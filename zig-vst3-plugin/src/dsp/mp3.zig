@@ -1,0 +1,1806 @@
+const std = @import("std");
+const file_reader_io = @import("file_reader_io.zig");
+
+pub const Version = enum {
+    mpeg1,
+    mpeg2,
+    mpeg25,
+};
+
+pub const ChannelMode = enum(u2) {
+    stereo = 0,
+    joint_stereo = 1,
+    dual_channel = 2,
+    mono = 3,
+};
+
+pub const maximum_free_format_frame_bytes: usize = 16 * 1024;
+
+pub const Header = struct {
+    version: Version,
+    crc_present: bool,
+    free_format: bool,
+    bitrate_kbps: u16,
+    sample_rate: u32,
+    padding: bool,
+    private: bool,
+    channel_mode: ChannelMode,
+    mode_extension: u2,
+    copyright: bool,
+    original: bool,
+    emphasis: u2,
+
+    pub fn parse(bytes: []const u8) !Header {
+        if (bytes.len < 4) return error.TruncatedMp3Header;
+        const value = readU32(bytes[0..4]);
+        if (value >> 21 != 0x7ff) return error.InvalidMp3Sync;
+
+        const version = switch (@as(u2, @intCast((value >> 19) & 0x3))) {
+            0 => Version.mpeg25,
+            1 => return error.ReservedMp3Version,
+            2 => Version.mpeg2,
+            3 => Version.mpeg1,
+        };
+        if (((value >> 17) & 0x3) != 1)
+            return error.NotMp3LayerThree;
+
+        const bitrate_index: u4 = @intCast((value >> 12) & 0xf);
+        if (bitrate_index == 15) return error.InvalidMp3Bitrate;
+        const rate_index: u2 = @intCast((value >> 10) & 0x3);
+        if (rate_index == 3) return error.InvalidMp3SampleRate;
+
+        return .{
+            .version = version,
+            .crc_present = ((value >> 16) & 1) == 0,
+            .free_format = bitrate_index == 0,
+            .bitrate_kbps = if (bitrate_index == 0)
+                0
+            else
+                bitrate(version, bitrate_index),
+            .sample_rate = sampleRate(version, rate_index),
+            .padding = ((value >> 9) & 1) != 0,
+            .private = ((value >> 8) & 1) != 0,
+            .channel_mode = @enumFromInt((value >> 6) & 0x3),
+            .mode_extension = @intCast((value >> 4) & 0x3),
+            .copyright = ((value >> 3) & 1) != 0,
+            .original = ((value >> 2) & 1) != 0,
+            .emphasis = @intCast(value & 0x3),
+        };
+    }
+
+    pub fn channels(self: Header) u8 {
+        return if (self.channel_mode == .mono) 1 else 2;
+    }
+
+    pub fn samplesPerFrame(self: Header) u16 {
+        return if (self.version == .mpeg1) 1152 else 576;
+    }
+
+    pub fn frameBytes(self: Header) usize {
+        if (self.free_format) return 0;
+        const coefficient: u64 =
+            if (self.version == .mpeg1) 144_000 else 72_000;
+        const base = coefficient * self.bitrate_kbps / self.sample_rate;
+        return @intCast(base + @intFromBool(self.padding));
+    }
+
+    pub fn sideInformationBytes(self: Header) u8 {
+        return switch (self.version) {
+            .mpeg1 => if (self.channels() == 1) 17 else 32,
+            .mpeg2, .mpeg25 => if (self.channels() == 1) 9 else 17,
+        };
+    }
+
+    fn compatible(self: Header, other: Header) bool {
+        return self.version == other.version and
+            self.sample_rate == other.sample_rate and
+            self.free_format == other.free_format and
+            self.channels() == other.channels();
+    }
+};
+
+pub const XingKind = enum {
+    variable,
+    constant,
+};
+
+pub const Xing = struct {
+    kind: XingKind,
+    frame_count: ?u32,
+    stream_bytes: ?u32,
+    toc: ?[100]u8,
+    quality: ?u32,
+    encoder: ?[9]u8,
+    encoder_delay: ?u12,
+    encoder_padding: ?u12,
+};
+
+pub const Vbri = struct {
+    version: u16,
+    delay: u16,
+    quality: u16,
+    stream_bytes: u32,
+    frame_count: u32,
+    toc_entries: u16,
+    toc_scale: u16,
+    entry_bytes: u16,
+    frames_per_entry: u16,
+    toc: []const u8,
+};
+
+pub const VbriSummary = struct {
+    version: u16,
+    delay: u16,
+    quality: u16,
+    stream_bytes: u32,
+    frame_count: u32,
+    toc_entries: u16,
+    toc_scale: u16,
+    entry_bytes: u16,
+    frames_per_entry: u16,
+
+    fn from(vbri: Vbri) VbriSummary {
+        return .{
+            .version = vbri.version,
+            .delay = vbri.delay,
+            .quality = vbri.quality,
+            .stream_bytes = vbri.stream_bytes,
+            .frame_count = vbri.frame_count,
+            .toc_entries = vbri.toc_entries,
+            .toc_scale = vbri.toc_scale,
+            .entry_bytes = vbri.entry_bytes,
+            .frames_per_entry = vbri.frames_per_entry,
+        };
+    }
+};
+
+pub const Frame = struct {
+    offset: usize,
+    bytes: []const u8,
+    header: Header,
+    xing: ?Xing,
+    vbri: ?Vbri,
+
+    pub fn parse(encoded: []const u8, offset: usize) !Frame {
+        if (offset > encoded.len or encoded.len - offset < 4)
+            return error.TruncatedMp3Header;
+        const header = try Header.parse(encoded[offset..]);
+        const free_base = if (header.free_format)
+            try inferMemoryFreeFormatBase(
+                encoded,
+                offset,
+                encoded.len,
+                header,
+            )
+        else
+            null;
+        const frame_bytes = try resolvedFrameBytes(
+            header,
+            free_base,
+        );
+        if (frame_bytes < 4 or frame_bytes > encoded.len - offset)
+            return error.TruncatedMp3Frame;
+        return frameAtKnownLength(
+            encoded,
+            offset,
+            header,
+            frame_bytes,
+        );
+    }
+};
+
+pub const Summary = struct {
+    audio_offset: usize,
+    audio_bytes: usize,
+    frame_count: u64,
+    sample_count: u64,
+    sample_rate: u32,
+    channels: u8,
+    first_xing: ?Xing,
+    first_vbri: ?Vbri,
+
+    pub fn durationSeconds(self: Summary) f64 {
+        return @as(f64, @floatFromInt(self.sample_count)) /
+            @as(f64, @floatFromInt(self.sample_rate));
+    }
+};
+
+pub const SeekPoint = struct {
+    frame_index: u64,
+    sample_offset: u64,
+    byte_offset: usize,
+};
+
+pub const FileFrame = struct {
+    byte_offset: u64,
+    bytes: []const u8,
+    header: Header,
+    xing: ?Xing,
+    vbri: ?Vbri,
+};
+
+pub const FileSummary = struct {
+    audio_offset: u64,
+    audio_bytes: u64,
+    frame_count: u64,
+    sample_count: u64,
+    sample_rate: u32,
+    channels: u8,
+    first_xing: ?Xing,
+    first_vbri: ?VbriSummary,
+
+    pub fn durationSeconds(self: FileSummary) f64 {
+        return @as(f64, @floatFromInt(self.sample_count)) /
+            @as(f64, @floatFromInt(self.sample_rate));
+    }
+};
+
+pub const Stream = struct {
+    encoded: []const u8,
+    audio_start: usize,
+    audio_end: usize,
+    cursor: usize,
+    first_header: ?Header = null,
+    frame_index: u64 = 0,
+    sample_offset: u64 = 0,
+    free_frame_base_bytes: ?usize = null,
+
+    pub fn init(encoded: []const u8) !Stream {
+        const audio_start = try leadingTagBytes(encoded);
+        const audio_end = trailingTagStart(encoded, audio_start);
+        if (audio_end - audio_start < 4) return error.Mp3StreamHasNoFrames;
+        return .{
+            .encoded = encoded,
+            .audio_start = audio_start,
+            .audio_end = audio_end,
+            .cursor = audio_start,
+        };
+    }
+
+    pub fn next(self: *Stream) !?Frame {
+        if (self.audio_start > self.audio_end or
+            self.audio_end > self.encoded.len or
+            self.cursor < self.audio_start or
+            self.cursor > self.audio_end)
+        {
+            return error.InvalidMp3StreamState;
+        }
+        if (self.cursor == self.audio_end) return null;
+        if (self.audio_end - self.cursor < 4)
+            return error.TrailingMp3Data;
+        const header = try Header.parse(self.encoded[self.cursor..]);
+        const next_free_base = if (header.free_format)
+            self.free_frame_base_bytes orelse
+                try inferMemoryFreeFormatBase(
+                    self.encoded,
+                    self.cursor,
+                    self.audio_end,
+                    header,
+                )
+        else
+            null;
+        const frame_bytes = try resolvedFrameBytes(
+            header,
+            next_free_base,
+        );
+        if (frame_bytes > self.audio_end - self.cursor)
+            return error.TruncatedMp3Frame;
+        const frame = try frameAtKnownLength(
+            self.encoded[0..self.audio_end],
+            self.cursor,
+            header,
+            frame_bytes,
+        );
+        if (self.first_header) |first| {
+            if (!first.compatible(frame.header))
+                return error.Mp3StreamFormatChanged;
+        }
+        const next_cursor = std.math.add(
+            usize,
+            self.cursor,
+            frame.bytes.len,
+        ) catch return error.Mp3ByteCountOverflow;
+        const next_frame_index = std.math.add(
+            u64,
+            self.frame_index,
+            1,
+        ) catch return error.Mp3FrameCountOverflow;
+        const next_sample_offset = std.math.add(
+            u64,
+            self.sample_offset,
+            frame.header.samplesPerFrame(),
+        ) catch return error.Mp3SampleCountOverflow;
+        self.first_header = self.first_header orelse frame.header;
+        self.free_frame_base_bytes = next_free_base;
+        self.cursor = next_cursor;
+        self.frame_index = next_frame_index;
+        self.sample_offset = next_sample_offset;
+        return frame;
+    }
+
+    pub fn summarize(encoded: []const u8) !Summary {
+        var stream = try Stream.init(encoded);
+        var first_xing: ?Xing = null;
+        var first_vbri: ?Vbri = null;
+        while (try stream.next()) |frame| {
+            if (stream.frame_index == 1) {
+                first_xing = frame.xing;
+                first_vbri = frame.vbri;
+            }
+        }
+        const first = stream.first_header orelse
+            return error.Mp3StreamHasNoFrames;
+        return .{
+            .audio_offset = stream.audio_start,
+            .audio_bytes = stream.audio_end - stream.audio_start,
+            .frame_count = stream.frame_index,
+            .sample_count = stream.sample_offset,
+            .sample_rate = first.sample_rate,
+            .channels = first.channels(),
+            .first_xing = first_xing,
+            .first_vbri = first_vbri,
+        };
+    }
+};
+
+pub const FileReader = struct {
+    io: std.Io,
+    file: std.Io.File,
+    audio_start: u64,
+    audio_end: u64,
+    offset: u64,
+    first_header: Header,
+    frame_index: u64 = 0,
+    sample_offset: u64 = 0,
+    free_frame_base_bytes: ?usize = null,
+
+    /// The caller owns the file and frame storage for the reader lifetime.
+    pub fn init(io: std.Io, file: std.Io.File) !FileReader {
+        const file_size = (try file.stat(io)).size;
+        if (file_size < 3) return error.Mp3StreamHasNoFrames;
+
+        var prefix: [10]u8 = undefined;
+        const prefix_bytes: usize = @intCast(@min(file_size, prefix.len));
+        try readExactAt(io, file, 0, prefix[0..prefix_bytes]);
+        const audio_start = try leadingFileTagBytes(
+            prefix[0..prefix_bytes],
+            file_size,
+        );
+
+        var audio_end = file_size;
+        if (audio_start <= file_size and
+            file_size - audio_start >= 128)
+        {
+            var marker: [3]u8 = undefined;
+            try readExactAt(io, file, file_size - 128, &marker);
+            if (std.mem.eql(u8, &marker, "TAG"))
+                audio_end -= 128;
+        }
+        if (audio_end < audio_start or audio_end - audio_start < 4)
+            return error.Mp3StreamHasNoFrames;
+
+        var header_bytes: [4]u8 = undefined;
+        try readExactAt(io, file, audio_start, &header_bytes);
+        const first_header = try Header.parse(&header_bytes);
+        const free_frame_base_bytes = if (first_header.free_format)
+            try inferFileFreeFormatBase(
+                io,
+                file,
+                audio_start,
+                audio_end,
+                first_header,
+            )
+        else
+            null;
+        return .{
+            .io = io,
+            .file = file,
+            .audio_start = audio_start,
+            .audio_end = audio_end,
+            .offset = audio_start,
+            .first_header = first_header,
+            .free_frame_base_bytes = free_frame_base_bytes,
+        };
+    }
+
+    /// Returned frame slices borrow storage until the caller reuses it.
+    pub fn next(self: *FileReader, storage: []u8) !?FileFrame {
+        if (self.audio_start > self.audio_end or
+            self.offset < self.audio_start or
+            self.offset > self.audio_end)
+        {
+            return error.InvalidMp3FileReaderState;
+        }
+        if (self.offset == self.audio_end) return null;
+        if (self.audio_end - self.offset < 4)
+            return error.TrailingMp3Data;
+
+        var header_bytes: [4]u8 = undefined;
+        try readExactAt(self.io, self.file, self.offset, &header_bytes);
+        const header = try Header.parse(&header_bytes);
+        if (!self.first_header.compatible(header))
+            return error.Mp3StreamFormatChanged;
+        const frame_bytes = try resolvedFrameBytes(
+            header,
+            self.free_frame_base_bytes,
+        );
+        if (frame_bytes > self.audio_end - self.offset)
+            return error.TruncatedMp3Frame;
+        if (storage.len < frame_bytes)
+            return error.Mp3FrameBufferTooSmall;
+        const next_offset = std.math.add(
+            u64,
+            self.offset,
+            frame_bytes,
+        ) catch return error.Mp3ByteCountOverflow;
+        const next_frame_index = std.math.add(
+            u64,
+            self.frame_index,
+            1,
+        ) catch return error.Mp3FrameCountOverflow;
+        const next_sample_offset = std.math.add(
+            u64,
+            self.sample_offset,
+            header.samplesPerFrame(),
+        ) catch return error.Mp3SampleCountOverflow;
+        try readExactAt(
+            self.io,
+            self.file,
+            self.offset,
+            storage[0..frame_bytes],
+        );
+        const parsed = try frameAtKnownLength(
+            storage[0..frame_bytes],
+            0,
+            header,
+            frame_bytes,
+        );
+        const byte_offset = self.offset;
+        self.offset = next_offset;
+        self.frame_index = next_frame_index;
+        self.sample_offset = next_sample_offset;
+        return .{
+            .byte_offset = byte_offset,
+            .bytes = parsed.bytes,
+            .header = parsed.header,
+            .xing = parsed.xing,
+            .vbri = parsed.vbri,
+        };
+    }
+
+    pub fn seek(self: *FileReader, point: SeekPoint) !void {
+        const byte_offset: u64 = @intCast(point.byte_offset);
+        if (byte_offset < self.audio_start or
+            byte_offset > self.audio_end -| 4)
+            return error.InvalidMp3SeekPoint;
+        const expected_sample = std.math.mul(
+            u64,
+            point.frame_index,
+            self.first_header.samplesPerFrame(),
+        ) catch return error.InvalidMp3SeekPoint;
+        if (point.sample_offset != expected_sample)
+            return error.InvalidMp3SeekPoint;
+        var header_bytes: [4]u8 = undefined;
+        try readExactAt(self.io, self.file, byte_offset, &header_bytes);
+        const header = Header.parse(&header_bytes) catch
+            return error.InvalidMp3SeekPoint;
+        if (!self.first_header.compatible(header))
+            return error.InvalidMp3SeekPoint;
+        const frame_bytes = resolvedFrameBytes(
+            header,
+            self.free_frame_base_bytes,
+        ) catch return error.InvalidMp3SeekPoint;
+        if (frame_bytes > self.audio_end - byte_offset)
+            return error.InvalidMp3SeekPoint;
+        self.offset = byte_offset;
+        self.frame_index = point.frame_index;
+        self.sample_offset = point.sample_offset;
+    }
+
+    pub fn summarize(
+        io: std.Io,
+        file: std.Io.File,
+        storage: []u8,
+    ) !FileSummary {
+        var reader = try FileReader.init(io, file);
+        var first_xing: ?Xing = null;
+        var first_vbri: ?VbriSummary = null;
+        while (try reader.next(storage)) |frame| {
+            if (reader.frame_index == 1) {
+                first_xing = frame.xing;
+                if (frame.vbri) |vbri|
+                    first_vbri = VbriSummary.from(vbri);
+            }
+        }
+        return .{
+            .audio_offset = reader.audio_start,
+            .audio_bytes = reader.audio_end - reader.audio_start,
+            .frame_count = reader.frame_index,
+            .sample_count = reader.sample_offset,
+            .sample_rate = reader.first_header.sample_rate,
+            .channels = reader.first_header.channels(),
+            .first_xing = first_xing,
+            .first_vbri = first_vbri,
+        };
+    }
+};
+
+pub fn requiredSeekPoints(encoded: []const u8, stride: u32) !usize {
+    if (stride == 0) return error.InvalidMp3SeekStride;
+    var stream = try Stream.init(encoded);
+    var count: usize = 0;
+    while (try stream.next()) |_| {
+        const index = stream.frame_index - 1;
+        if (index % stride == 0)
+            count = std.math.add(
+                usize,
+                count,
+                1,
+            ) catch return error.Mp3SeekPointCountOverflow;
+    }
+    return count;
+}
+
+pub fn buildSeekIndex(
+    encoded: []const u8,
+    stride: u32,
+    destination: []SeekPoint,
+) ![]const SeekPoint {
+    const destination_bytes = std.math.mul(
+        usize,
+        destination.len,
+        @sizeOf(SeekPoint),
+    ) catch return error.Mp3SeekIndexSizeOverflow;
+    if (byteRangesOverlap(
+        @intFromPtr(encoded.ptr),
+        encoded.len,
+        @intFromPtr(destination.ptr),
+        destination_bytes,
+    )) return error.OverlappingMp3SeekStorage;
+    const required = try requiredSeekPoints(encoded, stride);
+    if (destination.len < required) return error.Mp3SeekIndexTooSmall;
+
+    var stream = try Stream.init(encoded);
+    var count: usize = 0;
+    while (true) {
+        const frame_index = stream.frame_index;
+        const sample_offset = stream.sample_offset;
+        const byte_offset = stream.cursor;
+        const frame = try stream.next() orelse break;
+        _ = frame;
+        if (frame_index % stride != 0) continue;
+        destination[count] = .{
+            .frame_index = frame_index,
+            .sample_offset = sample_offset,
+            .byte_offset = byte_offset,
+        };
+        count += 1;
+    }
+    if (count != required) return error.Mp3SeekIndexChanged;
+    return destination[0..count];
+}
+
+pub fn findSeekPoint(points: []const SeekPoint, target_sample: u64) !SeekPoint {
+    if (points.len == 0) return error.EmptyMp3SeekIndex;
+    var selected = points[0];
+    if (selected.frame_index != 0 or selected.sample_offset != 0)
+        return error.InvalidMp3SeekIndex;
+    var previous = selected;
+    for (points[1..]) |point| {
+        if (point.frame_index <= previous.frame_index or
+            point.sample_offset <= previous.sample_offset or
+            point.byte_offset <= previous.byte_offset)
+            return error.InvalidMp3SeekIndex;
+        if (point.sample_offset <= target_sample) selected = point;
+        previous = point;
+    }
+    return selected;
+}
+
+fn resolvedFrameBytes(
+    header: Header,
+    free_base_bytes: ?usize,
+) !usize {
+    if (!header.free_format) return header.frameBytes();
+    const base = free_base_bytes orelse
+        return error.CannotInferFreeFormatMp3FrameSize;
+    return std.math.add(
+        usize,
+        base,
+        @intFromBool(header.padding),
+    ) catch return error.Mp3ByteCountOverflow;
+}
+
+fn minimumFrameBytes(header: Header) usize {
+    return 4 + @as(usize, if (header.crc_present) 2 else 0) +
+        header.sideInformationBytes();
+}
+
+fn inferMemoryFreeFormatBase(
+    encoded: []const u8,
+    offset: usize,
+    audio_end: usize,
+    header: Header,
+) !usize {
+    if (!header.free_format)
+        return error.InvalidFreeFormatMp3Header;
+    const first_candidate = std.math.add(
+        usize,
+        offset,
+        minimumFrameBytes(header),
+    ) catch return error.Mp3ByteCountOverflow;
+    const maximum_candidate = @min(
+        audio_end -| 4,
+        std.math.add(
+            usize,
+            offset,
+            maximum_free_format_frame_bytes,
+        ) catch std.math.maxInt(usize),
+    );
+    var candidate = first_candidate;
+    while (candidate <= maximum_candidate) : (candidate += 1) {
+        const candidate_header =
+            Header.parse(encoded[candidate..audio_end]) catch continue;
+        if (!header.compatible(candidate_header)) continue;
+        const frame_bytes = candidate - offset;
+        const padding: usize = @intFromBool(header.padding);
+        if (frame_bytes <= padding) continue;
+        const base = frame_bytes - padding;
+        if (try confirmsMemoryFreeFormat(
+            encoded,
+            candidate,
+            audio_end,
+            candidate_header,
+            base,
+        )) return base;
+    }
+    return error.CannotInferFreeFormatMp3FrameSize;
+}
+
+fn confirmsMemoryFreeFormat(
+    encoded: []const u8,
+    candidate: usize,
+    audio_end: usize,
+    header: Header,
+    base: usize,
+) !bool {
+    const frame_bytes = try resolvedFrameBytes(header, base);
+    const next = std.math.add(
+        usize,
+        candidate,
+        frame_bytes,
+    ) catch return false;
+    if (next == audio_end) return true;
+    if (next > audio_end -| 4) return false;
+    const next_header =
+        Header.parse(encoded[next..audio_end]) catch return false;
+    return header.compatible(next_header);
+}
+
+fn inferFileFreeFormatBase(
+    io: std.Io,
+    file: std.Io.File,
+    offset: u64,
+    audio_end: u64,
+    header: Header,
+) !usize {
+    if (!header.free_format)
+        return error.InvalidFreeFormatMp3Header;
+    const first_candidate = std.math.add(
+        u64,
+        offset,
+        minimumFrameBytes(header),
+    ) catch return error.Mp3ByteCountOverflow;
+    const maximum_candidate = @min(
+        audio_end -| 4,
+        std.math.add(
+            u64,
+            offset,
+            maximum_free_format_frame_bytes,
+        ) catch std.math.maxInt(u64),
+    );
+    var candidate = first_candidate;
+    var header_bytes: [4]u8 = undefined;
+    while (candidate <= maximum_candidate) : (candidate += 1) {
+        try readExactAt(io, file, candidate, &header_bytes);
+        const candidate_header =
+            Header.parse(&header_bytes) catch continue;
+        if (!header.compatible(candidate_header)) continue;
+        const frame_bytes = std.math.cast(
+            usize,
+            candidate - offset,
+        ) orelse return error.Mp3ByteCountOverflow;
+        const padding: usize = @intFromBool(header.padding);
+        if (frame_bytes <= padding) continue;
+        const base = frame_bytes - padding;
+        if (try confirmsFileFreeFormat(
+            io,
+            file,
+            candidate,
+            audio_end,
+            candidate_header,
+            base,
+        )) return base;
+    }
+    return error.CannotInferFreeFormatMp3FrameSize;
+}
+
+fn confirmsFileFreeFormat(
+    io: std.Io,
+    file: std.Io.File,
+    candidate: u64,
+    audio_end: u64,
+    header: Header,
+    base: usize,
+) !bool {
+    const frame_bytes = try resolvedFrameBytes(header, base);
+    const next = std.math.add(
+        u64,
+        candidate,
+        frame_bytes,
+    ) catch return false;
+    if (next == audio_end) return true;
+    if (next > audio_end -| 4) return false;
+    var next_bytes: [4]u8 = undefined;
+    try readExactAt(io, file, next, &next_bytes);
+    const next_header = Header.parse(&next_bytes) catch return false;
+    return header.compatible(next_header);
+}
+
+fn frameAtKnownLength(
+    encoded: []const u8,
+    offset: usize,
+    header: Header,
+    frame_bytes: usize,
+) !Frame {
+    if (offset > encoded.len or
+        frame_bytes < minimumFrameBytes(header) or
+        frame_bytes > encoded.len - offset)
+        return error.TruncatedMp3Frame;
+    const bytes = encoded[offset .. offset + frame_bytes];
+    return .{
+        .offset = offset,
+        .bytes = bytes,
+        .header = header,
+        .xing = try parseXing(bytes, header),
+        .vbri = try parseVbri(bytes),
+    };
+}
+
+pub fn requiredFileSeekPoints(
+    io: std.Io,
+    file: std.Io.File,
+    frame_storage: []u8,
+    stride: u32,
+) !usize {
+    if (stride == 0) return error.InvalidMp3SeekStride;
+    var reader = try FileReader.init(io, file);
+    var count: usize = 0;
+    while (try reader.next(frame_storage)) |_| {
+        const index = reader.frame_index - 1;
+        if (index % stride == 0)
+            count = std.math.add(
+                usize,
+                count,
+                1,
+            ) catch return error.Mp3SeekPointCountOverflow;
+    }
+    return count;
+}
+
+pub fn buildFileSeekIndex(
+    io: std.Io,
+    file: std.Io.File,
+    frame_storage: []u8,
+    stride: u32,
+    destination: []SeekPoint,
+) ![]const SeekPoint {
+    const destination_bytes = std.math.mul(
+        usize,
+        destination.len,
+        @sizeOf(SeekPoint),
+    ) catch return error.Mp3SeekIndexSizeOverflow;
+    if (byteRangesOverlap(
+        @intFromPtr(frame_storage.ptr),
+        frame_storage.len,
+        @intFromPtr(destination.ptr),
+        destination_bytes,
+    )) return error.OverlappingMp3SeekStorage;
+    const required = try requiredFileSeekPoints(
+        io,
+        file,
+        frame_storage,
+        stride,
+    );
+    if (destination.len < required) return error.Mp3SeekIndexTooSmall;
+
+    var reader = try FileReader.init(io, file);
+    var count: usize = 0;
+    while (true) {
+        const frame_index = reader.frame_index;
+        const sample_offset = reader.sample_offset;
+        const byte_offset: usize = std.math.cast(
+            usize,
+            reader.offset,
+        ) orelse return error.Mp3FileOffsetTooLarge;
+        _ = try reader.next(frame_storage) orelse break;
+        if (frame_index % stride != 0) continue;
+        if (count >= destination.len)
+            return error.Mp3SeekIndexChanged;
+        destination[count] = .{
+            .frame_index = frame_index,
+            .sample_offset = sample_offset,
+            .byte_offset = byte_offset,
+        };
+        count = std.math.add(
+            usize,
+            count,
+            1,
+        ) catch return error.Mp3SeekPointCountOverflow;
+    }
+    if (count != required) return error.Mp3SeekIndexChanged;
+    return destination[0..count];
+}
+
+fn parseXing(frame: []const u8, header: Header) !?Xing {
+    const offset: usize = 4 + header.sideInformationBytes();
+    if (frame.len < offset + 4) return null;
+    const marker = frame[offset .. offset + 4];
+    const kind: XingKind = if (std.mem.eql(u8, marker, "Xing"))
+        .variable
+    else if (std.mem.eql(u8, marker, "Info"))
+        .constant
+    else
+        return null;
+    if (frame.len < offset + 8) return error.TruncatedXingHeader;
+    const flags = readU32(frame[offset + 4 .. offset + 8]);
+    if (flags & ~@as(u32, 0xf) != 0) return error.InvalidXingFlags;
+    var cursor = offset + 8;
+    var xing = Xing{
+        .kind = kind,
+        .frame_count = null,
+        .stream_bytes = null,
+        .toc = null,
+        .quality = null,
+        .encoder = null,
+        .encoder_delay = null,
+        .encoder_padding = null,
+    };
+    if (flags & 1 != 0) {
+        xing.frame_count = try readOptionalU32(frame, &cursor);
+    }
+    if (flags & 2 != 0) {
+        xing.stream_bytes = try readOptionalU32(frame, &cursor);
+    }
+    if (flags & 4 != 0) {
+        if (frame.len -| cursor < 100) return error.TruncatedXingHeader;
+        xing.toc = frame[cursor..][0..100].*;
+        cursor += 100;
+    }
+    if (flags & 8 != 0) {
+        xing.quality = try readOptionalU32(frame, &cursor);
+    }
+
+    if (frame.len -| cursor >= 24) {
+        const encoder = frame[cursor..][0..9].*;
+        xing.encoder = encoder;
+        const delay_offset = cursor + 21;
+        const delay_fields =
+            readU24(frame[delay_offset .. delay_offset + 3]);
+        if (std.mem.startsWith(u8, &encoder, "LAME") or
+            std.mem.startsWith(u8, &encoder, "Lavf") or
+            std.mem.startsWith(u8, &encoder, "Lavc"))
+        {
+            xing.encoder_delay = @intCast(delay_fields >> 12);
+            xing.encoder_padding = @intCast(delay_fields & 0xfff);
+        }
+    }
+    return xing;
+}
+
+fn parseVbri(frame: []const u8) !?Vbri {
+    const offset = 4 + 32;
+    if (frame.len < offset + 4 or
+        !std.mem.eql(u8, frame[offset .. offset + 4], "VBRI"))
+        return null;
+    if (frame.len < offset + 26) return error.TruncatedVbriHeader;
+    const version = readU16(frame[offset + 4 .. offset + 6]);
+    if (version != 1) return error.UnsupportedVbriVersion;
+    const entry_count = readU16(frame[offset + 18 .. offset + 20]);
+    const entry_bytes = readU16(frame[offset + 22 .. offset + 24]);
+    if (entry_bytes < 1 or entry_bytes > 4)
+        return error.InvalidVbriEntrySize;
+    const toc_bytes = std.math.mul(
+        usize,
+        entry_count,
+        entry_bytes,
+    ) catch return error.VbriSizeOverflow;
+    if (frame.len - (offset + 26) < toc_bytes)
+        return error.TruncatedVbriToc;
+    return .{
+        .version = version,
+        .delay = readU16(frame[offset + 6 .. offset + 8]),
+        .quality = readU16(frame[offset + 8 .. offset + 10]),
+        .stream_bytes = readU32(frame[offset + 10 .. offset + 14]),
+        .frame_count = readU32(frame[offset + 14 .. offset + 18]),
+        .toc_entries = entry_count,
+        .toc_scale = readU16(frame[offset + 20 .. offset + 22]),
+        .entry_bytes = entry_bytes,
+        .frames_per_entry = readU16(frame[offset + 24 .. offset + 26]),
+        .toc = frame[offset + 26 ..][0..toc_bytes],
+    };
+}
+
+fn leadingTagBytes(encoded: []const u8) !usize {
+    if (encoded.len < 3 or !std.mem.eql(u8, encoded[0..3], "ID3"))
+        return 0;
+    if (encoded.len < 10) return error.TruncatedLeadingId3Tag;
+    const total = try leadingTagSize(encoded[0..10]);
+    if (total > encoded.len) return error.TruncatedLeadingId3Tag;
+    return total;
+}
+
+fn leadingTagSize(header: []const u8) !usize {
+    const version = header[3];
+    if (version < 2 or version > 4) return error.UnsupportedLeadingId3Tag;
+    for (header[6..10]) |byte| {
+        if (byte & 0x80 != 0) return error.InvalidLeadingId3Size;
+    }
+    const body_bytes =
+        (@as(usize, header[6]) << 21) |
+        (@as(usize, header[7]) << 14) |
+        (@as(usize, header[8]) << 7) |
+        header[9];
+    const footer_bytes: usize =
+        if (version == 4 and header[5] & 0x10 != 0) 10 else 0;
+    return std.math.add(
+        usize,
+        10 + footer_bytes,
+        body_bytes,
+    ) catch return error.LeadingId3SizeOverflow;
+}
+
+fn leadingFileTagBytes(prefix: []const u8, file_size: u64) !u64 {
+    if (prefix.len < 3 or !std.mem.eql(u8, prefix[0..3], "ID3"))
+        return 0;
+    if (prefix.len < 10) return error.TruncatedLeadingId3Tag;
+    const total: u64 = try leadingTagSize(prefix[0..10]);
+    if (total > file_size) return error.TruncatedLeadingId3Tag;
+    return total;
+}
+
+fn trailingTagStart(encoded: []const u8, audio_start: usize) usize {
+    if (audio_start <= encoded.len and
+        encoded.len - audio_start >= 128 and
+        std.mem.eql(u8, encoded[encoded.len - 128 ..][0..3], "TAG"))
+        return encoded.len - 128;
+    return encoded.len;
+}
+
+fn readOptionalU32(bytes: []const u8, cursor: *usize) !u32 {
+    if (bytes.len -| cursor.* < 4) return error.TruncatedXingHeader;
+    const value = readU32(bytes[cursor.*..][0..4]);
+    cursor.* += 4;
+    return value;
+}
+
+fn bitrate(version: Version, index: u4) u16 {
+    const mpeg1 = [_]u16{
+        0,   32,  40,  48,  56,  64,  80,  96,
+        112, 128, 160, 192, 224, 256, 320, 0,
+    };
+    const mpeg2 = [_]u16{
+        0,  8,  16, 24,  32,  40,  48,  56,
+        64, 80, 96, 112, 128, 144, 160, 0,
+    };
+    return if (version == .mpeg1) mpeg1[index] else mpeg2[index];
+}
+
+fn sampleRate(version: Version, index: u2) u32 {
+    const base = [_]u32{ 44_100, 48_000, 32_000, 0 };
+    return switch (version) {
+        .mpeg1 => base[index],
+        .mpeg2 => base[index] / 2,
+        .mpeg25 => base[index] / 4,
+    };
+}
+
+fn readU16(bytes: []const u8) u16 {
+    return (@as(u16, bytes[0]) << 8) | bytes[1];
+}
+
+fn readU24(bytes: []const u8) u24 {
+    return (@as(u24, bytes[0]) << 16) |
+        (@as(u24, bytes[1]) << 8) |
+        bytes[2];
+}
+
+fn readU32(bytes: []const u8) u32 {
+    return (@as(u32, bytes[0]) << 24) |
+        (@as(u32, bytes[1]) << 16) |
+        (@as(u32, bytes[2]) << 8) |
+        bytes[3];
+}
+
+fn readExactAt(
+    io: std.Io,
+    file: std.Io.File,
+    offset: u64,
+    destination: []u8,
+) !void {
+    return file_reader_io.readExactAt(
+        io,
+        file,
+        offset,
+        destination,
+        error.TruncatedMp3File,
+    );
+}
+
+fn byteRangesOverlap(
+    first_start: usize,
+    first_length: usize,
+    second_start: usize,
+    second_length: usize,
+) bool {
+    if (first_length == 0 or second_length == 0) return false;
+    const first_end = std.math.add(
+        usize,
+        first_start,
+        first_length,
+    ) catch std.math.maxInt(usize);
+    const second_end = std.math.add(
+        usize,
+        second_start,
+        second_length,
+    ) catch std.math.maxInt(usize);
+    return first_start < second_end and second_start < first_end;
+}
+
+fn testHeader(
+    version_bits: u2,
+    protection: bool,
+    bitrate_index: u4,
+    rate_index: u2,
+    padding: bool,
+    mode: ChannelMode,
+) [4]u8 {
+    var value: u32 = 0x7ff << 21;
+    value |= @as(u32, version_bits) << 19;
+    value |= 1 << 17;
+    value |= @as(u32, @intFromBool(protection)) << 16;
+    value |= @as(u32, bitrate_index) << 12;
+    value |= @as(u32, rate_index) << 10;
+    value |= @as(u32, @intFromBool(padding)) << 9;
+    value |= @as(u32, @intFromEnum(mode)) << 6;
+    return .{
+        @intCast((value >> 24) & 0xff),
+        @intCast((value >> 16) & 0xff),
+        @intCast((value >> 8) & 0xff),
+        @intCast(value & 0xff),
+    };
+}
+
+fn appendFrame(
+    destination: []u8,
+    offset: usize,
+    header_bytes: [4]u8,
+) !usize {
+    const header = try Header.parse(&header_bytes);
+    const length = header.frameBytes();
+    if (destination.len - offset < length) return error.TestStorageTooSmall;
+    @memset(destination[offset .. offset + length], 0);
+    @memcpy(destination[offset..][0..4], &header_bytes);
+    return offset + length;
+}
+
+fn appendFreeFormatFrame(
+    destination: []u8,
+    offset: usize,
+    header_bytes: [4]u8,
+    base_bytes: usize,
+) !usize {
+    const header = try Header.parse(&header_bytes);
+    if (!header.free_format)
+        return error.TestHeaderIsNotFreeFormat;
+    const length = try resolvedFrameBytes(header, base_bytes);
+    if (offset > destination.len or
+        length > destination.len - offset)
+        return error.TestStorageTooSmall;
+    @memset(destination[offset .. offset + length], 0);
+    @memcpy(destination[offset..][0..4], &header_bytes);
+    return offset + length;
+}
+
+test "parses MPEG Layer III versions, CRC, padding, and frame sizes" {
+    const mpeg1 = try Header.parse(&testHeader(
+        3,
+        false,
+        9,
+        0,
+        false,
+        .stereo,
+    ));
+    try std.testing.expectEqual(Version.mpeg1, mpeg1.version);
+    try std.testing.expect(mpeg1.crc_present);
+    try std.testing.expectEqual(@as(u16, 128), mpeg1.bitrate_kbps);
+    try std.testing.expectEqual(@as(u32, 44_100), mpeg1.sample_rate);
+    try std.testing.expectEqual(@as(usize, 417), mpeg1.frameBytes());
+    try std.testing.expectEqual(@as(u16, 1152), mpeg1.samplesPerFrame());
+    try std.testing.expectEqual(@as(u8, 32), mpeg1.sideInformationBytes());
+
+    const mpeg2 = try Header.parse(&testHeader(
+        2,
+        true,
+        8,
+        0,
+        true,
+        .mono,
+    ));
+    try std.testing.expectEqual(Version.mpeg2, mpeg2.version);
+    try std.testing.expect(!mpeg2.crc_present);
+    try std.testing.expectEqual(@as(u16, 64), mpeg2.bitrate_kbps);
+    try std.testing.expectEqual(@as(u32, 22_050), mpeg2.sample_rate);
+    try std.testing.expectEqual(@as(usize, 209), mpeg2.frameBytes());
+    try std.testing.expectEqual(@as(u16, 576), mpeg2.samplesPerFrame());
+    try std.testing.expectEqual(@as(u8, 9), mpeg2.sideInformationBytes());
+
+    const mpeg25 = try Header.parse(&testHeader(
+        0,
+        true,
+        1,
+        2,
+        false,
+        .joint_stereo,
+    ));
+    try std.testing.expectEqual(@as(u32, 8_000), mpeg25.sample_rate);
+    try std.testing.expectEqual(@as(u16, 8), mpeg25.bitrate_kbps);
+    try std.testing.expectEqual(@as(usize, 72), mpeg25.frameBytes());
+}
+
+test "rejects malformed and unsupported MPEG headers" {
+    try std.testing.expectError(
+        error.TruncatedMp3Header,
+        Header.parse(&.{ 0xff, 0xfb, 0x90 }),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3Sync,
+        Header.parse(&.{ 0, 0, 0, 0 }),
+    );
+    try std.testing.expectError(
+        error.ReservedMp3Version,
+        Header.parse(&testHeader(1, true, 9, 0, false, .stereo)),
+    );
+    var not_layer_three = testHeader(3, true, 9, 0, false, .stereo);
+    not_layer_three[1] |= 0x04;
+    try std.testing.expectError(
+        error.NotMp3LayerThree,
+        Header.parse(&not_layer_three),
+    );
+    const free = try Header.parse(
+        &testHeader(3, true, 0, 0, false, .stereo),
+    );
+    try std.testing.expect(free.free_format);
+    try std.testing.expectEqual(@as(u16, 0), free.bitrate_kbps);
+    try std.testing.expectEqual(@as(usize, 0), free.frameBytes());
+    try std.testing.expectError(
+        error.InvalidMp3Bitrate,
+        Header.parse(&testHeader(3, true, 15, 0, false, .stereo)),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3SampleRate,
+        Header.parse(&testHeader(3, true, 9, 3, false, .stereo)),
+    );
+}
+
+test "free-format MP3 infers padded frame sizes transactionally" {
+    var encoded: [1700]u8 = @splat(0);
+    const plain = testHeader(3, true, 0, 0, false, .stereo);
+    const padded = testHeader(3, true, 0, 0, true, .stereo);
+    var cursor = try appendFreeFormatFrame(
+        &encoded,
+        0,
+        plain,
+        500,
+    );
+    cursor = try appendFreeFormatFrame(
+        &encoded,
+        cursor,
+        padded,
+        500,
+    );
+    cursor = try appendFreeFormatFrame(
+        &encoded,
+        cursor,
+        plain,
+        500,
+    );
+    @memcpy(encoded[100..104], &plain);
+
+    const first = try Frame.parse(encoded[0..cursor], 0);
+    try std.testing.expect(first.header.free_format);
+    try std.testing.expectEqual(@as(usize, 500), first.bytes.len);
+
+    var stream = try Stream.init(encoded[0..cursor]);
+    try std.testing.expectEqual(
+        @as(usize, 500),
+        (try stream.next()).?.bytes.len,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 501),
+        (try stream.next()).?.bytes.len,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 500),
+        (try stream.next()).?.bytes.len,
+    );
+    try std.testing.expect((try stream.next()) == null);
+    try std.testing.expectEqual(@as(?usize, 500), stream.free_frame_base_bytes);
+
+    var one_frame: [500]u8 = undefined;
+    _ = try appendFreeFormatFrame(&one_frame, 0, plain, 500);
+    try std.testing.expectError(
+        error.CannotInferFreeFormatMp3FrameSize,
+        Frame.parse(&one_frame, 0),
+    );
+}
+
+test "file-backed free-format MP3 scans summarizes and seeks" {
+    var encoded: [1600]u8 = @splat(0);
+    const header = testHeader(3, true, 0, 0, false, .stereo);
+    var cursor = try appendFreeFormatFrame(
+        &encoded,
+        0,
+        header,
+        500,
+    );
+    cursor = try appendFreeFormatFrame(
+        &encoded,
+        cursor,
+        header,
+        500,
+    );
+    cursor = try appendFreeFormatFrame(
+        &encoded,
+        cursor,
+        header,
+        500,
+    );
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "free-format.mp3",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    try file.writePositionalAll(
+        std.testing.io,
+        encoded[0..cursor],
+        0,
+    );
+
+    var reader = try FileReader.init(std.testing.io, file);
+    try std.testing.expectEqual(
+        @as(?usize, 500),
+        reader.free_frame_base_bytes,
+    );
+    var storage: [501]u8 = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 500),
+        (try reader.next(&storage)).?.bytes.len,
+    );
+    const summary = try FileReader.summarize(
+        std.testing.io,
+        file,
+        &storage,
+    );
+    try std.testing.expectEqual(@as(u64, 3), summary.frame_count);
+
+    var points: [3]SeekPoint = undefined;
+    const index = try buildFileSeekIndex(
+        std.testing.io,
+        file,
+        &storage,
+        1,
+        &points,
+    );
+    try reader.seek(index[2]);
+    try std.testing.expectEqual(
+        @as(u64, 1000),
+        reader.offset,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 500),
+        (try reader.next(&storage)).?.bytes.len,
+    );
+}
+
+test "parses bounded Xing fields and LAME delay metadata" {
+    var storage: [500]u8 = undefined;
+    const header_bytes = testHeader(3, false, 9, 0, false, .stereo);
+    const end = try appendFrame(&storage, 0, header_bytes);
+    const offset = 4 + 32;
+    @memcpy(storage[offset..][0..4], "Xing");
+    storage[offset + 7] = 0xf;
+    storage[offset + 8 ..][0..4].* = .{ 0, 0, 0, 10 };
+    storage[offset + 12 ..][0..4].* = .{ 0, 0, 4, 0 };
+    for (storage[offset + 16 ..][0..100], 0..) |*byte, index|
+        byte.* = @intCast(index);
+    storage[offset + 116 ..][0..4].* = .{ 0, 0, 0, 7 };
+    @memcpy(storage[offset + 120 ..][0..9], "LAME3.100");
+    storage[offset + 141 ..][0..3].* = .{ 0x24, 0x03, 0x21 };
+
+    const frame = try Frame.parse(storage[0..end], 0);
+    const xing = frame.xing.?;
+    try std.testing.expectEqual(XingKind.variable, xing.kind);
+    try std.testing.expectEqual(@as(?u32, 10), xing.frame_count);
+    try std.testing.expectEqual(@as(?u32, 1024), xing.stream_bytes);
+    try std.testing.expectEqual(@as(u8, 99), xing.toc.?[99]);
+    try std.testing.expectEqual(@as(?u32, 7), xing.quality);
+    try std.testing.expectEqual(@as(?u12, 0x240), xing.encoder_delay);
+    try std.testing.expectEqual(@as(?u12, 0x321), xing.encoder_padding);
+
+    storage[offset + 7] = 0x10;
+    try std.testing.expectError(
+        error.InvalidXingFlags,
+        Frame.parse(storage[0..end], 0),
+    );
+    const short_end = try appendFrame(
+        &storage,
+        0,
+        testHeader(3, true, 1, 0, false, .stereo),
+    );
+    @memcpy(storage[offset..][0..4], "Xing");
+    storage[offset + 7] = 0x4;
+    try std.testing.expectError(
+        error.TruncatedXingHeader,
+        Frame.parse(storage[0..short_end], 0),
+    );
+}
+
+test "parses bounded VBRI header and table" {
+    var storage: [500]u8 = undefined;
+    const end = try appendFrame(
+        &storage,
+        0,
+        testHeader(3, true, 9, 0, false, .stereo),
+    );
+    const offset = 36;
+    @memcpy(storage[offset..][0..4], "VBRI");
+    storage[offset + 4 ..][0..22].* = .{
+        0, 1, 0, 2, 0, 3,
+        0, 0, 4, 0, 0, 0,
+        0, 9, 0, 2, 0, 1,
+        0, 2, 0, 4,
+    };
+    storage[offset + 26 ..][0..4].* = .{ 0, 5, 0, 6 };
+    const frame = try Frame.parse(storage[0..end], 0);
+    const vbri = frame.vbri.?;
+    try std.testing.expectEqual(@as(u16, 1), vbri.version);
+    try std.testing.expectEqual(@as(u32, 1024), vbri.stream_bytes);
+    try std.testing.expectEqual(@as(u32, 9), vbri.frame_count);
+    try std.testing.expectEqualSlices(u8, &.{ 0, 5, 0, 6 }, vbri.toc);
+
+    storage[offset + 23] = 5;
+    try std.testing.expectError(
+        error.InvalidVbriEntrySize,
+        Frame.parse(storage[0..end], 0),
+    );
+    storage[offset + 23] = 2;
+    storage[offset + 18 ..][0..2].* = .{ 0xff, 0xff };
+    try std.testing.expectError(
+        error.TruncatedVbriToc,
+        Frame.parse(storage[0..end], 0),
+    );
+    storage[offset + 18 ..][0..2].* = .{ 0, 2 };
+    storage[offset + 5] = 2;
+    try std.testing.expectError(
+        error.UnsupportedVbriVersion,
+        Frame.parse(storage[0..end], 0),
+    );
+}
+
+test "stream skips ID3 tags, summarizes frames, and builds seek index" {
+    var storage: [1600]u8 = undefined;
+    @memset(&storage, 0);
+    @memcpy(storage[0..3], "ID3");
+    storage[3] = 4;
+    storage[5] = 0x10;
+    storage[9] = 5;
+    @memcpy(storage[15..18], "3DI");
+    var cursor: usize = 25;
+    const header = testHeader(3, true, 9, 0, false, .stereo);
+    cursor = try appendFrame(&storage, cursor, header);
+    cursor = try appendFrame(&storage, cursor, header);
+    cursor = try appendFrame(&storage, cursor, header);
+    @memcpy(storage[cursor..][0..3], "TAG");
+    cursor += 128;
+
+    const summary = try Stream.summarize(storage[0..cursor]);
+    try std.testing.expectEqual(@as(usize, 25), summary.audio_offset);
+    try std.testing.expectEqual(@as(u64, 3), summary.frame_count);
+    try std.testing.expectEqual(@as(u64, 3456), summary.sample_count);
+    try std.testing.expectEqual(@as(u32, 44_100), summary.sample_rate);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 3456.0 / 44_100.0),
+        summary.durationSeconds(),
+        1e-12,
+    );
+
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        try requiredSeekPoints(storage[0..cursor], 2),
+    );
+    var points: [2]SeekPoint = undefined;
+    const index = try buildSeekIndex(storage[0..cursor], 2, &points);
+    try std.testing.expectEqual(@as(usize, 25), index[0].byte_offset);
+    try std.testing.expectEqual(@as(u64, 2), index[1].frame_index);
+    try std.testing.expectEqual(@as(u64, 2304), index[1].sample_offset);
+    try std.testing.expectEqual(
+        index[0],
+        try findSeekPoint(index, 2303),
+    );
+    try std.testing.expectEqual(
+        index[1],
+        try findSeekPoint(index, 2304),
+    );
+}
+
+test "file reader scans summarizes indexes and seeks without whole-file storage" {
+    var encoded: [1600]u8 = undefined;
+    @memset(&encoded, 0);
+    @memcpy(encoded[0..3], "ID3");
+    encoded[3] = 3;
+    encoded[9] = 4;
+    var cursor: usize = 14;
+    const header = testHeader(3, true, 9, 0, false, .stereo);
+    cursor = try appendFrame(&encoded, cursor, header);
+    cursor = try appendFrame(&encoded, cursor, header);
+    cursor = try appendFrame(&encoded, cursor, header);
+    @memcpy(encoded[cursor..][0..3], "TAG");
+    cursor += 128;
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "framing.mp3",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    try file.writePositionalAll(std.testing.io, encoded[0..cursor], 0);
+
+    var reader = try FileReader.init(std.testing.io, file);
+    try std.testing.expectEqual(@as(u64, 14), reader.audio_start);
+    const original_offset = reader.offset;
+    var short_storage: [100]u8 = undefined;
+    try std.testing.expectError(
+        error.Mp3FrameBufferTooSmall,
+        reader.next(&short_storage),
+    );
+    try std.testing.expectEqual(original_offset, reader.offset);
+
+    var frame_storage: [500]u8 = undefined;
+    const first = (try reader.next(&frame_storage)).?;
+    try std.testing.expectEqual(@as(u64, 14), first.byte_offset);
+    try std.testing.expectEqual(@as(usize, 417), first.bytes.len);
+
+    const summary = try FileReader.summarize(
+        std.testing.io,
+        file,
+        &frame_storage,
+    );
+    try std.testing.expectEqual(@as(u64, 3), summary.frame_count);
+    try std.testing.expectEqual(@as(u64, 3456), summary.sample_count);
+    try std.testing.expectEqual(@as(u64, 14), summary.audio_offset);
+
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        try requiredFileSeekPoints(
+            std.testing.io,
+            file,
+            &frame_storage,
+            2,
+        ),
+    );
+    var points: [2]SeekPoint = undefined;
+    const index = try buildFileSeekIndex(
+        std.testing.io,
+        file,
+        &frame_storage,
+        2,
+        &points,
+    );
+    try std.testing.expectEqual(@as(u64, 2), index[1].frame_index);
+    try reader.seek(index[1]);
+    try std.testing.expectEqual(@as(u64, 2), reader.frame_index);
+    const sought = (try reader.next(&frame_storage)).?;
+    try std.testing.expectEqual(
+        @as(u64, @intCast(index[1].byte_offset)),
+        sought.byte_offset,
+    );
+
+    const retained_offset = reader.offset;
+    try std.testing.expectError(
+        error.InvalidMp3SeekPoint,
+        reader.seek(.{
+            .frame_index = 1,
+            .sample_offset = 1152,
+            .byte_offset = 15,
+        }),
+    );
+    try std.testing.expectEqual(retained_offset, reader.offset);
+    try std.testing.expectError(
+        error.InvalidMp3SeekPoint,
+        reader.seek(.{
+            .frame_index = index[1].frame_index,
+            .sample_offset = index[1].sample_offset + 1,
+            .byte_offset = index[1].byte_offset,
+        }),
+    );
+    try std.testing.expectEqual(retained_offset, reader.offset);
+}
+
+test "MP3 readers reject counter rollover transactionally" {
+    const header = testHeader(3, true, 9, 0, false, .stereo);
+    var encoded: [500]u8 = undefined;
+    const encoded_bytes = try appendFrame(&encoded, 0, header);
+
+    var stream = try Stream.init(encoded[0..encoded_bytes]);
+    stream.frame_index = std.math.maxInt(u64);
+    try std.testing.expectError(
+        error.Mp3FrameCountOverflow,
+        stream.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), stream.cursor);
+    try std.testing.expect(stream.first_header == null);
+    try std.testing.expectEqual(
+        std.math.maxInt(u64),
+        stream.frame_index,
+    );
+    try std.testing.expectEqual(@as(u64, 0), stream.sample_offset);
+
+    stream.frame_index = 0;
+    stream.sample_offset = std.math.maxInt(u64);
+    try std.testing.expectError(
+        error.Mp3SampleCountOverflow,
+        stream.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), stream.cursor);
+    try std.testing.expect(stream.first_header == null);
+    try std.testing.expectEqual(@as(u64, 0), stream.frame_index);
+    try std.testing.expectEqual(
+        std.math.maxInt(u64),
+        stream.sample_offset,
+    );
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "counter-rollover.mp3",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    try file.writePositionalAll(
+        std.testing.io,
+        encoded[0..encoded_bytes],
+        0,
+    );
+
+    var reader = try FileReader.init(std.testing.io, file);
+    var frame_storage: [500]u8 = @splat(0xaa);
+    const original_storage = frame_storage;
+    reader.frame_index = std.math.maxInt(u64);
+    try std.testing.expectError(
+        error.Mp3FrameCountOverflow,
+        reader.next(&frame_storage),
+    );
+    try std.testing.expectEqual(@as(u64, 0), reader.offset);
+    try std.testing.expectEqualSlices(
+        u8,
+        &original_storage,
+        &frame_storage,
+    );
+
+    reader.frame_index = 0;
+    reader.sample_offset = std.math.maxInt(u64);
+    try std.testing.expectError(
+        error.Mp3SampleCountOverflow,
+        reader.next(&frame_storage),
+    );
+    try std.testing.expectEqual(@as(u64, 0), reader.offset);
+    try std.testing.expectEqual(@as(u64, 0), reader.frame_index);
+    try std.testing.expectEqual(
+        std.math.maxInt(u64),
+        reader.sample_offset,
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &original_storage,
+        &frame_storage,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        trailingTagStart(&.{}, std.math.maxInt(usize)),
+    );
+}
+
+test "stream and seek indexing reject invalid boundaries transactionally" {
+    const header = testHeader(3, true, 9, 0, false, .stereo);
+    var storage: [900]u8 = undefined;
+    var cursor = try appendFrame(&storage, 0, header);
+    cursor = try appendFrame(&storage, cursor, header);
+
+    var changed = storage;
+    const second = (try Header.parse(&header)).frameBytes();
+    changed[second + 2] = 0x94;
+    try std.testing.expectError(
+        error.Mp3StreamFormatChanged,
+        Stream.summarize(changed[0..cursor]),
+    );
+
+    var trailing = storage;
+    trailing[cursor] = 0;
+    try std.testing.expectError(
+        error.TrailingMp3Data,
+        Stream.summarize(trailing[0 .. cursor + 1]),
+    );
+    var short_destination = [_]SeekPoint{.{
+        .frame_index = 99,
+        .sample_offset = 99,
+        .byte_offset = 99,
+    }};
+    try std.testing.expectError(
+        error.Mp3SeekIndexTooSmall,
+        buildSeekIndex(storage[0..cursor], 1, &short_destination),
+    );
+    try std.testing.expectEqual(@as(u64, 99), short_destination[0].frame_index);
+    try std.testing.expectError(
+        error.InvalidMp3SeekStride,
+        requiredSeekPoints(storage[0..cursor], 0),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3SeekIndex,
+        findSeekPoint(&.{.{
+            .frame_index = 1,
+            .sample_offset = 0,
+            .byte_offset = 0,
+        }}, 0),
+    );
+
+    var stream = try Stream.init(storage[0..cursor]);
+    stream.audio_end = stream.encoded.len + 1;
+    try std.testing.expectError(
+        error.InvalidMp3StreamState,
+        stream.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), stream.cursor);
+
+    stream.audio_end = stream.encoded.len;
+    stream.audio_start = 1;
+    try std.testing.expectError(
+        error.InvalidMp3StreamState,
+        stream.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), stream.cursor);
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "invalid-reader-state.mp3",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    try file.writePositionalAll(
+        std.testing.io,
+        storage[0..cursor],
+        0,
+    );
+    var reader = try FileReader.init(std.testing.io, file);
+    const original_offset = reader.offset;
+    reader.audio_start = original_offset + 1;
+    var frame_storage: [500]u8 = @splat(0xaa);
+    const original_frame_storage = frame_storage;
+    try std.testing.expectError(
+        error.InvalidMp3FileReaderState,
+        reader.next(&frame_storage),
+    );
+    try std.testing.expectEqual(original_offset, reader.offset);
+    try std.testing.expectEqualSlices(
+        u8,
+        &original_frame_storage,
+        &frame_storage,
+    );
+}
+
+test "MP3 seek index builders reject overlapping storage" {
+    const header = testHeader(3, true, 9, 0, false, .stereo);
+    var aliased: [900]u8 align(@alignOf(SeekPoint)) = undefined;
+    const aliased_points: *[2]SeekPoint = @ptrCast(&aliased);
+    var encoded_bytes = try appendFrame(&aliased, 0, header);
+    encoded_bytes = try appendFrame(
+        &aliased,
+        encoded_bytes,
+        header,
+    );
+    const original = aliased;
+    try std.testing.expectError(
+        error.OverlappingMp3SeekStorage,
+        buildSeekIndex(
+            aliased[0..encoded_bytes],
+            1,
+            aliased_points,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &original,
+        &aliased,
+    );
+
+    var file_bytes: [900]u8 = undefined;
+    var file_length = try appendFrame(&file_bytes, 0, header);
+    file_length = try appendFrame(&file_bytes, file_length, header);
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "overlapping-index.mp3",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    try file.writePositionalAll(
+        std.testing.io,
+        file_bytes[0..file_length],
+        0,
+    );
+
+    var file_alias: [500]u8 align(@alignOf(SeekPoint)) =
+        @splat(0xaa);
+    const file_alias_points: *[2]SeekPoint =
+        @ptrCast(&file_alias);
+    const original_file_alias = file_alias;
+    try std.testing.expectError(
+        error.OverlappingMp3SeekStorage,
+        buildFileSeekIndex(
+            std.testing.io,
+            file,
+            &file_alias,
+            1,
+            file_alias_points,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &original_file_alias,
+        &file_alias,
+    );
+}
+
+test "leading ID3 validation and truncated frames are bounded" {
+    try std.testing.expectError(
+        error.TruncatedLeadingId3Tag,
+        Stream.init("ID3"),
+    );
+    try std.testing.expectError(
+        error.InvalidLeadingId3Size,
+        Stream.init(&.{ 'I', 'D', '3', 4, 0, 0, 0x80, 0, 0, 0 }),
+    );
+    try std.testing.expectError(
+        error.TruncatedLeadingId3Tag,
+        Stream.init(&.{ 'I', 'D', '3', 4, 0, 0, 0, 0, 0, 1 }),
+    );
+
+    var frame: [32]u8 = undefined;
+    @memset(&frame, 0);
+    const header = testHeader(3, true, 9, 0, false, .stereo);
+    @memcpy(frame[0..4], &header);
+    try std.testing.expectError(
+        error.TruncatedMp3Frame,
+        Frame.parse(&frame, 0),
+    );
+}

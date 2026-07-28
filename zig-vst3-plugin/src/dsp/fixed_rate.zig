@@ -169,6 +169,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
             const config = Config{ .host_rate = self.host_rate, .model_rate = self.model_rate };
             config.validate() catch return false;
             if (!self.to_model.validState() or !self.to_host.validState()) return false;
+            if (self.to_model.drain_target != null or self.to_host.drain_target != null) return false;
             if (self.to_model.input_rate != self.host_rate or self.to_model.output_rate != self.model_rate or
                 self.to_host.input_rate != self.model_rate or self.to_host.output_rate != self.host_rate)
             {
@@ -318,6 +319,16 @@ test "fixed-rate pipeline rejects malformed public configuration state" {
 
     try pipeline.configure(.{ .host_rate = 48_000, .model_rate = 48_000 });
     pipeline.latency_samples +%= 1;
+    try std.testing.expect(!pipeline.validState());
+    try std.testing.expectError(error.InvalidState, pipeline.convertOutput(&.{}, &.{}));
+
+    try pipeline.configure(.{ .host_rate = 48_000, .model_rate = 48_000 });
+    try pipeline.to_model.beginDrain();
+    try std.testing.expect(!pipeline.validState());
+    try std.testing.expectError(error.InvalidState, pipeline.convertInput(&.{}, &.{}));
+
+    try pipeline.configure(.{ .host_rate = 48_000, .model_rate = 48_000 });
+    try pipeline.to_host.beginDrain();
     try std.testing.expect(!pipeline.validState());
     try std.testing.expectError(error.InvalidState, pipeline.convertOutput(&.{}, &.{}));
 }

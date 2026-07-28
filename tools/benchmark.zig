@@ -29,7 +29,25 @@ const Budget = struct {
     ir_preparation_ms: f64 = 500.0,
     ir_adoption_ns: f64 = 1_000_000.0,
     ir_processing_ns_per_sample: f64 = 20_000.0,
+    resampler_ns_per_sample: f64 = 500.0,
     fixed_rate_ns_per_sample: f64 = 2_000.0,
+    chebyshev2_design_ns: f64 = 1_000_000.0,
+    elliptic_design_ns: f64 = 5_000_000.0,
+    complex_jacobi_ns: f64 = 10_000.0,
+    inverse_complex_jacobi_ns: f64 = 10_000.0,
+    least_squares_design_ns: f64 = 100_000_000.0,
+    equiripple_design_ns: f64 = 200_000_000.0,
+    mixed_oversampling_design_ns: f64 = 500_000_000.0,
+    mixed_oversampling_ns_per_sample: f64 = 5_000.0,
+    lookahead_limiter_ns_per_sample: f64 = 2_000.0,
+    inter_sample_limiter_ns_per_sample: f64 = 5_000.0,
+    multiband_compressor_ns_per_sample: f64 = 5_000.0,
+    snapshot_publication_ns: f64 = 1_000.0,
+    snapshot_read_ns: f64 = 1_000.0,
+    contended_snapshot_publication_ns: f64 = 2_000.0,
+    reference_snapshot_update_ns: f64 = 2_000.0,
+    vorbis_mdct_ns_per_sample: f64 = 500.0,
+    dispatched_kernel_ns_per_sample: f64 = 100.0,
     dense_kernel_ns: f64 = 500.0,
     recurrent_tail_ns: f64 = 50.0,
     convolution_tail_ns: f64 = 500.0,
@@ -124,9 +142,817 @@ pub fn main() !void {
     try benchAudioFileImport();
     try benchSamplePlayerPipeline();
     try benchIrConvolution();
+    try benchStreamingResampler();
     try benchFixedRatePipeline();
+    try benchAdvancedFilterDesign();
+    try benchAdvancedDynamics();
+    try benchRealtimePublication();
+    try benchVorbisInverseMdct();
+    try benchDispatchedKernels();
     try benchDenseKernels();
     try benchDenormalSilenceTails();
+}
+
+fn benchAdvancedFilterDesign() !void {
+    std.debug.print("\nadvanced filter design\n", .{});
+
+    const iir_iterations = 1_000;
+    var timer = try Timer.start();
+    var iir_checksum: f64 = 0.0;
+    for (0..iir_iterations) |_| {
+        const cascade = try plug.dsp.ChebyshevTypeIIDesigner(f64).lowPass(.{
+            .order = 6,
+            .sample_rate = 48_000.0,
+            .stopband_hz = 6_000.0,
+            .attenuation_db = 72.0,
+        });
+        iir_checksum += cascade.sections[0].b0;
+    }
+    std.mem.doNotOptimizeAway(iir_checksum);
+    try requireRate(
+        "Chebyshev Type II design",
+        try timer.read(),
+        iir_iterations,
+        budget.chebyshev2_design_ns,
+    );
+
+    timer = try Timer.start();
+    iir_checksum = 0.0;
+    for (0..iir_iterations) |_| {
+        const cascade = try plug.dsp.EllipticDesigner(f64).lowPass(.{
+            .order = 6,
+            .sample_rate = 48_000.0,
+            .frequency_hz = 6_000.0,
+            .ripple_db = 0.25,
+            .attenuation_db = 90.0,
+        });
+        iir_checksum += cascade.sections[0].b0;
+    }
+    std.mem.doNotOptimizeAway(iir_checksum);
+    try requireRate(
+        "elliptic design",
+        try timer.read(),
+        iir_iterations,
+        budget.elliptic_design_ns,
+    );
+
+    const Complex = std.math.complex.Complex(f64);
+    timer = try Timer.start();
+    var complex_checksum: f64 = 0.0;
+    for (0..iterations) |index| {
+        const offset =
+            @as(f64, @floatFromInt(index % 1_024)) * 0.000_001;
+        const values = try plug.dsp.complexJacobiElliptic(
+            Complex.init(0.75 + offset, 0.4),
+            0.5,
+        );
+        complex_checksum += values.sn.re;
+    }
+    std.mem.doNotOptimizeAway(complex_checksum);
+    try requireRate(
+        "complex Jacobi sn/cn/dn",
+        try timer.read(),
+        iterations,
+        budget.complex_jacobi_ns,
+    );
+
+    const inverse_source = try plug.dsp.complexJacobiElliptic(
+        Complex.init(0.75, 0.4),
+        0.5,
+    );
+    timer = try Timer.start();
+    complex_checksum = 0.0;
+    for (0..iterations) |index| {
+        const offset =
+            @as(f64, @floatFromInt(index % 1_024)) * 0.000_000_1;
+        const inverse = try plug.dsp.inverseComplexJacobiSn(
+            Complex.init(inverse_source.sn.re + offset, inverse_source.sn.im),
+            0.5,
+        );
+        complex_checksum += inverse.re;
+    }
+    std.mem.doNotOptimizeAway(complex_checksum);
+    try requireRate(
+        "inverse complex Jacobi sn",
+        try timer.read(),
+        iterations,
+        budget.inverse_complex_jacobi_ns,
+    );
+
+    const bands = [_]plug.dsp.FirLeastSquaresBand{
+        .{
+            .lower_frequency = 0.0,
+            .upper_frequency = 0.18,
+            .lower_gain = 1.0,
+            .upper_gain = 1.0,
+        },
+        .{
+            .lower_frequency = 0.25,
+            .upper_frequency = 0.5,
+            .lower_gain = 0.0,
+            .upper_gain = 0.0,
+            .weight = 4.0,
+        },
+    };
+    const least_squares_iterations = 50;
+    var taps: [63]f64 = undefined;
+    timer = try Timer.start();
+    var fir_checksum: f64 = 0.0;
+    for (0..least_squares_iterations) |_| {
+        try plug.dsp.FirDesigner(f64).leastSquares(&taps, &bands, 1_024);
+        fir_checksum += taps[31];
+    }
+    std.mem.doNotOptimizeAway(fir_checksum);
+    try requireRate(
+        "least-squares FIR design",
+        try timer.read(),
+        least_squares_iterations,
+        budget.least_squares_design_ns,
+    );
+
+    const equiripple_iterations = 25;
+    timer = try Timer.start();
+    fir_checksum = 0.0;
+    for (0..equiripple_iterations) |_| {
+        const report = try plug.dsp.FirEquirippleDesigner(f64).design(
+            &taps,
+            &bands,
+            .{ .grid_density = 32, .maximum_iterations = 64 },
+        );
+        fir_checksum += taps[31] + report.weighted_ripple;
+    }
+    std.mem.doNotOptimizeAway(fir_checksum);
+    try requireRate(
+        "equiripple FIR design",
+        try timer.read(),
+        equiripple_iterations,
+        budget.equiripple_design_ns,
+    );
+
+    const mixed_configs = [_]plug.dsp.MixedOversamplingStageConfig{
+        .{ .fir_equiripple = .{
+            .up = .{ .stopband_attenuation_db = -60.0 },
+            .down = .{ .stopband_attenuation_db = -70.0 },
+        } },
+        .{ .polyphase_iir = .{} },
+    };
+    const Mixed = plug.dsp.MixedOversampler(f32, frame_count, 4);
+    const mixed_design_iterations = 5;
+    timer = try Timer.start();
+    var mixed_checksum: f64 = 0.0;
+    for (0..mixed_design_iterations) |_| {
+        const mixed = try Mixed.init(&mixed_configs);
+        mixed_checksum += try mixed.latencySamples();
+    }
+    std.mem.doNotOptimizeAway(mixed_checksum);
+    try requireRate(
+        "mixed oversampling stage design",
+        try timer.read(),
+        mixed_design_iterations,
+        budget.mixed_oversampling_design_ns,
+    );
+
+    var mixed = try Mixed.init(&mixed_configs);
+    var mixed_input: [frame_count]f32 = undefined;
+    fillInput(&mixed_input, 0.75);
+    var mixed_output: [frame_count]f32 = undefined;
+    const mixed_processing_iterations = 250;
+    timer = try Timer.start();
+    mixed_checksum = 0.0;
+    for (0..mixed_processing_iterations) |_| {
+        const high_rate = try mixed.upsample(&mixed_input);
+        for (high_rate) |*sample| sample.* *= 0.99;
+        try mixed.downsample(&mixed_output);
+        mixed_checksum += mixed_output[frame_count - 1];
+    }
+    std.mem.doNotOptimizeAway(mixed_checksum);
+    try requireRate(
+        "4x mixed oversampling",
+        try timer.read(),
+        mixed_processing_iterations * frame_count,
+        budget.mixed_oversampling_ns_per_sample,
+    );
+}
+
+fn benchAdvancedDynamics() !void {
+    std.debug.print("\nadvanced dynamics\n", .{});
+    const block_iterations = 250;
+    const sample_count = block_iterations * frame_count;
+    var source: [frame_count]f32 = undefined;
+    fillInput(&source, 1.25);
+
+    var limiter = try plug.dsp.LookaheadLimiter(f32, 512).init(.{
+        .sample_rate = 48_000.0,
+        .threshold_db = -1.0,
+        .release_ms = 50.0,
+        .lookahead_ms = 5.0,
+    });
+    var samples = source;
+    var timer = try Timer.start();
+    var checksum: f64 = 0.0;
+    for (0..block_iterations) |_| {
+        samples = source;
+        limiter.process(&samples);
+        checksum += samples[frame_count - 1];
+    }
+    std.mem.doNotOptimizeAway(checksum);
+    try requireRate(
+        "lookahead limiter",
+        try timer.read(),
+        sample_count,
+        budget.lookahead_limiter_ns_per_sample,
+    );
+
+    var inter_sample = try plug.dsp.InterSampleLimiter(
+        f32,
+        frame_count,
+        4,
+    ).init(.{
+        .sample_rate = 48_000.0,
+        .threshold_db = -1.0,
+        .release_ms = 50.0,
+        .reconstruction_guard_db = 0.5,
+    });
+    timer = try Timer.start();
+    checksum = 0.0;
+    for (0..block_iterations) |_| {
+        samples = source;
+        try inter_sample.process(&samples);
+        checksum += samples[frame_count - 1];
+    }
+    std.mem.doNotOptimizeAway(checksum);
+    try requireRate(
+        "4x inter-sample limiter",
+        try timer.read(),
+        sample_count,
+        budget.inter_sample_limiter_ns_per_sample,
+    );
+
+    const compressor = plug.dsp.CompressorConfig{
+        .sample_rate = 48_000.0,
+        .threshold_db = -18.0,
+        .ratio = 4.0,
+        .attack_ms = 10.0,
+        .release_ms = 100.0,
+    };
+    var multiband = try plug.dsp.MultibandCompressor(f32, 4).init(.{
+        .sample_rate = 48_000.0,
+        .crossover_hz = .{ 120.0, 1_200.0, 8_000.0 },
+        .bands = .{ compressor, compressor, compressor, compressor },
+    });
+    timer = try Timer.start();
+    checksum = 0.0;
+    for (0..block_iterations) |_| {
+        samples = source;
+        multiband.process(&samples);
+        checksum += samples[frame_count - 1];
+    }
+    std.mem.doNotOptimizeAway(checksum);
+    try requireRate(
+        "four-band compressor",
+        try timer.read(),
+        sample_count,
+        budget.multiband_compressor_ns_per_sample,
+    );
+}
+
+fn benchRealtimePublication() !void {
+    std.debug.print("\nrealtime snapshot publication\n", .{});
+    const State = struct {
+        cutoff_hz: f64,
+        resonance: f64,
+        mode: u32,
+    };
+    var publisher = plug.dsp.RealtimeSnapshotPublisher(State).init(.{
+        .cutoff_hz = 1_000.0,
+        .resonance = 0.5,
+        .mode = 0,
+    });
+
+    var timer = try Timer.start();
+    var checksum: u64 = 0;
+    for (0..iterations) |index| {
+        checksum +%= try publisher.publish(.{
+            .cutoff_hz = @floatFromInt(100 + index % 20_000),
+            .resonance = @as(f64, @floatFromInt(index % 100)) / 100.0,
+            .mode = @intCast(index % 4),
+        });
+    }
+    std.mem.doNotOptimizeAway(checksum);
+    try requireRate(
+        "snapshot publication",
+        try timer.read(),
+        iterations,
+        budget.snapshot_publication_ns,
+    );
+
+    timer = try Timer.start();
+    var value_checksum: f64 = 0.0;
+    for (0..iterations) |_| {
+        const snapshot =
+            publisher.tryRead() orelse return error.BenchmarkSnapshotReadFailed;
+        value_checksum += snapshot.value.cutoff_hz;
+    }
+    std.mem.doNotOptimizeAway(value_checksum);
+    try requireRate(
+        "snapshot read",
+        try timer.read(),
+        iterations,
+        budget.snapshot_read_ns,
+    );
+
+    var references =
+        plug.dsp.RealtimeReferencePublisher(State, 8).init(.{
+            .cutoff_hz = 1_000.0,
+            .resonance = 0.5,
+            .mode = 0,
+        });
+    timer = try Timer.start();
+    checksum = 0;
+    for (0..iterations) |index| {
+        var writer = try references.beginUpdate();
+        defer writer.cancel();
+        const pending = writer.value() orelse
+            return error.BenchmarkReferenceUpdateFailed;
+        pending.cutoff_hz = @floatFromInt(100 + index % 20_000);
+        pending.mode = @intCast(index % 4);
+        checksum +%= try writer.commit();
+    }
+    std.mem.doNotOptimizeAway(checksum);
+    try requireRate(
+        "reference snapshot partial update",
+        try timer.read(),
+        iterations,
+        budget.reference_snapshot_update_ns,
+    );
+
+    const Shared = struct {
+        publisher: plug.dsp.RealtimeSnapshotPublisher(State),
+        stop: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        read_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
+        fn read(shared: *@This()) void {
+            while (!shared.stop.load(.acquire)) {
+                if (shared.publisher.tryRead() != null)
+                    _ = shared.read_count.fetchAdd(1, .monotonic);
+            }
+        }
+    };
+    var shared = Shared{
+        .publisher = plug.dsp.RealtimeSnapshotPublisher(State).init(.{
+            .cutoff_hz = 1_000.0,
+            .resonance = 0.5,
+            .mode = 0,
+        }),
+    };
+    const reader = try std.Thread.spawn(.{}, Shared.read, .{&shared});
+    defer {
+        shared.stop.store(true, .release);
+        reader.join();
+    }
+    for (0..1_000_000) |_| {
+        if (shared.read_count.load(.acquire) != 0) break;
+        std.atomic.spinLoopHint();
+    } else {
+        return error.BenchmarkSnapshotReaderDidNotStart;
+    }
+
+    timer = try Timer.start();
+    checksum = 0;
+    for (0..iterations) |index| {
+        checksum +%= try shared.publisher.publish(.{
+            .cutoff_hz = @floatFromInt(100 + index % 20_000),
+            .resonance = @as(f64, @floatFromInt(index % 100)) / 100.0,
+            .mode = @intCast(index % 4),
+        });
+    }
+    const contended_elapsed_ns = try timer.read();
+    std.mem.doNotOptimizeAway(checksum);
+    if (shared.read_count.load(.acquire) == 0)
+        return error.BenchmarkSnapshotReaderStopped;
+    try requireRate(
+        "snapshot publication with concurrent reader",
+        contended_elapsed_ns,
+        iterations,
+        budget.contended_snapshot_publication_ns,
+    );
+}
+
+fn requireRate(
+    name: []const u8,
+    elapsed_ns: u64,
+    operation_count: usize,
+    maximum_ns_per_operation: f64,
+) !void {
+    const benchmark = Benchmark{
+        .name = name,
+        .iterations = operation_count,
+        .elapsed_ns = elapsed_ns,
+    };
+    try benchmark.requireAtMost(maximum_ns_per_operation);
+}
+
+fn benchVorbisInverseMdct() !void {
+    std.debug.print("\nVorbis MDCT\n", .{});
+    inline for (.{ 64, 256, 2048 }) |block_size| {
+        var plan = plug.dsp.VorbisInverseMdct(f32, block_size).init();
+        var spectrum: [block_size / 2]f32 = undefined;
+        for (&spectrum, 0..) |*coefficient, index| {
+            coefficient.* = @floatCast(@sin(
+                @as(f64, @floatFromInt(index + 1)) * 0.173,
+            ));
+        }
+        var output: [block_size]f32 = undefined;
+        const benchmark_iterations: usize =
+            @max(@as(usize, 100), iterations * 64 / block_size);
+        var timer = try Timer.start();
+        var checksum: f32 = 0;
+        for (0..benchmark_iterations) |_| {
+            try plan.process(&spectrum, &output);
+            checksum += output[benchmark_iterations % block_size];
+        }
+        const elapsed_ns = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        const ns_per_sample =
+            @as(f64, @floatFromInt(elapsed_ns)) /
+            @as(f64, @floatFromInt(benchmark_iterations * block_size));
+        std.debug.print(
+            "inverse {d}-sample block: {d:.2} ns/sample\n",
+            .{ block_size, ns_per_sample },
+        );
+        if (ns_per_sample > budget.vorbis_mdct_ns_per_sample)
+            return error.BenchmarkBudgetExceeded;
+    }
+    inline for (.{ 64, 256, 2048 }) |block_size| {
+        var plan = plug.dsp.VorbisForwardMdct(f32, block_size).init();
+        var input: [block_size]f32 = undefined;
+        for (&input, 0..) |*sample, index| {
+            sample.* = @floatCast(@sin(
+                @as(f64, @floatFromInt(index + 1)) * 0.173,
+            ));
+        }
+        var output: [block_size / 2]f32 = undefined;
+        const benchmark_iterations: usize =
+            @max(@as(usize, 100), iterations * 64 / block_size);
+        var timer = try Timer.start();
+        var checksum: f32 = 0;
+        for (0..benchmark_iterations) |_| {
+            try plan.process(&input, &output);
+            checksum += output[
+                benchmark_iterations % (block_size / 2)
+            ];
+        }
+        const elapsed_ns = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        const ns_per_sample =
+            @as(f64, @floatFromInt(elapsed_ns)) /
+            @as(f64, @floatFromInt(benchmark_iterations * block_size));
+        std.debug.print(
+            "forward {d}-sample block: {d:.2} ns/sample\n",
+            .{ block_size, ns_per_sample },
+        );
+        if (ns_per_sample > budget.vorbis_mdct_ns_per_sample)
+            return error.BenchmarkBudgetExceeded;
+    }
+}
+
+fn benchDispatchedKernels() !void {
+    std.debug.print("\ndispatched buffer kernels\n", .{});
+    inline for (.{ 8, 32, 128, 512 }) |sample_count| {
+        try benchDispatchedKernelSize(sample_count);
+    }
+}
+
+fn benchDispatchedKernelSize(comptime sample_count: usize) !void {
+    var left: [sample_count]f32 = undefined;
+    var right: [sample_count]f32 = undefined;
+    for (&left, &right, 0..) |*left_sample, *right_sample, index| {
+        const phase =
+            std.math.tau * @as(f64, @floatFromInt(index)) /
+            @as(f64, @floatFromInt(sample_count));
+        left_sample.* = @floatCast(@sin(phase) * 0.5);
+        right_sample.* = @floatCast(@cos(phase) * 0.5);
+    }
+    const detected = plug.dsp.KernelDispatcher.initDetected();
+    const dispatchers = [_]plug.dsp.KernelDispatcher{
+        plug.dsp.KernelDispatcher.init(.{}),
+        detected,
+    };
+    for (dispatchers, 0..) |dispatcher, dispatcher_index| {
+        if (dispatcher_index == 1 and detected.backend == .scalar) continue;
+        const benchmark_iterations = if (sample_count <= 32)
+            iterations * 4
+        else
+            iterations;
+        var working = left;
+        var timer = try Timer.start();
+        var checksum: f32 = 0.0;
+        for (0..benchmark_iterations) |_| {
+            try dispatcher.processGain(f32, &working, 0.999_9);
+            checksum += working[0];
+        }
+        const gain_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "gain",
+            sample_count,
+            benchmark_iterations,
+            gain_elapsed,
+        );
+
+        working = left;
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_| {
+            try dispatcher.processAffine(
+                f32,
+                &working,
+                0.999_9,
+                0.000_01,
+            );
+            checksum += working[0];
+        }
+        const affine_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "affine",
+            sample_count,
+            benchmark_iterations,
+            affine_elapsed,
+        );
+
+        working = left;
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_| {
+            try dispatcher.applyFastMath(f32, .sine, &working);
+            checksum += working[0];
+        }
+        const fast_math_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "fast sine",
+            sample_count,
+            benchmark_iterations,
+            fast_math_elapsed,
+        );
+
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_| {
+            try dispatcher.copyBuffer(f32, &working, &left);
+            checksum += working[0];
+        }
+        const copy_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "copy",
+            sample_count,
+            benchmark_iterations,
+            copy_elapsed,
+        );
+
+        working = left;
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_| {
+            try dispatcher.addBuffer(f32, &working, &right);
+            checksum += working[0];
+        }
+        const add_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "add",
+            sample_count,
+            benchmark_iterations,
+            add_elapsed,
+        );
+
+        working = left;
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_| {
+            try dispatcher.multiplyBuffer(f32, &working, &right);
+            checksum += working[0];
+        }
+        const multiply_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "multiply",
+            sample_count,
+            benchmark_iterations,
+            multiply_elapsed,
+        );
+
+        var complex_real = left;
+        var complex_imaginary = right;
+        const complex_multiplier_real =
+            [_]f32{0.999_9} ** sample_count;
+        const complex_multiplier_imaginary =
+            [_]f32{0.000_1} ** sample_count;
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_| {
+            try dispatcher.multiplyComplexBuffer(
+                f32,
+                &complex_real,
+                &complex_imaginary,
+                &complex_multiplier_real,
+                &complex_multiplier_imaginary,
+            );
+            checksum += complex_real[0] + complex_imaginary[0];
+        }
+        const complex_multiply_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "complex multiply",
+            sample_count,
+            benchmark_iterations,
+            complex_multiply_elapsed,
+        );
+
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_|
+            checksum += try dispatcher.sum(f32, &left);
+        const sum_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "sum",
+            sample_count,
+            benchmark_iterations,
+            sum_elapsed,
+        );
+
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_|
+            checksum += try dispatcher.innerProduct(
+                f32,
+                &left,
+                &right,
+            );
+        const inner_product_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "inner product",
+            sample_count,
+            benchmark_iterations,
+            inner_product_elapsed,
+        );
+
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_|
+            checksum += try dispatcher.peakAbsolute(f32, &left);
+        const peak_absolute_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "absolute peak",
+            sample_count,
+            benchmark_iterations,
+            peak_absolute_elapsed,
+        );
+
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_|
+            checksum += try dispatcher.minimum(f32, &left);
+        const minimum_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "minimum",
+            sample_count,
+            benchmark_iterations,
+            minimum_elapsed,
+        );
+
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_|
+            checksum += try dispatcher.maximum(f32, &left);
+        const maximum_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "maximum",
+            sample_count,
+            benchmark_iterations,
+            maximum_elapsed,
+        );
+
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_|
+            checksum += try dispatcher.sumSquares(f32, &left);
+        const sum_squares_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "sum squares",
+            sample_count,
+            benchmark_iterations,
+            sum_squares_elapsed,
+        );
+
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_|
+            checksum += try dispatcher.rootMeanSquare(f32, &left);
+        const rms_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "RMS",
+            sample_count,
+            benchmark_iterations,
+            rms_elapsed,
+        );
+
+        var mixed: [sample_count]f32 = undefined;
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_| {
+            try dispatcher.mixBuffers(
+                f32,
+                &mixed,
+                &left,
+                &right,
+                0.375,
+                0.625,
+            );
+            checksum += mixed[0];
+        }
+        const mix_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "weighted mix",
+            sample_count,
+            benchmark_iterations,
+            mix_elapsed,
+        );
+
+        var interleaved: [sample_count * 2]f32 = undefined;
+        var restored_left: [sample_count]f32 = undefined;
+        var restored_right: [sample_count]f32 = undefined;
+        timer = try Timer.start();
+        checksum = 0.0;
+        for (0..benchmark_iterations) |_| {
+            try dispatcher.interleaveStereo(
+                f32,
+                &interleaved,
+                &left,
+                &right,
+            );
+            try dispatcher.deinterleaveStereo(
+                f32,
+                &restored_left,
+                &restored_right,
+                &interleaved,
+            );
+            checksum += restored_left[0] + restored_right[0];
+        }
+        const layout_elapsed = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        try reportDispatchedKernel(
+            dispatcher,
+            "stereo layout round trip",
+            sample_count * 2,
+            benchmark_iterations,
+            layout_elapsed,
+        );
+    }
+}
+
+fn reportDispatchedKernel(
+    dispatcher: plug.dsp.KernelDispatcher,
+    operation: []const u8,
+    sample_count: usize,
+    benchmark_iterations: usize,
+    elapsed_ns: u64,
+) !void {
+    const total_samples = benchmark_iterations * sample_count;
+    const ns_per_sample =
+        @as(f64, @floatFromInt(elapsed_ns)) /
+        @as(f64, @floatFromInt(total_samples));
+    std.debug.print(
+        "{s} {s}, {d} samples: {d:.2} ns/sample\n",
+        .{ @tagName(dispatcher.backend), operation, sample_count, ns_per_sample },
+    );
+    if (ns_per_sample > budget.dispatched_kernel_ns_per_sample)
+        return error.BenchmarkBudgetExceeded;
 }
 
 fn benchDenormalSilenceTails() !void {
@@ -253,6 +1079,44 @@ fn benchResourceIdentity() !void {
         (1024.0 * 1024.0);
     std.debug.print("resource SHA-256 identity: {d:.1} MiB/s ({d} bytes)\n", .{ mib_per_second, total_bytes });
     if (mib_per_second < budget.resource_identity_mib_per_second) return error.BenchmarkBudgetExceeded;
+}
+
+fn benchStreamingResampler() !void {
+    const Resampler = plug.dsp.StreamingResampler(f32);
+    const native_backend = plug.dsp.KernelDispatcher.initDetected().backend;
+    var input: [frame_count]f32 = undefined;
+    for (&input, 0..) |*sample, index| {
+        sample.* = @floatCast(@sin(
+            std.math.tau * 997.0 *
+                @as(f64, @floatFromInt(index)) / 44_100.0,
+        ));
+    }
+    var output: [600]f32 = undefined;
+    for ([_]plug.dsp.KernelBackend{ .scalar, native_backend }) |backend| {
+        var resampler = try Resampler.initBackend(.{
+            .input_rate = 44_100,
+            .output_rate = 48_000,
+        }, backend);
+        var timer = try Timer.start();
+        var checksum: f64 = 0.0;
+        const benchmark_iterations = iterations / 10;
+        for (0..benchmark_iterations) |_| {
+            resampler.reset();
+            const result = try resampler.process(&input, &output);
+            checksum += output[result.produced - 1];
+        }
+        const elapsed_ns = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        const sample_count = benchmark_iterations * input.len;
+        const ns_per_sample = @as(f64, @floatFromInt(elapsed_ns)) /
+            @as(f64, @floatFromInt(sample_count));
+        std.debug.print(
+            "streaming resampler ({s}): {d:.1} ns/input sample\n",
+            .{ @tagName(backend), ns_per_sample },
+        );
+        if (ns_per_sample > budget.resampler_ns_per_sample)
+            return error.BenchmarkBudgetExceeded;
+    }
 }
 
 fn benchFixedRatePipeline() !void {

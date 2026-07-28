@@ -1,7 +1,24 @@
 const std = @import("std");
+const dsp_fft = @import("dsp/fft.zig");
 const realtime_audit = @import("realtime_audit.zig");
+const serial_generation = @import("serial_generation.zig");
 
 pub const maximum_channels = 2;
+
+pub const LatencyMode = enum {
+    partitioned,
+    zero,
+};
+
+pub const Routing = enum {
+    independent,
+    mono,
+};
+
+pub const Options = struct {
+    latency: LatencyMode = .partitioned,
+    routing: Routing = .independent,
+};
 
 pub const Metadata = struct {
     generation: u64,
@@ -33,15 +50,170 @@ pub const StageError = error{
     Incomplete,
 };
 
-const Complex = struct {
-    real: f32 = 0.0,
-    imaginary: f32 = 0.0,
+/// One producer submits jobs while one consumer prepares or discards them.
+pub fn PreparationQueue(
+    comptime maximum_frames: usize,
+    comptime queue_capacity: usize,
+) type {
+    if (maximum_frames == 0)
+        @compileError(
+            "PreparationQueue maximum_frames must be positive",
+        );
+    if (queue_capacity == 0)
+        @compileError(
+            "PreparationQueue capacity must be positive",
+        );
 
-    fn multiplyAdd(target: *Complex, left: Complex, right: Complex) void {
-        target.real += left.real * right.real - left.imaginary * right.imaginary;
-        target.imaginary += left.real * right.imaginary + left.imaginary * right.real;
-    }
-};
+    return struct {
+        const Self = @This();
+        const State = enum(u8) {
+            free,
+            writing,
+            ready,
+            reading,
+        };
+        const Slot = struct {
+            state: std.atomic.Value(u8) =
+                std.atomic.Value(u8).init(@intFromEnum(State.free)),
+            metadata: Metadata = .{
+                .generation = 0,
+                .sample_rate = 0,
+                .channels = 0,
+                .frames = 0,
+            },
+            samples: [maximum_frames * maximum_channels]f32 =
+                @splat(0.0),
+        };
+
+        slots: [queue_capacity]Slot =
+            @splat(.{}),
+        producer_cursor: usize = 0,
+        consumer_cursor: usize = 0,
+        latest_generation: u64 = 0,
+
+        pub fn submit(
+            self: *Self,
+            metadata: Metadata,
+            samples: []const f32,
+        ) !void {
+            try self.validateProducerCursor();
+            try metadata.validate(maximum_frames);
+            if (!serial_generation.after(
+                metadata.generation,
+                self.latest_generation,
+            ))
+                return error.InvalidGeneration;
+            const expected_samples =
+                metadata.frames * metadata.channels;
+            if (samples.len != expected_samples)
+                return error.InvalidChunk;
+            for (samples) |sample_value| {
+                if (!std.math.isFinite(sample_value))
+                    return error.NonFiniteSample;
+            }
+
+            const slot = &self.slots[self.producer_cursor];
+            if (slot.state.cmpxchgStrong(
+                @intFromEnum(State.free),
+                @intFromEnum(State.writing),
+                .acq_rel,
+                .acquire,
+            ) != null)
+                return error.QueueFull;
+            slot.metadata = metadata;
+            @memcpy(slot.samples[0..samples.len], samples);
+            if (samples.len < slot.samples.len)
+                @memset(slot.samples[samples.len..], 0.0);
+            slot.state.store(@intFromEnum(State.ready), .release);
+            self.producer_cursor =
+                (self.producer_cursor + 1) % queue_capacity;
+            self.latest_generation = metadata.generation;
+        }
+
+        pub fn prepareNext(
+            self: *Self,
+            comptime partition_size: usize,
+            convolver: *PartitionedConvolver(
+                maximum_frames,
+                partition_size,
+            ),
+        ) !?u64 {
+            try self.validateConsumerCursor();
+            const slot = &self.slots[self.consumer_cursor];
+            if (slot.state.cmpxchgStrong(
+                @intFromEnum(State.ready),
+                @intFromEnum(State.reading),
+                .acq_rel,
+                .acquire,
+            ) != null)
+                return null;
+
+            const metadata = slot.metadata;
+            const sample_count =
+                metadata.frames * metadata.channels;
+            var began = false;
+            errdefer {
+                if (began) _ = convolver.cancel(metadata.generation);
+                slot.state.store(@intFromEnum(State.ready), .release);
+            }
+            try convolver.begin(metadata);
+            began = true;
+            if (sample_count != 0) {
+                try convolver.write(
+                    metadata.generation,
+                    0,
+                    slot.samples[0..sample_count],
+                );
+            }
+            try convolver.commit(metadata.generation);
+            slot.state.store(@intFromEnum(State.free), .release);
+            self.consumer_cursor =
+                (self.consumer_cursor + 1) % queue_capacity;
+            return metadata.generation;
+        }
+
+        pub fn discardNext(self: *Self) !?u64 {
+            try self.validateConsumerCursor();
+            const slot = &self.slots[self.consumer_cursor];
+            if (slot.state.cmpxchgStrong(
+                @intFromEnum(State.ready),
+                @intFromEnum(State.free),
+                .acq_rel,
+                .acquire,
+            ) != null)
+                return null;
+            const generation = slot.metadata.generation;
+            self.consumer_cursor =
+                (self.consumer_cursor + 1) % queue_capacity;
+            return generation;
+        }
+
+        pub fn pendingCount(self: *const Self) !usize {
+            try self.validateConsumerCursor();
+            var result: usize = 0;
+            for (&self.slots) |*slot| {
+                const state = slot.state.load(.acquire);
+                if (state == @intFromEnum(State.ready) or
+                    state == @intFromEnum(State.reading))
+                    result += 1
+                else if (state != @intFromEnum(State.free) and
+                    state != @intFromEnum(State.writing))
+                    return error.InvalidQueueState;
+            }
+            return result;
+        }
+
+        fn validateProducerCursor(self: *const Self) !void {
+            if (self.producer_cursor >= queue_capacity)
+                return error.InvalidQueueState;
+        }
+
+        fn validateConsumerCursor(self: *const Self) !void {
+            if (self.consumer_cursor >= queue_capacity)
+                return error.InvalidQueueState;
+        }
+    };
+}
 
 pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_size: usize) type {
     if (maximum_frames == 0) @compileError("PartitionedConvolver maximum_frames must be positive");
@@ -49,6 +221,8 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         @compileError("PartitionedConvolver partition_size must be a power of two of at least 8");
     }
     const fft_size = partition_size * 2;
+    const Fft = dsp_fft.Transform(f32, fft_size);
+    const Complex = Fft.Value;
     const partition_count = (maximum_frames + partition_size - 1) / partition_size;
     const no_slot = std.math.maxInt(u8);
 
@@ -69,17 +243,19 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             prepared_partitions: usize = 0,
             prepared_sample_rate: u32 = 0,
             raw: [maximum_frames * maximum_channels]f32 = @splat(0.0),
+            head: [maximum_channels][partition_size]f32 =
+                @splat(@splat(0.0)),
             spectra: [maximum_channels][partition_count][fft_size]Complex = @splat(@splat(@splat(.{}))),
         };
 
+        options: Options = .{},
         slots: [3]Slot = .{ .{}, .{}, .{} },
         pending_slot: std.atomic.Value(u8) = std.atomic.Value(u8).init(no_slot),
         latest_generation: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
         active_slot: u8 = no_slot,
         staging_slot: u8 = no_slot,
         target_sample_rate: u32 = 0,
-        twiddle_forward: [fft_size / 2]Complex = undefined,
-        twiddle_inverse: [fft_size / 2]Complex = undefined,
+        fft: Fft,
         input_block: [maximum_channels][partition_size]f32 = @splat(@splat(0.0)),
         input_fill: usize = 0,
         input_spectra: [maximum_channels][partition_count][fft_size]Complex = @splat(@splat(@splat(.{}))),
@@ -87,6 +263,9 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         output_block: [maximum_channels][partition_size]f32 = @splat(@splat(0.0)),
         overlap: [maximum_channels][partition_size]f32 = @splat(@splat(0.0)),
         output_index: usize = 0,
+        direct_history: [maximum_channels][partition_size]f32 =
+            @splat(@splat(0.0)),
+        direct_index: usize = 0,
 
         pub fn init(target_sample_rate: u32) Self {
             var self: Self = undefined;
@@ -94,13 +273,46 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             return self;
         }
 
-        pub fn initInPlace(self: *Self, target_sample_rate: u32) void {
-            self.* = .{ .target_sample_rate = target_sample_rate };
-            for (0..fft_size / 2) |index| {
-                const angle = std.math.tau * @as(f32, @floatFromInt(index)) / @as(f32, @floatFromInt(fft_size));
-                self.twiddle_forward[index] = .{ .real = @cos(angle), .imaginary = -@sin(angle) };
-                self.twiddle_inverse[index] = .{ .real = @cos(angle), .imaginary = @sin(angle) };
-            }
+        pub fn initWithOptions(
+            target_sample_rate: u32,
+            options: Options,
+        ) Self {
+            var self: Self = undefined;
+            self.initInPlaceWithOptions(target_sample_rate, options);
+            return self;
+        }
+
+        pub fn initInPlace(
+            self: *Self,
+            target_sample_rate: u32,
+        ) void {
+            self.initInPlaceWithOptions(target_sample_rate, .{});
+        }
+
+        pub fn initInPlaceWithOptions(
+            self: *Self,
+            target_sample_rate: u32,
+            options: Options,
+        ) void {
+            self.* = .{
+                .options = options,
+                .target_sample_rate = target_sample_rate,
+                .fft = Fft.init(),
+            };
+        }
+
+        pub fn latencySamples(self: *const Self) usize {
+            return switch (self.options.latency) {
+                .partitioned => partition_size,
+                .zero => 0,
+            };
+        }
+
+        pub fn setOptions(self: *Self, options: Options) void {
+            if (self.options.latency != options.latency or
+                self.options.routing != options.routing)
+                self.resetProcessing();
+            self.options = options;
         }
 
         pub fn setTargetSampleRate(self: *Self, sample_rate: u32) StageError!void {
@@ -149,7 +361,9 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         pub fn begin(self: *Self, metadata: Metadata) StageError!void {
             if (self.staging_slot != no_slot) return error.Busy;
             try metadata.validate(maximum_frames);
-            if (metadata.generation <= self.latest_generation.load(.acquire)) return error.InvalidGeneration;
+            if (!serial_generation.after(metadata.generation, self.latest_generation.load(.acquire))) {
+                return error.InvalidGeneration;
+            }
             const slot_index = self.claimFreeSlot() orelse return error.Busy;
             const slot = &self.slots[slot_index];
             slot.metadata = metadata;
@@ -234,13 +448,35 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
 
         pub fn processFrame(self: *Self, left: f32, right: f32) [2]f32 {
             if (self.input_fill >= partition_size or self.output_index >= partition_size or
-                self.history_head >= partition_count)
+                self.history_head >= partition_count or
+                self.direct_index >= partition_size)
             {
                 self.resetProcessing();
             }
-            const output = .{ self.output_block[0][self.output_index], self.output_block[1][self.output_index] };
-            self.input_block[0][self.input_fill] = if (std.math.isFinite(left)) left else 0.0;
-            self.input_block[1][self.input_fill] = if (std.math.isFinite(right)) right else 0.0;
+            const finite_left = if (std.math.isFinite(left)) left else 0.0;
+            const finite_right = if (std.math.isFinite(right)) right else 0.0;
+            const inputs = switch (self.options.routing) {
+                .independent => .{ finite_left, finite_right },
+                .mono => blk: {
+                    const mono =
+                        finite_left * 0.5 + finite_right * 0.5;
+                    break :blk .{ mono, mono };
+                },
+            };
+            var output = [2]f32{
+                self.output_block[0][self.output_index],
+                self.output_block[1][self.output_index],
+            };
+            if (self.options.latency == .zero) {
+                const direct = self.processDirect(inputs);
+                for (0..maximum_channels) |channel| {
+                    output[channel] += direct[channel];
+                    if (!std.math.isFinite(output[channel]))
+                        output[channel] = 0.0;
+                }
+            }
+            self.input_block[0][self.input_fill] = inputs[0];
+            self.input_block[1][self.input_fill] = inputs[1];
             self.advanceSample();
             return output;
         }
@@ -253,6 +489,8 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             self.output_block = @splat(@splat(0.0));
             self.overlap = @splat(@splat(0.0));
             self.output_index = 0;
+            self.direct_history = @splat(@splat(0.0));
+            self.direct_index = 0;
         }
 
         fn claimFreeSlot(self: *Self) ?u8 {
@@ -280,6 +518,7 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             if (destination_frames == 0 or destination_frames > maximum_frames) return error.TooManyFrames;
             slot.prepared_frames = destination_frames;
             slot.prepared_partitions = (destination_frames + partition_size - 1) / partition_size;
+            slot.head = @splat(@splat(0.0));
             slot.spectra = @splat(@splat(@splat(.{})));
 
             var transform: [fft_size]Complex = @splat(.{});
@@ -289,9 +528,18 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
                     for (0..partition_size) |offset| {
                         const destination = partition * partition_size + offset;
                         if (destination >= destination_frames) break;
-                        transform[offset].real = resample(slot, channel, destination, destination_frames);
+                        const sample_value = resample(
+                            slot,
+                            channel,
+                            destination,
+                            destination_frames,
+                        );
+                        transform[offset].real = sample_value;
+                        if (partition == 0)
+                            slot.head[channel][offset] = sample_value;
                     }
-                    self.fft(&transform, false);
+                    self.fft.forward(&transform) catch
+                        return error.NonFiniteSample;
                     slot.spectra[channel][partition] = transform;
                 }
             }
@@ -319,27 +567,91 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             self.renderBlock();
         }
 
+        fn processDirect(
+            self: *Self,
+            inputs: [maximum_channels]f32,
+        ) [maximum_channels]f32 {
+            for (0..maximum_channels) |channel|
+                self.direct_history[channel][self.direct_index] =
+                    inputs[channel];
+            var output: [maximum_channels]f32 = @splat(0.0);
+            if (self.activeSlot()) |slot| {
+                const head_frames =
+                    @min(slot.prepared_frames, partition_size);
+                for (0..maximum_channels) |channel| {
+                    const ir_channel = switch (self.options.routing) {
+                        .independent => if (slot.metadata.channels == 1)
+                            0
+                        else
+                            channel,
+                        .mono => 0,
+                    };
+                    var sample_value: f32 = 0.0;
+                    for (0..head_frames) |tap| {
+                        const history =
+                            (self.direct_index + partition_size - tap) %
+                            partition_size;
+                        sample_value +=
+                            self.direct_history[channel][history] *
+                            slot.head[ir_channel][tap];
+                    }
+                    output[channel] = if (std.math.isFinite(sample_value))
+                        sample_value
+                    else
+                        0.0;
+                }
+            }
+            self.direct_index =
+                (self.direct_index + 1) % partition_size;
+            return output;
+        }
+
         fn renderBlock(self: *Self) void {
-            const slot = self.activeSlot();
-            if (slot == null or slot.?.prepared_partitions == 0) {
+            const slot = self.activeSlot() orelse {
+                self.output_block = @splat(@splat(0.0));
+                return;
+            };
+            if (slot.prepared_partitions == 0) {
                 self.output_block = @splat(@splat(0.0));
                 return;
             }
             for (0..maximum_channels) |channel| {
                 var input_fft: [fft_size]Complex = @splat(.{});
                 for (0..partition_size) |index| input_fft[index].real = self.input_block[channel][index];
-                self.fft(&input_fft, false);
+                self.fft.forward(&input_fft) catch {
+                    self.resetProcessing();
+                    return;
+                };
                 self.input_spectra[channel][self.history_head] = input_fft;
 
                 var output_fft: [fft_size]Complex = @splat(.{});
-                const ir_channel = if (slot.?.metadata.channels == 1) 0 else channel;
-                for (0..slot.?.prepared_partitions) |partition| {
-                    const history = (self.history_head + partition_count - partition) % partition_count;
+                const ir_channel = switch (self.options.routing) {
+                    .independent => if (slot.metadata.channels == 1)
+                        0
+                    else
+                        channel,
+                    .mono => 0,
+                };
+                const first_partition: usize =
+                    if (self.options.latency == .zero) 1 else 0;
+                for (
+                    first_partition..slot.prepared_partitions,
+                ) |partition| {
+                    const delay = if (self.options.latency == .zero)
+                        partition - 1
+                    else
+                        partition;
+                    const history =
+                        (self.history_head + partition_count - delay) %
+                        partition_count;
                     for (0..fft_size) |bin| {
-                        Complex.multiplyAdd(&output_fft[bin], self.input_spectra[channel][history][bin], slot.?.spectra[ir_channel][partition][bin]);
+                        Complex.multiplyAdd(&output_fft[bin], self.input_spectra[channel][history][bin], slot.spectra[ir_channel][partition][bin]);
                     }
                 }
-                self.fft(&output_fft, true);
+                self.fft.inverse(&output_fft) catch {
+                    self.resetProcessing();
+                    return;
+                };
                 for (0..partition_size) |index| {
                     self.output_block[channel][index] = output_fft[index].real + self.overlap[channel][index];
                     self.overlap[channel][index] = output_fft[index + partition_size].real;
@@ -373,46 +685,6 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
 
         fn slotIndex(index: u8) ?usize {
             return if (index < 3) index else null;
-        }
-
-        fn fft(self: *const Self, values: *[fft_size]Complex, inverse: bool) void {
-            var target: usize = 0;
-            for (1..fft_size) |index| {
-                var bit = fft_size >> 1;
-                while (target & bit != 0) : (bit >>= 1) target &= ~bit;
-                target |= bit;
-                if (index < target) std.mem.swap(Complex, &values[index], &values[target]);
-            }
-            const twiddles = if (inverse) &self.twiddle_inverse else &self.twiddle_forward;
-            var length: usize = 2;
-            while (length <= fft_size) : (length *= 2) {
-                const stride = fft_size / length;
-                var start: usize = 0;
-                while (start < fft_size) : (start += length) {
-                    for (0..length / 2) |offset| {
-                        const even = start + offset;
-                        const odd = even + length / 2;
-                        const twiddle = twiddles[offset * stride];
-                        const odd_value = Complex{
-                            .real = values[odd].real * twiddle.real - values[odd].imaginary * twiddle.imaginary,
-                            .imaginary = values[odd].real * twiddle.imaginary + values[odd].imaginary * twiddle.real,
-                        };
-                        values[odd] = .{
-                            .real = values[even].real - odd_value.real,
-                            .imaginary = values[even].imaginary - odd_value.imaginary,
-                        };
-                        values[even].real += odd_value.real;
-                        values[even].imaginary += odd_value.imaginary;
-                    }
-                }
-            }
-            if (inverse) {
-                const scale = 1.0 / @as(f32, @floatFromInt(fft_size));
-                for (values) |*value| {
-                    value.real *= scale;
-                    value.imaginary *= scale;
-                }
-            }
         }
     };
 }
@@ -454,6 +726,105 @@ test "partitioned convolver isolates stereo IR channels" {
     try std.testing.expectApproxEqAbs(@as(f32, 0.0), left[9], 0.0001);
     try std.testing.expectApproxEqAbs(@as(f32, 0.0), right[8], 0.0001);
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), right[9], 0.0001);
+}
+
+test "partitioned convolver zero-latency mode aligns head and tail" {
+    const Convolver = PartitionedConvolver(32, 8);
+    var convolver = Convolver.initWithOptions(
+        48_000,
+        .{ .latency = .zero },
+    );
+    try std.testing.expectEqual(@as(usize, 0), convolver.latencySamples());
+    try convolver.begin(.{
+        .generation = 1,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = 9,
+    });
+    try convolver.write(
+        1,
+        0,
+        &.{ 0.25, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0 },
+    );
+    try convolver.commit(1);
+    try std.testing.expect(convolver.adoptPending());
+
+    var output: [24]f32 = undefined;
+    for (&output, 0..) |*sample, index| {
+        sample.* = convolver.processFrame(
+            if (index == 0) 1.0 else 0.0,
+            0.0,
+        )[0];
+    }
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.25),
+        output[0],
+        0.0001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.5),
+        output[1],
+        0.0001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0),
+        output[8],
+        0.0001,
+    );
+    for (output, 0..) |sample, index| {
+        if (index == 0 or index == 1 or index == 8) continue;
+        try std.testing.expectApproxEqAbs(
+            @as(f32, 0.0),
+            sample,
+            0.0001,
+        );
+    }
+}
+
+test "partitioned convolver exposes independent and mono routing" {
+    const Convolver = PartitionedConvolver(16, 8);
+    var convolver = Convolver.initWithOptions(
+        48_000,
+        .{ .latency = .zero },
+    );
+    try convolver.begin(.{
+        .generation = 1,
+        .sample_rate = 48_000,
+        .channels = 2,
+        .frames = 1,
+    });
+    try convolver.write(1, 0, &.{ 1.0, 2.0 });
+    try convolver.commit(1);
+    try std.testing.expect(convolver.adoptPending());
+
+    const independent = convolver.processFrame(1.0, 3.0);
+    try std.testing.expectEqual(
+        @as([2]f32, .{ 1.0, 6.0 }),
+        independent,
+    );
+
+    convolver.setOptions(.{
+        .latency = .zero,
+        .routing = .mono,
+    });
+    const mono = convolver.processFrame(1.0, 3.0);
+    try std.testing.expectEqual(
+        @as([2]f32, .{ 2.0, 2.0 }),
+        mono,
+    );
+
+    convolver.setOptions(.{});
+    try std.testing.expectEqual(
+        @as(usize, 8),
+        convolver.latencySamples(),
+    );
+    try std.testing.expectEqual(
+        @as([2]f32, .{ 0.0, 0.0 }),
+        convolver.processFrame(
+            std.math.floatMax(f32),
+            std.math.floatMax(f32),
+        ),
+    );
 }
 
 test "partitioned convolver replaces pending generations without touching the active slot" {
@@ -509,6 +880,23 @@ test "partitioned convolver rejects malformed staging sequences" {
     try convolver.write(2, 0, &.{1.0});
     try std.testing.expectError(error.Incomplete, convolver.commit(2));
     try std.testing.expect(convolver.cancel(2));
+}
+
+test "partitioned convolver publishes across generation rollover" {
+    const Convolver = PartitionedConvolver(16, 8);
+    var convolver = Convolver.init(48_000);
+    convolver.latest_generation.store(std.math.maxInt(u64), .release);
+
+    try convolver.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 1 });
+    try convolver.write(1, 0, &.{1.0});
+    try convolver.commit(1);
+    try std.testing.expect(convolver.adoptPending());
+    try std.testing.expectEqual(@as(u64, 1), convolver.activeMetadata().?.generation);
+
+    try std.testing.expectError(
+        error.InvalidGeneration,
+        convolver.begin(.{ .generation = std.math.maxInt(u64) - 1, .sample_rate = 48_000, .channels = 1, .frames = 1 }),
+    );
 }
 
 test "partitioned convolver metadata exposes public bounded validation" {
@@ -596,4 +984,244 @@ test "partitioned convolver recovers malformed processing cursors" {
     try std.testing.expectEqual(@as(usize, 0), convolver.history_head);
     try std.testing.expectEqual(@as(f32, 0.0), convolver.input_block[0][0]);
     try std.testing.expectEqual(@as(f32, 0.0), convolver.input_block[1][0]);
+}
+
+test "convolution preparation queue publishes ordered jobs" {
+    const Queue = PreparationQueue(16, 2);
+    const Convolver = PartitionedConvolver(16, 8);
+    var queue = Queue{};
+    var convolver = Convolver.init(48_000);
+
+    try queue.submit(
+        .{
+            .generation = 1,
+            .sample_rate = 48_000,
+            .channels = 1,
+            .frames = 1,
+        },
+        &.{1.0},
+    );
+    try queue.submit(
+        .{
+            .generation = 2,
+            .sample_rate = 48_000,
+            .channels = 2,
+            .frames = 1,
+        },
+        &.{ 0.5, 0.25 },
+    );
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        try queue.pendingCount(),
+    );
+    try std.testing.expectError(
+        error.QueueFull,
+        queue.submit(
+            .{
+                .generation = 3,
+                .sample_rate = 48_000,
+                .channels = 1,
+                .frames = 1,
+            },
+            &.{0.125},
+        ),
+    );
+
+    try std.testing.expectEqual(
+        @as(?u64, 1),
+        try queue.prepareNext(8, &convolver),
+    );
+    try std.testing.expect(convolver.adoptPending());
+    try std.testing.expectEqual(
+        @as(?u64, 2),
+        try queue.prepareNext(8, &convolver),
+    );
+    try std.testing.expect(convolver.adoptPending());
+    try std.testing.expectEqual(
+        @as(u64, 2),
+        convolver.activeMetadata().?.generation,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        try queue.pendingCount(),
+    );
+}
+
+test "convolution preparation queue retries busy consumers" {
+    const Queue = PreparationQueue(16, 1);
+    const Convolver = PartitionedConvolver(16, 8);
+    var queue = Queue{};
+    var convolver = Convolver.init(48_000);
+    try queue.submit(
+        .{
+            .generation = 1,
+            .sample_rate = 48_000,
+            .channels = 1,
+            .frames = 1,
+        },
+        &.{0.5},
+    );
+    try convolver.begin(.{
+        .generation = 10,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = 1,
+    });
+    try std.testing.expectError(
+        error.Busy,
+        queue.prepareNext(8, &convolver),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        try queue.pendingCount(),
+    );
+    try std.testing.expect(convolver.cancel(10));
+    try std.testing.expectEqual(
+        @as(?u64, 1),
+        try queue.prepareNext(8, &convolver),
+    );
+}
+
+test "convolution preparation queue validates before mutation" {
+    const Queue = PreparationQueue(16, 2);
+    var queue = Queue{};
+    try std.testing.expectError(
+        error.InvalidChunk,
+        queue.submit(
+            .{
+                .generation = 1,
+                .sample_rate = 48_000,
+                .channels = 2,
+                .frames = 1,
+            },
+            &.{1.0},
+        ),
+    );
+    try std.testing.expectError(
+        error.NonFiniteSample,
+        queue.submit(
+            .{
+                .generation = 1,
+                .sample_rate = 48_000,
+                .channels = 1,
+                .frames = 1,
+            },
+            &.{std.math.nan(f32)},
+        ),
+    );
+    try queue.submit(
+        .{
+            .generation = 1,
+            .sample_rate = 48_000,
+            .channels = 1,
+            .frames = 0,
+        },
+        &.{},
+    );
+    try std.testing.expectEqual(
+        @as(?u64, 1),
+        try queue.discardNext(),
+    );
+    try std.testing.expectEqual(
+        @as(?u64, null),
+        try queue.discardNext(),
+    );
+
+    queue.consumer_cursor = 2;
+    try std.testing.expectError(
+        error.InvalidQueueState,
+        queue.pendingCount(),
+    );
+    queue.consumer_cursor = 0;
+    queue.producer_cursor = 2;
+    try std.testing.expectError(
+        error.InvalidQueueState,
+        queue.submit(
+            .{
+                .generation = 2,
+                .sample_rate = 48_000,
+                .channels = 1,
+                .frames = 0,
+            },
+            &.{},
+        ),
+    );
+}
+
+test "convolution preparation queue transfers concurrent SPSC jobs" {
+    const Queue = PreparationQueue(8, 4);
+    const Convolver = PartitionedConvolver(8, 8);
+    const Shared = struct {
+        queue: Queue = .{},
+        convolver: Convolver = Convolver.init(48_000),
+        failed: std.atomic.Value(bool) =
+            std.atomic.Value(bool).init(false),
+
+        fn produce(shared: *@This()) void {
+            var generation: u64 = 1;
+            while (generation <= 100) {
+                shared.queue.submit(
+                    .{
+                        .generation = generation,
+                        .sample_rate = 48_000,
+                        .channels = 1,
+                        .frames = 0,
+                    },
+                    &.{},
+                ) catch |err| switch (err) {
+                    error.QueueFull => {
+                        std.Thread.yield() catch {};
+                        continue;
+                    },
+                    else => {
+                        shared.failed.store(true, .release);
+                        return;
+                    },
+                };
+                generation += 1;
+            }
+        }
+
+        fn consume(shared: *@This()) void {
+            var consumed: usize = 0;
+            while (consumed < 100) {
+                const generation =
+                    shared.queue.prepareNext(
+                        8,
+                        &shared.convolver,
+                    ) catch {
+                        shared.failed.store(true, .release);
+                        return;
+                    };
+                if (generation == null) {
+                    std.Thread.yield() catch {};
+                    continue;
+                }
+                consumed += 1;
+            }
+        }
+    };
+
+    var shared = Shared{};
+    const producer = try std.Thread.spawn(
+        .{},
+        Shared.produce,
+        .{&shared},
+    );
+    const consumer = try std.Thread.spawn(
+        .{},
+        Shared.consume,
+        .{&shared},
+    );
+    producer.join();
+    consumer.join();
+    try std.testing.expect(!shared.failed.load(.acquire));
+    try std.testing.expectEqual(
+        @as(u64, 100),
+        shared.convolver.latest_generation.load(.acquire),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        try shared.queue.pendingCount(),
+    );
 }
