@@ -4,6 +4,7 @@
 #include "vstgui/lib/cframe.h"
 
 #include <algorithm>
+#include <cmath>
 
 struct ZigVstguiCanvas {
     VSTGUI::CDrawContext* context;
@@ -37,6 +38,53 @@ VSTGUI::CRect localRect(
     );
 }
 
+bool finiteRect(double left, double top, double right, double bottom) {
+    return std::isfinite(left) &&
+        std::isfinite(top) &&
+        std::isfinite(right) &&
+        std::isfinite(bottom);
+}
+
+template <typename Function>
+void guardedCall(Function&& function) {
+    try {
+        function();
+    } catch (...) {
+    }
+}
+
+template <typename Function>
+int32_t guardedResult(Function&& function) {
+    try {
+        return function() ? 0 : -1;
+    } catch (...) {
+        return -1;
+    }
+}
+
+class GraphicsStateGuard {
+public:
+    explicit GraphicsStateGuard(VSTGUI::CDrawContext* value_context)
+    : context(value_context) {
+        context->saveGlobalState();
+        saved = true;
+    }
+
+    ~GraphicsStateGuard() noexcept {
+        if (!saved) return;
+        guardedCall([&] {
+            context->restoreGlobalState();
+        });
+    }
+
+    GraphicsStateGuard(const GraphicsStateGuard&) = delete;
+    GraphicsStateGuard& operator=(const GraphicsStateGuard&) = delete;
+
+private:
+    VSTGUI::CDrawContext* context;
+    bool saved {false};
+};
+
 }
 
 extern "C" void zig_vstgui_canvas_fill_rect(
@@ -47,9 +95,11 @@ extern "C" void zig_vstgui_canvas_fill_rect(
     double bottom,
     uint32_t rgba
 ) {
-    if (!canvas || !canvas->context) return;
-    canvas->context->setFillColor(colorFromRgba(rgba));
-    canvas->context->drawRect(localRect(canvas, left, top, right, bottom), VSTGUI::kDrawFilled);
+    if (!canvas || !canvas->context || !finiteRect(left, top, right, bottom)) return;
+    guardedCall([&] {
+        canvas->context->setFillColor(colorFromRgba(rgba));
+        canvas->context->drawRect(localRect(canvas, left, top, right, bottom), VSTGUI::kDrawFilled);
+    });
 }
 
 extern "C" void zig_vstgui_canvas_stroke_rect(
@@ -61,10 +111,18 @@ extern "C" void zig_vstgui_canvas_stroke_rect(
     uint32_t rgba,
     double width
 ) {
-    if (!canvas || !canvas->context || width <= 0.0) return;
-    canvas->context->setFrameColor(colorFromRgba(rgba));
-    canvas->context->setLineWidth(width);
-    canvas->context->drawRect(localRect(canvas, left, top, right, bottom), VSTGUI::kDrawStroked);
+    if (!canvas ||
+        !canvas->context ||
+        !finiteRect(left, top, right, bottom) ||
+        !std::isfinite(width) ||
+        width <= 0.0) {
+        return;
+    }
+    guardedCall([&] {
+        canvas->context->setFrameColor(colorFromRgba(rgba));
+        canvas->context->setLineWidth(width);
+        canvas->context->drawRect(localRect(canvas, left, top, right, bottom), VSTGUI::kDrawStroked);
+    });
 }
 
 extern "C" void zig_vstgui_canvas_fill_ellipse(
@@ -75,9 +133,11 @@ extern "C" void zig_vstgui_canvas_fill_ellipse(
     double bottom,
     uint32_t rgba
 ) {
-    if (!canvas || !canvas->context) return;
-    canvas->context->setFillColor(colorFromRgba(rgba));
-    canvas->context->drawEllipse(localRect(canvas, left, top, right, bottom), VSTGUI::kDrawFilled);
+    if (!canvas || !canvas->context || !finiteRect(left, top, right, bottom)) return;
+    guardedCall([&] {
+        canvas->context->setFillColor(colorFromRgba(rgba));
+        canvas->context->drawEllipse(localRect(canvas, left, top, right, bottom), VSTGUI::kDrawFilled);
+    });
 }
 
 extern "C" void zig_vstgui_canvas_line(
@@ -89,13 +149,21 @@ extern "C" void zig_vstgui_canvas_line(
     uint32_t rgba,
     double width
 ) {
-    if (!canvas || !canvas->context || width <= 0.0) return;
-    canvas->context->setFrameColor(colorFromRgba(rgba));
-    canvas->context->setLineWidth(width);
-    canvas->context->drawLine(
-        VSTGUI::CPoint(canvas->bounds.left + start_x, canvas->bounds.top + start_y),
-        VSTGUI::CPoint(canvas->bounds.left + end_x, canvas->bounds.top + end_y)
-    );
+    if (!canvas ||
+        !canvas->context ||
+        !finiteRect(start_x, start_y, end_x, end_y) ||
+        !std::isfinite(width) ||
+        width <= 0.0) {
+        return;
+    }
+    guardedCall([&] {
+        canvas->context->setFrameColor(colorFromRgba(rgba));
+        canvas->context->setLineWidth(width);
+        canvas->context->drawLine(
+            VSTGUI::CPoint(canvas->bounds.left + start_x, canvas->bounds.top + start_y),
+            VSTGUI::CPoint(canvas->bounds.left + end_x, canvas->bounds.top + end_y)
+        );
+    });
 }
 
 extern "C" int32_t zig_vstgui_canvas_draw_asset(
@@ -107,13 +175,21 @@ extern "C" int32_t zig_vstgui_canvas_draw_asset(
     double bottom,
     float alpha
 ) {
-    if (!canvas || !canvas->context || !canvas->assets) return -1;
-    return canvas->assets->draw(
-        asset_id,
-        canvas->context,
-        localRect(canvas, left, top, right, bottom),
-        alpha
-    ) ? 0 : -1;
+    if (!canvas ||
+        !canvas->context ||
+        !canvas->assets ||
+        !finiteRect(left, top, right, bottom) ||
+        !std::isfinite(alpha)) {
+        return -1;
+    }
+    return guardedResult([&] {
+        return canvas->assets->draw(
+            asset_id,
+            canvas->context,
+            localRect(canvas, left, top, right, bottom),
+            alpha
+        );
+    });
 }
 
 namespace ZigVstgui {
@@ -140,25 +216,29 @@ void DrawingOverlay::draw(VSTGUI::CDrawContext* context) {
         setDirty(false);
         return;
     }
-    const auto bounds = getViewSize();
-    const ZigVstguiDrawRequest request {
-        parameter_id,
-        component,
-        drawingState(),
-        source->getValueNormalized(),
-        bounds.getWidth(),
-        bounds.getHeight(),
-        context->getScaleFactor(),
-    };
-    ZigVstguiCanvas canvas {context, bounds, assets};
-    context->saveGlobalState();
-    context->setClipRect(bounds);
-    context->setDrawMode(VSTGUI::kAntiAliasing);
-    if (callbacks.draw_parameter(callbacks.userdata, &request, &canvas) != 0) {
-        drawMissingAsset(context, bounds);
+    try {
+        const auto bounds = getViewSize();
+        const ZigVstguiDrawRequest request {
+            parameter_id,
+            component,
+            drawingState(),
+            source->getValueNormalized(),
+            bounds.getWidth(),
+            bounds.getHeight(),
+            context->getScaleFactor(),
+        };
+        ZigVstguiCanvas canvas {context, bounds, assets};
+        GraphicsStateGuard state(context);
+        context->setClipRect(bounds);
+        context->setDrawMode(VSTGUI::kAntiAliasing);
+        if (callbacks.draw_parameter(callbacks.userdata, &request, &canvas) != 0) {
+            drawMissingAsset(context, bounds);
+        }
+    } catch (...) {
     }
-    context->restoreGlobalState();
-    setDirty(false);
+    guardedCall([&] {
+        setDirty(false);
+    });
 }
 
 void DrawingOverlay::setInteractionState(ZigVstguiDrawingState state) {

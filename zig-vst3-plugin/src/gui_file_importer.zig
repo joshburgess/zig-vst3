@@ -104,7 +104,7 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
             self.completed_units = 0;
             self.total_units = 0;
             self.cancel_requested.store(false, .release);
-            self.generation +%= 1;
+            self.advanceGeneration();
 
             if (paths.len == 0) {
                 self.zone.reset();
@@ -122,7 +122,9 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
         }
 
         pub fn startImport(self: *Self, total_units: usize) !void {
-            if (self.status != .validating or total_units == 0 or !self.validRetainedPaths()) {
+            if (!self.retainedStateValid() or self.status != .validating or
+                total_units == 0 or !self.validRetainedPaths())
+            {
                 return error.InvalidImportTransition;
             }
             self.completed_units = 0;
@@ -131,14 +133,18 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
         }
 
         pub fn advance(self: *Self, completed_units: usize) !void {
-            if (self.status != .importing or completed_units < self.completed_units or completed_units > self.total_units) {
+            if (!self.retainedStateValid() or self.status != .importing or
+                completed_units < self.completed_units or completed_units > self.total_units)
+            {
                 return error.InvalidImportProgress;
             }
             self.completed_units = completed_units;
         }
 
         pub fn complete(self: *Self, preview_point_count: usize) !void {
-            if (self.status != .importing or self.completed_units != self.total_units) {
+            if (!self.retainedStateValid() or
+                self.status != .importing or self.completed_units != self.total_units)
+            {
                 return error.InvalidImportTransition;
             }
             self.cancel_requested.store(false, .release);
@@ -156,9 +162,17 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
         }
 
         pub fn finishWith(self: *Self, status: Status) !void {
-            if (self.status != .validating and self.status != .importing) return error.InvalidImportTransition;
+            if (!self.retainedStateValid() or
+                (self.status != .validating and self.status != .importing))
+            {
+                return error.InvalidImportTransition;
+            }
             switch (status) {
-                .empty, .unsupported_file, .capacity_limit, .invalid_path, .cancelled, .failed => {},
+                .empty, .unsupported_file, .capacity_limit, .invalid_path => {
+                    self.completed_units = 0;
+                    self.total_units = 0;
+                },
+                .cancelled, .failed => {},
                 else => return error.InvalidTerminalStatus,
             }
             self.cancel_requested.store(false, .release);
@@ -166,7 +180,11 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
         }
 
         pub fn requestCancel(self: *Self) !void {
-            if (self.status != .validating and self.status != .importing) return error.InvalidImportTransition;
+            if (!self.retainedStateValid() or
+                (self.status != .validating and self.status != .importing))
+            {
+                return error.InvalidImportTransition;
+            }
             self.cancel_requested.store(true, .release);
         }
 
@@ -175,7 +193,9 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
         }
 
         pub fn acknowledgeCancel(self: *Self) !void {
-            if (!self.cancellationRequested() or (self.status != .validating and self.status != .importing)) {
+            if (!self.retainedStateValid() or !self.cancellationRequested() or
+                (self.status != .validating and self.status != .importing))
+            {
                 return error.InvalidImportTransition;
             }
             self.cancel_requested.store(false, .release);
@@ -183,13 +203,15 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
         }
 
         pub fn retry(self: *Self) !void {
-            if (!self.validRetainedPaths() or (self.status != .cancelled and self.status != .failed)) {
+            if (!self.retainedStateValid() or !self.validRetainedPaths() or
+                (self.status != .cancelled and self.status != .failed))
+            {
                 return error.InvalidImportTransition;
             }
             self.completed_units = 0;
             self.total_units = 0;
             self.cancel_requested.store(false, .release);
-            self.generation +%= 1;
+            self.advanceGeneration();
             self.status = .validating;
         }
 
@@ -198,7 +220,7 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
             self.completed_units = 0;
             self.total_units = 0;
             self.cancel_requested.store(false, .release);
-            self.generation +%= 1;
+            self.advanceGeneration();
             self.status = .idle;
         }
 
@@ -228,6 +250,15 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
                 if (self.zone.paths[index].slice().len == 0) return false;
             }
             return true;
+        }
+
+        fn retainedStateValid(self: *const Self) bool {
+            return self.snapshot().valid();
+        }
+
+        fn advanceGeneration(self: *Self) void {
+            self.generation +%= 1;
+            if (self.generation == 0) self.generation = 1;
         }
     };
 }
@@ -341,9 +372,52 @@ test "import model rejects invalid transitions without losing progress" {
     try std.testing.expectError(error.InvalidTerminalStatus, importer.finishWith(.ready));
     try importer.finishWith(.capacity_limit);
     try std.testing.expectEqual(Status.capacity_limit, importer.snapshot().status);
+    try importer.snapshot().validate();
     importer.reset();
     try std.testing.expectEqual(Status.idle, importer.snapshot().status);
     try std.testing.expectEqual(@as(?[]const u8, null), importer.path(0));
+}
+
+test "import model revalidates mutable state before transitions" {
+    const Importer = Model(1, 1);
+    var importer = try Importer.init(&.{".wav"});
+    _ = importer.begin(.drop, &.{"/tmp/room.wav"});
+    try importer.startImport(4);
+
+    importer.total_units = 0;
+    try std.testing.expectError(error.InvalidImportProgress, importer.advance(0));
+    try std.testing.expectError(error.InvalidImportTransition, importer.complete(1));
+    try std.testing.expectError(error.InvalidImportTransition, importer.requestCancel());
+    try std.testing.expectError(error.InvalidImportTransition, importer.finishWith(.failed));
+
+    importer.reset();
+    try importer.snapshot().validate();
+    try std.testing.expectEqual(Status.validating, importer.begin(.drop, &.{"/tmp/room.wav"}));
+    importer.generation = 0;
+    try std.testing.expectError(error.InvalidImportTransition, importer.startImport(1));
+    try std.testing.expectEqual(Status.validating, importer.begin(.drop, &.{"/tmp/room.wav"}));
+    try importer.startImport(1);
+}
+
+test "import model generation remains valid across integer saturation" {
+    const Importer = Model(1, 1);
+    var importer = try Importer.init(&.{".wav"});
+
+    importer.generation = std.math.maxInt(u64);
+    try std.testing.expectEqual(Status.validating, importer.begin(.drop, &.{"/tmp/room.wav"}));
+    try std.testing.expectEqual(@as(u64, 1), importer.snapshot().generation);
+    try importer.snapshot().validate();
+
+    try importer.fail();
+    importer.generation = std.math.maxInt(u64);
+    try importer.retry();
+    try std.testing.expectEqual(@as(u64, 1), importer.snapshot().generation);
+    try importer.snapshot().validate();
+
+    importer.generation = std.math.maxInt(u64);
+    importer.reset();
+    try std.testing.expectEqual(@as(u64, 1), importer.snapshot().generation);
+    try importer.snapshot().validate();
 }
 
 test "import model generated transition sequences remain bounded" {

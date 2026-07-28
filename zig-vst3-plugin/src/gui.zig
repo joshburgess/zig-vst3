@@ -96,7 +96,7 @@ pub const Context = struct {
     }
 
     pub fn beginGesture(self: Context, id: ParameterId) Error!Gesture {
-        const initial = self.value(id) orelse return error.InvalidParameter;
+        const initial = clampNormalized(self.value(id) orelse return error.InvalidParameter);
         try self.vtable.begin_edit(self.userdata, id);
         return .{
             .context = self,
@@ -134,8 +134,9 @@ pub const Gesture = struct {
 
     pub fn set(self: *Gesture, value: NormalizedValue) Error!void {
         if (!self.active) return error.Rejected;
-        try self.context.vtable.perform_edit(self.context.userdata, self.id, value);
-        self.accepted = value;
+        const normalized = clampNormalized(value);
+        try self.context.vtable.perform_edit(self.context.userdata, self.id, normalized);
+        self.accepted = normalized;
     }
 
     pub fn finish(self: *Gesture) void {
@@ -399,7 +400,7 @@ pub fn ParameterPanel(comptime parameter_count: usize) type {
 }
 
 pub fn quantized(metadata: ParameterMetadata, value: NormalizedValue) NormalizedValue {
-    const clamped = if (std.math.isNan(value)) 0.0 else std.math.clamp(value, 0.0, 1.0);
+    const clamped = clampNormalized(value);
     if (metadata.step_count <= 0) return clamped;
     const steps: f64 = @floatFromInt(metadata.step_count);
     return @round(clamped * steps) / steps;
@@ -500,11 +501,21 @@ pub const Editor = struct {
 pub fn constrained(policy: ResizePolicy, requested: Size) Size {
     return switch (policy) {
         .fixed => |size| size,
-        .resizable => |bounds| .{
-            .width = std.math.clamp(requested.width, bounds.minimum.width, bounds.maximum.width),
-            .height = std.math.clamp(requested.height, bounds.minimum.height, bounds.maximum.height),
+        .resizable => |bounds| blk: {
+            const minimum_width = @min(bounds.minimum.width, bounds.maximum.width);
+            const maximum_width = @max(bounds.minimum.width, bounds.maximum.width);
+            const minimum_height = @min(bounds.minimum.height, bounds.maximum.height);
+            const maximum_height = @max(bounds.minimum.height, bounds.maximum.height);
+            break :blk .{
+                .width = std.math.clamp(requested.width, minimum_width, maximum_width),
+                .height = std.math.clamp(requested.height, minimum_height, maximum_height),
+            };
         },
     };
+}
+
+fn clampNormalized(value: NormalizedValue) NormalizedValue {
+    return if (std.math.isNan(value)) 0.0 else std.math.clamp(value, 0.0, 1.0);
 }
 
 const Fake = struct {
@@ -776,6 +787,20 @@ test "rejected edits preserve the last accepted value" {
     try std.testing.expectEqual(@as(NormalizedValue, 0.75), fake.value);
 }
 
+test "direct gestures sanitize normalized values and cancellation state" {
+    var invalid_initial = Fake{ .value = std.math.nan(f64) };
+    var gesture = try invalid_initial.context().beginGesture(7);
+    try std.testing.expectEqual(@as(NormalizedValue, 0.0), gesture.initial);
+    try std.testing.expectEqual(@as(NormalizedValue, 0.0), gesture.accepted);
+
+    try gesture.set(std.math.inf(f64));
+    try std.testing.expectEqual(@as(NormalizedValue, 1.0), invalid_initial.value);
+    try std.testing.expectEqual(@as(NormalizedValue, 1.0), gesture.accepted);
+
+    gesture.cancel();
+    try std.testing.expectEqual(@as(NormalizedValue, 0.0), invalid_initial.value);
+}
+
 test "detach cancels an active gesture and destroys once" {
     var fake = Fake{};
     var editor = fakeEditor(&fake);
@@ -816,6 +841,17 @@ test "resize requests are constrained before reaching the host" {
     try editor.requestResize(.{ .width = 1_000, .height = 100 });
     try std.testing.expectEqual(Size{ .width = 800, .height = 150 }, editor.size);
     try std.testing.expectEqual(editor.size, fake.last_size);
+}
+
+test "resize constraints tolerate reversed direct bounds" {
+    const policy = ResizePolicy{ .resizable = .{
+        .minimum = .{ .width = 800, .height = 600 },
+        .maximum = .{ .width = 200, .height = 150 },
+    } };
+    try std.testing.expectEqual(
+        Size{ .width = 800, .height = 150 },
+        constrained(policy, .{ .width = 1_000, .height = 100 }),
+    );
 }
 
 test "parameter attachment owns gestures and exact text entry" {

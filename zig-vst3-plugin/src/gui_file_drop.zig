@@ -31,7 +31,9 @@ pub const Path = struct {
 
     pub fn slice(self: *const Path) []const u8 {
         if (self.len == 0 or self.len > maximum_path_bytes) return &.{};
-        return self.bytes[0..self.len];
+        const value = self.bytes[0..self.len];
+        if (std.mem.indexOfScalar(u8, value, 0) != null) return &.{};
+        return value;
     }
 };
 
@@ -96,6 +98,11 @@ pub fn DropZone(comptime file_capacity: usize, comptime extension_capacity: usiz
         }
 
         pub fn complete(self: *Self, accepted: bool) void {
+            if (self.status != .acceptable) return;
+            if (!self.pathsValid()) {
+                self.status = .handler_failed;
+                return;
+            }
             self.status = if (accepted) .accepted else .handler_failed;
         }
 
@@ -105,12 +112,39 @@ pub fn DropZone(comptime file_capacity: usize, comptime extension_capacity: usiz
         }
 
         fn accepts(self: *const Self, path: []const u8) bool {
-            if (self.extension_count == 0 or self.extension_count > extension_capacity) return false;
+            if (!self.extensionsValid()) return false;
             for (self.extensions[0..self.extension_count], self.extension_lengths[0..self.extension_count]) |extension, length| {
-                if (length < 2 or length > maximum_extension_bytes) return false;
                 if (path.len >= length and std.ascii.eqlIgnoreCase(path[path.len - length ..], extension[0..length])) return true;
             }
             return false;
+        }
+
+        fn extensionsValid(self: *const Self) bool {
+            if (self.extension_count == 0 or self.extension_count > extension_capacity) return false;
+            for (self.extensions[0..self.extension_count], self.extension_lengths[0..self.extension_count], 0..) |extension, length, index| {
+                if (length < 2 or length > maximum_extension_bytes or extension[0] != '.') return false;
+                for (extension[0..length]) |character| {
+                    if (!std.ascii.isAlphanumeric(character) and character != '.') return false;
+                }
+                for (0..index) |previous_index| {
+                    const previous_length = self.extension_lengths[previous_index];
+                    if (previous_length == length and
+                        std.ascii.eqlIgnoreCase(
+                            self.extensions[previous_index][0..previous_length],
+                            extension[0..length],
+                        )) return false;
+                }
+            }
+            return true;
+        }
+
+        fn pathsValid(self: *const Self) bool {
+            if (self.path_count == 0 or self.path_count > file_capacity) return false;
+            for (self.paths[0..self.path_count]) |*path| {
+                const value = path.slice();
+                if (value.len == 0 or !self.accepts(value)) return false;
+            }
+            return true;
         }
     };
 }
@@ -152,6 +186,9 @@ test "file drop rejects malformed direct bounded storage" {
     try std.testing.expectEqual(@as(usize, 0), path.slice().len);
     path.len = 0;
     try std.testing.expectEqual(@as(usize, 0), path.slice().len);
+    path = try Path.init("sample.wav");
+    path.bytes[1] = 0;
+    try std.testing.expectEqual(@as(usize, 0), path.slice().len);
 
     const Zone = DropZone(1, 1);
     var zone = try Zone.init(&.{".wav"});
@@ -160,4 +197,20 @@ test "file drop rejects malformed direct bounded storage" {
     zone.extension_count = 1;
     zone.extension_lengths[0] = maximum_extension_bytes + 1;
     try std.testing.expectEqual(Status.rejected_type, zone.inspect(&.{"sample.wav"}));
+
+    zone = try Zone.init(&.{".wav"});
+    zone.extensions[0][0] = 'w';
+    try std.testing.expectEqual(Status.rejected_type, zone.inspect(&.{"samplewav"}));
+
+    zone = try Zone.init(&.{".wav"});
+    try std.testing.expectEqual(Status.rejected_type, zone.inspect(&.{"sample.mid"}));
+    zone.complete(true);
+    try std.testing.expectEqual(Status.rejected_type, zone.status);
+    try std.testing.expectEqual(Status.acceptable, zone.inspect(&.{"sample.wav"}));
+    zone.path_count = 2;
+    zone.complete(true);
+    try std.testing.expectEqual(Status.handler_failed, zone.status);
+    try std.testing.expectEqual(Status.acceptable, zone.inspect(&.{"sample.wav"}));
+    zone.complete(true);
+    try std.testing.expectEqual(Status.accepted, zone.status);
 }

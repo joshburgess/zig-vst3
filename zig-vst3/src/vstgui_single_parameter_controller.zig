@@ -1433,11 +1433,15 @@ fn NativeBridge(comptime Controller: type) type {
             return 0;
         }
 
-        fn storeEditorEnvelope(userdata: ?*anyopaque, field_id: u32, points: [*]const EnvelopePoint, count: u32) callconv(.c) types.int32 {
+        fn storeEditorEnvelope(userdata: ?*anyopaque, field_id: u32, points: ?[*]const EnvelopePoint, count: u32) callconv(.c) types.int32 {
             if (comptime !Controller.hasEditorState) return -1;
             if (count > editor_state.maximum_envelope_points) return -1;
+            const source = if (count == 0)
+                @as([]const EnvelopePoint, &.{})
+            else
+                (points orelse return -1)[0..count];
             var stored: [editor_state.maximum_envelope_points]editor_state.Point = undefined;
-            for (points[0..count], 0..) |point, index| stored[index] = .{ .id = point.point_id, .x = point.x, .y = point.y };
+            for (source, 0..) |point, index| stored[index] = .{ .id = point.point_id, .x = point.x, .y = point.y };
             const envelope = editor_state.Envelope.init(stored[0..count]) catch return -1;
             const iface = controller(userdata) orelse return -1;
             Controller.editorState(iface).set(field_id, .{ .envelope = envelope }) catch return -1;

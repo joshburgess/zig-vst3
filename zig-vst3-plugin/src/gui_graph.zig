@@ -1,4 +1,5 @@
 const std = @import("std");
+const dsp_fft = @import("dsp/fft.zig");
 const realtime_audit = @import("realtime_audit.zig");
 const gui_telemetry = @import("gui_telemetry.zig");
 
@@ -155,10 +156,15 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
 
         pub fn cancel(self: *Self) void {
             if (!self.transaction_active) return;
+            const retained_points =
+                self.transaction_points[0..@min(self.transaction_count, capacity)];
+            const selection_valid = if (self.transaction_selection) |id|
+                containsId(retained_points, id)
+            else
+                true;
             if (self.transaction_count > capacity or !self.x_range.valid() or !self.y_range.valid() or
-                !validPointStorage(self.transaction_points[0..@min(self.transaction_count, capacity)], self.x_range, self.y_range) or
-                (self.transaction_selection != null and
-                    !containsId(self.transaction_points[0..@min(self.transaction_count, capacity)], self.transaction_selection.?)))
+                !validPointStorage(retained_points, self.x_range, self.y_range) or
+                !selection_valid)
             {
                 self.transaction_count = 0;
                 self.transaction_selection = null;
@@ -398,13 +404,18 @@ pub fn SnapshotSeries(comptime capacity: usize) type {
             if (!self.activity.active() or source.len > capacity) return self.drop();
             for (source) |point| if (!point.finite()) return self.drop();
 
-            _ = self.generation.fetchAdd(1, .acq_rel);
+            const current_generation = self.generation.load(.monotonic);
+            const writing_generation = if (current_generation >= std.math.maxInt(usize) - 2)
+                1
+            else
+                (current_generation + 1) | 1;
+            self.generation.store(writing_generation, .release);
             for (source, 0..) |point, index| {
                 self.points[index].x.store(point.x);
                 self.points[index].y.store(point.y);
             }
             self.point_count.store(source.len, .release);
-            _ = self.generation.fetchAdd(1, .release);
+            self.generation.store(writing_generation + 1, .release);
             return true;
         }
 
@@ -436,7 +447,12 @@ pub fn SnapshotSeries(comptime capacity: usize) type {
         }
 
         fn drop(self: *@This()) bool {
-            _ = self.dropped_count.fetchAdd(1, .monotonic);
+            var current = self.dropped_count.load(.monotonic);
+            while (current != std.math.maxInt(usize)) {
+                if (self.dropped_count.cmpxchgWeak(current, current + 1, .monotonic, .monotonic)) |observed| {
+                    current = observed;
+                } else break;
+            }
             return false;
         }
     };
@@ -496,13 +512,14 @@ pub fn SpectrumAnalyzer(comptime fft_size: usize) type {
     }
     const bin_count = fft_size / 2;
     const Series = SnapshotSeries(bin_count);
+    const Fft = dsp_fft.Transform(f64, fft_size);
 
     return struct {
         series: Series,
         window: [fft_size]f64,
         samples: [fft_size]f64 = @splat(0.0),
-        real: [fft_size]f64 = undefined,
-        imaginary: [fft_size]f64 = undefined,
+        fft: Fft,
+        spectrum: [fft_size]Fft.Value = undefined,
         write_index: usize = 0,
         buffered_count: usize = 0,
         samples_since_frame: usize = 0,
@@ -516,8 +533,8 @@ pub fn SpectrumAnalyzer(comptime fft_size: usize) type {
                     @as(f64, @floatFromInt(fft_size - 1)));
             }
             result.samples = @splat(0.0);
-            result.real = undefined;
-            result.imaginary = undefined;
+            result.fft = Fft.init();
+            result.spectrum = undefined;
             result.write_index = 0;
             result.buffered_count = 0;
             result.samples_since_frame = 0;
@@ -535,6 +552,11 @@ pub fn SpectrumAnalyzer(comptime fft_size: usize) type {
         pub fn push(self: *@This(), source: anytype, sample_rate: f64) bool {
             if (!self.series.producing() or source.len == 0 or
                 !std.math.isFinite(sample_rate) or sample_rate <= 0.0) return false;
+            if (self.write_index >= fft_size or self.buffered_count > fft_size) {
+                self.write_index = 0;
+                self.buffered_count = 0;
+                self.samples_since_frame = 0;
+            }
             for (source) |sample| {
                 const value: f64 = @floatCast(sample);
                 self.samples[self.write_index] = if (std.math.isFinite(value)) value else 0.0;
@@ -563,59 +585,22 @@ pub fn SpectrumAnalyzer(comptime fft_size: usize) type {
             var window_sum: f64 = 0.0;
             for (0..fft_size) |index| {
                 const source_index = (self.write_index + index) % fft_size;
-                self.real[index] = self.samples[source_index] * self.window[index];
-                self.imaginary[index] = 0.0;
+                self.spectrum[index] = .{
+                    .real = self.samples[source_index] * self.window[index],
+                };
                 window_sum += self.window[index];
             }
-            self.fft();
+            self.fft.forward(&self.spectrum) catch return false;
             var points: [bin_count]Point = undefined;
             for (&points, 1..) |*point, bin| {
-                const magnitude = 2.0 * @sqrt(
-                    self.real[bin] * self.real[bin] + self.imaginary[bin] * self.imaginary[bin],
-                ) / window_sum;
+                const magnitude =
+                    2.0 * self.spectrum[bin].magnitude() / window_sum;
                 point.* = .{
                     .x = @as(f64, @floatFromInt(bin)) * sample_rate / @as(f64, @floatFromInt(fft_size)),
                     .y = std.math.clamp(20.0 * std.math.log10(@max(magnitude, 0.000001)), -120.0, 0.0),
                 };
             }
             return self.series.publish(&points);
-        }
-
-        fn fft(self: *@This()) void {
-            var target: usize = 0;
-            for (1..fft_size) |index| {
-                var bit = fft_size >> 1;
-                while (target & bit != 0) : (bit >>= 1) target &= ~bit;
-                target |= bit;
-                if (index < target) {
-                    std.mem.swap(f64, &self.real[index], &self.real[target]);
-                    std.mem.swap(f64, &self.imaginary[index], &self.imaginary[target]);
-                }
-            }
-            var length: usize = 2;
-            while (length <= fft_size) : (length *= 2) {
-                const angle = -std.math.tau / @as(f64, @floatFromInt(length));
-                const step_real = std.math.cos(angle);
-                const step_imaginary = std.math.sin(angle);
-                var start: usize = 0;
-                while (start < fft_size) : (start += length) {
-                    var twiddle_real: f64 = 1.0;
-                    var twiddle_imaginary: f64 = 0.0;
-                    for (0..length / 2) |offset| {
-                        const even = start + offset;
-                        const odd = even + length / 2;
-                        const odd_real = self.real[odd] * twiddle_real - self.imaginary[odd] * twiddle_imaginary;
-                        const odd_imaginary = self.real[odd] * twiddle_imaginary + self.imaginary[odd] * twiddle_real;
-                        self.real[odd] = self.real[even] - odd_real;
-                        self.imaginary[odd] = self.imaginary[even] - odd_imaginary;
-                        self.real[even] += odd_real;
-                        self.imaginary[even] += odd_imaginary;
-                        const next_real = twiddle_real * step_real - twiddle_imaginary * step_imaginary;
-                        twiddle_imaginary = twiddle_real * step_imaginary + twiddle_imaginary * step_real;
-                        twiddle_real = next_real;
-                    }
-                }
-            }
         }
     };
 }
@@ -696,6 +681,30 @@ test "snapshot series is activity gated and bounded" {
     series.editorClosed();
 }
 
+test "snapshot series drop count saturates instead of wrapping" {
+    var series = SnapshotSeries(1).init();
+    series.dropped_count.store(std.math.maxInt(usize), .release);
+    try std.testing.expect(!series.publish(&.{.{ .x = 0.0, .y = 0.0 }}));
+    try std.testing.expectEqual(std.math.maxInt(usize), series.dropped());
+    series.editorOpened();
+    try std.testing.expect(series.publish(&.{.{ .x = 0.0, .y = 0.5 }}));
+    var output: [1]Point = undefined;
+    try std.testing.expectEqual(@as(?usize, 1), series.read(&output));
+    try std.testing.expectEqual(@as(f64, 0.5), output[0].y);
+}
+
+test "snapshot series recovers a generation at the integer boundary" {
+    var series = SnapshotSeries(1).init();
+    series.editorOpened();
+    series.generation.store(std.math.maxInt(usize), .release);
+    try std.testing.expect(series.publish(&.{.{ .x = 0.25, .y = 0.75 }}));
+    try std.testing.expectEqual(@as(usize, 2), series.generation.load(.acquire));
+    var output: [1]Point = undefined;
+    try std.testing.expectEqual(@as(?usize, 1), series.read(&output));
+    try std.testing.expectEqual(@as(f64, 0.25), output[0].x);
+    try std.testing.expectEqual(@as(f64, 0.75), output[0].y);
+}
+
 test "waveform capture downsamples without work while inactive" {
     var capture = WaveformCapture(4).init();
     const samples = [_]f32{ -1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0 };
@@ -737,6 +746,23 @@ test "spectrum analyzer publishes a deterministic bounded FFT" {
     try std.testing.expect(!analyzer.push(&samples, 0.0));
     analyzer.editorClosed();
     try std.testing.expect(!analyzer.push(&samples, 48_000.0));
+}
+
+test "spectrum analyzer recovers malformed retained cursors" {
+    const fft_size = 8;
+    var analyzer = SpectrumAnalyzer(fft_size).init();
+    analyzer.editorOpened();
+    analyzer.write_index = fft_size;
+    analyzer.buffered_count = std.math.maxInt(usize);
+    analyzer.samples_since_frame = std.math.maxInt(usize);
+    const samples = [_]f64{ 0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0 };
+    try std.testing.expect(analyzer.push(&samples, 48_000.0));
+    try std.testing.expectEqual(@as(usize, 0), analyzer.write_index);
+    try std.testing.expectEqual(@as(usize, fft_size), analyzer.buffered_count);
+    try std.testing.expectEqual(@as(usize, 0), analyzer.samples_since_frame);
+    var points: [fft_size / 2]Point = undefined;
+    try std.testing.expectEqual(@as(?usize, fft_size / 2), analyzer.read(&points));
+    for (points) |point| try std.testing.expect(point.finite());
 }
 
 test "editable envelope keeps stable IDs and ordered snapped points" {

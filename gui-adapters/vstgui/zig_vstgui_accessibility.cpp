@@ -1,6 +1,7 @@
 #include "zig_vstgui_accessibility.h"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace ZigVstgui {
@@ -51,11 +52,17 @@ void AccessibilityNode::setValueText(std::string value) {
 }
 
 void AccessibilityNode::setRange(double minimum, double maximum, double current) {
+    if (!std::isfinite(minimum) || !std::isfinite(maximum)) {
+        clearRange();
+        return;
+    }
+    const double lower = std::min(minimum, maximum);
+    const double upper = std::max(minimum, maximum);
     AccessibilityRange next {
         true,
-        std::min(minimum, maximum),
-        std::max(minimum, maximum),
-        std::clamp(current, std::min(minimum, maximum), std::max(minimum, maximum)),
+        lower,
+        upper,
+        std::isnan(current) ? lower : std::clamp(current, lower, upper),
     };
     if (semantic_range.present == next.present &&
         semantic_range.minimum == next.minimum &&

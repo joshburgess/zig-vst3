@@ -817,6 +817,8 @@ int32_t zig_vstgui_canvas_draw_asset(
 );
 int32_t zig_vstgui_editor_open(ZigVstguiEditor* editor, void* parent, ZigVstguiPlatform platform);
 void zig_vstgui_editor_close(ZigVstguiEditor* editor);
+void* zig_vstgui_editor_native_widget(ZigVstguiEditor* editor);
+int32_t zig_vstgui_editor_idle(ZigVstguiEditor* editor);
 void zig_vstgui_editor_destroy(ZigVstguiEditor* editor);
 int32_t zig_vstgui_editor_resize(ZigVstguiEditor* editor, uint32_t width, uint32_t height);
 int32_t zig_vstgui_editor_set_scale(ZigVstguiEditor* editor, double scale);

@@ -1,5 +1,6 @@
 #include "zig_vstgui_adapter.h"
 #include "zig_vstgui_editor.h"
+#include "vstgui/lib/platform/iplatformframe.h"
 
 #include <algorithm>
 #include <cctype>
@@ -15,6 +16,23 @@ std::string normalizedExtension(const char* value) {
         return static_cast<char>(std::tolower(character));
     });
     return result;
+}
+
+template <typename Function>
+int32_t guardedResult(Function&& function) {
+    try {
+        return function() ? 0 : -1;
+    } catch (...) {
+        return -1;
+    }
+}
+
+template <typename Function>
+void guardedCall(Function&& function) {
+    try {
+        function();
+    } catch (...) {
+    }
 }
 
 }
@@ -275,6 +293,7 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
     uint32_t progress_indicator_count,
     ZigVstguiSkinDescription skin
 ) {
+    try {
     constexpr uint32_t style_mask = ZIG_VSTGUI_STYLE_BACKGROUND |
         ZIG_VSTGUI_STYLE_FOREGROUND |
         ZIG_VSTGUI_STYLE_BORDER |
@@ -717,6 +736,9 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         return nullptr;
     }
     return editor;
+    } catch (...) {
+        return nullptr;
+    }
 }
 
 extern "C" int32_t zig_vstgui_editor_open(
@@ -724,15 +746,54 @@ extern "C" int32_t zig_vstgui_editor_open(
     void* parent,
     ZigVstguiPlatform platform
 ) {
-    return editor && editor->open(parent, platform) ? 0 : -1;
+    if (!editor) return -1;
+    try {
+        return editor->open(parent, platform) ? 0 : -1;
+    } catch (...) {
+        try {
+            editor->close();
+        } catch (...) {
+        }
+        return -1;
+    }
 }
 
 extern "C" void zig_vstgui_editor_close(ZigVstguiEditor* editor) {
-    if (editor) editor->close();
+    guardedCall([editor] {
+        if (editor) editor->close();
+    });
+}
+
+extern "C" void* zig_vstgui_editor_native_widget(
+    ZigVstguiEditor* editor
+) {
+    if (!editor) return nullptr;
+    try {
+        auto* frame = editor->frameView();
+        if (!frame) return nullptr;
+        auto* platform_frame = frame->getPlatformFrame();
+        return platform_frame
+            ? platform_frame->getPlatformRepresentation()
+            : nullptr;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+extern "C" int32_t zig_vstgui_editor_idle(
+    ZigVstguiEditor* editor
+) {
+    if (!editor) return -1;
+    try {
+        editor->flushParameterUpdates();
+        return 0;
+    } catch (...) {
+        return -1;
+    }
 }
 
 extern "C" void zig_vstgui_editor_destroy(ZigVstguiEditor* editor) {
-    delete editor;
+    guardedCall([editor] { delete editor; });
 }
 
 extern "C" int32_t zig_vstgui_editor_resize(
@@ -740,11 +801,11 @@ extern "C" int32_t zig_vstgui_editor_resize(
     uint32_t width,
     uint32_t height
 ) {
-    return editor && editor->resize(width, height) ? 0 : -1;
+    return guardedResult([=] { return editor && editor->resize(width, height); });
 }
 
 extern "C" int32_t zig_vstgui_editor_set_scale(ZigVstguiEditor* editor, double scale) {
-    return editor && editor->setScale(scale) ? 0 : -1;
+    return guardedResult([=] { return editor && editor->setScale(scale); });
 }
 
 extern "C" int32_t zig_vstgui_editor_set_parameter(
@@ -752,7 +813,7 @@ extern "C" int32_t zig_vstgui_editor_set_parameter(
     uint32_t parameter_id,
     double normalized
 ) {
-    return editor && editor->setParameter(parameter_id, normalized) ? 0 : -1;
+    return guardedResult([=] { return editor && editor->setParameter(parameter_id, normalized); });
 }
 
 extern "C" int32_t zig_vstgui_editor_set_modulation(
@@ -760,7 +821,7 @@ extern "C" int32_t zig_vstgui_editor_set_modulation(
     uint32_t parameter_id,
     double normalized
 ) {
-    return editor && editor->setModulation(parameter_id, normalized) ? 0 : -1;
+    return guardedResult([=] { return editor && editor->setModulation(parameter_id, normalized); });
 }
 
 extern "C" int32_t zig_vstgui_editor_refresh_parameters(
@@ -768,7 +829,7 @@ extern "C" int32_t zig_vstgui_editor_refresh_parameters(
     const ZigVstguiParameterValue* parameters,
     uint32_t parameter_count
 ) {
-    return editor && editor->refreshParameters(parameters, parameter_count) ? 0 : -1;
+    return guardedResult([=] { return editor && editor->refreshParameters(parameters, parameter_count); });
 }
 
 extern "C" int32_t zig_vstgui_editor_key_down(
@@ -777,7 +838,7 @@ extern "C" int32_t zig_vstgui_editor_key_down(
     int16_t key_code,
     int16_t modifiers
 ) {
-    return editor && editor->keyDown(key, key_code, modifiers) ? 0 : -1;
+    return guardedResult([=] { return editor && editor->keyDown(key, key_code, modifiers); });
 }
 
 extern "C" int32_t zig_vstgui_editor_key_up(
@@ -786,26 +847,34 @@ extern "C" int32_t zig_vstgui_editor_key_up(
     int16_t key_code,
     int16_t modifiers
 ) {
-    return editor && editor->keyUp(key, key_code, modifiers) ? 0 : -1;
+    return guardedResult([=] { return editor && editor->keyUp(key, key_code, modifiers); });
 }
 
 extern "C" void zig_vstgui_editor_set_focus(ZigVstguiEditor* editor, int32_t focused) {
-    if (editor) editor->setFocus(focused != 0);
+    guardedCall([=] {
+        if (editor) editor->setFocus(focused != 0);
+    });
 }
 
 extern "C" void zig_vstgui_editor_set_frame(ZigVstguiEditor* editor, void* plug_frame) {
-    if (editor) editor->setPlugFrame(plug_frame);
+    guardedCall([=] {
+        if (editor) editor->setPlugFrame(plug_frame);
+    });
 }
 
 extern "C" void zig_vstgui_editor_set_wayland_host(ZigVstguiEditor* editor, void* wayland_host) {
-    if (editor) editor->setWaylandHost(wayland_host);
+    guardedCall([=] {
+        if (editor) editor->setWaylandHost(wayland_host);
+    });
 }
 
 extern "C" void zig_vstgui_editor_set_resize_callbacks(
     ZigVstguiEditor* editor,
     ZigVstguiResizeCallbacks callbacks
 ) {
-    if (editor) editor->setResizeCallbacks(callbacks);
+    guardedCall([=] {
+        if (editor) editor->setResizeCallbacks(callbacks);
+    });
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {

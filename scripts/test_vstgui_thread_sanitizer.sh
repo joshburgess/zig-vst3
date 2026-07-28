@@ -68,6 +68,27 @@ if [ "${VSTGUI_THREAD_SANITIZER_SKIP_BUILD:-0}" != 1 ]; then
   fi
 fi
 
+iteration=0
+started_epoch=0
+write_interrupted_status() {
+  signal_name="$1"
+  status="$2"
+  {
+    printf 'classification=interrupted\n'
+    printf 'signal=%s\n' "$signal_name"
+    printf 'status=%s\n' "$status"
+    printf 'iteration=%s\n' "$iteration"
+    printf 'phase=adapter-thread-safety\n'
+    printf 'started_epoch=%s\n' "$started_epoch"
+    printf 'finished_epoch=%s\n' "$(date +%s)"
+  } > "$output_dir/runner-status.txt"
+  trap - HUP INT TERM
+  exit "$status"
+}
+trap 'write_interrupted_status HUP 129' HUP
+trap 'write_interrupted_status INT 130' INT
+trap 'write_interrupted_status TERM 143' TERM
+
 iteration=1
 while [ "$iteration" -le "$repetitions" ]; do
   stdout_path="$output_dir/$iteration.stdout"

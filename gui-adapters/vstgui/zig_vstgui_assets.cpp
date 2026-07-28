@@ -84,6 +84,30 @@ VSTGUI::CColor withAlpha(VSTGUI::CColor color, float alpha) {
     return color;
 }
 
+class GraphicsStateGuard {
+public:
+    explicit GraphicsStateGuard(VSTGUI::CDrawContext* value_context)
+    : context(value_context) {
+        context->saveGlobalState();
+        saved = true;
+    }
+
+    ~GraphicsStateGuard() noexcept {
+        if (!saved) return;
+        try {
+            context->restoreGlobalState();
+        } catch (...) {
+        }
+    }
+
+    GraphicsStateGuard(const GraphicsStateGuard&) = delete;
+    GraphicsStateGuard& operator=(const GraphicsStateGuard&) = delete;
+
+private:
+    VSTGUI::CDrawContext* context;
+    bool saved {false};
+};
+
 }
 
 AssetPlacement placeAsset(
@@ -296,7 +320,7 @@ void SvgDocument::draw(
     transform.translate(-view_left, -view_top);
     transform.scale(placement.scale_x, placement.scale_y);
     transform.translate(placement.destination.left, placement.destination.top);
-    context->saveGlobalState();
+    GraphicsStateGuard state(context);
     context->setClipRect(bounds);
     context->setDrawMode(VSTGUI::kAntiAliasing);
     for (const auto& source : paths) {
@@ -335,7 +359,6 @@ void SvgDocument::draw(
             context->drawGraphicsPath(path, VSTGUI::CDrawContext::kPathStroked, &transform);
         }
     }
-    context->restoreGlobalState();
 }
 
 bool AssetResource::load(const ZigVstguiAssetDescription& description) {
@@ -378,7 +401,7 @@ void AssetResource::draw(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bou
         return;
     }
     const auto placement = placeAsset(bounds, bitmap->getWidth(), bitmap->getHeight(), scale);
-    context->saveGlobalState();
+    GraphicsStateGuard state(context);
     context->setClipRect(bounds);
     context->setBitmapInterpolationQuality(VSTGUI::BitmapInterpolationQuality::kHigh);
     context->fillRectWithBitmap(
@@ -387,19 +410,26 @@ void AssetResource::draw(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bou
         placement.destination,
         std::clamp(alpha, 0.f, 1.f)
     );
-    context->restoreGlobalState();
 }
 
 bool AssetStore::load(const ZigVstguiAssetDescription* descriptions, uint32_t asset_count) {
-    resources.clear();
     if (asset_count > ZIG_VSTGUI_MAX_ASSETS || (asset_count > 0 && !descriptions)) return false;
-    resources.reserve(asset_count);
+    std::vector<AssetResource> next_resources;
+    next_resources.reserve(asset_count);
     for (uint32_t index = 0; index < asset_count; ++index) {
-        if (find(descriptions[index].asset_id)) return false;
+        const auto duplicate = std::find_if(
+            next_resources.begin(),
+            next_resources.end(),
+            [&](const AssetResource& resource) {
+                return resource.id() == descriptions[index].asset_id;
+            }
+        );
+        if (duplicate != next_resources.end()) return false;
         AssetResource resource;
         if (!resource.load(descriptions[index])) return false;
-        resources.push_back(std::move(resource));
+        next_resources.push_back(std::move(resource));
     }
+    resources = std::move(next_resources);
     return true;
 }
 
@@ -431,7 +461,7 @@ uint32_t AssetStore::count() const {
 
 void drawMissingAsset(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds) {
     if (!context) return;
-    context->saveGlobalState();
+    GraphicsStateGuard state(context);
     context->setDrawMode(VSTGUI::kAntiAliasing);
     context->setFillColor(VSTGUI::CColor(65, 15, 25, 255));
     context->setFrameColor(VSTGUI::CColor(255, 80, 105, 255));
@@ -439,7 +469,6 @@ void drawMissingAsset(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds
     context->drawRect(bounds, VSTGUI::kDrawFilledAndStroked);
     context->drawLine(bounds.getTopLeft(), bounds.getBottomRight());
     context->drawLine(VSTGUI::CPoint(bounds.right, bounds.top), VSTGUI::CPoint(bounds.left, bounds.bottom));
-    context->restoreGlobalState();
 }
 
 }

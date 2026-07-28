@@ -2,6 +2,7 @@
 #include "zig_vstgui_action_button.h"
 #include "zig_vstgui_action_menu.h"
 #include "zig_vstgui_controls.h"
+#include "zig_vstgui_drawing.h"
 #include "zig_vstgui_editor.h"
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
@@ -30,6 +31,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -119,6 +121,9 @@ int32_t rejectDrop(void*, uint32_t, const char* const*, uint32_t) { return -1; }
 int32_t acceptAction(void*, uint32_t, uint32_t) { return 0; }
 int32_t rejectAction(void*, uint32_t, uint32_t) { return -1; }
 int32_t acceptPreset(void*, uint32_t) { return 0; }
+int32_t throwDuringDraw(void*, const ZigVstguiDrawRequest*, ZigVstguiCanvas*) {
+    throw std::runtime_error("drawing callback failure");
+}
 int32_t acceptImport(
     void*,
     uint32_t,
@@ -2197,6 +2202,42 @@ double benchmarkPianoDraw() {
     return average;
 }
 
+bool drawingCallbackExceptionsRestoreContextState() {
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(96, 96), 1.0);
+    if (!offscreen) return false;
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    ZigVstgui::RotaryKnob source(VSTGUI::CRect(8, 8, 88, 88), nullptr, 1, styles, 0.5);
+    ZigVstguiDrawingCallbacks callbacks {};
+    callbacks.draw_parameter = throwDuringDraw;
+    ZigVstgui::DrawingOverlay overlay(
+        1,
+        ZIG_VSTGUI_DRAW_KNOB,
+        &source,
+        nullptr,
+        callbacks
+    );
+    overlay.setViewSize(VSTGUI::CRect(8, 8, 88, 88));
+
+    const VSTGUI::CRect original_clip(3, 4, 91, 92);
+    offscreen->beginDraw();
+    offscreen->setClipRect(original_clip);
+    bool escaped = false;
+    try {
+        overlay.draw(offscreen);
+    } catch (...) {
+        escaped = true;
+    }
+    VSTGUI::CRect restored_clip;
+    offscreen->getClipRect(restored_clip);
+    offscreen->endDraw();
+    return !escaped &&
+        restored_clip.left == original_clip.left &&
+        restored_clip.top == original_clip.top &&
+        restored_clip.right == original_clip.right &&
+        restored_clip.bottom == original_clip.bottom &&
+        !overlay.isDirty();
+}
+
 double benchmarkStepSequencerDraw() {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 90)));
@@ -2483,6 +2524,7 @@ int main(int argc, char** argv) {
     std::filesystem::create_directories(output);
     ZigVstgui::RuntimeGuard runtime;
     int result = 0;
+    if (!drawingCallbackExceptionsRestoreContextState()) result = std::max(result, 7);
     {
         const Snapshot snapshots[] = {
             controlStates(1.0),

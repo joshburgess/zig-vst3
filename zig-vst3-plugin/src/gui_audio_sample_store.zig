@@ -1,5 +1,6 @@
 const std = @import("std");
 const realtime_audit = @import("realtime_audit.zig");
+const serial_generation = @import("serial_generation.zig");
 
 pub const maximum_channels = 2;
 
@@ -59,7 +60,9 @@ pub fn Store(comptime maximum_frames: usize) type {
         pub fn begin(self: *Self, metadata: Metadata) StageError!void {
             if (self.staging_slot != no_slot) return error.Busy;
             try metadata.validate(maximum_frames);
-            if (metadata.generation <= self.latest_generation.load(.acquire)) return error.InvalidGeneration;
+            if (!serial_generation.after(metadata.generation, self.latest_generation.load(.acquire))) {
+                return error.InvalidGeneration;
+            }
             const slot_index = self.claimFreeSlot() orelse return error.Busy;
             const slot = &self.slots[slot_index];
             slot.metadata = metadata;
@@ -270,6 +273,22 @@ test "sample store rejects stale incomplete and oversized transfers" {
     try store.write(2, 0, &.{0.75});
     try store.commit(2);
     try std.testing.expectError(error.InvalidGeneration, store.begin(.{ .generation = 2, .sample_rate = 48_000, .channels = 1, .frames = 1 }));
+}
+
+test "sample store publishes across generation rollover" {
+    var store = Store(2){};
+    store.latest_generation.store(std.math.maxInt(u64), .release);
+
+    try store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 1 });
+    try store.write(1, 0, &.{0.75});
+    try store.commit(1);
+    try std.testing.expect(store.adoptPending());
+    try std.testing.expectEqual(@as(u64, 1), store.activeMetadata().?.generation);
+
+    try std.testing.expectError(
+        error.InvalidGeneration,
+        store.begin(.{ .generation = std.math.maxInt(u64) - 1, .sample_rate = 48_000, .channels = 1, .frames = 1 }),
+    );
 }
 
 test "sample store rejects overflowing chunk offsets" {

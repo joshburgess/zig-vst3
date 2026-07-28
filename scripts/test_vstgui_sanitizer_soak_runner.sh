@@ -7,7 +7,8 @@ trap 'rm -rf "$temporary"' EXIT HUP INT TERM
 fake_build="$temporary/build"
 success_output="$temporary/success"
 failure_output="$temporary/failure"
-mkdir -p "$fake_build" "$success_output" "$failure_output"
+interrupt_output="$temporary/interrupt"
+mkdir -p "$fake_build" "$success_output" "$failure_output" "$interrupt_output"
 
 write_success() {
   path="$1"
@@ -51,6 +52,26 @@ grep -q '^classification=failed$' "$failure_run/runner-status.txt"
 grep -q '^status=7$' "$failure_run/runner-status.txt"
 grep -q '^iteration=1$' "$failure_run/runner-status.txt"
 grep -q '^phase=adapter$' "$failure_run/runner-status.txt"
+
+printf '#!/bin/sh\nkill -TERM "$PPID"\nexit 0\n' > "$fake_build/zig_vstgui_adapter_tests"
+chmod +x "$fake_build/zig_vstgui_adapter_tests"
+set +e
+VSTGUI_SANITIZER_SOAK_REPETITIONS=2 \
+VSTGUI_SANITIZER_SOAK_OUTPUT_DIR="$interrupt_output" \
+VSTGUI_SANITIZER_SOAK_BUILD_DIR="$fake_build" \
+VSTGUI_SANITIZER_SOAK_SKIP_BUILD=1 \
+  "$root/scripts/vstgui_sanitizer_soak.sh" > "$temporary/interrupt.stdout" 2> "$temporary/interrupt.stderr"
+interrupt_status=$?
+set -e
+test "$interrupt_status" = 143
+interrupt_run=$(find "$interrupt_output" -mindepth 1 -maxdepth 1 -type d | sed -n '1p')
+test -n "$interrupt_run"
+grep -q '^classification=interrupted$' "$interrupt_run/runner-status.txt"
+grep -q '^signal=TERM$' "$interrupt_run/runner-status.txt"
+grep -q '^status=143$' "$interrupt_run/runner-status.txt"
+grep -q '^iteration=1$' "$interrupt_run/runner-status.txt"
+grep -q '^phase=adapter$' "$interrupt_run/runner-status.txt"
+test ! -e "$interrupt_run/1-adapter.status"
 
 set +e
 VSTGUI_SANITIZER_SOAK_REPETITIONS=0 "$root/scripts/vstgui_sanitizer_soak.sh" > /dev/null 2> "$temporary/invalid.stderr"

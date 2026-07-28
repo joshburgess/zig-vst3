@@ -72,6 +72,7 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
                 self.noteOff(note, playback);
                 return;
             }
+            self.ensureVoiceAgeSpace();
             const index = self.voiceForAttack(playback.voice_limit);
             const bounds = frameBounds(metadata.frames, playback.start, playback.end);
             self.voices[index] = .{
@@ -82,8 +83,7 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
                 .level = if (playback.envelope.attack_seconds <= 0.0) 1.0 else 0.0,
                 .age = self.next_age,
             };
-            self.next_age +%= 1;
-            if (self.next_age == 0) self.next_age = 1;
+            self.next_age += 1;
         }
 
         pub fn noteOff(self: *Self, note: i16, playback: Playback) void {
@@ -176,6 +176,24 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
             return oldest_index;
         }
 
+        fn ensureVoiceAgeSpace(self: *Self) void {
+            if (self.next_age != 0 and self.next_age != std.math.maxInt(u64)) return;
+            var assigned: [voice_count]bool = @splat(false);
+            var next: u64 = 1;
+            for (0..voice_count) |_| {
+                var oldest: ?usize = null;
+                for (self.voices, 0..) |voice, index| {
+                    if (voice.stage == .idle or assigned[index]) continue;
+                    if (oldest == null or voice.age < self.voices[oldest.?].age) oldest = index;
+                }
+                const index = oldest orelse break;
+                self.voices[index].age = next;
+                assigned[index] = true;
+                next += 1;
+            }
+            self.next_age = next;
+        }
+
         fn advanceEnvelope(self: *Self, voice: *Voice, envelope: Envelope) f64 {
             const sustain = std.math.clamp(finiteOr(envelope.sustain, 0.8), 0.0, 1.0);
             switch (voice.stage) {
@@ -222,6 +240,7 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
 
         fn voiceValid(voice: Voice) bool {
             return voice.note >= 0 and voice.note <= 127 and
+                voice.age != 0 and
                 std.math.isFinite(voice.velocity) and voice.velocity >= 0.0 and voice.velocity <= 1.0 and
                 std.math.isFinite(voice.position) and std.math.isFinite(voice.level);
         }
@@ -288,6 +307,29 @@ test "sample player steals the oldest voice deterministically" {
     const limited = player.processFrame(mono_limit);
     try std.testing.expectEqual(@as([2]f32, .{ 1.0, 1.0 }), limited);
     try std.testing.expect(player.voices[1].stage == .idle);
+}
+
+test "sample player rebases exhausted voice ages before stealing" {
+    var player = Player(2, 2){};
+    try player.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
+    try player.store.write(1, 0, &.{ 1.0, 1.0 });
+    try player.store.commit(1);
+    _ = player.adoptPending();
+    const playback = Playback{
+        .loop_enabled = true,
+        .envelope = .{ .attack_seconds = 0.0, .decay_seconds = 0.0, .sustain = 1.0 },
+    };
+    player.noteOn(60, 1.0, playback);
+    player.noteOn(61, 1.0, playback);
+    player.voices[0].age = std.math.maxInt(u64) - 2;
+    player.voices[1].age = std.math.maxInt(u64) - 1;
+    player.next_age = std.math.maxInt(u64);
+
+    player.noteOn(62, 1.0, playback);
+    try std.testing.expectEqual(@as(i16, 62), player.voices[0].note);
+    try std.testing.expectEqual(@as(i16, 61), player.voices[1].note);
+    try std.testing.expect(player.voices[0].age > player.voices[1].age);
+    try std.testing.expectEqual(@as(u64, 4), player.next_age);
 }
 
 test "sample player releases notes and bounds reverse loops" {

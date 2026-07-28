@@ -159,10 +159,12 @@ pub fn run(comptime Config: type, options: Options) !Report {
         .sampleRate = 48_000,
     };
     if (processor.vtable.setupProcessing(processor, &setup) != types.kResultOk) return error.SetupProcessingFailed;
-    var malformed_process = ivstaudioprocessor.ProcessData{ .numSamples = -1 };
-    if (processor.vtable.process(processor, &malformed_process) == types.kResultOk) return error.MalformedProcessAccepted;
+    if (component.vtable.setActive(component, 1) != types.kResultOk) return error.ActivationFailed;
+    defer _ = component.vtable.setActive(component, 0);
     if (processor.vtable.setProcessing(processor, 1) != types.kResultOk) return error.StartProcessingFailed;
     defer _ = processor.vtable.setProcessing(processor, 0);
+    var malformed_process = ivstaudioprocessor.ProcessData{ .numSamples = -1 };
+    if (processor.vtable.process(processor, &malformed_process) == types.kResultOk) return error.MalformedProcessAccepted;
 
     var parameter_ids: [maximum_parameters]vsttypes.ParamID = @splat(0);
     const declared_parameter_count = controller.vtable.getParameterCount(controller);

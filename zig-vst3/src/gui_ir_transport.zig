@@ -17,6 +17,11 @@ const Operation = enum(i64) {
 
 const TransportMessage = vst_message.Message(32, 7, 1, samples_per_chunk * @sizeOf(f32));
 
+pub fn nextGeneration(current: u64) u64 {
+    const next = current +% 1;
+    return if (next == 0) 1 else next;
+}
+
 pub fn sendDecoded(
     peer: ?*ivstmessage.IConnectionPoint,
     target_id: u32,
@@ -24,7 +29,7 @@ pub fn sendDecoded(
 ) types.tresult {
     const snapshot = importer.snapshot();
     if (snapshot.import.status != .ready or snapshot.decoded_frames == 0 or
-        snapshot.sample_frames != snapshot.decoded_frames or snapshot.import.generation > std.math.maxInt(i64))
+        snapshot.sample_frames != snapshot.decoded_frames)
     {
         return types.kInvalidArgument;
     }
@@ -39,11 +44,11 @@ pub fn sendDecodedGeneration(
 ) types.tresult {
     const target = peer orelse return types.kResultFalse;
     const snapshot = importer.snapshot();
-    if (!validSnapshot(snapshot) or transfer_generation == 0 or transfer_generation > std.math.maxInt(i64)) {
+    if (!validSnapshot(snapshot) or transfer_generation == 0) {
         return types.kInvalidArgument;
     }
     const sample_count = std.math.mul(usize, snapshot.decoded_frames, snapshot.channels) catch return types.kInvalidArgument;
-    const generation: i64 = @intCast(transfer_generation);
+    const generation: i64 = @bitCast(transfer_generation);
     if (sendHeader(target, .begin, target_id, generation, snapshot.sample_rate, snapshot.channels, snapshot.decoded_frames) != types.kResultOk) {
         return types.kResultFalse;
     }
@@ -94,8 +99,8 @@ fn finiteSamples(samples: []const f32) bool {
 }
 
 pub fn sendClear(peer: ?*ivstmessage.IConnectionPoint, target_id: u32, generation: u64) types.tresult {
-    if (generation == 0 or generation > std.math.maxInt(i64)) return types.kInvalidArgument;
-    return sendScalar(peer orelse return types.kResultFalse, .clear, target_id, @intCast(generation));
+    if (generation == 0) return types.kInvalidArgument;
+    return sendScalar(peer orelse return types.kResultFalse, .clear, target_id, @bitCast(generation));
 }
 
 pub fn receive(convolver: anytype, expected_target_id: u32, message: ?*ivstmessage.IMessage) types.tresult {
@@ -108,7 +113,7 @@ pub fn receive(convolver: anytype, expected_target_id: u32, message: ?*ivstmessa
     if (attributes.vtable.getInt(attributes, "operation", &operation_value) != types.kResultOk or
         attributes.vtable.getInt(attributes, "target", &target_value) != types.kResultOk or
         attributes.vtable.getInt(attributes, "generation", &generation_value) != types.kResultOk or
-        target_value != expected_target_id or generation_value <= 0)
+        target_value != expected_target_id or generation_value == 0)
     {
         return types.kInvalidArgument;
     }
@@ -120,7 +125,7 @@ pub fn receive(convolver: anytype, expected_target_id: u32, message: ?*ivstmessa
         5 => .clear,
         else => return types.kInvalidArgument,
     };
-    const generation: u64 = @intCast(generation_value);
+    const generation: u64 = @bitCast(generation_value);
     switch (operation) {
         .begin => {
             var sample_rate: i64 = 0;
@@ -237,6 +242,13 @@ fn decodeSamples(bytes: []const u8, samples: []f32) void {
     for (samples, 0..) |*sample, index| sample.* = @bitCast(std.mem.readInt(u32, bytes[index * 4 ..][0..4], .little));
 }
 
+test "IR transport generation spans the signed wire representation" {
+    try std.testing.expectEqual(@as(u64, 1), nextGeneration(0));
+    try std.testing.expectEqual(@as(u64, 2), nextGeneration(1));
+    try std.testing.expectEqual(@as(u64, std.math.maxInt(i64)) + 1, nextGeneration(std.math.maxInt(i64)));
+    try std.testing.expectEqual(@as(u64, 1), nextGeneration(std.math.maxInt(u64)));
+}
+
 test "IR transport stages bounded chunks and commits one generation" {
     const Convolver = core.gui_ir_convolution.PartitionedConvolver(16, 8);
     const ReceiverConfig = struct {
@@ -255,6 +267,34 @@ test "IR transport stages bounded chunks and commits one generation" {
     try std.testing.expectEqual(types.kResultOk, sendScalar(receiver.asInterface(), .commit, 9, 4));
     try std.testing.expect(ReceiverConfig.convolver.adoptPending());
     try std.testing.expectEqual(@as(u64, 4), ReceiverConfig.convolver.activeMetadata().?.generation);
+}
+
+test "IR transport preserves unsigned generations through signed attributes" {
+    const Convolver = core.gui_ir_convolution.PartitionedConvolver(16, 8);
+    const ReceiverConfig = struct {
+        var convolver = Convolver.init(48_000);
+
+        pub fn notify(_: anytype, message: ?*ivstmessage.IMessage) types.tresult {
+            return receive(&convolver, 10, message);
+        }
+    };
+    const Receiver = vst_message.ConnectionPoint(ReceiverConfig);
+    var receiver = Receiver{};
+    var payload: [4]u8 = undefined;
+    encodeSamples(&.{1.0}, &payload);
+
+    const maximum_generation: i64 = @bitCast(@as(u64, std.math.maxInt(u64)));
+    try std.testing.expectEqual(types.kResultOk, sendHeader(receiver.asInterface(), .begin, 10, maximum_generation, 48_000, 1, 1));
+    try std.testing.expectEqual(types.kResultOk, sendChunk(receiver.asInterface(), 10, maximum_generation, 0, &payload));
+    try std.testing.expectEqual(types.kResultOk, sendScalar(receiver.asInterface(), .commit, 10, maximum_generation));
+    try std.testing.expect(ReceiverConfig.convolver.adoptPending());
+    try std.testing.expectEqual(std.math.maxInt(u64), ReceiverConfig.convolver.activeMetadata().?.generation);
+
+    try std.testing.expectEqual(types.kResultOk, sendHeader(receiver.asInterface(), .begin, 10, 1, 48_000, 1, 1));
+    try std.testing.expectEqual(types.kResultOk, sendChunk(receiver.asInterface(), 10, 1, 0, &payload));
+    try std.testing.expectEqual(types.kResultOk, sendScalar(receiver.asInterface(), .commit, 10, 1));
+    try std.testing.expect(ReceiverConfig.convolver.adoptPending());
+    try std.testing.expectEqual(@as(u64, 1), ReceiverConfig.convolver.activeMetadata().?.generation);
 }
 
 const HostileImporter = struct {

@@ -36,7 +36,8 @@ pub const Mailbox = struct {
         const slot = &self.slots[@intCast(command.pitch)];
         var previous = slot.load(.monotonic);
         while (true) {
-            const sequence = ((previous >> sequence_shift) + 1) & sequence_mask;
+            const previous_sequence = (previous >> sequence_shift) & sequence_mask;
+            const sequence = if (previous_sequence == sequence_mask) 1 else previous_sequence + 1;
             const velocity: u64 = @intFromFloat(@round(
                 command.velocity * @as(f64, @floatFromInt(velocity_mask)),
             ));
@@ -149,6 +150,24 @@ test "mailbox keeps the latest state and releases before presses" {
     try std.testing.expectEqual(@as(usize, 1), count);
     try std.testing.expectEqual(@as(i16, 64), commands[0].pitch);
     try std.testing.expect(commands[0].pressed);
+}
+
+test "mailbox sequence rollover preserves a channel zero release" {
+    var mailbox = Mailbox{};
+    const pitch = 60;
+    const saturated_sequence = Mailbox.sequence_mask << Mailbox.sequence_shift;
+    mailbox.slots[pitch].store(saturated_sequence, .monotonic);
+    var seen: [128]u64 = @splat(0);
+    seen[pitch] = saturated_sequence;
+
+    try mailbox.publish(.{ .channel = 0, .pitch = pitch, .velocity = 0.0, .pressed = false });
+    try std.testing.expect(mailbox.slots[pitch].load(.monotonic) != 0);
+    var commands: [1]Command = undefined;
+    try std.testing.expectEqual(@as(usize, 1), mailbox.collect(&seen, &commands));
+    try std.testing.expectEqual(@as(i16, pitch), commands[0].pitch);
+    try std.testing.expectEqual(@as(i16, 0), commands[0].channel);
+    try std.testing.expect(!commands[0].pressed);
+    try std.testing.expectEqual(@as(f64, 0.0), commands[0].velocity);
 }
 
 test "connection message round trips into the mailbox" {

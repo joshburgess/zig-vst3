@@ -256,7 +256,12 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         pub fn workerRunning(self: *const Self) bool {
-            return self.worker.worker_running.load(.acquire);
+            if (!self.worker.worker_running.load(.acquire)) return false;
+            const mutable: *Self = @constCast(self);
+            mutable.lock();
+            defer mutable.unlock();
+            const status = self.model.snapshot().status;
+            return status == .validating or status == .importing;
         }
 
         pub fn reset(self: *Self) bool {

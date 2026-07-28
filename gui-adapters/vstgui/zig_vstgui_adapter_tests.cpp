@@ -416,6 +416,10 @@ int testAccessibilityNode() {
     if (node.generation() != generation) return 7;
     node.clearRange();
     if (node.range().present || observer.last != ZigVstgui::AccessibilityChange::range) return 8;
+    node.setRange(0.0, 1.0, std::numeric_limits<double>::quiet_NaN());
+    if (!node.range().present || !closeEnough(node.range().current, 0.0)) return 14;
+    node.setRange(std::numeric_limits<double>::infinity(), 1.0, 0.5);
+    if (node.range().present) return 15;
     if (node.perform(ZigVstgui::AccessibilityAction::press)) return 9;
     node.setEnabled(true);
     node.setReadOnly(false);
@@ -454,6 +458,21 @@ int testGestureOwnership() {
 
     model.hostChanged(-0.5);
     if (!closeEnough(model.acceptedValue(), 0.0)) return 10;
+
+    ZigVstgui::ParameterControlModel malformed(
+        43,
+        std::numeric_limits<double>::quiet_NaN(),
+        callbacks
+    );
+    if (!closeEnough(malformed.acceptedValue(), 0.0)) return 11;
+    malformed.hostChanged(std::numeric_limits<double>::infinity());
+    if (!closeEnough(malformed.acceptedValue(), 1.0)) return 12;
+    state.reject = false;
+    if (!malformed.beginGesture() ||
+        !malformed.performEdit(std::numeric_limits<double>::quiet_NaN())) return 13;
+    if (!closeEnough(malformed.acceptedValue(), 0.0) ||
+        !closeEnough(state.last_value, 0.0)) return 14;
+    malformed.endGesture();
     return 0;
 }
 
@@ -467,12 +486,19 @@ int testEditorRuntimeFontLifecycle() {
             zig_vstgui_editor_destroy(editor);
             return static_cast<int>(iteration + 1);
         }
+        if (zig_vstgui_editor_native_widget(editor) != nullptr ||
+            zig_vstgui_editor_idle(editor) != 0) {
+            zig_vstgui_editor_destroy(editor);
+            return static_cast<int>(iteration + 5);
+        }
         if (editor->parameterControlValueGap(1) < ZigVstgui::defaultTheme().spacing.medium) {
             zig_vstgui_editor_destroy(editor);
             return static_cast<int>(iteration + 3);
         }
         zig_vstgui_editor_destroy(editor);
     }
+    if (zig_vstgui_editor_native_widget(nullptr) != nullptr ||
+        zig_vstgui_editor_idle(nullptr) == 0) return 7;
     return 0;
 }
 
@@ -1459,7 +1485,7 @@ int testAssetsAndFonts() {
     ZigVstgui::AssetStore assets;
     if (!assets.load(&svg_asset, 1) || assets.count() != 1 || !assets.find(7)) return 10;
     const ZigVstguiAssetDescription duplicate_assets[] = {svg_asset, svg_asset};
-    if (assets.load(duplicate_assets, 2)) return 11;
+    if (assets.load(duplicate_assets, 2) || assets.count() != 1 || !assets.find(7)) return 11;
 
     const std::vector<std::string> families {"Fallback Sans", "Preferred Sans"};
     if (ZigVstgui::chooseFontFamily("Preferred Sans", "Fallback Sans", families) != "Preferred Sans") return 12;

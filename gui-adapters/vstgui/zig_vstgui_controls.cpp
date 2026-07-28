@@ -44,6 +44,7 @@ std::string humanizeEnumLabel(std::string label) {
 }
 
 double clampNormalized(double value) {
+    if (std::isnan(value)) return 0.0;
     return std::clamp(value, 0.0, 1.0);
 }
 
