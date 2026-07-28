@@ -5,10 +5,84 @@ const events_mod = @import("events.zig");
 const ordered = @import("ordered.zig");
 
 pub const max_audio_channels = 64;
+pub const max_auxiliary_audio_buses =
+    @import("../plugin/audio_layout.zig").max_auxiliary_audio_buses;
+
+pub const ProcessMode = enum {
+    realtime,
+    prefetch,
+    offline,
+};
+
+pub const TimeSignature = struct {
+    numerator: u16,
+    denominator: u16,
+
+    pub fn valid(self: TimeSignature) bool {
+        return self.numerator > 0 and
+            self.denominator > 0 and
+            std.math.isPowerOfTwo(self.denominator);
+    }
+};
+
+pub const CycleRange = struct {
+    start_quarter_notes: f64,
+    end_quarter_notes: f64,
+
+    pub fn valid(self: CycleRange) bool {
+        return std.math.isFinite(self.start_quarter_notes) and
+            std.math.isFinite(self.end_quarter_notes) and
+            self.end_quarter_notes >= self.start_quarter_notes;
+    }
+};
+
+pub const Transport = struct {
+    project_time_samples: i64,
+    state_valid: bool = false,
+    playing: bool = false,
+    recording: bool = false,
+    cycle_active: bool = false,
+    tempo_bpm: ?f64 = null,
+    project_quarter_notes: ?f64 = null,
+    bar_position_quarter_notes: ?f64 = null,
+    cycle: ?CycleRange = null,
+    time_signature: ?TimeSignature = null,
+
+    pub fn valid(self: Transport) bool {
+        if (self.tempo_bpm) |tempo| {
+            if (!std.math.isFinite(tempo) or tempo <= 0.0 or tempo > 1_000.0)
+                return false;
+        }
+        if (self.project_quarter_notes) |position| {
+            if (!std.math.isFinite(position)) return false;
+        }
+        if (self.bar_position_quarter_notes) |position| {
+            if (!std.math.isFinite(position)) return false;
+        }
+        if (self.cycle) |cycle| {
+            if (!cycle.valid()) return false;
+        }
+        if (self.time_signature) |signature| {
+            if (!signature.valid()) return false;
+        }
+        return true;
+    }
+
+    pub fn tempoOr(self: Transport, fallback_bpm: f64) f64 {
+        if (self.tempo_bpm) |tempo| return tempo;
+        return if (std.math.isFinite(fallback_bpm) and
+            fallback_bpm > 0.0 and
+            fallback_bpm <= 1_000.0)
+            fallback_bpm
+        else
+            120.0;
+    }
+};
 
 pub const BlockSegment = changes_mod.BlockSegment;
 pub const BlockSegmentIterator = changes_mod.BlockSegmentIterator;
 pub const ParameterChange = changes_mod.ParameterChange;
+pub const ParameterRamp = changes_mod.ParameterRamp;
 pub const BlockParameterLatch = changes_mod.BlockParameterLatch;
 pub const ParameterChangeIdIterator = changes_mod.ParameterChangeIdIterator;
 pub const ParameterChangeIdOffsetIterator = changes_mod.ParameterChangeIdOffsetIterator;
@@ -228,26 +302,156 @@ pub fn AudioOutputs(comptime Sample: type) type {
     };
 }
 
+pub const AudioBusRange = struct {
+    channel_offset: usize,
+    channel_count: usize,
+};
+
+pub fn BoundedAudioBusRanges(
+    comptime maximum_auxiliary_buses: usize,
+) type {
+    if (maximum_auxiliary_buses >= std.math.maxInt(u8))
+        @compileError("audio bus range capacity must be at most 254");
+
+    return struct {
+        const Self = @This();
+
+        pub const capacity = maximum_auxiliary_buses;
+
+        ranges: [maximum_auxiliary_buses]AudioBusRange =
+            [_]AudioBusRange{.{ .channel_offset = 0, .channel_count = 0 }} **
+            maximum_auxiliary_buses,
+        count: usize = 0,
+
+        pub fn init(
+            channel_counts: []const usize,
+            total_channels: usize,
+        ) !Self {
+            if (channel_counts.len > maximum_auxiliary_buses)
+                return error.TooManyAudioBuses;
+            if (channel_counts.len == 0) {
+                if (total_channels == 0) return .{};
+                if (maximum_auxiliary_buses == 0)
+                    return error.TooManyAudioBuses;
+                return .{
+                    .ranges = init_ranges: {
+                        var ranges =
+                            [_]AudioBusRange{.{ .channel_offset = 0, .channel_count = 0 }} **
+                            maximum_auxiliary_buses;
+                        ranges[0].channel_count = total_channels;
+                        break :init_ranges ranges;
+                    },
+                    .count = 1,
+                };
+            }
+            var result = Self{ .count = channel_counts.len };
+            var offset: usize = 0;
+            for (channel_counts, 0..) |channel_count, index| {
+                const next = std.math.add(
+                    usize,
+                    offset,
+                    channel_count,
+                ) catch return error.TooManyChannels;
+                if (next > total_channels)
+                    return error.InvalidAudioBusChannels;
+                if (comptime maximum_auxiliary_buses != 0) {
+                    result.ranges[index] = .{
+                        .channel_offset = offset,
+                        .channel_count = channel_count,
+                    };
+                }
+                offset = next;
+            }
+            if (offset != total_channels)
+                return error.InvalidAudioBusChannels;
+            return result;
+        }
+
+        pub fn range(
+            self: Self,
+            index: usize,
+        ) ?AudioBusRange {
+            if (index >= self.count or
+                self.count > maximum_auxiliary_buses)
+                return null;
+            return self.ranges[index];
+        }
+
+        pub fn busCount(self: Self) usize {
+            return if (self.count <= maximum_auxiliary_buses)
+                self.count
+            else
+                0;
+        }
+
+        pub fn valid(
+            self: Self,
+            total_channels: usize,
+        ) bool {
+            if (self.count > maximum_auxiliary_buses) return false;
+            if (self.count == 0) return total_channels == 0;
+            var expected_offset: usize = 0;
+            for (self.ranges[0..self.count]) |item| {
+                if (item.channel_offset != expected_offset)
+                    return false;
+                expected_offset = std.math.add(
+                    usize,
+                    expected_offset,
+                    item.channel_count,
+                ) catch return false;
+                if (expected_offset > total_channels) return false;
+            }
+            return expected_offset == total_channels;
+        }
+    };
+}
+
+pub const AudioBusRanges =
+    BoundedAudioBusRanges(max_auxiliary_audio_buses);
+
 pub const ProcessAttachments = struct {
     parameter_changes: []const ParameterChange = &.{},
+    parameter_change_sequences: []const usize = &.{},
+    parameter_ramps: []const ParameterRamp = &.{},
     events: []const Event = &.{},
     output_events: ?*EventWriter = null,
 };
 
-pub fn ProcessContext(comptime Sample: type) type {
+pub fn BoundedProcessContext(
+    comptime Sample: type,
+    comptime maximum_auxiliary_buses: usize,
+) type {
+    const BusRanges =
+        BoundedAudioBusRanges(maximum_auxiliary_buses);
+
     return struct {
+        pub const auxiliary_bus_capacity =
+            maximum_auxiliary_buses;
+
         sample_rate: f64,
+        mode: ProcessMode = .realtime,
         inputs: AudioInputs(Sample) = .{},
+        sidechain_inputs: AudioInputs(Sample) = .{},
+        auxiliary_input_ranges: BusRanges = .{},
         outputs: AudioOutputs(Sample) = .{},
+        auxiliary_outputs: AudioOutputs(Sample) = .{},
+        auxiliary_output_ranges: BusRanges = .{},
         parameter_changes: ParameterChanges = .{},
         events: Events = .{},
         output_events: ?*EventWriter = null,
+        host_transport: ?Transport = null,
 
         pub const InitOptions = struct {
             sample_rate: f64,
+            process_mode: ProcessMode = .realtime,
             input_channels: []const []const Sample = &.{},
+            sidechain_input_channels: []const []const Sample = &.{},
+            auxiliary_input_bus_channel_counts: []const usize = &.{},
             output_channels: []const []Sample = &.{},
+            auxiliary_output_channels: []const []Sample = &.{},
+            auxiliary_output_bus_channel_counts: []const usize = &.{},
             attachments: ProcessAttachments = .{},
+            transport: ?Transport = null,
         };
 
         pub fn init(sample_rate: f64, input_channels: []const []const Sample, output_channels: []const []Sample) !@This() {
@@ -262,15 +466,45 @@ pub fn ProcessContext(comptime Sample: type) type {
             if (!common.isPositiveFinite(options.sample_rate)) {
                 return error.InvalidSampleRate;
             }
+            if (options.transport) |host_transport| {
+                if (!host_transport.valid()) return error.InvalidTransport;
+            }
             const inputs = try AudioInputs(Sample).init(options.input_channels);
+            const sidechain_inputs = try AudioInputs(Sample).init(options.sidechain_input_channels);
+            const auxiliary_input_ranges = try BusRanges.init(
+                options.auxiliary_input_bus_channel_counts,
+                sidechain_inputs.channelCount(),
+            );
             const outputs = try AudioOutputs(Sample).init(options.output_channels);
+            const auxiliary_outputs = try AudioOutputs(Sample).init(options.auxiliary_output_channels);
+            const auxiliary_output_ranges = try BusRanges.init(
+                options.auxiliary_output_bus_channel_counts,
+                auxiliary_outputs.channelCount(),
+            );
             try validateProcessFrameCounts(inputs.channelCount(), inputs.frameCount(), outputs.channelCount(), outputs.frameCount());
+            const frame_count = processFrameCount(inputs.channelCount(), inputs.frameCount(), outputs.frameCount());
+            if (sidechain_inputs.hasChannels() and sidechain_inputs.frameCount() != frame_count) {
+                return error.MismatchedFrameCount;
+            }
+            if (auxiliary_outputs.hasChannels() and auxiliary_outputs.frameCount() != frame_count) {
+                return error.MismatchedFrameCount;
+            }
             var context = @This(){
                 .sample_rate = options.sample_rate,
+                .mode = options.process_mode,
                 .inputs = inputs,
+                .sidechain_inputs = sidechain_inputs,
+                .auxiliary_input_ranges = auxiliary_input_ranges,
                 .outputs = outputs,
+                .auxiliary_outputs = auxiliary_outputs,
+                .auxiliary_output_ranges = auxiliary_output_ranges,
+                .host_transport = options.transport,
             };
-            try context.setParameterChanges(options.attachments.parameter_changes);
+            try context.setParameterAutomation(
+                options.attachments.parameter_changes,
+                options.attachments.parameter_change_sequences,
+                options.attachments.parameter_ramps,
+            );
             try context.setEvents(options.attachments.events);
             if (options.attachments.output_events) |writer| try context.setOutputEvents(writer);
             return context;
@@ -294,17 +528,34 @@ pub fn ProcessContext(comptime Sample: type) type {
             self.parameter_changes = try ParameterChanges.init(changes, self.frameCount());
         }
 
+        pub fn setParameterAutomation(
+            self: *@This(),
+            changes: []const ParameterChange,
+            change_sequences: []const usize,
+            ramps: []const ParameterRamp,
+        ) !void {
+            self.parameter_changes = try ParameterChanges.initWithRamps(
+                changes,
+                change_sequences,
+                ramps,
+                self.frameCount(),
+            );
+        }
+
         pub fn setEvents(self: *@This(), events: []const Event) !void {
             self.events = try Events.init(events, self.frameCount());
         }
 
         pub fn setOutputEvents(self: *@This(), writer: *EventWriter) !void {
             if (writer.frame_count != self.frameCount()) return error.MismatchedFrameCount;
+            if (!writer.valid()) return error.InvalidState;
             self.output_events = writer;
         }
 
         pub fn outputEventWriter(self: *const @This()) ?*EventWriter {
-            return self.output_events;
+            const writer = self.output_events orelse return null;
+            if (writer.frame_count != self.frameCount() or !writer.valid()) return null;
+            return writer;
         }
 
         fn requireOutputEventWriter(self: *const @This()) !*EventWriter {
@@ -313,6 +564,37 @@ pub fn ProcessContext(comptime Sample: type) type {
 
         pub fn sampleRate(self: *const @This()) f64 {
             return self.sample_rate;
+        }
+
+        pub fn processMode(self: *const @This()) ProcessMode {
+            return self.mode;
+        }
+
+        pub fn transport(self: *const @This()) ?Transport {
+            const value = self.host_transport orelse return null;
+            return if (value.valid()) value else null;
+        }
+
+        pub fn hostTempoBpm(self: *const @This()) ?f64 {
+            const value = self.transport() orelse return null;
+            return value.tempo_bpm;
+        }
+
+        pub fn projectTimeSamples(self: *const @This()) ?i64 {
+            const value = self.transport() orelse return null;
+            return value.project_time_samples;
+        }
+
+        pub fn isRealtime(self: *const @This()) bool {
+            return self.mode == .realtime;
+        }
+
+        pub fn isPrefetch(self: *const @This()) bool {
+            return self.mode == .prefetch;
+        }
+
+        pub fn isOffline(self: *const @This()) bool {
+            return self.mode == .offline;
         }
 
         pub fn sampleDurationSeconds(self: *const @This()) f64 {
@@ -353,6 +635,20 @@ pub fn ProcessContext(comptime Sample: type) type {
 
         pub fn parameterChanges(self: *const @This()) ParameterChanges {
             return self.parameter_changes;
+        }
+
+        pub fn parameterRamps(
+            self: *const @This(),
+        ) []const ParameterRamp {
+            return self.parameter_changes.ramps;
+        }
+
+        pub fn parameterRampCount(self: *const @This()) usize {
+            return self.parameter_changes.rampCount();
+        }
+
+        pub fn hasParameterRamps(self: *const @This()) bool {
+            return self.parameterRampCount() != 0;
         }
 
         pub fn parameterChangesForId(self: *const @This(), id: u32) ParameterChangeIdIterator {
@@ -1502,12 +1798,70 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.outputs;
         }
 
+        pub fn sidechainInputAudio(self: *const @This()) AudioInputs(Sample) {
+            return self.sidechain_inputs;
+        }
+
+        pub fn auxiliaryOutputAudio(self: *const @This()) AudioOutputs(Sample) {
+            return self.auxiliary_outputs;
+        }
+
+        pub fn auxiliaryInputBus(
+            self: *const @This(),
+            index: usize,
+        ) ?AudioInputs(Sample) {
+            const range = self.auxiliary_input_ranges.range(index) orelse
+                return null;
+            const channel_end = std.math.add(
+                usize,
+                range.channel_offset,
+                range.channel_count,
+            ) catch return null;
+            if (channel_end > self.sidechain_inputs.channelCount()) return null;
+            return AudioInputs(Sample).init(
+                self.sidechain_inputs.channels[range.channel_offset..channel_end],
+            ) catch null;
+        }
+
+        pub fn auxiliaryOutputBus(
+            self: *const @This(),
+            index: usize,
+        ) ?AudioOutputs(Sample) {
+            const range = self.auxiliary_output_ranges.range(index) orelse
+                return null;
+            const channel_end = std.math.add(
+                usize,
+                range.channel_offset,
+                range.channel_count,
+            ) catch return null;
+            if (channel_end > self.auxiliary_outputs.channelCount()) return null;
+            return AudioOutputs(Sample).init(
+                self.auxiliary_outputs.channels[range.channel_offset..channel_end],
+            ) catch null;
+        }
+
+        pub fn auxiliaryInputBusCount(self: *const @This()) usize {
+            return self.auxiliary_input_ranges.busCount();
+        }
+
+        pub fn auxiliaryOutputBusCount(self: *const @This()) usize {
+            return self.auxiliary_output_ranges.busCount();
+        }
+
         pub fn fillOutputs(self: *const @This(), value: Sample) void {
             self.outputs.fill(value);
         }
 
         pub fn clearOutputs(self: *const @This()) void {
             self.outputs.clear();
+        }
+
+        pub fn fillAuxiliaryOutputs(self: *const @This(), value: Sample) void {
+            self.auxiliary_outputs.fill(value);
+        }
+
+        pub fn clearAuxiliaryOutputs(self: *const @This()) void {
+            self.auxiliary_outputs.clear();
         }
 
         pub fn inputChannel(self: *const @This(), index: usize) ?[]const Sample {
@@ -1518,6 +1872,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.outputs.channel(index);
         }
 
+        pub fn sidechainInputChannel(self: *const @This(), index: usize) ?[]const Sample {
+            return self.sidechain_inputs.channel(index);
+        }
+
+        pub fn auxiliaryOutputChannel(self: *const @This(), index: usize) ?[]Sample {
+            return self.auxiliary_outputs.channel(index);
+        }
+
         pub fn inputSample(self: *const @This(), channel_index: usize, frame_index: usize) ?Sample {
             return self.inputs.sample(channel_index, frame_index);
         }
@@ -1526,8 +1888,20 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.outputs.sample(channel_index, frame_index);
         }
 
+        pub fn sidechainInputSample(self: *const @This(), channel_index: usize, frame_index: usize) ?Sample {
+            return self.sidechain_inputs.sample(channel_index, frame_index);
+        }
+
+        pub fn auxiliaryOutputSample(self: *const @This(), channel_index: usize, frame_index: usize) ?Sample {
+            return self.auxiliary_outputs.sample(channel_index, frame_index);
+        }
+
         pub fn setOutputSample(self: *const @This(), channel_index: usize, frame_index: usize, value: Sample) bool {
             return self.outputs.setSample(channel_index, frame_index, value);
+        }
+
+        pub fn setAuxiliaryOutputSample(self: *const @This(), channel_index: usize, frame_index: usize, value: Sample) bool {
+            return self.auxiliary_outputs.setSample(channel_index, frame_index, value);
         }
 
         pub fn hasInputChannel(self: *const @This(), index: usize) bool {
@@ -1554,12 +1928,36 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.outputs.channelCount();
         }
 
+        pub fn sidechainInputChannelCount(self: *const @This()) usize {
+            return self.sidechain_inputs.channelCount();
+        }
+
+        pub fn auxiliaryOutputChannelCount(self: *const @This()) usize {
+            return self.auxiliary_outputs.channelCount();
+        }
+
         pub fn inputChannelsEmpty(self: *const @This()) bool {
             return self.inputs.isEmpty();
         }
 
         pub fn hasInputChannels(self: *const @This()) bool {
             return self.inputs.hasChannels();
+        }
+
+        pub fn hasSidechainInputChannels(self: *const @This()) bool {
+            return self.sidechain_inputs.hasChannels();
+        }
+
+        pub fn sidechainInputChannelsEmpty(self: *const @This()) bool {
+            return self.sidechain_inputs.isEmpty();
+        }
+
+        pub fn hasAuxiliaryOutputChannels(self: *const @This()) bool {
+            return self.auxiliary_outputs.hasChannels();
+        }
+
+        pub fn auxiliaryOutputChannelsEmpty(self: *const @This()) bool {
+            return self.auxiliary_outputs.isEmpty();
         }
 
         pub fn outputChannelsEmpty(self: *const @This()) bool {
@@ -1578,10 +1976,25 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.outputs.frameCount();
         }
 
+        pub fn sidechainInputFrameCount(self: *const @This()) usize {
+            return self.sidechain_inputs.frameCount();
+        }
+
+        pub fn auxiliaryOutputFrameCount(self: *const @This()) usize {
+            return self.auxiliary_outputs.frameCount();
+        }
+
         pub fn frameCount(self: *const @This()) usize {
             return processFrameCount(self.inputChannelCount(), self.inputFrameCount(), self.outputFrameCount());
         }
     };
+}
+
+pub fn ProcessContext(comptime Sample: type) type {
+    return BoundedProcessContext(
+        Sample,
+        max_auxiliary_audio_buses,
+    );
 }
 test "audio input view validates channel frame counts" {
     const left = [_]f32{ 0.1, 0.2 };
@@ -1832,6 +2245,243 @@ test "process context rejects side-to-side frame count mismatch" {
     try std.testing.expectError(error.MismatchedFrameCount, ProcessContext(f32).init(48_000.0, &input_channels, &output_channels));
 }
 
+test "process context keeps sidechain input separate from main audio" {
+    const main_left = [_]f32{ 0.1, 0.2, 0.3 };
+    const main_right = [_]f32{ 0.4, 0.5, 0.6 };
+    const sidechain = [_]f32{ 0.7, 0.8, 0.9 };
+    var output_left = [_]f32{ 0.0, 0.0, 0.0 };
+    var output_right = [_]f32{ 0.0, 0.0, 0.0 };
+    const main_channels = [_][]const f32{ &main_left, &main_right };
+    const sidechain_channels = [_][]const f32{&sidechain};
+    const output_channels = [_][]f32{ &output_left, &output_right };
+
+    const context = try ProcessContext(f32).initWithOptions(.{
+        .sample_rate = 48_000.0,
+        .input_channels = &main_channels,
+        .sidechain_input_channels = &sidechain_channels,
+        .output_channels = &output_channels,
+    });
+
+    try std.testing.expectEqual(@as(usize, 3), context.frameCount());
+    try std.testing.expectEqual(@as(usize, 2), context.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 1), context.sidechainInputChannelCount());
+    try std.testing.expectEqual(@as(usize, 2), context.outputChannelCount());
+    try std.testing.expectEqual(@as(usize, 3), context.sidechainInputFrameCount());
+    try std.testing.expect(context.hasSidechainInputChannels());
+    try std.testing.expect(!context.sidechainInputChannelsEmpty());
+    try std.testing.expectEqual(@as(?f32, 0.5), context.inputSample(1, 1));
+    try std.testing.expectEqual(@as(?f32, 0.8), context.sidechainInputSample(0, 1));
+    try std.testing.expectEqual(@as(?f32, null), context.sidechainInputSample(1, 0));
+    try std.testing.expectEqual(@as(f32, 0.9), context.sidechainInputChannel(0).?[2]);
+    try std.testing.expectEqual(@as(usize, 1), context.sidechainInputAudio().channelCount());
+}
+
+test "process context rejects mismatched sidechain frame count" {
+    const main = [_]f32{ 0.1, 0.2, 0.3 };
+    const sidechain = [_]f32{ 0.4, 0.5 };
+    var output = [_]f32{ 0.0, 0.0, 0.0 };
+
+    try std.testing.expectError(error.MismatchedFrameCount, ProcessContext(f32).initWithOptions(.{
+        .sample_rate = 48_000.0,
+        .input_channels = &[_][]const f32{&main},
+        .sidechain_input_channels = &[_][]const f32{&sidechain},
+        .output_channels = &[_][]f32{&output},
+    }));
+}
+
+test "process context keeps auxiliary output separate from the main output" {
+    const input = [_]f32{ 0.1, 0.2 };
+    var main_output = [_]f32{ 0.0, 0.0 };
+    var auxiliary_output = [_]f32{ 0.0, 0.0 };
+    const context = try ProcessContext(f32).initWithOptions(.{
+        .sample_rate = 48_000.0,
+        .input_channels = &[_][]const f32{&input},
+        .output_channels = &[_][]f32{&main_output},
+        .auxiliary_output_channels = &[_][]f32{&auxiliary_output},
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), context.auxiliaryOutputChannelCount());
+    try std.testing.expectEqual(@as(usize, 2), context.auxiliaryOutputFrameCount());
+    try std.testing.expect(context.hasAuxiliaryOutputChannels());
+    try std.testing.expect(!context.auxiliaryOutputChannelsEmpty());
+    try std.testing.expect(context.setAuxiliaryOutputSample(0, 1, 0.75));
+    try std.testing.expectEqual(@as(?f32, 0.75), context.auxiliaryOutputSample(0, 1));
+    try std.testing.expectEqual(@as(f32, 0.0), main_output[1]);
+    context.fillAuxiliaryOutputs(0.25);
+    try std.testing.expectEqual(@as(f32, 0.25), auxiliary_output[0]);
+    context.clearAuxiliaryOutputs();
+    try std.testing.expectEqual(@as(f32, 0.0), auxiliary_output[0]);
+}
+
+test "process context rejects mismatched auxiliary output frame count" {
+    const input = [_]f32{ 0.1, 0.2 };
+    var main_output = [_]f32{ 0.0, 0.0 };
+    var auxiliary_output = [_]f32{0.0};
+
+    try std.testing.expectError(error.MismatchedFrameCount, ProcessContext(f32).initWithOptions(.{
+        .sample_rate = 48_000.0,
+        .input_channels = &[_][]const f32{&input},
+        .output_channels = &[_][]f32{&main_output},
+        .auxiliary_output_channels = &[_][]f32{&auxiliary_output},
+    }));
+}
+
+test "process context preserves auxiliary input and output bus boundaries" {
+    const main_input = [_]f32{ 0.1, 0.2 };
+    const auxiliary_input_mono = [_]f32{ 1.0, 1.1 };
+    const auxiliary_input_left = [_]f32{ 2.0, 2.1 };
+    const auxiliary_input_right = [_]f32{ 3.0, 3.1 };
+    var main_output = [_]f32{ 0.0, 0.0 };
+    var auxiliary_output_mono = [_]f32{ 0.0, 0.0 };
+    var auxiliary_output_left = [_]f32{ 0.0, 0.0 };
+    var auxiliary_output_right = [_]f32{ 0.0, 0.0 };
+    const context = try ProcessContext(f32).initWithOptions(.{
+        .sample_rate = 48_000.0,
+        .input_channels = &.{&main_input},
+        .sidechain_input_channels = &.{
+            &auxiliary_input_mono,
+            &auxiliary_input_left,
+            &auxiliary_input_right,
+        },
+        .auxiliary_input_bus_channel_counts = &.{ 1, 2 },
+        .output_channels = &.{&main_output},
+        .auxiliary_output_channels = &.{
+            &auxiliary_output_mono,
+            &auxiliary_output_left,
+            &auxiliary_output_right,
+        },
+        .auxiliary_output_bus_channel_counts = &.{ 1, 2 },
+    });
+
+    try std.testing.expectEqual(@as(usize, 2), context.auxiliaryInputBusCount());
+    try std.testing.expectEqual(@as(usize, 2), context.auxiliaryOutputBusCount());
+    const input_bus_0 = context.auxiliaryInputBus(0).?;
+    const input_bus_1 = context.auxiliaryInputBus(1).?;
+    try std.testing.expectEqual(@as(usize, 1), input_bus_0.channelCount());
+    try std.testing.expectEqual(@as(usize, 2), input_bus_1.channelCount());
+    try std.testing.expectEqual(@as(f32, 1.1), input_bus_0.channel(0).?[1]);
+    try std.testing.expectEqual(@as(f32, 3.1), input_bus_1.channel(1).?[1]);
+
+    const output_bus_0 = context.auxiliaryOutputBus(0).?;
+    const output_bus_1 = context.auxiliaryOutputBus(1).?;
+    output_bus_0.channel(0).?[0] = 4.0;
+    output_bus_1.channel(1).?[1] = 5.0;
+    try std.testing.expectEqual(@as(f32, 4.0), auxiliary_output_mono[0]);
+    try std.testing.expectEqual(@as(f32, 5.0), auxiliary_output_right[1]);
+    try std.testing.expectEqual(@as(?AudioInputs(f32), null), context.auxiliaryInputBus(2));
+    try std.testing.expectEqual(@as(?AudioOutputs(f32), null), context.auxiliaryOutputBus(2));
+}
+
+test "bounded process context selects auxiliary bus capacity" {
+    const Context = BoundedProcessContext(f32, 12);
+    const main_input = [_]f32{ 0.0, 0.0 };
+    var main_output = [_]f32{ 0.0, 0.0 };
+    var auxiliary_inputs: [12][2]f32 = undefined;
+    var auxiliary_outputs: [12][2]f32 = undefined;
+    var input_views: [12][]const f32 = undefined;
+    var output_views: [12][]f32 = undefined;
+    var channel_counts: [12]usize = @splat(1);
+    for (
+        &auxiliary_inputs,
+        &auxiliary_outputs,
+        &input_views,
+        &output_views,
+        0..,
+    ) |*input, *output, *input_view, *output_view, index| {
+        input.* = @splat(@as(f32, @floatFromInt(index + 1)));
+        output.* = @splat(0.0);
+        input_view.* = input;
+        output_view.* = output;
+    }
+
+    const context = try Context.initWithOptions(.{
+        .sample_rate = 48_000.0,
+        .input_channels = &.{&main_input},
+        .sidechain_input_channels = &input_views,
+        .auxiliary_input_bus_channel_counts = &channel_counts,
+        .output_channels = &.{&main_output},
+        .auxiliary_output_channels = &output_views,
+        .auxiliary_output_bus_channel_counts = &channel_counts,
+    });
+
+    try std.testing.expectEqual(@as(usize, 12), Context.auxiliary_bus_capacity);
+    try std.testing.expectEqual(@as(usize, 12), context.auxiliaryInputBusCount());
+    try std.testing.expectEqual(@as(usize, 12), context.auxiliaryOutputBusCount());
+    try std.testing.expectEqual(
+        @as(f32, 12.0),
+        context.auxiliaryInputBus(11).?.sample(0, 1).?,
+    );
+    try std.testing.expect(
+        context.auxiliaryOutputBus(11).?.setSample(0, 1, 0.75),
+    );
+    try std.testing.expectEqual(@as(f32, 0.75), auxiliary_outputs[11][1]);
+}
+
+test "zero-capacity process context rejects auxiliary channels" {
+    const Context = BoundedProcessContext(f32, 0);
+    const auxiliary_input = [_]f32{ 1.0, 2.0 };
+
+    try std.testing.expectError(
+        error.TooManyAudioBuses,
+        Context.initWithOptions(.{
+            .sample_rate = 48_000.0,
+            .sidechain_input_channels = &.{&auxiliary_input},
+        }),
+    );
+    const context = try Context.initWithOptions(.{
+        .sample_rate = 48_000.0,
+    });
+    try std.testing.expectEqual(@as(usize, 0), context.auxiliaryInputBusCount());
+    try std.testing.expectEqual(@as(usize, 0), context.auxiliaryOutputBusCount());
+}
+
+test "process context rejects invalid auxiliary bus channel partitions" {
+    const input = [_]f32{ 0.1, 0.2 };
+    const auxiliary_input = [_]f32{ 1.0, 1.1 };
+    var output = [_]f32{ 0.0, 0.0 };
+
+    try std.testing.expectError(
+        error.InvalidAudioBusChannels,
+        ProcessContext(f32).initWithOptions(.{
+            .sample_rate = 48_000.0,
+            .input_channels = &.{&input},
+            .sidechain_input_channels = &.{&auxiliary_input},
+            .auxiliary_input_bus_channel_counts = &.{ 1, 1 },
+            .output_channels = &.{&output},
+        }),
+    );
+    try std.testing.expectError(
+        error.TooManyAudioBuses,
+        ProcessContext(f32).initWithOptions(.{
+            .sample_rate = 48_000.0,
+            .input_channels = &.{&input},
+            .auxiliary_input_bus_channel_counts = &.{ 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            .output_channels = &.{&output},
+        }),
+    );
+}
+
+test "process context rejects malformed auxiliary bus ranges on access" {
+    var context = try ProcessContext(f32).initWithOptions(.{
+        .sample_rate = 48_000.0,
+        .sidechain_input_channels = &.{},
+        .auxiliary_input_bus_channel_counts = &.{0},
+        .auxiliary_output_channels = &.{},
+        .auxiliary_output_bus_channel_counts = &.{0},
+    });
+    context.auxiliary_input_ranges.ranges[0] = .{
+        .channel_offset = std.math.maxInt(usize),
+        .channel_count = 1,
+    };
+    context.auxiliary_output_ranges.ranges[0] = .{
+        .channel_offset = 1,
+        .channel_count = 0,
+    };
+
+    try std.testing.expect(context.auxiliaryInputBus(0) == null);
+    try std.testing.expect(context.auxiliaryOutputBus(0) == null);
+}
+
 test "process context supports named init options" {
     const input = [_]f32{ 0.1, 0.2, 0.3 };
     var output = [_]f32{ 0.0, 0.0, 0.0 };
@@ -1844,6 +2494,7 @@ test "process context supports named init options" {
 
     const context = try ProcessContext(f32).initWithOptions(.{
         .sample_rate = 44_100.0,
+        .process_mode = .offline,
         .input_channels = &input_channels,
         .output_channels = &output_channels,
         .attachments = .{
@@ -1854,6 +2505,10 @@ test "process context supports named init options" {
     });
 
     try std.testing.expectEqual(@as(f64, 44_100.0), context.sampleRate());
+    try std.testing.expectEqual(ProcessMode.offline, context.processMode());
+    try std.testing.expect(!context.isRealtime());
+    try std.testing.expect(!context.isPrefetch());
+    try std.testing.expect(context.isOffline());
     try std.testing.expectEqual(@as(usize, 3), context.frameCount());
     try std.testing.expectEqual(@as(usize, 1), context.parameterChangeCount());
     try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
@@ -2300,6 +2955,40 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(context.hasOutputEventWriter());
 }
 
+test "process context carries native parameter ramps" {
+    const input = [_]f32{ 0, 0, 0, 0 };
+    var output = [_]f32{ 0, 0, 0, 0 };
+    const ramps = [_]ParameterRamp{.{
+        .id = 4,
+        .start_offset = 0,
+        .duration_frames = 4,
+        .start_normalized = 0.0,
+        .end_normalized = 1.0,
+        .sequence = 0,
+    }};
+    const context = try ProcessContext(f32).initWith(
+        48_000.0,
+        &.{&input},
+        &.{&output},
+        .{ .parameter_ramps = &ramps },
+    );
+
+    try std.testing.expect(context.hasParameterRamps());
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        context.parameterRampCount(),
+    );
+    try std.testing.expectEqualSlices(
+        ParameterRamp,
+        &ramps,
+        context.parameterRamps(),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.5),
+        context.parameterNormalizedAtOrBeforeOr(4, 2, 0.0),
+    );
+}
+
 test "process context rejects attached changes outside frame count" {
     const input = [_]f32{0.1};
     var output = [_]f32{0.0};
@@ -2336,6 +3025,27 @@ test "process context rejects attached changes outside frame count" {
         &input_channels,
         &output_channels,
         .{ .output_events = &mismatched_writer },
+    ));
+
+    var malformed_count_writer = EventWriter.init(&output_storage, input.len);
+    malformed_count_writer.count = output_storage.len + 1;
+    try std.testing.expectError(error.InvalidState, context.setOutputEvents(&malformed_count_writer));
+    try std.testing.expectError(error.InvalidState, ProcessContext(f32).initWith(
+        48_000.0,
+        &input_channels,
+        &output_channels,
+        .{ .output_events = &malformed_count_writer },
+    ));
+
+    var malformed_event_writer = EventWriter.init(&output_storage, input.len);
+    malformed_event_writer.count = 1;
+    malformed_event_writer.storage[0] = Event.noteOn(input.len, 0, 60, 0.5);
+    try std.testing.expectError(error.InvalidState, context.setOutputEvents(&malformed_event_writer));
+    try std.testing.expectError(error.InvalidState, ProcessContext(f32).initWith(
+        48_000.0,
+        &input_channels,
+        &output_channels,
+        .{ .output_events = &malformed_event_writer },
     ));
 }
 
@@ -2379,6 +3089,35 @@ test "process context keeps existing attachments after rejected setters" {
     try std.testing.expectError(error.MismatchedFrameCount, context.setOutputEvents(&mismatched_writer));
     try std.testing.expect(context.hasOutputEventWriter());
     try std.testing.expect(context.outputEventWriter().? == &valid_writer);
+}
+
+test "process context hides an attached writer that later becomes invalid" {
+    const input = [_]f32{ 0.1, 0.2 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    var output_storage: [1]Event = undefined;
+    var writer = EventWriter.init(&output_storage, input.len);
+    var context = try ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .output_events = &writer,
+    });
+
+    writer.count = output_storage.len + 1;
+    try std.testing.expect(!context.hasOutputEventWriter());
+    try std.testing.expectEqual(@as(?*EventWriter, null), context.outputEventWriter());
+    try std.testing.expectError(error.OutputEventsUnavailable, context.appendOutputEvent(Event.noteOn(0, 0, 60, 0.5)));
+
+    writer.clear();
+    try std.testing.expect(context.outputEventWriter().? == &writer);
+
+    writer.frame_count = input.len + 1;
+    try std.testing.expect(!context.hasOutputEventWriter());
+    try std.testing.expect(!context.appendOutputEventIfPossible(Event.noteOn(0, 0, 60, 0.5)));
+
+    writer.frame_count = input.len;
+    try std.testing.expect(context.outputEventWriter().? == &writer);
+    try context.appendOutputEvent(Event.noteOn(0, 0, 60, 0.5));
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
 }
 
 test "process block segments split at parameter and event offsets" {
@@ -2807,4 +3546,42 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCount());
     no_writer.clearOutputEvents();
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCount());
+}
+
+test "process context exposes checked host transport" {
+    const context = try ProcessContext(f32).initWithOptions(.{
+        .sample_rate = 48_000.0,
+        .transport = .{
+            .project_time_samples = 48_000,
+            .state_valid = true,
+            .playing = true,
+            .tempo_bpm = 125.0,
+            .project_quarter_notes = 16.0,
+            .time_signature = .{
+                .numerator = 5,
+                .denominator = 4,
+            },
+        },
+    });
+    try std.testing.expect(context.transport().?.playing);
+    try std.testing.expectEqual(
+        @as(?i64, 48_000),
+        context.projectTimeSamples(),
+    );
+    try std.testing.expectEqual(@as(?f64, 125.0), context.hostTempoBpm());
+    try std.testing.expectEqual(
+        @as(f64, 120.0),
+        (Transport{ .project_time_samples = 0 }).tempoOr(120.0),
+    );
+
+    try std.testing.expectError(
+        error.InvalidTransport,
+        ProcessContext(f32).initWithOptions(.{
+            .sample_rate = 48_000.0,
+            .transport = .{
+                .project_time_samples = 0,
+                .tempo_bpm = std.math.nan(f64),
+            },
+        }),
+    );
 }
