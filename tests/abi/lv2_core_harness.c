@@ -256,8 +256,24 @@ typedef struct {
 		LV2_State_Retrieve_Function,
 		LV2_State_Handle,
 		uint32_t,
-		const LV2_Feature* const*);
+	    const LV2_Feature* const*);
 } LV2_State_Interface;
+
+typedef struct {
+	LV2_State_Handle handle;
+	char* (*abstract_path)(LV2_State_Handle, const char*);
+	char* (*absolute_path)(LV2_State_Handle, const char*);
+} LV2_State_Map_Path;
+
+typedef struct {
+	LV2_State_Handle handle;
+	char* (*path)(LV2_State_Handle, const char*);
+} LV2_State_Make_Path;
+
+typedef struct {
+	LV2_State_Handle handle;
+	void (*free_path)(LV2_State_Handle, char*);
+} LV2_State_Free_Path;
 
 extern size_t zig_lv2_layout_value(uint32_t index);
 
@@ -379,6 +395,19 @@ int main(void)
 		sizeof(LV2_Programs_UI_Interface),
 		_Alignof(LV2_Programs_UI_Interface),
 		offsetof(LV2_Programs_UI_Interface, select_program),
+		sizeof(LV2_State_Map_Path),
+		_Alignof(LV2_State_Map_Path),
+		offsetof(LV2_State_Map_Path, handle),
+		offsetof(LV2_State_Map_Path, abstract_path),
+		offsetof(LV2_State_Map_Path, absolute_path),
+		sizeof(LV2_State_Make_Path),
+		_Alignof(LV2_State_Make_Path),
+		offsetof(LV2_State_Make_Path, handle),
+		offsetof(LV2_State_Make_Path, path),
+		sizeof(LV2_State_Free_Path),
+		_Alignof(LV2_State_Free_Path),
+		offsetof(LV2_State_Free_Path, handle),
+		offsetof(LV2_State_Free_Path, free_path),
 	};
 	const size_t count = sizeof(expected) / sizeof(expected[0]);
 	for (size_t index = 0; index < count; ++index) {

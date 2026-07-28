@@ -242,6 +242,11 @@ test "installed core package exposes format-neutral processor and editor contrac
     try std.testing.expect(@hasDecl(core.lv2, "ui"));
     try std.testing.expect(@hasDecl(core.lv2.ui, "Descriptor"));
     try std.testing.expect(@hasDecl(core.lv2.ui, "Adapter"));
+    try std.testing.expect(@hasDecl(core.lv2, "StatePathFeatures"));
+    try std.testing.expect(@hasDecl(core.lv2, "OwnedStatePath"));
+    try std.testing.expect(@hasDecl(core.lv2, "StateMapPath"));
+    try std.testing.expect(@hasDecl(core.lv2, "StateMakePath"));
+    try std.testing.expect(@hasDecl(core.lv2, "StateFreePath"));
     try std.testing.expectEqual(
         @as(u8, 64),
         core.plugin.AudioBusLayout.ambisonic_seventh_order

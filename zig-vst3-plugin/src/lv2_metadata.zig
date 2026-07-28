@@ -39,6 +39,12 @@ pub fn Generator(
     const has_programs =
         @hasDecl(Adapter, "programs_enabled") and
         Adapter.programs_enabled;
+    const has_portable_state_paths =
+        @hasDecl(Adapter, "portable_state_paths_enabled") and
+        Adapter.portable_state_paths_enabled;
+    const requires_state_make_path =
+        @hasDecl(Adapter, "state_make_path_required") and
+        Adapter.state_make_path_required;
     _ = plugin_api.PluginSpec(Plugin);
 
     return struct {
@@ -124,8 +130,14 @@ pub fn Generator(
             if (Adapter.worker_enabled)
                 try writer.writeAll(" , work:schedule");
             try writer.writeAll(
-                " ;\n    lv2:requiredFeature urid:map ;\n" ++
-                    "    lv2:extensionData opts:interface , state:interface",
+                " ;\n    lv2:requiredFeature urid:map",
+            );
+            if (has_portable_state_paths)
+                try writer.writeAll(" , state:mapPath , state:freePath");
+            if (requires_state_make_path)
+                try writer.writeAll(" , state:makePath");
+            try writer.writeAll(
+                " ;\n    lv2:extensionData opts:interface , state:interface",
             );
             if (Adapter.worker_enabled)
                 try writer.writeAll(" , work:interface");
@@ -584,6 +596,8 @@ test "LV2 metadata generator writes ports workers and presets" {
         pub const latency_output_port = 6;
         pub const worker_enabled = true;
         pub const programs_enabled = true;
+        pub const portable_state_paths_enabled = true;
+        pub const state_make_path_required = true;
     };
     const Generated = Generator(
         Probe,
@@ -629,6 +643,13 @@ test "LV2 metadata generator writes ports workers and presets" {
     );
     try std.testing.expect(
         std.mem.indexOf(u8, plugin, "pgm:Interface") != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "state:mapPath , state:freePath , state:makePath",
+        ) != null,
     );
     try std.testing.expect(
         std.mem.indexOf(u8, plugin, "lv2:symbol \"output_2\"") != null,

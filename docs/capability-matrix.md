@@ -10,6 +10,8 @@ ARA host-contract fixtures cover phase-safe controller reservation, reentrant pr
 
 Standalone lifecycle fixtures cover callback drain during stop, stale-callback silence after stop or failed startup, processor rollback, restart, and retry. Physical device timing and automatic recovery remain unconfirmed.
 
+LV2 component state now supports host-mapped external resources and host-created generated paths through scoped, explicitly released path values. Dynamic Patch messages and external-host state portability remain open.
+
 The largest remaining plugin-authoring gaps are:
 
 1. AUv3 and AAX wrappers, plus remaining LV2 extensions and external-host coverage for LV2 and AUv2.

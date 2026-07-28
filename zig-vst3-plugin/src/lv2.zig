@@ -18,6 +18,12 @@ pub const options_interface_uri =
     "http://lv2plug.in/ns/ext/options#interface";
 pub const state_interface_uri =
     "http://lv2plug.in/ns/ext/state#interface";
+pub const state_map_path_uri =
+    "http://lv2plug.in/ns/ext/state#mapPath";
+pub const state_make_path_uri =
+    "http://lv2plug.in/ns/ext/state#makePath";
+pub const state_free_path_uri =
+    "http://lv2plug.in/ns/ext/state#freePath";
 pub const worker_interface_uri =
     "http://lv2plug.in/ns/ext/worker#interface";
 pub const worker_schedule_uri =
@@ -325,6 +331,115 @@ pub const StateInterface = extern struct {
     ) callconv(.c) StateStatus,
 };
 
+pub const StateMapPath = extern struct {
+    handle: StateHandle,
+    abstract_path: *const fn (
+        handle: StateHandle,
+        absolute_path: [*:0]const u8,
+    ) callconv(.c) ?[*:0]u8,
+    absolute_path: *const fn (
+        handle: StateHandle,
+        abstract_path: [*:0]const u8,
+    ) callconv(.c) ?[*:0]u8,
+};
+
+pub const StateMakePath = extern struct {
+    handle: StateHandle,
+    path: *const fn (
+        handle: StateHandle,
+        path: [*:0]const u8,
+    ) callconv(.c) ?[*:0]u8,
+};
+
+pub const StateFreePath = extern struct {
+    handle: StateHandle,
+    free_path: *const fn (
+        handle: StateHandle,
+        path: [*:0]u8,
+    ) callconv(.c) void,
+};
+
+/// Host-owned path returned by an LV2 State feature. Call `deinit` once
+/// before the enclosing state callback returns.
+pub const OwnedStatePath = struct {
+    pointer: [*:0]u8,
+    free_path: *const StateFreePath,
+
+    pub fn bytes(self: OwnedStatePath) []const u8 {
+        return std.mem.span(self.pointer);
+    }
+
+    pub fn deinit(self: *OwnedStatePath) void {
+        self.free_path.free_path(
+            self.free_path.handle,
+            self.pointer,
+        );
+        self.* = undefined;
+    }
+};
+
+/// Valid only during the State save or restore callback that supplied it.
+pub const StatePathFeatures = struct {
+    map_path: *const StateMapPath,
+    make_path: ?*const StateMakePath,
+    free_path: *const StateFreePath,
+
+    pub fn mapAbsolute(
+        self: StatePathFeatures,
+        path: [:0]const u8,
+    ) !OwnedStatePath {
+        if (path.len == 0) return error.InvalidStatePath;
+        const mapped = self.map_path.abstract_path(
+            self.map_path.handle,
+            path.ptr,
+        ) orelse return error.StatePathMappingFailed;
+        return self.owned(mapped);
+    }
+
+    pub fn resolveAbstract(
+        self: StatePathFeatures,
+        path: [:0]const u8,
+    ) !OwnedStatePath {
+        if (path.len == 0) return error.InvalidStatePath;
+        const resolved = self.map_path.absolute_path(
+            self.map_path.handle,
+            path.ptr,
+        ) orelse return error.StatePathMappingFailed;
+        return self.owned(resolved);
+    }
+
+    pub fn makePath(
+        self: StatePathFeatures,
+        path: [:0]const u8,
+    ) !OwnedStatePath {
+        if (path.len == 0) return error.InvalidStatePath;
+        const make_path = self.make_path orelse
+            return error.StateMakePathUnavailable;
+        const created = make_path.path(
+            make_path.handle,
+            path.ptr,
+        ) orelse return error.StatePathMappingFailed;
+        return self.owned(created);
+    }
+
+    fn owned(
+        self: StatePathFeatures,
+        path: [*:0]u8,
+    ) !OwnedStatePath {
+        if (std.mem.span(path).len == 0) {
+            self.free_path.free_path(
+                self.free_path.handle,
+                path,
+            );
+            return error.InvalidStatePath;
+        }
+        return .{
+            .pointer = path,
+            .free_path = self.free_path,
+        };
+    }
+};
+
 pub const Descriptor = extern struct {
     URI: [*:0]const u8,
     instantiate: *const fn (
@@ -466,6 +581,32 @@ pub fn CoreAdapterWithParameters(
         @compileError(
             "LV2 component state requires maximum size, read, and write declarations",
         );
+    const declares_lv2_component_state_reader = @hasDecl(
+        Plugin,
+        "readLv2ComponentState",
+    );
+    const declares_lv2_component_state_writer = @hasDecl(
+        Plugin,
+        "writeLv2ComponentState",
+    );
+    const has_lv2_component_state_paths =
+        declares_lv2_component_state_reader and
+        declares_lv2_component_state_writer;
+    if ((declares_lv2_component_state_reader or
+        declares_lv2_component_state_writer) and
+        (!has_component_state or
+            !has_lv2_component_state_paths))
+        @compileError(
+            "LV2 portable component state requires generic component state and both LV2 path-aware hooks",
+        );
+    const requires_lv2_state_make_path =
+        @hasDecl(Plugin, "lv2_state_requires_make_path") and
+        Plugin.lv2_state_requires_make_path;
+    if (requires_lv2_state_make_path and
+        !has_lv2_component_state_paths)
+        @compileError(
+            "LV2 makePath requires path-aware component state hooks",
+        );
     const component_state_maximum_encoded_size =
         if (has_component_state)
             Plugin.component_state_maximum_encoded_size
@@ -590,6 +731,10 @@ pub fn CoreAdapterWithParameters(
         pub const maximum_frames = maximum_block_size;
         pub const worker_enabled = has_worker;
         pub const programs_enabled = has_programs;
+        pub const portable_state_paths_enabled =
+            has_lv2_component_state_paths;
+        pub const state_make_path_required =
+            requires_lv2_state_make_path;
         pub const input_channels = input_channel_count;
         pub const output_channels = output_channel_count;
         pub const parameters = parameter_count;
@@ -1149,16 +1294,42 @@ pub fn CoreAdapterWithParameters(
             store: StateStoreFunction,
             handle: StateHandle,
             _: u32,
-            _: ?[*:null]const ?*const Feature,
+            features: ?[*:null]const ?*const Feature,
         ) callconv(.c) StateStatus {
             const self = instanceFromHandle(instance) orelse
                 return .unknown;
             if (self.state_key == 0 or self.state_type == 0)
                 return .no_feature;
+            const path_features: ?StatePathFeatures =
+                if (comptime has_lv2_component_state_paths)
+                    statePathFeatures(
+                        features,
+                        requires_lv2_state_make_path,
+                    ) orelse
+                        return .no_feature
+                else
+                    null;
             var bytes: [Spec.encoded_parameter_state_size]u8 = undefined;
             var writer = std.Io.Writer.fixed(&bytes);
             self.runtime.writeParameterState(&writer) catch
                 return .unknown;
+            var component_bytes: [component_state_maximum_encoded_size]u8 = undefined;
+            var component_size: usize = 0;
+            if (comptime has_component_state) {
+                var component_writer =
+                    std.Io.Writer.fixed(&component_bytes);
+                if (comptime has_lv2_component_state_paths) {
+                    self.runtime.instance.plugin.writeLv2ComponentState(
+                        &component_writer,
+                        path_features.?,
+                    ) catch return .unknown;
+                } else {
+                    self.runtime.instance.plugin.writeComponentState(
+                        &component_writer,
+                    ) catch return .unknown;
+                }
+                component_size = component_writer.end;
+            }
             const parameter_status = store(
                 handle,
                 self.state_key,
@@ -1170,18 +1341,11 @@ pub fn CoreAdapterWithParameters(
             if (parameter_status != .success)
                 return parameter_status;
             if (comptime has_component_state) {
-                var component_bytes: [component_state_maximum_encoded_size]u8 =
-                    undefined;
-                var component_writer =
-                    std.Io.Writer.fixed(&component_bytes);
-                self.runtime.instance.plugin.writeComponentState(
-                    &component_writer,
-                ) catch return .unknown;
                 return store(
                     handle,
                     self.component_state_key,
                     &component_bytes,
-                    component_writer.end,
+                    component_size,
                     self.state_type,
                     state_is_pod | state_is_portable,
                 );
@@ -1194,12 +1358,21 @@ pub fn CoreAdapterWithParameters(
             retrieve: StateRetrieveFunction,
             handle: StateHandle,
             _: u32,
-            _: ?[*:null]const ?*const Feature,
+            features: ?[*:null]const ?*const Feature,
         ) callconv(.c) StateStatus {
             const self = instanceFromHandle(instance) orelse
                 return .unknown;
             if (self.state_key == 0 or self.state_type == 0)
                 return .no_feature;
+            const path_features: ?StatePathFeatures =
+                if (comptime has_lv2_component_state_paths)
+                    statePathFeatures(
+                        features,
+                        requires_lv2_state_make_path,
+                    ) orelse
+                        return .no_feature
+                else
+                    null;
             var parameter_size: usize = 0;
             var parameter_type: Urid = 0;
             var parameter_flags: u32 = 0;
@@ -1267,14 +1440,25 @@ pub fn CoreAdapterWithParameters(
                     var reader = std.Io.Reader.fixed(
                         data[0..component_size],
                     );
-                    self.runtime.instance.plugin.readComponentState(
-                        &reader,
-                    ) catch {
+                    const restored = if (comptime has_lv2_component_state_paths) blk: {
+                        self.runtime.instance.plugin
+                            .readLv2ComponentState(
+                            &reader,
+                            path_features.?,
+                        ) catch break :blk false;
+                        break :blk true;
+                    } else blk: {
+                        self.runtime.instance.plugin
+                            .readComponentState(&reader) catch
+                            break :blk false;
+                        break :blk true;
+                    };
+                    if (!restored) {
                         if (!self.restoreParameterSnapshot(
                             &previous_parameter_bytes,
                         )) return .unknown;
                         return .bad_type;
-                    };
+                    }
                     if (reader.seek != reader.end) {
                         if (!self.restoreParameterSnapshot(
                             &previous_parameter_bytes,
@@ -2391,6 +2575,43 @@ fn featureData(
     return null;
 }
 
+fn statePathFeatures(
+    features: ?[*:null]const ?*const Feature,
+    require_make_path: bool,
+) ?StatePathFeatures {
+    const map_path = featureStruct(
+        StateMapPath,
+        features,
+        state_map_path_uri,
+    ) orelse return null;
+    const free_path = featureStruct(
+        StateFreePath,
+        features,
+        state_free_path_uri,
+    ) orelse return null;
+    const make_path = featureStruct(
+        StateMakePath,
+        features,
+        state_make_path_uri,
+    );
+    if (require_make_path and make_path == null) return null;
+    return .{
+        .map_path = map_path,
+        .make_path = make_path,
+        .free_path = free_path,
+    };
+}
+
+fn featureStruct(
+    comptime T: type,
+    features: ?[*:null]const ?*const Feature,
+    wanted_uri: []const u8,
+) ?*const T {
+    const raw = featureData(features, wanted_uri) orelse return null;
+    if (@intFromPtr(raw) % @alignOf(T) != 0) return null;
+    return @ptrCast(@alignCast(raw));
+}
+
 fn layoutChannelCounts(
     comptime layouts: []const plugin_api.AudioBusLayout,
 ) [layouts.len]usize {
@@ -3317,6 +3538,138 @@ test "LV2 instantiation options constrain block length" {
         "/tmp/lv2-options-probe.lv2",
         features[0..].ptr,
     ) == null);
+}
+
+test "LV2 state path features own mapped resolved and generated paths" {
+    const Host = struct {
+        storage: [128]u8 = @splat(0),
+        free_count: usize = 0,
+        return_empty: bool = false,
+
+        fn abstractPath(
+            handle: StateHandle,
+            path: [*:0]const u8,
+        ) callconv(.c) ?[*:0]u8 {
+            const self: *@This() = @ptrCast(
+                @alignCast(handle orelse return null),
+            );
+            if (!std.mem.eql(
+                u8,
+                std.mem.span(path),
+                "/samples/source.wav",
+            )) return null;
+            return self.publish(if (self.return_empty)
+                ""
+            else
+                "resource/source.wav");
+        }
+
+        fn absolutePath(
+            handle: StateHandle,
+            path: [*:0]const u8,
+        ) callconv(.c) ?[*:0]u8 {
+            const self: *@This() = @ptrCast(
+                @alignCast(handle orelse return null),
+            );
+            if (!std.mem.eql(
+                u8,
+                std.mem.span(path),
+                "resource/source.wav",
+            )) return null;
+            return self.publish("/restored/source.wav");
+        }
+
+        fn makePath(
+            handle: StateHandle,
+            path: [*:0]const u8,
+        ) callconv(.c) ?[*:0]u8 {
+            const self: *@This() = @ptrCast(
+                @alignCast(handle orelse return null),
+            );
+            if (!std.mem.eql(
+                u8,
+                std.mem.span(path),
+                "generated/cache.bin",
+            )) return null;
+            return self.publish("/state/generated/cache.bin");
+        }
+
+        fn freePath(
+            handle: StateHandle,
+            _: [*:0]u8,
+        ) callconv(.c) void {
+            const self: *@This() = @ptrCast(
+                @alignCast(handle orelse return),
+            );
+            self.free_count += 1;
+        }
+
+        fn publish(
+            self: *@This(),
+            value: []const u8,
+        ) ?[*:0]u8 {
+            if (value.len >= self.storage.len) return null;
+            @memset(&self.storage, 0);
+            @memcpy(self.storage[0..value.len], value);
+            return self.storage[0..value.len :0].ptr;
+        }
+    };
+
+    var host = Host{};
+    const map_path = StateMapPath{
+        .handle = &host,
+        .abstract_path = Host.abstractPath,
+        .absolute_path = Host.absolutePath,
+    };
+    const make_path = StateMakePath{
+        .handle = &host,
+        .path = Host.makePath,
+    };
+    const free_path = StateFreePath{
+        .handle = &host,
+        .free_path = Host.freePath,
+    };
+    const paths = StatePathFeatures{
+        .map_path = &map_path,
+        .make_path = &make_path,
+        .free_path = &free_path,
+    };
+
+    var mapped = try paths.mapAbsolute("/samples/source.wav");
+    try std.testing.expectEqualStrings(
+        "resource/source.wav",
+        mapped.bytes(),
+    );
+    mapped.deinit();
+    var resolved = try paths.resolveAbstract("resource/source.wav");
+    try std.testing.expectEqualStrings(
+        "/restored/source.wav",
+        resolved.bytes(),
+    );
+    resolved.deinit();
+    var generated = try paths.makePath("generated/cache.bin");
+    try std.testing.expectEqualStrings(
+        "/state/generated/cache.bin",
+        generated.bytes(),
+    );
+    generated.deinit();
+    try std.testing.expectEqual(@as(usize, 3), host.free_count);
+
+    const without_make = StatePathFeatures{
+        .map_path = &map_path,
+        .make_path = null,
+        .free_path = &free_path,
+    };
+    try std.testing.expectError(
+        error.StateMakePathUnavailable,
+        without_make.makePath("generated/cache.bin"),
+    );
+    host.return_empty = true;
+    try std.testing.expectError(
+        error.InvalidStatePath,
+        paths.mapAbsolute("/samples/source.wav"),
+    );
+    try std.testing.expectEqual(@as(usize, 4), host.free_count);
 }
 
 test "LV2 state interface saves restores validates and resets parameters" {
