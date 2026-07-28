@@ -50,6 +50,71 @@ pub const Profile = struct {
     reference: []const u8,
 };
 
+pub const EmissionProfileLevel = enum {
+    level_0,
+    level_1,
+    level_2,
+};
+
+const EmissionElementCounts = struct {
+    programmes: usize = 0,
+    contents: usize = 0,
+    objects: usize = 0,
+    pack_formats: usize = 0,
+    channel_formats: usize = 0,
+    track_uids: usize = 0,
+
+    fn exceeds(
+        self: EmissionElementCounts,
+        limits: EmissionElementCounts,
+    ) bool {
+        return self.programmes > limits.programmes or
+            self.contents > limits.contents or
+            self.objects > limits.objects or
+            self.pack_formats > limits.pack_formats or
+            self.channel_formats > limits.channel_formats or
+            self.track_uids > limits.track_uids;
+    }
+};
+
+fn emissionProfileLimits(
+    level: EmissionProfileLevel,
+) EmissionElementCounts {
+    return switch (level) {
+        .level_0 => .{
+            .programmes = std.math.maxInt(usize),
+            .contents = std.math.maxInt(usize),
+            .objects = std.math.maxInt(usize),
+            .pack_formats = std.math.maxInt(usize),
+            .channel_formats = std.math.maxInt(usize),
+            .track_uids = std.math.maxInt(usize),
+        },
+        .level_1 => .{
+            .programmes = 8,
+            .contents = 16,
+            .objects = 48,
+            .pack_formats = 32,
+            .channel_formats = 32,
+            .track_uids = 32,
+        },
+        .level_2 => .{
+            .programmes = 16,
+            .contents = 28,
+            .objects = 84,
+            .pack_formats = 56,
+            .channel_formats = 56,
+            .track_uids = 56,
+        },
+    };
+}
+
+fn profilesEqual(left: Profile, right: Profile) bool {
+    return std.mem.eql(u8, left.name, right.name) and
+        std.mem.eql(u8, left.version, right.version) and
+        std.mem.eql(u8, left.level, right.level) and
+        std.mem.eql(u8, left.reference, right.reference);
+}
+
 pub const Tag = struct {
     group_index: usize,
     value: []const u8,
@@ -376,6 +441,114 @@ pub const Document = struct {
         try self.validateChannelEntries(.{ .view = allocation });
     }
 
+    /// Identifies the declared BS.2168 version and level.
+    /// This does not establish document conformance.
+    pub fn emissionProfileLevel(
+        self: Document,
+    ) !EmissionProfileLevel {
+        try self.validateUniqueProfiles();
+        var result: ?EmissionProfileLevel = null;
+        var profile_iterator = self.profiles();
+        while (try profile_iterator.next()) |profile| {
+            if (!std.mem.eql(u8, profile.reference, "ITU-R BS.2168"))
+                continue;
+            if (!std.mem.eql(
+                u8,
+                profile.name,
+                "Advanced sound system: ADM and S-ADM profile for emission",
+            )) {
+                return error.InvalidAdmEmissionProfileName;
+            }
+            if (!std.mem.eql(u8, profile.version, "1"))
+                return error.UnsupportedAdmEmissionProfileVersion;
+            const level: EmissionProfileLevel =
+                if (std.mem.eql(u8, profile.level, "0"))
+                    .level_0
+                else if (std.mem.eql(u8, profile.level, "1"))
+                    .level_1
+                else if (std.mem.eql(u8, profile.level, "2"))
+                    .level_2
+                else
+                    return error.UnsupportedAdmEmissionProfileLevel;
+            if (result != null)
+                return error.DuplicateAdmEmissionProfile;
+            result = level;
+        }
+        return result orelse error.MissingAdmEmissionProfile;
+    }
+
+    /// Validates the supported BS.2168 document and element-count subset.
+    /// Other profile requirements require separate validation.
+    pub fn validateEmissionProfileElementLimits(
+        self: Document,
+    ) !EmissionProfileLevel {
+        try self.validateEmissionProfileDocumentVersion();
+        const level = try self.emissionProfileLevel();
+        const limits = emissionProfileLimits(level);
+        var counts = EmissionElementCounts{};
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            switch (declaration.identifier.kind) {
+                .programme => counts.programmes += 1,
+                .content => counts.contents += 1,
+                .object => counts.objects += 1,
+                .pack_format => {
+                    const type_label = declaration.identifier.typeLabel() orelse
+                        return error.InvalidAdmEmissionProfileFormat;
+                    if (type_label != 0x0002 and type_label != 0x0003)
+                        return error.InvalidAdmEmissionProfileFormat;
+                    if (type_label != 0x0002) counts.pack_formats += 1;
+                },
+                .channel_format => {
+                    const type_label = declaration.identifier.typeLabel() orelse
+                        return error.InvalidAdmEmissionProfileFormat;
+                    if (type_label != 0x0002 and type_label != 0x0003)
+                        return error.InvalidAdmEmissionProfileFormat;
+                    if (type_label != 0x0002) counts.channel_formats += 1;
+                },
+                .track_uid => counts.track_uids += 1,
+                .track_format, .stream_format => return error.ForbiddenAdmEmissionProfileFormat,
+                .alternative_value_set, .block_format => {},
+            }
+        }
+        if (counts.programmes == 0 or
+            counts.contents == 0 or
+            counts.objects == 0 or
+            counts.track_uids == 0)
+        {
+            return error.MissingAdmEmissionProfileElement;
+        }
+        if (counts.exceeds(limits))
+            return error.AdmEmissionProfileElementLimitExceeded;
+        return level;
+    }
+
+    fn validateEmissionProfileDocumentVersion(self: Document) !void {
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "audioFormatExtended",
+                    )) {
+                        continue;
+                    }
+                    const encoded = try element.attribute("version") orelse
+                        return error.MissingAdmEmissionProfileDocumentVersion;
+                    var storage: [max_profile_text_bytes]u8 = undefined;
+                    const version = try xml.decodeContent(&storage, encoded);
+                    if (!std.mem.eql(u8, version, "ITU-R_BS.2076-3"))
+                        return error.UnsupportedAdmEmissionProfileDocumentVersion;
+                    return;
+                },
+                else => {},
+            }
+        }
+        return error.MissingAudioFormatExtended;
+    }
+
     fn validateDuplicateDeclarations(self: Document) !void {
         var outer = self.declarations();
         var index: usize = 0;
@@ -387,6 +560,21 @@ pub const Document = struct {
                     return error.InvalidAdmDeclarationIteration;
                 if (previous.identifier.eql(declaration.identifier))
                     return error.DuplicateAdmDeclaration;
+            }
+        }
+    }
+
+    fn validateUniqueProfiles(self: Document) !void {
+        var outer = self.profiles();
+        var index: usize = 0;
+        while (try outer.next()) |profile| : (index += 1) {
+            var inner = self.profiles();
+            var previous_index: usize = 0;
+            while (previous_index < index) : (previous_index += 1) {
+                const previous = (try inner.next()) orelse
+                    return error.InvalidAdmProfileIteration;
+                if (profilesEqual(profile, previous))
+                    return error.DuplicateAdmProfile;
             }
         }
     }
@@ -2815,6 +3003,147 @@ test "ADM XML rejects malformed profile lists" {
             \\  <profile profileName="A" profileVersion="1" profileLevel="1">A</profile>
             \\</audioFormatExtended>
         ),
+    );
+}
+
+test "ADM XML identifies and bounds the emission profile" {
+    const document = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001"/>
+        \\  <audioContent audioContentID="ACO_1001"/>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioPackFormat audioPackFormatID="AP_00021001"/>
+        \\  <audioPackFormat audioPackFormatID="AP_00031001"/>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001"/>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectEqual(
+        EmissionProfileLevel.level_1,
+        try document.emissionProfileLevel(),
+    );
+    try std.testing.expectEqual(
+        EmissionProfileLevel.level_1,
+        try document.validateEmissionProfileElementLimits(),
+    );
+}
+
+test "ADM XML emission profile rejects invalid declarations" {
+    const wrong_name = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <profileList>
+        \\    <profile profileName="Emission Profile"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileName,
+        wrong_name.emissionProfileLevel(),
+    );
+
+    const wrong_version = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="2" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.UnsupportedAdmEmissionProfileVersion,
+        wrong_version.emissionProfileLevel(),
+    );
+
+    const wrong_level = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="3">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.UnsupportedAdmEmissionProfileLevel,
+        wrong_level.emissionProfileLevel(),
+    );
+
+    const duplicate = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.DuplicateAdmProfile,
+        duplicate.emissionProfileLevel(),
+    );
+}
+
+test "ADM XML emission profile enforces core element limits" {
+    const too_many_programmes = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001"/>
+        \\  <audioProgramme audioProgrammeID="APR_1002"/>
+        \\  <audioProgramme audioProgrammeID="APR_1003"/>
+        \\  <audioProgramme audioProgrammeID="APR_1004"/>
+        \\  <audioProgramme audioProgrammeID="APR_1005"/>
+        \\  <audioProgramme audioProgrammeID="APR_1006"/>
+        \\  <audioProgramme audioProgrammeID="APR_1007"/>
+        \\  <audioProgramme audioProgrammeID="APR_1008"/>
+        \\  <audioProgramme audioProgrammeID="APR_1009"/>
+        \\  <audioContent audioContentID="ACO_1001"/>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.AdmEmissionProfileElementLimitExceeded,
+        too_many_programmes.validateEmissionProfileElementLimits(),
+    );
+
+    const forbidden_track_format = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001"/>
+        \\  <audioContent audioContentID="ACO_1001"/>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <audioTrackFormat audioTrackFormatID="AT_00011001_01"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.ForbiddenAdmEmissionProfileFormat,
+        forbidden_track_format.validateEmissionProfileElementLimits(),
+    );
+
+    const wrong_document_version = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-2">
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.UnsupportedAdmEmissionProfileDocumentVersion,
+        wrong_document_version.validateEmissionProfileElementLimits(),
     );
 }
 
