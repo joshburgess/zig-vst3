@@ -5124,33 +5124,175 @@ test "standalone application owns device and processor lifecycle" {
     try std.testing.expectEqual(@as(usize, 1), probe.stop_count);
 }
 
-test "standalone application rolls back a failed device start" {
+test "standalone application contains callbacks across stop and restart" {
     const Plugin = struct {
-        pub const name = "Standalone Rollback Probe";
+        pub const name = "Standalone Teardown Probe";
         pub const vendor = "zig-vst3";
-        pub const audio_input_layout: audio_layout.AudioBusLayout = .none;
-        pub const audio_output_layout: audio_layout.AudioBusLayout = .none;
+        pub const audio_input_layout: audio_layout.AudioBusLayout = .mono;
+        pub const audio_output_layout: audio_layout.AudioBusLayout = .mono;
         pub const Params = struct {};
+
+        pub fn process(
+            _: *@This(),
+            context: *process_api.ProcessContext(f32),
+        ) void {
+            const input = context.inputChannel(0) orelse return;
+            const output = context.outputChannel(0) orelse return;
+            @memcpy(output, input);
+        }
     };
     const Probe = struct {
+        callback: ?AudioCallback(f32) = null,
+        retained_callback: ?AudioCallback(f32) = null,
+        start_count: usize = 0,
+        stop_count: usize = 0,
+        stop_callback_output: f32 = 0,
+
         fn startAudio(
-            _: *anyopaque,
+            context: *anyopaque,
             _: DeviceConfiguration,
-            _: AudioCallback(f32),
+            callback: AudioCallback(f32),
         ) !void {
-            return error.DeviceUnavailable;
+            const self: *@This() = @ptrCast(@alignCast(context));
+            self.callback = callback;
+            self.retained_callback = callback;
+            self.start_count += 1;
         }
 
-        fn stopAudio(_: *anyopaque) void {}
+        fn stopAudio(context: *anyopaque) void {
+            const self: *@This() = @ptrCast(@alignCast(context));
+            const callback = self.callback orelse return;
+            const input = [_]f32{0.375};
+            var output = [_]f32{9};
+            const inputs = [_][]const f32{&input};
+            const outputs = [_][]f32{&output};
+            callback.process_block(callback.context, .{
+                .input_channels = &inputs,
+                .output_channels = &outputs,
+            });
+            self.stop_callback_output = output[0];
+            self.callback = null;
+            self.stop_count += 1;
+        }
     };
 
-    var context: u8 = 0;
+    var probe = Probe{};
     const Application = StandaloneApplication(Plugin, f32);
     var application = try Application.init(
         std.testing.allocator,
         .{},
         .{
-            .context = &context,
+            .context = &probe,
+            .start_audio = Probe.startAudio,
+            .stop_audio = Probe.stopAudio,
+        },
+    );
+    defer application.deinit();
+    const configuration = DeviceConfiguration{
+        .sample_rate = 48_000.0,
+        .max_block_size = 1,
+        .input_channel_count = 1,
+        .output_channel_count = 1,
+    };
+
+    try application.start(configuration);
+    try application.stop();
+    try std.testing.expectEqual(@as(f32, 0.375), probe.stop_callback_output);
+    try std.testing.expectEqual(@as(usize, 1), probe.stop_count);
+
+    const stale_callback = probe.retained_callback orelse
+        return error.MissingRetainedAudioCallback;
+    const stale_input = [_]f32{0.75};
+    var stale_output = [_]f32{9};
+    const stale_inputs = [_][]const f32{&stale_input};
+    const stale_outputs = [_][]f32{&stale_output};
+    stale_callback.process_block(stale_callback.context, .{
+        .input_channels = &stale_inputs,
+        .output_channels = &stale_outputs,
+    });
+    try std.testing.expectEqual(@as(f32, 0), stale_output[0]);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        application.callbackFailureCount(),
+    );
+
+    try application.start(configuration);
+    const restarted_callback = probe.callback orelse
+        return error.MissingRestartedAudioCallback;
+    var restarted_output = [_]f32{9};
+    const restarted_outputs = [_][]f32{&restarted_output};
+    restarted_callback.process_block(restarted_callback.context, .{
+        .input_channels = &stale_inputs,
+        .output_channels = &restarted_outputs,
+    });
+    try std.testing.expectEqual(@as(f32, 0.75), restarted_output[0]);
+    try application.stop();
+    try std.testing.expectEqual(@as(usize, 2), probe.start_count);
+    try std.testing.expectEqual(@as(usize, 2), probe.stop_count);
+}
+
+test "standalone application rolls back a failed device start" {
+    const Plugin = struct {
+        pub const name = "Standalone Rollback Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: audio_layout.AudioBusLayout = .mono;
+        pub const audio_output_layout: audio_layout.AudioBusLayout = .mono;
+        pub const Params = struct {};
+
+        pub fn process(
+            _: *@This(),
+            context: *process_api.ProcessContext(f32),
+        ) void {
+            const input = context.inputChannel(0) orelse return;
+            const output = context.outputChannel(0) orelse return;
+            @memcpy(output, input);
+        }
+    };
+    const Probe = struct {
+        callback: ?AudioCallback(f32) = null,
+        retained_callback: ?AudioCallback(f32) = null,
+        start_count: usize = 0,
+        stop_count: usize = 0,
+        callback_before_failure_output: f32 = 0,
+
+        fn startAudio(
+            context: *anyopaque,
+            _: DeviceConfiguration,
+            callback: AudioCallback(f32),
+        ) !void {
+            const self: *@This() = @ptrCast(@alignCast(context));
+            self.callback = callback;
+            self.retained_callback = callback;
+            self.start_count += 1;
+            const input = [_]f32{0.625};
+            var output = [_]f32{9};
+            const inputs = [_][]const f32{&input};
+            const outputs = [_][]f32{&output};
+            callback.process_block(callback.context, .{
+                .input_channels = &inputs,
+                .output_channels = &outputs,
+            });
+            self.callback_before_failure_output = output[0];
+            if (self.start_count == 1) {
+                self.callback = null;
+                return error.DeviceUnavailable;
+            }
+        }
+
+        fn stopAudio(context: *anyopaque) void {
+            const self: *@This() = @ptrCast(@alignCast(context));
+            self.callback = null;
+            self.stop_count += 1;
+        }
+    };
+
+    var probe = Probe{};
+    const Application = StandaloneApplication(Plugin, f32);
+    var application = try Application.init(
+        std.testing.allocator,
+        .{},
+        .{
+            .context = &probe,
             .start_audio = Probe.startAudio,
             .stop_audio = Probe.stopAudio,
         },
@@ -5161,8 +5303,8 @@ test "standalone application rolls back a failed device start" {
         application.start(.{
             .sample_rate = 48_000.0,
             .max_block_size = 64,
-            .input_channel_count = 0,
-            .output_channel_count = 0,
+            .input_channel_count = 1,
+            .output_channel_count = 1,
         }),
     );
     try std.testing.expect(!application.running);
@@ -5170,6 +5312,37 @@ test "standalone application rolls back a failed device start" {
         runtime_mod.RuntimeState.initialized,
         application.runtime.runtime.runtimeState(),
     );
+    try std.testing.expectEqual(
+        @as(f32, 0.625),
+        probe.callback_before_failure_output,
+    );
+
+    const stale_callback = probe.retained_callback orelse
+        return error.MissingFailedStartAudioCallback;
+    const stale_input = [_]f32{0.25};
+    var stale_output = [_]f32{9};
+    const stale_inputs = [_][]const f32{&stale_input};
+    const stale_outputs = [_][]f32{&stale_output};
+    stale_callback.process_block(stale_callback.context, .{
+        .input_channels = &stale_inputs,
+        .output_channels = &stale_outputs,
+    });
+    try std.testing.expectEqual(@as(f32, 0), stale_output[0]);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        application.callbackFailureCount(),
+    );
+
+    try application.start(.{
+        .sample_rate = 48_000.0,
+        .max_block_size = 64,
+        .input_channel_count = 1,
+        .output_channel_count = 1,
+    });
+    try std.testing.expect(application.running);
+    try std.testing.expectEqual(@as(usize, 2), probe.start_count);
+    try application.stop();
+    try std.testing.expectEqual(@as(usize, 1), probe.stop_count);
 }
 
 test "MIDI event buffer rejects unsupported overflow and late packets" {

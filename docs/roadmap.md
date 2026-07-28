@@ -79,6 +79,8 @@ Current interpretation:
 - `ProcessContext` provides direct input, output, parameter-change, input-event, output-event, timing, segment, and writer helpers. The current distinction between input events, output events, and generic event views is intentional.
 - `state` value types provide direct report/header helpers, while `PluginInstance` binds the helpers that need the reflected parameter count.
 
+The standalone lifecycle fixture now covers a callback during stop, stale callbacks after stop and failed startup, processor rollback, clean restart, and successful retry. Physical callback timing and recovery remain external checks.
+
 Do not add aliases only to make every type expose every spelling. Add new API only when a real workflow needs the helper at that API boundary.
 
 ## Non-goals

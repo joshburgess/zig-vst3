@@ -8,6 +8,8 @@ For VST3 plugin authoring, `zig-vst3-plugin` already covers the core processor l
 
 ARA host-contract fixtures cover phase-safe controller reservation, reentrant product extension hooks, extension failure rollback, generation-checked observer publication, two-phase archive ownership, legacy restore, corrupt-input rollback, and retry after failed decoding. External ARA-host behavior remains unconfirmed.
 
+Standalone lifecycle fixtures cover callback drain during stop, stale-callback silence after stop or failed startup, processor rollback, restart, and retry. Physical device timing and automatic recovery remain unconfirmed.
+
 The largest remaining plugin-authoring gaps are:
 
 1. AUv3 and AAX wrappers, plus remaining LV2 extensions and external-host coverage for LV2 and AUv2.
