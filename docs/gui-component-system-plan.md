@@ -2,7 +2,7 @@
 
 This plan extends the host integration work in [gui-plan.md](gui-plan.md). It builds a reusable, customizable component layer for plugin editors without turning `zig-vst3` into a general desktop GUI toolkit.
 
-The immediate target is a multi-parameter component gallery that runs through the existing VSTGUI adapter. The broader target is NIH-plug-level editor ergonomics with the plugin-focused parts of third-party framework's component and LookAndFeel model.
+The immediate target is a multi-parameter component gallery that runs through the existing VSTGUI adapter. The broader target is a project-owned component and theme model with plugin-focused editor ergonomics.
 
 ## Current Position
 
@@ -33,17 +33,17 @@ Match the useful shape of NIH-plug's GUI support:
 
 NIH-plug is a framework and adapter reference, not a complete widget toolkit. Its VIZIA adapter currently includes a generic UI, parameter base, parameter button, parameter slider, peak meter, and resize handle.
 
-### third-party framework-style customization
+### Independent Customization
 
-Adopt the plugin-relevant parts of third-party framework's GUI design:
+The component system uses project-owned contracts:
 
 - A component tree with bounds, visibility, enabled state, child ownership, focus, input, and invalidation
-- A separate theme and drawing policy comparable to third-party framework LookAndFeel
+- A separate theme and drawing policy
 - Standard controls that retain behavior when their appearance changes
 - Per-editor, per-container, and per-control style overrides
 - Semantic accessibility roles, names, values, and states
 
-Do not reproduce third-party framework's application windows, document model, networking, media, or other general desktop facilities.
+Do not add application windows, a document model, networking, media, or other general desktop facilities to the component layer.
 
 ## Architecture
 
@@ -465,7 +465,3 @@ Also verify:
 - [NIH-plug repository and GUI overview](https://github.com/robbert-vdh/nih-plug)
 - [NIH-plug Editor contract](https://nih-plug.robbertvanderhelm.nl/nih_plug/editor/trait.Editor.html)
 - [NIH-plug VIZIA widgets](https://github.com/robbert-vdh/nih-plug/tree/master/nih_plug_vizia/src/widgets)
-- [third-party framework Component](https://docs.third-party framework.com/master/classthird-party framework_1_1Component.html)
-- [third-party framework LookAndFeel](https://docs.third-party framework.com/develop/classthird-party framework_1_1LookAndFeel.html)
-- [third-party framework Slider](https://docs.third-party framework.com/master/classthird-party framework_1_1Slider.html)
-- [third-party framework AccessibilityHandler](https://docs.third-party framework.com/master/classthird-party framework_1_1AccessibilityHandler.html)

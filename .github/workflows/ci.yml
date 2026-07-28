@@ -205,8 +205,8 @@ jobs:
         run: |
           # pluginval is a Windows GUI-subsystem app: the PowerShell call
           # operator does not block on it and its process exit code is
-          # unreliable (a non-zero code leaks from third-party framework teardown after a clean
-          # run). Use Start-Process -Wait to block until it fully exits, then
+          # unreliable after otherwise clean runs. Use Start-Process -Wait to
+          # block until it fully exits, then
           # read the verdict from its --output-dir log file (absolute path)
           # rather than trusting the exit code.
           $ErrorActionPreference = 'Continue'

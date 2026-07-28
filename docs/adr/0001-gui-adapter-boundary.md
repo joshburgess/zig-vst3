@@ -33,9 +33,9 @@ A native renderer would remove the C++ boundary and give full control over batch
 
 This remains a supported future adapter. It is not the first implementation because it delays validation of the framework lifecycle and parameter API.
 
-### Use third-party framework
+### Use a Broad Cross-Platform Framework
 
-third-party framework has mature editor and parameter attachment APIs. Its build size, broader framework scope, and licensing options make it a poor default dependency for this repository. It remains a design reference.
+Broad application frameworks provide mature editor and parameter attachment APIs. Their build size, unrelated scope, and licensing constraints make them poor default dependencies for this repository. The project instead derives its contracts from plugin format specifications and its own bounded runtime requirements.
 
 ### Bind a Rust GUI Adapter
 

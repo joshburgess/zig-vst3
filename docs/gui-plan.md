@@ -87,9 +87,9 @@ The adapter must not mutate processor state directly. The host receives GUI edit
 
 ## Lessons From Existing Systems
 
-### VSTGUI and third-party framework
+### VSTGUI
 
-Use VSTGUI and third-party framework as references for editor lifetime, resize constraints, content scaling, parameter attachments, and host automation gestures. VSTGUI is the leading candidate for the first adapter because it is plugin-focused, uses a permissive license, and already understands VST3 editor behavior. third-party framework is a useful design reference, but its size and licensing make it a less attractive default dependency.
+Use VSTGUI for its VST3 editor integration. Derive editor lifetime, resize constraints, content scaling, parameter attachments, and host automation gestures from the VST3 and VSTGUI contracts. Keep the framework-owned editor API independent of the adapter.
 
 ### NIH-plug
 
@@ -411,8 +411,6 @@ Run the smallest applicable tier on each change. Run the full matrix before decl
 - [Steinberg VST3 editing model](https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical%2BDocumentation/API%2BDocumentation/Index.html)
 - [VSTGUI overview](https://steinbergmedia.github.io/vst3_dev_portal/pages/What%2Bis%2Bthe%2BVST%2B3%2BSDK/VSTGUI.html)
 - [VSTGUI `VST3Editor`](https://steinbergmedia.github.io/vst3_doc/vstgui/html/class_v_s_t_g_u_i_1_1_v_s_t3_editor.html)
-- [third-party framework `AudioProcessorEditor`](https://docs.third-party framework.com/master/classthird-party framework_1_1AudioProcessorEditor.html)
-- [third-party framework parameter attachments](https://docs.third-party framework.com/master/classthird-party framework_1_1AudioProcessorValueTreeState_1_1SliderAttachment.html)
 - [NIH-plug repository and GUI adapters](https://github.com/robbert-vdh/nih-plug)
 - [NIH-plug GUI context](https://nih-plug.robbertvanderhelm.nl/nih_plug/context/gui/index.html)
 - [NIH-plug egui editor state](https://nih-plug.robbertvanderhelm.nl/nih_plug_egui/struct.EguiState.html)
