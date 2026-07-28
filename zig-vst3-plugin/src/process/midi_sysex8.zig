@@ -2,6 +2,7 @@ const std = @import("std");
 const ump = @import("midi_ump.zig");
 const ump_bytes = @import("midi_ump_bytes.zig");
 const sysex7 = @import("midi_sysex7.zig");
+const segmented = @import("midi_segmented.zig");
 const byteAt = ump_bytes.byteAt;
 const setByte = ump_bytes.setByte;
 
@@ -104,18 +105,18 @@ pub const Packetizer = struct {
         }
         if (self.cursor == self.source.len) return null;
 
-        const end = @min(
-            std.math.add(usize, self.cursor, 13) catch self.source.len,
+        const end = segmented.payloadEnd(
             self.source.len,
+            self.cursor,
+            13,
         );
-        const kind: Kind = if (self.source.len <= 13)
-            .complete
-        else if (self.cursor == 0)
-            .begin
-        else if (end == self.source.len)
-            .end
-        else
-            .continuation;
+        const kind = segmented.packetForm(
+            Kind,
+            self.source.len,
+            self.cursor,
+            end,
+            13,
+        );
         const packet = try (try Chunk.init(
             self.group,
             kind,
@@ -148,14 +149,14 @@ pub fn Reassembler(comptime capacity: usize) type {
         }
 
         pub fn valid(self: *const Self) bool {
-            if (self.count > capacity) return false;
-            if (self.active and (self.completed or self.group == null or self.stream_id == null))
-                return false;
-            if (self.completed and (self.group == null or self.stream_id == null)) return false;
-            if (!self.active and !self.completed and
-                (self.count != 0 or self.group != null or self.stream_id != null))
-                return false;
-            return true;
+            return segmented.reassemblyStateValid(
+                self.count,
+                capacity,
+                self.active,
+                self.completed,
+                self.group != null and self.stream_id != null,
+                self.group == null and self.stream_id == null,
+            );
         }
 
         pub fn message(self: *const Self) ?[]const u8 {
@@ -181,14 +182,19 @@ pub fn Reassembler(comptime capacity: usize) type {
                 else
                     error.UnexpectedSysex8Begin;
             }
-            if (chunk.count > capacity) return error.Sysex8CapacityExceeded;
-            copyChunk(self.storage[0..], 0, chunk);
-            self.count = chunk.count;
+            if (!segmented.replace(
+                u8,
+                self.storage[0..],
+                &self.count,
+                chunk.storage[0..chunk.count],
+            )) return error.Sysex8CapacityExceeded;
             self.group = chunk.group;
             self.stream_id = chunk.stream_id;
-            self.active = !completes;
-            self.completed = completes;
-            return completes;
+            return segmented.setCompletion(
+                &self.active,
+                &self.completed,
+                completes,
+            );
         }
 
         fn acceptContinuation(self: *Self, chunk: Chunk, completes: bool) !bool {
@@ -200,20 +206,19 @@ pub fn Reassembler(comptime capacity: usize) type {
             }
             if (self.group.? != chunk.group) return error.Sysex8GroupMismatch;
             if (self.stream_id.? != chunk.stream_id) return error.Sysex8StreamMismatch;
-            const new_count = std.math.add(usize, self.count, chunk.count) catch
-                return error.Sysex8CapacityExceeded;
-            if (new_count > capacity) return error.Sysex8CapacityExceeded;
-            copyChunk(self.storage[0..], self.count, chunk);
-            self.count = new_count;
-            self.active = !completes;
-            self.completed = completes;
-            return completes;
+            if (!segmented.append(
+                u8,
+                self.storage[0..],
+                &self.count,
+                chunk.storage[0..chunk.count],
+            )) return error.Sysex8CapacityExceeded;
+            return segmented.setCompletion(
+                &self.active,
+                &self.completed,
+                completes,
+            );
         }
     };
-}
-
-fn copyChunk(destination: []u8, offset: usize, chunk: Chunk) void {
-    @memcpy(destination[offset..][0..chunk.count], chunk.storage[0..chunk.count]);
 }
 
 test "SysEx8 chunks round trip every data byte" {

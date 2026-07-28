@@ -1,6 +1,7 @@
 const std = @import("std");
 const ump = @import("midi_ump.zig");
 const ump_bytes = @import("midi_ump_bytes.zig");
+const segmented = @import("midi_segmented.zig");
 const byteAt = ump_bytes.byteAt;
 const setByte = ump_bytes.setByte;
 
@@ -162,9 +163,10 @@ pub const Packetizer = struct {
         }
         if (self.cursor == self.source.len) return null;
 
-        const end = @min(
-            std.math.add(usize, self.cursor, 14) catch self.source.len,
+        const end = segmented.payloadEnd(
             self.source.len,
+            self.cursor,
+            14,
         );
         const packet = try (try Payload.init(
             self.header.metadata.group,
@@ -196,12 +198,14 @@ pub fn Reassembler(comptime capacity: usize) type {
         }
 
         pub fn valid(self: *const Self) bool {
-            if (self.count > capacity) return false;
-            if (self.active and (self.completed or self.header == null)) return false;
-            if (self.completed and self.header == null) return false;
-            if (!self.active and !self.completed and
-                (self.count != 0 or self.header != null))
-                return false;
+            if (!segmented.reassemblyStateValid(
+                self.count,
+                capacity,
+                self.active,
+                self.completed,
+                self.header != null,
+                self.header == null,
+            )) return false;
             if (self.header) |header| {
                 const expected = header.payloadByteCount() orelse return false;
                 if (self.count > expected) return false;
@@ -232,9 +236,11 @@ pub fn Reassembler(comptime capacity: usize) type {
             if (expected > capacity) return error.MixedDataCapacityExceeded;
             self.count = 0;
             self.header = header;
-            self.active = expected != 0;
-            self.completed = expected == 0;
-            return self.completed;
+            return segmented.setCompletion(
+                &self.active,
+                &self.completed,
+                expected == 0,
+            );
         }
 
         fn acceptPayload(self: *Self, ump_packet: ump.Packet) !bool {
@@ -248,14 +254,17 @@ pub fn Reassembler(comptime capacity: usize) type {
             if (payload.mds_id != header.metadata.mds_id)
                 return error.MixedDataIdMismatch;
 
-            const new_count = std.math.add(usize, self.count, payload.count) catch
-                return error.MixedDataCapacityExceeded;
-            if (new_count > capacity) return error.MixedDataCapacityExceeded;
-            @memcpy(self.storage[self.count..new_count], payload.data());
-            self.count = new_count;
-            self.active = new_count != header.payloadByteCount().?;
-            self.completed = !self.active;
-            return self.completed;
+            if (!segmented.append(
+                u8,
+                self.storage[0..],
+                &self.count,
+                payload.data(),
+            )) return error.MixedDataCapacityExceeded;
+            return segmented.setCompletion(
+                &self.active,
+                &self.completed,
+                self.count == header.payloadByteCount().?,
+            );
         }
     };
 }

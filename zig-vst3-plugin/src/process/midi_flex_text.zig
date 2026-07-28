@@ -3,6 +3,7 @@ const flex = @import("midi_flex.zig");
 const sysex7 = @import("midi_sysex7.zig");
 const ump = @import("midi_ump.zig");
 const ump_bytes = @import("midi_ump_bytes.zig");
+const segmented = @import("midi_segmented.zig");
 const byteAt = ump_bytes.byteAt;
 const setByte = ump_bytes.setByte;
 
@@ -189,18 +190,18 @@ pub const Packetizer = struct {
         }
         if (self.cursor == self.source.len) return null;
 
-        const end = @min(
-            std.math.add(usize, self.cursor, 12) catch self.source.len,
+        const end = segmented.payloadEnd(
             self.source.len,
+            self.cursor,
+            12,
         );
-        const form: Form = if (self.source.len <= 12)
-            .complete
-        else if (self.cursor == 0)
-            .begin
-        else if (end == self.source.len)
-            .end
-        else
-            .continuation;
+        const form = segmented.packetForm(
+            Form,
+            self.source.len,
+            self.cursor,
+            end,
+            12,
+        );
         const packet = try (try Chunk.init(
             self.target,
             self.kind,
@@ -234,14 +235,17 @@ pub fn Reassembler(comptime capacity: usize) type {
         }
 
         pub fn valid(self: *const Self) bool {
-            if (self.count > capacity or self.packet_count > 32) return false;
-            if (self.active and (self.completed or self.target == null or self.kind == null))
-                return false;
-            if (self.completed and (self.target == null or self.kind == null))
-                return false;
+            if (self.packet_count > 32) return false;
+            if (!segmented.reassemblyStateValid(
+                self.count,
+                capacity,
+                self.active,
+                self.completed,
+                self.target != null and self.kind != null,
+                self.target == null and self.kind == null,
+            )) return false;
             if (!self.active and !self.completed and
-                (self.count != 0 or self.packet_count != 0 or
-                    self.target != null or self.kind != null))
+                self.packet_count != 0)
                 return false;
             return true;
         }
@@ -274,15 +278,20 @@ pub fn Reassembler(comptime capacity: usize) type {
                 else
                     error.UnexpectedFlexTextBegin;
             }
-            if (chunk.count > capacity) return error.FlexTextCapacityExceeded;
-            copyChunk(self.storage[0..], 0, chunk);
-            self.count = chunk.count;
+            if (!segmented.replace(
+                u8,
+                self.storage[0..],
+                &self.count,
+                chunk.storage[0..chunk.count],
+            )) return error.FlexTextCapacityExceeded;
             self.packet_count = 1;
             self.target = chunk.target;
             self.kind = chunk.kind;
-            self.active = !completes;
-            self.completed = completes;
-            return completes;
+            return segmented.setCompletion(
+                &self.active,
+                &self.completed,
+                completes,
+            );
         }
 
         fn acceptContinuation(self: *Self, chunk: Chunk, completes: bool) !bool {
@@ -295,15 +304,18 @@ pub fn Reassembler(comptime capacity: usize) type {
             if (!std.meta.eql(self.target.?, chunk.target)) return error.FlexTextTargetMismatch;
             if (self.kind.? != chunk.kind) return error.FlexTextKindMismatch;
             if (self.packet_count == 32) return error.FlexTextPacketLimitExceeded;
-            const new_count = std.math.add(usize, self.count, chunk.count) catch
-                return error.FlexTextCapacityExceeded;
-            if (new_count > capacity) return error.FlexTextCapacityExceeded;
-            copyChunk(self.storage[0..], self.count, chunk);
-            self.count = new_count;
+            if (!segmented.append(
+                u8,
+                self.storage[0..],
+                &self.count,
+                chunk.storage[0..chunk.count],
+            )) return error.FlexTextCapacityExceeded;
             self.packet_count += 1;
-            self.active = !completes;
-            self.completed = completes;
-            return completes;
+            return segmented.setCompletion(
+                &self.active,
+                &self.completed,
+                completes,
+            );
         }
     };
 }
@@ -314,10 +326,6 @@ fn kindFromFields(bank: u8, status: u8) ?Kind {
         0x0100...0x010C, 0x0200...0x0204 => @enumFromInt(value),
         else => null,
     };
-}
-
-fn copyChunk(destination: []u8, offset: usize, chunk: Chunk) void {
-    @memcpy(destination[offset..][0..chunk.count], chunk.storage[0..chunk.count]);
 }
 
 fn startsWithBom(bytes: []const u8) bool {

@@ -1,6 +1,7 @@
 const std = @import("std");
 const ump = @import("midi_ump.zig");
 const byteAt = @import("midi_ump_bytes.zig").byteAt;
+const segmented = @import("midi_segmented.zig");
 
 pub const Kind = enum(u2) {
     complete,
@@ -111,18 +112,18 @@ pub const Packetizer = struct {
         }
         if (self.cursor == self.source.len) return null;
 
-        const end = @min(
-            std.math.add(usize, self.cursor, 6) catch self.source.len,
+        const end = segmented.payloadEnd(
             self.source.len,
+            self.cursor,
+            6,
         );
-        const kind: Kind = if (self.source.len <= 6)
-            .complete
-        else if (self.cursor == 0)
-            .begin
-        else if (end == self.source.len)
-            .end
-        else
-            .continuation;
+        const kind = segmented.packetForm(
+            Kind,
+            self.source.len,
+            self.cursor,
+            end,
+            6,
+        );
         const packet = try (try Chunk.init(
             self.group,
             kind,
@@ -153,12 +154,14 @@ pub fn Reassembler(comptime capacity: usize) type {
         }
 
         pub fn valid(self: *const Self) bool {
-            if (self.count > capacity) return false;
-            if (self.active and (self.completed or self.group == null)) return false;
-            if (self.completed and self.group == null) return false;
-            if (!self.active and !self.completed and (self.count != 0 or self.group != null))
-                return false;
-            return true;
+            return segmented.reassemblyStateValid(
+                self.count,
+                capacity,
+                self.active,
+                self.completed,
+                self.group != null,
+                self.group == null,
+            );
         }
 
         pub fn message(self: *const Self) ?[]const u7 {
@@ -170,33 +173,32 @@ pub fn Reassembler(comptime capacity: usize) type {
             if (!self.valid()) return error.InvalidSysex7ReassemblerState;
             const chunk = try Chunk.parse(ump_packet);
             return switch (chunk.kind) {
-                .complete => try self.acceptComplete(chunk),
-                .begin => try self.acceptBegin(chunk),
+                .complete => try self.acceptInitial(chunk, true),
+                .begin => try self.acceptInitial(chunk, false),
                 .continuation => try self.acceptContinuation(chunk, false),
                 .end => try self.acceptContinuation(chunk, true),
             };
         }
 
-        fn acceptComplete(self: *Self, chunk: Chunk) !bool {
-            if (self.active) return error.UnexpectedSysex7Complete;
-            if (chunk.count > capacity) return error.Sysex7CapacityExceeded;
-            copyChunk(self.storage[0..], 0, chunk);
-            self.count = chunk.count;
+        fn acceptInitial(self: *Self, chunk: Chunk, completes: bool) !bool {
+            if (self.active) {
+                return if (completes)
+                    error.UnexpectedSysex7Complete
+                else
+                    error.UnexpectedSysex7Begin;
+            }
+            if (!segmented.replace(
+                u7,
+                self.storage[0..],
+                &self.count,
+                chunk.storage[0..chunk.count],
+            )) return error.Sysex7CapacityExceeded;
             self.group = chunk.group;
-            self.active = false;
-            self.completed = true;
-            return true;
-        }
-
-        fn acceptBegin(self: *Self, chunk: Chunk) !bool {
-            if (self.active) return error.UnexpectedSysex7Begin;
-            if (chunk.count > capacity) return error.Sysex7CapacityExceeded;
-            copyChunk(self.storage[0..], 0, chunk);
-            self.count = chunk.count;
-            self.group = chunk.group;
-            self.active = true;
-            self.completed = false;
-            return false;
+            return segmented.setCompletion(
+                &self.active,
+                &self.completed,
+                completes,
+            );
         }
 
         fn acceptContinuation(self: *Self, chunk: Chunk, completes: bool) !bool {
@@ -207,20 +209,19 @@ pub fn Reassembler(comptime capacity: usize) type {
                     error.UnexpectedSysex7Continuation;
             }
             if (self.group.? != chunk.group) return error.Sysex7GroupMismatch;
-            const new_count = std.math.add(usize, self.count, chunk.count) catch
-                return error.Sysex7CapacityExceeded;
-            if (new_count > capacity) return error.Sysex7CapacityExceeded;
-            copyChunk(self.storage[0..], self.count, chunk);
-            self.count = new_count;
-            self.active = !completes;
-            self.completed = completes;
-            return completes;
+            if (!segmented.append(
+                u7,
+                self.storage[0..],
+                &self.count,
+                chunk.storage[0..chunk.count],
+            )) return error.Sysex7CapacityExceeded;
+            return segmented.setCompletion(
+                &self.active,
+                &self.completed,
+                completes,
+            );
         }
     };
-}
-
-fn copyChunk(destination: []u7, offset: usize, chunk: Chunk) void {
-    @memcpy(destination[offset..][0..chunk.count], chunk.storage[0..chunk.count]);
 }
 
 test "SysEx7 chunks round trip packet fields" {
