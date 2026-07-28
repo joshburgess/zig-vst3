@@ -1,10 +1,12 @@
 const std = @import("std");
+const ara_vst3 = @import("ara_vst3.zig");
 const funknown = @import("funknown.zig");
 const gui_ir_transport = @import("gui_ir_transport.zig");
 const resource_path_transport = @import("resource_path_transport.zig");
 const gui_note_transport = @import("gui_note_transport.zig");
 const gui_telemetry_source = @import("gui_telemetry_source.zig");
 const latency_transport = @import("latency_transport.zig");
+const host_restart_transport = @import("host_restart_transport.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
@@ -43,6 +45,15 @@ const vst_message = @import("vst_message.zig");
 const vst_parameter_changes = @import("vst_parameter_changes.zig");
 const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_bridge = @import("zig_vst3_plugin_bridge.zig");
+const zig_vst3_plugin_runtime_adapter =
+    @import("zig_vst3_plugin_runtime_adapter.zig");
+
+fn optionalChildOrSelf(comptime T: type) type {
+    return switch (@typeInfo(T)) {
+        .optional => |info| info.child,
+        else => T,
+    };
+}
 
 const process_parameter_change_capacity = 64;
 const process_event_capacity = 64;
@@ -54,47 +65,7 @@ pub const ParameterObserver = struct {
     changed: *const fn (*anyopaque, vsttypes.ParamID, vsttypes.ParamValue) callconv(.c) void,
 };
 
-pub const HostRequestSink = struct {
-    context: *anyopaque,
-    mark_latency_changed: *const fn (*anyopaque) void,
-    dispatch: *const fn (*anyopaque) types.tresult,
-
-    pub fn markLatencyChanged(self: *HostRequestSink) void {
-        self.mark_latency_changed(self.context);
-    }
-
-    pub fn dispatchPending(self: *HostRequestSink) bool {
-        if (!plug_core.realtime_audit.observe(.host_call)) return false;
-        return self.dispatch(self.context) == types.kResultOk;
-    }
-};
-
-test "host request dispatch is rejected in a realtime audit scope" {
-    const Probe = struct {
-        var dispatch_count: usize = 0;
-
-        fn mark(_: *anyopaque) void {}
-
-        fn dispatch(_: *anyopaque) types.tresult {
-            dispatch_count += 1;
-            return types.kResultOk;
-        }
-    };
-    var context: u8 = 0;
-    var sink = HostRequestSink{
-        .context = &context,
-        .mark_latency_changed = Probe.mark,
-        .dispatch = Probe.dispatch,
-    };
-    Probe.dispatch_count = 0;
-    const scope = plug_core.realtime_audit.Scope.enter();
-    try std.testing.expect(!sink.dispatchPending());
-    const report = scope.leave();
-    try std.testing.expectEqual(@as(u32, 1), report.count(.host_call));
-    try std.testing.expectEqual(@as(usize, 0), Probe.dispatch_count);
-    try std.testing.expect(sink.dispatchPending());
-    try std.testing.expectEqual(@as(usize, 1), Probe.dispatch_count);
-}
+pub const HostRequestSink = plug_core.plugin.HostRequestSink;
 
 var test_data_exchange_queue_opened_count: usize = 0;
 var test_data_exchange_queue_closed_count: usize = 0;
@@ -110,6 +81,7 @@ var test_effect_processor_init_count: usize = 0;
 var test_effect_processor_deinit_count: usize = 0;
 var test_effect_prepare_sample_rate: f64 = 0;
 var test_effect_prepare_block_size: u32 = 0;
+var test_effect_prepare_mode: plug_process.ProcessMode = .realtime;
 var test_effect_reset_count: usize = 0;
 
 fn failInfo(out: anytype) types.tresult {
@@ -840,6 +812,17 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn notify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
             if (message == null) return types.kResultFalse;
+            var restart_flags: types.int32 = 0;
+            const restart_result =
+                host_restart_transport.receive(message, &restart_flags);
+            if (restart_result == types.kResultOk) {
+                return restartComponent(
+                    &ownerFromConnectionPoint(ptr).iface,
+                    restart_flags,
+                );
+            }
+            if (restart_result == types.kInvalidArgument)
+                return restart_result;
             const latency_result = latency_transport.receive(message);
             if (latency_result == types.kResultOk) {
                 return restartComponent(&ownerFromConnectionPoint(ptr).iface, ivsteditcontroller.RestartFlags.kLatencyChanged);
@@ -1923,6 +1906,245 @@ test "simple stereo effect clears unsupported query outputs" {
     try std.testing.expect(processor.vtable.release(processor) >= 1);
 }
 
+test "simple stereo effect aggregates ARA entry point identity" {
+    const TestAraExtension = struct {
+        var initialize_calls: usize = 0;
+        var deinit_calls: usize = 0;
+        var bind_calls: usize = 0;
+        var unbind_calls: usize = 0;
+
+        pub fn initializeInPlace(_: *@This()) void {
+            initialize_calls += 1;
+        }
+
+        pub fn deinit(_: *@This()) void {
+            deinit_calls += 1;
+        }
+    };
+    TestAraExtension.initialize_calls = 0;
+    TestAraExtension.deinit_calls = 0;
+    TestAraExtension.bind_calls = 0;
+    TestAraExtension.unbind_calls = 0;
+    const TestAraEntryPoint = ara_vst3.PlugInEntryPoint(struct {
+        pub fn bind(
+            _: anytype,
+            _: *ara_vst3.DocumentController,
+            _: ara_vst3.RoleFlags,
+            _: ara_vst3.RoleFlags,
+        ) ?*const ara_vst3.PlugInExtensionInstance {
+            return @ptrFromInt(0x3000);
+        }
+    });
+    const ara_factory_ptr: *const ara_vst3.Factory =
+        @ptrFromInt(0x1000);
+    const TestEffect = SimpleStereoEffect(struct {
+        pub const component_name = "ARA Component";
+        pub const controller_cid = tuid.inlineUid(
+            0x11111111,
+            0x22222222,
+            0x33333333,
+            0x44444444,
+        );
+        pub const AraExtension = TestAraExtension;
+        pub const AraEntryPoint = TestAraEntryPoint;
+        pub const ara_factory = ara_factory_ptr;
+        pub const Processor = struct {
+            pub fn process(
+                _: @This(),
+                comptime Sample: type,
+                context: *plug_process.ProcessContext(Sample),
+            ) void {
+                context.outputs.clear();
+            }
+        };
+
+        pub fn initAraExtension(
+            _: *Processor,
+        ) AraExtension {
+            return .{};
+        }
+
+        pub fn bindAraExtension(
+            _: *Processor,
+            _: *AraExtension,
+        ) void {
+            AraExtension.bind_calls += 1;
+        }
+
+        pub fn unbindAraExtension(
+            _: *Processor,
+            _: *AraExtension,
+        ) void {
+            AraExtension.unbind_calls += 1;
+        }
+
+        pub fn applyParameterChanges(
+            _: plug_process.ParameterChanges,
+        ) void {}
+
+        pub fn readState(
+            _: ?*ibstream.IBStream,
+        ) types.tresult {
+            return types.kResultFalse;
+        }
+
+        pub fn writeState(
+            _: ?*ibstream.IBStream,
+        ) types.tresult {
+            return types.kResultFalse;
+        }
+    });
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        TestEffect.create(
+            @ptrCast(&ivstcomponent.icomponent_iid),
+            &component_out,
+        ),
+    );
+    const component: *ivstcomponent.IComponent =
+        @ptrCast(@alignCast(component_out orelse
+            return error.TestUnexpectedResult));
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        TestAraExtension.initialize_calls,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        TestAraExtension.bind_calls,
+    );
+
+    var entry_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.queryInterface(
+            component,
+            &ara_vst3.plug_in_entry_point_iid,
+            &entry_out,
+        ),
+    );
+    const entry: *ara_vst3.IPlugInEntryPoint =
+        @ptrCast(@alignCast(entry_out orelse
+            return error.TestUnexpectedResult));
+    try std.testing.expect(
+        entry.vtable.getFactory(entry) == ara_factory_ptr,
+    );
+
+    var unknown_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        entry.vtable.queryInterface(
+            entry,
+            &funknown.iid,
+            &unknown_out,
+        ),
+    );
+    try std.testing.expect(
+        unknown_out == @as(?*anyopaque, component),
+    );
+    const unknown: *funknown.Header =
+        @ptrCast(@alignCast(unknown_out orelse
+            return error.TestUnexpectedResult));
+    _ = unknown.vtable.release(unknown);
+
+    const extension =
+        entry.vtable.bindToDocumentController(
+            entry,
+            @ptrFromInt(0x2000),
+        ) orelse return error.TestUnexpectedResult;
+    try std.testing.expect(
+        extension ==
+            @as(
+                *const ara_vst3.PlugInExtensionInstance,
+                @ptrFromInt(0x3000),
+            ),
+    );
+    _ = entry.vtable.release(entry);
+    try std.testing.expectEqual(
+        @as(types.uint32, 0),
+        component.vtable.release(component),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        TestAraExtension.deinit_calls,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        TestAraExtension.unbind_calls,
+    );
+}
+
+test "simple stereo effect requests followed host transport fields" {
+    const TestEffect = SimpleStereoEffect(struct {
+        pub const component_name = "TransportFollower";
+        pub const controller_cid =
+            tuid.inlineUid(0x618AD0C3, 0x3D1B48E4, 0xA74C1D3B, 0x96A05C22);
+        pub const follow_host_transport = true;
+        pub const Processor = struct {
+            pub fn process(
+                _: @This(),
+                comptime Sample: type,
+                context: *plug_process.ProcessContext(Sample),
+            ) void {
+                context.outputs.clear();
+            }
+        };
+
+        pub fn applyParameterChanges(_: plug_process.ParameterChanges) void {}
+
+        pub fn readState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultFalse;
+        }
+
+        pub fn writeState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultFalse;
+        }
+    });
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        TestEffect.create(
+            @ptrCast(&ivstcomponent.icomponent_iid),
+            &component_out,
+        ),
+    );
+    const component: *ivstcomponent.IComponent =
+        @ptrCast(@alignCast(component_out.?));
+    defer _ = component.vtable.release(component);
+
+    var requirements_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.queryInterface(
+            component,
+            &ivstaudioprocessor.iprocess_context_requirements_iid,
+            &requirements_out,
+        ),
+    );
+    const requirements: *ivstaudioprocessor.IProcessContextRequirements =
+        @ptrCast(@alignCast(requirements_out.?));
+    defer _ = requirements.vtable.release(requirements);
+    const requested =
+        requirements.vtable.getProcessContextRequirements(requirements);
+    try std.testing.expect(
+        requested &
+            ivstaudioprocessor.ProcessContextRequirementFlags.kNeedTempo !=
+            0,
+    );
+    try std.testing.expect(
+        requested &
+            ivstaudioprocessor.ProcessContextRequirementFlags.kNeedProjectTimeMusic !=
+            0,
+    );
+    try std.testing.expect(
+        requested &
+            ivstaudioprocessor.ProcessContextRequirementFlags.kNeedTransportState !=
+            0,
+    );
+}
+
 test "simple stereo effect exposes bounded graph and text telemetry" {
     const TestEffect = SimpleStereoEffect(struct {
         pub const component_name = "GraphTelemetryComponent";
@@ -2518,6 +2740,7 @@ test "simple stereo effect exposes processor lifecycle and decoded audio transpo
         pub fn prepare(_: *@This(), config: plug_core.plugin.PrepareConfig) void {
             test_effect_prepare_sample_rate = config.sample_rate;
             test_effect_prepare_block_size = config.max_block_size;
+            test_effect_prepare_mode = config.process_mode;
         }
 
         pub fn reset(_: *@This()) void {
@@ -2587,6 +2810,7 @@ test "simple stereo effect exposes processor lifecycle and decoded audio transpo
     test_effect_processor_deinit_count = 0;
     test_effect_prepare_sample_rate = 0;
     test_effect_prepare_block_size = 0;
+    test_effect_prepare_mode = .realtime;
     test_effect_reset_count = 0;
 
     var component_out: ?*anyopaque = null;
@@ -2600,6 +2824,7 @@ test "simple stereo effect exposes processor lifecycle and decoded audio transpo
     try std.testing.expectEqual(@as(u32, 8), processor.vtable.getLatencySamples(processor));
     try std.testing.expectEqual(@as(u32, 16), processor.vtable.getTailSamples(processor));
     var setup = ivstaudioprocessor.ProcessSetup{
+        .processMode = @intFromEnum(ivstaudioprocessor.ProcessModes.kOffline),
         .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .sampleRate = 96_000,
         .maxSamplesPerBlock = 256,
@@ -2607,6 +2832,7 @@ test "simple stereo effect exposes processor lifecycle and decoded audio transpo
     try std.testing.expectEqual(types.kResultOk, processor.vtable.setupProcessing(processor, &setup));
     try std.testing.expectEqual(@as(f64, 96_000), test_effect_prepare_sample_rate);
     try std.testing.expectEqual(@as(u32, 256), test_effect_prepare_block_size);
+    try std.testing.expectEqual(plug_process.ProcessMode.offline, test_effect_prepare_mode);
     try std.testing.expectEqual(@as(usize, 1), test_effect_reset_count);
 
     try std.testing.expectEqual(types.kInvalidArgument, component.vtable.activateBus(component, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 2));
@@ -2650,20 +2876,1250 @@ test "simple stereo effect exposes processor lifecycle and decoded audio transpo
     try std.testing.expectEqual(@as(usize, 1), test_effect_processor_deinit_count);
 }
 
+test "simple effect reports fallible processor construction failure" {
+    const EmptyParams = struct {};
+    const Set = plug_core.parameters.ParameterSet(EmptyParams);
+    const Effect = SimpleEffect(struct {
+        pub const component_name = "FallibleProcessorComponent";
+        pub const controller_cid =
+            tuid.inlineUid(
+                0x61A88001,
+                0x61A88002,
+                0x61A88003,
+                0x61A88004,
+            );
+        pub const Params = EmptyParams;
+        pub const parameter_set = &Set.init(.{});
+        pub const Processor = struct {
+            pub fn initWithAllocator(
+                _: std.mem.Allocator,
+            ) !@This() {
+                return error.InitializationFailed;
+            }
+
+            pub fn process(
+                _: *@This(),
+                comptime Sample: type,
+                _: *plug_process.ProcessContext(Sample),
+            ) void {}
+        };
+    });
+
+    var out: ?*anyopaque = @ptrFromInt(1);
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        Effect.create(
+            @ptrCast(&ivstcomponent.icomponent_iid),
+            &out,
+        ),
+    );
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
+}
+
+test "simple effect binds dynamic topology across host metadata negotiation activation and flush validation" {
+    const vstspeaker = @import("pluginterfaces/vst/vstspeaker.zig");
+    const Config = struct {
+        pub const component_name = "DynamicTopologyComponent";
+        pub const controller_cid =
+            tuid.inlineUid(
+                0xD7A64B21,
+                0x0C62477E,
+                0xB8A44E18,
+                0xF06B8D93,
+            );
+        pub const dynamic_audio_bus_topology: ?plug_core.plugin.DynamicAudioBusTopology = makeTopology();
+
+        fn makeTopology() plug_core.plugin.DynamicAudioBusTopology {
+            const main_layouts =
+                plug_core.plugin.AudioBusLayoutSet.init(
+                    &.{ .mono, .stereo },
+                ) catch unreachable;
+            var topology =
+                plug_core.plugin.DynamicAudioBusTopology.init(
+                    plug_core.plugin.DynamicAudioBus.init(
+                        .stereo,
+                        main_layouts,
+                        true,
+                    ) catch unreachable,
+                    plug_core.plugin.DynamicAudioBus.init(
+                        .stereo,
+                        main_layouts,
+                        true,
+                    ) catch unreachable,
+                ) catch unreachable;
+            _ = topology.addAuxiliary(
+                .input,
+                plug_core.plugin.DynamicAudioBus.fixed(
+                    .mono,
+                    false,
+                ) catch unreachable,
+            ) catch unreachable;
+            return topology;
+        }
+
+        pub const Processor = struct {
+            host_requests: ?*HostRequestSink = null,
+            last_auxiliary_input_count: usize = 0,
+            last_auxiliary_output_count: usize = 0,
+
+            pub fn bindHostRequests(
+                self: *@This(),
+                requests: *HostRequestSink,
+            ) void {
+                self.host_requests = requests;
+            }
+
+            pub fn process(
+                self: *@This(),
+                comptime Sample: type,
+                context: *plug_process.ProcessContext(Sample),
+            ) void {
+                self.last_auxiliary_input_count =
+                    context.auxiliaryInputBusCount();
+                self.last_auxiliary_output_count =
+                    context.auxiliaryOutputBusCount();
+                context.outputs.clear();
+                context.clearAuxiliaryOutputs();
+            }
+        };
+    };
+    const Effect = SimpleEffect(Config);
+    const ControllerParams = struct {};
+    const controller_parameter_set =
+        plug_core.parameters.ParameterSet(ControllerParams).init(.{});
+    const Controller = ReflectedEditController(struct {
+        pub const controller_name = "DynamicTopologyController";
+        pub const Params = ControllerParams;
+        pub const parameter_set = &controller_parameter_set;
+    });
+    const HandlerConfig = struct {
+        var reject_restart = false;
+
+        pub fn restartComponent(
+            _: anytype,
+            _: types.int32,
+        ) types.tresult {
+            if (!reject_restart) return types.kResultOk;
+            reject_restart = false;
+            return types.kResultFalse;
+        }
+    };
+    const Handler = vst_component_handler.ComponentHandler(HandlerConfig);
+    var handler = Handler{};
+    HandlerConfig.reject_restart = false;
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.create(
+            @ptrCast(&ivstcomponent.icomponent_iid),
+            &component_out,
+        ),
+    );
+    const component: *ivstcomponent.IComponent =
+        @ptrCast(@alignCast(
+            component_out orelse return error.MissingComponent,
+        ));
+    defer _ = component.vtable.release(component);
+    var component_connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.queryInterface(
+            component,
+            &ivstmessage.iconnection_point_iid,
+            &component_connection_out,
+        ),
+    );
+    const component_connection: *ivstmessage.IConnectionPoint =
+        @ptrCast(@alignCast(
+            component_connection_out orelse return error.MissingConnection,
+        ));
+    defer _ = component_connection.vtable.release(component_connection);
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Controller.create(
+            @ptrCast(&ivsteditcontroller.iedit_controller_iid),
+            &controller_out,
+        ),
+    );
+    const controller: *ivsteditcontroller.IEditController =
+        @ptrCast(@alignCast(
+            controller_out orelse return error.MissingController,
+        ));
+    defer _ = controller.vtable.release(controller);
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller.vtable.setComponentHandler(
+            controller,
+            handler.asHandler(),
+        ),
+    );
+    defer _ = controller.vtable.setComponentHandler(controller, null);
+    var controller_connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller.vtable.queryInterface(
+            controller,
+            &ivstmessage.iconnection_point_iid,
+            &controller_connection_out,
+        ),
+    );
+    const controller_connection: *ivstmessage.IConnectionPoint =
+        @ptrCast(@alignCast(
+            controller_connection_out orelse return error.MissingConnection,
+        ));
+    defer _ = controller_connection.vtable.release(controller_connection);
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller_connection.vtable.connect(
+            controller_connection,
+            component_connection,
+        ),
+    );
+    defer _ = controller_connection.vtable.disconnect(
+        controller_connection,
+        component_connection,
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_connection.vtable.connect(
+            component_connection,
+            controller_connection,
+        ),
+    );
+    defer _ = component_connection.vtable.disconnect(
+        component_connection,
+        controller_connection,
+    );
+    const audio = @intFromEnum(ivstcomponent.MediaTypes.kAudio);
+    const input = @intFromEnum(ivstcomponent.BusDirections.kInput);
+    const output = @intFromEnum(ivstcomponent.BusDirections.kOutput);
+    try std.testing.expectEqual(
+        @as(types.int32, 2),
+        component.vtable.getBusCount(component, audio, input),
+    );
+    try std.testing.expectEqual(
+        @as(types.int32, 1),
+        component.vtable.getBusCount(component, audio, output),
+    );
+    var info = ivstcomponent.BusInfo{};
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.getBusInfo(component, audio, input, 1, &info),
+    );
+    try std.testing.expectEqual(@as(types.int32, 1), info.channelCount);
+    try std.testing.expectEqual(@as(types.uint32, 0), info.flags);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.queryInterface(
+            component,
+            &ivstaudioprocessor.iaudio_processor_iid,
+            &processor_out,
+        ),
+    );
+    const processor: *ivstaudioprocessor.IAudioProcessor =
+        @ptrCast(@alignCast(
+            processor_out orelse return error.MissingProcessor,
+        ));
+    defer _ = processor.vtable.release(processor);
+
+    var input_arrangements = [_]vsttypes.SpeakerArrangement{
+        vstspeaker.SpeakerArr.kMono,
+        vstspeaker.SpeakerArr.kMono,
+    };
+    var output_arrangements = [_]vsttypes.SpeakerArrangement{
+        vstspeaker.SpeakerArr.kMono,
+    };
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.setBusArrangements(
+            processor,
+            &input_arrangements,
+            input_arrangements.len,
+            &output_arrangements,
+            output_arrangements.len,
+        ),
+    );
+    var arrangement: vsttypes.SpeakerArrangement = 0;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.getBusArrangement(
+            processor,
+            input,
+            0,
+            &arrangement,
+        ),
+    );
+    try std.testing.expectEqual(
+        vstspeaker.SpeakerArr.kMono,
+        arrangement,
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.activateBus(
+            component,
+            audio,
+            input,
+            1,
+            1,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.getBusInfo(component, audio, input, 1, &info),
+    );
+    try std.testing.expectEqual(@as(types.uint32, 0), info.flags);
+
+    const processor_instance = Effect.processorInstance(component);
+    const host_requests =
+        processor_instance.host_requests orelse
+        return error.MissingHostRequests;
+    try std.testing.expect(
+        host_requests.addAuxiliaryAudioBus(
+            .output,
+            try plug_core.plugin.DynamicAudioBus.fixed(.mono, false),
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(types.int32, 2),
+        component.vtable.getBusCount(component, audio, output),
+    );
+    var snapshot: plug_core.plugin.DynamicAudioBusSnapshot = .{};
+    try std.testing.expect(
+        Effect.audioBusTopologySnapshot(component, &snapshot),
+    );
+    try std.testing.expect(snapshot.bus(.input, 1).?.active);
+    try std.testing.expectEqual(
+        plug_core.plugin.AudioBusLayout.mono,
+        snapshot.bus(.output, 1).?.layout,
+    );
+
+    var input_buses = [_]ivstaudioprocessor.AudioBusBuffers{
+        .{ .numChannels = 1 },
+        .{ .numChannels = 1 },
+    };
+    var output_buses = [_]ivstaudioprocessor.AudioBusBuffers{
+        .{ .numChannels = 1 },
+        .{ .numChannels = 1 },
+    };
+    var flush = ivstaudioprocessor.ProcessData{
+        .numInputs = input_buses.len,
+        .numOutputs = output_buses.len,
+        .inputs = &input_buses,
+        .outputs = &output_buses,
+        .numSamples = 0,
+    };
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.process(processor, &flush),
+    );
+    flush.numOutputs = output_buses.len + 1;
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        processor.vtable.process(processor, &flush),
+    );
+    var setup = ivstaudioprocessor.ProcessSetup{
+        .symbolicSampleSize = @intFromEnum(
+            ivstaudioprocessor.SymbolicSampleSizes.kSample32,
+        ),
+        .sampleRate = 48_000,
+        .maxSamplesPerBlock = 1,
+    };
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.setupProcessing(processor, &setup),
+    );
+    var main_input_sample = [_]f32{1};
+    var auxiliary_input_sample = [_]f32{2};
+    var main_output_sample = [_]f32{3};
+    var auxiliary_output_sample = [_]f32{4};
+    var main_input_channels = [_][*]f32{&main_input_sample};
+    var auxiliary_input_channels =
+        [_][*]f32{&auxiliary_input_sample};
+    var main_output_channels = [_][*]f32{&main_output_sample};
+    var auxiliary_output_channels =
+        [_][*]f32{&auxiliary_output_sample};
+    input_buses[0].channelBuffers = .{
+        .channelBuffers32 = &main_input_channels,
+    };
+    input_buses[1].channelBuffers = .{
+        .channelBuffers32 = &auxiliary_input_channels,
+    };
+    output_buses[0].channelBuffers = .{
+        .channelBuffers32 = &main_output_channels,
+    };
+    output_buses[1].channelBuffers = .{
+        .channelBuffers32 = &auxiliary_output_channels,
+    };
+    flush.numOutputs = output_buses.len;
+    flush.numSamples = 1;
+    flush.symbolicSampleSize =
+        @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32);
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.process(processor, &flush),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        processor_instance.last_auxiliary_input_count,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        processor_instance.last_auxiliary_output_count,
+    );
+    try std.testing.expectEqual(@as(f32, 0), main_output_sample[0]);
+    try std.testing.expectEqual(@as(f32, 0), auxiliary_output_sample[0]);
+
+    const before_rejection = snapshot;
+    try std.testing.expect(
+        !host_requests.setAudioBusLayout(
+            .input,
+            0,
+            .surround_5_1,
+        ),
+    );
+    try std.testing.expect(
+        Effect.audioBusTopologySnapshot(component, &snapshot),
+    );
+    try std.testing.expectEqualDeep(before_rejection, snapshot);
+
+    const StateStream = vst_stream.FixedBufferStream(256);
+    var state_stream = StateStream{};
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.getState(component, state_stream.asStream()),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        state_stream.asStream().vtable.seek(
+            state_stream.asStream(),
+            0,
+            @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet),
+            null,
+        ),
+    );
+    var restored_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.create(
+            @ptrCast(&ivstcomponent.icomponent_iid),
+            &restored_out,
+        ),
+    );
+    const restored_component: *ivstcomponent.IComponent =
+        @ptrCast(@alignCast(
+            restored_out orelse return error.MissingComponent,
+        ));
+    defer _ = restored_component.vtable.release(restored_component);
+    try std.testing.expectEqual(
+        types.kResultOk,
+        restored_component.vtable.setState(
+            restored_component,
+            state_stream.asStream(),
+        ),
+    );
+    var restored_snapshot: plug_core.plugin.DynamicAudioBusSnapshot = .{};
+    try std.testing.expect(
+        Effect.audioBusTopologySnapshot(
+            restored_component,
+            &restored_snapshot,
+        ),
+    );
+    snapshot.generation = 0;
+    restored_snapshot.generation = 0;
+    try std.testing.expectEqualDeep(snapshot, restored_snapshot);
+    try std.testing.expectEqual(
+        @as(types.int32, 2),
+        restored_component.vtable.getBusCount(
+            restored_component,
+            audio,
+            output,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        Effect.dispatchHostRequests(restored_component),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.dispatchHostRequests(component),
+    );
+    try std.testing.expectEqual(@as(u32, 1), handler.restart_count);
+    try std.testing.expectEqual(
+        ivsteditcontroller.RestartFlags.kIoChanged,
+        handler.last_restart_flags,
+    );
+
+    host_requests.markChanges(&.{
+        .component_reload,
+        .audio_io,
+        .parameter_values,
+        .latency,
+        .parameter_titles,
+        .midi_cc_assignments,
+        .note_expression,
+        .io_titles,
+        .prefetchable_support,
+        .routing_info,
+        .keyswitches,
+        .parameter_id_mapping,
+        .latency,
+    });
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.dispatchHostRequests(component),
+    );
+    try std.testing.expectEqual(@as(u32, 2), handler.restart_count);
+    try std.testing.expectEqual(
+        ivsteditcontroller.RestartFlags.kReloadComponent |
+            ivsteditcontroller.RestartFlags.kIoChanged |
+            ivsteditcontroller.RestartFlags.kParamValuesChanged |
+            ivsteditcontroller.RestartFlags.kLatencyChanged |
+            ivsteditcontroller.RestartFlags.kParamTitlesChanged |
+            ivsteditcontroller.RestartFlags.kMidiCCAssignmentChanged |
+            ivsteditcontroller.RestartFlags.kNoteExpressionChanged |
+            ivsteditcontroller.RestartFlags.kIoTitlesChanged |
+            ivsteditcontroller.RestartFlags
+                .kPrefetchableSupportChanged |
+            ivsteditcontroller.RestartFlags.kRoutingInfoChanged |
+            ivsteditcontroller.RestartFlags.kKeyswitchChanged |
+            ivsteditcontroller.RestartFlags.kParamIDMappingChanged,
+        handler.last_restart_flags,
+    );
+
+    host_requests.markChanges(&.{ .parameter_values, .routing_info });
+    HandlerConfig.reject_restart = true;
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        Effect.dispatchHostRequests(component),
+    );
+    try std.testing.expectEqual(@as(u32, 3), handler.restart_count);
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.dispatchHostRequests(component),
+    );
+    try std.testing.expectEqual(@as(u32, 4), handler.restart_count);
+    try std.testing.expectEqual(
+        ivsteditcontroller.RestartFlags.kParamValuesChanged |
+            ivsteditcontroller.RestartFlags.kRoutingInfoChanged,
+        handler.last_restart_flags,
+    );
+
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_connection.vtable.disconnect(
+            component_connection,
+            controller_connection,
+        ),
+    );
+    host_requests.markChanges(&.{ .parameter_values, .routing_info });
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        Effect.dispatchHostRequests(component),
+    );
+    try std.testing.expectEqual(@as(u32, 4), handler.restart_count);
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_connection.vtable.connect(
+            component_connection,
+            controller_connection,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.dispatchHostRequests(component),
+    );
+    try std.testing.expectEqual(@as(u32, 5), handler.restart_count);
+    try std.testing.expectEqual(
+        ivsteditcontroller.RestartFlags.kParamValuesChanged |
+            ivsteditcontroller.RestartFlags.kRoutingInfoChanged,
+        handler.last_restart_flags,
+    );
+}
+
+test "simple effect carries selected bus capacity through VST3 processing and state" {
+    const Topology =
+        plug_core.plugin.BoundedDynamicAudioBusTopology(12);
+    const Snapshot = Topology.SnapshotType;
+    const Config = struct {
+        pub const component_name = "LargeDynamicTopologyComponent";
+        pub const controller_cid =
+            tuid.inlineUid(
+                0x659E43B1,
+                0x7D4C4F28,
+                0xA7320B69,
+                0x1CE745D0,
+            );
+        pub const dynamic_audio_bus_topology: ?Topology =
+            makeTopology();
+
+        fn makeTopology() Topology {
+            var topology = Topology.init(
+                plug_core.plugin.DynamicAudioBus.fixed(
+                    .mono,
+                    true,
+                ) catch unreachable,
+                null,
+            ) catch unreachable;
+            for (0..Topology.auxiliary_capacity) |_|
+                _ = topology.addAuxiliary(
+                    .input,
+                    plug_core.plugin.DynamicAudioBus.fixed(
+                        .mono,
+                        false,
+                    ) catch unreachable,
+                ) catch unreachable;
+            return topology;
+        }
+
+        pub const Processor = struct {
+            auxiliary_input_count: usize = 0,
+
+            pub fn process(
+                self: *@This(),
+                comptime Sample: type,
+                context: *plug_process.BoundedProcessContext(
+                    Sample,
+                    Topology.auxiliary_capacity,
+                ),
+            ) void {
+                self.auxiliary_input_count =
+                    context.auxiliaryInputBusCount();
+            }
+        };
+    };
+    const Effect = SimpleEffect(Config);
+    const audio =
+        @intFromEnum(ivstcomponent.MediaTypes.kAudio);
+    const input =
+        @intFromEnum(ivstcomponent.BusDirections.kInput);
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.create(
+            @ptrCast(&ivstcomponent.icomponent_iid),
+            &component_out,
+        ),
+    );
+    const component: *ivstcomponent.IComponent =
+        @ptrCast(@alignCast(
+            component_out orelse return error.MissingComponent,
+        ));
+    defer _ = component.vtable.release(component);
+    try std.testing.expectEqual(
+        @as(types.int32, 13),
+        component.vtable.getBusCount(component, audio, input),
+    );
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.queryInterface(
+            component,
+            &ivstaudioprocessor.iaudio_processor_iid,
+            &processor_out,
+        ),
+    );
+    const processor: *ivstaudioprocessor.IAudioProcessor =
+        @ptrCast(@alignCast(
+            processor_out orelse return error.MissingProcessor,
+        ));
+    defer _ = processor.vtable.release(processor);
+    var setup = ivstaudioprocessor.ProcessSetup{
+        .symbolicSampleSize = @intFromEnum(
+            ivstaudioprocessor.SymbolicSampleSizes.kSample32,
+        ),
+        .sampleRate = 48_000,
+        .maxSamplesPerBlock = 1,
+    };
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.setupProcessing(processor, &setup),
+    );
+    var samples: [Topology.bus_capacity][1]f32 =
+        @splat(.{1.0});
+    var channel_pointers: [Topology.bus_capacity][1][*]f32 = undefined;
+    var input_buses: [Topology.bus_capacity]ivstaudioprocessor.AudioBusBuffers =
+        @splat(.{ .numChannels = 1 });
+    for (
+        &samples,
+        &channel_pointers,
+        &input_buses,
+    ) |*bus_samples, *bus_channel_pointers, *bus| {
+        bus_channel_pointers[0] = bus_samples;
+        bus.channelBuffers = .{
+            .channelBuffers32 = bus_channel_pointers,
+        };
+    }
+    var process_data = ivstaudioprocessor.ProcessData{
+        .symbolicSampleSize = @intFromEnum(
+            ivstaudioprocessor.SymbolicSampleSizes.kSample32,
+        ),
+        .numSamples = 1,
+        .numInputs = Topology.bus_capacity,
+        .inputs = &input_buses,
+    };
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.process(processor, &process_data),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 12),
+        Effect.processorInstance(component)
+            .auxiliary_input_count,
+    );
+
+    var snapshot: Snapshot = .{};
+    try std.testing.expect(
+        Effect.audioBusTopologySnapshot(component, &snapshot),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 13),
+        snapshot.busCount(.input),
+    );
+    const StateStream = vst_stream.FixedBufferStream(512);
+    var state_stream = StateStream{};
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.getState(
+            component,
+            state_stream.asStream(),
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        state_stream.asStream().vtable.seek(
+            state_stream.asStream(),
+            0,
+            @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet),
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.setState(
+            component,
+            state_stream.asStream(),
+        ),
+    );
+}
+
+test "VST3 runtime adapter forwards resource audio and telemetry payloads" {
+    const ResourceReceiver = struct {
+        imported: [16]u8 = @splat(0),
+        imported_length: usize = 0,
+
+        pub fn importPath(
+            self: *@This(),
+            path: []const u8,
+        ) bool {
+            if (path.len > self.imported.len) return false;
+            @memcpy(self.imported[0..path.len], path);
+            self.imported_length = path.len;
+            return true;
+        }
+
+        pub fn relink(_: *@This(), _: []const u8) bool {
+            return true;
+        }
+
+        pub fn requestCancel(_: *@This()) bool {
+            return true;
+        }
+
+        pub fn retry(_: *@This()) bool {
+            return true;
+        }
+    };
+    const AudioReceiver = struct {
+        cleared_generation: u64 = 0,
+
+        pub fn begin(_: *@This(), _: anytype) !void {}
+
+        pub fn write(
+            _: *@This(),
+            _: u64,
+            _: usize,
+            _: []const f32,
+        ) !void {}
+
+        pub fn commit(_: *@This(), _: u64) !void {}
+
+        pub fn cancel(_: *@This(), _: u64) bool {
+            return true;
+        }
+
+        pub fn clear(self: *@This(), generation: u64) !void {
+            self.cleared_generation = generation;
+        }
+    };
+    const Plugin = struct {
+        resource_receiver: ResourceReceiver = .{},
+        audio_receiver: AudioReceiver = .{},
+        editor_open_count: usize = 0,
+        editor_close_count: usize = 0,
+
+        pub const name = "Payload Adapter";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+
+        pub fn resourcePathReceiver(
+            self: *@This(),
+        ) *ResourceReceiver {
+            return &self.resource_receiver;
+        }
+
+        pub fn audioImportReceiver(
+            self: *@This(),
+        ) *AudioReceiver {
+            return &self.audio_receiver;
+        }
+
+        pub fn guiTelemetryLoad(
+            _: *@This(),
+            source_id: u32,
+        ) f64 {
+            return @floatFromInt(source_id);
+        }
+
+        pub fn guiGraphLoad(
+            _: *@This(),
+            source_id: u32,
+            output: []plug_core.gui_graph.Point,
+        ) usize {
+            if (output.len == 0) return 0;
+            output[0] = .{
+                .x = @floatFromInt(source_id),
+                .y = 0.25,
+            };
+            return 1;
+        }
+
+        pub fn guiTelemetryLoadText(
+            _: *@This(),
+            _: u32,
+            output: []u8,
+        ) usize {
+            if (output.len < 7) return 0;
+            @memcpy(output[0..7], "payload");
+            return 7;
+        }
+
+        pub fn guiTelemetryEditorOpened(self: *@This()) void {
+            self.editor_open_count += 1;
+        }
+
+        pub fn guiTelemetryEditorClosed(self: *@This()) void {
+            self.editor_close_count += 1;
+        }
+    };
+    const Configuration = struct {
+        pub const component_name = "PayloadAdapterComponent";
+        pub const controller_cid = tuid.inlineUid(
+            0x66421F3A,
+            0x95D14B31,
+            0xAF243D5A,
+            0xD6FB56A1,
+        );
+        pub const resource_path_target_id: u32 = 17;
+        pub const audio_import_target_id: u32 = 19;
+    };
+    const Effect = HighLevelEffect(Plugin, Configuration);
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.create(
+            @ptrCast(&ivstcomponent.icomponent_iid),
+            &component_out,
+        ),
+    );
+    const component: *ivstcomponent.IComponent =
+        @ptrCast(@alignCast(
+            component_out orelse return error.MissingComponent,
+        ));
+    defer _ = component.vtable.release(component);
+    var connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.queryInterface(
+            component,
+            &ivstmessage.iconnection_point_iid,
+            &connection_out,
+        ),
+    );
+    const connection: *ivstmessage.IConnectionPoint =
+        @ptrCast(@alignCast(
+            connection_out orelse return error.MissingConnection,
+        ));
+    defer _ = connection.vtable.release(connection);
+
+    try std.testing.expectEqual(
+        types.kResultOk,
+        resource_path_transport.sendImport(
+            connection,
+            17,
+            "model.fixture",
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        gui_ir_transport.sendClear(connection, 19, 23),
+    );
+    const plugin = &Effect.processorInstance(component)
+        .runtime.instance.plugin;
+    try std.testing.expectEqualStrings(
+        "model.fixture",
+        plugin.resource_receiver
+            .imported[0..plugin.resource_receiver.imported_length],
+    );
+    try std.testing.expectEqual(
+        @as(u64, 23),
+        plugin.audio_receiver.cleared_generation,
+    );
+
+    const telemetry =
+        gui_telemetry_source.query(component) orelse
+        return error.MissingTelemetry;
+    defer telemetry.release();
+    try std.testing.expectEqual(@as(f64, 5), telemetry.load(5));
+    var graph: [1]plug_core.gui_graph.Point = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        telemetry.loadGraph(7, &graph),
+    );
+    try std.testing.expectEqual(
+        plug_core.gui_graph.Point{ .x = 7, .y = 0.25 },
+        graph[0],
+    );
+    var text: [7]u8 = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 7),
+        telemetry.loadText(3, &text),
+    );
+    try std.testing.expectEqualStrings("payload", &text);
+    telemetry.editorOpened();
+    telemetry.editorClosed();
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        plugin.editor_open_count,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        plugin.editor_close_count,
+    );
+}
+
+test "high-level effect derives metadata and configured parameters" {
+    const Plugin = struct {
+        pub const name = "Configured High-Level Effect";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plug_core.plugin.AudioBusLayout = .mono;
+        pub const audio_output_layout: plug_core.plugin.AudioBusLayout = .surround_5_1;
+        pub const event_input = false;
+        pub const Params = struct {
+            enabled: plug_core.parameters.BoolParam = .{
+                .id = 0,
+                .name = "Enabled",
+                .default = false,
+            },
+        };
+    };
+    const Configuration = struct {
+        pub const component_name =
+            "ConfiguredHighLevelComponent";
+        pub const controller_cid = tuid.inlineUid(
+            0xD71371CE,
+            0x357D49A6,
+            0xA6CCB501,
+            0x588D88E7,
+        );
+        pub const params = Plugin.Params{
+            .enabled = .{
+                .id = 0,
+                .name = "Enabled",
+                .default = true,
+            },
+        };
+    };
+    const Effect = HighLevelEffectWithParameters(
+        Plugin,
+        Configuration.params,
+        Configuration,
+    );
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.create(
+            @ptrCast(&ivstcomponent.icomponent_iid),
+            &component_out,
+        ),
+    );
+    const component: *ivstcomponent.IComponent =
+        @ptrCast(@alignCast(
+            component_out orelse return error.MissingComponent,
+        ));
+    defer _ = component.vtable.release(component);
+
+    try std.testing.expectEqual(
+        @as(types.int32, 1),
+        component.vtable.getBusCount(
+            component,
+            @intFromEnum(ivstcomponent.MediaTypes.kAudio),
+            @intFromEnum(ivstcomponent.BusDirections.kInput),
+        ),
+    );
+    var output_info: ivstcomponent.BusInfo = .{};
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.getBusInfo(
+            component,
+            @intFromEnum(ivstcomponent.MediaTypes.kAudio),
+            @intFromEnum(ivstcomponent.BusDirections.kOutput),
+            0,
+            &output_info,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(types.int32, 6),
+        output_info.channelCount,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 1.0),
+        Effect.processorInstance(component)
+            .runtime.instance.parameterView()
+            .loadNormalized("enabled"),
+    );
+}
+
+pub fn HighLevelEditController(
+    comptime Plugin: type,
+    comptime declared_controller_name: []const u8,
+) type {
+    return HighLevelEditControllerWithParameters(
+        Plugin,
+        .{},
+        declared_controller_name,
+    );
+}
+
+pub fn HighLevelEditControllerWithParameters(
+    comptime Plugin: type,
+    comptime params: Plugin.Params,
+    comptime declared_controller_name: []const u8,
+) type {
+    const Spec = plug_core.plugin.PluginSpec(Plugin);
+
+    return ReflectedEditController(struct {
+        pub const controller_name = declared_controller_name;
+        pub const Params = Spec.Params;
+        pub const owned_parameter_set =
+            Spec.ParameterSet.init(params);
+        pub const parameter_set = &owned_parameter_set;
+    });
+}
+
 pub fn SimpleStereoEffect(comptime Config: type) type {
     return SimpleEffect(Config);
 }
 
+pub fn HighLevelEffect(
+    comptime Plugin: type,
+    comptime Config: type,
+) type {
+    return HighLevelEffectWithParameters(Plugin, .{}, Config);
+}
+
+pub fn HighLevelEffectWithParameters(
+    comptime Plugin: type,
+    comptime params: Plugin.Params,
+    comptime Config: type,
+) type {
+    const Spec = plug_core.plugin.PluginSpec(Plugin);
+
+    return SimpleEffect(struct {
+        pub const component_name = Config.component_name;
+        pub const controller_cid = Config.controller_cid;
+        pub const dynamic_audio_bus_topology =
+            Spec.dynamic_audio_bus_topology;
+        pub const maximum_auxiliary_audio_buses =
+            Spec.auxiliary_audio_bus_capacity;
+        pub const audio_input_layout = Spec.audio_input_layout;
+        pub const audio_output_layout = Spec.audio_output_layout;
+        pub const audio_auxiliary_input_layouts =
+            Spec.audio_auxiliary_input_layouts;
+        pub const audio_auxiliary_output_layouts =
+            Spec.audio_auxiliary_output_layouts;
+        pub const event_input = Spec.event_input;
+        pub const event_output = Spec.event_output;
+        pub const follow_host_transport =
+            Spec.follow_host_transport;
+        pub const gui_note_input =
+            @hasDecl(Config, "gui_note_input") and
+            Config.gui_note_input;
+        pub const process_context_requirements =
+            if (@hasDecl(Config, "process_context_requirements"))
+                Config.process_context_requirements
+            else
+                0;
+        pub const Params = Spec.Params;
+        pub const owned_parameter_set =
+            Spec.ParameterSet.init(params);
+        pub const parameter_set = &owned_parameter_set;
+        pub const Processor =
+            zig_vst3_plugin_runtime_adapter.ProcessorWithParameters(
+                Plugin,
+                params,
+            );
+        pub const ara_enabled = @hasDecl(Config, "AraExtension");
+        pub const AraExtension = if (ara_enabled)
+            Config.AraExtension
+        else
+            struct {};
+        pub const AraEntryPoint = if (ara_enabled)
+            Config.AraEntryPoint
+        else
+            struct {};
+        pub const ara_factory: *const ara_vst3.Factory =
+            if (ara_enabled)
+                Config.ara_factory
+            else
+                @ptrFromInt(1);
+        pub fn initAraExtension(
+            processor: *Processor,
+        ) AraExtension {
+            if (comptime ara_enabled)
+                return Config.initAraExtension(processor);
+            return .{};
+        }
+        pub fn bindAraExtension(
+            processor: *Processor,
+            extension: *AraExtension,
+        ) void {
+            if (comptime ara_enabled and
+                @hasDecl(Config, "bindAraExtension"))
+                Config.bindAraExtension(processor, extension);
+        }
+        pub fn unbindAraExtension(
+            processor: *Processor,
+            extension: *AraExtension,
+        ) void {
+            if (comptime ara_enabled and
+                @hasDecl(Config, "unbindAraExtension"))
+                Config.unbindAraExtension(processor, extension);
+        }
+        pub const resource_path_target_id: ?u32 =
+            if (@hasDecl(Config, "resource_path_target_id"))
+                Config.resource_path_target_id
+            else
+                null;
+        pub const audio_import_target_id: ?u32 =
+            if (@hasDecl(Config, "audio_import_target_id"))
+                Config.audio_import_target_id
+            else
+                null;
+    });
+}
+
 pub fn SimpleEffect(comptime Config: type) type {
     return struct {
+        const ara_enabled =
+            if (@hasDecl(Config, "ara_enabled"))
+                Config.ara_enabled
+            else
+                @hasDecl(Config, "AraExtension");
+        const AraExtension = if (ara_enabled)
+            Config.AraExtension
+        else
+            struct {};
+        const AraEntryPoint = if (ara_enabled)
+            Config.AraEntryPoint
+        else
+            struct {};
         const Params = if (@hasDecl(Config, "Params")) Config.Params else struct {};
         const DefaultParameterSet = plug_core.parameters.ParameterSet(Params);
         const default_parameter_set = DefaultParameterSet.init(.{});
         const parameter_set = if (@hasDecl(Config, "parameter_set")) Config.parameter_set else &default_parameter_set;
         const ParameterState = zig_vst3_plugin_bridge.ParameterState(Params);
+        const processor_component_state =
+            @hasDecl(
+                Config.Processor,
+                "component_state_maximum_encoded_size",
+            ) and
+            Config.Processor.component_state_maximum_encoded_size != 0;
         const event_output = @hasDecl(Config, "event_output") and Config.event_output;
         const event_input = !@hasDecl(Config, "event_input") or Config.event_input;
         const gui_note_input = @hasDecl(Config, "gui_note_input") and Config.gui_note_input;
+        const resource_path_target_id: ?u32 =
+            if (@hasDecl(Config, "resource_path_target_id"))
+                Config.resource_path_target_id
+            else
+                null;
+        const audio_import_target_id: ?u32 =
+            if (@hasDecl(Config, "audio_import_target_id"))
+                Config.audio_import_target_id
+            else
+                null;
+        const processor_resource_path_receiver =
+            if (@hasDecl(
+                Config.Processor,
+                "hasResourcePathReceiver",
+            ))
+                Config.Processor.hasResourcePathReceiver
+            else
+                @hasDecl(Config.Processor, "resourcePathReceiver");
+        const processor_audio_import_receiver =
+            if (@hasDecl(
+                Config.Processor,
+                "hasAudioImportReceiver",
+            ))
+                Config.Processor.hasAudioImportReceiver
+            else
+                @hasDecl(Config.Processor, "audioImportReceiver");
+        const processor_gui_telemetry_load =
+            if (@hasDecl(Config.Processor, "hasGuiTelemetryLoad"))
+                Config.Processor.hasGuiTelemetryLoad
+            else
+                @hasDecl(Config.Processor, "guiTelemetryLoad");
+        const processor_gui_graph_load =
+            if (@hasDecl(Config.Processor, "hasGuiGraphLoad"))
+                Config.Processor.hasGuiGraphLoad
+            else
+                @hasDecl(Config.Processor, "guiGraphLoad");
+        const processor_gui_telemetry_load_text =
+            if (@hasDecl(
+                Config.Processor,
+                "hasGuiTelemetryLoadText",
+            ))
+                Config.Processor.hasGuiTelemetryLoadText
+            else
+                @hasDecl(Config.Processor, "guiTelemetryLoadText");
+        const processor_gui_editor_opened =
+            if (@hasDecl(
+                Config.Processor,
+                "hasGuiTelemetryEditorOpened",
+            ))
+                Config.Processor.hasGuiTelemetryEditorOpened
+            else
+                @hasDecl(
+                    Config.Processor,
+                    "guiTelemetryEditorOpened",
+                );
+        const processor_gui_editor_closed =
+            if (@hasDecl(
+                Config.Processor,
+                "hasGuiTelemetryEditorClosed",
+            ))
+                Config.Processor.hasGuiTelemetryEditorClosed
+            else
+                @hasDecl(
+                    Config.Processor,
+                    "guiTelemetryEditorClosed",
+                );
         const audio_input_layout: plug_core.plugin.AudioBusLayout = if (@hasDecl(Config, "audio_input_layout"))
             Config.audio_input_layout
         else if (!@hasDecl(Config, "audio_input") or Config.audio_input)
@@ -2678,29 +4134,190 @@ pub fn SimpleEffect(comptime Config: type) type {
             .none;
         const audio_input = audio_input_layout.hasBus();
         const audio_output = audio_output_layout.hasBus();
+        const audio_sidechain_layout: plug_core.plugin.AudioBusLayout = if (@hasDecl(Config, "audio_sidechain_layout"))
+            Config.audio_sidechain_layout
+        else
+            .none;
+        const audio_auxiliary_input_layouts: []const plug_core.plugin.AudioBusLayout = if (@hasDecl(Config, "audio_auxiliary_input_layouts"))
+            Config.audio_auxiliary_input_layouts
+        else
+            &.{};
+        const audio_auxiliary_output_layout: plug_core.plugin.AudioBusLayout = if (@hasDecl(Config, "audio_auxiliary_output_layout"))
+            Config.audio_auxiliary_output_layout
+        else
+            .none;
+        const audio_auxiliary_output_layouts: []const plug_core.plugin.AudioBusLayout = if (@hasDecl(Config, "audio_auxiliary_output_layouts"))
+            Config.audio_auxiliary_output_layouts
+        else
+            &.{};
         const bus_config = zig_vst3_plugin_bridge.StereoAudioBuses.Config{
             .audio_input = audio_input,
             .audio_output = audio_output,
             .audio_input_layout = audio_input_layout,
             .audio_output_layout = audio_output_layout,
+            .audio_sidechain_layout = audio_sidechain_layout,
+            .audio_auxiliary_input_layouts = audio_auxiliary_input_layouts,
+            .audio_auxiliary_output_layout = audio_auxiliary_output_layout,
+            .audio_auxiliary_output_layouts = audio_auxiliary_output_layouts,
             .event_input = event_input,
             .event_output = event_output,
         };
-        const process_context_requirements: types.uint32 = if (@hasDecl(Config, "process_context_requirements"))
-            Config.process_context_requirements
-        else
-            0;
+        const AudioBusTopology =
+            if (@hasDecl(Config, "audio_bus_topology"))
+                optionalChildOrSelf(
+                    @TypeOf(Config.audio_bus_topology),
+                )
+            else if (@hasDecl(Config, "dynamic_audio_bus_topology"))
+                optionalChildOrSelf(
+                    @TypeOf(Config.dynamic_audio_bus_topology),
+                )
+            else if (@hasDecl(
+                Config,
+                "maximum_auxiliary_audio_buses",
+            ))
+                plug_core.plugin.BoundedDynamicAudioBusTopology(
+                    Config.maximum_auxiliary_audio_buses,
+                )
+            else
+                plug_core.plugin.DynamicAudioBusTopology;
+        const AudioBusSnapshot = AudioBusTopology.SnapshotType;
+        const auxiliary_audio_bus_capacity =
+            AudioBusTopology.auxiliary_capacity;
+        const declared_audio_bus_topology: ?AudioBusTopology =
+            if (@hasDecl(Config, "audio_bus_topology"))
+                Config.audio_bus_topology
+            else if (@hasDecl(Config, "dynamic_audio_bus_topology"))
+                Config.dynamic_audio_bus_topology
+            else
+                null;
+        const dynamic_audio_buses =
+            declared_audio_bus_topology != null;
+        const initial_audio_bus_topology: AudioBusTopology =
+            declared_audio_bus_topology orelse fixedAudioBusTopology();
+        const initial_audio_bus_snapshot =
+            initial_audio_bus_topology.snapshot() catch unreachable;
+        const AudioBusSnapshotPublisher =
+            plug_core.dsp.RealtimeSnapshotPublisher(
+                AudioBusSnapshot,
+            );
+        const declared_process_context_requirements: types.uint32 =
+            if (@hasDecl(Config, "process_context_requirements"))
+                Config.process_context_requirements
+            else
+                0;
+        const host_transport_requirements: types.uint32 =
+            if (@hasDecl(Config, "follow_host_transport") and
+            Config.follow_host_transport)
+                ivstaudioprocessor.ProcessContextRequirementFlags.kNeedProjectTimeMusic |
+                    ivstaudioprocessor.ProcessContextRequirementFlags.kNeedBarPositionMusic |
+                    ivstaudioprocessor.ProcessContextRequirementFlags.kNeedCycleMusic |
+                    ivstaudioprocessor.ProcessContextRequirementFlags.kNeedTempo |
+                    ivstaudioprocessor.ProcessContextRequirementFlags.kNeedTimeSignature |
+                    ivstaudioprocessor.ProcessContextRequirementFlags.kNeedTransportState
+            else
+                0;
+        const process_context_requirements =
+            declared_process_context_requirements |
+            host_transport_requirements;
 
         comptime {
+            if (ara_enabled and
+                (!@hasDecl(Config, "AraExtension") or
+                    !@hasDecl(Config, "AraEntryPoint") or
+                    !@hasDecl(Config, "ara_factory") or
+                    !@hasDecl(Config, "initAraExtension")))
+                @compileError(
+                    "ARA effects require AraExtension, AraEntryPoint, ara_factory, and initAraExtension",
+                );
             if (@hasDecl(Config, "audio_input") and Config.audio_input != audio_input_layout.hasBus()) {
                 @compileError("audio_input_layout conflicts with audio_input");
             }
             if (@hasDecl(Config, "audio_output") and Config.audio_output != audio_output_layout.hasBus()) {
                 @compileError("audio_output_layout conflicts with audio_output");
             }
+            if (audio_sidechain_layout.hasBus() and !audio_input_layout.hasBus()) {
+                @compileError("audio_sidechain_layout requires a main audio input bus");
+            }
+            if (@hasDecl(Config, "audio_auxiliary_input_layouts") and @hasDecl(Config, "audio_sidechain_layout")) {
+                @compileError("audio_auxiliary_input_layouts conflicts with audio_sidechain_layout");
+            }
+            if (audio_auxiliary_input_layouts.len > auxiliary_audio_bus_capacity) {
+                @compileError("too many auxiliary audio input buses");
+            }
+            for (audio_auxiliary_input_layouts) |layout| {
+                if (!layout.hasBus()) {
+                    @compileError("auxiliary audio input bus layouts cannot be none");
+                }
+            }
+            if (audio_auxiliary_input_layouts.len != 0 and !audio_input_layout.hasBus()) {
+                @compileError("audio_auxiliary_input_layouts requires a main audio input bus");
+            }
+            if (audio_auxiliary_output_layout.hasBus() and !audio_output_layout.hasBus()) {
+                @compileError("audio_auxiliary_output_layout requires a main audio output bus");
+            }
+            if (@hasDecl(Config, "audio_auxiliary_output_layouts") and @hasDecl(Config, "audio_auxiliary_output_layout")) {
+                @compileError("audio_auxiliary_output_layouts conflicts with audio_auxiliary_output_layout");
+            }
+            if (audio_auxiliary_output_layouts.len > auxiliary_audio_bus_capacity) {
+                @compileError("too many auxiliary audio output buses");
+            }
+            for (audio_auxiliary_output_layouts) |layout| {
+                if (!layout.hasBus()) {
+                    @compileError("auxiliary audio output bus layouts cannot be none");
+                }
+            }
+            if (audio_auxiliary_output_layouts.len != 0 and !audio_output_layout.hasBus()) {
+                @compileError("audio_auxiliary_output_layouts requires a main audio output bus");
+            }
             if (gui_note_input and !event_input) {
                 @compileError("gui_note_input requires an event input bus");
             }
+            if (!initial_audio_bus_topology.valid()) {
+                @compileError("audio_bus_topology must be valid");
+            }
+        }
+
+        fn fixedAudioBusTopology() AudioBusTopology {
+            var topology = AudioBusTopology{};
+            if (audio_input_layout.hasBus()) {
+                topology.input_buses[0] =
+                    plug_core.plugin.DynamicAudioBus.fixed(
+                        audio_input_layout,
+                        true,
+                    ) catch unreachable;
+                topology.input_count = 1;
+                for (0..bus_config.auxiliaryInputCount()) |index| {
+                    const layout =
+                        bus_config.auxiliaryInputLayout(index) orelse
+                        unreachable;
+                    topology.input_buses[topology.input_count] =
+                        plug_core.plugin.DynamicAudioBus.fixed(
+                            layout,
+                            false,
+                        ) catch unreachable;
+                    topology.input_count += 1;
+                }
+            }
+            if (audio_output_layout.hasBus()) {
+                topology.output_buses[0] =
+                    plug_core.plugin.DynamicAudioBus.fixed(
+                        audio_output_layout,
+                        true,
+                    ) catch unreachable;
+                topology.output_count = 1;
+                for (0..bus_config.auxiliaryOutputCount()) |index| {
+                    const layout =
+                        bus_config.auxiliaryOutputLayoutAt(index) orelse
+                        unreachable;
+                    topology.output_buses[topology.output_count] =
+                        plug_core.plugin.DynamicAudioBus.fixed(
+                            layout,
+                            false,
+                        ) catch unreachable;
+                    topology.output_count += 1;
+                }
+            }
+            return topology;
         }
 
         const Component = struct {
@@ -2713,9 +4330,16 @@ pub fn SimpleEffect(comptime Config: type) type {
             prefetchable_support: ivstprefetchablesupport.IPrefetchableSupport = .{ .vtable = &prefetchable_support_vtable },
             data_exchange_receiver: ivstdataexchange.IDataExchangeReceiver = .{ .vtable = &data_exchange_receiver_vtable },
             telemetry_source: gui_telemetry_source.Interface = .{ .vtable = &telemetry_source_vtable },
+            ara_extension: AraExtension = undefined,
+            ara_entry_point: AraEntryPoint = undefined,
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
             connected_peer_mutex: std.Io.Mutex = .init,
-            latency_change_pending: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+            audio_bus_topology_mutex: std.Io.Mutex = .init,
+            audio_bus_topology: AudioBusTopology =
+                initial_audio_bus_topology,
+            audio_bus_snapshots: AudioBusSnapshotPublisher = undefined,
+            pending_host_changes: std.atomic.Value(u16) =
+                std.atomic.Value(u16).init(0),
             host_request_sink: HostRequestSink = undefined,
             host_application: ?*ivsthostapplication.IHostApplication = null,
             info_listener: ?*ivstchannelcontextinfo.IInfoListener = null,
@@ -2726,23 +4350,64 @@ pub fn SimpleEffect(comptime Config: type) type {
             gui_notes: gui_note_transport.Mailbox = .{},
             gui_note_seen: [128]u64 = @splat(0),
             sample_rate: f64 = 0,
+            component_active: bool = false,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
 
-            fn init(self: *Component) void {
+            fn init(self: *Component) !void {
                 self.* = .{
                     .parameter_state = ParameterState.init(parameter_set),
                     .processor_impl = undefined,
                 };
-                if (@hasDecl(Config.Processor, "initInPlace")) {
+                self.audio_bus_snapshots =
+                    AudioBusSnapshotPublisher.init(
+                        initial_audio_bus_snapshot,
+                    );
+                if (@hasDecl(Config.Processor, "initWithAllocator")) {
+                    self.processor_impl = try Config.Processor.initWithAllocator(
+                        std.heap.page_allocator,
+                    );
+                } else if (@hasDecl(Config.Processor, "initInPlace")) {
                     self.processor_impl.initInPlace();
                 } else if (@hasDecl(Config.Processor, "init")) {
                     self.processor_impl = Config.Processor.init();
                 } else {
                     self.processor_impl = .{};
                 }
+                if (comptime ara_enabled) {
+                    self.ara_extension =
+                        Config.initAraExtension(
+                            &self.processor_impl,
+                        );
+                    if (@hasDecl(
+                        AraExtension,
+                        "initializeInPlace",
+                    )) {
+                        self.ara_extension.initializeInPlace();
+                    }
+                    if (@hasDecl(Config, "bindAraExtension")) {
+                        Config.bindAraExtension(
+                            &self.processor_impl,
+                            &self.ara_extension,
+                        );
+                    }
+                    self.ara_entry_point =
+                        AraEntryPoint.initDelegated(
+                            &self.ara_extension,
+                            Config.ara_factory,
+                            .{
+                                .context = self,
+                                .query = araIdentityQuery,
+                                .add_ref = araIdentityAddRef,
+                                .release = araIdentityRelease,
+                            },
+                        );
+                }
                 self.host_request_sink = .{
                     .context = self,
-                    .mark_latency_changed = markLatencyChangedRequest,
+                    .mark_change = markHostChangeRequest,
+                    .set_audio_bus_layout = setAudioBusLayoutRequest,
+                    .add_auxiliary_audio_bus = addAuxiliaryAudioBusRequest,
+                    .remove_auxiliary_audio_bus = removeAuxiliaryAudioBusRequest,
                     .dispatch = dispatchHostRequestsRequest,
                 };
                 if (@hasDecl(Config.Processor, "bindHostRequests")) {
@@ -2754,7 +4419,10 @@ pub fn SimpleEffect(comptime Config: type) type {
         pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
             out.* = null;
             const component = std.heap.page_allocator.create(Component) catch return types.kResultFalse;
-            component.init();
+            component.init() catch {
+                std.heap.page_allocator.destroy(component);
+                return types.kResultFalse;
+            };
             const result = query(&component.iface, @ptrCast(requested_iid), out);
             _ = release(&component.iface);
             return result;
@@ -2773,7 +4441,93 @@ pub fn SimpleEffect(comptime Config: type) type {
         }
 
         pub fn markLatencyChanged(iface: *ivstcomponent.IComponent) void {
-            owner(iface).latency_change_pending.store(true, .release);
+            markHostChange(owner(iface), .latency);
+        }
+
+        pub fn markIoChanged(iface: *ivstcomponent.IComponent) void {
+            markHostChange(owner(iface), .audio_io);
+        }
+
+        pub fn markHostChanged(
+            iface: *ivstcomponent.IComponent,
+            change: plug_core.plugin.HostChange,
+        ) void {
+            markHostChange(owner(iface), change);
+        }
+
+        pub fn audioBusTopologySnapshot(
+            iface: *ivstcomponent.IComponent,
+            out: *AudioBusSnapshot,
+        ) bool {
+            const self = owner(iface);
+            lockAudioBusTopology(self);
+            defer unlockAudioBusTopology(self);
+            out.* = self.audio_bus_topology.snapshot() catch return false;
+            return true;
+        }
+
+        pub fn setAudioBusLayout(
+            iface: *ivstcomponent.IComponent,
+            direction: plug_core.plugin.AudioBusDirection,
+            index: usize,
+            layout: plug_core.plugin.AudioBusLayout,
+        ) bool {
+            if (comptime !dynamic_audio_buses)
+                return false;
+            const self = owner(iface);
+            lockAudioBusTopology(self);
+            defer unlockAudioBusTopology(self);
+            var next = self.audio_bus_topology;
+            const previous_generation = next.current_generation;
+            _ = next.setLayout(direction, index, layout) catch return false;
+            return publishPluginTopologyChange(
+                self,
+                next,
+                previous_generation,
+            );
+        }
+
+        pub fn addAuxiliaryAudioBus(
+            iface: *ivstcomponent.IComponent,
+            direction: plug_core.plugin.AudioBusDirection,
+            bus_value: plug_core.plugin.DynamicAudioBus,
+        ) bool {
+            if (comptime !dynamic_audio_buses)
+                return false;
+            const self = owner(iface);
+            lockAudioBusTopology(self);
+            defer unlockAudioBusTopology(self);
+            var next = self.audio_bus_topology;
+            const previous_generation = next.current_generation;
+            _ = next.addAuxiliary(direction, bus_value) catch return false;
+            return publishPluginTopologyChange(
+                self,
+                next,
+                previous_generation,
+            );
+        }
+
+        pub fn removeAuxiliaryAudioBus(
+            iface: *ivstcomponent.IComponent,
+            direction: plug_core.plugin.AudioBusDirection,
+            auxiliary_index: usize,
+        ) bool {
+            if (comptime !dynamic_audio_buses)
+                return false;
+            const self = owner(iface);
+            lockAudioBusTopology(self);
+            defer unlockAudioBusTopology(self);
+            var next = self.audio_bus_topology;
+            const previous_generation = next.current_generation;
+            _ = next.removeAuxiliary(
+                direction,
+                auxiliary_index,
+            ) catch return false;
+            return publishPluginTopologyChange(
+                self,
+                next,
+                previous_generation,
+            );
         }
 
         pub fn dispatchHostRequests(iface: *ivstcomponent.IComponent) types.tresult {
@@ -2852,26 +4606,147 @@ pub fn SimpleEffect(comptime Config: type) type {
         const ownerFromDataExchangeReceiver = interface_map.ownerFromField(Component, ivstdataexchange.IDataExchangeReceiver, "data_exchange_receiver");
         const ownerFromTelemetrySource = interface_map.ownerFromField(Component, gui_telemetry_source.Interface, "telemetry_source");
 
-        fn markLatencyChangedRequest(context: *anyopaque) void {
+        fn markHostChangeRequest(
+            context: *anyopaque,
+            change: plug_core.plugin.HostChange,
+        ) void {
             const self: *Component = @ptrCast(@alignCast(context));
-            self.latency_change_pending.store(true, .release);
+            markHostChange(self, change);
         }
 
-        fn dispatchHostRequestsRequest(context: *anyopaque) types.tresult {
+        fn setAudioBusLayoutRequest(
+            context: *anyopaque,
+            direction: plug_core.plugin.AudioBusDirection,
+            index: usize,
+            layout: plug_core.plugin.AudioBusLayout,
+        ) bool {
             const self: *Component = @ptrCast(@alignCast(context));
-            return dispatchPendingHostRequests(self);
+            return setAudioBusLayout(
+                &self.iface,
+                direction,
+                index,
+                layout,
+            );
+        }
+
+        fn addAuxiliaryAudioBusRequest(
+            context: *anyopaque,
+            direction: plug_core.plugin.AudioBusDirection,
+            bus_value: plug_core.plugin.DynamicAudioBus,
+        ) bool {
+            const self: *Component = @ptrCast(@alignCast(context));
+            return addAuxiliaryAudioBus(
+                &self.iface,
+                direction,
+                bus_value,
+            );
+        }
+
+        fn removeAuxiliaryAudioBusRequest(
+            context: *anyopaque,
+            direction: plug_core.plugin.AudioBusDirection,
+            auxiliary_index: usize,
+        ) bool {
+            const self: *Component = @ptrCast(@alignCast(context));
+            return removeAuxiliaryAudioBus(
+                &self.iface,
+                direction,
+                auxiliary_index,
+            );
+        }
+
+        fn publishPluginTopologyChange(
+            self: *Component,
+            next: AudioBusTopology,
+            previous_generation: u64,
+        ) bool {
+            if (next.current_generation == previous_generation)
+                return true;
+            const snapshot = next.snapshot() catch return false;
+            _ = self.audio_bus_snapshots.publish(snapshot) catch
+                return false;
+            self.audio_bus_topology = next;
+            markHostChange(self, .audio_io);
+            return true;
+        }
+
+        fn dispatchHostRequestsRequest(context: *anyopaque) bool {
+            const self: *Component = @ptrCast(@alignCast(context));
+            return dispatchPendingHostRequests(self) == types.kResultOk;
         }
 
         fn dispatchPendingHostRequests(self: *Component) types.tresult {
-            if (!self.latency_change_pending.swap(false, .acq_rel)) return types.kResultOk;
+            const pending =
+                self.pending_host_changes.swap(0, .acq_rel);
+            if (pending == 0) return types.kResultOk;
             const peer = retainComponentConnectionPeer(self) orelse {
-                self.latency_change_pending.store(true, .release);
+                _ = self.pending_host_changes.fetchOr(
+                    pending,
+                    .release,
+                );
                 return types.kResultFalse;
             };
             defer _ = peer.vtable.release(peer);
-            const result = latency_transport.send(peer);
-            if (result != types.kResultOk) self.latency_change_pending.store(true, .release);
+            const flags = hostRestartFlags(pending);
+            const result = host_restart_transport.send(peer, flags);
+            if (result != types.kResultOk)
+                _ = self.pending_host_changes.fetchOr(
+                    pending,
+                    .release,
+                );
             return result;
+        }
+
+        fn markHostChange(
+            self: *Component,
+            change: plug_core.plugin.HostChange,
+        ) void {
+            _ = self.pending_host_changes.fetchOr(
+                hostChangeBit(change),
+                .release,
+            );
+        }
+
+        fn hostChangeBit(
+            change: plug_core.plugin.HostChange,
+        ) u16 {
+            return @as(u16, 1) << @intFromEnum(change);
+        }
+
+        fn hostRestartFlags(pending: u16) types.int32 {
+            var flags: types.int32 = 0;
+            inline for (std.meta.fields(
+                plug_core.plugin.HostChange,
+            )) |field| {
+                const change: plug_core.plugin.HostChange =
+                    @enumFromInt(field.value);
+                if (pending & hostChangeBit(change) != 0)
+                    flags |= hostRestartFlag(change);
+            }
+            return flags;
+        }
+
+        fn hostRestartFlag(
+            change: plug_core.plugin.HostChange,
+        ) types.int32 {
+            return switch (change) {
+                .component_reload => ivsteditcontroller.RestartFlags.kReloadComponent,
+                .audio_io => ivsteditcontroller.RestartFlags.kIoChanged,
+                .parameter_values => ivsteditcontroller.RestartFlags.kParamValuesChanged,
+                .latency => ivsteditcontroller.RestartFlags.kLatencyChanged,
+                .parameter_titles => ivsteditcontroller.RestartFlags.kParamTitlesChanged,
+                .midi_cc_assignments => ivsteditcontroller.RestartFlags
+                    .kMidiCCAssignmentChanged,
+                .note_expression => ivsteditcontroller.RestartFlags
+                    .kNoteExpressionChanged,
+                .io_titles => ivsteditcontroller.RestartFlags.kIoTitlesChanged,
+                .prefetchable_support => ivsteditcontroller.RestartFlags
+                    .kPrefetchableSupportChanged,
+                .routing_info => ivsteditcontroller.RestartFlags.kRoutingInfoChanged,
+                .keyswitches => ivsteditcontroller.RestartFlags.kKeyswitchChanged,
+                .parameter_id_mapping => ivsteditcontroller.RestartFlags
+                    .kParamIDMappingChanged,
+            };
         }
 
         fn retainComponentConnectionPeer(self: *Component) ?*ivstmessage.IConnectionPoint {
@@ -2894,6 +4769,18 @@ pub fn SimpleEffect(comptime Config: type) type {
             self.connected_peer_mutex.unlock(std.Io.Threaded.global_single_threaded.io());
         }
 
+        fn lockAudioBusTopology(self: *Component) void {
+            self.audio_bus_topology_mutex.lockUncancelable(
+                std.Io.Threaded.global_single_threaded.io(),
+            );
+        }
+
+        fn unlockAudioBusTopology(self: *Component) void {
+            self.audio_bus_topology_mutex.unlock(
+                std.Io.Threaded.global_single_threaded.io(),
+            );
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             const base_entries = [_]interface_map.Entry{
@@ -2908,16 +4795,91 @@ pub fn SimpleEffect(comptime Config: type) type {
                 interface_map.fieldEntry("prefetchable_support", self, &ivstprefetchablesupport.iprefetchable_support_iid),
                 interface_map.fieldEntry("data_exchange_receiver", self, &ivstdataexchange.idata_exchange_receiver_iid),
             };
-            if (comptime @hasDecl(Config.Processor, "guiTelemetryLoad") or
-                @hasDecl(Config.Processor, "guiGraphLoad") or
-                @hasDecl(Config.Processor, "guiTelemetryLoadText"))
+            if (comptime processor_gui_telemetry_load or
+                processor_gui_graph_load or
+                processor_gui_telemetry_load_text)
             {
+                if (comptime ara_enabled) {
+                    const entries = base_entries ++
+                        [_]interface_map.Entry{
+                            .{
+                                .iid = &gui_telemetry_source.iid,
+                                .ptr = &self.telemetry_source,
+                            },
+                            .{
+                                .iid = &ara_vst3.plug_in_entry_point_iid,
+                                .ptr = self.ara_entry_point
+                                    .asEntryPoint(),
+                            },
+                            .{
+                                .iid = &ara_vst3.plug_in_entry_point_2_iid,
+                                .ptr = self.ara_entry_point
+                                    .asEntryPoint2(),
+                            },
+                        };
+                    return interface_map.queryWithAddRef(
+                        ptr,
+                        addRef,
+                        &entries,
+                        requested_iid,
+                        out,
+                    );
+                }
                 const entries = base_entries ++ [_]interface_map.Entry{
                     interface_map.fieldEntry("telemetry_source", self, &gui_telemetry_source.iid),
                 };
                 return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
             }
+            if (comptime ara_enabled) {
+                const entries = base_entries ++
+                    [_]interface_map.Entry{
+                        .{
+                            .iid = &ara_vst3.plug_in_entry_point_iid,
+                            .ptr = self.ara_entry_point
+                                .asEntryPoint(),
+                        },
+                        .{
+                            .iid = &ara_vst3.plug_in_entry_point_2_iid,
+                            .ptr = self.ara_entry_point
+                                .asEntryPoint2(),
+                        },
+                    };
+                return interface_map.queryWithAddRef(
+                    ptr,
+                    addRef,
+                    &entries,
+                    requested_iid,
+                    out,
+                );
+            }
             return interface_map.queryWithAddRef(ptr, addRef, &base_entries, requested_iid, out);
+        }
+
+        fn araIdentityQuery(
+            context: *anyopaque,
+            requested_iid: *const tuid.TUID,
+            out: *?*anyopaque,
+        ) callconv(.c) types.tresult {
+            const self: *Component = @ptrCast(@alignCast(context));
+            return query(
+                &self.iface,
+                requested_iid,
+                out,
+            );
+        }
+
+        fn araIdentityAddRef(
+            context: *anyopaque,
+        ) callconv(.c) types.uint32 {
+            const self: *Component = @ptrCast(@alignCast(context));
+            return addRef(&self.iface);
+        }
+
+        fn araIdentityRelease(
+            context: *anyopaque,
+        ) callconv(.c) types.uint32 {
+            const self: *Component = @ptrCast(@alignCast(context));
+            return release(&self.iface);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -2929,6 +4891,19 @@ pub fn SimpleEffect(comptime Config: type) type {
             const next = funknown.decrementRefCount(&self.ref_count, Config.component_name);
             if (next == 0) {
                 _ = self.ref_count.load(.acquire);
+                if (comptime ara_enabled and
+                    @hasDecl(Config, "unbindAraExtension"))
+                {
+                    Config.unbindAraExtension(
+                        &self.processor_impl,
+                        &self.ara_extension,
+                    );
+                }
+                if (comptime ara_enabled and
+                    @hasDecl(AraExtension, "deinit"))
+                {
+                    self.ara_extension.deinit();
+                }
                 if (@hasDecl(Config.Processor, "deinit")) self.processor_impl.deinit();
                 releaseComponentConnectionPeer(self);
                 releaseDataExchangeHandler(&self.data_exchange_handler);
@@ -2962,20 +4937,20 @@ pub fn SimpleEffect(comptime Config: type) type {
 
         fn telemetryLoad(ptr: *anyopaque, source_id: types.uint32) callconv(.c) f64 {
             const self = ownerFromTelemetrySource(ptr);
-            if (comptime @hasDecl(Config.Processor, "guiTelemetryLoad")) {
+            if (comptime processor_gui_telemetry_load) {
                 return self.processor_impl.guiTelemetryLoad(source_id);
             }
             return 0.0;
         }
 
         fn telemetryEditorOpened(ptr: *anyopaque) callconv(.c) void {
-            if (comptime @hasDecl(Config.Processor, "guiTelemetryEditorOpened")) {
+            if (comptime processor_gui_editor_opened) {
                 ownerFromTelemetrySource(ptr).processor_impl.guiTelemetryEditorOpened();
             }
         }
 
         fn telemetryEditorClosed(ptr: *anyopaque) callconv(.c) void {
-            if (comptime @hasDecl(Config.Processor, "guiTelemetryEditorClosed")) {
+            if (comptime processor_gui_editor_closed) {
                 ownerFromTelemetrySource(ptr).processor_impl.guiTelemetryEditorClosed();
             }
         }
@@ -2986,7 +4961,7 @@ pub fn SimpleEffect(comptime Config: type) type {
             output: [*]plug_core.gui_graph.Point,
             capacity: types.uint32,
         ) callconv(.c) types.uint32 {
-            if (comptime @hasDecl(Config.Processor, "guiGraphLoad")) {
+            if (comptime processor_gui_graph_load) {
                 const bounded_capacity = @min(capacity, gui_telemetry_source.maximum_graph_points);
                 const count = ownerFromTelemetrySource(ptr).processor_impl.guiGraphLoad(source_id, output[0..bounded_capacity]);
                 return @intCast(@min(count, bounded_capacity));
@@ -3000,7 +4975,7 @@ pub fn SimpleEffect(comptime Config: type) type {
             output: [*]u8,
             capacity: types.uint32,
         ) callconv(.c) types.uint32 {
-            if (comptime @hasDecl(Config.Processor, "guiTelemetryLoadText")) {
+            if (comptime processor_gui_telemetry_load_text) {
                 const bounded_capacity = @min(capacity, gui_telemetry_source.maximum_text_bytes);
                 const count = ownerFromTelemetrySource(ptr).processor_impl.guiTelemetryLoadText(source_id, output[0..bounded_capacity]);
                 return @intCast(@min(count, bounded_capacity));
@@ -3045,20 +5020,100 @@ pub fn SimpleEffect(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getBusCount(_: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) callconv(.c) types.int32 {
-            return zig_vst3_plugin_bridge.StereoAudioBuses.busCountConfigured(media_type, direction, bus_config);
+        fn getBusCount(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) callconv(.c) types.int32 {
+            const self = owner(ptr);
+            lockAudioBusTopology(self);
+            defer unlockAudioBusTopology(self);
+            const snapshot =
+                self.audio_bus_topology.snapshot() catch return 0;
+            const config =
+                zig_vst3_plugin_bridge.StereoAudioBuses
+                    .configFromSnapshot(
+                    &snapshot,
+                    event_input,
+                    event_output,
+                ) orelse return 0;
+            return zig_vst3_plugin_bridge.StereoAudioBuses
+                .busCountConfigured(media_type, direction, config);
         }
 
-        fn getBusInfo(_: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo) callconv(.c) types.tresult {
-            return zig_vst3_plugin_bridge.StereoAudioBuses.busInfoConfigured(media_type, direction, index, out, bus_config);
+        fn getBusInfo(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo) callconv(.c) types.tresult {
+            const self = owner(ptr);
+            lockAudioBusTopology(self);
+            defer unlockAudioBusTopology(self);
+            const snapshot =
+                self.audio_bus_topology.snapshot() catch {
+                    out.* = .{};
+                    return types.kInvalidArgument;
+                };
+            return zig_vst3_plugin_bridge.StereoAudioBuses
+                .busInfoSnapshot(
+                media_type,
+                direction,
+                index,
+                out,
+                &snapshot,
+                event_input,
+                event_output,
+            );
         }
 
         fn getRoutingInfo(_: *anyopaque, _: *ivstcomponent.RoutingInfo, _: *ivstcomponent.RoutingInfo) callconv(.c) types.tresult {
             return types.kNoInterface;
         }
 
-        fn activateBus(_: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool) callconv(.c) types.tresult {
-            return zig_vst3_plugin_bridge.StereoAudioBuses.activateBusConfigured(media_type, direction, index, state, bus_config);
+        fn activateBus(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool) callconv(.c) types.tresult {
+            if (state > 1) return types.kInvalidArgument;
+            const self = owner(ptr);
+            lockAudioBusTopology(self);
+            defer unlockAudioBusTopology(self);
+            const snapshot =
+                self.audio_bus_topology.snapshot() catch
+                    return types.kInvalidArgument;
+            const config =
+                zig_vst3_plugin_bridge.StereoAudioBuses
+                    .configFromSnapshot(
+                    &snapshot,
+                    event_input,
+                    event_output,
+                ) orelse return types.kInvalidArgument;
+            if (media_type != @intFromEnum(ivstcomponent.MediaTypes.kAudio)) {
+                return zig_vst3_plugin_bridge.StereoAudioBuses
+                    .activateBusConfigured(
+                    media_type,
+                    direction,
+                    index,
+                    state,
+                    config,
+                );
+            }
+            const bus_direction: plug_core.plugin.AudioBusDirection =
+                if (direction ==
+                @intFromEnum(ivstcomponent.BusDirections.kInput))
+                    .input
+                else if (direction ==
+                @intFromEnum(ivstcomponent.BusDirections.kOutput))
+                    .output
+                else
+                    return types.kInvalidArgument;
+            const bus_index =
+                std.math.cast(usize, index) orelse
+                return types.kInvalidArgument;
+            var next = self.audio_bus_topology;
+            const previous_generation = next.current_generation;
+            _ = next.setActive(
+                bus_direction,
+                bus_index,
+                state != 0,
+            ) catch return types.kInvalidArgument;
+            if (next.current_generation == previous_generation)
+                return types.kResultOk;
+            const next_snapshot =
+                next.snapshot() catch return types.kInvalidArgument;
+            _ = self.audio_bus_snapshots.publish(next_snapshot) catch
+                return types.kResultFalse;
+            self.audio_bus_topology = next;
+            return types.kResultOk;
         }
 
         fn resetProcessState(self: *Component) void {
@@ -3068,15 +5123,112 @@ pub fn SimpleEffect(comptime Config: type) type {
             self.gui_note_seen = @splat(0);
         }
 
+        fn syncProcessorParameterValues(self: *Component) void {
+            if (@hasDecl(Config.Processor, "syncParameterValues")) {
+                self.processor_impl.syncParameterValues(
+                    &self.parameter_state.values,
+                );
+            }
+        }
+
+        fn notifyProcessorStateRestore(self: *Component) void {
+            syncProcessorParameterValues(self);
+            if (@hasDecl(Config.Processor, "afterParameterStateRestore")) {
+                self.processor_impl.afterParameterStateRestore();
+            }
+            if (@hasDecl(Config.Processor, "afterComponentStateRestore")) {
+                self.processor_impl.afterComponentStateRestore();
+            }
+        }
+
+        fn topologyContentEqual(
+            left_value: AudioBusTopology,
+            right_value: AudioBusTopology,
+        ) bool {
+            var left = left_value;
+            var right = right_value;
+            left.current_generation = 0;
+            right.current_generation = 0;
+            return std.meta.eql(left, right);
+        }
+
         fn setActive(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
             if (state > 1) return types.kInvalidArgument;
-            if (state == 0) resetProcessState(owner(ptr));
+            const self = owner(ptr);
+            const active = state != 0;
+            if (active == self.component_active) {
+                if (!active) resetProcessState(self);
+                return types.kResultOk;
+            }
+            if (active) {
+                if (comptime @hasDecl(Config.Processor, "activateChecked")) {
+                    self.processor_impl.activateChecked() catch
+                        return types.kResultFalse;
+                } else if (comptime @hasDecl(Config.Processor, "activate")) {
+                    self.processor_impl.activate();
+                }
+            } else {
+                if (comptime @hasDecl(Config.Processor, "deactivateChecked")) {
+                    self.processor_impl.deactivateChecked() catch
+                        return types.kResultFalse;
+                } else if (comptime @hasDecl(Config.Processor, "deactivate")) {
+                    self.processor_impl.deactivate();
+                } else {
+                    resetProcessState(self);
+                }
+            }
+            self.component_active = active;
             return types.kResultOk;
         }
 
         fn setState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = owner(ptr);
-            if (comptime @hasDecl(Config.Processor, "component_state_maximum_encoded_size")) {
+            if (comptime dynamic_audio_buses) {
+                lockAudioBusTopology(self);
+                defer unlockAudioBusTopology(self);
+                var restored_topology = self.audio_bus_topology;
+                const result = if (comptime processor_component_state)
+                    zig_vst3_plugin_bridge
+                        .readProcessorComponentStateWithTopology(
+                        Params,
+                        Config.Processor,
+                        state,
+                        parameter_set,
+                        &self.parameter_state.values,
+                        &self.processor_impl,
+                        &restored_topology,
+                    )
+                else
+                    zig_vst3_plugin_bridge
+                        .readComponentParameterStateWithTopology(
+                        Params,
+                        state,
+                        parameter_set,
+                        &self.parameter_state.values,
+                        &restored_topology,
+                    );
+                if (result != types.kResultOk) return result;
+                if (!topologyContentEqual(
+                    self.audio_bus_topology,
+                    restored_topology,
+                )) {
+                    restored_topology.current_generation =
+                        self.audio_bus_topology.current_generation;
+                    restored_topology.current_generation +%= 1;
+                    if (restored_topology.current_generation == 0)
+                        restored_topology.current_generation = 1;
+                    const snapshot =
+                        restored_topology.snapshot() catch
+                            return types.kResultFalse;
+                    _ = self.audio_bus_snapshots.publish(snapshot) catch
+                        return types.kResultFalse;
+                    self.audio_bus_topology = restored_topology;
+                    markHostChange(self, .audio_io);
+                }
+                notifyProcessorStateRestore(self);
+                return types.kResultOk;
+            }
+            if (comptime processor_component_state) {
                 const result = zig_vst3_plugin_bridge.readProcessorComponentState(
                     Params,
                     Config.Processor,
@@ -3085,17 +5237,43 @@ pub fn SimpleEffect(comptime Config: type) type {
                     &self.parameter_state.values,
                     &self.processor_impl,
                 );
-                if (result == types.kResultOk and @hasDecl(Config.Processor, "afterComponentStateRestore")) {
-                    self.processor_impl.afterComponentStateRestore();
-                }
+                if (result == types.kResultOk)
+                    notifyProcessorStateRestore(self);
                 return result;
             }
-            return self.parameter_state.readFromStream(state);
+            const result = self.parameter_state.readFromStream(state);
+            if (result == types.kResultOk)
+                notifyProcessorStateRestore(self);
+            return result;
         }
 
         fn getState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = owner(ptr);
-            if (comptime @hasDecl(Config.Processor, "component_state_maximum_encoded_size")) {
+            if (comptime dynamic_audio_buses) {
+                lockAudioBusTopology(self);
+                defer unlockAudioBusTopology(self);
+                if (comptime processor_component_state) {
+                    return zig_vst3_plugin_bridge
+                        .writeProcessorComponentStateWithTopology(
+                        Params,
+                        Config.Processor,
+                        state,
+                        parameter_set,
+                        &self.parameter_state.values,
+                        &self.processor_impl,
+                        &self.audio_bus_topology,
+                    );
+                }
+                return zig_vst3_plugin_bridge
+                    .writeComponentParameterStateWithTopology(
+                    Params,
+                    state,
+                    parameter_set,
+                    &self.parameter_state.values,
+                    &self.audio_bus_topology,
+                );
+            }
+            if (comptime processor_component_state) {
                 return zig_vst3_plugin_bridge.writeProcessorComponentState(
                     Params,
                     Config.Processor,
@@ -3151,18 +5329,22 @@ pub fn SimpleEffect(comptime Config: type) type {
 
         fn componentNotify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
-            if (comptime @hasDecl(Config, "resource_path_target_id") and @hasDecl(Config.Processor, "resourcePathReceiver")) {
+            if (comptime resource_path_target_id != null and
+                processor_resource_path_receiver)
+            {
                 const result = resource_path_transport.receive(
                     self.processor_impl.resourcePathReceiver(),
-                    Config.resource_path_target_id,
+                    resource_path_target_id.?,
                     message,
                 );
                 if (result != types.kResultFalse) return result;
             }
-            if (comptime @hasDecl(Config, "audio_import_target_id") and @hasDecl(Config.Processor, "audioImportReceiver")) {
+            if (comptime audio_import_target_id != null and
+                processor_audio_import_receiver)
+            {
                 const result = gui_ir_transport.receive(
                     self.processor_impl.audioImportReceiver(),
-                    Config.audio_import_target_id,
+                    audio_import_target_id.?,
                     message,
                 );
                 if (result != types.kResultFalse) return result;
@@ -3266,15 +5448,105 @@ pub fn SimpleEffect(comptime Config: type) type {
             }
         }
 
-        fn setBusArrangements(_: *anyopaque, inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32) callconv(.c) types.tresult {
-            return zig_vst3_plugin_bridge.StereoAudioBuses.setArrangementsConfigured(inputs, num_inputs, outputs, num_outputs, bus_config);
+        fn setBusArrangements(ptr: *anyopaque, inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32) callconv(.c) types.tresult {
+            const input_count =
+                std.math.cast(usize, num_inputs) orelse
+                return types.kResultFalse;
+            const output_count =
+                std.math.cast(usize, num_outputs) orelse
+                return types.kResultFalse;
+            const self = ownerFromProcessor(ptr);
+            lockAudioBusTopology(self);
+            defer unlockAudioBusTopology(self);
+            if (input_count != self.audio_bus_topology.input_count or
+                output_count != self.audio_bus_topology.output_count)
+                return types.kResultFalse;
+            var input_layouts: [AudioBusTopology.bus_capacity]plug_core.plugin.AudioBusLayout = @splat(.none);
+            var output_layouts: [AudioBusTopology.bus_capacity]plug_core.plugin.AudioBusLayout = @splat(.none);
+            if (input_count != 0) {
+                const values = inputs orelse return types.kResultFalse;
+                for (values[0..input_count], 0..) |arrangement_value, index| {
+                    input_layouts[index] =
+                        zig_vst3_plugin_bridge.StereoAudioBuses
+                            .layoutForSpeakerArrangement(
+                            arrangement_value,
+                        ) orelse return types.kResultFalse;
+                }
+            }
+            if (output_count != 0) {
+                const values = outputs orelse return types.kResultFalse;
+                for (values[0..output_count], 0..) |arrangement_value, index| {
+                    output_layouts[index] =
+                        zig_vst3_plugin_bridge.StereoAudioBuses
+                            .layoutForSpeakerArrangement(
+                            arrangement_value,
+                        ) orelse return types.kResultFalse;
+                }
+            }
+            var next = self.audio_bus_topology;
+            const previous_generation = next.current_generation;
+            _ = next.setLayouts(
+                input_layouts[0..input_count],
+                output_layouts[0..output_count],
+            ) catch return types.kResultFalse;
+            if (next.current_generation == previous_generation)
+                return types.kResultOk;
+            const snapshot =
+                next.snapshot() catch return types.kResultFalse;
+            _ = self.audio_bus_snapshots.publish(snapshot) catch
+                return types.kResultFalse;
+            self.audio_bus_topology = next;
+            return types.kResultOk;
         }
 
-        fn getBusArrangement(_: *anyopaque, direction: vsttypes.BusDirection, index: types.int32, out: *vsttypes.SpeakerArrangement) callconv(.c) types.tresult {
-            return zig_vst3_plugin_bridge.StereoAudioBuses.arrangementConfigured(direction, index, out, bus_config);
+        fn getBusArrangement(ptr: *anyopaque, direction: vsttypes.BusDirection, index: types.int32, out: *vsttypes.SpeakerArrangement) callconv(.c) types.tresult {
+            const self = ownerFromProcessor(ptr);
+            lockAudioBusTopology(self);
+            defer unlockAudioBusTopology(self);
+            const snapshot =
+                self.audio_bus_topology.snapshot() catch {
+                    out.* = 0;
+                    return types.kInvalidArgument;
+                };
+            const config =
+                zig_vst3_plugin_bridge.StereoAudioBuses
+                    .configFromSnapshot(
+                    &snapshot,
+                    event_input,
+                    event_output,
+                ) orelse {
+                    out.* = 0;
+                    return types.kInvalidArgument;
+                };
+            return zig_vst3_plugin_bridge.StereoAudioBuses
+                .arrangementConfigured(
+                direction,
+                index,
+                out,
+                config,
+            );
         }
 
-        fn canProcessSampleSize(_: *anyopaque, symbolic_sample_size: types.int32) callconv(.c) types.tresult {
+        fn canProcessSampleSize(ptr: *anyopaque, symbolic_sample_size: types.int32) callconv(.c) types.tresult {
+            if (comptime @hasDecl(Config.Processor, "supportsSampleType")) {
+                const supported =
+                    if (symbolic_sample_size == @intFromEnum(
+                        ivstaudioprocessor.SymbolicSampleSizes.kSample32,
+                    ))
+                        ownerFromProcessor(ptr)
+                            .processor_impl.supportsSampleType(f32)
+                    else if (symbolic_sample_size == @intFromEnum(
+                        ivstaudioprocessor.SymbolicSampleSizes.kSample64,
+                    ))
+                        ownerFromProcessor(ptr)
+                            .processor_impl.supportsSampleType(f64)
+                    else
+                        false;
+                return if (supported)
+                    types.kResultOk
+                else
+                    types.kResultFalse;
+            }
             return zig_vst3_plugin_bridge.RealtimeProcessorDefaults.canProcessSampleSize(symbolic_sample_size);
         }
 
@@ -3289,12 +5561,26 @@ pub fn SimpleEffect(comptime Config: type) type {
             const self = ownerFromProcessor(ptr);
             const setup_result = zig_vst3_plugin_bridge.RealtimeProcessorDefaults.validateProcessSetup(setup);
             if (setup_result != types.kResultOk) return setup_result;
+            const sample_size_result =
+                canProcessSampleSize(ptr, setup.symbolicSampleSize);
+            if (sample_size_result != types.kResultOk)
+                return sample_size_result;
+            const process_mode = zig_vst3_plugin_bridge.RealtimeProcessorDefaults.processMode(setup.processMode) orelse {
+                return types.kInvalidArgument;
+            };
 
             self.sample_rate = setup.sampleRate;
-            if (comptime @hasDecl(Config.Processor, "prepare")) {
+            if (comptime @hasDecl(Config.Processor, "prepareChecked")) {
+                self.processor_impl.prepareChecked(.{
+                    .sample_rate = setup.sampleRate,
+                    .max_block_size = @intCast(setup.maxSamplesPerBlock),
+                    .process_mode = process_mode,
+                }) catch return types.kResultFalse;
+            } else if (comptime @hasDecl(Config.Processor, "prepare")) {
                 self.processor_impl.prepare(.{
                     .sample_rate = setup.sampleRate,
                     .max_block_size = @intCast(setup.maxSamplesPerBlock),
+                    .process_mode = process_mode,
                 });
             }
             resetProcessState(self);
@@ -3313,7 +5599,14 @@ pub fn SimpleEffect(comptime Config: type) type {
                 component: *Component,
                 parameter_changes: plug_process.ParameterChanges,
 
-                pub fn process(processor: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+                pub fn process(
+                    processor: @This(),
+                    comptime Sample: type,
+                    context: *plug_process.BoundedProcessContext(
+                        Sample,
+                        auxiliary_audio_bus_capacity,
+                    ),
+                ) void {
                     const process_parameter_count = @typeInfo(@TypeOf(Config.Processor.process)).@"fn".params.len;
                     if (comptime process_parameter_count == 3) {
                         processor.component.parameter_state.applyChanges(processor.parameter_changes);
@@ -3330,9 +5623,20 @@ pub fn SimpleEffect(comptime Config: type) type {
             var output_event_storage: [process_output_event_capacity]plug_process.Event = undefined;
             const parameter_changes = zig_vst3_plugin_bridge.collectInputParameterChanges(data, &parameter_change_storage);
             if (data.numSamples == 0) {
-                const flush_result = zig_vst3_plugin_bridge.validateParameterFlushData(data, bus_config);
+                const audio_bus_snapshot =
+                    self.audio_bus_snapshots.tryRead() orelse
+                    return types.kResultFalse;
+                const flush_result =
+                    zig_vst3_plugin_bridge
+                        .validateParameterFlushSnapshot(
+                        data,
+                        &audio_bus_snapshot.value,
+                        event_input,
+                        event_output,
+                    );
                 if (flush_result != types.kResultOk) return flush_result;
                 self.parameter_state.applyChanges(parameter_changes);
+                syncProcessorParameterValues(self);
                 return types.kResultOk;
             }
             const host_events = zig_vst3_plugin_bridge.collectInputEvents(data, &event_storage);
@@ -3367,11 +5671,33 @@ pub fn SimpleEffect(comptime Config: type) type {
                 return types.kInvalidArgument;
             };
             var output_events = plug_process.EventWriter.init(&output_event_storage, zig_vst3_plugin_bridge.frameCountOrZero(data));
+            const audio_bus_snapshot =
+                self.audio_bus_snapshots.tryRead() orelse
+                return types.kResultFalse;
             const realtime_scope = plug_core.realtime_audit.Scope.enter();
-            const result = zig_vst3_plugin_bridge.processMainAudioConfiguredWithSampleRate(data, parameter_changes, events, &output_events, Processor{ .component = self, .parameter_changes = parameter_changes }, bus_config, self.sample_rate);
+            const result =
+                zig_vst3_plugin_bridge
+                    .processMainAudioSnapshotWithSampleRate(
+                    data,
+                    parameter_changes,
+                    events,
+                    &output_events,
+                    Processor{
+                        .component = self,
+                        .parameter_changes = parameter_changes,
+                    },
+                    &audio_bus_snapshot.value,
+                    event_input,
+                    event_output,
+                    self.sample_rate,
+                );
             const audit_report = realtime_scope.leave();
             if (!audit_report.clean()) return types.kResultFalse;
             if (result != types.kResultOk) return result;
+            if (comptime @hasDecl(Config.Processor, "processSucceeded")) {
+                if (!self.processor_impl.processSucceeded())
+                    return types.kResultFalse;
+            }
             return zig_vst3_plugin_bridge.writeOutputEvents(data, output_events.events());
         }
 

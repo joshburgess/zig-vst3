@@ -3,6 +3,11 @@ const common = @import("common.zig");
 
 pub const parameters = @import("parameters.zig");
 pub const realtime_audit = @import("realtime_audit.zig");
+pub const gui = @import("gui.zig");
+pub const audio_unit = @import("audio_unit.zig");
+pub const audio_unit_v2 = @import("audio_unit_v2.zig");
+pub const lv2 = @import("lv2.zig");
+pub const lv2_metadata = @import("lv2_metadata.zig");
 pub const dsp = @import("dsp.zig");
 pub const resource = @import("resource.zig");
 pub const editor_state = @import("editor_state.zig");
@@ -30,6 +35,11 @@ test {
     std.testing.refAllDecls(common);
     std.testing.refAllDecls(parameters);
     std.testing.refAllDecls(realtime_audit);
+    std.testing.refAllDecls(gui);
+    std.testing.refAllDecls(audio_unit);
+    std.testing.refAllDecls(audio_unit_v2);
+    std.testing.refAllDecls(lv2);
+    std.testing.refAllDecls(lv2_metadata);
     std.testing.refAllDecls(dsp);
     std.testing.refAllDecls(resource);
     std.testing.refAllDecls(editor_state);

@@ -447,7 +447,207 @@ pub const ModelShell = struct {
     };
 };
 
+pub const RuntimeProcessor = struct {
+    pub const name = ModelShell.name;
+    pub const vendor = ModelShell.vendor;
+    pub const audio_input_layout = ModelShell.audio_input_layout;
+    pub const audio_output_layout = ModelShell.audio_output_layout;
+    pub const event_input = ModelShell.event_input;
+    pub const Params = ModelShell.Params;
+    pub const component_state_maximum_encoded_size =
+        Processor.component_state_maximum_encoded_size;
+
+    allocator: std.mem.Allocator,
+    engine: *Processor,
+
+    pub fn init(allocator: std.mem.Allocator) !RuntimeProcessor {
+        const engine = try allocator.create(Processor);
+        engine.initInPlace();
+        return .{
+            .allocator = allocator,
+            .engine = engine,
+        };
+    }
+
+    pub fn prepare(
+        self: *RuntimeProcessor,
+        config: plug.plugin.PrepareConfig,
+    ) void {
+        self.engine.prepare(config);
+    }
+
+    pub fn reset(self: *RuntimeProcessor) void {
+        self.engine.reset();
+    }
+
+    pub fn bindHostRequests(
+        self: *RuntimeProcessor,
+        requests: *plug.HostRequestSink,
+    ) void {
+        self.engine.bindHostRequests(requests);
+    }
+
+    pub fn latencySamples(self: *const RuntimeProcessor) u32 {
+        return self.engine.latencySamples();
+    }
+
+    pub fn resourcePathReceiver(
+        self: *RuntimeProcessor,
+    ) *ModelRecovery {
+        return self.engine.resourcePathReceiver();
+    }
+
+    pub fn guiTelemetryLoad(
+        self: *const RuntimeProcessor,
+        source_id: u32,
+    ) f64 {
+        return self.engine.guiTelemetryLoad(source_id);
+    }
+
+    pub fn guiTelemetryLoadText(
+        self: *const RuntimeProcessor,
+        source_id: u32,
+        output: []u8,
+    ) usize {
+        return self.engine.guiTelemetryLoadText(source_id, output);
+    }
+
+    pub fn componentStateEncodedSize(
+        self: *const RuntimeProcessor,
+    ) usize {
+        return self.engine.componentStateEncodedSize();
+    }
+
+    pub fn writeComponentState(
+        self: *const RuntimeProcessor,
+        writer: anytype,
+    ) !void {
+        try self.engine.writeComponentState(writer);
+    }
+
+    pub fn readComponentState(
+        self: *RuntimeProcessor,
+        reader: anytype,
+    ) !void {
+        try self.engine.readComponentState(reader);
+    }
+
+    pub fn processWithParameterView(
+        self: *RuntimeProcessor,
+        context: *plug.process.ProcessContext(f32),
+        parameters: plug.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(parameters, f32, context);
+    }
+
+    pub fn process64WithParameterView(
+        self: *RuntimeProcessor,
+        context: *plug.process.ProcessContext(f64),
+        parameters: plug.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(parameters, f64, context);
+    }
+
+    pub fn importModel(
+        self: *RuntimeProcessor,
+        path: []const u8,
+    ) bool {
+        return self.engine.importModel(path);
+    }
+
+    pub fn relinkModel(
+        self: *RuntimeProcessor,
+        path: []const u8,
+    ) bool {
+        return self.engine.relinkModel(path);
+    }
+
+    pub fn waitForModel(self: *RuntimeProcessor) void {
+        self.engine.waitForModel();
+    }
+
+    pub fn maintain(self: *RuntimeProcessor) usize {
+        return self.engine.maintain();
+    }
+
+    pub fn resourceSnapshot(
+        self: *const RuntimeProcessor,
+    ) ModelRecovery.Snapshot {
+        return self.engine.resourceSnapshot();
+    }
+
+    pub fn deinit(self: *RuntimeProcessor) void {
+        self.engine.deinit();
+        self.allocator.destroy(self.engine);
+    }
+};
+
 pub const parameter_set = plug.parameters.ParameterSet(ModelShell.Params).init(.{});
+
+test "model shell runtime preserves stable recovery ownership and both precisions" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    try temporary.dir.writeFile(std.testing.io, .{
+        .sub_path = "runtime.json",
+        .data = "{\"version\":1,\"gain\":2.0,\"sample_rate\":48000}",
+    });
+    var path: [maximum_path_bytes]u8 = undefined;
+    const path_length = try temporary.dir.realPathFile(
+        std.testing.io,
+        "runtime.json",
+        &path,
+    );
+
+    var runtime = try RuntimeProcessor.init(std.testing.allocator);
+    defer runtime.deinit();
+    try std.testing.expectEqual(
+        runtime.engine.resourcePathReceiver(),
+        runtime.resourcePathReceiver(),
+    );
+    try std.testing.expect(runtime.importModel(path[0..path_length]));
+    runtime.waitForModel();
+    try std.testing.expectEqual(
+        plug.resource.RecoveryStatus.ready,
+        runtime.resourceSnapshot().status,
+    );
+
+    const Values = plug.parameters.ParameterValues(ModelShell.Params);
+    var values = Values.init(&parameter_set);
+    const parameters = values.view(&parameter_set);
+
+    const input32 = [_]f32{ 0.25, -0.5 };
+    var output32 = [_]f32{ 0.0, 0.0 };
+    const inputs32 = [_][]const f32{&input32};
+    const outputs32 = [_][]f32{&output32};
+    var context32 = try plug.process.ProcessContext(f32).init(
+        48_000,
+        &inputs32,
+        &outputs32,
+    );
+    runtime.processWithParameterView(&context32, parameters);
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 0.25, -0.375 },
+        &output32,
+    );
+
+    runtime.reset();
+    const input64 = [_]f64{ 0.25, -0.5 };
+    var output64 = [_]f64{ 0.0, 0.0 };
+    const inputs64 = [_][]const f64{&input64};
+    const outputs64 = [_][]f64{&output64};
+    var context64 = try plug.process.ProcessContext(f64).init(
+        48_000,
+        &inputs64,
+        &outputs64,
+    );
+    runtime.process64WithParameterView(&context64, parameters);
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ 0.25, -0.375 },
+        &output64,
+    );
+}
 
 test "model shell activation quality is isolated per instance" {
     var temporary = std.testing.tmpDir(.{});
@@ -659,13 +859,17 @@ test "model shell prepares model-rate conversion before latency-approved adoptio
         var marks: usize = 0;
         var dispatches: usize = 0;
 
-        fn mark(_: *anyopaque) void {
+        fn mark(
+            _: *anyopaque,
+            change: plug.HostChange,
+        ) void {
+            if (change != .latency) return;
             marks += 1;
         }
 
-        fn dispatch(_: *anyopaque) i32 {
+        fn dispatch(_: *anyopaque) bool {
             dispatches += 1;
-            return 0;
+            return true;
         }
     };
 
@@ -682,7 +886,7 @@ test "model shell prepares model-rate conversion before latency-approved adoptio
     var sink_context: u8 = 0;
     var sink = plug.HostRequestSink{
         .context = &sink_context,
-        .mark_latency_changed = HostProbe.mark,
+        .mark_change = HostProbe.mark,
         .dispatch = HostProbe.dispatch,
     };
     HostProbe.marks = 0;

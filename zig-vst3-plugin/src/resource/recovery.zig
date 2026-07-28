@@ -720,6 +720,67 @@ test "resource recovery presents one bounded generation to the GUI" {
     try std.testing.expectError(error.InvalidRecoveryState, malformed_retained.validate());
 }
 
+test "resource recovery publishes and adopts across generation rollover" {
+    const TestResource = struct { generation: u64 };
+    const metadata_limit = 8;
+    const RolloverRecovery = Recovery(struct {
+        pub const Resource = TestResource;
+        pub const Failure = enum { allocation_failed };
+        pub const path_capacity = 32;
+        pub const metadata_capacity = metadata_limit;
+        pub const slot_capacity = 2;
+        pub const maximum_work_units = 1;
+        pub const maximum_result_units = 1;
+
+        pub fn prepare(_: @import("path.zig").BoundedPath(path_capacity), _: *job_mod.WorkerContext) job_mod.Outcome(Prepared(Resource, metadata_capacity), Failure) {
+            const resource = std.heap.page_allocator.create(Resource) catch {
+                return .{ .failure = .allocation_failed };
+            };
+            resource.* = .{ .generation = 0 };
+            return .{ .success = .{
+                .value = .{
+                    .resource = resource,
+                    .identity = reference_mod.Identity.fromBytes("rollover"),
+                    .resource_schema_version = 1,
+                    .metadata = reference_mod.BoundedMetadata(metadata_capacity).init("rollover") catch {
+                        std.heap.page_allocator.destroy(resource);
+                        return .{ .failure = .allocation_failed };
+                    },
+                },
+                .result_units = 1,
+            } };
+        }
+
+        pub fn destroy(resource: *Resource) void {
+            std.heap.page_allocator.destroy(resource);
+        }
+
+        pub fn failureStatus(_: Failure) reference_mod.RecoveryStatus {
+            return .failed;
+        }
+    });
+
+    var recovery = RolloverRecovery.init();
+    defer recovery.deinit();
+    recovery.next_publication_generation = std.math.maxInt(u64) - 1;
+    recovery.exchange.latest_generation.store(std.math.maxInt(u64) - 1, .release);
+
+    try std.testing.expect(recovery.importPath("before-wrap"));
+    recovery.waitAndPoll();
+    try std.testing.expectEqual(std.math.maxInt(u64), recovery.snapshot().generation);
+    try std.testing.expectEqual(reference_mod.RecoveryStatus.ready, recovery.snapshot().status);
+    try std.testing.expect(!recovery.adoptPendingThroughAtBlockBoundary(std.math.maxInt(u64) - 1));
+    try std.testing.expect(recovery.adoptPendingThroughAtBlockBoundary(std.math.maxInt(u64)));
+
+    try std.testing.expect(recovery.importPath("after-wrap"));
+    recovery.waitAndPoll();
+    try std.testing.expectEqual(@as(u64, 1), recovery.snapshot().generation);
+    try std.testing.expectEqual(reference_mod.RecoveryStatus.ready, recovery.snapshot().status);
+    try std.testing.expect(!recovery.adoptPendingThroughAtBlockBoundary(std.math.maxInt(u64)));
+    try std.testing.expect(recovery.adoptPendingThroughAtBlockBoundary(1));
+    try std.testing.expectEqual(@as(usize, 1), recovery.reclaim());
+}
+
 test "resource recovery restores, detects changes, and relinks moved content" {
     const metadata_limit = 32;
     const TestResource = struct { value: u32 };

@@ -7,6 +7,8 @@ const types = @import("pluginterfaces/base/types.zig");
 const tuid = @import("tuid.zig");
 const vst_index = @import("vst_index.zig");
 
+pub const vst_sdk_version = "VST 3.8.0";
+
 pub const FactoryInfo = struct {
     vendor: []const u8,
     url: []const u8 = "",
@@ -25,7 +27,7 @@ pub const ClassInfo = struct {
     sub_categories: []const u8 = "",
     vendor: []const u8 = "",
     version: []const u8 = "",
-    sdk_version: []const u8 = "",
+    sdk_version: []const u8 = vst_sdk_version,
     create: ?CreateFn = null,
 };
 
@@ -504,7 +506,6 @@ test "static factory 3 exposes factory2 and factory3 metadata" {
             .class_flags = 9,
             .sub_categories = "Fx|Dynamics",
             .version = "1.2.3",
-            .sdk_version = "VST 3.8.0",
         },
     });
 
@@ -527,7 +528,10 @@ test "static factory 3 exposes factory2 and factory3 metadata" {
     try std.testing.expectEqualStrings("Fx|Dynamics", std.mem.sliceTo(&info2.subCategories, 0));
     try std.testing.expectEqualStrings("Test Vendor", std.mem.sliceTo(&info2.vendor, 0));
     try std.testing.expectEqualStrings("1.2.3", std.mem.sliceTo(&info2.version, 0));
-    try std.testing.expectEqualStrings("VST 3.8.0", std.mem.sliceTo(&info2.sdkVersion, 0));
+    try std.testing.expectEqualStrings(
+        vst_sdk_version,
+        std.mem.sliceTo(&info2.sdkVersion, 0),
+    );
 
     var info_w = ipluginbase.PClassInfoW{};
     try std.testing.expectEqual(types.kResultOk, factory.vtable.getClassInfoUnicode(factory, 0, &info_w));

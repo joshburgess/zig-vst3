@@ -129,6 +129,9 @@ pub fn Reference(comptime path_capacity: usize, comptime metadata_capacity: usiz
         pub fn validate(self: *const Self) !void {
             if (self.path.length == 0) return error.InvalidPath;
             if (self.path.length > path_capacity) return error.PathTooLong;
+            if (std.mem.indexOfScalar(u8, self.path.bytes[0..self.path.length], 0) != null) {
+                return error.InvalidPath;
+            }
             if (self.metadata.length > metadata_capacity) return error.MetadataTooLong;
         }
 
@@ -287,6 +290,22 @@ test "resource reference rejects malformed direct storage lengths" {
     stored.path.length = 0;
     var empty_path_writer = std.Io.Writer.fixed(&encoded);
     try std.testing.expectError(error.InvalidPath, stored.write(&empty_path_writer));
+}
+
+test "resource reference rejects an embedded nul introduced by direct mutation" {
+    const Stored = Reference(8, 8);
+    var stored = try Stored.init("model", Identity.fromBytes("fixture"), 1, "linear");
+    stored.path.bytes[2] = 0;
+
+    try std.testing.expect(!stored.valid());
+    try std.testing.expectError(error.InvalidPath, stored.validate());
+    try std.testing.expectEqual(Stored.maximum_encoded_size + 1, stored.encodedSize());
+    try std.testing.expectEqual(RecoveryStatus.failed, stored.classifyCandidate("model", stored.identity));
+
+    var encoded: [Stored.maximum_encoded_size]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&encoded);
+    try std.testing.expectError(error.InvalidPath, stored.write(&writer));
+    try std.testing.expectEqual(@as(usize, 0), writer.end);
 }
 
 test "streamed identity matches one-shot identity" {

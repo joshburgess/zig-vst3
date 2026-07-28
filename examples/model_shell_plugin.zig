@@ -7,30 +7,36 @@ const base = vst3.pluginterfaces.base;
 const vst = vst3.pluginterfaces.vst;
 const types = base.types;
 
-pub const Spec = core.plugin.PluginSpec(support.ModelShell);
+pub const Spec = core.plugin.PluginSpec(
+    support.RuntimeProcessor,
+);
 const model_parameter_set = support.parameter_set;
 
 pub const component_cid = vst3.tuid.inlineUid(0xCA8B884C, 0xBE224DA2, 0x9113CA6D, 0x993D0E41);
 pub const model_shell_controller_cid = vst3.tuid.inlineUid(0x6EAC0BC1, 0x0B7747EC, 0x9588BFDD, 0x4CE008AD);
 const model_resource_target_id = 1;
 
-const Effect = vst3.zig_vst3_plugin_effect.SimpleEffect(struct {
-    pub const component_name = "ModelShellComponent";
-    pub const controller_cid = model_shell_controller_cid;
-    pub const audio_input_layout = Spec.audio_input_layout;
-    pub const audio_output_layout = Spec.audio_output_layout;
-    pub const event_input = false;
-    pub const Params = Spec.Params;
-    pub const parameter_set = &model_parameter_set;
-    pub const Processor = support.Processor;
-    pub const resource_path_target_id = model_resource_target_id;
-});
+const Vst3ModelShellProcessor =
+    vst3.zig_vst3_plugin_runtime_adapter.Processor(
+        support.RuntimeProcessor,
+    );
 
-const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
-    pub const controller_name = "ModelShellController";
-    pub const Params = Spec.Params;
-    pub const parameter_set = &model_parameter_set;
-});
+const Effect =
+    vst3.zig_vst3_plugin_effect.HighLevelEffect(
+        support.RuntimeProcessor,
+        struct {
+            pub const component_name = "ModelShellComponent";
+            pub const controller_cid = model_shell_controller_cid;
+            pub const resource_path_target_id =
+                model_resource_target_id;
+        },
+    );
+
+const Controller =
+    vst3.zig_vst3_plugin_effect.HighLevelEditController(
+        support.RuntimeProcessor,
+        "ModelShellController",
+    );
 
 const Factory = vst3.factory.StaticFactory3(.{
     .vendor = Spec.vendor,
@@ -59,7 +65,18 @@ test "model shell component restores a resource without an editor" {
     try std.testing.expectEqual(types.kResultOk, Effect.create(@ptrCast(&vst.ivstcomponent.icomponent_iid), &first_out));
     const first: *vst.ivstcomponent.IComponent = @ptrCast(@alignCast(first_out orelse return error.MissingComponent));
     defer _ = first.vtable.release(first);
-    const first_processor = Effect.processorInstance(first);
+    const first_adapter = Effect.processorInstance(first);
+    try std.testing.expect(first_adapter.supportsSampleType(f32));
+    try std.testing.expect(first_adapter.supportsSampleType(f64));
+    try std.testing.expect(Vst3ModelShellProcessor.hasResourcePathReceiver);
+    try std.testing.expect(Vst3ModelShellProcessor.hasGuiTelemetryLoad);
+    try std.testing.expect(Vst3ModelShellProcessor.hasGuiTelemetryLoadText);
+    try std.testing.expectEqual(
+        support.RuntimeProcessor.component_state_maximum_encoded_size,
+        Vst3ModelShellProcessor.component_state_maximum_encoded_size,
+    );
+    const first_processor =
+        &first_adapter.runtime.instance.plugin;
     try std.testing.expect(first_processor.importModel(path[0..path_length]));
     first_processor.waitForModel();
 
@@ -73,8 +90,9 @@ test "model shell component restores a resource without an editor" {
     defer _ = second.vtable.release(second);
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(base.ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, second.vtable.setState(second, stream.asStream()));
-    const second_processor = Effect.processorInstance(second);
-    second_processor.models.preparation.wait();
+    const second_processor =
+        &Effect.processorInstance(second).runtime.instance.plugin;
+    second_processor.waitForModel();
     try std.testing.expectEqual(core.resource.RecoveryStatus.ready, second_processor.resourceSnapshot().status);
 
     var controller_out: ?*anyopaque = null;
@@ -121,7 +139,8 @@ test "model shell controller routes bounded resource recovery commands" {
     const telemetry = Controller.retainGuiTelemetry(controller) orelse return error.MissingTelemetry;
     defer telemetry.release();
 
-    const processor = Effect.processorInstance(component);
+    const processor =
+        &Effect.processorInstance(component).runtime.instance.plugin;
     try std.testing.expectEqual(types.kResultOk, Controller.importResourcePath(
         controller,
         model_resource_target_id,

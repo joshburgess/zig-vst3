@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-script_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+script_dir="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
+# shellcheck disable=SC1091
 . "$script_dir/pluginval_runner_lib.sh"
 
 expect_result() {
@@ -33,7 +34,7 @@ last exit code = 0
 last terminating signal = Segmentation fault: 11'
 expect_result unknown 'active count = 0'
 
-tmp_root="${TMPDIR:-/tmp}/zig-vst3-pluginval-runner-test-$$"
+tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-pluginval-runner-test.XXXXXX")"
 trap 'rm -rf "$tmp_root"' EXIT HUP INT TERM
 mkdir -p "$tmp_root/fake.vst3" "$tmp_root/success" "$tmp_root/failure"
 printf 'fixture\n' > "$tmp_root/fake.vst3/module.bin"
@@ -42,6 +43,7 @@ fake_pluginval="$tmp_root/fake-pluginval"
     printf '#!/bin/sh\n'
     printf 'printf "fake pluginval stdout\\n"\n'
     printf 'printf "fake pluginval stderr\\n" >&2\n'
+    # shellcheck disable=SC2016
     printf 'exit "${FAKE_PLUGINVAL_STATUS:-0}"\n'
 } > "$fake_pluginval"
 chmod +x "$fake_pluginval"

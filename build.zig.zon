@@ -9,6 +9,7 @@
         "build.zig.zon",
         "zig-vst3",
         "zig-vst3-plugin",
+        "vendor/ARA_API",
         "LICENSE",
         "README.md",
         "CHANGELOG.md",

@@ -752,6 +752,7 @@ pub fn parameterStepCount(param: anytype) i32 {
     if (Param == FloatParam or Param == LogFloatParam) return 0;
     if (Param == BoolParam) return 1;
     if (Param == IntParam) {
+        if (parameterDescriptorError(param) != null) return 0;
         const range = std.math.sub(i64, param.max, param.min) catch return std.math.maxInt(i32);
         return std.math.cast(i32, range) orelse std.math.maxInt(i32);
     }
@@ -768,15 +769,19 @@ pub fn parameterStepCount(param: anytype) i32 {
 
 pub fn parameterPlainMinimum(param: anytype) ?f64 {
     const Param = @TypeOf(param);
-    if (Param == FloatParam or Param == LogFloatParam) return param.min;
-    if (Param == IntParam) return @floatFromInt(param.min);
+    if (Param == FloatParam or Param == LogFloatParam) {
+        return if (parameterDescriptorError(param) == null) param.min else null;
+    }
+    if (Param == IntParam) return if (parameterDescriptorError(param) == null) @floatFromInt(param.min) else null;
     return null;
 }
 
 pub fn parameterPlainMaximum(param: anytype) ?f64 {
     const Param = @TypeOf(param);
-    if (Param == FloatParam or Param == LogFloatParam) return param.max;
-    if (Param == IntParam) return @floatFromInt(param.max);
+    if (Param == FloatParam or Param == LogFloatParam) {
+        return if (parameterDescriptorError(param) == null) param.max else null;
+    }
+    if (Param == IntParam) return if (parameterDescriptorError(param) == null) @floatFromInt(param.max) else null;
     return null;
 }
 
@@ -1355,4 +1360,36 @@ test "integer parameter step count saturates to VST limit" {
 
     try std.testing.expectEqual(@as(?i32, std.math.maxInt(i32)), set.stepCount(0));
     try std.testing.expectEqual(@as(?i32, std.math.maxInt(i32)), set.stepCount(1));
+}
+
+test "numeric descriptor metadata fails closed for malformed direct state" {
+    const invalid_float = FloatParam{
+        .id = 0,
+        .name = "Float",
+        .min = 1.0,
+        .max = 1.0,
+        .default = 1.0,
+    };
+    const invalid_log = LogFloatParam{
+        .id = 1,
+        .name = "Log",
+        .min = 0.0,
+        .max = 20_000.0,
+        .default = 1_000.0,
+    };
+    const invalid_int = IntParam{
+        .id = 2,
+        .name = "Int",
+        .min = 4,
+        .max = 1,
+        .default = 2,
+    };
+
+    try std.testing.expectEqual(@as(i32, 0), parameterStepCount(invalid_int));
+    try std.testing.expectEqual(@as(?f64, null), parameterPlainMinimum(invalid_float));
+    try std.testing.expectEqual(@as(?f64, null), parameterPlainMaximum(invalid_float));
+    try std.testing.expectEqual(@as(?f64, null), parameterPlainMinimum(invalid_log));
+    try std.testing.expectEqual(@as(?f64, null), parameterPlainMaximum(invalid_log));
+    try std.testing.expectEqual(@as(?f64, null), parameterPlainMinimum(invalid_int));
+    try std.testing.expectEqual(@as(?f64, null), parameterPlainMaximum(invalid_int));
 }

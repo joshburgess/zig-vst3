@@ -7,7 +7,7 @@ const base = vst3.pluginterfaces.base;
 const vst = vst3.pluginterfaces.vst;
 const types = base.types;
 
-pub const Spec = core.plugin.PluginSpec(support.CKernelProbe);
+pub const Spec = core.plugin.PluginSpec(support.Processor);
 const c_kernel_parameter_set = Spec.ParameterSet.init(.{});
 
 pub const component_cid = vst3.tuid.inlineUid(0x916A3B59, 0x17F54CD8, 0x89E65394, 0xB6C5DBB2);
@@ -16,12 +16,15 @@ pub const c_kernel_controller_cid = vst3.tuid.inlineUid(0x9C98BB59, 0x1B3B46EC, 
 const Effect = vst3.zig_vst3_plugin_effect.SimpleEffect(struct {
     pub const component_name = "CKernelProbeComponent";
     pub const controller_cid = c_kernel_controller_cid;
+    pub const dynamic_audio_bus_topology = Spec.dynamic_audio_bus_topology;
     pub const audio_input_layout = Spec.audio_input_layout;
     pub const audio_output_layout = Spec.audio_output_layout;
     pub const event_input = false;
     pub const Params = Spec.Params;
     pub const parameter_set = &c_kernel_parameter_set;
-    pub const Processor = support.Processor;
+    pub const Processor = vst3.zig_vst3_plugin_runtime_adapter.Processor(
+        support.Processor,
+    );
 });
 
 const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {

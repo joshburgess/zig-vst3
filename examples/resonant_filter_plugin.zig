@@ -332,16 +332,87 @@ const ResonantFilterProcessor = struct {
     }
 };
 
+const RuntimeProcessor = struct {
+    pub const name = Definition.name;
+    pub const vendor = Definition.vendor;
+    pub const url = Definition.url;
+    pub const Params = Definition.Params;
+
+    const ParameterAdapter = struct {
+        view: core.parameters.ParameterView(Params),
+
+        pub fn getNormalizedById(
+            self: ParameterAdapter,
+            id: u32,
+        ) f64 {
+            return self.view.loadById(id) orelse 0.0;
+        }
+    };
+
+    engine: ResonantFilterProcessor = .{},
+
+    pub fn processWithParameterView(
+        self: *RuntimeProcessor,
+        context: *core.process.ProcessContext(f32),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(
+            ParameterAdapter{ .view = parameters },
+            f32,
+            context,
+        );
+    }
+
+    pub fn process64WithParameterView(
+        self: *RuntimeProcessor,
+        context: *core.process.ProcessContext(f64),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(
+            ParameterAdapter{ .view = parameters },
+            f64,
+            context,
+        );
+    }
+
+    pub fn guiGraphLoad(
+        self: *RuntimeProcessor,
+        source_id: u32,
+        output: []core.gui_graph.Point,
+    ) usize {
+        return self.engine.guiGraphLoad(source_id, output);
+    }
+
+    pub fn guiTelemetryEditorOpened(
+        self: *RuntimeProcessor,
+    ) void {
+        self.engine.guiTelemetryEditorOpened();
+    }
+
+    pub fn guiTelemetryEditorClosed(
+        self: *RuntimeProcessor,
+    ) void {
+        self.engine.guiTelemetryEditorClosed();
+    }
+};
+
+const Vst3ResonantFilterProcessor =
+    vst3.zig_vst3_plugin_runtime_adapter.Processor(
+        RuntimeProcessor,
+    );
+
 pub const component_cid = vst3.tuid.inlineUid(0x4C17E9A2, 0x865B43D1, 0xA92F6710, 0x3DE8B5C4);
 pub const resonant_filter_controller_cid = vst3.tuid.inlineUid(0xB8035D71, 0x2AF64CE9, 0x9174E20B, 0x6C3D8FA5);
 
-const Effect = vst3.zig_vst3_plugin_effect.SimpleStereoEffect(struct {
-    pub const component_name = "ResonantFilterComponent";
-    pub const controller_cid = resonant_filter_controller_cid;
-    pub const Params = Spec.Params;
-    pub const parameter_set = &filter_parameter_set;
-    pub const Processor = ResonantFilterProcessor;
-});
+const Effect =
+    vst3.zig_vst3_plugin_effect.HighLevelEffect(
+        RuntimeProcessor,
+        struct {
+            pub const component_name = "ResonantFilterComponent";
+            pub const controller_cid =
+                resonant_filter_controller_cid;
+        },
+    );
 
 const Factory = vst3.factory.StaticFactory3(.{
     .vendor = Spec.vendor,
@@ -357,6 +428,18 @@ comptime {
 }
 
 test "resonant filter exports component and controller classes" {
+    try std.testing.expect(
+        Vst3ResonantFilterProcessor.hasGuiGraphLoad,
+    );
+    try std.testing.expect(
+        Vst3ResonantFilterProcessor
+            .hasGuiTelemetryEditorOpened,
+    );
+    try std.testing.expect(
+        Vst3ResonantFilterProcessor
+            .hasGuiTelemetryEditorClosed,
+    );
+
     const plugin_factory = Factory.getPluginFactory().?;
     var class_info: base.ipluginbase.PClassInfo = .{};
 

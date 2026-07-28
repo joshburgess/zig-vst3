@@ -510,6 +510,95 @@ const ChannelStripProcessor = struct {
     }
 };
 
+const RuntimeProcessor = struct {
+    pub const name = ChannelStripDefinition.name;
+    pub const vendor = ChannelStripDefinition.vendor;
+    pub const url = ChannelStripDefinition.url;
+    pub const Params = ChannelStripDefinition.Params;
+
+    const ParameterAdapter = struct {
+        view: core.parameters.ParameterView(Params),
+
+        pub fn getNormalizedById(
+            self: ParameterAdapter,
+            id: u32,
+        ) f64 {
+            return self.view.loadById(id) orelse 0.0;
+        }
+    };
+
+    engine: ChannelStripProcessor = .{},
+
+    pub fn processWithParameterView(
+        self: *RuntimeProcessor,
+        context: *core.process.ProcessContext(f32),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(
+            ParameterAdapter{ .view = parameters },
+            f32,
+            context,
+        );
+    }
+
+    pub fn process64WithParameterView(
+        self: *RuntimeProcessor,
+        context: *core.process.ProcessContext(f64),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(
+            ParameterAdapter{ .view = parameters },
+            f64,
+            context,
+        );
+    }
+
+    pub fn guiTelemetryLoad(
+        self: *RuntimeProcessor,
+        source_id: u32,
+    ) f64 {
+        return self.engine.guiTelemetryLoad(source_id);
+    }
+
+    pub fn guiGraphLoad(
+        self: *RuntimeProcessor,
+        source_id: u32,
+        output: []core.gui_graph.Point,
+    ) usize {
+        return self.engine.guiGraphLoad(source_id, output);
+    }
+
+    pub fn guiTelemetryEditorOpened(
+        self: *RuntimeProcessor,
+    ) void {
+        self.engine.guiTelemetryEditorOpened();
+    }
+
+    pub fn guiTelemetryEditorClosed(
+        self: *RuntimeProcessor,
+    ) void {
+        self.engine.guiTelemetryEditorClosed();
+    }
+
+    pub fn publishTelemetry(
+        self: *RuntimeProcessor,
+        left: f64,
+        right: f64,
+        reduction: f64,
+    ) void {
+        self.engine.publishTelemetry(
+            left,
+            right,
+            reduction,
+        );
+    }
+};
+
+const Vst3ChannelStripProcessor =
+    vst3.zig_vst3_plugin_runtime_adapter.Processor(
+        RuntimeProcessor,
+    );
+
 fn processSample(comptime Sample: type, input: Sample, gain: f64, drive: f64, bypassed: bool, mode: Mode) Sample {
     if (bypassed) return input;
     const driven = @as(f64, @floatCast(input)) * drive;
@@ -521,13 +610,14 @@ fn processSample(comptime Sample: type, input: Sample, gain: f64, drive: f64, by
     return @floatCast(shaped * gain);
 }
 
-const Effect = vst3.zig_vst3_plugin_effect.SimpleStereoEffect(struct {
-    pub const component_name = "ChannelStripComponent";
-    pub const controller_cid = channel_controller_cid;
-    pub const Params = Spec.Params;
-    pub const parameter_set = &channel_parameter_set;
-    pub const Processor = ChannelStripProcessor;
-});
+const Effect =
+    vst3.zig_vst3_plugin_effect.HighLevelEffect(
+        RuntimeProcessor,
+        struct {
+            pub const component_name = "ChannelStripComponent";
+            pub const controller_cid = channel_controller_cid;
+        },
+    );
 
 pub const component_cid = vst3.tuid.inlineUid(0x760719F3, 0x4E144C91, 0xB09BF160, 0xC667AD90);
 pub const channel_controller_cid = vst3.tuid.inlineUid(0x54E01F82, 0x900A4D49, 0x9F6B8C42, 0x5E4E5164);
@@ -556,6 +646,19 @@ comptime {
 }
 
 test "channel strip exports component and controller classes" {
+    try std.testing.expect(
+        Vst3ChannelStripProcessor.hasGuiTelemetryLoad,
+    );
+    try std.testing.expect(
+        Vst3ChannelStripProcessor.hasGuiGraphLoad,
+    );
+    try std.testing.expect(
+        Vst3ChannelStripProcessor.hasGuiTelemetryEditorOpened,
+    );
+    try std.testing.expect(
+        Vst3ChannelStripProcessor.hasGuiTelemetryEditorClosed,
+    );
+
     const plugin_factory = ChannelStripFactory.getPluginFactory().?;
     var class_info: base.ipluginbase.PClassInfo = .{};
 
@@ -788,7 +891,9 @@ test "controller retains its connected component telemetry through editor teardo
     source.editorOpened();
     defer source.editorClosed();
 
-    Effect.processorInstance(component).publishTelemetry(0.8, 0.6, 0.4);
+    Effect.processorInstance(component)
+        .runtime.instance.plugin
+        .publishTelemetry(0.8, 0.6, 0.4);
     try std.testing.expectEqual(@as(f64, 0.8), source.load(0));
     try std.testing.expectEqual(types.kResultOk, controller_connection.vtable.disconnect(controller_connection, component_connection));
     try std.testing.expectEqual(@as(f64, 0.8), source.load(0));

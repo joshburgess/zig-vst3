@@ -2,27 +2,16 @@ const event_echo_controller = @import("event_echo_controller.zig");
 const event_echo_spec = @import("event_echo_spec.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
+const plug_plugin = @import("zig-vst3-plugin-core").plugin;
 const plug_state = @import("zig-vst3-plugin-core").state;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
+const runtime_adapter =
+    @import("zig_vst3_plugin_runtime_adapter.zig");
 
 pub const cid = tuid.inlineUid(0xD9C97C5A, 0x062A4B52, 0x9C3DF51C, 0xFFAC4B41);
-
-const EventEchoProcessor = struct {
-    pub fn process(_: *EventEchoProcessor, _: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        for (0..context.outputChannelCount()) |channel| {
-            const input = context.inputChannel(channel) orelse continue;
-            const output = context.outputChannel(channel) orelse continue;
-            for (0..context.frameCount()) |sample| {
-                output[sample] = input[sample];
-            }
-        }
-
-        _ = context.appendOutputEventsIfPossible(context.inputEvents());
-    }
-};
 
 const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
     pub const component_name = "EventEchoComponent";
@@ -30,7 +19,9 @@ const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
     pub const event_output = event_echo_spec.Spec.event_output;
     pub const Params = event_echo_spec.Spec.Params;
     pub const parameter_set = &event_echo_spec.parameter_set;
-    pub const Processor = EventEchoProcessor;
+    pub const Processor = runtime_adapter.Processor(
+        event_echo_spec.EventEchoPlugin,
+    );
 });
 
 pub const create = Effect.create;
@@ -66,8 +57,11 @@ test "event echo processor copies audio and input events" {
         .output_events = &output_events,
     });
 
-    var processor = EventEchoProcessor{};
-    processor.process(&.{}, f32, &context);
+    var instance = try plug_plugin.PluginInstance(
+        event_echo_spec.EventEchoPlugin,
+    ).init(std.testing.allocator, .{});
+    defer instance.deinit();
+    instance.process(&context);
 
     try std.testing.expectEqualSlices(f32, &input, &output);
     try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
@@ -97,6 +91,25 @@ test "event echo component writes output events through processor shell" {
     try std.testing.expect(processor_out != null);
     const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
     defer _ = processor.vtable.release(processor);
+    var setup = ivstaudioprocessor.ProcessSetup{
+        .processMode = @intFromEnum(
+            ivstaudioprocessor.ProcessModes.kRealtime,
+        ),
+        .symbolicSampleSize = @intFromEnum(
+            ivstaudioprocessor.SymbolicSampleSizes.kSample32,
+        ),
+        .sampleRate = 48_000.0,
+        .maxSamplesPerBlock = 2,
+    };
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.setupProcessing(processor, &setup),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.setActive(component_iface, 1),
+    );
+    defer _ = component_iface.vtable.setActive(component_iface, 0);
 
     var input_samples = [_]f32{ 0.25, -0.5 };
     var output_samples = [_]f32{ 0.0, 0.0 };
@@ -175,6 +188,25 @@ test "event echo component writes output events through double precision process
     try std.testing.expect(processor_out != null);
     const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
     defer _ = processor.vtable.release(processor);
+    var setup = ivstaudioprocessor.ProcessSetup{
+        .processMode = @intFromEnum(
+            ivstaudioprocessor.ProcessModes.kRealtime,
+        ),
+        .symbolicSampleSize = @intFromEnum(
+            ivstaudioprocessor.SymbolicSampleSizes.kSample64,
+        ),
+        .sampleRate = 48_000.0,
+        .maxSamplesPerBlock = 2,
+    };
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.setupProcessing(processor, &setup),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.setActive(component_iface, 1),
+    );
+    defer _ = component_iface.vtable.setActive(component_iface, 0);
 
     var input_samples = [_]f64{ 0.25, -0.5 };
     var output_samples = [_]f64{ 0.0, 0.0 };

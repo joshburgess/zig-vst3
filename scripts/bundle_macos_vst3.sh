@@ -7,10 +7,40 @@ bundle_id="${3:?usage: scripts/bundle_macos_vst3.sh library bundle-path bundle-i
 version="${4:?usage: scripts/bundle_macos_vst3.sh library bundle-path bundle-id version executable-name}"
 executable_name="${5:?usage: scripts/bundle_macos_vst3.sh library bundle-path bundle-id version executable-name}"
 
-contents_dir="${bundle_path}/Contents"
+if [[ ! -f "$library" ]]; then
+    printf 'library is not a file: %s\n' "$library" >&2
+    exit 1
+fi
+if [[ "$bundle_path" != *.vst3 || "$bundle_path" == *.vst3/ ]]; then
+    printf 'bundle path must end in .vst3: %s\n' "$bundle_path" >&2
+    exit 1
+fi
+if [[ ! "$executable_name" =~ ^[A-Za-z0-9._-]+$ ||
+    "$executable_name" == "." || "$executable_name" == ".." ]]; then
+    printf 'executable name must be a single path component: %s\n' "$executable_name" >&2
+    exit 1
+fi
+if [[ ! "$bundle_id" =~ ^[A-Za-z0-9.-]+$ ]]; then
+    printf 'bundle identifier contains unsupported characters: %s\n' "$bundle_id" >&2
+    exit 1
+fi
+if [[ ! "$version" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    printf 'bundle version contains unsupported characters: %s\n' "$version" >&2
+    exit 1
+fi
+
+bundle_parent="$(dirname -- "$bundle_path")"
+mkdir -p "$bundle_parent"
+staging_path="$(mktemp -d "${bundle_path}.staging.XXXXXX")"
+cleanup() {
+    if [[ -n "$staging_path" ]]; then
+        rm -rf -- "$staging_path"
+    fi
+}
+trap cleanup EXIT
+contents_dir="${staging_path}/Contents"
 macos_dir="${contents_dir}/MacOS"
 
-rm -rf "$bundle_path"
 mkdir -p "$macos_dir"
 cp "$library" "${macos_dir}/${executable_name}"
 
@@ -36,3 +66,6 @@ cat >"${contents_dir}/Info.plist" <<PLIST
 PLIST
 
 printf 'BNDL????' >"${contents_dir}/PkgInfo"
+rm -rf -- "$bundle_path"
+mv -- "$staging_path" "$bundle_path"
+staging_path=""

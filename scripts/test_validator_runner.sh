@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-script_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
-tmp_root="${TMPDIR:-/tmp}/zig-vst3-validator-runner-test-$$"
+script_dir="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
+tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-validator-runner-test.XXXXXX")"
 trap 'rm -rf "$tmp_root"' EXIT HUP INT TERM
 mkdir -p "$tmp_root/fake.vst3" "$tmp_root/success" "$tmp_root/failure"
 printf 'fixture\n' > "$tmp_root/fake.vst3/module.bin"
@@ -11,6 +11,7 @@ fake_validator="$tmp_root/fake-validator"
     printf '#!/bin/sh\n'
     printf 'printf "fake validator stdout\\n"\n'
     printf 'printf "fake validator stderr\\n" >&2\n'
+    # shellcheck disable=SC2016
     printf 'exit "${FAKE_VALIDATOR_STATUS:-0}"\n'
 } > "$fake_validator"
 chmod +x "$fake_validator"

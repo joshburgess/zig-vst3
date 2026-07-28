@@ -1,9 +1,12 @@
 .zig-cache/
+.zig-cache-global/
+.zig-global-cache/
 zig-out/
 zig-cache/
 
 # Local SDK checkouts and generated host-test artifacts.
 .vst3-sdk/
+.ara-sdk/
 vendor/VST3_SDK/
 host-test-results/
 

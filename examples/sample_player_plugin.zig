@@ -130,8 +130,8 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
         const state = Controller.controllerState(controller);
         const snapshot = state.importer.snapshot();
         if (snapshot.import.status == .ready and snapshot.import.generation != state.published_import_generation) {
-            const generation = state.transfer_generation +% 1;
-            if (generation != 0 and Controller.sendDecodedAudioGeneration(controller, sample_import_id, generation, &state.importer) == types.kResultOk) {
+            const generation = vst3.gui_ir_transport.nextGeneration(state.transfer_generation);
+            if (Controller.sendDecodedAudioGeneration(controller, sample_import_id, generation, &state.importer) == types.kResultOk) {
                 state.transfer_generation = generation;
                 state.published_import_generation = snapshot.import.generation;
                 const name = state.pending_import_name[0..state.pending_import_name_len];
@@ -226,8 +226,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
 
     fn clearSample(controller: *vst.ivsteditcontroller.IEditController, state: *SamplePlayerControllerState) bool {
         if (!state.importer.canReset()) return false;
-        const generation = state.transfer_generation +% 1;
-        if (generation == 0) return false;
+        const generation = vst3.gui_ir_transport.nextGeneration(state.transfer_generation);
         if (state.transfer_generation != 0 and Controller.clearDecodedAudio(controller, sample_import_id, generation) != types.kResultOk) return false;
         if (!state.importer.reset()) return false;
         Controller.editorState(controller).reset(last_import_state_id) catch return false;
@@ -329,17 +328,103 @@ const SamplePlayerProcessor = struct {
     }
 };
 
-const Effect = vst3.zig_vst3_plugin_effect.SimpleStereoEffect(struct {
-    pub const component_name = "SamplePlayerComponent";
-    pub const controller_cid = sample_player_controller_cid;
-    pub const event_input = Spec.event_input;
-    pub const gui_note_input = true;
+const RuntimeProcessor = struct {
+    pub const name = Definition.name;
+    pub const vendor = Definition.vendor;
+    pub const url = Definition.url;
     pub const audio_input = Spec.audio_input;
-    pub const Params = Spec.Params;
-    pub const parameter_set = &sample_parameter_set;
-    pub const audio_import_target_id = sample_import_id;
-    pub const Processor = SamplePlayerProcessor;
-});
+    pub const audio_output_layout = Spec.audio_output_layout;
+    pub const event_input = Spec.event_input;
+    pub const Params = Definition.Params;
+
+    allocator: std.mem.Allocator,
+    engine: *SamplePlayerProcessor,
+
+    pub fn init(allocator: std.mem.Allocator) !RuntimeProcessor {
+        const engine = try allocator.create(SamplePlayerProcessor);
+        engine.initInPlace();
+        return .{
+            .allocator = allocator,
+            .engine = engine,
+        };
+    }
+
+    pub fn prepare(
+        self: *RuntimeProcessor,
+        config: core.plugin.PrepareConfig,
+    ) void {
+        self.engine.prepare(config);
+    }
+
+    pub fn reset(self: *RuntimeProcessor) void {
+        self.engine.reset();
+    }
+
+    pub fn audioImportReceiver(
+        self: *RuntimeProcessor,
+    ) *core.gui_audio_sample_store.Store(
+        maximum_sample_frames,
+    ) {
+        return self.engine.audioImportReceiver();
+    }
+
+    pub fn processWithParameterView(
+        self: *RuntimeProcessor,
+        context: *core.process.ProcessContext(f32),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(parameters, f32, context);
+    }
+
+    pub fn process64WithParameterView(
+        self: *RuntimeProcessor,
+        context: *core.process.ProcessContext(f64),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(parameters, f64, context);
+    }
+
+    pub fn guiGraphLoad(
+        self: *RuntimeProcessor,
+        source_id: u32,
+        output: []core.gui_graph.Point,
+    ) usize {
+        return self.engine.guiGraphLoad(source_id, output);
+    }
+
+    pub fn guiTelemetryEditorOpened(
+        self: *RuntimeProcessor,
+    ) void {
+        self.engine.guiTelemetryEditorOpened();
+    }
+
+    pub fn guiTelemetryEditorClosed(
+        self: *RuntimeProcessor,
+    ) void {
+        self.engine.guiTelemetryEditorClosed();
+    }
+
+    pub fn deinit(self: *RuntimeProcessor) void {
+        self.allocator.destroy(self.engine);
+    }
+};
+
+const Vst3SamplePlayerProcessor =
+    vst3.zig_vst3_plugin_runtime_adapter.Processor(
+        RuntimeProcessor,
+    );
+
+const Effect =
+    vst3.zig_vst3_plugin_effect.HighLevelEffect(
+        RuntimeProcessor,
+        struct {
+            pub const component_name = "SamplePlayerComponent";
+            pub const controller_cid =
+                sample_player_controller_cid;
+            pub const gui_note_input = true;
+            pub const audio_import_target_id = sample_import_id;
+        },
+    );
 
 pub const component_cid = vst3.tuid.inlineUid(0xB110C621, 0x4D9D4B10, 0xAD0831CB, 0x11274A90);
 pub const sample_player_controller_cid = vst3.tuid.inlineUid(0x92F06B17, 0xA23E49B8, 0x8A55E20F, 0x665302D1);
@@ -489,6 +574,22 @@ test "sample player exports component and controller classes" {
 }
 
 test "sample player creates its public API editor" {
+    try std.testing.expect(
+        Vst3SamplePlayerProcessor.hasAudioImportReceiver,
+    );
+    try std.testing.expect(
+        Vst3SamplePlayerProcessor.hasGuiGraphLoad,
+    );
+    try std.testing.expect(
+        Vst3SamplePlayerProcessor.hasGuiTelemetryEditorOpened,
+    );
+    try std.testing.expect(
+        Vst3SamplePlayerProcessor.hasGuiTelemetryEditorClosed,
+    );
+    try std.testing.expect(
+        @hasDecl(RuntimeProcessor, "process64WithParameterView"),
+    );
+
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &out));
     const controller: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(out orelse return error.MissingController));
@@ -777,14 +878,21 @@ test "sample player replaces imports across editor teardown and clears the proce
     try std.testing.expect(replacement_snapshot.import.generation > first_snapshot.import.generation);
     try std.testing.expectEqualStrings("replacement.wav", Controller.editorState(controller).get(last_import_state_id).?.text.slice());
 
-    var processor = Effect.processorInstance(component);
-    processor.prepare(.{ .sample_rate = 48_000, .max_block_size = 8 });
+    const processor = Effect.processorInstance(component);
+    try processor.prepareChecked(.{
+        .sample_rate = 48_000,
+        .max_block_size = 8,
+    });
+    const runtime = &processor.runtime.instance.plugin;
+    const parameters = processor.runtime.instance
+        .parameterValuesConst()
+        .view(processor.runtime.instance.parameterSet());
     var left: [8]f32 = @splat(0.0);
     var right: [8]f32 = @splat(0.0);
     const outputs = [_][]f32{ &left, &right };
     const note_on = [_]core.process.Event{core.process.Event.noteOn(0, 0, 60, 1.0)};
     var context = try core.process.ProcessContext(f32).initWith(48_000, &.{}, &outputs, .{ .events = &note_on });
-    processor.process(undefined, f32, &context);
+    runtime.processWithParameterView(&context, parameters);
     try std.testing.expect(left[1] < 0.0);
 
     try std.testing.expectEqual(types.kResultOk, Controller.performAction(controller, clear_action_group_id, clear_action_id));
@@ -792,7 +900,10 @@ test "sample player replaces imports across editor teardown and clears the proce
     left = @splat(1.0);
     right = @splat(1.0);
     var empty_context = try core.process.ProcessContext(f32).initWith(48_000, &.{}, &outputs, .{ .events = &note_on });
-    processor.process(undefined, f32, &empty_context);
+    runtime.processWithParameterView(
+        &empty_context,
+        parameters,
+    );
     try std.testing.expectEqualSlices(f32, &@as([8]f32, @splat(0.0)), &left);
     try std.testing.expectEqualSlices(f32, &left, &right);
 }

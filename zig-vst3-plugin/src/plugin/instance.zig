@@ -6,6 +6,7 @@ const state = @import("../state.zig");
 const units_api = @import("../units.zig");
 const config_mod = @import("config.zig");
 const lifecycle = @import("lifecycle.zig");
+const host_requests = @import("host_requests.zig");
 const spec_mod = @import("spec.zig");
 
 pub const PrepareConfig = config_mod.PrepareConfig;
@@ -58,6 +59,30 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return Spec.audio_input_layout.channelCount();
         }
 
+        pub fn hasAudioSidechainInput(_: *const Self) bool {
+            return Spec.audio_sidechain_layout.hasBus();
+        }
+
+        pub fn audioSidechainInputLayout(_: *const Self) process_api.AudioBusLayout {
+            return Spec.audio_sidechain_layout;
+        }
+
+        pub fn audioSidechainInputChannelCount(_: *const Self) u8 {
+            return Spec.audio_sidechain_layout.channelCount();
+        }
+
+        pub fn audioAuxiliaryInputBusCount(_: *const Self) usize {
+            return Spec.audio_auxiliary_input_layouts.len;
+        }
+
+        pub fn audioAuxiliaryInputLayout(
+            _: *const Self,
+            index: usize,
+        ) ?process_api.AudioBusLayout {
+            if (index >= Spec.audio_auxiliary_input_layouts.len) return null;
+            return Spec.audio_auxiliary_input_layouts[index];
+        }
+
         pub fn hasAudioOutput(_: *const Self) bool {
             return Spec.audio_output;
         }
@@ -68,6 +93,30 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn audioOutputChannelCount(_: *const Self) u8 {
             return Spec.audio_output_layout.channelCount();
+        }
+
+        pub fn hasAudioAuxiliaryOutput(_: *const Self) bool {
+            return Spec.audio_auxiliary_output_layout.hasBus();
+        }
+
+        pub fn audioAuxiliaryOutputLayout(_: *const Self) process_api.AudioBusLayout {
+            return Spec.audio_auxiliary_output_layout;
+        }
+
+        pub fn audioAuxiliaryOutputChannelCount(_: *const Self) u8 {
+            return Spec.audio_auxiliary_output_layout.channelCount();
+        }
+
+        pub fn audioAuxiliaryOutputBusCount(_: *const Self) usize {
+            return Spec.audio_auxiliary_output_layouts.len;
+        }
+
+        pub fn audioAuxiliaryOutputLayoutAt(
+            _: *const Self,
+            index: usize,
+        ) ?process_api.AudioBusLayout {
+            if (index >= Spec.audio_auxiliary_output_layouts.len) return null;
+            return Spec.audio_auxiliary_output_layouts[index];
         }
 
         pub fn hasEventInput(_: *const Self) bool {
@@ -84,6 +133,46 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn hasPrepareHook(_: *const Self) bool {
             return Spec.has_prepare;
+        }
+
+        pub fn hasActivateHook(_: *const Self) bool {
+            return Spec.has_activate;
+        }
+
+        pub fn hasDeactivateHook(_: *const Self) bool {
+            return Spec.has_deactivate;
+        }
+
+        pub fn hasResetHook(_: *const Self) bool {
+            return Spec.has_reset;
+        }
+
+        pub fn hasReleaseResourcesHook(_: *const Self) bool {
+            return Spec.has_release_resources;
+        }
+
+        pub fn hasAfterStateRestoreHook(_: *const Self) bool {
+            return Spec.has_after_state_restore;
+        }
+
+        pub fn latencySamples(self: *const Self) u32 {
+            if (Spec.has_latency_samples)
+                return self.plugin.latencySamples();
+            return 0;
+        }
+
+        pub fn tailSamples(self: *const Self) u32 {
+            if (Spec.has_tail_samples)
+                return self.plugin.tailSamples();
+            return 0;
+        }
+
+        pub fn bindHostRequests(
+            self: *Self,
+            requests: *host_requests.HostRequestSink,
+        ) void {
+            if (Spec.has_bind_host_requests)
+                self.plugin.bindHostRequests(requests);
         }
 
         pub fn hasProcessHook(_: *const Self) bool {
@@ -2060,7 +2149,44 @@ pub fn PluginInstance(comptime Plugin: type) type {
             var values = Spec.ParameterValues.init(&self.spec.parameter_set);
             values.copyFrom(&self.spec.values);
             values.applyChangesAtOffset(&self.spec.parameter_set, changes, 0);
+            for (changes.ramps) |ramp| {
+                const baseline = values.loadById(
+                    &self.spec.parameter_set,
+                    ramp.id,
+                ) orelse continue;
+                _ = values.storeById(
+                    &self.spec.parameter_set,
+                    ramp.id,
+                    changes.normalizedAtOrBeforeOr(
+                        ramp.id,
+                        0,
+                        baseline,
+                    ),
+                );
+            }
             return values;
+        }
+
+        fn applyParameterRampBoundaries(
+            self: *Self,
+            changes: process_api.ParameterChanges,
+            frame_count: usize,
+        ) void {
+            for (changes.ramps) |ramp| {
+                const baseline = self.spec.values.loadById(
+                    &self.spec.parameter_set,
+                    ramp.id,
+                ) orelse continue;
+                _ = self.spec.values.storeById(
+                    &self.spec.parameter_set,
+                    ramp.id,
+                    changes.normalizedAtOrBeforeOr(
+                        ramp.id,
+                        frame_count,
+                        baseline,
+                    ),
+                );
+            }
         }
 
         pub fn encodedParameterStateSize(_: *const Self) usize {
@@ -2443,7 +2569,13 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return state.migratedParameterId(id, migrations);
         }
 
-        pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
+        pub fn process(
+            self: *Self,
+            context: *process_api.BoundedProcessContext(
+                f32,
+                Spec.auxiliary_audio_bus_capacity,
+            ),
+        ) void {
             const changes = context.parameterChanges();
             if (Spec.has_process_with_parameter_view) {
                 var block_values = self.blockParameterValues(changes);
@@ -2457,9 +2589,19 @@ pub fn PluginInstance(comptime Plugin: type) type {
                 self.applyParameterChanges(changes);
                 if (Spec.has_process) self.plugin.process(context);
             }
+            self.applyParameterRampBoundaries(
+                changes,
+                context.frameCount(),
+            );
         }
 
-        pub fn process64(self: *Self, context: *process_api.ProcessContext(f64)) void {
+        pub fn process64(
+            self: *Self,
+            context: *process_api.BoundedProcessContext(
+                f64,
+                Spec.auxiliary_audio_bus_capacity,
+            ),
+        ) void {
             const changes = context.parameterChanges();
             if (Spec.has_process64_with_parameter_view) {
                 var block_values = self.blockParameterValues(changes);
@@ -2473,6 +2615,30 @@ pub fn PluginInstance(comptime Plugin: type) type {
                 self.applyParameterChanges(changes);
                 if (Spec.has_process64) self.plugin.process64(context);
             }
+            self.applyParameterRampBoundaries(
+                changes,
+                context.frameCount(),
+            );
+        }
+
+        pub fn activate(self: *Self) void {
+            if (Spec.has_activate) self.plugin.activate();
+        }
+
+        pub fn deactivate(self: *Self) void {
+            if (Spec.has_deactivate) self.plugin.deactivate();
+        }
+
+        pub fn reset(self: *Self) void {
+            if (Spec.has_reset) self.plugin.reset();
+        }
+
+        pub fn releaseResources(self: *Self) void {
+            if (Spec.has_release_resources) self.plugin.releaseResources();
+        }
+
+        pub fn afterStateRestore(self: *Self) void {
+            if (Spec.has_after_state_restore) self.plugin.afterStateRestore();
         }
 
         pub fn deinit(self: *Self) void {

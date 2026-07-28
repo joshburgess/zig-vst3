@@ -387,16 +387,86 @@ const EqProcessor = struct {
     }
 };
 
+const RuntimeProcessor = struct {
+    pub const name = Definition.name;
+    pub const vendor = Definition.vendor;
+    pub const url = Definition.url;
+    pub const Params = Definition.Params;
+
+    const ParameterAdapter = struct {
+        view: core.parameters.ParameterView(Params),
+
+        pub fn getNormalizedById(
+            self: ParameterAdapter,
+            id: u32,
+        ) f64 {
+            return self.view.loadById(id) orelse 0.0;
+        }
+    };
+
+    engine: EqProcessor = .{},
+
+    pub fn processWithParameterView(
+        self: *RuntimeProcessor,
+        context: *core.process.ProcessContext(f32),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(
+            ParameterAdapter{ .view = parameters },
+            f32,
+            context,
+        );
+    }
+
+    pub fn process64WithParameterView(
+        self: *RuntimeProcessor,
+        context: *core.process.ProcessContext(f64),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(
+            ParameterAdapter{ .view = parameters },
+            f64,
+            context,
+        );
+    }
+
+    pub fn guiGraphLoad(
+        self: *RuntimeProcessor,
+        source_id: u32,
+        output: []core.gui_graph.Point,
+    ) usize {
+        return self.engine.guiGraphLoad(source_id, output);
+    }
+
+    pub fn guiTelemetryEditorOpened(
+        self: *RuntimeProcessor,
+    ) void {
+        self.engine.guiTelemetryEditorOpened();
+    }
+
+    pub fn guiTelemetryEditorClosed(
+        self: *RuntimeProcessor,
+    ) void {
+        self.engine.guiTelemetryEditorClosed();
+    }
+};
+
+const Vst3EqProcessor =
+    vst3.zig_vst3_plugin_runtime_adapter.Processor(
+        RuntimeProcessor,
+    );
+
 pub const component_cid = vst3.tuid.inlineUid(0x5A58C6F1, 0x1D8947E2, 0xA19B3C7D, 0x8E2014F6);
 pub const parametric_eq_controller_cid = vst3.tuid.inlineUid(0x9F624B30, 0x7C1542D8, 0xB503E91A, 0x6D84F2C7);
 
-const Effect = vst3.zig_vst3_plugin_effect.SimpleStereoEffect(struct {
-    pub const component_name = "ParametricEqComponent";
-    pub const controller_cid = parametric_eq_controller_cid;
-    pub const Params = Spec.Params;
-    pub const parameter_set = &eq_parameter_set;
-    pub const Processor = EqProcessor;
-});
+const Effect =
+    vst3.zig_vst3_plugin_effect.HighLevelEffect(
+        RuntimeProcessor,
+        struct {
+            pub const component_name = "ParametricEqComponent";
+            pub const controller_cid = parametric_eq_controller_cid;
+        },
+    );
 
 const Factory = vst3.factory.StaticFactory3(.{
     .vendor = Spec.vendor,
@@ -412,6 +482,14 @@ comptime {
 }
 
 test "parametric EQ exports component and controller classes" {
+    try std.testing.expect(Vst3EqProcessor.hasGuiGraphLoad);
+    try std.testing.expect(
+        Vst3EqProcessor.hasGuiTelemetryEditorOpened,
+    );
+    try std.testing.expect(
+        Vst3EqProcessor.hasGuiTelemetryEditorClosed,
+    );
+
     const plugin_factory = Factory.getPluginFactory().?;
     var class_info: base.ipluginbase.PClassInfo = .{};
 

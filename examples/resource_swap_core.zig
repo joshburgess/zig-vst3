@@ -117,6 +117,64 @@ pub const ResourceSwap = struct {
     pub const Params = struct {};
 };
 
+pub const RuntimeProcessor = struct {
+    pub const name = ResourceSwap.name;
+    pub const vendor = ResourceSwap.vendor;
+    pub const audio_input_layout =
+        ResourceSwap.audio_input_layout;
+    pub const audio_output_layout =
+        ResourceSwap.audio_output_layout;
+    pub const event_input = ResourceSwap.event_input;
+    pub const Params = ResourceSwap.Params;
+
+    allocator: std.mem.Allocator,
+    engine: *Processor,
+
+    pub fn init(allocator: std.mem.Allocator) !RuntimeProcessor {
+        const engine = try allocator.create(Processor);
+        engine.initInPlace();
+        return .{
+            .allocator = allocator,
+            .engine = engine,
+        };
+    }
+
+    pub fn process(
+        self: *RuntimeProcessor,
+        context: *plug.process.ProcessContext(f32),
+    ) void {
+        self.engine.processBlock(f32, context);
+    }
+
+    pub fn process64(
+        self: *RuntimeProcessor,
+        context: *plug.process.ProcessContext(f64),
+    ) void {
+        self.engine.processBlock(f64, context);
+    }
+
+    pub fn waitForPreparation(self: *RuntimeProcessor) bool {
+        return self.engine.waitForPreparation();
+    }
+
+    pub fn requestGain(
+        self: *RuntimeProcessor,
+        gain: f64,
+        work_units: usize,
+    ) bool {
+        return self.engine.requestGain(gain, work_units);
+    }
+
+    pub fn reclaimRetired(self: *RuntimeProcessor) usize {
+        return self.engine.reclaimRetired();
+    }
+
+    pub fn deinit(self: *RuntimeProcessor) void {
+        self.engine.deinit();
+        self.allocator.destroy(self.engine);
+    }
+};
+
 test "resource swap processor adopts prepared graphs at block boundaries" {
     var processor: Processor = undefined;
     processor.initInPlace();
@@ -136,4 +194,34 @@ test "resource swap processor adopts prepared graphs at block boundaries" {
     processor.processBlock(f32, &context);
     try std.testing.expectEqualSlices(f32, &.{ 0.5, -1.0 }, &output);
     try std.testing.expectEqual(@as(usize, 1), processor.reclaimRetired());
+}
+
+test "resource swap runtime owns the self-referential engine at a stable address" {
+    var runtime = try RuntimeProcessor.init(std.testing.allocator);
+    defer runtime.deinit();
+
+    try std.testing.expect(runtime.waitForPreparation());
+    try std.testing.expect(runtime.requestGain(0.5, 16));
+    try std.testing.expect(runtime.waitForPreparation());
+
+    const input = [_]f64{ 0.5, -1.0 };
+    var output = [_]f64{ 0.0, 0.0 };
+    const inputs = [_][]const f64{&input};
+    const outputs = [_][]f64{&output};
+    var context = try plug.process.ProcessContext(f64).init(
+        48_000,
+        &inputs,
+        &outputs,
+    );
+    runtime.process64(&context);
+
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ 0.25, -0.5 },
+        &output,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        runtime.reclaimRetired(),
+    );
 }

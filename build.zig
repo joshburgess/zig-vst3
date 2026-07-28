@@ -13,11 +13,154 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const ara_translate = b.addTranslateC(.{
+        .root_source_file = b.path("vendor/ARA_API/ARAInterface.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_translate.addIncludePath(b.path("vendor/ARA_API"));
+    const ara_raw = ara_translate.createModule();
+    const zig_vst3_ara = b.addModule("zig-vst3-ara", .{
+        .root_source_file = b.path("zig-vst3/src/ara_api.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    zig_vst3_ara.addImport("ara-raw", ara_raw);
+    zig_vst3.addImport("zig-vst3-ara", zig_vst3_ara);
     const zig_vst3_plugin_core = b.addModule("zig-vst3-plugin-core", .{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,
         .optimize = optimize,
     });
+    const zig_vst3_core_audio = b.addModule("zig-vst3-coreaudio", .{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/core_audio.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addCoreAudioBackend(b, zig_vst3_core_audio, target);
+    zig_vst3_core_audio.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_wasapi = b.addModule("zig-vst3-wasapi", .{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/wasapi.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addWasapiBackend(b, zig_vst3_wasapi, target);
+    zig_vst3_wasapi.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_alsa = b.addModule("zig-vst3-alsa", .{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/alsa.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addAlsaBackend(b, zig_vst3_alsa, target);
+    zig_vst3_alsa.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_alsa_midi = b.addModule("zig-vst3-alsamidi", .{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/alsa_midi.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addAlsaMidiBackend(b, zig_vst3_alsa_midi, target);
+    zig_vst3_alsa_midi.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_win_midi = b.addModule("zig-vst3-winmidi", .{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/win_midi.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addWinMidiBackend(b, zig_vst3_win_midi, target);
+    zig_vst3_win_midi.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_win_window = b.addModule("zig-vst3-winwindow", .{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/win_window.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addWinWindowBackend(b, zig_vst3_win_window, target);
+    zig_vst3_win_window.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_cocoa_window = b.addModule(
+        "zig-vst3-cocoawindow",
+        .{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/cocoa_window.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        },
+    );
+    addCocoaWindowBackend(b, zig_vst3_cocoa_window, target);
+    zig_vst3_cocoa_window.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_x11_window = b.addModule(
+        "zig-vst3-x11window",
+        .{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/x11_window.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        },
+    );
+    addX11WindowBackend(b, zig_vst3_x11_window, target);
+    zig_vst3_x11_window.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_wayland_window = b.addModule(
+        "zig-vst3-waylandwindow",
+        .{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/wayland_window.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        },
+    );
+    addWaylandWindowBackend(b, zig_vst3_wayland_window, target);
+    zig_vst3_wayland_window.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_core_midi = b.addModule("zig-vst3-coremidi", .{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/core_midi.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addCoreMidiBackend(b, zig_vst3_core_midi, target);
+    zig_vst3_core_midi.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
     zig_vst3.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
     zig_vst3.addOptions("zig-vst3-gui-options", gui_options);
 
@@ -65,6 +208,30 @@ pub fn build(b: *std.Build) void {
             .bundle_id = "dev.zig-vst3.mono-gain",
         },
         .{
+            .short_name = "surround-gain",
+            .display_name = "surround gain",
+            .artifact_name = "zig_vst3_surround_gain",
+            .root_source_file = "examples/surround_gain_plugin.zig",
+            .core_example_source_file = "examples/surround_gain_core.zig",
+            .bundle_id = "dev.zig-vst3.surround-gain",
+        },
+        .{
+            .short_name = "sidechain-ducker",
+            .display_name = "sidechain ducker",
+            .artifact_name = "zig_vst3_sidechain_ducker",
+            .root_source_file = "examples/sidechain_ducker_plugin.zig",
+            .core_example_source_file = "examples/sidechain_ducker_core.zig",
+            .bundle_id = "dev.zig-vst3.sidechain-ducker",
+        },
+        .{
+            .short_name = "aux-output-splitter",
+            .display_name = "auxiliary output splitter",
+            .artifact_name = "zig_vst3_aux_output_splitter",
+            .root_source_file = "examples/aux_output_splitter_plugin.zig",
+            .core_example_source_file = "examples/aux_output_splitter_core.zig",
+            .bundle_id = "dev.zig-vst3.aux-output-splitter",
+        },
+        .{
             .short_name = "resource-swap",
             .display_name = "resource swap",
             .artifact_name = "zig_vst3_resource_swap",
@@ -79,6 +246,14 @@ pub fn build(b: *std.Build) void {
             .root_source_file = "examples/fixed_rate_plugin.zig",
             .core_example_source_file = "examples/fixed_rate_core.zig",
             .bundle_id = "dev.zig-vst3.fixed-rate",
+        },
+        .{
+            .short_name = "ara-playback",
+            .display_name = "ARA playback",
+            .artifact_name = "zig_vst3_ara_playback",
+            .root_source_file = "examples/ara_playback_plugin.zig",
+            .core_example_source_file = "examples/ara_playback_core.zig",
+            .bundle_id = "dev.zig-vst3.ara-playback",
         },
         .{
             .short_name = "model-shell",
@@ -211,6 +386,66 @@ pub fn build(b: *std.Build) void {
             c_kernel_test_step.dependOn(&b.addRunArtifact(example_plugins[index].plugin_tests).step);
             c_kernel_test_step.dependOn(&b.addRunArtifact(example_plugins[index].core_example_tests).step);
         }
+        if (std.mem.eql(
+            u8,
+            options.short_name,
+            "ara-playback",
+        )) {
+            const ara_product_vst3 = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/root.zig",
+                ),
+                .target = target,
+                .optimize = optimize,
+            });
+            ara_product_vst3.addImport(
+                "zig-vst3-plugin-core",
+                zig_vst3_plugin_core,
+            );
+            ara_product_vst3.addImport(
+                "zig-vst3-ara",
+                zig_vst3_ara,
+            );
+            ara_product_vst3.addOptions(
+                "zig-vst3-gui-options",
+                gui_options,
+            );
+            const ara_product_module = b.createModule(.{
+                .root_source_file = b.path(
+                    options.root_source_file,
+                ),
+                .target = target,
+                .optimize = optimize,
+            });
+            ara_product_module.addImport(
+                "zig-vst3-plugin-core",
+                zig_vst3_plugin_core,
+            );
+            ara_product_module.addImport(
+                "zig-vst3",
+                ara_product_vst3,
+            );
+            const ara_product_tests = b.addTest(.{
+                .root_module = ara_product_module,
+            });
+            const ara_product_test_step = b.step(
+                "test-ara-playback-product",
+                "Test and build the concrete ARA playback product",
+            );
+            ara_product_test_step.dependOn(
+                &b.addRunArtifact(
+                    ara_product_tests,
+                ).step,
+            );
+            ara_product_test_step.dependOn(
+                &b.addRunArtifact(
+                    example_plugins[index].core_example_tests,
+                ).step,
+            );
+            ara_product_test_step.dependOn(
+                example_plugins[index].bundles.native,
+            );
+        }
     }
 
     const gui_lifecycle_step = b.step("test-gui-lifecycle", "Run headless lifecycle stress for every example editor");
@@ -236,20 +471,1779 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     vst3_test_module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
+    vst3_test_module.addImport("zig-vst3-ara", zig_vst3_ara);
     vst3_test_module.addOptions("zig-vst3-gui-options", gui_options);
     if (native_vstgui) addVstguiAdapter(vst3_test_module, target);
     const vst3_tests = b.addTest(.{
         .root_module = vst3_test_module,
     });
     if (native_vstgui) vst3_tests.step.dependOn(vstgui_adapter_step);
+    const focused_vst3_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3/src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    focused_vst3_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    focused_vst3_module.addImport(
+        "zig-vst3-ara",
+        zig_vst3_ara,
+    );
+    focused_vst3_module.addOptions(
+        "zig-vst3-gui-options",
+        gui_options,
+    );
+    if (native_vstgui)
+        addVstguiAdapter(focused_vst3_module, target);
+    const focused_vst3_tests = b.addTest(.{
+        .root_module = focused_vst3_module,
+    });
+    if (native_vstgui)
+        focused_vst3_tests.step.dependOn(vstgui_adapter_step);
+    const vst3_module_test_step = b.step(
+        "test-vst3-module",
+        "Run the public VST3 module tests without visual benchmarks",
+    );
+    vst3_module_test_step.dependOn(
+        &b.addRunArtifact(focused_vst3_tests).step,
+    );
 
-    const zig_vst3_plugin_core_tests = b.addTest(.{
+    const ara_tests = b.addTest(.{
+        .root_module = zig_vst3_ara,
+    });
+    const ara_vst3_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+            .root_source_file = b.path("zig-vst3/src/ara_vst3.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
+    const ara_model_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3/src/ara_model.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const ara_controller_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/ara_document_controller.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_controller_module.addImport(
+        "zig-vst3-ara",
+        zig_vst3_ara,
+    );
+    const ara_controller_tests = b.addTest(.{
+        .root_module = ara_controller_module,
+    });
+    const ara_factory_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3/src/ara_factory.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_factory_module.addImport(
+        "zig-vst3-ara",
+        zig_vst3_ara,
+    );
+    const ara_factory_tests = b.addTest(.{
+        .root_module = ara_factory_module,
+    });
+    const ara_extension_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3/src/ara_extension.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_extension_module.addImport(
+        "zig-vst3-ara",
+        zig_vst3_ara,
+    );
+    const ara_extension_tests = b.addTest(.{
+        .root_module = ara_extension_module,
+    });
+    const ara_playback_renderer_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/ara_playback_renderer.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_playback_renderer_module.addImport(
+        "zig-vst3-ara",
+        zig_vst3_ara,
+    );
+    ara_playback_renderer_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const ara_playback_renderer_tests = b.addTest(.{
+        .root_module = ara_playback_renderer_module,
+    });
+    const ara_content_fades_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/ara_content_fades.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_content_fades_module.addImport(
+        "zig-vst3-ara",
+        zig_vst3_ara,
+    );
+    ara_content_fades_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const ara_content_fades_tests = b.addTest(.{
+        .root_module = ara_content_fades_module,
+    });
+    const ara_source_cache_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/ara_source_cache.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_source_cache_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const ara_source_cache_tests = b.addTest(.{
+        .root_module = ara_source_cache_module,
+    });
+    const ara_tuning_analysis_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/ara_tuning_analysis.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_tuning_analysis_module.addImport(
+        "zig-vst3-ara",
+        zig_vst3_ara,
+    );
+    const ara_tuning_analysis_tests = b.addTest(.{
+        .root_module = ara_tuning_analysis_module,
+    });
+    const ara_tempo_warp_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/ara_tempo_warp.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_tempo_warp_module.addImport(
+        "zig-vst3-ara",
+        zig_vst3_ara,
+    );
+    ara_tempo_warp_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const ara_tempo_warp_tests = b.addTest(.{
+        .root_module = ara_tempo_warp_module,
+    });
+    const ara_registration_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3/src/ara_registration.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const ara_test_step = b.step(
+        "test-ara",
+        "Run ARA API, VST3 companion, ABI, and cross-build tests",
+    );
+    ara_test_step.dependOn(&b.addRunArtifact(ara_tests).step);
+    ara_test_step.dependOn(
+        &b.addRunArtifact(ara_vst3_tests).step,
+    );
+    ara_test_step.dependOn(
+        &b.addRunArtifact(ara_model_tests).step,
+    );
+    ara_test_step.dependOn(
+        &b.addRunArtifact(ara_controller_tests).step,
+    );
+    ara_test_step.dependOn(
+        &b.addRunArtifact(ara_factory_tests).step,
+    );
+    ara_test_step.dependOn(
+        &b.addRunArtifact(ara_extension_tests).step,
+    );
+    ara_test_step.dependOn(
+        &b.addRunArtifact(
+            ara_playback_renderer_tests,
+        ).step,
+    );
+    ara_test_step.dependOn(
+        &b.addRunArtifact(ara_content_fades_tests).step,
+    );
+    ara_test_step.dependOn(
+        &b.addRunArtifact(ara_source_cache_tests).step,
+    );
+    ara_test_step.dependOn(
+        &b.addRunArtifact(ara_tuning_analysis_tests).step,
+    );
+    ara_test_step.dependOn(
+        &b.addRunArtifact(ara_tempo_warp_tests).step,
+    );
+    ara_test_step.dependOn(
+        &b.addRunArtifact(ara_registration_tests).step,
+    );
+    const ara_cross_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    };
+    for (ara_cross_targets) |ara_target| {
+        const ara_cross_translate = b.addTranslateC(.{
+            .root_source_file = b.path(
+                "vendor/ARA_API/ARAInterface.h",
+            ),
+            .target = ara_target,
+            .optimize = .ReleaseSafe,
+        });
+        ara_cross_translate.addIncludePath(
+            b.path("vendor/ARA_API"),
+        );
+        const ara_cross_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3/src/ara_api.zig"),
+            .target = ara_target,
+            .optimize = .ReleaseSafe,
+        });
+        ara_cross_module.addImport(
+            "ara-raw",
+            ara_cross_translate.createModule(),
+        );
+        const ara_cross_tests = b.addTest(.{
+            .root_module = ara_cross_module,
+        });
+        ara_test_step.dependOn(&ara_cross_tests.step);
+        const ara_vst3_cross_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/ara_vst3.zig",
+                ),
+                .target = ara_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        ara_test_step.dependOn(&ara_vst3_cross_tests.step);
+        const ara_model_cross_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/ara_model.zig",
+                ),
+                .target = ara_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        ara_test_step.dependOn(&ara_model_cross_tests.step);
+        const ara_controller_cross_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3/src/ara_document_controller.zig",
+            ),
+            .target = ara_target,
+            .optimize = .ReleaseSafe,
+        });
+        ara_controller_cross_module.addImport(
+            "zig-vst3-ara",
+            ara_cross_module,
+        );
+        const ara_controller_cross_tests = b.addTest(.{
+            .root_module = ara_controller_cross_module,
+        });
+        ara_test_step.dependOn(&ara_controller_cross_tests.step);
+        const ara_factory_cross_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3/src/ara_factory.zig",
+            ),
+            .target = ara_target,
+            .optimize = .ReleaseSafe,
+        });
+        ara_factory_cross_module.addImport(
+            "zig-vst3-ara",
+            ara_cross_module,
+        );
+        const ara_factory_cross_tests = b.addTest(.{
+            .root_module = ara_factory_cross_module,
+        });
+        ara_test_step.dependOn(&ara_factory_cross_tests.step);
+        const ara_extension_cross_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3/src/ara_extension.zig",
+            ),
+            .target = ara_target,
+            .optimize = .ReleaseSafe,
+        });
+        ara_extension_cross_module.addImport(
+            "zig-vst3-ara",
+            ara_cross_module,
+        );
+        const ara_extension_cross_tests = b.addTest(.{
+            .root_module = ara_extension_cross_module,
+        });
+        ara_test_step.dependOn(&ara_extension_cross_tests.step);
+        const ara_playback_renderer_cross_module =
+            b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/ara_playback_renderer.zig",
+                ),
+                .target = ara_target,
+                .optimize = .ReleaseSafe,
+            });
+        ara_playback_renderer_cross_module.addImport(
+            "zig-vst3-ara",
+            ara_cross_module,
+        );
+        ara_playback_renderer_cross_module.addImport(
+            "zig-vst3-plugin-core",
+            zig_vst3_plugin_core,
+        );
+        const ara_playback_renderer_cross_tests = b.addTest(.{
+            .root_module = ara_playback_renderer_cross_module,
+        });
+        ara_test_step.dependOn(
+            &ara_playback_renderer_cross_tests.step,
+        );
+        const ara_content_fades_cross_module =
+            b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/ara_content_fades.zig",
+                ),
+                .target = ara_target,
+                .optimize = .ReleaseSafe,
+            });
+        ara_content_fades_cross_module.addImport(
+            "zig-vst3-ara",
+            ara_cross_module,
+        );
+        ara_content_fades_cross_module.addImport(
+            "zig-vst3-plugin-core",
+            zig_vst3_plugin_core,
+        );
+        const ara_content_fades_cross_tests = b.addTest(.{
+            .root_module = ara_content_fades_cross_module,
+        });
+        ara_test_step.dependOn(
+            &ara_content_fades_cross_tests.step,
+        );
+        const ara_source_cache_cross_module =
+            b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/ara_source_cache.zig",
+                ),
+                .target = ara_target,
+                .optimize = .ReleaseSafe,
+            });
+        ara_source_cache_cross_module.addImport(
+            "zig-vst3-plugin-core",
+            zig_vst3_plugin_core,
+        );
+        const ara_source_cache_cross_tests = b.addTest(.{
+            .root_module = ara_source_cache_cross_module,
+        });
+        ara_test_step.dependOn(
+            &ara_source_cache_cross_tests.step,
+        );
+        const ara_tuning_analysis_cross_module =
+            b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/ara_tuning_analysis.zig",
+                ),
+                .target = ara_target,
+                .optimize = .ReleaseSafe,
+            });
+        ara_tuning_analysis_cross_module.addImport(
+            "zig-vst3-ara",
+            ara_cross_module,
+        );
+        const ara_tuning_analysis_cross_tests =
+            b.addTest(.{
+                .root_module = ara_tuning_analysis_cross_module,
+            });
+        ara_test_step.dependOn(
+            &ara_tuning_analysis_cross_tests.step,
+        );
+        const ara_tempo_warp_cross_module =
+            b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/ara_tempo_warp.zig",
+                ),
+                .target = ara_target,
+                .optimize = .ReleaseSafe,
+            });
+        ara_tempo_warp_cross_module.addImport(
+            "zig-vst3-ara",
+            ara_cross_module,
+        );
+        ara_tempo_warp_cross_module.addImport(
+            "zig-vst3-plugin-core",
+            zig_vst3_plugin_core,
+        );
+        const ara_tempo_warp_cross_tests = b.addTest(.{
+            .root_module = ara_tempo_warp_cross_module,
+        });
+        ara_test_step.dependOn(
+            &ara_tempo_warp_cross_tests.step,
+        );
+        const ara_registration_cross_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/ara_registration.zig",
+                ),
+                .target = ara_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        ara_test_step.dependOn(
+            &ara_registration_cross_tests.step,
+        );
+    }
+
+    const zig_vst3_plugin_core_test_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const zig_vst3_core_audio_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/core_audio.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addCoreAudioBackend(
+        b,
+        zig_vst3_core_audio_test_module,
+        target,
+    );
+    zig_vst3_core_audio_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_core_audio_tests = b.addTest(.{
+        .root_module = zig_vst3_core_audio_test_module,
+    });
+    const run_core_audio_tests =
+        b.addRunArtifact(zig_vst3_core_audio_tests);
+    const core_audio_test_step = b.step(
+        "test-coreaudio",
+        "Run CoreAudio backend tests and non-macOS compile checks",
+    );
+    core_audio_test_step.dependOn(&run_core_audio_tests.step);
+    const core_audio_cross_build_step = b.step(
+        "test-coreaudio-builds",
+        "Compile the optional CoreAudio module for non-macOS targets",
+    );
+    const core_audio_cross_targets =
+        [_]std.Build.ResolvedTarget{
+            b.resolveTargetQuery(.{
+                .cpu_arch = .aarch64,
+                .os_tag = .linux,
+                .abi = .gnu,
+            }),
+            b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .linux,
+                .abi = .gnu,
+            }),
+            b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .gnu,
+            }),
+        };
+    for (core_audio_cross_targets) |cross_target| {
+        const cross_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        const cross_core_audio = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core_audio.zig",
+            ),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        cross_core_audio.addImport(
+            "zig-vst3-plugin-core",
+            cross_core,
+        );
+        const cross_tests = b.addTest(.{
+            .root_module = cross_core_audio,
+        });
+        core_audio_cross_build_step.dependOn(&cross_tests.step);
+    }
+    core_audio_test_step.dependOn(core_audio_cross_build_step);
+    const zig_vst3_wasapi_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/wasapi.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addWasapiBackend(
+        b,
+        zig_vst3_wasapi_test_module,
+        target,
+    );
+    zig_vst3_wasapi_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_wasapi_tests = b.addTest(.{
+        .root_module = zig_vst3_wasapi_test_module,
+    });
+    const wasapi_test_step = b.step(
+        "test-wasapi",
+        "Run WASAPI contract tests and compile the Windows backend",
+    );
+    wasapi_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_wasapi_tests).step,
+    );
+    const wasapi_windows_target = b.resolveTargetQuery(.{
+        .cpu_arch = .x86_64,
+        .os_tag = .windows,
+        .abi = .gnu,
+    });
+    const wasapi_windows_core = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/core.zig",
+        ),
+        .target = wasapi_windows_target,
+        .optimize = .ReleaseSafe,
+    });
+    const wasapi_windows_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/wasapi.zig",
+        ),
+        .target = wasapi_windows_target,
+        .optimize = .ReleaseSafe,
+    });
+    addWasapiBackend(
+        b,
+        wasapi_windows_module,
+        wasapi_windows_target,
+    );
+    wasapi_windows_module.addImport(
+        "zig-vst3-plugin-core",
+        wasapi_windows_core,
+    );
+    const wasapi_windows_tests = b.addTest(.{
+        .root_module = wasapi_windows_module,
+    });
+    wasapi_test_step.dependOn(&wasapi_windows_tests.step);
+    const wasapi_link_smoke = b.addExecutable(.{
+        .name = "wasapi-link-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/wasapi_link_smoke.zig",
+            ),
+            .target = wasapi_windows_target,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    wasapi_link_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        wasapi_windows_core,
+    );
+    wasapi_link_smoke.root_module.addImport(
+        "zig-vst3-wasapi",
+        wasapi_windows_module,
+    );
+    wasapi_test_step.dependOn(&wasapi_link_smoke.step);
+    const zig_vst3_alsa_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/alsa.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addAlsaBackend(b, zig_vst3_alsa_test_module, target);
+    zig_vst3_alsa_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_alsa_tests = b.addTest(.{
+        .root_module = zig_vst3_alsa_test_module,
+    });
+    const alsa_test_step = b.step(
+        "test-alsa",
+        "Run ALSA contract tests and compile Linux backends",
+    );
+    alsa_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_alsa_tests).step,
+    );
+    const alsa_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+    };
+    for (alsa_targets) |alsa_target| {
+        const alsa_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = alsa_target,
+            .optimize = .ReleaseSafe,
+        });
+        const alsa_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/alsa.zig",
+            ),
+            .target = alsa_target,
+            .optimize = .ReleaseSafe,
+        });
+        addAlsaBackend(b, alsa_module, alsa_target);
+        alsa_module.addImport(
+            "zig-vst3-plugin-core",
+            alsa_core,
+        );
+        const alsa_tests = b.addTest(.{
+            .root_module = alsa_module,
+        });
+        alsa_test_step.dependOn(&alsa_tests.step);
+        const alsa_link_smoke = b.addExecutable(.{
+            .name = b.fmt(
+                "alsa-link-smoke-{s}",
+                .{@tagName(alsa_target.result.cpu.arch)},
+            ),
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tests/alsa_link_smoke.zig",
+                ),
+                .target = alsa_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        alsa_link_smoke.root_module.addImport(
+            "zig-vst3-plugin-core",
+            alsa_core,
+        );
+        alsa_link_smoke.root_module.addImport(
+            "zig-vst3-alsa",
+            alsa_module,
+        );
+        alsa_test_step.dependOn(&alsa_link_smoke.step);
+    }
+    const zig_vst3_alsa_midi_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/alsa_midi.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addAlsaMidiBackend(
+        b,
+        zig_vst3_alsa_midi_test_module,
+        target,
+    );
+    zig_vst3_alsa_midi_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_alsa_midi_tests = b.addTest(.{
+        .root_module = zig_vst3_alsa_midi_test_module,
+    });
+    const alsa_midi_test_step = b.step(
+        "test-alsamidi",
+        "Run ALSA RawMIDI tests and compile Linux backends",
+    );
+    const midi_scheduler_queue_test = b.addExecutable(.{
+        .name = "midi-scheduler-queue-test",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+        }),
+    });
+    midi_scheduler_queue_test.root_module.addIncludePath(
+        b.path("zig-vst3-plugin/src/plugin"),
+    );
+    midi_scheduler_queue_test.root_module.addCSourceFile(.{
+        .file = b.path("tests/abi/midi_scheduler_queue.c"),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    const run_midi_scheduler_queue_test =
+        b.addRunArtifact(midi_scheduler_queue_test);
+    alsa_midi_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_alsa_midi_tests).step,
+    );
+    alsa_midi_test_step.dependOn(
+        &run_midi_scheduler_queue_test.step,
+    );
+    for (alsa_targets) |alsa_target| {
+        const alsa_midi_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = alsa_target,
+            .optimize = .ReleaseSafe,
+        });
+        const alsa_midi_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/alsa_midi.zig",
+            ),
+            .target = alsa_target,
+            .optimize = .ReleaseSafe,
+        });
+        addAlsaMidiBackend(
+            b,
+            alsa_midi_module,
+            alsa_target,
+        );
+        alsa_midi_module.addImport(
+            "zig-vst3-plugin-core",
+            alsa_midi_core,
+        );
+        const alsa_midi_tests = b.addTest(.{
+            .root_module = alsa_midi_module,
+        });
+        alsa_midi_test_step.dependOn(&alsa_midi_tests.step);
+        const alsa_midi_link_smoke = b.addExecutable(.{
+            .name = b.fmt(
+                "alsa-midi-link-smoke-{s}",
+                .{@tagName(alsa_target.result.cpu.arch)},
+            ),
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tests/alsa_midi_link_smoke.zig",
+                ),
+                .target = alsa_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        alsa_midi_link_smoke.root_module.addImport(
+            "zig-vst3-plugin-core",
+            alsa_midi_core,
+        );
+        alsa_midi_link_smoke.root_module.addImport(
+            "zig-vst3-alsamidi",
+            alsa_midi_module,
+        );
+        alsa_midi_test_step.dependOn(
+            &alsa_midi_link_smoke.step,
+        );
+    }
+    const zig_vst3_win_midi_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/win_midi.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addWinMidiBackend(
+        b,
+        zig_vst3_win_midi_test_module,
+        target,
+    );
+    zig_vst3_win_midi_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_win_midi_tests = b.addTest(.{
+        .root_module = zig_vst3_win_midi_test_module,
+    });
+    const win_midi_test_step = b.step(
+        "test-winmidi",
+        "Run Windows MIDI tests and compile the WinMM backend",
+    );
+    win_midi_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_win_midi_tests).step,
+    );
+    win_midi_test_step.dependOn(
+        &run_midi_scheduler_queue_test.step,
+    );
+    const win_midi_target = b.resolveTargetQuery(.{
+        .cpu_arch = .x86_64,
+        .os_tag = .windows,
+        .abi = .gnu,
+    });
+    const win_midi_core = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/core.zig",
+        ),
+        .target = win_midi_target,
+        .optimize = .ReleaseSafe,
+    });
+    const win_midi_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/win_midi.zig",
+        ),
+        .target = win_midi_target,
+        .optimize = .ReleaseSafe,
+    });
+    addWinMidiBackend(b, win_midi_module, win_midi_target);
+    win_midi_module.addImport(
+        "zig-vst3-plugin-core",
+        win_midi_core,
+    );
+    const win_midi_tests = b.addTest(.{
+        .root_module = win_midi_module,
+    });
+    win_midi_test_step.dependOn(&win_midi_tests.step);
+    const win_midi_link_smoke = b.addExecutable(.{
+        .name = "win-midi-link-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/win_midi_link_smoke.zig",
+            ),
+            .target = win_midi_target,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    win_midi_link_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        win_midi_core,
+    );
+    win_midi_link_smoke.root_module.addImport(
+        "zig-vst3-winmidi",
+        win_midi_module,
+    );
+    win_midi_test_step.dependOn(&win_midi_link_smoke.step);
+    const zig_vst3_win_window_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/win_window.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addWinWindowBackend(
+        b,
+        zig_vst3_win_window_test_module,
+        target,
+    );
+    zig_vst3_win_window_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_win_window_tests = b.addTest(.{
+        .root_module = zig_vst3_win_window_test_module,
+    });
+    const win_window_test_step = b.step(
+        "test-winwindow",
+        "Run standalone Win32 window tests and link the backend",
+    );
+    win_window_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_win_window_tests).step,
+    );
+    const win_window_core = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/core.zig",
+        ),
+        .target = win_midi_target,
+        .optimize = .ReleaseSafe,
+    });
+    const win_window_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/win_window.zig",
+        ),
+        .target = win_midi_target,
+        .optimize = .ReleaseSafe,
+    });
+    addWinWindowBackend(
+        b,
+        win_window_module,
+        win_midi_target,
+    );
+    win_window_module.addImport(
+        "zig-vst3-plugin-core",
+        win_window_core,
+    );
+    const win_window_tests = b.addTest(.{
+        .root_module = win_window_module,
+    });
+    win_window_test_step.dependOn(&win_window_tests.step);
+    const win_window_link_smoke = b.addExecutable(.{
+        .name = "win-window-link-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/win_window_link_smoke.zig",
+            ),
+            .target = win_midi_target,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    win_window_link_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        win_window_core,
+    );
+    win_window_link_smoke.root_module.addImport(
+        "zig-vst3-winwindow",
+        win_window_module,
+    );
+    win_window_test_step.dependOn(
+        &win_window_link_smoke.step,
+    );
+    const zig_vst3_cocoa_window_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/cocoa_window.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addCocoaWindowBackend(
+        b,
+        zig_vst3_cocoa_window_test_module,
+        target,
+    );
+    zig_vst3_cocoa_window_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_cocoa_window_tests = b.addTest(.{
+        .root_module = zig_vst3_cocoa_window_test_module,
+    });
+    const cocoa_window_test_step = b.step(
+        "test-cocoawindow",
+        "Run standalone Cocoa window tests and link the backend",
+    );
+    cocoa_window_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_cocoa_window_tests).step,
+    );
+    const cocoa_window_link_smoke = b.addExecutable(.{
+        .name = "cocoa-window-link-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/cocoa_window_link_smoke.zig",
+            ),
+            .target = target,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    cocoa_window_link_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    cocoa_window_link_smoke.root_module.addImport(
+        "zig-vst3-cocoawindow",
+        zig_vst3_cocoa_window,
+    );
+    cocoa_window_test_step.dependOn(
+        &cocoa_window_link_smoke.step,
+    );
+    for ([_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    }) |cross_target| {
+        const cross_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        const cross_cocoa_window = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/cocoa_window.zig",
+            ),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        cross_cocoa_window.addImport(
+            "zig-vst3-plugin-core",
+            cross_core,
+        );
+        const cross_tests = b.addTest(.{
+            .root_module = cross_cocoa_window,
+        });
+        cocoa_window_test_step.dependOn(&cross_tests.step);
+    }
+    const zig_vst3_x11_window_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/x11_window.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addX11WindowBackend(
+        b,
+        zig_vst3_x11_window_test_module,
+        target,
+    );
+    zig_vst3_x11_window_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_x11_window_tests = b.addTest(.{
+        .root_module = zig_vst3_x11_window_test_module,
+    });
+    const x11_window_test_step = b.step(
+        "test-x11window",
+        "Run standalone X11 window tests and link Linux backends",
+    );
+    x11_window_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_x11_window_tests).step,
+    );
+    for ([_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+    }, 0..) |linux_target, index| {
+        const x11_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = linux_target,
+            .optimize = .ReleaseSafe,
+        });
+        const x11_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/x11_window.zig",
+            ),
+            .target = linux_target,
+            .optimize = .ReleaseSafe,
+        });
+        addX11WindowBackend(b, x11_module, linux_target);
+        x11_module.addImport(
+            "zig-vst3-plugin-core",
+            x11_core,
+        );
+        const x11_tests = b.addTest(.{
+            .root_module = x11_module,
+        });
+        x11_window_test_step.dependOn(&x11_tests.step);
+        const x11_link_smoke = b.addExecutable(.{
+            .name = if (index == 0)
+                "x11-window-link-smoke-x86_64"
+            else
+                "x11-window-link-smoke-aarch64",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tests/x11_window_link_smoke.zig",
+                ),
+                .target = linux_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        x11_link_smoke.root_module.addImport(
+            "zig-vst3-plugin-core",
+            x11_core,
+        );
+        x11_link_smoke.root_module.addImport(
+            "zig-vst3-x11window",
+            x11_module,
+        );
+        x11_window_test_step.dependOn(
+            &x11_link_smoke.step,
+        );
+    }
+    const windows_x11_core = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/core.zig",
+        ),
+        .target = win_midi_target,
+        .optimize = .ReleaseSafe,
+    });
+    const windows_x11 = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/x11_window.zig",
+        ),
+        .target = win_midi_target,
+        .optimize = .ReleaseSafe,
+    });
+    windows_x11.addImport(
+        "zig-vst3-plugin-core",
+        windows_x11_core,
+    );
+    const windows_x11_tests = b.addTest(.{
+        .root_module = windows_x11,
+    });
+    x11_window_test_step.dependOn(
+        &windows_x11_tests.step,
+    );
+    const zig_vst3_wayland_window_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/wayland_window.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addWaylandWindowBackend(
+        b,
+        zig_vst3_wayland_window_test_module,
+        target,
+    );
+    zig_vst3_wayland_window_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_wayland_window_tests = b.addTest(.{
+        .root_module = zig_vst3_wayland_window_test_module,
+    });
+    const wayland_window_test_step = b.step(
+        "test-waylandwindow",
+        "Run standalone Wayland window tests and link Linux backends",
+    );
+    wayland_window_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_wayland_window_tests).step,
+    );
+    for ([_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+    }, 0..) |linux_target, index| {
+        const wayland_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = linux_target,
+            .optimize = .ReleaseSafe,
+        });
+        const wayland_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/wayland_window.zig",
+            ),
+            .target = linux_target,
+            .optimize = .ReleaseSafe,
+        });
+        addWaylandWindowBackend(b, wayland_module, linux_target);
+        wayland_module.addImport(
+            "zig-vst3-plugin-core",
+            wayland_core,
+        );
+        const wayland_tests = b.addTest(.{
+            .root_module = wayland_module,
+        });
+        wayland_window_test_step.dependOn(&wayland_tests.step);
+        const wayland_link_smoke = b.addExecutable(.{
+            .name = if (index == 0)
+                "wayland-window-link-smoke-x86_64"
+            else
+                "wayland-window-link-smoke-aarch64",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tests/wayland_window_link_smoke.zig",
+                ),
+                .target = linux_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        wayland_link_smoke.root_module.addImport(
+            "zig-vst3-plugin-core",
+            wayland_core,
+        );
+        wayland_link_smoke.root_module.addImport(
+            "zig-vst3-waylandwindow",
+            wayland_module,
+        );
+        wayland_window_test_step.dependOn(
+            &wayland_link_smoke.step,
+        );
+    }
+    const windows_wayland_core = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/core.zig",
+        ),
+        .target = win_midi_target,
+        .optimize = .ReleaseSafe,
+    });
+    const windows_wayland = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/wayland_window.zig",
+        ),
+        .target = win_midi_target,
+        .optimize = .ReleaseSafe,
+    });
+    windows_wayland.addImport(
+        "zig-vst3-plugin-core",
+        windows_wayland_core,
+    );
+    const windows_wayland_tests = b.addTest(.{
+        .root_module = windows_wayland,
+    });
+    wayland_window_test_step.dependOn(
+        &windows_wayland_tests.step,
+    );
+    const wayland_standalone_frame_test_step = b.step(
+        "test-wayland-standalone-frame",
+        "Run standalone VST3 Wayland host and frame bridge tests",
+    );
+    const native_wayland_frame_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/vst_wayland_standalone_frame.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    native_wayland_frame_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const native_wayland_frame_tests = b.addTest(.{
+        .root_module = native_wayland_frame_module,
+    });
+    wayland_standalone_frame_test_step.dependOn(
+        &b.addRunArtifact(native_wayland_frame_tests).step,
+    );
+    for ([_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    }) |cross_target| {
+        const cross_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        const cross_wayland_frame = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3/src/vst_wayland_standalone_frame.zig",
+            ),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        cross_wayland_frame.addImport(
+            "zig-vst3-plugin-core",
+            cross_core,
+        );
+        const cross_tests = b.addTest(.{
+            .root_module = cross_wayland_frame,
+        });
+        wayland_standalone_frame_test_step.dependOn(
+            &cross_tests.step,
+        );
+    }
+    const linux_run_loop_test_step = b.step(
+        "test-linux-run-loop",
+        "Run standalone Linux run-loop tests and portability builds",
+    );
+    const native_linux_run_loop_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3/src/vst_linux_run_loop.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    linux_run_loop_test_step.dependOn(
+        &b.addRunArtifact(native_linux_run_loop_tests).step,
+    );
+    for ([_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        win_midi_target,
+    }) |run_loop_target| {
+        const cross_linux_run_loop_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/vst_linux_run_loop.zig",
+                ),
+                .target = run_loop_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        linux_run_loop_test_step.dependOn(
+            &cross_linux_run_loop_tests.step,
+        );
+    }
+    const zig_vst3_core_midi_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/core_midi.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addCoreMidiBackend(
+        b,
+        zig_vst3_core_midi_test_module,
+        target,
+    );
+    zig_vst3_core_midi_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_core_midi_tests = b.addTest(.{
+        .root_module = zig_vst3_core_midi_test_module,
+    });
+    const run_core_midi_tests =
+        b.addRunArtifact(zig_vst3_core_midi_tests);
+    const core_midi_test_step = b.step(
+        "test-coremidi",
+        "Run CoreMIDI backend tests and non-macOS compile checks",
+    );
+    core_midi_test_step.dependOn(&run_core_midi_tests.step);
+    const core_midi_cross_build_step = b.step(
+        "test-coremidi-builds",
+        "Compile the optional CoreMIDI module for non-macOS targets",
+    );
+    const core_midi_cross_targets =
+        [_]std.Build.ResolvedTarget{
+            b.resolveTargetQuery(.{
+                .cpu_arch = .aarch64,
+                .os_tag = .linux,
+                .abi = .gnu,
+            }),
+            b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .linux,
+                .abi = .gnu,
+            }),
+            b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .gnu,
+            }),
+        };
+    for (core_midi_cross_targets) |cross_target| {
+        const cross_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        const cross_core_midi = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core_midi.zig",
+            ),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        cross_core_midi.addImport(
+            "zig-vst3-plugin-core",
+            cross_core,
+        );
+        const cross_tests = b.addTest(.{
+            .root_module = cross_core_midi,
+        });
+        core_midi_cross_build_step.dependOn(&cross_tests.step);
+    }
+    core_midi_test_step.dependOn(core_midi_cross_build_step);
+    const zig_vst3_plugin_core_tests = b.addTest(.{
+        .root_module = zig_vst3_plugin_core_test_module,
+    });
+    const audio_unit_test_step = b.step(
+        "test-audio-unit",
+        "Run Audio Unit render, AUv2 ABI, and cross-target checks",
+    );
+    const audio_unit_v2_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/audio_unit_v2.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    audio_unit_test_step.dependOn(
+        &b.addRunArtifact(audio_unit_v2_tests).step,
+    );
+    const audio_unit_cross_build_step = b.step(
+        "test-audio-unit-builds",
+        "Compile Audio Unit render and AUv2 modules for supported targets",
+    );
+    const audio_unit_cross_targets =
+        [_]std.Build.ResolvedTarget{
+            b.resolveTargetQuery(.{
+                .cpu_arch = .aarch64,
+                .os_tag = .linux,
+                .abi = .gnu,
+            }),
+            b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .linux,
+                .abi = .gnu,
+            }),
+            b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .gnu,
+            }),
+        };
+    for (audio_unit_cross_targets) |cross_target| {
+        const cross_v2_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3-plugin/src/audio_unit_v2.zig",
+                ),
+                .target = cross_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        audio_unit_cross_build_step.dependOn(&cross_v2_tests.step);
+        const cross_audio_unit_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        const cross_auxiliary_output_audio_unit = b.createModule(.{
+            .root_source_file = b.path(
+                "examples/aux_output_splitter_audio_unit.zig",
+            ),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        cross_auxiliary_output_audio_unit.addImport(
+            "zig-vst3-plugin-core",
+            cross_audio_unit_core,
+        );
+        const cross_auxiliary_output_library = b.addLibrary(.{
+            .linkage = .dynamic,
+            .name = "zig_vst3_aux_output_splitter_auv2",
+            .root_module = cross_auxiliary_output_audio_unit,
+        });
+        audio_unit_cross_build_step.dependOn(
+            &cross_auxiliary_output_library.step,
+        );
+    }
+    const audio_unit_v2_abi_object = b.addObject(.{
+        .name = "audio-unit-v2-abi-zig",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/audio_unit_v2.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    const audio_unit_v2_abi_harness = b.addExecutable(.{
+        .name = "audio-unit-v2-abi-harness",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+        }),
+    });
+    audio_unit_v2_abi_harness.root_module.addCSourceFile(.{
+        .file = b.path("tests/abi/audio_unit_v2_layout.c"),
+        .flags = &.{ "-std=c11", "-Wall", "-Wextra", "-Werror" },
+    });
+    audio_unit_v2_abi_harness.root_module.addObject(
+        audio_unit_v2_abi_object,
+    );
+    audio_unit_v2_abi_harness.root_module.linkFramework(
+        "AudioToolbox",
+        .{},
+    );
+    const run_audio_unit_v2_abi =
+        b.addRunArtifact(audio_unit_v2_abi_harness);
+    audio_unit_test_step.dependOn(&run_audio_unit_v2_abi.step);
+    audio_unit_test_step.dependOn(audio_unit_cross_build_step);
+
+    const mono_gain_audio_unit_module = b.createModule(.{
+        .root_source_file = b.path(
+            "examples/mono_gain_audio_unit.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    mono_gain_audio_unit_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    addAudioUnitV2ClassInfo(
+        b,
+        mono_gain_audio_unit_module,
+        target,
+    );
+    const mono_gain_audio_unit = b.addLibrary(.{
+        .linkage = .dynamic,
+        .name = "zig_vst3_mono_gain_auv2",
+        .root_module = mono_gain_audio_unit_module,
+    });
+    b.installArtifact(mono_gain_audio_unit);
+    const auxiliary_output_audio_unit_module = b.createModule(.{
+        .root_source_file = b.path(
+            "examples/aux_output_splitter_audio_unit.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    auxiliary_output_audio_unit_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    addAudioUnitV2ClassInfo(
+        b,
+        auxiliary_output_audio_unit_module,
+        target,
+    );
+    const auxiliary_output_audio_unit = b.addLibrary(.{
+        .linkage = .dynamic,
+        .name = "zig_vst3_aux_output_splitter_auv2",
+        .root_module = auxiliary_output_audio_unit_module,
+    });
+    b.installArtifact(auxiliary_output_audio_unit);
+    const audio_unit_host_smoke = b.addExecutable(.{
+        .name = "audio-unit-v2-host-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/audio_unit_v2_host_smoke.zig",
+            ),
+            .target = target,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    audio_unit_host_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    if (target.result.os.tag == .macos)
+        audio_unit_host_smoke.root_module.linkFramework(
+            "CoreFoundation",
+            .{},
+        );
+    const run_audio_unit_host_smoke =
+        b.addRunArtifact(audio_unit_host_smoke);
+    run_audio_unit_host_smoke.addFileArg(
+        mono_gain_audio_unit.getEmittedBin(),
+    );
+    audio_unit_test_step.dependOn(
+        &run_audio_unit_host_smoke.step,
+    );
+    const audio_unit_multi_output_host_smoke = b.addExecutable(.{
+        .name = "audio-unit-v2-multi-output-host-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/audio_unit_v2_multi_output_host_smoke.zig",
+            ),
+            .target = target,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    audio_unit_multi_output_host_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const run_audio_unit_multi_output_host_smoke =
+        b.addRunArtifact(audio_unit_multi_output_host_smoke);
+    run_audio_unit_multi_output_host_smoke.addFileArg(
+        auxiliary_output_audio_unit.getEmittedBin(),
+    );
+    audio_unit_test_step.dependOn(
+        &run_audio_unit_multi_output_host_smoke.step,
+    );
+    const mono_gain_audio_unit_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "examples/mono_gain_audio_unit.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    mono_gain_audio_unit_tests.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    addAudioUnitV2ClassInfo(
+        b,
+        mono_gain_audio_unit_tests.root_module,
+        target,
+    );
+    audio_unit_test_step.dependOn(
+        &b.addRunArtifact(mono_gain_audio_unit_tests).step,
+    );
+    const auxiliary_output_audio_unit_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "examples/aux_output_splitter_audio_unit.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    auxiliary_output_audio_unit_tests.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    addAudioUnitV2ClassInfo(
+        b,
+        auxiliary_output_audio_unit_tests.root_module,
+        target,
+    );
+    audio_unit_test_step.dependOn(
+        &b.addRunArtifact(auxiliary_output_audio_unit_tests).step,
+    );
+    const mono_gain_audio_unit_bundle_step = b.step(
+        "bundle-audio-unit-mono-gain",
+        "Build the native Mono Gain Audio Unit v2 component",
+    );
+    const auxiliary_output_audio_unit_bundle_step = b.step(
+        "bundle-audio-unit-aux-output-splitter",
+        "Build the native multi-output Audio Unit v2 component",
+    );
+    if (target.result.os.tag == .macos) {
+        const mono_gain_component_path = b.getInstallPath(
+            .prefix,
+            "bundle/zig_vst3_mono_gain.component",
+        );
+        const bundle_audio_unit = b.addSystemCommand(
+            &.{"scripts/bundle_macos_auv2.sh"},
+        );
+        bundle_audio_unit.addFileArg(
+            mono_gain_audio_unit.getEmittedBin(),
+        );
+        bundle_audio_unit.addArgs(&.{
+            mono_gain_component_path,
+            "dev.zig-vst3.mono-gain-auv2",
+            "0.2.1",
+            "zig_vst3_mono_gain",
+            "aufx",
+            "ZMGn",
+            "Zig3",
+            "zig-vst3: Mono Gain",
+            "ZigVst3MonoGainFactory",
+            "513",
+        });
+        mono_gain_audio_unit_bundle_step.dependOn(
+            &bundle_audio_unit.step,
+        );
+        const test_audio_unit_bundle = b.addSystemCommand(
+            &.{"scripts/test_auv2_bundle.sh"},
+        );
+        test_audio_unit_bundle.addArg(mono_gain_component_path);
+        test_audio_unit_bundle.addArgs(&.{
+            "zig_vst3_mono_gain",
+            "aufx",
+            "ZMGn",
+            "Zig3",
+            "ZigVst3MonoGainFactory",
+            "513",
+        });
+        test_audio_unit_bundle.step.dependOn(
+            &bundle_audio_unit.step,
+        );
+        mono_gain_audio_unit_bundle_step.dependOn(
+            &test_audio_unit_bundle.step,
+        );
+        audio_unit_test_step.dependOn(
+            mono_gain_audio_unit_bundle_step,
+        );
+
+        const auxiliary_output_component_path = b.getInstallPath(
+            .prefix,
+            "bundle/zig_vst3_aux_output_splitter.component",
+        );
+        const bundle_auxiliary_output_audio_unit =
+            b.addSystemCommand(
+                &.{"scripts/bundle_macos_auv2.sh"},
+            );
+        bundle_auxiliary_output_audio_unit.addFileArg(
+            auxiliary_output_audio_unit.getEmittedBin(),
+        );
+        bundle_auxiliary_output_audio_unit.addArgs(&.{
+            auxiliary_output_component_path,
+            "dev.zig-vst3.aux-output-splitter-auv2",
+            "0.2.1",
+            "zig_vst3_aux_output_splitter",
+            "aufx",
+            "ZAux",
+            "Zig3",
+            "zig-vst3: Auxiliary Output Splitter",
+            "ZigVst3AuxOutputSplitterFactory",
+            "513",
+        });
+        auxiliary_output_audio_unit_bundle_step.dependOn(
+            &bundle_auxiliary_output_audio_unit.step,
+        );
+        const test_auxiliary_output_audio_unit_bundle =
+            b.addSystemCommand(
+                &.{"scripts/test_auv2_bundle.sh"},
+            );
+        test_auxiliary_output_audio_unit_bundle.addArg(
+            auxiliary_output_component_path,
+        );
+        test_auxiliary_output_audio_unit_bundle.addArgs(&.{
+            "zig_vst3_aux_output_splitter",
+            "aufx",
+            "ZAux",
+            "Zig3",
+            "ZigVst3AuxOutputSplitterFactory",
+            "513",
+        });
+        test_auxiliary_output_audio_unit_bundle.step.dependOn(
+            &bundle_auxiliary_output_audio_unit.step,
+        );
+        auxiliary_output_audio_unit_bundle_step.dependOn(
+            &test_auxiliary_output_audio_unit_bundle.step,
+        );
+        audio_unit_test_step.dependOn(
+            auxiliary_output_audio_unit_bundle_step,
+        );
+    }
 
     const zig_vst3_plugin_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -278,6 +2272,422 @@ pub fn build(b: *std.Build) void {
     });
     gui_examples.root_module.addImport("zig-vst3", zig_vst3);
     gui_examples.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
+
+    const mono_gain_lv2_module = b.createModule(.{
+        .root_source_file = b.path("examples/mono_gain_lv2.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    mono_gain_lv2_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const mono_gain_lv2 = b.addLibrary(.{
+        .linkage = .dynamic,
+        .name = "zig_vst3_mono_gain_lv2",
+        .root_module = mono_gain_lv2_module,
+    });
+    b.installArtifact(mono_gain_lv2);
+
+    var mono_gain_lv2_ui: ?*std.Build.Step.Compile = null;
+    var mono_gain_lv2_ui_tests: ?*std.Build.Step.Run = null;
+    var mono_gain_lv2_vstgui_host_smoke: ?*std.Build.Step.Run = null;
+    if (native_vstgui) {
+        const ui_module = b.createModule(.{
+            .root_source_file = b.path(
+                "examples/mono_gain_lv2_ui.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        });
+        ui_module.addImport(
+            "zig-vst3-plugin-core",
+            zig_vst3_plugin_core,
+        );
+        ui_module.addImport("zig-vst3", zig_vst3);
+        addVstguiAdapter(ui_module, target);
+        const ui_library = b.addLibrary(.{
+            .linkage = .dynamic,
+            .name = "zig_vst3_mono_gain_lv2_ui",
+            .root_module = ui_module,
+        });
+        ui_library.step.dependOn(vstgui_adapter_step);
+        b.installArtifact(ui_library);
+        mono_gain_lv2_ui = ui_library;
+
+        const ui_test_module = b.createModule(.{
+            .root_source_file = b.path(
+                "examples/mono_gain_lv2_ui.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        });
+        ui_test_module.addImport(
+            "zig-vst3-plugin-core",
+            zig_vst3_plugin_core,
+        );
+        ui_test_module.addImport("zig-vst3", zig_vst3);
+        addVstguiAdapter(ui_test_module, target);
+        const ui_tests = b.addTest(.{
+            .root_module = ui_test_module,
+        });
+        ui_tests.step.dependOn(vstgui_adapter_step);
+        mono_gain_lv2_ui_tests =
+            b.addRunArtifact(ui_tests);
+
+        const ui_host_smoke = b.addExecutable(.{
+            .name = "lv2-vstgui-ui-host-smoke",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tests/lv2_vstgui_ui_host_smoke.zig",
+                ),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+                .link_libc = true,
+            }),
+        });
+        ui_host_smoke.root_module.addImport(
+            "zig-vst3-plugin-core",
+            zig_vst3_plugin_core,
+        );
+        const run_ui_host_smoke =
+            b.addRunArtifact(ui_host_smoke);
+        run_ui_host_smoke.addFileArg(
+            ui_library.getEmittedBin(),
+        );
+        mono_gain_lv2_vstgui_host_smoke =
+            run_ui_host_smoke;
+    }
+
+    const mono_gain_lv2_metadata_module = b.createModule(.{
+        .root_source_file = b.path(
+            "tools/generate_mono_gain_lv2_metadata.zig",
+        ),
+        .target = b.graph.host,
+        .optimize = .ReleaseSafe,
+    });
+    mono_gain_lv2_metadata_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    mono_gain_lv2_metadata_module.addImport(
+        "mono-gain-lv2",
+        mono_gain_lv2_module,
+    );
+    const mono_gain_lv2_metadata = b.addExecutable(.{
+        .name = "generate-mono-gain-lv2-metadata",
+        .root_module = mono_gain_lv2_metadata_module,
+    });
+
+    const component_state_lv2_module = b.createModule(.{
+        .root_source_file = b.path(
+            "tests/fixtures/lv2_component_state_plugin.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    component_state_lv2_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const component_state_lv2 = b.addLibrary(.{
+        .linkage = .dynamic,
+        .name = "zig_vst3_component_state_lv2",
+        .root_module = component_state_lv2_module,
+    });
+
+    const lv2_ui_module = b.createModule(.{
+        .root_source_file = b.path(
+            "tests/fixtures/lv2_ui_plugin.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    lv2_ui_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const lv2_ui_library = b.addLibrary(.{
+        .linkage = .dynamic,
+        .name = "zig_vst3_lv2_ui_probe",
+        .root_module = lv2_ui_module,
+    });
+
+    const mono_gain_lv2_test_module = b.createModule(.{
+        .root_source_file = b.path("examples/mono_gain_lv2.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    mono_gain_lv2_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const mono_gain_lv2_tests = b.addTest(.{
+        .root_module = mono_gain_lv2_test_module,
+    });
+
+    const mono_gain_lv2_bundle_step = b.step(
+        "bundle-lv2-mono-gain",
+        "Build the native Mono Gain LV2 bundle",
+    );
+    const mono_gain_lv2_bundle = b.addSystemCommand(
+        &.{"scripts/bundle_lv2.sh"},
+    );
+    mono_gain_lv2_bundle.addFileArg(mono_gain_lv2.getEmittedBin());
+    mono_gain_lv2_bundle.addArg(
+        b.getInstallPath(
+            .prefix,
+            "bundle/zig_vst3_mono_gain.lv2",
+        ),
+    );
+    mono_gain_lv2_bundle.addFileArg(
+        mono_gain_lv2_metadata.getEmittedBin(),
+    );
+    if (mono_gain_lv2_ui) |ui_library|
+        mono_gain_lv2_bundle.addFileArg(
+            ui_library.getEmittedBin(),
+        );
+    mono_gain_lv2_bundle_step.dependOn(
+        &mono_gain_lv2_bundle.step,
+    );
+
+    const mono_gain_lv2_entry_check = b.addSystemCommand(
+        &.{"scripts/check_lv2_entry_symbol.sh"},
+    );
+    mono_gain_lv2_entry_check.addFileArg(
+        mono_gain_lv2.getEmittedBin(),
+    );
+    var mono_gain_lv2_ui_entry_check: ?*std.Build.Step.Run = null;
+    if (mono_gain_lv2_ui) |ui_library| {
+        const check = b.addSystemCommand(
+            &.{"scripts/check_lv2_entry_symbol.sh"},
+        );
+        check.addFileArg(ui_library.getEmittedBin());
+        check.addArg("lv2ui_descriptor");
+        mono_gain_lv2_ui_entry_check = check;
+    }
+
+    const lv2_host_smoke = b.addExecutable(.{
+        .name = "lv2-host-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/lv2_host_smoke.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+        }),
+    });
+    lv2_host_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const run_lv2_host_smoke = b.addRunArtifact(lv2_host_smoke);
+    run_lv2_host_smoke.addFileArg(mono_gain_lv2.getEmittedBin());
+
+    const lv2_component_state_host_smoke = b.addExecutable(.{
+        .name = "lv2-component-state-host-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/lv2_component_state_host_smoke.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+        }),
+    });
+    lv2_component_state_host_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const run_lv2_component_state_host_smoke =
+        b.addRunArtifact(lv2_component_state_host_smoke);
+    run_lv2_component_state_host_smoke.addFileArg(
+        component_state_lv2.getEmittedBin(),
+    );
+
+    const lv2_ui_host_smoke = b.addExecutable(.{
+        .name = "lv2-ui-host-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/lv2_ui_host_smoke.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+        }),
+    });
+    lv2_ui_host_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const run_lv2_ui_host_smoke =
+        b.addRunArtifact(lv2_ui_host_smoke);
+    run_lv2_ui_host_smoke.addFileArg(
+        lv2_ui_library.getEmittedBin(),
+    );
+
+    const lv2_abi_object = b.addObject(.{
+        .name = "lv2-core-abi-zig",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/abi/lv2_core_harness.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    lv2_abi_object.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const lv2_abi_harness = b.addExecutable(.{
+        .name = "lv2-core-abi-harness",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+        }),
+    });
+    lv2_abi_harness.root_module.addCSourceFile(.{
+        .file = b.path("tests/abi/lv2_core_harness.c"),
+        .flags = &.{"-std=c11"},
+    });
+    lv2_abi_harness.root_module.addObject(lv2_abi_object);
+    const run_lv2_abi_harness =
+        b.addRunArtifact(lv2_abi_harness);
+    const lv2_abi_step = b.step(
+        "test-lv2-abi",
+        "Run the LV2 C ABI layout harness",
+    );
+    lv2_abi_step.dependOn(&run_lv2_abi_harness.step);
+
+    const lv2_cross_build_step = b.step(
+        "test-lv2-builds",
+        "Compile LV2 libraries for supported cross targets",
+    );
+    const lv2_cross_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    };
+    for (lv2_cross_targets) |lv2_target| {
+        const target_core = b.createModule(.{
+            .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+            .target = lv2_target,
+            .optimize = .ReleaseSafe,
+        });
+        const target_module = b.createModule(.{
+            .root_source_file = b.path("examples/mono_gain_lv2.zig"),
+            .target = lv2_target,
+            .optimize = .ReleaseSafe,
+        });
+        target_module.addImport(
+            "zig-vst3-plugin-core",
+            target_core,
+        );
+        const target_library = b.addLibrary(.{
+            .linkage = .dynamic,
+            .name = b.fmt(
+                "zig_vst3_mono_gain_lv2_{s}_{s}",
+                .{
+                    @tagName(lv2_target.result.cpu.arch),
+                    @tagName(lv2_target.result.os.tag),
+                },
+            ),
+            .root_module = target_module,
+        });
+        lv2_cross_build_step.dependOn(&target_library.step);
+
+        const target_component_state_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/fixtures/lv2_component_state_plugin.zig",
+            ),
+            .target = lv2_target,
+            .optimize = .ReleaseSafe,
+        });
+        target_component_state_module.addImport(
+            "zig-vst3-plugin-core",
+            target_core,
+        );
+        const target_component_state_library = b.addLibrary(.{
+            .linkage = .dynamic,
+            .name = b.fmt(
+                "zig_vst3_component_state_lv2_{s}_{s}",
+                .{
+                    @tagName(lv2_target.result.cpu.arch),
+                    @tagName(lv2_target.result.os.tag),
+                },
+            ),
+            .root_module = target_component_state_module,
+        });
+        lv2_cross_build_step.dependOn(
+            &target_component_state_library.step,
+        );
+
+        const target_ui_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/fixtures/lv2_ui_plugin.zig",
+            ),
+            .target = lv2_target,
+            .optimize = .ReleaseSafe,
+        });
+        target_ui_module.addImport(
+            "zig-vst3-plugin-core",
+            target_core,
+        );
+        const target_ui_library = b.addLibrary(.{
+            .linkage = .dynamic,
+            .name = b.fmt(
+                "zig_vst3_lv2_ui_probe_{s}_{s}",
+                .{
+                    @tagName(lv2_target.result.cpu.arch),
+                    @tagName(lv2_target.result.os.tag),
+                },
+            ),
+            .root_module = target_ui_module,
+        });
+        lv2_cross_build_step.dependOn(
+            &target_ui_library.step,
+        );
+    }
+
+    const lv2_test_step = b.step(
+        "test-lv2",
+        "Run LV2 ABI, host, bundle, and cross-build tests",
+    );
+    lv2_test_step.dependOn(
+        &b.addRunArtifact(mono_gain_lv2_tests).step,
+    );
+    lv2_test_step.dependOn(mono_gain_lv2_bundle_step);
+    lv2_test_step.dependOn(&mono_gain_lv2_entry_check.step);
+    if (mono_gain_lv2_ui_entry_check) |check|
+        lv2_test_step.dependOn(&check.step);
+    if (mono_gain_lv2_ui_tests) |ui_tests|
+        lv2_test_step.dependOn(&ui_tests.step);
+    if (mono_gain_lv2_vstgui_host_smoke) |host_smoke|
+        lv2_test_step.dependOn(&host_smoke.step);
+    lv2_test_step.dependOn(&run_lv2_host_smoke.step);
+    lv2_test_step.dependOn(
+        &run_lv2_component_state_host_smoke.step,
+    );
+    lv2_test_step.dependOn(&run_lv2_ui_host_smoke.step);
+    lv2_test_step.dependOn(&run_lv2_abi_harness.step);
+    lv2_test_step.dependOn(lv2_cross_build_step);
+    const test_lv2_bundle =
+        b.addSystemCommand(&.{"scripts/test_lv2_bundle.sh"});
+    test_lv2_bundle.addFileArg(
+        mono_gain_lv2_metadata.getEmittedBin(),
+    );
+    lv2_test_step.dependOn(&test_lv2_bundle.step);
 
     if (native_vstgui) {
         vst3_tests.step.dependOn(vstgui_native_test_step);
@@ -328,6 +2738,36 @@ pub fn build(b: *std.Build) void {
     });
     const generate_fixtures_step = b.step("generate-sample-player-fixtures", "Generate bounded WAV and AIFF sample-player fixtures");
     generate_fixtures_step.dependOn(&b.addRunArtifact(fixture_generator).step);
+
+    const vorbis_interop_fixture = b.addExecutable(.{
+        .name = "vorbis-interop-fixture",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/vorbis_interop_fixture.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    vorbis_interop_fixture.root_module.addImport(
+        "zig-vst3-plugin",
+        zig_vst3_plugin,
+    );
+    const run_vorbis_interop_fixture =
+        b.addRunArtifact(vorbis_interop_fixture);
+    const vorbis_interop_ogg =
+        run_vorbis_interop_fixture.addOutputFileArg(
+            "vorbis-interop.ogg",
+        );
+    const generate_vorbis_interop_step = b.step(
+        "generate-vorbis-interop-fixture",
+        "Generate a deterministic Ogg Vorbis interoperability fixture",
+    );
+    generate_vorbis_interop_step.dependOn(
+        &run_vorbis_interop_fixture.step,
+    );
+    const test_vorbis_interop = b.addSystemCommand(
+        &.{"scripts/test_vorbis_interop.sh"},
+    );
+    test_vorbis_interop.addFileArg(vorbis_interop_ogg);
 
     const dsp_reference_renderer = b.addExecutable(.{
         .name = "dsp-reference-renderer",
@@ -389,17 +2829,41 @@ pub fn build(b: *std.Build) void {
         realtime_source_audit,
         gui_examples,
     });
+    test_step.dependOn(core_midi_test_step);
+    test_step.dependOn(audio_unit_cross_build_step);
+    test_step.dependOn(&run_audio_unit_v2_abi.step);
+    test_step.dependOn(ara_test_step);
+    test_step.dependOn(core_audio_test_step);
+    test_step.dependOn(wasapi_test_step);
+    test_step.dependOn(alsa_test_step);
+    test_step.dependOn(alsa_midi_test_step);
+    test_step.dependOn(win_midi_test_step);
+    test_step.dependOn(win_window_test_step);
+    test_step.dependOn(cocoa_window_test_step);
+    test_step.dependOn(x11_window_test_step);
+    test_step.dependOn(wayland_window_test_step);
+    test_step.dependOn(wayland_standalone_frame_test_step);
+    test_step.dependOn(linux_run_loop_test_step);
     addExamplePluginTestDependencies(b, test_step, &example_plugins);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_pluginval_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_validator_runner.sh"}).step);
+    test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_gui_lifecycle_soak_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_sanitizer_soak_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_thread_sanitizer_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_build_modes.sh"}).step);
+    test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_bundle_scripts.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/check_public_gui_examples.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_installed_package.sh"}).step);
     test_step.dependOn(generate_fixtures_step);
     test_step.dependOn(dsp_fixture_parity_step);
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_vorbis_interop_runner.sh"},
+        ).step,
+    );
+    test_step.dependOn(&test_vorbis_interop.step);
     test_step.dependOn(dsp_fixture_builds_step);
+    test_step.dependOn(lv2_test_step);
 
     const sanitizer_step = addScriptCheckStep(b, .{
         .step_name = "test-vstgui-sanitizers",
@@ -430,6 +2894,24 @@ pub fn build(b: *std.Build) void {
     });
     const resource_thread_sanitizer_step = b.step("test-resource-thread-sanitizer", "Run resource job and exchange tests with the thread sanitizer");
     resource_thread_sanitizer_step.dependOn(&b.addRunArtifact(resource_thread_sanitizer_tests).step);
+
+    const dsp_thread_sanitizer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/dsp/realtime_snapshot.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .Debug,
+            .sanitize_thread = true,
+        }),
+    });
+    const dsp_thread_sanitizer_step = b.step(
+        "test-dsp-thread-sanitizer",
+        "Run realtime DSP publication tests with the thread sanitizer",
+    );
+    dsp_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(dsp_thread_sanitizer_tests).step,
+    );
 
     const plugin_path_option = b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate");
 
@@ -537,12 +3019,16 @@ pub fn build(b: *std.Build) void {
         .{ .step_name = "inter-app-audio-abi", .description = "Compare Zig Inter-App Audio declarations against the pinned VST3 SDK", .script = "scripts/check_inter_app_audio_abi.sh" },
         .{ .step_name = "test-plug-provider-abi", .description = "Compare Zig test plug provider declarations against the pinned VST3 SDK", .script = "scripts/check_test_plug_provider_abi.sh" },
         .{ .step_name = "test-interfaces-abi", .description = "Compare Zig test interface declarations against the pinned VST3 SDK", .script = "scripts/check_test_interfaces_abi.sh" },
+        .{ .step_name = "ara-vst3-abi", .description = "Compare Zig ARA API and VST3 companion declarations against the official ARA SDK", .script = "scripts/check_ara_vst3_abi.sh" },
     };
 
     var raw_api_script_steps: [raw_api_script_checks.len]*std.Build.Step = undefined;
     for (raw_api_script_checks, 0..) |options, index| {
         raw_api_script_steps[index] = addScriptCheckStep(b, options);
     }
+    ara_test_step.dependOn(
+        raw_api_script_steps[raw_api_script_steps.len - 1],
+    );
 
     const funknown_harness_zig = addAbiHarnessObject(b, target, optimize, zig_vst3, .{
         .name = "funknown_harness_zig",
@@ -684,6 +3170,258 @@ fn addZigVst3PluginTest(
     return b.addTest(.{
         .root_module = module,
     });
+}
+
+fn addCoreMidiBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .macos) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/core_midi_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-fblocks",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-deprecated-declarations",
+        },
+    });
+    module.linkFramework("CoreFoundation", .{});
+    module.linkFramework("CoreMIDI", .{});
+}
+
+fn addAudioUnitV2ClassInfo(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .macos) return;
+    module.link_libc = true;
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/audio_unit_v2_class_info.c",
+        ),
+        .flags = &.{ "-std=c11", "-Wall", "-Wextra", "-Werror" },
+    });
+    module.linkFramework("AudioToolbox", .{});
+    module.linkFramework("CoreFoundation", .{});
+}
+
+fn addCoreAudioBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .macos) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/core_audio_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-deprecated-declarations",
+        },
+    });
+    module.linkFramework("AudioToolbox", .{});
+    module.linkFramework("CoreAudio", .{});
+    module.linkFramework("CoreFoundation", .{});
+}
+
+fn addWasapiBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .windows) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/wasapi_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    module.linkSystemLibrary("ole32", .{});
+    module.linkSystemLibrary("oleaut32", .{});
+    module.linkSystemLibrary("avrt", .{});
+    module.linkSystemLibrary("uuid", .{});
+}
+
+fn addAlsaBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .linux) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/alsa_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    module.linkSystemLibrary("dl", .{});
+    module.linkSystemLibrary("pthread", .{});
+}
+
+fn addAlsaMidiBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .linux) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/alsa_midi_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    module.linkSystemLibrary("dl", .{});
+    module.linkSystemLibrary("pthread", .{});
+}
+
+fn addWinMidiBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .windows) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/win_midi_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    module.linkSystemLibrary("winmm", .{});
+}
+
+fn addWinWindowBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .windows) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/win_window_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    module.linkSystemLibrary("user32", .{});
+}
+
+fn addCocoaWindowBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .macos) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/cocoa_window_shim.m",
+        ),
+        .flags = &.{
+            "-fno-objc-arc",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-deprecated-declarations",
+        },
+    });
+    module.linkFramework("AppKit", .{});
+    module.linkFramework("Foundation", .{});
+}
+
+fn addX11WindowBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .linux) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/x11_window_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wpedantic",
+        },
+    });
+    module.linkSystemLibrary("dl", .{});
+}
+
+fn addWaylandWindowBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .linux) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/wayland_window_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wpedantic",
+        },
+    });
+    module.linkSystemLibrary("dl", .{});
 }
 
 fn addEntrySymbolsCheck(
@@ -952,7 +3690,11 @@ fn addExamplePlugin(
 }
 
 fn usesFullPluginModule(short_name: []const u8) bool {
-    return std.mem.eql(u8, short_name, "resource-swap") or
+    return std.mem.eql(u8, short_name, "mono-gain") or
+        std.mem.eql(u8, short_name, "surround-gain") or
+        std.mem.eql(u8, short_name, "sidechain-ducker") or
+        std.mem.eql(u8, short_name, "aux-output-splitter") or
+        std.mem.eql(u8, short_name, "resource-swap") or
         std.mem.eql(u8, short_name, "fixed-rate") or
         std.mem.eql(u8, short_name, "model-shell") or
         std.mem.eql(u8, short_name, "c-kernel");

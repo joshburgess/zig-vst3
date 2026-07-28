@@ -24,6 +24,66 @@ pub fn build(b: *std.Build) void {
     });
     dsp_fixture_tests.root_module.addImport("zig-vst3-plugin", dependency.module("zig-vst3-plugin"));
 
+    const core_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("core_consumer.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    core_tests.root_module.addImport(
+        "zig-vst3-plugin-core",
+        dependency.module("zig-vst3-plugin-core"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3",
+        dependency.module("zig-vst3"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-ara",
+        dependency.module("zig-vst3-ara"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-coreaudio",
+        dependency.module("zig-vst3-coreaudio"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-coremidi",
+        dependency.module("zig-vst3-coremidi"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-wasapi",
+        dependency.module("zig-vst3-wasapi"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-alsa",
+        dependency.module("zig-vst3-alsa"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-alsamidi",
+        dependency.module("zig-vst3-alsamidi"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-winmidi",
+        dependency.module("zig-vst3-winmidi"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-winwindow",
+        dependency.module("zig-vst3-winwindow"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-cocoawindow",
+        dependency.module("zig-vst3-cocoawindow"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-x11window",
+        dependency.module("zig-vst3-x11window"),
+    );
+    core_tests.root_module.addImport(
+        "zig-vst3-waylandwindow",
+        dependency.module("zig-vst3-waylandwindow"),
+    );
+
     const kernel_module = b.createModule(.{
         .root_source_file = b.path("kernel_plugin.zig"),
         .target = target,
@@ -51,6 +111,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Compile installed-package editor consumers");
     test_step.dependOn(&b.addRunArtifact(consumer_tests).step);
     test_step.dependOn(&b.addRunArtifact(dsp_fixture_tests).step);
+    test_step.dependOn(&b.addRunArtifact(core_tests).step);
     test_step.dependOn(&kernel_plugin.step);
     test_step.dependOn(&b.addRunArtifact(kernel_tests).step);
 }

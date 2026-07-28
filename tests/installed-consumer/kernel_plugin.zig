@@ -39,6 +39,7 @@ const InstalledProcessor = struct {
 const Effect = vst3.zig_vst3_plugin_effect.SimpleEffect(struct {
     pub const component_name = "InstalledCKernelComponent";
     pub const controller_cid = installed_controller_cid;
+    pub const dynamic_audio_bus_topology = Spec.dynamic_audio_bus_topology;
     pub const audio_input_layout = Spec.audio_input_layout;
     pub const audio_output_layout = Spec.audio_output_layout;
     pub const event_input = false;

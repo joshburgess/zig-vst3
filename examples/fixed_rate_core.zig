@@ -118,7 +118,28 @@ pub const Processor = struct {
         return true;
     }
 
-    pub fn process(self: *Processor, _: anytype, comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+    pub fn process(
+        self: *Processor,
+        context: *plug.process.ProcessContext(f32),
+    ) void {
+        self.processSample(f32, context);
+    }
+
+    pub fn process64(
+        self: *Processor,
+        context: *plug.process.ProcessContext(f64),
+    ) void {
+        self.processSample(f64, context);
+    }
+
+    fn processSample(
+        self: *Processor,
+        comptime Sample: type,
+        context: *plug.process.ProcessContext(Sample),
+    ) void {
+        var denormals = plug.dsp.DenormalScope.enter();
+        defer denormals.leave();
+
         const input = context.inputChannel(0) orelse return;
         const output = context.outputChannel(0) orelse return;
         const requested = self.requested_fixed_rate.load(.acquire);
@@ -154,14 +175,112 @@ pub const Processor = struct {
     }
 };
 
-pub const FixedRate = struct {
+pub const RuntimeProcessor = struct {
+    pub const latency_telemetry_source_id: u32 = 0;
     pub const name = "zig-vst3 Fixed Rate Processor";
     pub const vendor = "zig-vst3";
     pub const audio_input_layout: plug.plugin.AudioBusLayout = .mono;
     pub const audio_output_layout: plug.plugin.AudioBusLayout = .mono;
     pub const event_input = false;
     pub const Params = struct {};
+    pub const component_state_maximum_encoded_size =
+        Processor.component_state_maximum_encoded_size;
+
+    allocator: std.mem.Allocator,
+    engine: *Processor,
+
+    pub fn init(allocator: std.mem.Allocator) !RuntimeProcessor {
+        const engine = try allocator.create(Processor);
+        engine.initInPlace();
+        return .{
+            .allocator = allocator,
+            .engine = engine,
+        };
+    }
+
+    pub fn bindHostRequests(
+        self: *RuntimeProcessor,
+        requests: *plug.HostRequestSink,
+    ) void {
+        self.engine.bindHostRequests(requests);
+    }
+
+    pub fn prepare(
+        self: *RuntimeProcessor,
+        config: plug.plugin.PrepareConfig,
+    ) void {
+        self.engine.prepare(config);
+    }
+
+    pub fn reset(self: *RuntimeProcessor) void {
+        self.engine.reset();
+    }
+
+    pub fn latencySamples(self: *const RuntimeProcessor) u32 {
+        return self.engine.latencySamples();
+    }
+
+    pub fn guiTelemetryLoad(
+        self: *const RuntimeProcessor,
+        source_id: u32,
+    ) f64 {
+        if (source_id != latency_telemetry_source_id) return 0.0;
+        return @floatFromInt(self.latencySamples());
+    }
+
+    pub fn requestFixedRate(
+        self: *RuntimeProcessor,
+        enabled: bool,
+    ) bool {
+        return self.engine.requestFixedRate(enabled);
+    }
+
+    pub fn afterComponentStateRestore(
+        self: *RuntimeProcessor,
+    ) void {
+        self.engine.afterComponentStateRestore();
+    }
+
+    pub fn componentConnectionReady(
+        self: *RuntimeProcessor,
+    ) void {
+        self.engine.componentConnectionReady();
+    }
+
+    pub fn writeComponentState(
+        self: *const RuntimeProcessor,
+        writer: anytype,
+    ) !void {
+        try self.engine.writeComponentState(writer);
+    }
+
+    pub fn readComponentState(
+        self: *RuntimeProcessor,
+        reader: anytype,
+    ) !void {
+        try self.engine.readComponentState(reader);
+    }
+
+    pub fn process(
+        self: *RuntimeProcessor,
+        context: *plug.process.ProcessContext(f32),
+    ) void {
+        self.engine.process(context);
+    }
+
+    pub fn process64(
+        self: *RuntimeProcessor,
+        context: *plug.process.ProcessContext(f64),
+    ) void {
+        self.engine.process64(context);
+    }
+
+    pub fn deinit(self: *RuntimeProcessor) void {
+        self.allocator.destroy(self.engine);
+    }
 };
+
+pub const FixedRate = RuntimeProcessor;
 
 test "fixed-rate processor renders the model path at exact host latency" {
     const allocator = std.testing.allocator;
@@ -177,7 +296,7 @@ test "fixed-rate processor renders the model path at exact host latency" {
     const inputs = [_][]const f32{&input};
     const outputs = [_][]f32{&output};
     var context = try plug.process.ProcessContext(f32).init(44_100, &inputs, &outputs);
-    processor.process({}, f32, &context);
+    processor.process(&context);
     var peak_index: usize = 0;
     for (output, 0..) |sample, index| {
         if (@abs(sample) > @abs(output[peak_index])) peak_index = index;
@@ -199,8 +318,40 @@ test "fixed-rate processor falls back safely outside its bounded rate ratio" {
     const inputs = [_][]const f64{&input};
     const outputs = [_][]f64{&output};
     var context = try plug.process.ProcessContext(f64).init(1_234_567.8, &inputs, &outputs);
-    processor.process({}, f64, &context);
+    processor.process64(&context);
     try std.testing.expectEqualSlices(f64, &input, &output);
+}
+
+test "fixed-rate processor flushes subnormal output without leaking thread policy" {
+    if (!plug.dsp.denormals.supported) return error.SkipZigTest;
+    const Harness = struct {
+        fn run(comptime Sample: type) !void {
+            const allocator = std.testing.allocator;
+            const processor = try allocator.create(Processor);
+            defer allocator.destroy(processor);
+            processor.initInPlace();
+            processor.prepare(.{ .sample_rate = 48_000, .max_block_size = 128 });
+
+            var input: [128]Sample = @splat(0.0);
+            input[0] = std.math.floatMin(Sample) * 2.0;
+            var output: [128]Sample = undefined;
+            const inputs = [_][]const Sample{&input};
+            const outputs = [_][]Sample{&output};
+            var context = try plug.process.ProcessContext(Sample).init(48_000, &inputs, &outputs);
+            const flush_before = plug.dsp.denormals.flushToZeroEnabled();
+            if (Sample == f32)
+                processor.process(&context)
+            else
+                processor.process64(&context);
+            try std.testing.expectEqual(flush_before, plug.dsp.denormals.flushToZeroEnabled());
+            for (output) |sample| {
+                try std.testing.expect(sample == 0.0 or std.math.isNormal(sample));
+            }
+        }
+    };
+
+    try Harness.run(f32);
+    try Harness.run(f64);
 }
 
 test "fixed-rate processor changes prepared latency before block-boundary activation" {
@@ -218,7 +369,7 @@ test "fixed-rate processor changes prepared latency before block-boundary activa
     const inputs = [_][]const f32{&input};
     const outputs = [_][]f32{&output};
     var context = try plug.process.ProcessContext(f32).init(96_000, &inputs, &outputs);
-    processor.process({}, f32, &context);
+    processor.process(&context);
     try std.testing.expectEqualSlices(f32, &input, &output);
     try std.testing.expect(processor.requestFixedRate(true));
     try std.testing.expectEqual(@as(u32, 48), processor.latencySamples());

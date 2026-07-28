@@ -172,8 +172,8 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
         const snapshot = state.importer.snapshot();
         if (snapshot.import.status == .ready and snapshot.import.generation != state.published_import_generation) {
             state.editor.loadFrom(&state.importer) catch return snapshot;
-            const generation = state.transfer_generation +% 1;
-            if (generation != 0 and Controller.sendDecodedAudioGeneration(
+            const generation = vst3.gui_ir_transport.nextGeneration(state.transfer_generation);
+            if (Controller.sendDecodedAudioGeneration(
                 controller,
                 ir_import_id,
                 generation,
@@ -237,8 +237,8 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
             else => return types.kResultFalse,
         };
         if (!(state.editor.apply(command, selection_start, selection_end) catch false)) return types.kResultFalse;
-        const generation = state.transfer_generation +% 1;
-        if (generation == 0 or Controller.sendDecodedAudioGeneration(
+        const generation = vst3.gui_ir_transport.nextGeneration(state.transfer_generation);
+        if (Controller.sendDecodedAudioGeneration(
             controller,
             ir_import_id,
             generation,
@@ -280,8 +280,8 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
 
     fn clearImport(controller: *vst.ivsteditcontroller.IEditController, state: *IRControllerState) bool {
         if (!state.importer.canReset()) return false;
-        const generation = state.transfer_generation +% 1;
-        if (generation == 0 or Controller.clearDecodedAudio(controller, ir_import_id, generation) != types.kResultOk) return false;
+        const generation = vst3.gui_ir_transport.nextGeneration(state.transfer_generation);
+        if (Controller.clearDecodedAudio(controller, ir_import_id, generation) != types.kResultOk) return false;
         if (!state.importer.reset()) return false;
         _ = state.editor.clear();
         state.transfer_generation = generation;
@@ -544,14 +544,101 @@ const IRProcessor = struct {
     }
 };
 
-const Effect = vst3.zig_vst3_plugin_effect.SimpleStereoEffect(struct {
-    pub const component_name = "IRLoaderComponent";
-    pub const controller_cid = ir_controller_cid;
-    pub const Params = Spec.Params;
-    pub const parameter_set = &ir_parameter_set;
-    pub const audio_import_target_id = ir_import_id;
-    pub const Processor = IRProcessor;
-});
+const RuntimeProcessor = struct {
+    pub const name = Definition.name;
+    pub const vendor = Definition.vendor;
+    pub const url = Definition.url;
+    pub const Params = Definition.Params;
+
+    const ParameterAdapter = struct {
+        view: core.parameters.ParameterView(Params),
+
+        pub fn getNormalizedById(
+            self: ParameterAdapter,
+            id: u32,
+        ) f64 {
+            return self.view.loadById(id) orelse 0.0;
+        }
+    };
+
+    allocator: std.mem.Allocator,
+    engine: *IRProcessor,
+
+    pub fn init(allocator: std.mem.Allocator) !RuntimeProcessor {
+        const engine = try allocator.create(IRProcessor);
+        engine.initInPlace();
+        return .{
+            .allocator = allocator,
+            .engine = engine,
+        };
+    }
+
+    pub fn prepare(
+        self: *RuntimeProcessor,
+        config: core.plugin.PrepareConfig,
+    ) void {
+        self.engine.prepare(config);
+    }
+
+    pub fn reset(self: *RuntimeProcessor) void {
+        self.engine.reset();
+    }
+
+    pub fn latencySamples(self: *const RuntimeProcessor) u32 {
+        return self.engine.latencySamples();
+    }
+
+    pub fn tailSamples(self: *const RuntimeProcessor) u32 {
+        return self.engine.tailSamples();
+    }
+
+    pub fn audioImportReceiver(self: *RuntimeProcessor) *Convolver {
+        return self.engine.audioImportReceiver();
+    }
+
+    pub fn processWithParameterView(
+        self: *RuntimeProcessor,
+        context: *core.process.ProcessContext(f32),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(
+            ParameterAdapter{ .view = parameters },
+            f32,
+            context,
+        );
+    }
+
+    pub fn process64WithParameterView(
+        self: *RuntimeProcessor,
+        context: *core.process.ProcessContext(f64),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        self.engine.process(
+            ParameterAdapter{ .view = parameters },
+            f64,
+            context,
+        );
+    }
+
+    pub fn deinit(self: *RuntimeProcessor) void {
+        self.allocator.destroy(self.engine);
+    }
+};
+
+const Vst3IRProcessor =
+    vst3.zig_vst3_plugin_runtime_adapter.Processor(
+        RuntimeProcessor,
+    );
+
+const Effect =
+    vst3.zig_vst3_plugin_effect.HighLevelEffect(
+        RuntimeProcessor,
+        struct {
+            pub const component_name = "IRLoaderComponent";
+            pub const controller_cid = ir_controller_cid;
+            pub const audio_import_target_id = ir_import_id;
+        },
+    );
 
 pub const component_cid = vst3.tuid.inlineUid(0x7A0A8A10, 0x9D554843, 0x84CE2F3A, 0x49A0B44E);
 pub const ir_controller_cid = vst3.tuid.inlineUid(0xF1955EA3, 0x413E4DC0, 0xA70E2997, 0x31D138AF);
@@ -575,6 +662,10 @@ test "IR loader exports component and controller classes" {
 }
 
 test "IR loader creates a public API editor and bounded processor" {
+    try std.testing.expect(Vst3IRProcessor.hasAudioImportReceiver);
+    try std.testing.expect(
+        @hasDecl(RuntimeProcessor, "process64WithParameterView"),
+    );
     try std.testing.expectEqual(@as(usize, 1), ir_skin.assets.len);
     try std.testing.expectEqualStrings("Avenir Next", std.mem.span(ir_skin.fonts.title_family.?));
     try std.testing.expectEqualStrings("Menlo", std.mem.span(ir_skin.fonts.value_family.?));
@@ -597,6 +688,15 @@ test "IR loader creates a public API editor and bounded processor" {
     const processor: *vst.ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out orelse return error.MissingProcessor));
     defer _ = processor.vtable.release(processor);
     try std.testing.expectEqual(@as(u32, convolution_partition_size), processor.vtable.getLatencySamples(processor));
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.canProcessSampleSize(
+            processor,
+            @intFromEnum(
+                vst.ivstaudioprocessor.SymbolicSampleSizes.kSample64,
+            ),
+        ),
+    );
 }
 
 test "IR loader survives concurrent headless host lifecycle stress" {
@@ -662,8 +762,13 @@ test "IR loader imports and clears one immutable processor generation" {
     try std.testing.expect(attempts < 1_000_000);
     _ = Controller.loadFileImport(controller, ir_import_id);
     const processor = Effect.processorInstance(component);
-    try std.testing.expect(processor.convolver.adoptPending());
-    try std.testing.expectEqual(@as(usize, 2), processor.convolver.activeMetadata().?.frames);
+    try std.testing.expect(
+        processor.audioImportReceiver().adoptPending(),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        processor.audioImportReceiver().activeMetadata().?.frames,
+    );
     const format_text = switch (Controller.editorState(controller).get(ir_format_state_id) orelse return error.MissingFormatState) {
         .text => |value| value,
         else => return error.InvalidFormatState,
@@ -680,22 +785,37 @@ test "IR loader imports and clears one immutable processor generation" {
         ir_edit_action_group_id,
         reverse_action_id,
     ));
-    try std.testing.expect(processor.convolver.adoptPending());
-    try std.testing.expectEqual(@as(usize, 2), processor.convolver.activeMetadata().?.frames);
+    try std.testing.expect(
+        processor.audioImportReceiver().adoptPending(),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        processor.audioImportReceiver().activeMetadata().?.frames,
+    );
     try std.testing.expectEqual(types.kResultOk, Controller.performAction(
         controller,
         ir_edit_action_group_id,
         reset_action_id,
     ));
-    try std.testing.expect(processor.convolver.adoptPending());
-    try std.testing.expectEqual(@as(usize, 2), processor.convolver.activeMetadata().?.frames);
+    try std.testing.expect(
+        processor.audioImportReceiver().adoptPending(),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        processor.audioImportReceiver().activeMetadata().?.frames,
+    );
 
     const StateStream = vst3.vst_stream.FixedBufferStream(8192);
     var state_stream = StateStream{};
     try std.testing.expectEqual(types.kResultOk, controller.vtable.getState(controller, state_stream.asStream()));
     try std.testing.expectEqual(types.kResultOk, Controller.performFileImportCommand(controller, ir_import_id, .reset));
-    try std.testing.expect(processor.convolver.adoptPending());
-    try std.testing.expectEqual(@as(usize, 0), processor.convolver.activeMetadata().?.frames);
+    try std.testing.expect(
+        processor.audioImportReceiver().adoptPending(),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        processor.audioImportReceiver().activeMetadata().?.frames,
+    );
     const cleared_text = switch (Controller.editorState(controller).get(ir_publish_state_id) orelse return error.MissingPublishState) {
         .text => |value| value,
         else => return error.InvalidPublishState,
@@ -738,13 +858,25 @@ test "IR loader rejects clear before mutating the processor while import work is
     try std.testing.expectEqual(types.kResultOk, controller_connection.vtable.connect(controller_connection, component_connection));
 
     const state = Controller.controllerState(controller);
+    try std.testing.expectEqual(
+        core.gui_file_importer.Status.validating,
+        state.importer.model.begin(.picker, &.{"active.wav"}),
+    );
+    try state.importer.model.startImport(1);
     state.importer.worker.worker_running.store(true, .release);
-    defer state.importer.worker.worker_running.store(false, .release);
+    defer {
+        state.importer.worker.worker_running.store(false, .release);
+        state.importer.model.reset();
+    }
     try std.testing.expectEqual(types.kResultFalse, Controller.performAction(
         controller,
         ir_destructive_action_group_id,
         clear_ir_action_id,
     ));
-    try std.testing.expect(!Effect.processorInstance(component).convolver.adoptPending());
+    try std.testing.expect(
+        !Effect.processorInstance(component)
+            .audioImportReceiver()
+            .adoptPending(),
+    );
     try std.testing.expectEqual(@as(u64, 0), state.transfer_generation);
 }

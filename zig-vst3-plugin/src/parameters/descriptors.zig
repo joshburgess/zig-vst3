@@ -36,20 +36,27 @@ pub const FloatParam = struct {
     }
 
     pub fn containsPlain(self: FloatParam, plain: f64) bool {
-        return common.isFiniteInRange(f64, plain, self.min, self.max);
+        return self.rangeValid() and common.isFiniteInRange(f64, plain, self.min, self.max);
+    }
+
+    fn valid(self: FloatParam) bool {
+        return self.rangeValid() and common.isFiniteInRange(f64, self.default, self.min, self.max);
     }
 
     pub fn clampPlain(self: FloatParam, plain: f64) f64 {
+        if (!self.rangeValid()) return 0.0;
         if (std.math.isNan(plain)) return self.min;
         return std.math.clamp(plain, self.min, self.max);
     }
 
     pub fn normalize(self: FloatParam, plain: f64) f64 {
+        if (!self.rangeValid()) return 0.0;
         const clamped = self.clampPlain(plain);
         return (clamped - self.min) / (self.max - self.min);
     }
 
     pub fn denormalize(self: FloatParam, normalized: f64) f64 {
+        if (!self.rangeValid()) return 0.0;
         const clamped = clampNormalized(normalized);
         return self.min + clamped * (self.max - self.min);
     }
@@ -84,6 +91,10 @@ pub const FloatParam = struct {
         if (std.math.isNan(plain)) return min;
         return std.math.clamp(plain, min, max);
     }
+
+    fn rangeValid(self: FloatParam) bool {
+        return common.isValidRange(self.min, self.max);
+    }
 };
 
 pub const LogFloatParam = struct {
@@ -115,19 +126,28 @@ pub const LogFloatParam = struct {
     }
 
     pub fn containsPlain(self: LogFloatParam, plain: f64) bool {
-        return std.math.isFinite(plain) and plain >= self.min and plain <= self.max;
+        return validRange(self.min, self.max) and
+            std.math.isFinite(plain) and plain >= self.min and plain <= self.max;
+    }
+
+    fn valid(self: LogFloatParam) bool {
+        return validRange(self.min, self.max) and
+            common.isFiniteInRange(f64, self.default, self.min, self.max);
     }
 
     pub fn clampPlain(self: LogFloatParam, plain: f64) f64 {
+        if (!validRange(self.min, self.max)) return 0.0;
         if (std.math.isNan(plain)) return self.min;
         return std.math.clamp(plain, self.min, self.max);
     }
 
     pub fn normalize(self: LogFloatParam, plain: f64) f64 {
+        if (!validRange(self.min, self.max)) return 0.0;
         return @log(self.clampPlain(plain) / self.min) / @log(self.max / self.min);
     }
 
     pub fn denormalize(self: LogFloatParam, normalized: f64) f64 {
+        if (!validRange(self.min, self.max)) return 0.0;
         return self.min * std.math.pow(f64, self.max / self.min, clampNormalized(normalized));
     }
 
@@ -200,14 +220,20 @@ pub const IntParam = struct {
     }
 
     pub fn containsPlain(self: IntParam, plain: i64) bool {
-        return plain >= self.min and plain <= self.max;
+        return self.rangeValid() and plain >= self.min and plain <= self.max;
+    }
+
+    fn valid(self: IntParam) bool {
+        return self.rangeValid() and self.default >= self.min and self.default <= self.max;
     }
 
     pub fn clampPlain(self: IntParam, plain: i64) i64 {
+        if (!self.rangeValid()) return 0;
         return std.math.clamp(plain, self.min, self.max);
     }
 
     pub fn normalize(self: IntParam, plain: i64) f64 {
+        if (!self.rangeValid()) return 0.0;
         const clamped = self.clampPlain(plain);
         const range = @as(f64, @floatFromInt(self.max)) - @as(f64, @floatFromInt(self.min));
         const offset = @as(f64, @floatFromInt(clamped)) - @as(f64, @floatFromInt(self.min));
@@ -215,6 +241,7 @@ pub const IntParam = struct {
     }
 
     pub fn denormalize(self: IntParam, normalized: f64) i64 {
+        if (!self.rangeValid()) return 0;
         const clamped = clampNormalized(normalized);
         const min = @as(f64, @floatFromInt(self.min));
         const max = @as(f64, @floatFromInt(self.max));
@@ -250,6 +277,10 @@ pub const IntParam = struct {
 
     fn clampPlainInRange(min: i64, max: i64, plain: i64) i64 {
         return std.math.clamp(plain, min, max);
+    }
+
+    fn rangeValid(self: IntParam) bool {
+        return self.max > self.min;
     }
 };
 
@@ -506,6 +537,55 @@ test "int parameter handles full-width ranges without overflow" {
     try std.testing.expectEqual(std.math.maxInt(i64), param.denormalize(1.0));
     try std.testing.expect(param.defaultNormalized() > 0.49);
     try std.testing.expect(param.defaultNormalized() < 0.51);
+}
+
+test "numeric descriptors contain malformed direct state" {
+    var buffer: [32]u8 = undefined;
+
+    const flat_float = FloatParam{
+        .id = 1,
+        .name = "Flat",
+        .min = 1.0,
+        .max = 1.0,
+        .default = 1.0,
+    };
+    try std.testing.expect(!flat_float.valid());
+    try std.testing.expect(!flat_float.containsPlain(1.0));
+    try std.testing.expectEqual(@as(f64, 0.0), flat_float.clampPlain(1.0));
+    try std.testing.expectEqual(@as(f64, 0.0), flat_float.normalize(1.0));
+    try std.testing.expectEqual(@as(f64, 0.0), flat_float.denormalize(0.5));
+    try std.testing.expectEqual(@as(f64, 0.0), flat_float.defaultNormalized());
+    try std.testing.expectEqualStrings("0%", try flat_float.formatPercent(0.5, &buffer));
+
+    const invalid_log = LogFloatParam{
+        .id = 2,
+        .name = "Log",
+        .min = 0.0,
+        .max = 20_000.0,
+        .default = 1_000.0,
+    };
+    try std.testing.expect(!invalid_log.valid());
+    try std.testing.expect(!invalid_log.containsPlain(1_000.0));
+    try std.testing.expectEqual(@as(f64, 0.0), invalid_log.clampPlain(1_000.0));
+    try std.testing.expectEqual(@as(f64, 0.0), invalid_log.normalize(1_000.0));
+    try std.testing.expectEqual(@as(f64, 0.0), invalid_log.denormalize(0.5));
+    try std.testing.expectEqual(@as(f64, 0.0), invalid_log.defaultNormalized());
+    try std.testing.expectEqualStrings("0.0", try invalid_log.formatPlain(0.5, &buffer));
+
+    const reversed_int = IntParam{
+        .id = 3,
+        .name = "Int",
+        .min = 4,
+        .max = 1,
+        .default = 2,
+    };
+    try std.testing.expect(!reversed_int.valid());
+    try std.testing.expect(!reversed_int.containsPlain(2));
+    try std.testing.expectEqual(@as(i64, 0), reversed_int.clampPlain(2));
+    try std.testing.expectEqual(@as(f64, 0.0), reversed_int.normalize(2));
+    try std.testing.expectEqual(@as(i64, 0), reversed_int.denormalize(0.5));
+    try std.testing.expectEqual(@as(f64, 0.0), reversed_int.defaultNormalized());
+    try std.testing.expectEqualStrings("0", try reversed_int.formatPlain(0.5, &buffer));
 }
 
 test "bool parameter maps around midpoint" {

@@ -1,5 +1,6 @@
 const std = @import("std");
 const realtime_audit = @import("../realtime_audit.zig");
+const serial_generation = @import("../serial_generation.zig");
 
 pub const PublishError = error{
     Busy,
@@ -50,7 +51,7 @@ pub fn Exchange(comptime Config: type) type {
 
         pub fn publish(self: *Self, generation: u64, resource: *Resource) PublishError!void {
             if (!realtime_audit.observe(.allocation)) return error.RealtimeViolation;
-            if (generation == 0 or generation <= self.latest_generation.load(.acquire)) {
+            if (!serial_generation.after(generation, self.latest_generation.load(.acquire))) {
                 return error.InvalidGeneration;
             }
             _ = self.reclaim();
@@ -67,18 +68,25 @@ pub fn Exchange(comptime Config: type) type {
         }
 
         pub fn adoptPending(self: *Self) ?View {
-            return self.adoptPendingInRange(0, std.math.maxInt(u64));
+            return self.adoptPendingBounded(null, null);
         }
 
         pub fn adoptPendingAtOrAfter(self: *Self, minimum_generation: u64) ?View {
-            return self.adoptPendingInRange(minimum_generation, std.math.maxInt(u64));
+            return self.adoptPendingBounded(minimum_generation, null);
         }
 
         pub fn adoptPendingThrough(self: *Self, maximum_generation: u64) ?View {
-            return self.adoptPendingInRange(0, maximum_generation);
+            return self.adoptPendingBounded(null, maximum_generation);
         }
 
         pub fn adoptPendingInRange(self: *Self, minimum_generation: u64, maximum_generation: u64) ?View {
+            return self.adoptPendingBounded(
+                if (minimum_generation == 0) null else minimum_generation,
+                maximum_generation,
+            );
+        }
+
+        fn adoptPendingBounded(self: *Self, minimum_generation: ?u64, maximum_generation: ?u64) ?View {
             _ = realtime_audit.observe(.resource_adoption);
             while (true) {
                 const next = self.pending_slot.load(.acquire);
@@ -90,11 +98,20 @@ pub fn Exchange(comptime Config: type) type {
                 const slot = &self.slots[next];
                 if (slot.state.load(.acquire) != @intFromEnum(SlotState.published)) return null;
                 const generation = slot.generation.load(.acquire);
-                if (generation > maximum_generation) return null;
-                if (self.pending_slot.cmpxchgStrong(next, no_slot, .acq_rel, .acquire) != null) continue;
-                if (generation < minimum_generation) {
+                if (generation == 0) {
+                    if (self.pending_slot.cmpxchgStrong(next, no_slot, .acq_rel, .acquire) != null) continue;
                     slot.state.store(@intFromEnum(SlotState.retired), .release);
                     return null;
+                }
+                if (maximum_generation) |maximum| {
+                    if (!serial_generation.atOrBefore(generation, maximum)) return null;
+                }
+                if (self.pending_slot.cmpxchgStrong(next, no_slot, .acq_rel, .acquire) != null) continue;
+                if (minimum_generation) |minimum| {
+                    if (!serial_generation.atOrAfter(generation, minimum)) {
+                        slot.state.store(@intFromEnum(SlotState.retired), .release);
+                        return null;
+                    }
                 }
                 if (validSlotIndex(self.active_slot)) {
                     self.slots[self.active_slot].state.store(@intFromEnum(SlotState.retired), .release);
@@ -306,6 +323,35 @@ test "resource exchange contains malformed public slot indices" {
     try std.testing.expectEqual(@as(usize, 1), exchange.reclaim());
 }
 
+test "resource exchange contains a malformed pending generation" {
+    const Model = struct { value: u8 };
+    const ModelExchange = Exchange(struct {
+        pub const Resource = Model;
+        pub const slot_capacity = 2;
+
+        pub fn destroy(resource: *Model) void {
+            std.heap.page_allocator.destroy(resource);
+        }
+    });
+
+    var exchange: ModelExchange = .{};
+    defer exchange.deinit();
+    const malformed = try std.heap.page_allocator.create(Model);
+    malformed.* = .{ .value = 1 };
+    try exchange.publish(1, malformed);
+    const pending = exchange.pending_slot.load(.acquire);
+    exchange.slots[pending].generation.store(0, .release);
+
+    try std.testing.expectEqual(@as(?ModelExchange.View, null), exchange.adoptPending());
+    try std.testing.expect(!exchange.hasPending());
+    try std.testing.expectEqual(@as(usize, 1), exchange.reclaim());
+
+    const recovered = try std.heap.page_allocator.create(Model);
+    recovered.* = .{ .value = 2 };
+    try exchange.publish(2, recovered);
+    try std.testing.expectEqual(@as(u8, 2), exchange.adoptPending().?.resource.value);
+}
+
 test "resource exchange rejects pending generations older than a restore boundary" {
     const Model = struct { value: u8 };
     const ModelExchange = Exchange(struct {
@@ -353,6 +399,46 @@ test "resource exchange retains a pending generation until adoption is approved"
     const adopted = exchange.adoptPendingThrough(4).?;
     try std.testing.expectEqual(@as(u64, 4), adopted.generation);
     try std.testing.expectEqual(@as(u8, 9), adopted.resource.value);
+}
+
+test "resource exchange preserves publication ordering across generation rollover" {
+    const Model = struct { value: u8 };
+    const ModelExchange = Exchange(struct {
+        pub const Resource = Model;
+        pub const slot_capacity = 2;
+
+        pub fn destroy(resource: *Model) void {
+            std.heap.page_allocator.destroy(resource);
+        }
+    });
+
+    var exchange: ModelExchange = .{};
+    defer exchange.deinit();
+    exchange.latest_generation.store(std.math.maxInt(u64) - 1, .release);
+
+    const before_wrap = try std.heap.page_allocator.create(Model);
+    before_wrap.* = .{ .value = 1 };
+    try exchange.publish(std.math.maxInt(u64), before_wrap);
+    try std.testing.expectEqual(std.math.maxInt(u64), exchange.adoptPending().?.generation);
+    try std.testing.expect(exchange.retireActiveAtBlockBoundary());
+    try std.testing.expectEqual(@as(usize, 1), exchange.reclaim());
+
+    const after_wrap = try std.heap.page_allocator.create(Model);
+    after_wrap.* = .{ .value = 2 };
+    try exchange.publish(1, after_wrap);
+    try std.testing.expect(exchange.adoptPendingThrough(std.math.maxInt(u64)) == null);
+    try std.testing.expect(exchange.hasPending());
+    try std.testing.expectEqual(@as(u64, 1), exchange.adoptPendingAtOrAfter(std.math.maxInt(u64)).?.generation);
+    try std.testing.expect(exchange.retireActiveAtBlockBoundary());
+    try std.testing.expectEqual(@as(usize, 1), exchange.reclaim());
+
+    const stale = try std.heap.page_allocator.create(Model);
+    stale.* = .{ .value = 3 };
+    try std.testing.expectError(
+        error.InvalidGeneration,
+        exchange.publish(std.math.maxInt(u64) - 1, stale),
+    );
+    std.heap.page_allocator.destroy(stale);
 }
 
 test "resource exchange audio operations are lock free and allocation free" {

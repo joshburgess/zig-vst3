@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-script_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+script_dir="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 . "$script_dir/pluginval_runner_lib.sh"
 
 if [ "$#" -ne 1 ]; then

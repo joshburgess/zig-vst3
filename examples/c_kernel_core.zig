@@ -104,23 +104,38 @@ const identity_weights = [16]f32{
 const zero_bias = [4]f32{ 0, 0, 0, 0 };
 
 pub const Processor = struct {
+    pub const name = "zig-vst3 C Kernel Probe";
+    pub const vendor = "zig-vst3";
+    pub const audio_input_layout: plug.plugin.AudioBusLayout = .mono;
+    pub const audio_output_layout: plug.plugin.AudioBusLayout = .mono;
+    pub const event_input = false;
+    pub const Params = struct {};
+
     kernel: DenseKernel,
 
-    pub fn init() Processor {
+    pub fn init(_: std.mem.Allocator) !Processor {
         return .{ .kernel = DenseKernel.initNative() };
     }
 
-    pub fn process(self: *Processor, _: anytype, comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+    pub fn process(
+        self: *Processor,
+        context: *plug.process.ProcessContext(f32),
+    ) void {
         const input = context.inputChannel(0) orelse return;
         const output = context.outputChannel(0) orelse return;
-        if (Sample != f32) {
-            @memcpy(output, input);
-            return;
-        }
         for (input, output) |sample, *destination| {
             const features = [4]f32{ sample, 0, 0, 0 };
             destination.* = self.kernel.run(&identity_weights, &zero_bias, &features)[0];
         }
+    }
+
+    pub fn process64(
+        _: *Processor,
+        context: *plug.process.ProcessContext(f64),
+    ) void {
+        const input = context.inputChannel(0) orelse return;
+        const output = context.outputChannel(0) orelse return;
+        @memcpy(output, input);
     }
 
     pub fn kernelBackendName(self: *const Processor) []const u8 {
@@ -128,14 +143,7 @@ pub const Processor = struct {
     }
 };
 
-pub const CKernelProbe = struct {
-    pub const name = "zig-vst3 C Kernel Probe";
-    pub const vendor = "zig-vst3";
-    pub const audio_input_layout: plug.plugin.AudioBusLayout = .mono;
-    pub const audio_output_layout: plug.plugin.AudioBusLayout = .mono;
-    pub const event_input = false;
-    pub const Params = struct {};
-};
+pub const CKernelProbe = Processor;
 
 test "portable C dense kernel matches the Zig fallback" {
     const weights = [16]f32{
@@ -191,14 +199,14 @@ test "accelerated dense kernel matches identical Zig fixtures" {
 }
 
 test "C kernel probe processes mono blocks without allocation" {
-    var processor = Processor.init();
+    var processor = try Processor.init(std.testing.allocator);
     const input = [_]f32{ 0.25, -0.5, 1.0, -1.0 };
     var output = [_]f32{0} ** input.len;
     const inputs = [_][]const f32{&input};
     const outputs = [_][]f32{&output};
     var context = try plug.process.ProcessContext(f32).init(48_000, &inputs, &outputs);
     const scope = plug.realtime_audit.Scope.enter();
-    processor.process(undefined, f32, &context);
+    processor.process(&context);
     const report = scope.leave();
     try std.testing.expect(report.clean());
     try std.testing.expectEqualSlices(f32, &input, &output);

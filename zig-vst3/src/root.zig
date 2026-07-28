@@ -1,6 +1,23 @@
 const std = @import("std");
 
 pub const entry = @import("entry.zig");
+pub const ara_document_controller =
+    @import("ara_document_controller.zig");
+pub const ara_content_fades =
+    @import("ara_content_fades.zig");
+pub const ara_extension = @import("ara_extension.zig");
+pub const ara_factory = @import("ara_factory.zig");
+pub const ara_model = @import("ara_model.zig");
+pub const ara_playback_renderer =
+    @import("ara_playback_renderer.zig");
+pub const ara_registration = @import("ara_registration.zig");
+pub const ara_source_cache = @import("ara_source_cache.zig");
+pub const ara_tuning_analysis =
+    @import("ara_tuning_analysis.zig");
+pub const ara_music_analysis = ara_tuning_analysis;
+pub const ara_tempo_warp =
+    @import("ara_tempo_warp.zig");
+pub const ara_vst3 = @import("ara_vst3.zig");
 pub const bypass_component = @import("bypass_component.zig");
 pub const bypass_controller = @import("bypass_controller.zig");
 pub const bypass_plugin = @import("bypass_plugin.zig");
@@ -25,6 +42,8 @@ pub const gain_spec = @import("gain_spec.zig");
 pub const gui_telemetry_source = @import("gui_telemetry_source.zig");
 pub const gui_note_transport = @import("gui_note_transport.zig");
 pub const latency_transport = @import("latency_transport.zig");
+pub const host_restart_transport =
+    @import("host_restart_transport.zig");
 pub const gui_ir_transport = @import("gui_ir_transport.zig");
 pub const resource_path_transport = @import("resource_path_transport.zig");
 pub const interface_map = @import("interface_map.zig");
@@ -51,6 +70,8 @@ pub const tuid = @import("tuid.zig");
 pub const version = "0.2.1-dev";
 pub const vst_capability_support = @import("vst_capability_support.zig");
 pub const vstgui = @import("vstgui.zig");
+pub const vstgui_lv2_backend =
+    @import("vstgui_lv2_backend.zig");
 pub const testing = struct {
     pub const vstgui_headless_host = @import("vstgui_headless_host.zig");
 };
@@ -81,12 +102,17 @@ pub const vst_unit_data = @import("vst_unit_data.zig");
 pub const vst_update_handler = @import("vst_update_handler.zig");
 pub const vst_value = @import("vst_value.zig");
 pub const vst_wayland_frame = @import("vst_wayland_frame.zig");
+pub const vst_wayland_standalone_frame = @import(
+    "vst_wayland_standalone_frame.zig",
+);
 pub const voice_mix_component = @import("voice_mix_component.zig");
 pub const voice_mix_controller = @import("voice_mix_controller.zig");
 pub const voice_mix_plugin = @import("voice_mix_plugin.zig");
 pub const voice_mix_spec = @import("voice_mix_spec.zig");
 pub const zig_vst3_plugin_bridge = @import("zig_vst3_plugin_bridge.zig");
 pub const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
+pub const zig_vst3_plugin_runtime_adapter =
+    @import("zig_vst3_plugin_runtime_adapter.zig");
 
 pub fn targetName() []const u8 {
     return @tagName(@import("builtin").target.os.tag);
@@ -97,6 +123,17 @@ test "zig-vst3 module exposes a development version" {
 }
 
 test {
+    std.testing.refAllDecls(ara_document_controller);
+    std.testing.refAllDecls(ara_content_fades);
+    std.testing.refAllDecls(ara_extension);
+    std.testing.refAllDecls(ara_factory);
+    std.testing.refAllDecls(ara_model);
+    std.testing.refAllDecls(ara_playback_renderer);
+    std.testing.refAllDecls(ara_registration);
+    std.testing.refAllDecls(ara_source_cache);
+    std.testing.refAllDecls(ara_tuning_analysis);
+    std.testing.refAllDecls(ara_tempo_warp);
+    std.testing.refAllDecls(ara_vst3);
     std.testing.refAllDecls(entry);
     std.testing.refAllDecls(bypass_component);
     std.testing.refAllDecls(bypass_controller);
@@ -141,6 +178,7 @@ test {
     std.testing.refAllDecls(tuid);
     std.testing.refAllDecls(vst_capability_support);
     std.testing.refAllDecls(vstgui);
+    std.testing.refAllDecls(vstgui_lv2_backend);
     std.testing.refAllDecls(testing);
     std.testing.refAllDecls(vst_cloneable);
     std.testing.refAllDecls(vst_component_handler);
@@ -169,10 +207,12 @@ test {
     std.testing.refAllDecls(vst_update_handler);
     std.testing.refAllDecls(vst_value);
     std.testing.refAllDecls(vst_wayland_frame);
+    std.testing.refAllDecls(vst_wayland_standalone_frame);
     std.testing.refAllDecls(voice_mix_component);
     std.testing.refAllDecls(voice_mix_controller);
     std.testing.refAllDecls(voice_mix_plugin);
     std.testing.refAllDecls(voice_mix_spec);
     std.testing.refAllDecls(zig_vst3_plugin_bridge);
     std.testing.refAllDecls(zig_vst3_plugin_effect);
+    std.testing.refAllDecls(zig_vst3_plugin_runtime_adapter);
 }

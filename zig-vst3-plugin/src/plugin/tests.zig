@@ -211,6 +211,8 @@ test "plugin spec exposes optional plugin metadata overrides" {
         pub const controller_class_name = "Custom Editor";
         pub const component_category = "Custom Processor Category";
         pub const controller_category = "Custom Controller Category";
+        pub const follow_host_transport = true;
+        pub const allow_dynamic_process_mode = true;
         pub const Params = struct {};
     };
     const Spec = PluginSpec(Custom);
@@ -230,6 +232,8 @@ test "plugin spec exposes optional plugin metadata overrides" {
     try std.testing.expectEqualStrings("Custom Editor", Spec.controller_class_name);
     try std.testing.expectEqualStrings("Custom Processor Category", Spec.component_category);
     try std.testing.expectEqualStrings("Custom Controller Category", Spec.controller_category);
+    try std.testing.expect(Spec.follow_host_transport);
+    try std.testing.expect(Spec.allow_dynamic_process_mode);
 }
 
 test "plugin spec exposes optional bus topology metadata" {
@@ -273,6 +277,13 @@ test "plugin spec exposes optional bus topology metadata" {
         pub const audio_output_layout: plugin.AudioBusLayout = .stereo;
         pub const Params = struct {};
     };
+    const SurroundEffect = struct {
+        pub const name = "Surround Effect";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin.AudioBusLayout = .surround_5_1;
+        pub const audio_output_layout: plugin.AudioBusLayout = .surround_7_1;
+        pub const Params = struct {};
+    };
 
     try std.testing.expect(PluginSpec(DefaultEffect).audio_input);
     try std.testing.expect(PluginSpec(DefaultEffect).audio_output);
@@ -292,6 +303,14 @@ test "plugin spec exposes optional bus topology metadata" {
     try std.testing.expectEqual(@as(u8, 1), PluginSpec(MonoEffect).audio_output_layout.channelCount());
     try std.testing.expectEqual(@as(u8, 1), PluginSpec(MonoToStereo).audio_input_layout.channelCount());
     try std.testing.expectEqual(@as(u8, 2), PluginSpec(MonoToStereo).audio_output_layout.channelCount());
+    try std.testing.expectEqual(@as(u8, 3), plugin.AudioBusLayout.surround_3_0.channelCount());
+    try std.testing.expectEqual(@as(u8, 4), plugin.AudioBusLayout.quadraphonic.channelCount());
+    try std.testing.expectEqual(@as(u8, 4), plugin.AudioBusLayout.ambisonic_first_order.channelCount());
+    try std.testing.expectEqual(@as(u8, 9), plugin.AudioBusLayout.ambisonic_second_order.channelCount());
+    try std.testing.expectEqual(@as(u8, 16), plugin.AudioBusLayout.ambisonic_third_order.channelCount());
+    try std.testing.expectEqual(@as(u8, 12), plugin.AudioBusLayout.surround_7_1_4.channelCount());
+    try std.testing.expectEqual(@as(u8, 6), PluginSpec(SurroundEffect).audio_input_layout.channelCount());
+    try std.testing.expectEqual(@as(u8, 8), PluginSpec(SurroundEffect).audio_output_layout.channelCount());
 }
 
 test "plugin spec exposes default root unit metadata" {
@@ -1034,10 +1053,16 @@ test "plugin instance exposes bus and lifecycle predicates" {
     defer instance.deinit();
 
     try std.testing.expect(instance.hasAudioInput());
+    try std.testing.expect(!instance.hasAudioSidechainInput());
+    try std.testing.expect(!instance.hasAudioAuxiliaryOutput());
     try std.testing.expect(!instance.hasAudioOutput());
     try std.testing.expectEqual(plugin.AudioBusLayout.stereo, instance.audioInputLayout());
+    try std.testing.expectEqual(plugin.AudioBusLayout.none, instance.audioSidechainInputLayout());
+    try std.testing.expectEqual(plugin.AudioBusLayout.none, instance.audioAuxiliaryOutputLayout());
     try std.testing.expectEqual(plugin.AudioBusLayout.none, instance.audioOutputLayout());
     try std.testing.expectEqual(@as(u8, 2), instance.audioInputChannelCount());
+    try std.testing.expectEqual(@as(u8, 0), instance.audioSidechainInputChannelCount());
+    try std.testing.expectEqual(@as(u8, 0), instance.audioAuxiliaryOutputChannelCount());
     try std.testing.expectEqual(@as(u8, 0), instance.audioOutputChannelCount());
     try std.testing.expect(instance.hasEventInput());
     try std.testing.expect(instance.hasEventOutput());
@@ -1053,6 +1078,219 @@ test "plugin instance exposes bus and lifecycle predicates" {
     try std.testing.expect(!instance.hasProcess64WithParametersHook());
     try std.testing.expect(instance.hasAnyProcessHook());
     try std.testing.expect(instance.hasDeinitHook());
+}
+
+test "plugin spec and instance expose an optional sidechain input layout" {
+    const Ducker = struct {
+        pub const name = "Sidechain Ducker";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin.AudioBusLayout = .stereo;
+        pub const audio_sidechain_layout: plugin.AudioBusLayout = .mono;
+        pub const audio_output_layout: plugin.AudioBusLayout = .stereo;
+        pub const Params = struct {};
+    };
+    const Spec = PluginSpec(Ducker);
+
+    try std.testing.expectEqual(plugin.AudioBusLayout.stereo, Spec.audio_input_layout);
+    try std.testing.expectEqual(plugin.AudioBusLayout.mono, Spec.audio_sidechain_layout);
+    try std.testing.expectEqual(plugin.AudioBusLayout.stereo, Spec.audio_output_layout);
+
+    var instance = try PluginInstance(Ducker).init(std.testing.allocator, .{});
+    defer instance.deinit();
+
+    try std.testing.expect(instance.hasAudioSidechainInput());
+    try std.testing.expectEqual(plugin.AudioBusLayout.mono, instance.audioSidechainInputLayout());
+    try std.testing.expectEqual(@as(u8, 1), instance.audioSidechainInputChannelCount());
+}
+
+test "plugin spec carries a declared dynamic audio topology" {
+    const DynamicPlugin = struct {
+        pub const name = "Dynamic";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const audio_bus_topology = makeTopology();
+
+        fn makeTopology() plugin.DynamicAudioBusTopology {
+            var topology =
+                plugin.DynamicAudioBusTopology.init(
+                    plugin.DynamicAudioBus.fixed(
+                        .stereo,
+                        true,
+                    ) catch unreachable,
+                    plugin.DynamicAudioBus.fixed(
+                        .stereo,
+                        true,
+                    ) catch unreachable,
+                ) catch unreachable;
+            _ = topology.addAuxiliary(
+                .input,
+                plugin.DynamicAudioBus.fixed(
+                    .mono,
+                    false,
+                ) catch unreachable,
+            ) catch unreachable;
+            return topology;
+        }
+    };
+    const Spec = PluginSpec(DynamicPlugin);
+    try std.testing.expect(Spec.dynamic_audio_bus_topology != null);
+    try std.testing.expectEqual(
+        plugin.AudioBusLayout.stereo,
+        Spec.audio_input_layout,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        Spec.audio_auxiliary_input_layouts.len,
+    );
+    try std.testing.expectEqual(
+        plugin.AudioBusLayout.mono,
+        Spec.audio_auxiliary_input_layouts[0],
+    );
+}
+
+test "plugin spec preserves a selected dynamic audio topology capacity" {
+    const DynamicPlugin = struct {
+        pub const name = "Large Dynamic";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const Topology =
+            plugin.BoundedDynamicAudioBusTopology(12);
+        pub const audio_bus_topology = makeTopology();
+
+        fn makeTopology() Topology {
+            var topology = Topology.init(
+                plugin.DynamicAudioBus.fixed(
+                    .stereo,
+                    true,
+                ) catch unreachable,
+                plugin.DynamicAudioBus.fixed(
+                    .stereo,
+                    true,
+                ) catch unreachable,
+            ) catch unreachable;
+            for (0..Topology.auxiliary_capacity) |_|
+                _ = topology.addAuxiliary(
+                    .input,
+                    plugin.DynamicAudioBus.fixed(
+                        .mono,
+                        false,
+                    ) catch unreachable,
+                ) catch unreachable;
+            return topology;
+        }
+    };
+    const Spec = PluginSpec(DynamicPlugin);
+
+    try std.testing.expectEqual(
+        DynamicPlugin.Topology,
+        Spec.AudioBusTopology,
+    );
+    try std.testing.expectEqual(
+        DynamicPlugin.Topology.SnapshotType,
+        Spec.AudioBusSnapshot,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 12),
+        Spec.auxiliary_audio_bus_capacity,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 12),
+        Spec.audio_auxiliary_input_layouts.len,
+    );
+    try std.testing.expectEqual(
+        plugin.AudioBusLayout.mono,
+        Spec.audio_auxiliary_input_layouts[11],
+    );
+}
+
+test "plugin spec selects capacity for static bus declarations" {
+    const StaticPlugin = struct {
+        pub const name = "Large Static";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const maximum_auxiliary_audio_buses = 12;
+        pub const audio_input_layout: plugin.AudioBusLayout =
+            .stereo;
+        pub const auxiliary_layouts =
+            [_]plugin.AudioBusLayout{.mono} ** 12;
+        pub const audio_auxiliary_input_layouts: []const plugin.AudioBusLayout = &auxiliary_layouts;
+    };
+    const Spec = PluginSpec(StaticPlugin);
+
+    try std.testing.expectEqual(
+        @as(usize, 12),
+        Spec.auxiliary_audio_bus_capacity,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 12),
+        Spec.audio_auxiliary_input_layouts.len,
+    );
+    try std.testing.expectEqual(
+        plugin.BoundedDynamicAudioBusTopology(12),
+        Spec.AudioBusTopology,
+    );
+}
+
+test "plugin spec and instance expose an optional auxiliary output layout" {
+    const Splitter = struct {
+        pub const name = "Auxiliary Splitter";
+        pub const vendor = "zig-vst3";
+        pub const audio_auxiliary_output_layout: plugin.AudioBusLayout = .mono;
+        pub const Params = struct {};
+    };
+    const Spec = PluginSpec(Splitter);
+
+    try std.testing.expectEqual(plugin.AudioBusLayout.mono, Spec.audio_auxiliary_output_layout);
+
+    var instance = try PluginInstance(Splitter).init(std.testing.allocator, .{});
+    defer instance.deinit();
+
+    try std.testing.expect(instance.hasAudioAuxiliaryOutput());
+    try std.testing.expectEqual(plugin.AudioBusLayout.mono, instance.audioAuxiliaryOutputLayout());
+    try std.testing.expectEqual(@as(u8, 1), instance.audioAuxiliaryOutputChannelCount());
+}
+
+test "plugin spec and instance preserve multiple auxiliary bus layouts" {
+    const MultiBus = struct {
+        pub const name = "Multi Bus";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin.AudioBusLayout = .stereo;
+        pub const audio_output_layout: plugin.AudioBusLayout = .stereo;
+        pub const audio_auxiliary_input_layouts: []const plugin.AudioBusLayout = &.{ .mono, .stereo };
+        pub const audio_auxiliary_output_layouts: []const plugin.AudioBusLayout = &.{ .stereo, .quadraphonic };
+        pub const Params = struct {};
+    };
+    const Spec = PluginSpec(MultiBus);
+
+    try std.testing.expectEqual(@as(usize, 2), Spec.audio_auxiliary_input_layouts.len);
+    try std.testing.expectEqual(@as(usize, 2), Spec.audio_auxiliary_output_layouts.len);
+    try std.testing.expectEqual(plugin.AudioBusLayout.mono, Spec.audio_sidechain_layout);
+    try std.testing.expectEqual(
+        plugin.AudioBusLayout.stereo,
+        Spec.audio_auxiliary_output_layout,
+    );
+
+    var instance = try PluginInstance(MultiBus).init(std.testing.allocator, .{});
+    defer instance.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), instance.audioAuxiliaryInputBusCount());
+    try std.testing.expectEqual(@as(usize, 2), instance.audioAuxiliaryOutputBusCount());
+    try std.testing.expectEqual(
+        plugin.AudioBusLayout.stereo,
+        instance.audioAuxiliaryInputLayout(1).?,
+    );
+    try std.testing.expectEqual(
+        plugin.AudioBusLayout.quadraphonic,
+        instance.audioAuxiliaryOutputLayoutAt(1).?,
+    );
+    try std.testing.expectEqual(
+        @as(?plugin.AudioBusLayout, null),
+        instance.audioAuxiliaryInputLayout(2),
+    );
+    try std.testing.expectEqual(
+        @as(?plugin.AudioBusLayout, null),
+        instance.audioAuxiliaryOutputLayoutAt(2),
+    );
 }
 
 test "plugin spec allows declaration-only plugin types" {
@@ -1095,6 +1333,7 @@ test "plugin spec allows declaration-only plugin types" {
 test "plugin instance drives declared lifecycle hooks" {
     const Gain = struct {
         prepared: bool = false,
+        prepared_mode: process_api.ProcessMode = .realtime,
         processed: bool = false,
         deinitialized: bool = false,
 
@@ -1110,6 +1349,7 @@ test "plugin instance drives declared lifecycle hooks" {
 
         pub fn prepare(self: *@This(), config: PrepareConfig) void {
             self.prepared = config.sample_rate == 48_000.0 and config.max_block_size == 64;
+            self.prepared_mode = config.process_mode;
         }
 
         pub fn process(self: *@This(), context: *process_api.ProcessContext(f32)) void {
@@ -1149,6 +1389,7 @@ test "plugin instance drives declared lifecycle hooks" {
     instance.deinit();
 
     try std.testing.expect(instance.plugin.prepared);
+    try std.testing.expectEqual(process_api.ProcessMode.realtime, instance.plugin.prepared_mode);
     try std.testing.expect(instance.plugin.processed);
     try std.testing.expect(instance.plugin.deinitialized);
     try std.testing.expectEqual(@as(f32, 0.125), output[0]);
@@ -1159,6 +1400,7 @@ test "plugin instance drives declared lifecycle hooks" {
 test "plugin instance validates prepare configuration" {
     const Gain = struct {
         prepared: bool = false,
+        prepared_mode: process_api.ProcessMode = .realtime,
 
         pub const name = "Prepare Validation Gain";
         pub const vendor = "zig-vst3";
@@ -1166,8 +1408,9 @@ test "plugin instance validates prepare configuration" {
             gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
         };
 
-        pub fn prepare(self: *@This(), _: PrepareConfig) void {
+        pub fn prepare(self: *@This(), config: PrepareConfig) void {
             self.prepared = true;
+            self.prepared_mode = config.process_mode;
         }
     };
     const Instance = PluginInstance(Gain);
@@ -1179,8 +1422,9 @@ test "plugin instance validates prepare configuration" {
     try std.testing.expectError(error.InvalidSampleRate, instance.prepareChecked(.{ .sample_rate = std.math.nan(f64), .max_block_size = 64 }));
     try std.testing.expect(!instance.plugin.prepared);
 
-    try instance.prepareChecked(.{ .sample_rate = 48_000.0, .max_block_size = 64 });
+    try instance.prepareChecked(.{ .sample_rate = 48_000.0, .max_block_size = 64, .process_mode = .prefetch });
     try std.testing.expect(instance.plugin.prepared);
+    try std.testing.expectEqual(process_api.ProcessMode.prefetch, instance.plugin.prepared_mode);
 }
 
 test "plugin instance applies parameter changes to owned values" {

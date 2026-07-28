@@ -7,28 +7,26 @@ const base = vst3.pluginterfaces.base;
 const vst = vst3.pluginterfaces.vst;
 const types = base.types;
 
-pub const Spec = core.plugin.PluginSpec(support.FixedRate);
+pub const Spec = core.plugin.PluginSpec(support.RuntimeProcessor);
 const fixed_rate_parameter_set = Spec.ParameterSet.init(.{});
 
 pub const component_cid = vst3.tuid.inlineUid(0x89002E15, 0x6D64498B, 0xB10D70C8, 0xAE015B7B);
 pub const fixed_rate_controller_cid = vst3.tuid.inlineUid(0xB46987B8, 0xD2214C2E, 0x86AA807E, 0x48C71220);
 
-const Effect = vst3.zig_vst3_plugin_effect.SimpleEffect(struct {
-    pub const component_name = "FixedRateComponent";
-    pub const controller_cid = fixed_rate_controller_cid;
-    pub const audio_input_layout = Spec.audio_input_layout;
-    pub const audio_output_layout = Spec.audio_output_layout;
-    pub const event_input = false;
-    pub const Params = Spec.Params;
-    pub const parameter_set = &fixed_rate_parameter_set;
-    pub const Processor = support.Processor;
-});
+const Effect =
+    vst3.zig_vst3_plugin_effect.HighLevelEffect(
+        support.RuntimeProcessor,
+        struct {
+            pub const component_name = "FixedRateComponent";
+            pub const controller_cid = fixed_rate_controller_cid;
+        },
+    );
 
-const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
-    pub const controller_name = "FixedRateController";
-    pub const Params = Spec.Params;
-    pub const parameter_set = &fixed_rate_parameter_set;
-});
+const Controller =
+    vst3.zig_vst3_plugin_effect.HighLevelEditController(
+        support.RuntimeProcessor,
+        "FixedRateController",
+    );
 
 const Factory = vst3.factory.StaticFactory3(.{
     .vendor = Spec.vendor,
@@ -49,11 +47,24 @@ test "fixed-rate component reports prepared SRC latency" {
     const component: *vst.ivstcomponent.IComponent = @ptrCast(@alignCast(component_out.?));
     defer _ = component.vtable.release(component);
     const processor = Effect.processorInstance(component);
-    processor.prepare(.{ .sample_rate = 44_100, .max_block_size = 1024 });
+    try processor.prepareChecked(.{
+        .sample_rate = 44_100,
+        .max_block_size = 1024,
+    });
     try std.testing.expectEqual(@as(u32, 31), processor.latencySamples());
+    const telemetry =
+        vst3.gui_telemetry_source.query(component) orelse
+        return error.MissingTelemetry;
+    defer telemetry.release();
+    try std.testing.expectEqual(
+        @as(f64, 31),
+        telemetry.load(
+            support.RuntimeProcessor.latency_telemetry_source_id,
+        ),
+    );
 }
 
-test "fixed-rate component coalesces latency changes into a host restart" {
+test "fixed-rate component coalesces latency and I/O changes into host restarts" {
     const Handler = vst3.vst_component_handler.ComponentHandler(struct {});
     var handler = Handler{};
 
@@ -82,17 +93,34 @@ test "fixed-rate component coalesces latency changes into a host restart" {
     defer _ = component_connection.vtable.disconnect(component_connection, controller_connection);
 
     const processor = Effect.processorInstance(component);
-    processor.prepare(.{ .sample_rate = 96_000, .max_block_size = 64 });
-    try std.testing.expect(processor.requestFixedRate(false));
+    try processor.prepareChecked(.{
+        .sample_rate = 96_000,
+        .max_block_size = 64,
+    });
+    try std.testing.expect(
+        processor.runtime.instance.plugin.requestFixedRate(false),
+    );
     try std.testing.expectEqual(@as(u32, 1), handler.restart_count);
     try std.testing.expectEqual(vst.ivsteditcontroller.RestartFlags.kLatencyChanged, handler.last_restart_flags);
-    try std.testing.expect(processor.requestFixedRate(false));
+    try std.testing.expect(
+        processor.runtime.instance.plugin.requestFixedRate(false),
+    );
     try std.testing.expectEqual(@as(u32, 1), handler.restart_count);
 
     Effect.markLatencyChanged(component);
     Effect.markLatencyChanged(component);
+    const host_requests =
+        processor.runtime.instance.plugin.engine.host_requests orelse
+        return error.MissingHostRequests;
+    host_requests.markIoChanged();
+    host_requests.markIoChanged();
     try std.testing.expectEqual(types.kResultOk, Effect.dispatchHostRequests(component));
     try std.testing.expectEqual(@as(u32, 2), handler.restart_count);
+    try std.testing.expectEqual(
+        vst.ivsteditcontroller.RestartFlags.kLatencyChanged |
+            vst.ivsteditcontroller.RestartFlags.kIoChanged,
+        handler.last_restart_flags,
+    );
 }
 
 test "fixed-rate component restores its prepared mode and latency" {
@@ -116,7 +144,10 @@ test "fixed-rate component restores its prepared mode and latency" {
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(base.ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, restored.vtable.setState(restored, stream.asStream()));
     const restored_processor = Effect.processorInstance(restored);
-    restored_processor.prepare(.{ .sample_rate = 96_000, .max_block_size = 64 });
+    try restored_processor.prepareChecked(.{
+        .sample_rate = 96_000,
+        .max_block_size = 64,
+    });
     try std.testing.expectEqual(@as(u32, 0), restored_processor.latencySamples());
 
     var controller_out: ?*anyopaque = null;
