@@ -782,6 +782,14 @@ Constructors include `Event.noteOn`, `Event.noteOff`, `Event.midiCc`, `Event.pit
 
 The VST3 bridge validates event offsets, channels, pitches, normalized values, and bounded data-event payloads before exposing events to plugin code. The accepted MIDI and event-value bounds are exported from `plug.process` as `midi_channel_min`, `midi_channel_max`, `midi_pitch_min`, `midi_pitch_max`, `midi_control_number_min`, `midi_control_number_max`, `event_value_min`, `event_value_max`, `bipolar_event_value_min`, and `bipolar_event_value_max`. Use `midiPitchIndex` and `midiPitchCount` when mapping validated MIDI pitches into fixed-size note state arrays.
 
+MIDI protocol modules are grouped under `plug.process.midi`. The namespace separates MIDI 1 and MIDI 2 channel protocols, UMP packets, SysEx, Flex Data, endpoint discovery, MIDI-CI process, profile, and property layers, Standard MIDI Files, and MPE state. Existing flat module and type names remain available for source compatibility.
+
+```zig
+const packet = try plug.process.midi.ump.Packet.init(words);
+const Device = plug.process.midi.ci.device.Device;
+const PropertySession = plug.process.midi.ci.property.session.Initiator;
+```
+
 ### MIDI 1 Channel Messages
 
 `process.Midi1Message` parses and generates complete MIDI 1 channel voice messages:

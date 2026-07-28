@@ -13,6 +13,33 @@ const x11_window = @import("zig-vst3-x11window");
 const wayland_window = @import("zig-vst3-waylandwindow");
 const std = @import("std");
 
+test "installed core package exposes grouped MIDI protocol modules" {
+    try std.testing.expect(
+        core.process.midi.protocol_1.Message ==
+            core.process.Midi1Message,
+    );
+    try std.testing.expect(
+        core.process.midi.protocol_2.ChannelMessage ==
+            core.process.Midi2ChannelMessage,
+    );
+    try std.testing.expect(
+        core.process.midi.ump.Packet ==
+            core.process.UmpPacket,
+    );
+    try std.testing.expect(
+        core.process.midi.ci.device.Device ==
+            core.process.MidiCiDevice,
+    );
+    try std.testing.expect(
+        core.process.midi.ci.property.session.Initiator ==
+            core.process.MidiCiPropertyInitiator,
+    );
+    try std.testing.expect(
+        core.process.midi.expression.instrument.Instrument ==
+            core.process.MpeInstrument,
+    );
+}
+
 test "installed core package exposes format-neutral processor and editor contracts" {
     try std.testing.expect(@hasDecl(core.plugin, "ProcessorRuntime"));
     try std.testing.expect(@hasDecl(core.plugin, "OfflineRenderer"));

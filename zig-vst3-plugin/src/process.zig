@@ -35,6 +35,54 @@ pub const mpe = @import("process/mpe.zig");
 pub const mpe_instrument = @import("process/mpe_instrument.zig");
 const context_mod = @import("process/context.zig");
 
+pub const midi = struct {
+    pub const protocol_1 = midi1;
+    pub const protocol_2 = midi2;
+    pub const ump = midi_ump;
+    pub const rpn = midi_rpn;
+    pub const system = midi_system;
+    pub const utility = midi_utility;
+    pub const file = midi_file;
+    pub const sysex = struct {
+        pub const seven = midi_sysex7;
+        pub const eight = midi_sysex8;
+    };
+    pub const flex = struct {
+        pub const data = midi_flex;
+        pub const text = midi_flex_text;
+    };
+    pub const mixed_data = midi_mixed_data;
+    pub const endpoint = struct {
+        pub const protocol = midi_stream;
+        pub const text = midi_stream_text;
+        pub const session = midi_endpoint_session;
+    };
+    pub const ci = struct {
+        pub const protocol = midi_ci;
+        pub const device = midi_ci_device;
+        pub const process = struct {
+            pub const protocol = midi_ci_process;
+            pub const report = midi_ci_process_report;
+        };
+        pub const profile = struct {
+            pub const protocol = midi_ci_profile;
+            pub const host = midi_ci_profile_host;
+        };
+        pub const property = struct {
+            pub const protocol = midi_ci_property;
+            pub const cache = midi_ci_property_cache;
+            pub const host = midi_ci_property_host;
+            pub const json = midi_ci_property_json;
+            pub const resources = midi_ci_property_resources;
+            pub const session = midi_ci_property_session;
+        };
+    };
+    pub const expression = struct {
+        pub const zones = mpe;
+        pub const instrument = mpe_instrument;
+    };
+};
+
 pub const max_audio_channels = context_mod.max_audio_channels;
 pub const midi_channel_min = events_mod.midi_channel_min;
 pub const midi_channel_max = events_mod.midi_channel_max;
