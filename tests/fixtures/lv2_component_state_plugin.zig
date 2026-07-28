@@ -7,6 +7,7 @@ const ComponentStateProbe = struct {
     worker_schedule: ?*core.lv2.WorkerScheduleSink = null,
     worker_requested: bool = false,
     worker_value: u32 = 0,
+    worker_end_run_count: usize = 0,
 
     pub const name = "LV2 Component State Probe";
     pub const vendor = "zig-vst3";
@@ -79,6 +80,10 @@ const ComponentStateProbe = struct {
             *align(1) const u32,
             @ptrCast(response.ptr),
         ).*;
+    }
+
+    pub fn endLv2WorkerRun(self: *@This()) !void {
+        self.worker_end_run_count += 1;
     }
 
     pub fn writeComponentState(

@@ -3822,12 +3822,14 @@ test "LV2 static ports carry selected auxiliary bus capacity" {
     );
 }
 
-test "LV2 worker schedules bounded work and applies synchronous responses" {
+test "LV2 worker supports immediate offline and bounded responses" {
     const Probe = struct {
         pub const name = "LV2 Worker Probe";
         pub const vendor = "zig-vst3";
         pub const audio_input_layout: plugin_api.AudioBusLayout = .mono;
         pub const audio_output_layout: plugin_api.AudioBusLayout = .mono;
+        pub const allow_dynamic_process_mode = true;
+        pub const lv2_freewheeling = true;
         pub const lv2_worker_maximum_request_size = 8;
         pub const lv2_worker_maximum_response_size = 8;
         pub const Params = struct {};
@@ -3838,6 +3840,7 @@ test "LV2 worker schedules bounded work and applies synchronous responses" {
         response: [8]u8 = undefined,
         response_size: usize = 0,
         end_run_count: usize = 0,
+        last_process_mode: process_api.ProcessMode = .realtime,
 
         pub fn bindLv2WorkerSchedule(
             self: *@This(),
@@ -3850,6 +3853,7 @@ test "LV2 worker schedules bounded work and applies synchronous responses" {
             self: *@This(),
             context: *process_api.ProcessContext(f32),
         ) void {
+            self.last_process_mode = context.processMode();
             if (!self.requested) {
                 self.requested = true;
                 self.schedule_status =
@@ -3963,6 +3967,7 @@ test "LV2 worker schedules bounded work and applies synchronous responses" {
 
     const input = [_]f32{0.0} ** 4;
     var output = [_]f32{0.0} ** input.len;
+    var freewheeling: f32 = 1.0;
     var latency: f32 = -1.0;
     Adapter.descriptor.connect_port(
         handle,
@@ -3976,6 +3981,11 @@ test "LV2 worker schedules bounded work and applies synchronous responses" {
     );
     Adapter.descriptor.connect_port(
         handle,
+        Adapter.freewheeling_input_port.?,
+        &freewheeling,
+    );
+    Adapter.descriptor.connect_port(
+        handle,
         Adapter.latency_output_port,
         &latency,
     );
@@ -3986,6 +3996,10 @@ test "LV2 worker schedules bounded work and applies synchronous responses" {
     const instance = Adapter.instanceFromHandle(handle) orelse
         return error.MissingInstance;
     const plugin = &instance.runtime.instance.plugin;
+    try std.testing.expectEqual(
+        process_api.ProcessMode.offline,
+        plugin.last_process_mode,
+    );
     try std.testing.expectEqual(WorkerStatus.success, plugin.schedule_status);
     try std.testing.expectEqual(@as(usize, 1), host.work_count);
     try std.testing.expectEqual(@as(usize, 1), host.response_count);

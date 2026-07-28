@@ -116,10 +116,34 @@ pub fn main(init: std.process.Init) !void {
     defer descriptor.cleanup(handle);
     if (widget == null) return error.MissingLv2Widget;
 
+    var second_host = Host{};
+    var second_widget: ui.Widget = null;
+    const second_handle = descriptor.instantiate(
+        descriptor,
+        "https://zig-vst3.dev/tests/lv2-ui-probe",
+        "/tmp/lv2-ui-probe.lv2",
+        Host.write,
+        &second_host,
+        &second_widget,
+        &features,
+    ) orelse return error.SecondLv2UiInstantiationFailed;
+    var second_active = true;
+    defer if (second_active) descriptor.cleanup(second_handle);
+    if (second_widget == null or second_widget == widget)
+        return error.InvalidSecondLv2Widget;
+
     const plain: f32 = 0.25;
     descriptor.port_event(handle, 2, @sizeOf(f32), 0, &plain);
     descriptor.port_event(handle, 2, 1, 0, &plain);
     descriptor.port_event(handle, 2, @sizeOf(f32), 1, &plain);
+    const second_plain: f32 = 0.75;
+    descriptor.port_event(
+        second_handle,
+        2,
+        @sizeOf(f32),
+        0,
+        &second_plain,
+    );
 
     const idle_ptr = descriptor.extension_data(
         ui.idle_interface_uri,
@@ -127,6 +151,8 @@ pub fn main(init: std.process.Init) !void {
     const idle: *const ui.IdleInterface =
         @ptrCast(@alignCast(idle_ptr));
     if (idle.idle(handle) != 0) return error.IdleFailed;
+    if (idle.idle(second_handle) != 0)
+        return error.SecondIdleFailed;
 
     const resize_ptr = descriptor.extension_data(
         ui.resize_uri,
@@ -137,6 +163,94 @@ pub fn main(init: std.process.Init) !void {
         return error.ResizeFailed;
     if (resize_interface.ui_resize(handle, 0, 480) == 0)
         return error.InvalidResizeAccepted;
+    if (resize_interface.ui_resize(second_handle, 480, 320) != 0)
+        return error.SecondResizeFailed;
+
+    const show_ptr = descriptor.extension_data(
+        ui.show_interface_uri,
+    ) orelse return error.MissingShowInterface;
+    const show: *const ui.ShowInterface =
+        @ptrCast(@alignCast(show_ptr));
+    if (show.show(handle) != 0 or show.hide(handle) != 0)
+        return error.ShowHideFailed;
+    if (show.show(second_handle) != 0 or
+        show.hide(second_handle) != 0)
+        return error.SecondShowHideFailed;
+
+    descriptor.cleanup(second_handle);
+    second_active = false;
+    var reopened_widget: ui.Widget = null;
+    const reopened_handle = descriptor.instantiate(
+        descriptor,
+        "https://zig-vst3.dev/tests/lv2-ui-probe",
+        "/tmp/lv2-ui-probe.lv2",
+        Host.write,
+        &second_host,
+        &reopened_widget,
+        &features,
+    ) orelse return error.ReopenedLv2UiInstantiationFailed;
+    defer descriptor.cleanup(reopened_handle);
+    if (reopened_widget == null)
+        return error.MissingReopenedLv2Widget;
+    if (idle.idle(reopened_handle) != 0)
+        return error.ReopenedIdleFailed;
+    if (show.show(reopened_handle) != 0 or
+        show.hide(reopened_handle) != 0)
+        return error.ReopenedShowHideFailed;
+
+    for (0..64) |index| {
+        var cycle_widget: ui.Widget = null;
+        const cycle_handle = descriptor.instantiate(
+            descriptor,
+            "https://zig-vst3.dev/tests/lv2-ui-probe",
+            "/tmp/lv2-ui-probe.lv2",
+            Host.write,
+            &second_host,
+            &cycle_widget,
+            &features,
+        ) orelse return error.LifecycleStressInstantiationFailed;
+        const cycle_value: f32 =
+            @floatFromInt(index % 5);
+        descriptor.port_event(
+            cycle_handle,
+            2,
+            @sizeOf(f32),
+            0,
+            &cycle_value,
+        );
+        const idle_status = idle.idle(cycle_handle);
+        const resize_status = resize_interface.ui_resize(
+            cycle_handle,
+            @intCast(320 + index % 4),
+            @intCast(200 + index % 3),
+        );
+        const show_status = show.show(cycle_handle);
+        const hide_status = show.hide(cycle_handle);
+        descriptor.cleanup(cycle_handle);
+        if (cycle_widget == null or idle_status != 0 or
+            resize_status != 0 or show_status != 0 or
+            hide_status != 0)
+            return error.LifecycleStressFailed;
+    }
+
+    const misaligned: ui.Handle =
+        @ptrFromInt(@intFromPtr(handle) + 1);
+    descriptor.port_event(
+        misaligned,
+        2,
+        @sizeOf(f32),
+        0,
+        &plain,
+    );
+    if (idle.idle(null) == 0 or idle.idle(misaligned) == 0)
+        return error.InvalidIdleHandleAccepted;
+    if (resize_interface.ui_resize(null, 640, 480) == 0 or
+        resize_interface.ui_resize(misaligned, 640, 480) == 0)
+        return error.InvalidResizeHandleAccepted;
+    if (show.show(null) == 0 or show.hide(misaligned) == 0)
+        return error.InvalidShowHideHandleAccepted;
+    descriptor.cleanup(null);
+    descriptor.cleanup(misaligned);
 
     if (descriptor.instantiate(
         descriptor,

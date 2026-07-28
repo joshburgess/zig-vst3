@@ -98,10 +98,26 @@ const StateHost = struct {
 };
 
 const WorkerHost = struct {
+    const maximum_message_size = 16;
+
     interface: *const core.lv2.WorkerInterface,
     instance: core.lv2.Handle = null,
+    request_bytes: [maximum_message_size]u8 = undefined,
+    request_size: usize = 0,
+    request_pending: bool = false,
+    response_bytes: [maximum_message_size]u8 = undefined,
+    response_size: usize = 0,
+    response_pending: bool = false,
     work_count: usize = 0,
     response_count: usize = 0,
+    delivery_count: usize = 0,
+    work_status: core.lv2.WorkerStatus = .unknown,
+    respond_entered: std.atomic.Value(bool) =
+        std.atomic.Value(bool).init(false),
+    allow_response: std.atomic.Value(bool) =
+        std.atomic.Value(bool).init(false),
+    work_finished: std.atomic.Value(bool) =
+        std.atomic.Value(bool).init(false),
 
     fn schedule(
         context: ?*anyopaque,
@@ -111,14 +127,19 @@ const WorkerHost = struct {
         const self: *@This() = @ptrCast(
             @alignCast(context orelse return .unknown),
         );
-        self.work_count += 1;
-        return self.interface.work(
-            self.instance,
-            respond,
-            self,
-            size,
-            data,
-        );
+        if (self.request_pending or size > self.request_bytes.len)
+            return .no_space;
+        if (size != 0 and data == null) return .unknown;
+        if (data) |raw| {
+            const bytes: [*]const u8 = @ptrCast(raw);
+            @memcpy(
+                self.request_bytes[0..size],
+                bytes[0..size],
+            );
+        }
+        self.request_size = size;
+        self.request_pending = true;
+        return .success;
     }
 
     fn respond(
@@ -129,12 +150,65 @@ const WorkerHost = struct {
         const self: *@This() = @ptrCast(
             @alignCast(context orelse return .unknown),
         );
+        if (self.response_pending or size > self.response_bytes.len)
+            return .no_space;
+        if (size != 0 and data == null) return .unknown;
+        self.respond_entered.store(true, .release);
+        while (!self.allow_response.load(.acquire))
+            std.Thread.yield() catch {};
+        if (data) |raw| {
+            const bytes: [*]const u8 = @ptrCast(raw);
+            @memcpy(
+                self.response_bytes[0..size],
+                bytes[0..size],
+            );
+        }
+        self.response_size = size;
+        self.response_pending = true;
         self.response_count += 1;
-        return self.interface.work_response(
+        return .success;
+    }
+
+    fn runWork(self: *@This()) void {
+        self.work_count += 1;
+        const data: ?*const anyopaque = if (self.request_size == 0)
+            null
+        else
+            self.request_bytes[0..self.request_size].ptr;
+        self.work_status = self.interface.work(
             self.instance,
-            size,
+            respond,
+            self,
+            @intCast(self.request_size),
             data,
         );
+        self.request_pending = false;
+        self.work_finished.store(true, .release);
+    }
+
+    fn waitForResponse(self: *@This()) bool {
+        while (!self.respond_entered.load(.acquire) and
+            !self.work_finished.load(.acquire))
+            std.Thread.yield() catch {};
+        return self.respond_entered.load(.acquire);
+    }
+
+    fn deliverResponse(self: *@This()) core.lv2.WorkerStatus {
+        if (!self.response_pending) return .unknown;
+        const data: ?*const anyopaque = if (self.response_size == 0)
+            null
+        else
+            self.response_bytes[0..self.response_size].ptr;
+        const status = self.interface.work_response(
+            self.instance,
+            @intCast(self.response_size),
+            data,
+        );
+        if (status == .success) {
+            self.response_pending = false;
+            self.delivery_count += 1;
+        }
+        return status;
     }
 };
 
@@ -166,6 +240,8 @@ pub fn main(init: std.process.Init) !void {
     ) orelse return error.MissingWorkerInterface;
     const worker_interface: *const core.lv2.WorkerInterface =
         @ptrCast(@alignCast(raw_worker));
+    const end_run = worker_interface.end_run orelse
+        return error.MissingWorkerEndRun;
     var worker_host = WorkerHost{
         .interface = worker_interface,
     };
@@ -206,15 +282,61 @@ pub fn main(init: std.process.Init) !void {
 
     if (descriptor.activate) |activate| activate(handle);
     descriptor.run(handle, input.len);
-    if (worker_host.work_count != 1)
+    if (!worker_host.request_pending or worker_host.work_count != 0)
         return error.WorkerWasNotScheduled;
-    if (worker_host.response_count != 1)
+    if (worker_host.response_count != 0)
+        return error.WorkerRespondedSynchronously;
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 0.375, -0.75 },
+        &output,
+    );
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    var worker_thread = try std.Thread.spawn(
+        .{},
+        WorkerHost.runWork,
+        .{&worker_host},
+    );
+    var worker_joined = false;
+    defer if (!worker_joined) {
+        worker_host.allow_response.store(true, .release);
+        worker_thread.join();
+    };
+    if (!worker_host.waitForResponse()) {
+        worker_thread.join();
+        worker_joined = true;
         return error.WorkerDidNotRespond;
+    }
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 0.375, -0.75 },
+        &output,
+    );
+    worker_host.allow_response.store(true, .release);
+    worker_thread.join();
+    worker_joined = true;
+    if (worker_host.work_status != .success or
+        worker_host.work_count != 1 or
+        worker_host.response_count != 1)
+        return error.WorkerExecutionFailed;
+    if (worker_host.deliverResponse() != .success)
+        return error.WorkerResponseDeliveryFailed;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+    if (worker_host.delivery_count != 1)
+        return error.WorkerResponseWasNotDelivered;
+
+    descriptor.run(handle, input.len);
     try std.testing.expectEqualSlices(
         f32,
         &[_]f32{ 3.375, 2.25 },
         &output,
     );
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
     if (descriptor.deactivate) |deactivate| deactivate(handle);
     var original = StateHost{};
     if (state.save(
