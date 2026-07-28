@@ -164,7 +164,7 @@ fn calculate(comptime Sample: type, config: Config) !Derived(Sample) {
     if (!std.math.isFinite(result.coefficient) or
         !std.math.isFinite(result.feedback) or
         !std.math.isFinite(result.drive))
-        return error.InvalidLadderFilterConfig;
+        return error.InvalidLadderConfig;
     return result;
 }
 
@@ -181,7 +181,7 @@ fn validateConfig(config: Config) !void {
         !std.math.isFinite(config.drive) or
         config.drive < 0.1 or
         config.drive > 20.0)
-        return error.InvalidLadderFilterConfig;
+        return error.InvalidLadderConfig;
 }
 
 test "ladder low-pass separates low and high frequencies" {
@@ -236,7 +236,7 @@ test "ladder processing is independent of block partitioning" {
 
 test "ladder rejects invalid config and contains hostile state" {
     try std.testing.expectError(
-        error.InvalidLadderFilterConfig,
+        error.InvalidLadderConfig,
         LadderFilter(f32).init(.{
             .mode = .low_pass_12,
             .sample_rate = 48_000.0,

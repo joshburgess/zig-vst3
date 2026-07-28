@@ -8,10 +8,13 @@ pub const Config = struct {
     host_rate: f64,
     model_rate: f64,
 
-    pub fn validate(self: Config) error{InvalidConfig}!void {
-        try (resampler.Config{ .input_rate = self.host_rate, .output_rate = self.model_rate }).validate();
+    pub fn validate(self: Config) error{InvalidFixedRateConfig}!void {
+        (resampler.Config{
+            .input_rate = self.host_rate,
+            .output_rate = self.model_rate,
+        }).validate() catch return error.InvalidFixedRateConfig;
         const ratio = self.model_rate / self.host_rate;
-        if (ratio > maximum_rate_ratio or ratio < 1.0 / maximum_rate_ratio) return error.InvalidConfig;
+        if (ratio > maximum_rate_ratio or ratio < 1.0 / maximum_rate_ratio) return error.InvalidFixedRateConfig;
     }
 };
 
@@ -30,31 +33,31 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
         pending_model_count: usize = 0,
         configured: bool = false,
 
-        pub fn init(config: Config) error{InvalidConfig}!Self {
+        pub fn init(config: Config) error{InvalidFixedRateConfig}!Self {
             var self = Self{};
             try self.configure(config);
             return self;
         }
 
-        pub fn configure(self: *Self, config: Config) error{InvalidConfig}!void {
+        pub fn configure(self: *Self, config: Config) error{InvalidFixedRateConfig}!void {
             try config.validate();
             const first_stage_delay: f64 = resampler.right_radius;
             const second_stage_minimum_host_delay = resampler.right_radius * config.host_rate / config.model_rate;
             const latency = @ceil(first_stage_delay + second_stage_minimum_host_delay);
-            if (latency > std.math.maxInt(u32)) return error.InvalidConfig;
+            if (latency > std.math.maxInt(u32)) return error.InvalidFixedRateConfig;
             const second_stage_host_delay = latency - first_stage_delay;
             const second_stage_input_delay = second_stage_host_delay * config.model_rate / config.host_rate;
 
-            try self.to_model.configure(.{
+            self.to_model.configure(.{
                 .input_rate = config.host_rate,
                 .output_rate = config.model_rate,
                 .delay_input_samples = first_stage_delay,
-            });
-            try self.to_host.configure(.{
+            }) catch return error.InvalidFixedRateConfig;
+            self.to_host.configure(.{
                 .input_rate = config.model_rate,
                 .output_rate = config.host_rate,
                 .delay_input_samples = second_stage_input_delay,
-            });
+            }) catch return error.InvalidFixedRateConfig;
             self.host_rate = config.host_rate;
             self.model_rate = config.model_rate;
             self.latency_samples = @intFromFloat(latency);
@@ -281,7 +284,7 @@ test "fixed-rate pipeline reset reproduces the same block stream" {
 
 test "fixed-rate pipeline bounds ratios and caller scratch" {
     const Pipeline = FixedRatePipeline(f32);
-    try std.testing.expectError(error.InvalidConfig, Pipeline.init(.{ .host_rate = 1_000, .model_rate = 96_000 }));
+    try std.testing.expectError(error.InvalidFixedRateConfig, Pipeline.init(.{ .host_rate = 1_000, .model_rate = 96_000 }));
     var pipeline = try Pipeline.init(.{ .host_rate = 48_000, .model_rate = 48_000 });
     var short_model: [4]f32 = undefined;
     try std.testing.expectError(error.InsufficientModelCapacity, pipeline.convertInput(&.{ 1, 2, 3, 4 }, &short_model));

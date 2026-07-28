@@ -10,9 +10,15 @@ pub fn Polynomial(comptime Sample: type, comptime capacity: usize) type {
     return struct {
         const Self = @This();
         pub const Complex = std.math.Complex(Sample);
+        pub const coefficient_capacity = capacity;
+        pub const maximum_degree = capacity - 1;
+        pub const default_root_tolerance: Sample =
+            if (Sample == f32) 1.0e-5 else 1.0e-12;
+        pub const default_root_maximum_iterations: usize = 256;
         pub const RootOptions = struct {
-            tolerance: Sample = if (Sample == f32) 1.0e-5 else 1.0e-12,
-            maximum_iterations: usize = 256,
+            tolerance: Sample = default_root_tolerance,
+            maximum_iterations: usize =
+                default_root_maximum_iterations,
         };
         pub const RootResult = struct {
             values: [capacity - 1]Complex = undefined,
@@ -913,6 +919,24 @@ test "polynomial constructs both Chebyshev families" {
 
 test "polynomial rejects capacity and finite-state violations" {
     const P = Polynomial(f32, 2);
+    try std.testing.expectEqual(@as(usize, 2), P.coefficient_capacity);
+    try std.testing.expectEqual(@as(usize, 1), P.maximum_degree);
+    try std.testing.expectEqual(
+        @as(f32, 1.0e-5),
+        P.default_root_tolerance,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 256),
+        P.default_root_maximum_iterations,
+    );
+    try std.testing.expectEqual(
+        P.default_root_tolerance,
+        (P.RootOptions{}).tolerance,
+    );
+    try std.testing.expectEqual(
+        P.default_root_maximum_iterations,
+        (P.RootOptions{}).maximum_iterations,
+    );
     try std.testing.expectError(
         error.PolynomialCapacityExceeded,
         P.init(&.{ 1.0, 2.0, 3.0 }),

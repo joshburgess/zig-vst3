@@ -13,12 +13,12 @@ pub const Config = struct {
     output_rate: f64,
     delay_input_samples: f64 = right_radius,
 
-    pub fn validate(self: Config) error{InvalidConfig}!void {
+    pub fn validate(self: Config) error{InvalidResamplerConfig}!void {
         if (!validRate(self.input_rate) or !validRate(self.output_rate) or
             !std.math.isFinite(self.delay_input_samples) or
             self.delay_input_samples < right_radius)
         {
-            return error.InvalidConfig;
+            return error.InvalidResamplerConfig;
         }
     }
 };
@@ -53,7 +53,7 @@ pub fn StreamingResampler(comptime Sample: type) type {
         backend: kernel_dispatch.Backend = .scalar,
         configured: bool = false,
 
-        pub fn init(config: Config) error{InvalidConfig}!Self {
+        pub fn init(config: Config) error{InvalidResamplerConfig}!Self {
             var self = Self{};
             try self.configure(config);
             return self;
@@ -62,13 +62,13 @@ pub fn StreamingResampler(comptime Sample: type) type {
         pub fn initBackend(
             config: Config,
             backend: kernel_dispatch.Backend,
-        ) error{InvalidConfig}!Self {
+        ) error{InvalidResamplerConfig}!Self {
             var self = Self{};
             try self.configureBackend(config, backend);
             return self;
         }
 
-        pub fn configure(self: *Self, config: Config) error{InvalidConfig}!void {
+        pub fn configure(self: *Self, config: Config) error{InvalidResamplerConfig}!void {
             return self.configureBackend(
                 config,
                 kernel_dispatch.preferred(kernel_dispatch.detectNative()),
@@ -79,7 +79,7 @@ pub fn StreamingResampler(comptime Sample: type) type {
             self: *Self,
             config: Config,
             backend: kernel_dispatch.Backend,
-        ) error{InvalidConfig}!void {
+        ) error{InvalidResamplerConfig}!void {
             try config.validate();
             self.input_rate = config.input_rate;
             self.output_rate = config.output_rate;
@@ -755,9 +755,9 @@ test "streaming resampler reset and drain are deterministic" {
 
 test "streaming resampler rejects invalid configuration and state transitions" {
     const Resampler = StreamingResampler(f32);
-    try std.testing.expectError(error.InvalidConfig, Resampler.init(.{ .input_rate = 0, .output_rate = 48_000 }));
-    try std.testing.expectError(error.InvalidConfig, Resampler.init(.{ .input_rate = 48_000, .output_rate = std.math.nan(f64) }));
-    try std.testing.expectError(error.InvalidConfig, Resampler.init(.{ .input_rate = 48_000, .output_rate = 48_000, .delay_input_samples = right_radius - 0.01 }));
+    try std.testing.expectError(error.InvalidResamplerConfig, Resampler.init(.{ .input_rate = 0, .output_rate = 48_000 }));
+    try std.testing.expectError(error.InvalidResamplerConfig, Resampler.init(.{ .input_rate = 48_000, .output_rate = std.math.nan(f64) }));
+    try std.testing.expectError(error.InvalidResamplerConfig, Resampler.init(.{ .input_rate = 48_000, .output_rate = 48_000, .delay_input_samples = right_radius - 0.01 }));
     var unconfigured = Resampler{};
     var output: [4]f32 = undefined;
     try std.testing.expectError(error.NotConfigured, unconfigured.process(&.{1.0}, &output));

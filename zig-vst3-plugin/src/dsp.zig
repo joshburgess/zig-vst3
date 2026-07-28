@@ -282,6 +282,12 @@ pub const FirEquirippleDesigner = equiripple_design.Designer;
 pub const FirEquirippleOptions = equiripple_design.Options;
 pub const FirEquirippleReport = equiripple_design.Report;
 pub const FirEquirippleSymmetry = equiripple_design.Symmetry;
+pub const maximum_fir_equiripple_bands =
+    equiripple_design.maximum_bands;
+pub const maximum_fir_equiripple_grid_density =
+    equiripple_design.maximum_grid_density;
+pub const maximum_fir_equiripple_taps =
+    equiripple_design.maximum_taps;
 pub const Fft = fft.Transform;
 pub const FirFilter = fir.FirFilter;
 pub const FirDesigner = fir_design.Designer;
@@ -293,6 +299,7 @@ pub const FirstOrderTptFilter = first_order_tpt.FirstOrderTptFilter;
 pub const FirstOrderTptKind = first_order_tpt.Kind;
 pub const FixedRateConfig = fixed_rate.Config;
 pub const FixedRatePipeline = fixed_rate.FixedRatePipeline;
+pub const maximum_fixed_rate_ratio = fixed_rate.maximum_rate_ratio;
 pub const FastMathApproximations = fast_math.Approximations;
 pub const FastMathOperation = fast_math.Operation;
 pub const FlacDecodeResult = flac.DecodeResult;
@@ -356,6 +363,10 @@ pub const OggPacketIterator = ogg.PacketIterator;
 pub const OggPage = ogg.Page;
 pub const OggPageIterator = ogg.PageIterator;
 pub const OggStreamWriter = ogg.StreamWriter;
+pub const maximum_ogg_page_body_bytes =
+    ogg.maximum_page_body_bytes;
+pub const maximum_ogg_page_bytes = ogg.maximum_page_bytes;
+pub const maximum_ogg_page_segments = ogg.maximum_page_segments;
 pub const analyzeVorbisPcmBlock = ogg.analyzeVorbisPcmBlock;
 pub const analyzeVorbisAudioPsychoacoustics =
     ogg.analyzeVorbisAudioPsychoacoustics;
@@ -685,6 +696,8 @@ pub const PannerRule = panner.Rule;
 pub const PcmDither = pcm_dither.PcmDither;
 pub const PcmDitherConfig = pcm_dither.Config;
 pub const PcmDitherMode = pcm_dither.Mode;
+pub const maximum_pcm_dither_channels =
+    pcm_dither.maximum_channels;
 pub const Phaser = phaser.Phaser;
 pub const PhaserConfig = phaser.Config;
 pub const ProcessorChain = processor_chain.ProcessorChain;

@@ -17,10 +17,10 @@ pub const Config = struct {
     gain_db: f64,
     q: f64,
 
-    pub fn coefficients(self: Config) error{InvalidConfig}!Coefficients {
+    pub fn coefficients(self: Config) error{InvalidBiquadConfig}!Coefficients {
         if (!std.math.isFinite(self.sample_rate) or self.sample_rate < 1_000.0 or
             !std.math.isFinite(self.frequency_hz) or !std.math.isFinite(self.gain_db) or
-            !std.math.isFinite(self.q)) return error.InvalidConfig;
+            !std.math.isFinite(self.q)) return error.InvalidBiquadConfig;
 
         const frequency = std.math.clamp(self.frequency_hz, 10.0, self.sample_rate * 0.49);
         const q = std.math.clamp(self.q, 0.1, 18.0);
@@ -100,9 +100,9 @@ const RawCoefficients = struct {
     a1: f64,
     a2: f64,
 
-    fn normalized(self: RawCoefficients) error{InvalidConfig}!Coefficients {
+    fn normalized(self: RawCoefficients) error{InvalidBiquadConfig}!Coefficients {
         if (!std.math.isFinite(self.a0) or @abs(self.a0) <= std.math.floatEps(f64)) {
-            return error.InvalidConfig;
+            return error.InvalidBiquadConfig;
         }
         const inverse = 1.0 / self.a0;
         const result = Coefficients{
@@ -112,7 +112,7 @@ const RawCoefficients = struct {
             .a1 = self.a1 * inverse,
             .a2 = self.a2 * inverse,
         };
-        if (!result.valid()) return error.InvalidConfig;
+        if (!result.valid()) return error.InvalidBiquadConfig;
         return result;
     }
 };
@@ -301,8 +301,8 @@ test "shelves approach their requested gain" {
 test "configuration clamps finite frequency and q" {
     const clamped = try (Config{ .kind = .bell, .sample_rate = 48_000.0, .frequency_hz = 1.0e9, .gain_db = 3.0, .q = 0.001 }).coefficients();
     try std.testing.expect(std.math.isFinite(clamped.magnitudeDb(48_000.0, 23_000.0)));
-    try std.testing.expectError(error.InvalidConfig, (Config{ .kind = .bell, .sample_rate = 0.0, .frequency_hz = 1_000.0, .gain_db = 0.0, .q = 1.0 }).coefficients());
-    try std.testing.expectError(error.InvalidConfig, (Config{ .kind = .bell, .sample_rate = 48_000.0, .frequency_hz = std.math.nan(f64), .gain_db = 0.0, .q = 1.0 }).coefficients());
+    try std.testing.expectError(error.InvalidBiquadConfig, (Config{ .kind = .bell, .sample_rate = 0.0, .frequency_hz = 1_000.0, .gain_db = 0.0, .q = 1.0 }).coefficients());
+    try std.testing.expectError(error.InvalidBiquadConfig, (Config{ .kind = .bell, .sample_rate = 48_000.0, .frequency_hz = std.math.nan(f64), .gain_db = 0.0, .q = 1.0 }).coefficients());
 }
 
 test "pass filters meet their cutoff response" {

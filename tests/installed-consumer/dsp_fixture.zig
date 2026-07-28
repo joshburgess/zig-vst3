@@ -446,12 +446,29 @@ test "installed package exposes bounded resource presentation" {
 }
 
 test "installed package exposes validated DSP and telemetry state" {
+    try std.testing.expectError(
+        error.InvalidBiquadConfig,
+        (plugin.dsp.BiquadConfig{
+            .kind = .low_pass,
+            .sample_rate = 0.0,
+            .frequency_hz = 1_000.0,
+            .gain_db = 0.0,
+            .q = 1.0,
+        }).coefficients(),
+    );
     var filter = plugin.dsp.SmoothedBiquad(f64){};
     filter.setImmediate(.{ .b0 = std.math.nan(f64) });
     try std.testing.expect(filter.current.valid());
     try std.testing.expectEqual(@as(f64, 0.5), filter.process(0.5));
 
     const Resampler = plugin.dsp.StreamingResampler(f64);
+    try std.testing.expectError(
+        error.InvalidResamplerConfig,
+        Resampler.init(.{
+            .input_rate = 0.0,
+            .output_rate = 48_000.0,
+        }),
+    );
     var resampler = try Resampler.init(.{ .input_rate = 48_000, .output_rate = 48_000 });
     try std.testing.expect(resampler.validState());
     const phase_before = resampler.next_input_position;
@@ -660,6 +677,13 @@ test "installed package exposes validated DSP and telemetry state" {
     try std.testing.expect(!resampler.validState());
 
     const Pipeline = plugin.dsp.FixedRatePipeline(f64);
+    try std.testing.expectError(
+        error.InvalidFixedRateConfig,
+        Pipeline.init(.{
+            .host_rate = 1_000.0,
+            .model_rate = 96_000.0,
+        }),
+    );
     var pipeline = try Pipeline.init(.{ .host_rate = 48_000, .model_rate = 48_000 });
     try std.testing.expect(pipeline.validState());
     pipeline.latency_samples +%= 1;
@@ -673,6 +697,38 @@ test "installed package exposes validated DSP and telemetry state" {
 }
 
 test "installed package exposes DSP blocks contexts and math primitives" {
+    try std.testing.expectEqual(
+        plugin.dsp.equiripple_design.maximum_bands,
+        plugin.dsp.maximum_fir_equiripple_bands,
+    );
+    try std.testing.expectEqual(
+        plugin.dsp.equiripple_design.maximum_grid_density,
+        plugin.dsp.maximum_fir_equiripple_grid_density,
+    );
+    try std.testing.expectEqual(
+        plugin.dsp.equiripple_design.maximum_taps,
+        plugin.dsp.maximum_fir_equiripple_taps,
+    );
+    try std.testing.expectEqual(
+        plugin.dsp.fixed_rate.maximum_rate_ratio,
+        plugin.dsp.maximum_fixed_rate_ratio,
+    );
+    try std.testing.expectEqual(
+        plugin.dsp.ogg.maximum_page_body_bytes,
+        plugin.dsp.maximum_ogg_page_body_bytes,
+    );
+    try std.testing.expectEqual(
+        plugin.dsp.ogg.maximum_page_bytes,
+        plugin.dsp.maximum_ogg_page_bytes,
+    );
+    try std.testing.expectEqual(
+        plugin.dsp.ogg.maximum_page_segments,
+        plugin.dsp.maximum_ogg_page_segments,
+    );
+    try std.testing.expectEqual(
+        plugin.dsp.pcm_dither.maximum_channels,
+        plugin.dsp.maximum_pcm_dither_channels,
+    );
     var left = [_]f32{ 0.25, 0.5 };
     var right = [_]f32{ 0.75, 1.0 };
     const block = try plugin.dsp.AudioBlock(f32, 2).init(
@@ -983,7 +1039,24 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         0.000_001,
     );
 
-    const polynomial = try plugin.dsp.Polynomial(f32, 3).init(
+    const InstalledPolynomial = plugin.dsp.Polynomial(f32, 3);
+    try std.testing.expectEqual(
+        @as(usize, 3),
+        InstalledPolynomial.coefficient_capacity,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        InstalledPolynomial.maximum_degree,
+    );
+    try std.testing.expectEqual(
+        @as(f32, 1.0e-5),
+        InstalledPolynomial.default_root_tolerance,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 256),
+        InstalledPolynomial.default_root_maximum_iterations,
+    );
+    const polynomial = try InstalledPolynomial.init(
         &.{ 1.0, 2.0, 3.0 },
     );
     try std.testing.expectEqual(@as(f32, 17.0), polynomial.evaluate(2.0));
@@ -1068,7 +1141,16 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         chebyshev_second.coefficients[2],
     );
 
-    var ladder = try plugin.dsp.LadderFilter(f32).init(.{
+    const Ladder = plugin.dsp.LadderFilter(f32);
+    try std.testing.expectError(
+        error.InvalidLadderConfig,
+        Ladder.init(.{
+            .mode = .low_pass_24,
+            .sample_rate = 0.0,
+            .frequency_hz = 1_000.0,
+        }),
+    );
+    var ladder = try Ladder.init(.{
         .mode = .low_pass_24,
         .sample_rate = 48_000.0,
         .frequency_hz = 1_000.0,
