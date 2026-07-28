@@ -70,7 +70,7 @@ These facilities now cover the reusable plugin-framework side of a NAM editor an
 
 | Capability | Current state | Required home | Priority |
 | --- | --- | --- | --- |
-| Configurable audio layouts | Mono, stereo, absent, and mixed main-bus layouts are public and validated | `zig-vst3` and `zig-vst3-plugin` | Complete |
+| Configurable audio layouts | Mono, stereo, quadraphonic, 5.1, 7.1, first-order ambisonic, absent, and mixed main-bus layouts are public and validated | `zig-vst3` and `zig-vst3-plugin` | Complete |
 | Immutable model publication | Fixed-capacity immutable resource exchange implemented and validated | `zig-vst3-plugin` | Complete |
 | Mutable inference runtime | Opt-in exclusive audio-thread mutation after block-boundary adoption implemented and validated | `zig-vst3-plugin` | Complete |
 | Deferred destruction | Replaced resources retire on audio and are reclaimed off-thread | `zig-vst3-plugin` | Complete |
@@ -104,7 +104,7 @@ Exit criteria:
 
 Completion evidence:
 
-- `AudioBusLayout` declares `.none`, `.mono`, and `.stereo`. `PluginSpec` retains stereo defaults and maps the older audio-presence flags without allowing conflicting declarations.
+- `AudioBusLayout` declares `.none`, `.mono`, `.stereo`, `.quadraphonic`, `.surround_5_1`, `.surround_7_1`, and `.ambisonic_first_order`. `PluginSpec` retains stereo defaults and maps the older audio-presence flags without allowing conflicting declarations.
 - The public `Mono Gain` probe uses `@import("zig-vst3-plugin")` for its core declaration and the public `SimpleEffect` VST3 shell. It rejects stereo arrangements and bounds process views to one channel.
 - The Steinberg validator passed all 47 tests, including single-precision and double-precision mono processing, variable blocks, arrangement fallback, and state transitions.
 - The full deterministic suite passed 3,962/3,962 tests. Raw ABI, entry-symbol, installed-package, native adapter, macOS accessibility, visual regression, and sanitizer gates passed.

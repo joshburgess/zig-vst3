@@ -148,13 +148,15 @@ The VST3 shell wraps parameter and processor state in a bounded versioned envelo
 
 The ownership sequence is:
 
-1. The writer fully constructs a resource and calls `publish` with a strictly increasing nonzero generation.
+1. The writer fully constructs a resource and calls `publish` with the next nonzero generation.
 2. The audio thread calls `adoptPending` at a block boundary.
 3. The audio thread reads the active resource through `active` for that block and later blocks.
 4. Replacing or retiring the active resource marks its slot for reclamation.
 5. A non-real-time thread calls `reclaim`, which invokes `Config.destroy`.
 
 `publish` returns `Busy` when all fixed slots are in use. It returns `InvalidGeneration` for a stale generation. In both cases the caller still owns the unpublished pointer. Publishing a newer pending generation retires the older pending generation before audio adoption.
+
+Generation comparisons use bounded serial-number ordering. A sequence may therefore advance from `maxInt(u64)` to `1` without making every later resource appear stale. Zero remains reserved for the uninitialized state, and generations separated by half the integer range are intentionally treated as unordered.
 
 The writer stores a completed pointer before publishing the slot with release ordering. Audio adoption acquires the published slot and swaps the pending index at the block boundary. Retired slots are released by audio and acquired by the reclaimer before destruction. `active_slot` is owned by the audio thread while processing is live.
 

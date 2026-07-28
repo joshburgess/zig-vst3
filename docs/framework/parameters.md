@@ -87,6 +87,10 @@ Use `process.ProcessContext` automation helpers when sample timing matters:
 const latest_gain = context.parameterNormalizedAtOrBeforeOr(0, sample_offset, 1.0);
 ```
 
+`ProcessAttachments.parameter_ramps` carries bounded linear ramps without expanding them into per-sample points. Each `ParameterRamp` has a signed start offset, a nonzero duration, normalized endpoints, and a sequence number for deterministic ties with point changes. Negative starts represent a ramp already in progress at the beginning of the block. `parameterNormalizedAtOrBeforeOr` interpolates active ramps and returns their endpoint after completion.
+
+`ParameterChanges.changeCount` reports the combined point and ramp total. The older point-query APIs, including `count`, `firstChange`, `latestChange`, `forId`, and the offset iterators, continue to enumerate point changes. Use `rampCount`, `hasRamp`, and `ProcessContext.parameterRamps` to inspect native ramps. Value-resolution and segment-boundary helpers combine both forms of automation and resolve equal-offset events by sequence number.
+
 `ParameterView` provides typed field reads with `load("field_name")`, normalized reads with `loadNormalized("field_name")`, and id/name/index reads for code that is not tied to reflected field names.
 
 ## Edit Parameters Outside Process

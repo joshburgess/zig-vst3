@@ -215,3 +215,12 @@ The final serialized pluginval rerun produced 28 successful `runner-status.txt` 
 The Sample Player previously ignored the processor's persisted parameter state and used declaration defaults whenever a block contained no point for a parameter. Its processor now owns one public `process.BlockParameterLatch` per declared parameter. Each block synchronizes parameters without automation from persisted state, retains the previous block value before the first automation point, and resolves later points through `valueAt` at process-segment boundaries.
 
 A deterministic stereo regression keeps hard-right pan across a quiet block, then automates to hard-left at sample offset two while the host-visible persisted state already contains the final value. The first two frames remain hard-right and the remaining frames become hard-left. The complete local suite passes 4,100 tests, including the 7-test installed-package suite and public latch usage. Native GUI and rendering gates remain within their existing budgets.
+
+### High-Level Runtime Migration
+
+- The component now runs Sample Player through `Vst3Processor` with a heap-owned stable engine.
+- The adapter forwards decoded-audio import, playhead graph loads, and editor-open and editor-close activity. MIDI events and sample-accurate parameter latches remain inside the processor contract for both f32 and f64.
+- Existing tests retain import isolation, malformed WAV and AIFF handling, bounded retry, replacement across editor teardown, clear, exact note timing, reverse and loop playback, voice stealing, parameter continuity, non-finite containment, and editor-gated graph publication.
+- The focused plugin root passes 16/16 tests. Native bundling passes 6/6 steps, and Linux x86-64 GNU and Windows x86-64 GNU bundles each pass 4/4 steps.
+- The complete deterministic gate passes 219/219 steps and 5,199/5,200 tests with one expected CoreAudio platform-branch skip.
+- The REAPER walkthrough remains deferred and still requires audible and visual confirmation. Automated runtime migration does not close it.

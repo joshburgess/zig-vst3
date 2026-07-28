@@ -174,3 +174,11 @@ Record each committed milestone here with test counts, validator results, perfor
 | Cross-target bundles | Linux and Windows matrices each pass 41/41 steps | Complete locally; native host checks remain external |
 | Pluginval | The macOS bootstrap launch defect is fixed; current strictness 5 and 10 matrices each pass all 13 plugins in 56/56 steps | Complete locally |
 | External accessibility and hosts | Toolkit-neutral semantics and automated macOS bridge pass | VoiceOver, Narrator, AT-SPI, native Windows, X11, and Wayland remain pending |
+
+## 2026-07-26 High-Level Runtime Migration
+
+- Resonant Filter now runs both processing precisions through `Vst3Processor`.
+- The adapter forwards its activity-gated spectrum graph and editor-open and editor-close activity. The controller retains response curves, linked cutoff and resonance editing, presets, view state, and responsive layout behavior.
+- Native bundling passes 6/6 steps. Linux x86-64 GNU and Windows x86-64 GNU bundles each pass 4/4 steps.
+- The complete deterministic gate passes 219/219 steps and 5,199/5,200 tests with one expected CoreAudio platform-branch skip.
+- Prior REAPER results remain the manual visual, interaction, and audible evidence. No new host result is inferred.

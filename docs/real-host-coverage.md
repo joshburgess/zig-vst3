@@ -2,6 +2,8 @@
 
 This page tracks the remaining work that cannot be proven by ABI fixtures alone.
 
+The [open-work tracker](open-work.md) is the consolidated index for automated checks, cleanup debt, feature work, and manual confirmation. This page retains the detailed host procedures.
+
 ## Automated Host-Like Gates
 
 Run these before recording new host rows:
@@ -35,6 +37,24 @@ Useful next slices:
 The editor smoke example is protocol-focused. The visible editors use the separate VSTGUI integration.
 See [the plugin GUI plan](gui-plan.md) for the implementation sequence and platform exit criteria.
 
+## LV2 Host Coverage
+
+Current state:
+
+- The core and UI ABI declarations have independent C layout checks.
+- Dynamically loaded fixtures exercise core processing, state, Worker calls, UI parent attachment, control-port updates, host writes, optional touch, idle, show, hide, resize, malformed host inputs, and teardown.
+- The native Mono Gain bundle links the production VSTGUI parameter backend, publishes the platform widget only after successful attachment, and declares the native UI class and parent feature in generated Turtle.
+- The UI fixture cross-builds for Linux aarch64, Linux x86-64, and Windows x86-64 GNU.
+- Generated Turtle can associate a plugin with a separate UI resource, class, and binary.
+- Automated smoke coverage proves native widget publication and descriptor loading without a physical host. External host scheduling and external Turtle discovery remain unproven.
+
+Useful next slices:
+
+- Run `lv2lint` against a generated bundle containing core, presets, and UI metadata.
+- Load the linked VSTGUI UI on each supported platform and test it in at least two LV2 hosts.
+- Confirm native parent and child ownership, automation in both directions, gesture touch notifications, idle cadence, both resize directions, show and hide, two instances, close, reopen, session reload, and teardown.
+- Exercise Worker delivery on a real asynchronous host worker thread and confirm responses arrive on a later `run`.
+
 ## Advanced Host-Integration Coverage
 
 Current state:
@@ -51,6 +71,7 @@ Current state:
 
 Useful next slices:
 
+- Confirm the sidechain ducker and both auxiliary outputs of the splitter in a host that exposes explicit VST3 bus routing.
 - Add a host-smoke row for channel context and automation state using a host that sends those callbacks to the component.
 - Add a data-exchange probe once a host or harness that supports `IDataExchangeHandler` is available.
 - Record a physical UI mapping host row with a controller/host pair that observes the gain controller's pressure-to-expression map.

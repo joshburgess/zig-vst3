@@ -275,3 +275,11 @@ Retained experimental APIs:
 - `GraphHandle` and mixed graph layers were experimental when this plan completed. Parametric EQ and Resonant Filter later passed the same production contract and macOS host checks, so the Resonant Filter milestone promoted them to supported status.
 - Analyzer transport was retained here under an incorrect one-consumer assessment. Channel Strip, Parametric EQ, and Resonant Filter later passed the shared bounded lifecycle and macOS host checks, so the Resonant Filter milestone promoted it to supported status.
 - Native assistive-technology bridges: automated macOS integration passes, but screen-reader workflows and native Windows and Linux bridges need their target environments.
+
+## 2026-07-26 High-Level Runtime Migration
+
+- Parametric EQ now runs both processing precisions through `Vst3Processor`.
+- The adapter forwards its activity-gated spectrum graph and editor-open and editor-close activity. The controller retains parameter-driven response layers, linked handles, presets, view state, and responsive layout behavior.
+- Native bundling passes 6/6 steps. Linux x86-64 GNU and Windows x86-64 GNU bundles each pass 4/4 steps.
+- The complete deterministic gate passes 219/219 steps and 5,199/5,200 tests with one expected CoreAudio platform-branch skip.
+- Prior REAPER results remain the manual visual and interaction evidence. No new host result is inferred.

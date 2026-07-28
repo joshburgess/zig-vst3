@@ -282,7 +282,7 @@ Add graphs through `EditorDescription.graphs`. A `Graph` declares a title, serie
 
 Fixed graphs copy at most 256 finite points when the editor is created and never create a refresh timer. Dynamic graph telemetry uses the same 256-point limit at both sides of its ABI boundary, so an oversized caller capacity cannot create an unbounded producer slice. Dynamic graphs require `maximum_refresh_hz` from 1 through 60. Publication stops while no editor is open, and a busy reader may drop a visualization frame rather than blocking the producer.
 
-`gui_graph.WaveformCapture(capacity)` reduces the latest audio block to 1–256 evenly spaced points with normalized frame positions. `gui_graph.SpectrumAnalyzer(fft_size)` accepts power-of-two FFT sizes from 8 through 512, applies a Hann window, publishes the positive-frequency bins as decibels, and performs at most one radix-2 transform per process call after a 50 percent hop. Both types use fixed storage and the nonblocking `SnapshotSeries` handoff. They allocate no memory, acquire no locks, and do no sample reduction or spectral work while every editor is closed.
+`gui_graph.WaveformCapture(capacity)` reduces the latest audio block to 1–256 evenly spaced points with normalized frame positions. `gui_graph.SpectrumAnalyzer(fft_size)` accepts power-of-two FFT sizes from 8 through 512, applies a Hann window, publishes the positive-frequency bins as decibels, and performs at most one public `dsp.Fft` transform per process call after a 50 percent hop. Both types use fixed storage and the nonblocking `SnapshotSeries` handoff. They allocate no memory, acquire no locks, and do no sample reduction or spectral work while every editor is closed.
 
 A `SimpleStereoEffect` processor exposes dynamic points with `guiGraphLoad`. Its existing telemetry open and close hooks should update the graph snapshot activity count:
 
@@ -427,7 +427,7 @@ Controller-to-processor transfer uses begin, 1,024-sample chunk, commit, cancel,
 
 The production limit is 131,072 mono or stereo frames with 512-sample convolution partitions. Fixed storage is 1.00 MiB for importer decoding, 3.00 MiB for original, edited, and rollback controller buffers, and 19.02 MiB for the three-slot convolver and its processing history. These capacities are allocated with their owning controller or processor instance, so multiple plugin instances do not share mutable media or work state.
 
-Host state stores parameters and bounded editor metadata, but it does not store an absolute source path or perform hidden file I/O during restoration. Restoring an instance therefore produces an explicit empty-media state until the user imports an IR again. This avoids stale path access and makes missing media deterministic. The IR Loader and Sample Player now share decoded transport. Editable import buffers and partitioned convolution remain experimental because the IR Loader is their only production consumer.
+Host state stores parameters and bounded editor metadata, but it does not store an absolute source path or perform hidden file I/O during restoration. Restoring an instance therefore produces an explicit empty-media state until the user imports an IR again. This avoids stale path access and makes missing media deterministic. The IR Loader and Sample Player now share decoded transport. The partitioned convolver is also available through `zig-vst3-plugin.dsp`; the IR Loader remains its production example.
 
 ### Sample player ownership reference
 

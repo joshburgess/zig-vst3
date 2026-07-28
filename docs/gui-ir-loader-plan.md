@@ -222,3 +222,12 @@ API status after this milestone:
 - `DecodedAudioFileImporter`, decoded-audio controller transport, processor lifecycle hooks, and partitioned convolution remain experimental. The decoded importer and transport have only one production consumer.
 - Post-success importer focus and importer-readiness action dependencies remain experimental fields on the supported `ActionButton` contract. The IR loader is their only production consumer.
 - Existing graph, parameter attachment, and composition declarations keep their current status. This milestone does not promote them.
+
+## 2026-07-26 High-Level Runtime Migration
+
+- The component now runs IR Loader through `Vst3Processor` rather than binding the convolution engine directly to the low-level processor shell.
+- The runtime heap-owns the 19.02 MiB bounded processor so its address remains stable. Teardown destroys that engine through the same allocator that created it.
+- The adapter forwards the decoded-audio receiver without changing controller-side import, editing, generation, rollback, clear, or state behavior. Existing integration tests cover those paths.
+- Both VST3 sample precisions remain supported. Concurrent headless editor and processing stress now uses the required VST3 component activation order.
+- Native, Linux x86-64 GNU, and Windows x86-64 GNU bundles pass. The full deterministic gate passes 219/219 steps and 5,197/5,198 tests with one expected CoreAudio platform-branch skip.
+- No new manual visual result is claimed. The previously recorded REAPER observations remain the current host evidence.
