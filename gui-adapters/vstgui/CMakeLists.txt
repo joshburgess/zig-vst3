@@ -43,6 +43,21 @@ endif()
 
 set(VSTGUI_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../.vst3-sdk/vst3sdk/vstgui4")
 add_subdirectory("${VSTGUI_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/vstgui")
+if(UNIX AND NOT APPLE)
+    get_target_property(VSTGUI_LIBRARY_SOURCES vstgui SOURCES)
+    list(
+        FILTER VSTGUI_LIBRARY_SOURCES
+        EXCLUDE REGEX "platform/linux/x11fileselector\\.cpp$"
+    )
+    set_property(
+        TARGET vstgui
+        PROPERTY SOURCES "${VSTGUI_LIBRARY_SOURCES}"
+    )
+    target_sources(
+        vstgui
+        PRIVATE zig_vstgui_no_process_file_selector.cpp
+    )
+endif()
 set_target_properties(vstgui PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     C_VISIBILITY_PRESET hidden
