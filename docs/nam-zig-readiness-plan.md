@@ -82,7 +82,7 @@ These facilities now cover the reusable plugin-framework side of a NAM editor an
 | Consumer C kernel integration | Public downstream recipe, installed-package test, and portable plus architecture-specific probe implemented | Package build API and DSP library | Complete |
 | CPU dispatch | Per-instance runtime NEON and AVX2 selection with a portable baseline implemented | DSP library | Complete |
 | Activation quality isolation | Automatable per-instance selection is stored on the exclusively owned runtime | Plugin parameters and prepared runtime | Complete |
-| Denormal policy | Scoped process-thread FTZ/DAZ or FZ with exact restoration implemented | `zig-vst3-plugin` or DSP library | Complete |
+| Denormal policy | Scoped process-thread FTZ or FZ with exact restoration implemented | `zig-vst3-plugin` or DSP library | Complete |
 | Headless golden rendering | Reusable fixed and randomized block runner with generated C++ WAV references implemented | Framework test tooling and future `zig-nam` tooling | Complete |
 | CLAP export | Out of scope for a VST3 backend | Separate backend or toolkit-neutral plugin shell | Later decision |
 
@@ -305,13 +305,13 @@ Completion evidence:
 
 ### Denormal handling
 
-- [x] Decide between scoped processor-thread FTZ/DAZ, numerically safe noise, or architecture-neutral algorithmic avoidance.
+- [x] Decide between scoped processor-thread FTZ, numerically safe noise, or architecture-neutral algorithmic avoidance.
 - [x] Restore any modified floating-point environment when required by the host contract.
 - [x] Add silence-tail performance tests for recurrent and convolution workloads.
 
 Completion evidence:
 
-- `dsp.DenormalScope` uses scoped FTZ and DAZ on x86-64 and scoped FZ on aarch64. It avoids noise injection so silence and parity renders remain deterministic. Unsupported architectures receive an explicit no-op scope and must use algorithmic avoidance.
+- `dsp.DenormalScope` uses scoped FTZ on x86-64 and scoped FZ on aarch64. It avoids optional DAZ state and noise injection, so hosted runners remain compatible while silence and parity renders remain deterministic. Unsupported architectures receive an explicit no-op scope and must use algorithmic avoidance.
 - The scope reads the processor thread's existing MXCSR or FPCR value, changes only the required flush bits, and restores the exact saved value on `leave`. Nested scopes preserve the outer scope, and an already-enabled host policy remains unchanged.
 - Native arm64 tests and x86-64 tests under Rosetta verify scope entry, subnormal result flushing, nesting, and exact restoration. The same module compiles for Linux aarch64/x86-64 and Windows x86-64.
 - Strict C benchmark workloads prevent ReleaseFast constant folding. On the current arm64 macOS machine, a 32-step recurrent silence tail measured 0.3 ns per state update and a 16-tap convolution silence tail measured 2.1 ns per output sample with the scope active. Both remain below their regression budgets.

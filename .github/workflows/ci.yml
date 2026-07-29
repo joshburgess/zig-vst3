@@ -70,7 +70,12 @@ jobs:
         shell: pwsh
         run: |
           $libcFile = Join-Path $env:RUNNER_TEMP 'zig-libc.txt'
-          zig libc | Out-File -FilePath $libcFile -Encoding utf8
+          $libcLines = zig libc
+          [IO.File]::WriteAllText(
+            $libcFile,
+            ($libcLines -join "`n") + "`n",
+            [Text.UTF8Encoding]::new($false)
+          )
           zig libc $libcFile
           "ZIG_LIBC_FILE=$libcFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Fetch pinned VST3 SDK
@@ -87,6 +92,8 @@ jobs:
         run: zig build test
       - name: Test
         if: runner.os == 'Linux'
+        env:
+          VSTGUI_RUN_VISUAL_TESTS: OFF
         run: xvfb-run -a zig build test
       - name: Test
         if: runner.os == 'Windows'

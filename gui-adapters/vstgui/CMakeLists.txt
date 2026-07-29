@@ -3,6 +3,7 @@ project(zig_vstgui_adapter LANGUAGES C CXX)
 
 option(ZIG_VSTGUI_ENABLE_SANITIZERS "Enable address and undefined-behavior sanitizers" OFF)
 option(ZIG_VSTGUI_ENABLE_THREAD_SANITIZER "Enable the thread sanitizer" OFF)
+option(ZIG_VSTGUI_RUN_VISUAL_TESTS "Run visual snapshot tests when building their validation target" ON)
 
 if(ZIG_VSTGUI_ENABLE_SANITIZERS AND ZIG_VSTGUI_ENABLE_THREAD_SANITIZER)
     message(FATAL_ERROR "Address and thread sanitizers require separate builds")
@@ -166,13 +167,19 @@ target_include_directories(zig_vstgui_visual_tests PRIVATE
 )
 target_link_libraries(zig_vstgui_visual_tests PRIVATE zig_vstgui_adapter)
 
-add_custom_target(zig_vstgui_visual_tests_run
-    COMMAND $<TARGET_FILE:zig_vstgui_visual_tests>
-        "${CMAKE_CURRENT_LIST_DIR}/testdata/visual"
-        "${CMAKE_BINARY_DIR}/visual-regression"
-        ${ZIG_VSTGUI_VISUAL_TEST_ARGS}
-    DEPENDS zig_vstgui_visual_tests
-)
+if(ZIG_VSTGUI_RUN_VISUAL_TESTS)
+    add_custom_target(zig_vstgui_visual_tests_run
+        COMMAND $<TARGET_FILE:zig_vstgui_visual_tests>
+            "${CMAKE_CURRENT_LIST_DIR}/testdata/visual"
+            "${CMAKE_BINARY_DIR}/visual-regression"
+            ${ZIG_VSTGUI_VISUAL_TEST_ARGS}
+        DEPENDS zig_vstgui_visual_tests
+    )
+else()
+    add_custom_target(zig_vstgui_visual_tests_run
+        DEPENDS zig_vstgui_visual_tests
+    )
+endif()
 
 add_custom_target(zig_vstgui_visual_tests_update
     COMMAND $<TARGET_FILE:zig_vstgui_visual_tests>

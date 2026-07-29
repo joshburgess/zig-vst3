@@ -32,6 +32,18 @@ ZIG_LOCAL_CACHE_DIR="$repo_root/.zig-cache" \
     "$ara_dir/ARAInterface.h" \
     > "$out_dir/ara_raw.zig"
 
+ara_bindings="$out_dir/ara_raw.zig"
+case "$(uname -m)" in
+    x86_64|amd64|i386|i686)
+        ara_bindings="$out_dir/ara_raw_packed.zig"
+        ZIG_GLOBAL_CACHE_DIR="$repo_root/.zig-global-cache" \
+        ZIG_LOCAL_CACHE_DIR="$repo_root/.zig-cache" \
+        "${ZIG:-zig}" run tools/pack_ara_bindings.zig -- \
+            "$out_dir/ara_raw.zig" \
+            "$ara_bindings"
+        ;;
+esac
+
 ZIG_GLOBAL_CACHE_DIR="$repo_root/.zig-global-cache" \
 ZIG_LOCAL_CACHE_DIR="$repo_root/.zig-cache" \
 "${ZIG:-zig}" run \
@@ -42,7 +54,7 @@ ZIG_LOCAL_CACHE_DIR="$repo_root/.zig-cache" \
     -Mzig-vst3=zig-vst3/src/root.zig \
     --dep ara-raw \
     -Mzig-vst3-ara=zig-vst3/src/ara_api.zig \
-    -Mara-raw="$out_dir/ara_raw.zig" \
+    -Mara-raw="$ara_bindings" \
     > "$out_dir/zig.txt"
 
 diff -u "$out_dir/cpp.txt" "$out_dir/zig.txt"

@@ -16,6 +16,8 @@ trap cleanup EXIT HUP INT TERM
 mkdir -p "$package" "$consumer"
 cp build.zig build.zig.zon LICENSE README.md CHANGELOG.md "$package/"
 cp -R zig-vst3 zig-vst3-plugin "$package/"
+mkdir -p "$package/tools"
+cp tools/pack_ara_bindings.zig "$package/tools/"
 mkdir -p "$package/vendor"
 cp -R vendor/ARA_API "$package/vendor/"
 cp tests/installed-consumer/build.zig tests/installed-consumer/build.zig.zon tests/installed-consumer/editors.zig tests/installed-consumer/dsp_fixture.zig tests/installed-consumer/core_consumer.zig tests/installed-consumer/kernel_plugin.zig "$consumer/"

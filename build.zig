@@ -3840,14 +3840,16 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
         module.linkFramework("Accelerate", .{});
         module.linkFramework("UniformTypeIdentifiers", .{});
     } else if (target.result.os.tag == .linux) {
-        module.linkSystemLibrary("stdc++", .{});
+        module.linkSystemLibrary(":libstdc++.so", .{ .use_pkg_config = .no });
         for ([_][]const u8{
             "X11",            "freetype2",      "xcb",         "xcb-util",       "xcb-cursor", "xcb-keysyms", "xcb-xkb",
             "xkbcommon",      "xkbcommon-x11",  "glib-2.0",    "cairo",          "pangocairo", "pangoft2",    "fontconfig",
             "wayland-client", "wayland-cursor", "wayland-egl", "wayland-server", "pthread",    "dl",
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .yes });
     } else if (target.result.os.tag == .windows) {
-        module.linkSystemLibrary("c++", .{});
+        module.linkSystemLibrary("msvcprt", .{ .use_pkg_config = .no });
+        module.linkSystemLibrary("vcruntime", .{ .use_pkg_config = .no });
+        module.linkSystemLibrary("ucrt", .{ .use_pkg_config = .no });
         for ([_][]const u8{
             "comctl32", "d2d1", "dwrite",        "gdi32", "ole32", "oleaut32", "shell32", "shlwapi", "uiautomationcore",
             "user32",   "uuid", "windowscodecs",

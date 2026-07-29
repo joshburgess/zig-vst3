@@ -29,6 +29,7 @@ VSTGUI_MODE_TEST_ZIG_LOG="$build_zig_log" \
   "$root/scripts/build_vstgui.sh" build
 
 test "$(wc -l < "$build_cmake_log" | tr -d ' ')" = 2
+grep -q -- '-DZIG_VSTGUI_RUN_VISUAL_TESTS=ON' "$build_cmake_log"
 grep -q -- '--target zig_vstgui_adapter --parallel' "$build_cmake_log"
 if grep -Eq 'tests_run|visual_tests|accessibility_tests' "$build_cmake_log"; then
   printf 'compile-only VSTGUI mode invoked a validation target\n' >&2
@@ -39,11 +40,13 @@ test ! -e "$build_zig_log"
 test_cmake_log="$temporary/test-cmake.log"
 test_zig_log="$temporary/test-zig.log"
 PATH="$fake_bin:$PATH" \
+VSTGUI_RUN_VISUAL_TESTS=OFF \
 VSTGUI_MODE_TEST_CMAKE_LOG="$test_cmake_log" \
 VSTGUI_MODE_TEST_ZIG_LOG="$test_zig_log" \
   "$root/scripts/build_vstgui.sh" test
 
 test "$(wc -l < "$test_cmake_log" | tr -d ' ')" = 3
+grep -q -- '-DZIG_VSTGUI_RUN_VISUAL_TESTS=OFF' "$test_cmake_log"
 grep -q -- '--target zig_vstgui_adapter --parallel' "$test_cmake_log"
 grep -q -- 'zig_vstgui_adapter_tests_run zig_vstgui_accessibility_tests_run zig_vstgui_visual_tests_run' "$test_cmake_log"
 test "$(wc -l < "$test_zig_log" | tr -d ' ')" = 1

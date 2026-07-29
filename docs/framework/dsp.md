@@ -925,7 +925,7 @@ Use `zig build test-dsp-fixture-builds` to compile the fixture API for Linux aar
 
 ## Denormal handling
 
-`DenormalScope` enables flush-to-zero behavior for the current thread on aarch64 and x86-64, then restores the exact floating-point control state it observed. On x86-64 it enables both FTZ and DAZ in MXCSR. On aarch64 it enables FZ in FPCR.
+`DenormalScope` enables flush-to-zero behavior for the current thread on aarch64 and x86-64, then restores the exact floating-point control state it observed. On x86-64 it enables FTZ in MXCSR. On aarch64 it enables FZ in FPCR.
 
 ```zig
 const plug = @import("zig-vst3-plugin");
