@@ -48,6 +48,36 @@ pub const Value = struct {
         );
     }
 
+    pub fn sumEquals(self: Value, other: Value, expected: Value) bool {
+        if (self.fractional_denominator == 0 or
+            other.fractional_denominator == 0 or
+            expected.fractional_denominator == 0)
+        {
+            return false;
+        }
+        const common_denominator =
+            @as(u256, self.fractional_denominator) *
+            other.fractional_denominator *
+            expected.fractional_denominator;
+        const fractional_sum =
+            @as(u256, self.fractional_numerator) *
+            other.fractional_denominator *
+            expected.fractional_denominator +
+            @as(u256, other.fractional_numerator) *
+                self.fractional_denominator *
+                expected.fractional_denominator;
+        const carry = fractional_sum / common_denominator;
+        const expected_fraction =
+            @as(u256, expected.fractional_numerator) *
+            self.fractional_denominator *
+            other.fractional_denominator;
+        return @as(u256, self.whole_seconds) +
+            other.whole_seconds +
+            carry ==
+            expected.whole_seconds and
+            fractional_sum % common_denominator == expected_fraction;
+    }
+
     pub fn toSeconds(self: Value) f64 {
         return @as(f64, @floatFromInt(self.whole_seconds)) +
             @as(f64, @floatFromInt(self.fractional_numerator)) /
@@ -217,6 +247,33 @@ test "ADM time parses decimal and fractional sample forms exactly" {
         short_samples.toSeconds(),
         1.0e-12,
     );
+}
+
+test "ADM time compares exact sums across representations" {
+    const start = try Value.parse("00:00:00.99500");
+    const duration = try Value.parse("240S48000");
+    const end = try Value.parse("00:00:01.00000");
+    try std.testing.expect(start.sumEquals(duration, end));
+
+    const repeating = Value{
+        .whole_seconds = 0,
+        .fractional_numerator = 1,
+        .fractional_denominator = 3,
+        .format = .fractional_samples,
+    };
+    const two_thirds = Value{
+        .whole_seconds = 0,
+        .fractional_numerator = 2,
+        .fractional_denominator = 3,
+        .format = .fractional_samples,
+    };
+    const one = try Value.parse("00:00:01.00000");
+    try std.testing.expect(repeating.sumEquals(two_thirds, one));
+    try std.testing.expect(!start.sumEquals(duration, repeating));
+
+    var malformed = repeating;
+    malformed.fractional_denominator = 0;
+    try std.testing.expect(!malformed.sumEquals(two_thirds, one));
 }
 
 test "ADM time rejects malformed clocks fractions and overflow" {

@@ -1734,6 +1734,97 @@ fn validateEmissionFormatOwner(owner: EmissionFormatOwner) !void {
     }
 }
 
+fn readEmissionObjectBlockSyntax(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !void {
+    try validateEmissionAttributes(
+        start,
+        &.{ "audioBlockFormatID", "rtime", "duration" },
+        error.InvalidAdmEmissionProfileBlockAttribute,
+    );
+    if (try start.attribute("rtime") == null or
+        try start.attribute("duration") == null)
+    {
+        return error.MissingAdmEmissionProfileBlockTiming;
+    }
+    if (start.self_closing) return;
+
+    while (try events.next()) |event| {
+        switch (event) {
+            .start => |element| {
+                if (element.depth != start.depth + 1)
+                    return error.InvalidAdmEmissionProfileBlockSubelement;
+                const name = element.localName();
+                if (std.mem.eql(u8, name, "cartesian")) {
+                    try validateEmissionAttributes(
+                        element,
+                        &.{},
+                        error.InvalidAdmEmissionProfileBlockParameterAttribute,
+                    );
+                    var storage: [max_profile_text_bytes]u8 = undefined;
+                    const value = try readEmissionSimpleElement(
+                        events,
+                        element,
+                        &storage,
+                    );
+                    if (!std.mem.eql(u8, value, "1"))
+                        return error.InvalidAdmEmissionProfileCartesianFlag;
+                } else if (std.mem.eql(u8, name, "position")) {
+                    try validateEmissionAttributes(
+                        element,
+                        &.{"coordinate"},
+                        error.InvalidAdmEmissionProfileBlockParameterAttribute,
+                    );
+                    if (try element.attribute("coordinate") == null)
+                        return error.InvalidAdmEmissionProfileBlockPosition;
+                } else if (std.mem.eql(u8, name, "objectDivergence")) {
+                    try validateEmissionAttributes(
+                        element,
+                        &.{ "azimuthRange", "positionRange" },
+                        error.InvalidAdmEmissionProfileBlockParameterAttribute,
+                    );
+                    const azimuth_range =
+                        try element.attribute("azimuthRange");
+                    const position_range =
+                        try element.attribute("positionRange");
+                    if ((azimuth_range == null) == (position_range == null))
+                        return error.InvalidAdmEmissionProfileObjectDivergence;
+                } else if (std.mem.eql(u8, name, "gain")) {
+                    try validateEmissionAttributes(
+                        element,
+                        &.{"gainUnit"},
+                        error.InvalidAdmEmissionProfileBlockParameterAttribute,
+                    );
+                } else if (std.mem.eql(u8, name, "jumpPosition")) {
+                    try validateEmissionAttributes(
+                        element,
+                        &.{"interpolationLength"},
+                        error.InvalidAdmEmissionProfileBlockParameterAttribute,
+                    );
+                } else {
+                    return error.InvalidAdmEmissionProfileBlockSubelement;
+                }
+            },
+            .end => |element| {
+                if (element.depth == start.depth and
+                    std.mem.eql(u8, element.name, start.name))
+                {
+                    return;
+                }
+            },
+            .text => |text| {
+                if (text.depth == start.depth + 1 and
+                    std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                {
+                    return error.InvalidAdmEmissionProfileBlockSubelement;
+                }
+            },
+        }
+    }
+    return error.InvalidAdmEmissionProfileBlockSubelement;
+}
+
 fn skipEmissionElement(
     events: *xml.EventIterator,
     start: xml.StartElement,
@@ -2601,6 +2692,121 @@ pub const Document = struct {
         }
         if (owner != null)
             return error.InvalidAdmEmissionProfileFormatStructure;
+    }
+
+    /// Validates file-based Objects block timing and parameters.
+    pub fn validateEmissionProfileObjectBlocks(self: Document) !void {
+        try self.validateEmissionProfileFormatMetadata();
+        try self.validateEmissionObjectBlockSyntax();
+
+        const minimum_duration = adm_time.Value{
+            .whole_seconds = 0,
+            .fractional_numerator = 5,
+            .fractional_denominator = 1000,
+            .format = .decimal,
+        };
+        const zero = zeroAdmTime();
+        var coordinate_system: ?bool = null;
+        var block_iterator = self.blocks();
+        while (try block_iterator.next()) |block| {
+            if (block.identifier.typeLabel() != 0x0003) continue;
+            if (!block.rtime_explicit or block.duration == null)
+                return error.MissingAdmEmissionProfileBlockTiming;
+            const duration = block.duration.?;
+            if (duration.compare(zero) != .eq and
+                duration.compare(minimum_duration) == .lt)
+            {
+                return error.InvalidAdmEmissionProfileBlockDuration;
+            }
+            if (block.position_count != 3)
+                return error.InvalidAdmEmissionProfileBlockPosition;
+            if (coordinate_system) |expected| {
+                if (block.cartesian != expected)
+                    return error.MixedAdmEmissionProfileCoordinateSystems;
+            } else {
+                coordinate_system = block.cartesian;
+            }
+            if (block.jump_position.interpolation_length != null)
+                return error.InvalidAdmEmissionProfileJumpPosition;
+            const linear_gain = emissionGainLinear(
+                block.gain.value,
+                block.gain.unit,
+            );
+            if (!std.math.isFinite(linear_gain) or
+                linear_gain > @sqrt(10.0))
+            {
+                return error.InvalidAdmEmissionProfileObjectBlockGain;
+            }
+
+            const sequence = block.identifier.secondary orelse
+                return error.InvalidAdmBlockIdentifier;
+            if (sequence == 1) continue;
+            var previous_iterator = self.blocks();
+            while (try previous_iterator.next()) |previous| {
+                if (!previous.channel_identifier.eql(
+                    block.channel_identifier,
+                ) or previous.identifier.secondary != sequence - 1) {
+                    continue;
+                }
+                const previous_duration = previous.duration orelse
+                    return error.MissingAdmEmissionProfileBlockTiming;
+                if (!previous.rtime.sumEquals(
+                    previous_duration,
+                    block.rtime,
+                )) {
+                    return error.InvalidAdmEmissionProfileBlockTiming;
+                }
+                break;
+            } else return error.InvalidAdmBlockSequence;
+        }
+    }
+
+    fn validateEmissionObjectBlockSyntax(self: Document) !void {
+        var frame_depth: ?usize = null;
+        var afe_depth: ?usize = null;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    const name = element.localName();
+                    if (std.mem.eql(u8, name, "frame") and
+                        !element.self_closing)
+                    {
+                        frame_depth = element.depth;
+                    } else if (std.mem.eql(
+                        u8,
+                        name,
+                        "audioFormatExtended",
+                    )) {
+                        if (frame_depth != null)
+                            return error.AdmEmissionProfileSerialBlocksRequireSerialValidation;
+                        afe_depth = element.depth;
+                    } else if (std.mem.eql(
+                        u8,
+                        name,
+                        "audioBlockFormatObjects",
+                    ) and insideAfe(afe_depth, element.depth)) {
+                        try readEmissionObjectBlockSyntax(&events, element);
+                    }
+                },
+                .end => |element| {
+                    if (afe_depth == element.depth and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioFormatExtended",
+                        ))
+                    {
+                        afe_depth = null;
+                    } else if (frame_depth == element.depth and
+                        std.mem.eql(u8, element.localName(), "frame"))
+                    {
+                        frame_depth = null;
+                    }
+                },
+                else => {},
+            }
+        }
     }
 
     fn validateEmissionComplementaryParameterGroup(
@@ -7782,9 +7988,10 @@ const valid_emission_object_parameters_xml =
     \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
     \\  </audioPackFormat>
     \\  <audioChannelFormat audioChannelFormatID="AC_00031001" audioChannelFormatName="Commentary Object" typeLabel="0003" typeDefinition="Objects">
-    \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+    \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001" rtime="00:00:00.00000" duration="00:00:01.00000">
     \\      <position coordinate="azimuth">0.0</position>
     \\      <position coordinate="elevation">0.0</position>
+    \\      <position coordinate="distance">1.0</position>
     \\    </audioBlockFormatObjects>
     \\  </audioChannelFormat>
     \\  <audioTrackUID UID="ATU_00000001" sampleRate="48000" bitDepth="24">
@@ -8076,19 +8283,24 @@ test "ADM XML emission profile accepts Cartesian object controls" {
         u8,
         std.testing.allocator,
         offset,
-        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001" rtime="00:00:00.00000" duration="00:00:01.00000">
         \\      <position coordinate="azimuth">0.0</position>
         \\      <position coordinate="elevation">0.0</position>
+        \\      <position coordinate="distance">1.0</position>
     ,
-        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001" rtime="00:00:00.00000" duration="00:00:01.00000">
         \\      <cartesian>1</cartesian>
+        \\      <gain gainUnit="linear">3.1622776601683795</gain>
+        \\      <objectDivergence positionRange="1.0">1.0</objectDivergence>
         \\      <position coordinate="X">0.0</position>
         \\      <position coordinate="Y">1.0</position>
+        \\      <position coordinate="Z">0.0</position>
         ,
     );
     defer std.testing.allocator.free(cartesian_block);
     const document = try Document.init(cartesian_block);
     try document.validateEmissionProfileObjectParameters();
+    try document.validateEmissionProfileObjectBlocks();
 }
 
 fn expectEmissionMetadataReplacement(
@@ -8369,9 +8581,9 @@ test "ADM XML emission profile restricts format structure" {
     );
     try expectEmissionFormatMetadataReplacement(
         error.InvalidAdmEmissionProfileChannelSubelement,
-        "    <audioBlockFormatObjects audioBlockFormatID=\"AB_00031001_00000001\">",
+        "    <audioBlockFormatObjects audioBlockFormatID=\"AB_00031001_00000001\" rtime=\"00:00:00.00000\" duration=\"00:00:01.00000\">",
         "    <frequency typeDefinition=\"lowPass\">120</frequency>\n" ++
-            "    <audioBlockFormatObjects audioBlockFormatID=\"AB_00031001_00000001\">",
+            "    <audioBlockFormatObjects audioBlockFormatID=\"AB_00031001_00000001\" rtime=\"00:00:00.00000\" duration=\"00:00:01.00000\">",
     );
 }
 
@@ -8393,6 +8605,231 @@ test "ADM XML emission profile restricts track metadata" {
         "    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>\n" ++
             "    <audioMXFLookUp>1</audioMXFLookUp>\n" ++
             "  </audioTrackUID>",
+    );
+}
+
+fn expectEmissionObjectBlockReplacement(
+    expected_error: anyerror,
+    needle: []const u8,
+    replacement: []const u8,
+) !void {
+    const replaced = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        needle,
+        replacement,
+    );
+    defer std.testing.allocator.free(replaced);
+    try std.testing.expect(!std.mem.eql(
+        u8,
+        replaced,
+        valid_emission_object_parameters_xml,
+    ));
+    const document = try Document.init(replaced);
+    try std.testing.expectError(
+        expected_error,
+        document.validateEmissionProfileObjectBlocks(),
+    );
+}
+
+test "ADM XML emission profile validates file object blocks" {
+    const document = try Document.init(
+        valid_emission_object_parameters_xml,
+    );
+    try document.validateEmissionProfileObjectBlocks();
+
+    const minimum_duration = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "duration=\"00:00:01.00000\"",
+        "duration=\"00:00:00.00500\"",
+    );
+    defer std.testing.allocator.free(minimum_duration);
+    const minimum_document = try Document.init(minimum_duration);
+    try minimum_document.validateEmissionProfileObjectBlocks();
+
+    const zero_duration = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "duration=\"00:00:01.00000\"",
+        "duration=\"00:00:00.00000\"",
+    );
+    defer std.testing.allocator.free(zero_duration);
+    const zero_document = try Document.init(zero_duration);
+    try zero_document.validateEmissionProfileObjectBlocks();
+}
+
+test "ADM XML emission profile requires continuous file block timing" {
+    try expectEmissionObjectBlockReplacement(
+        error.MissingAdmEmissionProfileBlockTiming,
+        " rtime=\"00:00:00.00000\"",
+        "",
+    );
+    try expectEmissionObjectBlockReplacement(
+        error.InvalidAdmEmissionProfileBlockDuration,
+        "duration=\"00:00:01.00000\"",
+        "duration=\"00:00:00.00499\"",
+    );
+    try expectEmissionObjectBlockReplacement(
+        error.InvalidAdmEmissionProfileBlockAttribute,
+        " duration=\"00:00:01.00000\">",
+        " duration=\"00:00:01.00000\" initializeBlock=\"1\">",
+    );
+
+    const discontinuous = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "    </audioBlockFormatObjects>\n  </audioChannelFormat>",
+        \\    </audioBlockFormatObjects>
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000002" rtime="00:00:00.50000" duration="00:00:01.00000">
+        \\      <position coordinate="azimuth">0.0</position>
+        \\      <position coordinate="elevation">0.0</position>
+        \\      <position coordinate="distance">1.0</position>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        ,
+    );
+    defer std.testing.allocator.free(discontinuous);
+    const discontinuous_document = try Document.init(discontinuous);
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileBlockTiming,
+        discontinuous_document.validateEmissionProfileObjectBlocks(),
+    );
+
+    const fractional_duration = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "duration=\"00:00:01.00000\"",
+        "duration=\"48000S48000\"",
+    );
+    defer std.testing.allocator.free(fractional_duration);
+    const continuous = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        fractional_duration,
+        "    </audioBlockFormatObjects>\n  </audioChannelFormat>",
+        \\    </audioBlockFormatObjects>
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000002" rtime="00:00:01.00000" duration="00:00:00.00000">
+        \\      <position coordinate="azimuth">0.0</position>
+        \\      <position coordinate="elevation">0.0</position>
+        \\      <position coordinate="distance">1.0</position>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        ,
+    );
+    defer std.testing.allocator.free(continuous);
+    const continuous_document = try Document.init(continuous);
+    try continuous_document.validateEmissionProfileObjectBlocks();
+}
+
+test "ADM XML emission profile restricts file block positions" {
+    try expectEmissionObjectBlockReplacement(
+        error.InvalidAdmEmissionProfileBlockPosition,
+        "      <position coordinate=\"distance\">1.0</position>\n",
+        "",
+    );
+    try expectEmissionObjectBlockReplacement(
+        error.InvalidAdmEmissionProfileBlockParameterAttribute,
+        "<position coordinate=\"azimuth\">0.0</position>",
+        "<position coordinate=\"azimuth\" screenEdgeLock=\"left\">0.0</position>",
+    );
+    try expectEmissionObjectBlockReplacement(
+        error.InvalidAdmEmissionProfileCartesianFlag,
+        "      <position coordinate=\"azimuth\">0.0</position>",
+        "      <cartesian>0</cartesian>\n" ++
+            "      <position coordinate=\"azimuth\">0.0</position>",
+    );
+
+    const mixed = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "    </audioBlockFormatObjects>\n  </audioChannelFormat>",
+        \\    </audioBlockFormatObjects>
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000002" rtime="00:00:01.00000" duration="00:00:00.00000">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X">0.0</position>
+        \\      <position coordinate="Y">1.0</position>
+        \\      <position coordinate="Z">0.0</position>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        ,
+    );
+    defer std.testing.allocator.free(mixed);
+    const mixed_document = try Document.init(mixed);
+    try std.testing.expectError(
+        error.MixedAdmEmissionProfileCoordinateSystems,
+        mixed_document.validateEmissionProfileObjectBlocks(),
+    );
+}
+
+test "ADM XML emission profile restricts file block parameters" {
+    try expectEmissionObjectBlockReplacement(
+        error.InvalidAdmEmissionProfileBlockSubelement,
+        "      <position coordinate=\"azimuth\">0.0</position>",
+        "      <width>1.0</width>\n" ++
+            "      <position coordinate=\"azimuth\">0.0</position>",
+    );
+    try expectEmissionObjectBlockReplacement(
+        error.InvalidAdmEmissionProfileObjectDivergence,
+        "      <position coordinate=\"azimuth\">0.0</position>",
+        "      <objectDivergence>0.5</objectDivergence>\n" ++
+            "      <position coordinate=\"azimuth\">0.0</position>",
+    );
+    try expectEmissionObjectBlockReplacement(
+        error.InvalidAdmEmissionProfileObjectBlockGain,
+        "      <position coordinate=\"azimuth\">0.0</position>",
+        "      <gain gainUnit=\"dB\">10.001</gain>\n" ++
+            "      <position coordinate=\"azimuth\">0.0</position>",
+    );
+    try expectEmissionObjectBlockReplacement(
+        error.InvalidAdmEmissionProfileJumpPosition,
+        "      <position coordinate=\"azimuth\">0.0</position>",
+        "      <jumpPosition interpolationLength=\"00:00:00.50000\">1</jumpPosition>\n" ++
+            "      <position coordinate=\"azimuth\">0.0</position>",
+    );
+
+    const boundary_gain = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "      <position coordinate=\"azimuth\">0.0</position>",
+        "      <gain gainUnit=\"dB\">10.0</gain>\n" ++
+            "      <objectDivergence azimuthRange=\"180.0\">1.0</objectDivergence>\n" ++
+            "      <jumpPosition>1</jumpPosition>\n" ++
+            "      <position coordinate=\"azimuth\">0.0</position>",
+    );
+    defer std.testing.allocator.free(boundary_gain);
+    const boundary_document = try Document.init(boundary_gain);
+    try boundary_document.validateEmissionProfileObjectBlocks();
+}
+
+test "ADM XML file block validation rejects serial frames" {
+    const framed_start = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "<audioFormatExtended version=\"ITU-R_BS.2076-3\">",
+        "<frame><audioFormatExtended version=\"ITU-R_BS.2076-3\">",
+    );
+    defer std.testing.allocator.free(framed_start);
+    const framed = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        framed_start,
+        "</audioFormatExtended>",
+        "</audioFormatExtended></frame>",
+    );
+    defer std.testing.allocator.free(framed);
+    const document = try Document.init(framed);
+    try std.testing.expectError(
+        error.AdmEmissionProfileSerialBlocksRequireSerialValidation,
+        document.validateEmissionProfileObjectBlocks(),
     );
 }
 
