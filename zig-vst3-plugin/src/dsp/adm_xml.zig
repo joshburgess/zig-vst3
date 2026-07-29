@@ -733,6 +733,20 @@ fn emissionRequiredAttributeValue(
         return error.InvalidAdmEmissionProfileFormatAttribute;
 }
 
+fn emissionRequiredAttributeValueAs(
+    element: xml.StartElement,
+    attribute_name: []const u8,
+    expected: []const u8,
+    missing_error: anyerror,
+    invalid_error: anyerror,
+) !void {
+    const encoded = try element.attribute(attribute_name) orelse
+        return missing_error;
+    var storage: [64]u8 = undefined;
+    const decoded = try xml.decodeContent(&storage, encoded);
+    if (!std.mem.eql(u8, decoded, expected)) return invalid_error;
+}
+
 fn validateEmissionFormatDeclarationAttributes(
     element: xml.StartElement,
     identifier_attribute: []const u8,
@@ -1484,6 +1498,159 @@ fn readEmissionReferenceElement(
     );
     var storage: [max_identifier_bytes]u8 = undefined;
     _ = try readEmissionSimpleElement(events, start, &storage);
+}
+
+fn readEmissionSerialFrameFormat(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !void {
+    try validateEmissionAttributes(
+        start,
+        &.{
+            "frameFormatID",
+            "start",
+            "duration",
+            "type",
+            "timeReference",
+            "flowID",
+        },
+        error.InvalidAdmEmissionProfileSerialFrameFormatAttribute,
+    );
+    const encoded_identifier = try start.attribute("frameFormatID") orelse
+        return error.MissingAdmEmissionProfileSerialFrameFormatAttribute;
+    var identifier_storage: [32]u8 = undefined;
+    const identifier = try xml.decodeContent(
+        &identifier_storage,
+        encoded_identifier,
+    );
+    if (identifier.len != 11 or
+        !std.mem.eql(u8, identifier[0..3], "FF_"))
+    {
+        return error.InvalidAdmEmissionProfileSerialFrameFormatIdentifier;
+    }
+    for (identifier[3..]) |byte| {
+        if (!std.ascii.isHex(byte))
+            return error.InvalidAdmEmissionProfileSerialFrameFormatIdentifier;
+    }
+
+    for ([_][]const u8{ "start", "duration" }) |attribute_name| {
+        const encoded = try start.attribute(attribute_name) orelse
+            return error.MissingAdmEmissionProfileSerialFrameFormatAttribute;
+        var storage: [64]u8 = undefined;
+        const raw = try xml.decodeContent(&storage, encoded);
+        const value = adm_time.Value.parse(raw) catch
+            return error.InvalidAdmEmissionProfileSerialFrameTime;
+        if (std.mem.eql(u8, attribute_name, "duration")) {
+            const minimum = adm_time.Value{
+                .whole_seconds = 0,
+                .fractional_numerator = 5,
+                .fractional_denominator = 1000,
+                .format = .decimal,
+            };
+            if (value.compare(minimum) == .lt)
+                return error.InvalidAdmEmissionProfileSerialFrameDuration;
+        }
+    }
+
+    const encoded_type = try start.attribute("type") orelse
+        return error.MissingAdmEmissionProfileSerialFrameFormatAttribute;
+    var type_storage: [16]u8 = undefined;
+    const frame_type = try xml.decodeContent(&type_storage, encoded_type);
+    if (!std.mem.eql(u8, frame_type, "header") and
+        !std.mem.eql(u8, frame_type, "full"))
+    {
+        return error.InvalidAdmEmissionProfileSerialFrameType;
+    }
+    try emissionRequiredAttributeValueAs(
+        start,
+        "timeReference",
+        "local",
+        error.MissingAdmEmissionProfileSerialFrameFormatAttribute,
+        error.InvalidAdmEmissionProfileSerialFrameFormatAttribute,
+    );
+    if (start.self_closing) return;
+    while (try events.next()) |event| {
+        switch (event) {
+            .start => return error.InvalidAdmEmissionProfileSerialFrameFormatSubelement,
+            .end => |element| {
+                if (element.depth != start.depth or
+                    !std.mem.eql(u8, element.name, start.name))
+                {
+                    return error.InvalidAdmEmissionProfileSerialFrameFormatSubelement;
+                }
+                return;
+            },
+            .text => |text| {
+                if (std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                    return error.InvalidAdmEmissionProfileSerialFrameFormatSubelement;
+            },
+        }
+    }
+    return error.InvalidAdmEmissionProfileSerialFrameFormat;
+}
+
+fn readEmissionSerialFrameHeader(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !void {
+    try validateEmissionAttributes(
+        start,
+        &.{},
+        error.InvalidAdmEmissionProfileSerialFrameHeaderAttribute,
+    );
+    if (start.self_closing)
+        return error.InvalidAdmEmissionProfileSerialFrameHeader;
+    var frame_format_count: usize = 0;
+    var transport_count: usize = 0;
+    var profile_list_count: usize = 0;
+    while (try events.next()) |event| {
+        switch (event) {
+            .start => |element| {
+                if (element.depth != start.depth + 1)
+                    return error.InvalidAdmEmissionProfileSerialFrameHeaderSubelement;
+                const name = element.localName();
+                if (std.mem.eql(u8, name, "frameFormat")) {
+                    frame_format_count += 1;
+                    if (frame_format_count > 1)
+                        return error.InvalidAdmEmissionProfileSerialFrameHeader;
+                    try readEmissionSerialFrameFormat(events, element);
+                } else if (std.mem.eql(
+                    u8,
+                    name,
+                    "transportTrackFormat",
+                )) {
+                    transport_count += 1;
+                    try skipEmissionElement(events, element);
+                } else if (std.mem.eql(u8, name, "profileList")) {
+                    profile_list_count += 1;
+                    if (profile_list_count > 1)
+                        return error.InvalidAdmEmissionProfileSerialFrameHeader;
+                    try skipEmissionElement(events, element);
+                } else {
+                    return error.InvalidAdmEmissionProfileSerialFrameHeaderSubelement;
+                }
+            },
+            .end => |element| {
+                if (element.depth != start.depth or
+                    !std.mem.eql(u8, element.name, start.name))
+                {
+                    return error.InvalidAdmEmissionProfileSerialFrameHeaderSubelement;
+                }
+                if (frame_format_count != 1 or
+                    transport_count == 0 or
+                    profile_list_count != 1)
+                {
+                    return error.InvalidAdmEmissionProfileSerialFrameHeader;
+                }
+                return;
+            },
+            .text => |text| {
+                if (std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                    return error.InvalidAdmEmissionProfileSerialFrameHeaderSubelement;
+            },
+        }
+    }
+    return error.InvalidAdmEmissionProfileSerialFrameHeader;
 }
 
 fn readEmissionProgrammeMetadata(
@@ -3107,6 +3274,80 @@ pub const Document = struct {
             )) {
                 return error.AdmEmissionProfileEssenceCoverageMismatch;
             }
+        }
+    }
+
+    /// Validates the S-ADM frame, header, and frame-format envelope.
+    pub fn validateEmissionProfileSerialFrameEnvelope(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileFormatMetadata();
+        var frame_depth: ?usize = null;
+        var frame_count: usize = 0;
+        var header_count: usize = 0;
+        var format_extended_count: usize = 0;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    const name = element.localName();
+                    if (frame_depth == null) {
+                        if (element.depth != 0 or
+                            !std.mem.eql(u8, name, "frame"))
+                        {
+                            return error.InvalidAdmEmissionProfileSerialFrame;
+                        }
+                        frame_count += 1;
+                        try validateEmissionAttributes(
+                            element,
+                            &.{"version"},
+                            error.InvalidAdmEmissionProfileSerialFrameAttribute,
+                        );
+                        try emissionRequiredAttributeValueAs(
+                            element,
+                            "version",
+                            "ITU-R_BS.2125-1",
+                            error.MissingAdmEmissionProfileSerialFrameAttribute,
+                            error.InvalidAdmEmissionProfileSerialFrameAttribute,
+                        );
+                        if (element.self_closing)
+                            return error.InvalidAdmEmissionProfileSerialFrame;
+                        frame_depth = element.depth;
+                        continue;
+                    }
+                    const depth = frame_depth.?;
+                    if (element.depth != depth + 1) continue;
+                    if (std.mem.eql(u8, name, "frameHeader")) {
+                        header_count += 1;
+                        if (header_count > 1)
+                            return error.InvalidAdmEmissionProfileSerialFrame;
+                        try readEmissionSerialFrameHeader(&events, element);
+                    } else if (std.mem.eql(
+                        u8,
+                        name,
+                        "audioFormatExtended",
+                    )) {
+                        format_extended_count += 1;
+                        if (format_extended_count > 1)
+                            return error.InvalidAdmEmissionProfileSerialFrame;
+                    }
+                },
+                .end => |element| {
+                    if (frame_depth == element.depth and
+                        std.mem.eql(u8, element.localName(), "frame"))
+                    {
+                        frame_depth = null;
+                    }
+                },
+                else => {},
+            }
+        }
+        if (frame_count != 1 or
+            frame_depth != null or
+            header_count != 1 or
+            format_extended_count != 1)
+        {
+            return error.InvalidAdmEmissionProfileSerialFrame;
         }
     }
 
@@ -9500,6 +9741,94 @@ test "ADM XML emission profile checks recommended programme languages" {
     );
     try single_language_document
         .validateEmissionProfileRecommendedProgrammeLanguages();
+}
+
+fn makeValidSerialEmissionFrame() ![]u8 {
+    const framed_start = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_labels_xml,
+        "<audioFormatExtended version=\"ITU-R_BS.2076-3\">",
+        \\<frame version="ITU-R_BS.2125-1">
+        \\  <frameHeader>
+        \\    <frameFormat frameFormatID="FF_00000001" start="00:00:00.00000" duration="00:00:00.01000" type="header" timeReference="local"/>
+        \\    <transportTrackFormat/>
+        \\    <profileList/>
+        \\  </frameHeader>
+        \\  <audioFormatExtended version="ITU-R_BS.2076-3">
+        ,
+    );
+    defer std.testing.allocator.free(framed_start);
+    return std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        framed_start,
+        "</audioFormatExtended>",
+        "</audioFormatExtended>\n</frame>",
+    );
+}
+
+test "ADM XML emission profile validates the serial frame envelope" {
+    const framed = try makeValidSerialEmissionFrame();
+    defer std.testing.allocator.free(framed);
+    const document = try Document.init(framed);
+    try document.validateEmissionProfileSerialFrameEnvelope();
+}
+
+test "ADM XML emission profile restricts the serial frame envelope" {
+    const framed = try makeValidSerialEmissionFrame();
+    defer std.testing.allocator.free(framed);
+    const cases = [_]struct {
+        expected: anyerror,
+        needle: []const u8,
+        replacement: []const u8,
+    }{
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFrameAttribute,
+            .needle = "version=\"ITU-R_BS.2125-1\"",
+            .replacement = "version=\"ITU-R_BS.2125-1\" custom=\"1\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFrameAttribute,
+            .needle = "version=\"ITU-R_BS.2125-1\"",
+            .replacement = "version=\"ITU-R_BS.2125-0\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFrameDuration,
+            .needle = "duration=\"00:00:00.01000\"",
+            .replacement = "duration=\"00:00:00.00499\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFrameFormatAttribute,
+            .needle = "timeReference=\"local\"",
+            .replacement = "timeReference=\"global\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFrameHeader,
+            .needle = "    <transportTrackFormat/>\n",
+            .replacement = "",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFrameHeader,
+            .needle = "    <profileList/>\n",
+            .replacement = "",
+        },
+    };
+    for (cases) |case| {
+        const replaced = try std.mem.replaceOwned(
+            u8,
+            std.testing.allocator,
+            framed,
+            case.needle,
+            case.replacement,
+        );
+        defer std.testing.allocator.free(replaced);
+        const document = try Document.init(replaced);
+        try std.testing.expectError(
+            case.expected,
+            document.validateEmissionProfileSerialFrameEnvelope(),
+        );
+    }
 }
 
 const valid_emission_complementary_parameters_xml =
