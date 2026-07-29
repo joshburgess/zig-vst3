@@ -126,6 +126,26 @@ set_target_properties(zig_vstgui_adapter PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release/libs"
 )
 
+if(UNIX AND NOT APPLE)
+    execute_process(
+        COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=libstdc++.so
+        OUTPUT_VARIABLE ZIG_VSTGUI_CXX_RUNTIME
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE ZIG_VSTGUI_CXX_RUNTIME_RESULT
+    )
+    if(NOT ZIG_VSTGUI_CXX_RUNTIME_RESULT EQUAL 0 OR
+       ZIG_VSTGUI_CXX_RUNTIME STREQUAL "libstdc++.so" OR
+       NOT EXISTS "${ZIG_VSTGUI_CXX_RUNTIME}")
+        message(FATAL_ERROR "Could not locate the C++ runtime used by ${CMAKE_CXX_COMPILER}")
+    endif()
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/Release/libs")
+    file(COPY_FILE
+        "${ZIG_VSTGUI_CXX_RUNTIME}"
+        "${CMAKE_BINARY_DIR}/Release/libs/libstdc++.so"
+        ONLY_IF_DIFFERENT
+    )
+endif()
+
 add_executable(zig_vstgui_adapter_tests zig_vstgui_adapter_tests.cpp)
 target_compile_features(zig_vstgui_adapter_tests PRIVATE cxx_std_17)
 target_compile_definitions(zig_vstgui_adapter_tests PRIVATE VSTGUI_ENABLE_XML_PARSER=0)

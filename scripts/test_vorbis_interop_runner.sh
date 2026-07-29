@@ -18,7 +18,7 @@ printf '%s\n' \
     >"$fake_bin/ffprobe"
 printf '%s\n' \
     '#!/bin/sh' \
-    'for argument do output=$argument; done' \
+    "for argument do output=\$argument; done" \
     "printf '\\001\\000\\002\\000' >\"\$output\"" \
     >"$fake_bin/ffmpeg"
 chmod +x "$fake_bin/ffprobe" "$fake_bin/ffmpeg"
@@ -76,5 +76,29 @@ PATH="$fake_bin:$PATH" \
     >"$root/conversion-unavailable.txt"
 grep -q 'AudioToolbox decoder unavailable' "$root/conversion-unavailable.txt"
 grep -q 'decoder interoperability tests skipped' "$root/conversion-unavailable.txt"
+
+printf '%s\n' \
+    '#!/bin/sh' \
+    "printf 'Ogg\\n48000\\n'" \
+    >"$fake_bin/afinfo"
+printf '%s\n' \
+    '#!/bin/sh' \
+    "printf 'RIFF000000000000000000000000000000000000000000000WAVE\\001\\000' >\"\$2\"" \
+    >"$fake_bin/afconvert"
+printf '%s\n' \
+    '#!/bin/sh' \
+    "printf '48000\\n'" \
+    >"$fake_bin/ffprobe"
+printf '%s\n' \
+    '#!/bin/sh' \
+    "for argument do output=\$argument; done" \
+    "printf '\\001\\000\\002\\000' >\"\$output\"" \
+    >"$fake_bin/ffmpeg"
+chmod +x "$fake_bin/afinfo" "$fake_bin/afconvert" "$fake_bin/ffprobe" "$fake_bin/ffmpeg"
+PATH="$fake_bin:$PATH" \
+    VORBIS_INTEROP_SKIP_FFMPEG=1 \
+    scripts/test_vorbis_interop.sh "$fixture" \
+    >"$root/audio-toolbox.txt"
+grep -q 'Vorbis AudioToolbox interoperability test passed' "$root/audio-toolbox.txt"
 
 printf 'Vorbis interoperability runner tests passed\n'

@@ -43,13 +43,12 @@ if [ "${VORBIS_INTEROP_ONLY_FFMPEG-0}" != "1" ] &&
             test "$(wc -c <"$decoded")" -gt 44
             if command -v ffmpeg >/dev/null 2>&1 &&
                 command -v ffprobe >/dev/null 2>&1; then
-                ffprobe -v error \
+                decoded_rate=$(ffprobe -v error \
                     -select_streams a:0 \
-                    -show_entries stream=codec_name,sample_rate \
+                    -show_entries stream=sample_rate \
                     -of default=noprint_wrappers=1:nokey=1 \
-                    "$decoded" >"$temporary/decoded-probe.txt"
-                grep -q '^pcm_s16le$' "$temporary/decoded-probe.txt"
-                grep -q '^48000$' "$temporary/decoded-probe.txt"
+                    "$decoded" | tr -d '\r')
+                test "$decoded_rate" = 48000
                 decoded_pcm="$temporary/audio-toolbox-decoded.pcm"
                 ffmpeg -v error -y -i "$decoded" \
                     -map 0:a:0 \

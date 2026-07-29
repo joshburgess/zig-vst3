@@ -86,7 +86,7 @@ jobs:
         run: zig build
       - name: Build
         if: runner.os == 'Windows'
-        run: zig build --libc "$env:ZIG_LIBC_FILE"
+        run: zig build -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
       - name: Test
         if: runner.os == 'macOS'
         run: zig build test
@@ -97,7 +97,7 @@ jobs:
         run: xvfb-run -a zig build test
       - name: Test
         if: runner.os == 'Windows'
-        run: zig build test --libc "$env:ZIG_LIBC_FILE"
+        run: zig build test -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
 
   raw-api-abi:
     name: Raw API ABI (${{ matrix.os }})
