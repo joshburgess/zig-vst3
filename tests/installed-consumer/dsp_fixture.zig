@@ -3481,6 +3481,21 @@ test "installed package exposes file-backed audio writers" {
             &matrix_inputs,
         ),
     );
+    var direct_blocks = advanced_adm.blocks();
+    const direct_block = (try direct_blocks.next()).?;
+    const speaker_labels = [_][]const u8{"M+000"};
+    const speaker_router = try plugin.dsp.AdmDirectSpeakerRouter(f32).init(
+        &direct_block,
+        &speaker_labels,
+    );
+    const speaker_input = [_]f32{ 0.25, -0.5 };
+    var speaker_output = [_]f32{ 0.0, 0.0 };
+    const speaker_outputs = [_][]f32{&speaker_output};
+    try speaker_router.mix(&speaker_input, &speaker_outputs);
+    try std.testing.expectEqualDeep(
+        speaker_input,
+        speaker_output,
+    );
     const emission_adm = try plugin.dsp.AdmXmlDocument.init(
         \\<audioFormatExtended version="ITU-R_BS.2076-3">
         \\  <audioProgramme audioProgrammeID="APR_1001" audioProgrammeName="Multilingual" audioProgrammeLanguage="und">

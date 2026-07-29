@@ -100,9 +100,12 @@ pub const AdmChannelAllocationIterator = adm.Iterator;
 pub const AdmChannelAllocationView = adm.View;
 pub const AdmIdentifier = adm.Identifier;
 pub const AdmIdentifierKind = adm.IdentifierKind;
+pub const AdmDirectSpeakerRouter = adm_render.DirectSpeakerRouter;
 pub const AdmStaticMatrixMixer = adm_render.StaticMatrixMixer;
 pub const maximum_adm_renderer_input_channels =
     adm_render.maximum_input_channels;
+pub const maximum_adm_renderer_output_channels =
+    adm_render.maximum_output_channels;
 pub const AdmXmlDeclaration = adm_xml.Declaration;
 pub const AdmXmlDeclarationIterator = adm_xml.DeclarationIterator;
 pub const AdmXmlBlockFormat = adm_xml.BlockFormat;

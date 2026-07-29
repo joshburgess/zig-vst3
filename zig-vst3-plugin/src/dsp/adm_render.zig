@@ -3,6 +3,7 @@ const adm = @import("adm.zig");
 const adm_xml = @import("adm_xml.zig");
 
 pub const maximum_input_channels = adm_xml.max_adm_matrix_coefficients;
+pub const maximum_output_channels: usize = 64;
 
 pub fn StaticMatrixMixer(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
@@ -64,22 +65,7 @@ pub fn StaticMatrixMixer(comptime Sample: type) type {
                     if (previous == input_index)
                         return error.DuplicateAdmRendererMatrixCoefficient;
                 }
-                const linear_gain = switch (coefficient.gain.unit) {
-                    .linear => coefficient.gain.value,
-                    .decibels => if (std.math.isInf(
-                        coefficient.gain.value,
-                    ) and coefficient.gain.value < 0.0)
-                        0.0
-                    else
-                        std.math.pow(
-                            f64,
-                            10.0,
-                            coefficient.gain.value / 20.0,
-                        ),
-                };
-                const gain: Sample = @floatCast(linear_gain);
-                if (!std.math.isFinite(gain))
-                    return error.InvalidAdmRendererGain;
+                const gain = try renderGain(Sample, coefficient.gain);
                 result.input_indices[term_index] = @intCast(input_index);
                 result.gains[term_index] = gain;
             }
@@ -165,6 +151,141 @@ pub fn StaticMatrixMixer(comptime Sample: type) type {
             return true;
         }
     };
+}
+
+pub fn DirectSpeakerRouter(comptime Sample: type) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError("DirectSpeakerRouter supports f32 and f64 samples");
+
+    return struct {
+        const Self = @This();
+
+        output_count: usize,
+        output_index: u8,
+        gain: Sample,
+
+        pub fn init(
+            block: *const adm_xml.BlockFormat,
+            output_labels: []const []const u8,
+        ) !Self {
+            if (block.identifier.typeLabel() != 0x0001 or
+                block.channel_identifier.typeLabel() != 0x0001)
+            {
+                return error.AdmRendererRequiresDirectSpeakersBlock;
+            }
+            if (output_labels.len == 0 or
+                output_labels.len > maximum_output_channels)
+            {
+                return error.InvalidAdmRendererOutputCount;
+            }
+            for (output_labels, 0..) |label, index| {
+                if (label.len == 0 or
+                    label.len > adm_xml.max_adm_speaker_label_bytes or
+                    !std.unicode.utf8ValidateSlice(label))
+                {
+                    return error.InvalidAdmRendererSpeakerLabel;
+                }
+                for (output_labels[0..index]) |previous| {
+                    if (std.mem.eql(u8, label, previous))
+                        return error.DuplicateAdmRendererSpeakerLabel;
+                }
+            }
+
+            var matched_output: ?usize = null;
+            for (block.speakerLabelSlice()) |speaker_label| {
+                for (output_labels, 0..) |output_label, output_index| {
+                    if (!std.mem.eql(
+                        u8,
+                        speaker_label.value(),
+                        output_label,
+                    )) {
+                        continue;
+                    }
+                    if (matched_output) |previous| {
+                        if (previous != output_index)
+                            return error.AmbiguousAdmRendererSpeakerRoute;
+                    } else {
+                        matched_output = output_index;
+                    }
+                }
+            }
+            const output_index = matched_output orelse
+                return error.MissingAdmRendererSpeakerRoute;
+            return .{
+                .output_count = output_labels.len,
+                .output_index = @intCast(output_index),
+                .gain = try renderGain(Sample, block.gain),
+            };
+        }
+
+        pub fn processSample(
+            self: *const Self,
+            input: Sample,
+        ) Sample {
+            if (!self.valid() or !std.math.isFinite(input)) return 0.0;
+            const output = input * self.gain;
+            return if (std.math.isFinite(output)) output else 0.0;
+        }
+
+        pub fn mix(
+            self: *const Self,
+            input: []const Sample,
+            outputs: []const []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (outputs.len != self.output_count)
+                return error.AdmRendererOutputCountMismatch;
+            for (outputs, 0..) |output, output_index| {
+                if (output.len != input.len)
+                    return error.AdmRendererBufferLengthMismatch;
+                for (outputs[0..output_index]) |previous| {
+                    if (slicesOverlap(Sample, previous, output))
+                        return error.AdmRendererAliasedBuffers;
+                }
+            }
+            const target = outputs[self.output_index];
+            if (slicesOverlap(Sample, input, target))
+                return error.AdmRendererAliasedBuffers;
+
+            for (input, target) |input_sample, *output_sample| {
+                if (!std.math.isFinite(input_sample)) continue;
+                if (!std.math.isFinite(output_sample.*)) {
+                    output_sample.* = 0.0;
+                    continue;
+                }
+                const mixed = output_sample.* + input_sample * self.gain;
+                output_sample.* = if (std.math.isFinite(mixed))
+                    mixed
+                else
+                    0.0;
+            }
+        }
+
+        pub fn valid(self: *const Self) bool {
+            return self.output_count > 0 and
+                self.output_count <= maximum_output_channels and
+                self.output_index < self.output_count and
+                std.math.isFinite(self.gain);
+        }
+    };
+}
+
+fn renderGain(
+    comptime Sample: type,
+    gain_value: adm_xml.Gain,
+) !Sample {
+    const linear_gain = switch (gain_value.unit) {
+        .linear => gain_value.value,
+        .decibels => if (std.math.isInf(gain_value.value) and
+            gain_value.value < 0.0)
+            0.0
+        else
+            std.math.pow(f64, 10.0, gain_value.value / 20.0),
+    };
+    const gain: Sample = @floatCast(linear_gain);
+    if (!std.math.isFinite(gain))
+        return error.InvalidAdmRendererGain;
+    return gain;
 }
 
 fn findInputChannel(
@@ -300,6 +421,95 @@ test "ADM static matrix mixer rejects unsupported plans transactionally" {
     );
     try std.testing.expectEqualDeep(
         [_]f32{ 1.0, 2.0 },
+        aliased,
+    );
+}
+
+test "ADM direct speaker router mixes an exact label match" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <speakerLabel>M+000</speakerLabel>
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <gain>0.5</gain>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const labels = [_][]const u8{ "M+030", "M+000", "M-030" };
+    const router = try DirectSpeakerRouter(f32).init(&block, &labels);
+    try std.testing.expectEqual(@as(u8, 1), router.output_index);
+    try std.testing.expectEqual(
+        @as(f32, 1.0),
+        router.processSample(2.0),
+    );
+
+    const input = [_]f32{ 2.0, std.math.nan(f32), -4.0 };
+    var left = [_]f32{ 1.0, 1.0, 1.0 };
+    var center = [_]f32{ 1.0, 1.0, 1.0 };
+    var right = [_]f32{ 1.0, 1.0, 1.0 };
+    const outputs = [_][]f32{ &left, &center, &right };
+    try router.mix(&input, &outputs);
+    try std.testing.expectEqualDeep(
+        [_]f32{ 2.0, 1.0, -1.0 },
+        center,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f32{ 1.0, 1.0, 1.0 },
+        left,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f32{ 1.0, 1.0, 1.0 },
+        right,
+    );
+}
+
+test "ADM direct speaker router rejects ambiguous and aliased routes" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <speakerLabel>M+000</speakerLabel>
+        \\      <speakerLabel>M+030</speakerLabel>
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    try std.testing.expectError(
+        error.AmbiguousAdmRendererSpeakerRoute,
+        DirectSpeakerRouter(f64).init(
+            &block,
+            &[_][]const u8{ "M+000", "M+030" },
+        ),
+    );
+    try std.testing.expectError(
+        error.MissingAdmRendererSpeakerRoute,
+        DirectSpeakerRouter(f64).init(
+            &block,
+            &[_][]const u8{"M-030"},
+        ),
+    );
+
+    const router = try DirectSpeakerRouter(f64).init(
+        &block,
+        &[_][]const u8{"M+000"},
+    );
+    var aliased = [_]f64{ 1.0, 2.0 };
+    const outputs = [_][]f64{&aliased};
+    try std.testing.expectError(
+        error.AdmRendererAliasedBuffers,
+        router.mix(&aliased, &outputs),
+    );
+    try std.testing.expectEqualDeep(
+        [_]f64{ 1.0, 2.0 },
         aliased,
     );
 }
