@@ -172,6 +172,10 @@ pub const AdmXmlExtensionAttribute = adm_xml.ExtensionAttribute;
 pub const AdmXmlExtensionAttributeIterator =
     adm_xml.ExtensionAttributeIterator;
 pub const AdmXmlExtensionIterator = adm_xml.ExtensionIterator;
+pub const AdmXmlUntypedElement = adm_xml.UntypedElement;
+pub const AdmXmlUntypedElementIterator = adm_xml.UntypedElementIterator;
+pub const AdmXmlUntypedAttribute = adm_xml.UntypedAttribute;
+pub const AdmXmlUntypedAttributeIterator = adm_xml.UntypedAttributeIterator;
 pub const AdmXmlGain = adm_xml.Gain;
 pub const AdmXmlGainUnit = adm_xml.GainUnit;
 pub const AdmXmlFrequency = adm_xml.Frequency;

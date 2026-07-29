@@ -3957,8 +3957,9 @@ test "installed package exposes file-backed audio writers" {
     });
     const namespaced_adm = try plugin.dsp.AdmXmlDocument.init(
         \\<a:audioFormatExtended xmlns:a="urn:adm" xmlns:v="urn:vendor" v:session="fixture">
-        \\  <a:audioObject audioObjectID="AO_1001">
+        \\  <a:audioObject audioObjectID="AO_1001" a:revision="next">
         \\    <a:audioPackFormatIDRef><![CDATA[AP_00010002]]></a:audioPackFormatIDRef>
+        \\    <a:futureMetadata mode="fixture"><![CDATA[literal < & >]]></a:futureMetadata>
         \\  </a:audioObject>
         \\  <v:audioObject audioObjectID="AO_1002"><![CDATA[literal < & >]]></v:audioObject>
         \\</a:audioFormatExtended>
@@ -3970,6 +3971,46 @@ test "installed package exposes file-backed audio writers" {
     try std.testing.expectEqual(
         @as(usize, 1),
         namespaced_adm.extension_count,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        namespaced_adm.untyped_element_count,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        namespaced_adm.untyped_attribute_count,
+    );
+    try std.testing.expectError(
+        error.UnsupportedAdmMetadataVocabulary,
+        namespaced_adm.validateTypedVocabulary(),
+    );
+    var installed_untyped_elements: plugin.dsp.AdmXmlUntypedElementIterator =
+        namespaced_adm.untypedElements();
+    const installed_untyped_element: plugin.dsp.AdmXmlUntypedElement =
+        (try installed_untyped_elements.next()).?;
+    try std.testing.expectEqualStrings(
+        "futureMetadata",
+        installed_untyped_element.localName(),
+    );
+    try std.testing.expectEqualStrings(
+        "AO_1001",
+        installed_untyped_element.declaration_owner.?.raw,
+    );
+    try std.testing.expect((try installed_untyped_elements.next()) == null);
+    var installed_untyped_attributes: plugin.dsp.AdmXmlUntypedAttributeIterator =
+        namespaced_adm.untypedAttributes();
+    const installed_untyped_attribute: plugin.dsp.AdmXmlUntypedAttribute =
+        (try installed_untyped_attributes.next()).?;
+    try std.testing.expectEqualStrings(
+        "a:revision",
+        installed_untyped_attribute.qualified_name,
+    );
+    try std.testing.expectEqualStrings(
+        "AO_1001",
+        installed_untyped_attribute.declaration_owner.?.raw,
+    );
+    try std.testing.expect(
+        (try installed_untyped_attributes.next()) == null,
     );
     var installed_extensions: plugin.dsp.AdmXmlExtensionIterator = namespaced_adm.extensions();
     const installed_extension: plugin.dsp.AdmXmlExtension = (try installed_extensions.next()).?;
