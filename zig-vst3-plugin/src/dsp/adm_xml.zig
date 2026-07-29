@@ -82,6 +82,17 @@ pub const EmissionPcmEssence = struct {
     frame_count: u64,
 };
 
+pub const EmissionSerialFlowState = struct {
+    initialized: bool = false,
+    next_frame_index: u32 = 1,
+    next_start: ?adm_time.Value = null,
+    flow_id: ?[36]u8 = null,
+
+    pub fn reset(self: *EmissionSerialFlowState) void {
+        self.* = .{};
+    }
+};
+
 const EmissionElementCounts = struct {
     programmes: usize = 0,
     contents: usize = 0,
@@ -1510,6 +1521,91 @@ fn readEmissionReferenceElement(
     _ = try readEmissionSimpleElement(events, start, &storage);
 }
 
+fn emissionSerialTimeAttribute(
+    element: xml.StartElement,
+    attribute_name: []const u8,
+) !adm_time.Value {
+    const encoded = try element.attribute(attribute_name) orelse
+        return error.MissingAdmEmissionProfileSerialFrameFormatAttribute;
+    var storage: [64]u8 = undefined;
+    const raw = try xml.decodeContent(&storage, encoded);
+    return adm_time.Value.parse(raw) catch
+        return error.InvalidAdmEmissionProfileSerialFrameTime;
+}
+
+fn decodeEmissionSerialFlowIdentifier(encoded: []const u8) ![36]u8 {
+    var result: [36]u8 = undefined;
+    var storage: [36]u8 = undefined;
+    const raw = xml.decodeContent(&storage, encoded) catch
+        return error.InvalidAdmEmissionProfileSerialFlowIdentifier;
+    if (raw.len != result.len)
+        return error.InvalidAdmEmissionProfileSerialFlowIdentifier;
+    for (raw, 0..) |byte, index| {
+        const separator = index == 8 or index == 13 or
+            index == 18 or index == 23;
+        if ((separator and byte != '-') or
+            (!separator and !std.ascii.isHex(byte)))
+        {
+            return error.InvalidAdmEmissionProfileSerialFlowIdentifier;
+        }
+    }
+    @memcpy(&result, raw);
+    return result;
+}
+
+fn sumAdmTime(
+    left: adm_time.Value,
+    right: adm_time.Value,
+) ?adm_time.Value {
+    if (left.fractional_denominator == 0 or
+        right.fractional_denominator == 0)
+    {
+        return null;
+    }
+    const divisor = greatestCommonDivisor(
+        left.fractional_denominator,
+        right.fractional_denominator,
+    );
+    const left_scale = right.fractional_denominator / divisor;
+    const denominator = std.math.mul(
+        u64,
+        left.fractional_denominator,
+        left_scale,
+    ) catch return null;
+    const right_scale = denominator / right.fractional_denominator;
+    const numerator =
+        @as(u128, left.fractional_numerator) * left_scale +
+        @as(u128, right.fractional_numerator) * right_scale;
+    const carry = numerator / denominator;
+    if (carry > std.math.maxInt(u64)) return null;
+    const whole = std.math.add(
+        u64,
+        left.whole_seconds,
+        right.whole_seconds,
+    ) catch return null;
+    return .{
+        .whole_seconds = std.math.add(
+            u64,
+            whole,
+            @intCast(carry),
+        ) catch return null,
+        .fractional_numerator = @intCast(numerator % denominator),
+        .fractional_denominator = denominator,
+        .format = left.format,
+    };
+}
+
+fn greatestCommonDivisor(left: u64, right: u64) u64 {
+    var a = left;
+    var b = right;
+    while (b != 0) {
+        const remainder = a % b;
+        a = b;
+        b = remainder;
+    }
+    return a;
+}
+
 fn readEmissionSerialFrameFormat(
     events: *xml.EventIterator,
     start: xml.StartElement,
@@ -1578,6 +1674,8 @@ fn readEmissionSerialFrameFormat(
         error.MissingAdmEmissionProfileSerialFrameFormatAttribute,
         error.InvalidAdmEmissionProfileSerialFrameFormatAttribute,
     );
+    if (try start.attribute("flowID")) |encoded_flow_id|
+        _ = try decodeEmissionSerialFlowIdentifier(encoded_flow_id);
     if (start.self_closing) return;
     while (try events.next()) |event| {
         switch (event) {
@@ -3817,6 +3915,132 @@ pub const Document = struct {
                 return error.InvalidAdmEmissionProfileSerialFrameCoverage;
             }
         }
+    }
+
+    /// Validates and advances one frame in an original S-ADM flow.
+    pub fn validateEmissionProfileSerialFlowFrame(
+        self: Document,
+        state: *EmissionSerialFlowState,
+    ) !void {
+        try self.validateEmissionProfileSerialObjectBlocks();
+        const frame = try self.emissionSerialFrameFlowFields();
+        if (state.initialized) {
+            const expected_start = state.next_start orelse
+                return error.InvalidAdmEmissionProfileSerialFlowState;
+            if (frame.index != state.next_frame_index)
+                return error.InvalidAdmEmissionProfileSerialFrameSequence;
+            if (frame.start.compare(expected_start) != .eq)
+                return error.InvalidAdmEmissionProfileSerialFrameContinuity;
+            if (!std.mem.eql(u8, frame.frame_type, "full"))
+                return error.InvalidAdmEmissionProfileSerialFrameType;
+            if (state.flow_id) |expected_id| {
+                if (frame.flow_id) |actual_id| {
+                    if (!std.mem.eql(u8, &expected_id, &actual_id))
+                        return error.InvalidAdmEmissionProfileSerialFlowIdentifier;
+                }
+            }
+        } else {
+            if (state.next_start != null or state.next_frame_index != 1 or
+                state.flow_id != null)
+            {
+                return error.InvalidAdmEmissionProfileSerialFlowState;
+            }
+            if (frame.index != 1)
+                return error.InvalidAdmEmissionProfileSerialFrameSequence;
+        }
+
+        const next_index = std.math.add(
+            u32,
+            frame.index,
+            1,
+        ) catch return error.InvalidAdmEmissionProfileSerialFrameSequence;
+        const next_start = sumAdmTime(
+            frame.start,
+            frame.duration,
+        ) orelse return error.InvalidAdmEmissionProfileSerialFrameContinuity;
+        state.* = .{
+            .initialized = true,
+            .next_frame_index = next_index,
+            .next_start = next_start,
+            .flow_id = state.flow_id orelse frame.flow_id,
+        };
+    }
+
+    const EmissionSerialFrameFlowFields = struct {
+        index: u32,
+        start: adm_time.Value,
+        duration: adm_time.Value,
+        frame_type: []const u8,
+        flow_id: ?[36]u8,
+    };
+
+    fn emissionSerialFrameFlowFields(
+        self: Document,
+    ) !EmissionSerialFrameFlowFields {
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "frameFormat",
+                    )) {
+                        continue;
+                    }
+                    const encoded_identifier =
+                        try element.attribute("frameFormatID") orelse
+                        return error.MissingAdmEmissionProfileSerialFrameFormatAttribute;
+                    var identifier_storage: [32]u8 = undefined;
+                    const identifier = try xml.decodeContent(
+                        &identifier_storage,
+                        encoded_identifier,
+                    );
+                    const index = std.fmt.parseInt(
+                        u32,
+                        identifier[3..],
+                        16,
+                    ) catch
+                        return error.InvalidAdmEmissionProfileSerialFrameFormatIdentifier;
+                    const start = try emissionSerialTimeAttribute(
+                        element,
+                        "start",
+                    );
+                    const duration = try emissionSerialTimeAttribute(
+                        element,
+                        "duration",
+                    );
+                    const encoded_type = try element.attribute("type") orelse
+                        return error.MissingAdmEmissionProfileSerialFrameFormatAttribute;
+                    var type_storage: [16]u8 = undefined;
+                    const frame_type = try xml.decodeContent(
+                        &type_storage,
+                        encoded_type,
+                    );
+                    const flow_id =
+                        if (try element.attribute("flowID")) |encoded|
+                            try decodeEmissionSerialFlowIdentifier(encoded)
+                        else
+                            null;
+                    return .{
+                        .index = index,
+                        .start = start,
+                        .duration = duration,
+                        .frame_type = if (std.mem.eql(
+                            u8,
+                            frame_type,
+                            "header",
+                        ))
+                            "header"
+                        else
+                            "full",
+                        .flow_id = flow_id,
+                    };
+                },
+                else => {},
+            }
+        }
+        return error.MissingAdmEmissionProfileSerialFrameFormatAttribute;
     }
 
     fn validateEmissionSerialObjectBlockSyntax(self: Document) !void {
@@ -10953,6 +11177,146 @@ test "ADM XML emission profile restricts serial object block timing" {
             document.validateEmissionProfileSerialObjectBlocks(),
         );
     }
+}
+
+test "ADM XML emission profile validates serial flow continuity" {
+    const framed = try makeValidSerialEmissionObjectFrame();
+    defer std.testing.allocator.free(framed);
+    const first = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        framed,
+        "timeReference=\"local\"",
+        "timeReference=\"local\" flowID=\"12345678-abcd-4000-a000-112233445566\"",
+    );
+    defer std.testing.allocator.free(first);
+    const second_index = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        first,
+        "frameFormatID=\"FF_00000001\" start=\"00:00:00.00000\"",
+        "frameFormatID=\"FF_00000002\" start=\"00:00:01.00000\"",
+    );
+    defer std.testing.allocator.free(second_index);
+    const second = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        second_index,
+        "type=\"header\"",
+        "type=\"full\"",
+    );
+    defer std.testing.allocator.free(second);
+
+    var state = EmissionSerialFlowState{};
+    const first_document = try Document.init(first);
+    try first_document.validateEmissionProfileSerialFlowFrame(&state);
+    try std.testing.expect(state.initialized);
+    try std.testing.expectEqual(@as(u32, 2), state.next_frame_index);
+    const second_document = try Document.init(second);
+    try second_document.validateEmissionProfileSerialFlowFrame(&state);
+    try std.testing.expectEqual(@as(u32, 3), state.next_frame_index);
+    const expected_start = try adm_time.Value.parse("00:00:02.00000");
+    try std.testing.expectEqual(
+        std.math.Order.eq,
+        expected_start.compare(state.next_start.?),
+    );
+    state.reset();
+    try std.testing.expect(!state.initialized);
+}
+
+test "ADM XML emission profile rejects invalid serial flow transitions" {
+    const framed = try makeValidSerialEmissionObjectFrame();
+    defer std.testing.allocator.free(framed);
+    const first = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        framed,
+        "timeReference=\"local\"",
+        "timeReference=\"local\" flowID=\"12345678-abcd-4000-a000-112233445566\"",
+    );
+    defer std.testing.allocator.free(first);
+    const second_index = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        first,
+        "frameFormatID=\"FF_00000001\" start=\"00:00:00.00000\"",
+        "frameFormatID=\"FF_00000002\" start=\"00:00:01.00000\"",
+    );
+    defer std.testing.allocator.free(second_index);
+    const second = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        second_index,
+        "type=\"header\"",
+        "type=\"full\"",
+    );
+    defer std.testing.allocator.free(second);
+    const cases = [_]struct {
+        expected: anyerror,
+        needle: []const u8,
+        replacement: []const u8,
+    }{
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFrameSequence,
+            .needle = "FF_00000002",
+            .replacement = "FF_00000003",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFrameContinuity,
+            .needle = "start=\"00:00:01.00000\"",
+            .replacement = "start=\"00:00:00.50000\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFrameType,
+            .needle = "type=\"full\"",
+            .replacement = "type=\"header\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFlowIdentifier,
+            .needle = "12345678-abcd-4000-a000-112233445566",
+            .replacement = "12345678-abcd-4000-a000-112233445567",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFlowIdentifier,
+            .needle = "12345678-abcd-4000-a000-112233445566",
+            .replacement = "12345678-abcd-4000-a000-11223344556z",
+        },
+    };
+    const first_document = try Document.init(first);
+    for (cases) |case| {
+        var state = EmissionSerialFlowState{};
+        try first_document.validateEmissionProfileSerialFlowFrame(&state);
+        const replaced = try std.mem.replaceOwned(
+            u8,
+            std.testing.allocator,
+            second,
+            case.needle,
+            case.replacement,
+        );
+        defer std.testing.allocator.free(replaced);
+        const document = try Document.init(replaced);
+        try std.testing.expectError(
+            case.expected,
+            document.validateEmissionProfileSerialFlowFrame(&state),
+        );
+        try std.testing.expectEqual(@as(u32, 2), state.next_frame_index);
+    }
+
+    const invalid_first = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        first,
+        "FF_00000001",
+        "FF_00000002",
+    );
+    defer std.testing.allocator.free(invalid_first);
+    const invalid_first_document = try Document.init(invalid_first);
+    var state = EmissionSerialFlowState{};
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileSerialFrameSequence,
+        invalid_first_document.validateEmissionProfileSerialFlowFrame(&state),
+    );
+    try std.testing.expect(!state.initialized);
 }
 
 const valid_emission_complementary_parameters_xml =
