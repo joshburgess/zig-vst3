@@ -4666,10 +4666,30 @@ test "ARA controller publishes typed provider content readers" {
     try std.testing.expectEqual(@as(usize, 2), resolved_reader.event_count);
     try std.testing.expectEqual(
         @as(i32, 2),
-        api.getContentReaderEventCount.?(
+        TestController.getContentReaderEventCount(
             instance.documentControllerRef,
             reader,
         ),
+    );
+    const interface_count = api.getContentReaderEventCount.?(
+        instance.documentControllerRef,
+        reader,
+    );
+    if (interface_count != 2) {
+        std.debug.print(
+            "ARA content reader boundary mismatch: count={d} reader=0x{x} controller=0x{x} expected_controller=0x{x} error={any}\n",
+            .{
+                interface_count,
+                @intFromPtr(reader.?),
+                @intFromPtr(instance.documentControllerRef.?),
+                @intFromPtr(&controller),
+                controller.last_error,
+            },
+        );
+    }
+    try std.testing.expectEqual(
+        @as(i32, 2),
+        interface_count,
     );
     const event_pointer = api.getContentReaderDataForEvent.?(
         instance.documentControllerRef,
