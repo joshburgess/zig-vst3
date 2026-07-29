@@ -39,6 +39,9 @@ public:
     ~RuntimeGuard();
     RuntimeGuard(const RuntimeGuard&) = delete;
     RuntimeGuard& operator=(const RuntimeGuard&) = delete;
+
+private:
+    bool com_initialized {false};
 };
 
 }

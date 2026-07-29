@@ -4134,10 +4134,10 @@ pub fn Analyzer(
 
         fn eventCount(
             context: ?*anyopaque,
+            output: *usize,
             object: ControllerType.ContentObject,
             content_type: raw.ARAContentType,
             range: ?raw.ARAContentTimeRange,
-            output: *usize,
         ) bool {
             if (!isAvailable(context, object, content_type))
                 return false;
@@ -4202,10 +4202,10 @@ pub fn Analyzer(
 
         fn eventData(
             context: ?*anyopaque,
+            event_index: usize,
             object: ControllerType.ContentObject,
             content_type: raw.ARAContentType,
             range: ?raw.ARAContentTimeRange,
-            event_index: usize,
         ) ?*const anyopaque {
             const self = fromContext(context) orelse return null;
             const source_id = switch (object) {

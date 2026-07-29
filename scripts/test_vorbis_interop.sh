@@ -14,6 +14,36 @@ fail() {
     exit 1
 }
 
+wav_data_range() {
+    wav_path=$1
+    wav_bytes=$(wc -c <"$wav_path")
+    chunk_offset=12
+    while [ $((chunk_offset + 8)) -le "$wav_bytes" ]; do
+        # shellcheck disable=SC2046
+        set -- $(dd if="$wav_path" bs=1 skip="$chunk_offset" count=8 2>/dev/null |
+            od -An -tu1 -v)
+        [ "$#" -eq 8 ] || return 1
+        chunk_size=$((
+            $5 +
+                $6 * 256 +
+                $7 * 65536 +
+                $8 * 16777216
+        ))
+        payload_offset=$((chunk_offset + 8))
+        payload_end=$((payload_offset + chunk_size))
+        [ "$payload_end" -le "$wav_bytes" ] || return 1
+        if [ "$1" -eq 100 ] &&
+            [ "$2" -eq 97 ] &&
+            [ "$3" -eq 116 ] &&
+            [ "$4" -eq 97 ]; then
+            printf '%s %s\n' "$payload_offset" "$chunk_size"
+            return 0
+        fi
+        chunk_offset=$((payload_end + chunk_size % 2))
+    done
+    return 1
+}
+
 if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
     command -v ffmpeg >/dev/null 2>&1; then
     ffmpeg_decoded="$temporary/ffmpeg-decoded.pcm"
@@ -62,17 +92,14 @@ if [ "${VORBIS_INTEROP_ONLY_FFMPEG-0}" != "1" ] &&
                     sed -n '1,120p' "$temporary/decoded.txt" >&2
                     fail "AudioToolbox reported unexpected WAV metadata"
                 fi
-                data_offset=$(awk '/audio data file offset:/ { print $5 }' "$temporary/decoded.txt")
-                case "$data_offset" in
-                    *[!0-9]* | "")
-                        sed -n '1,120p' "$temporary/decoded.txt" >&2
-                        fail "AudioToolbox did not report a usable PCM offset"
-                        ;;
-                esac
-                file_bytes=$(wc -c <"$decoded")
-                [ "$data_offset" -lt "$file_bytes" ] ||
-                    fail "AudioToolbox reported a PCM offset beyond the WAV"
-                audio_bytes=$((file_bytes - data_offset))
+                data_range=$(wav_data_range "$decoded") || {
+                    sed -n '1,120p' "$temporary/decoded.txt" >&2
+                    fail "AudioToolbox produced a malformed WAV data range"
+                }
+                # shellcheck disable=SC2086
+                set -- $data_range
+                data_offset=$1
+                audio_bytes=$2
                 [ "$audio_bytes" -gt 0 ] ||
                     fail "AudioToolbox produced an empty PCM data range"
                 if ! dd if="$decoded" bs=1 skip="$data_offset" count="$audio_bytes" 2>/dev/null |

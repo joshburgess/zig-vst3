@@ -109,17 +109,17 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 ) raw.ARAContentGrade,
                 event_count: *const fn (
                     ?*anyopaque,
+                    *usize,
                     ContentObject,
                     raw.ARAContentType,
                     ?raw.ARAContentTimeRange,
-                    *usize,
                 ) bool,
                 event_data: *const fn (
                     ?*anyopaque,
+                    usize,
                     ContentObject,
                     raw.ARAContentType,
                     ?raw.ARAContentTimeRange,
-                    usize,
                 ) ?*const anyopaque,
             };
         };
@@ -1905,10 +1905,10 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             };
             return provider.vtable.event_data(
                 provider.context,
+                @intCast(event_index),
                 reader.object,
                 reader.content_type,
                 reader.range,
-                @intCast(event_index),
             );
         }
 
@@ -2760,10 +2760,10 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             var count: usize = 0;
             if (!provider.vtable.event_count(
                 provider.context,
+                &count,
                 object,
                 content_type,
                 range,
-                &count,
             )) return error.ContentReaderUnavailable;
             if (count > std.math.maxInt(i32))
                 return error.ContentCountOverflow;
@@ -4551,10 +4551,10 @@ test "ARA controller publishes typed provider content readers" {
 
         fn count(
             context: ?*anyopaque,
+            output: *usize,
             object: TestController.ContentObject,
             content_type: raw.ARAContentType,
             range: ?raw.ARAContentTimeRange,
-            output: *usize,
         ) bool {
             _ = object;
             _ = content_type;
@@ -4565,10 +4565,10 @@ test "ARA controller publishes typed provider content readers" {
 
         fn data(
             context: ?*anyopaque,
+            event_index: usize,
             object: TestController.ContentObject,
             content_type: raw.ARAContentType,
             range: ?raw.ARAContentTimeRange,
-            event_index: usize,
         ) ?*const anyopaque {
             _ = object;
             _ = content_type;
@@ -4783,10 +4783,10 @@ test "ARA controller routes validated analysis requests and host notifications" 
 
         fn count(
             context: ?*anyopaque,
+            output: *usize,
             object: TestController.ContentObject,
             content_type: raw.ARAContentType,
             range: ?raw.ARAContentTimeRange,
-            output: *usize,
         ) bool {
             _ = context;
             _ = object;
@@ -4798,10 +4798,10 @@ test "ARA controller routes validated analysis requests and host notifications" 
 
         fn data(
             context: ?*anyopaque,
+            event_index: usize,
             object: TestController.ContentObject,
             content_type: raw.ARAContentType,
             range: ?raw.ARAContentTimeRange,
-            event_index: usize,
         ) ?*const anyopaque {
             _ = context;
             _ = object;

@@ -4,6 +4,7 @@
 #include "wasapi_shim.h"
 
 #include <windows.h>
+#include <initguid.h>
 
 #include <audioclient.h>
 #include <avrt.h>
@@ -76,6 +77,13 @@ typedef struct {
     HRESULT status;
     BOOL uninitialize;
 } com_scope;
+
+static const GUID zv3_ieee_float_subtype = {
+    0x00000003,
+    0x0000,
+    0x0010,
+    {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71},
+};
 
 static com_scope enter_com(void) {
     com_scope scope;
@@ -794,7 +802,7 @@ static WAVEFORMATEXTENSIBLE requested_format(
     format.Samples.wValidBitsPerSample =
         format.Format.wBitsPerSample;
     format.dwChannelMask = 0;
-    format.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+    format.SubFormat = zv3_ieee_float_subtype;
     return format;
 }
 

@@ -15,6 +15,10 @@
 #include <cstdlib>
 #include <cstring>
 
+#if defined(_WIN32)
+#include <objbase.h>
+#endif
+
 namespace {
 
 std::atomic<uint32_t> editor_count {0};
@@ -57,11 +61,21 @@ double graphAxisValue(double normalized, const ZigVstguiGraphAxis& axis) {
 }
 
 ZigVstgui::RuntimeGuard::RuntimeGuard() {
+#if defined(_WIN32)
+    const auto com_status = CoInitializeEx(
+        nullptr,
+        COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE
+    );
+    com_initialized = SUCCEEDED(com_status);
+#endif
     if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) VSTGUI::init(nullptr);
 }
 
 ZigVstgui::RuntimeGuard::~RuntimeGuard() {
     if (editor_count.fetch_sub(1, std::memory_order_acq_rel) == 1) VSTGUI::exit();
+#if defined(_WIN32)
+    if (com_initialized) CoUninitialize();
+#endif
 }
 
 ZigVstguiEditor::ZigVstguiEditor(

@@ -83,7 +83,7 @@ printf '%s\n' \
     >"$fake_bin/afinfo"
 printf '%s\n' \
     '#!/bin/sh' \
-    "printf 'RIFF000000000000000000000000000000000000000000000WAVE\\001\\000' >\"\$2\"" \
+    "printf 'RIFF\\050\\000\\000\\000WAVEfmt \\020\\000\\000\\000\\001\\000\\001\\000\\200\\273\\000\\000\\000\\167\\001\\000\\002\\000\\020\\000data\\004\\000\\000\\000\\001\\000\\002\\000' >\"\$2\"" \
     >"$fake_bin/afconvert"
 printf '%s\n' \
     '#!/bin/sh' \
@@ -103,13 +103,13 @@ grep -q 'Vorbis AudioToolbox interoperability test passed' "$root/audio-toolbox.
 printf '%s\n' \
     '#!/bin/sh' \
     "case \"\$1\" in" \
-    '    *.wav) printf "WAVE\n48000\naudio data file offset: 44\naudio bytes: 0\n" ;;' \
+    '    *.wav) printf "WAVE\n48000\naudio data file offset: 4096\naudio bytes: 0\n" ;;' \
     '    *) printf "Ogg\n48000\n" ;;' \
     'esac' \
     >"$fake_bin/afinfo"
 printf '%s\n' \
     '#!/bin/sh' \
-    "printf 'RIFF0000000000000000000000000000000000000000\\001\\000\\002\\000' >\"\$2\"" \
+    "printf 'RIFF\\050\\000\\000\\000WAVEfmt \\020\\000\\000\\000\\001\\000\\001\\000\\200\\273\\000\\000\\000\\167\\001\\000\\002\\000\\020\\000data\\004\\000\\000\\000\\001\\000\\002\\000' >\"\$2\"" \
     >"$fake_bin/afconvert"
 chmod +x "$fake_bin/afinfo" "$fake_bin/afconvert"
 PATH="$fake_bin:$PATH" \
