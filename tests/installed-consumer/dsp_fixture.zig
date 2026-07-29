@@ -3480,10 +3480,15 @@ test "installed package exposes file-backed audio writers" {
         \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
         \\  </audioContent>
         \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
         \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0001"/>
         \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0002"/>
         \\  </audioObject>
-        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
         \\  <profileList>
         \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
         \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
@@ -3497,6 +3502,7 @@ test "installed package exposes file-backed audio writers" {
     try emission_adm.validateEmissionProfileSubelementLimits();
     try emission_adm.validateEmissionProfileIdentifiers();
     try emission_adm.validateEmissionProfileObjectTopology();
+    try emission_adm.validateEmissionProfileObjectSources();
     var wav = try plugin.dsp.WavFileWriter.initWithRiffMetadata(
         std.testing.io,
         wav_file,

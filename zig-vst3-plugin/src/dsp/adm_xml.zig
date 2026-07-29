@@ -176,6 +176,25 @@ const EmissionObjectParent = struct {
     primary: u32,
 };
 
+const EmissionPackChannels = struct {
+    primaries: [24]u32 = undefined,
+    len: usize = 0,
+
+    fn append(self: *EmissionPackChannels, primary: u32) !void {
+        if (self.len == self.primaries.len)
+            return error.AdmEmissionProfileLayoutChannelLimitExceeded;
+        self.primaries[self.len] = primary;
+        self.len += 1;
+    }
+
+    fn indexOf(self: EmissionPackChannels, primary: u32) ?usize {
+        for (self.primaries[0..self.len], 0..) |candidate, index| {
+            if (candidate == primary) return index;
+        }
+        return null;
+    }
+};
+
 fn emissionProfileLimits(
     level: EmissionProfileLevel,
 ) EmissionElementCounts {
@@ -239,6 +258,130 @@ fn emissionSubelementLimits(
             .alternative_value_sets = 16,
             .complementary_labels = 8,
         },
+    };
+}
+
+fn emissionMaximumLayoutChannels(
+    level: EmissionProfileLevel,
+) usize {
+    return switch (level) {
+        .level_0 => std.math.maxInt(usize),
+        .level_1 => 12,
+        .level_2 => 24,
+    };
+}
+
+fn commonEmissionPackChannelIndexes(
+    pack_index: u16,
+) ?[]const u16 {
+    return switch (pack_index) {
+        0x0001 => &.{0x0003},
+        0x0002 => &.{ 0x0001, 0x0002 },
+        0x000a => &.{ 0x0001, 0x0002, 0x0003 },
+        0x0003 => &.{
+            0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006,
+        },
+        0x000c => &.{ 0x0001, 0x0002, 0x0003, 0x0005, 0x0006 },
+        0x000f => &.{
+            0x0001, 0x0002, 0x0003, 0x0004,
+            0x000a, 0x000b, 0x001c, 0x001d,
+        },
+        0x001b => &.{
+            0x0001, 0x0002, 0x0003, 0x000a,
+            0x000b, 0x001c, 0x001d,
+        },
+        0x0004 => &.{
+            0x0001, 0x0002, 0x0003, 0x0004,
+            0x0005, 0x0006, 0x000d, 0x000f,
+        },
+        0x001c => &.{
+            0x0001, 0x0002, 0x0003, 0x0005,
+            0x0006, 0x000d, 0x000f,
+        },
+        0x0005 => &.{
+            0x0001, 0x0002, 0x0003, 0x0004, 0x0005,
+            0x0006, 0x000d, 0x000f, 0x0010, 0x0012,
+        },
+        0x001e => &.{
+            0x0001, 0x0002, 0x0003, 0x0005, 0x0006,
+            0x000d, 0x000f, 0x0010, 0x0012,
+        },
+        0x0017 => &.{
+            0x0001, 0x0002, 0x0003, 0x0004,
+            0x000a, 0x000b, 0x001c, 0x001d,
+            0x0022, 0x0023, 0x001e, 0x001f,
+        },
+        0x001f => &.{
+            0x0001, 0x0002, 0x0003, 0x000a,
+            0x000b, 0x001c, 0x001d, 0x0022,
+            0x0023, 0x001e, 0x001f,
+        },
+        0x0010 => &.{
+            0x0018, 0x0019, 0x0003, 0x001c, 0x001d, 0x0001,
+            0x0002, 0x0009, 0x000a, 0x000b, 0x0022, 0x0023,
+            0x000e, 0x000c, 0x001e, 0x001f, 0x0013, 0x0014,
+            0x0011, 0x0015, 0x0016, 0x0017,
+        },
+        0x0009 => &.{
+            0x0018, 0x0019, 0x0003, 0x0020, 0x001c, 0x001d,
+            0x0001, 0x0002, 0x0009, 0x0021, 0x000a, 0x000b,
+            0x0022, 0x0023, 0x000e, 0x000c, 0x001e, 0x001f,
+            0x0013, 0x0014, 0x0011, 0x0015, 0x0016, 0x0017,
+        },
+        0x0801 => &.{0x0803},
+        0x0802 => &.{ 0x0801, 0x0802 },
+        0x080a => &.{ 0x0801, 0x0802, 0x0803 },
+        0x0803 => &.{
+            0x0801, 0x0802, 0x0803, 0x0804, 0x0805, 0x0806,
+        },
+        0x080c => &.{ 0x0801, 0x0802, 0x0803, 0x0805, 0x0806 },
+        0x080f => &.{
+            0x0801, 0x0802, 0x0803, 0x0804,
+            0x080a, 0x080b, 0x0805, 0x0806,
+        },
+        0x081b => &.{
+            0x0801, 0x0802, 0x0803, 0x080a,
+            0x080b, 0x0805, 0x0806,
+        },
+        0x0804 => &.{
+            0x0801, 0x0802, 0x0803, 0x0804,
+            0x0805, 0x0806, 0x080d, 0x080f,
+        },
+        0x081c => &.{
+            0x0801, 0x0802, 0x0803, 0x0805,
+            0x0806, 0x080d, 0x080f,
+        },
+        0x0805 => &.{
+            0x0801, 0x0802, 0x0803, 0x0804, 0x0805,
+            0x0806, 0x080d, 0x080f, 0x0810, 0x0812,
+        },
+        0x081e => &.{
+            0x0801, 0x0802, 0x0803, 0x0805, 0x0806,
+            0x080d, 0x080f, 0x0810, 0x0812,
+        },
+        0x0817 => &.{
+            0x0801, 0x0802, 0x0803, 0x0804,
+            0x080a, 0x080b, 0x0805, 0x0806,
+            0x080d, 0x080f, 0x0810, 0x0812,
+        },
+        0x081f => &.{
+            0x0801, 0x0802, 0x0803, 0x080a,
+            0x080b, 0x0805, 0x0806, 0x080d,
+            0x080f, 0x0810, 0x0812,
+        },
+        0x0810 => &.{
+            0x0801, 0x0802, 0x0803, 0x0805, 0x0806, 0x0807,
+            0x0808, 0x0809, 0x080a, 0x080b, 0x080d, 0x080f,
+            0x080e, 0x080c, 0x0810, 0x0812, 0x0813, 0x0814,
+            0x0811, 0x0815, 0x0816, 0x0817,
+        },
+        0x0809 => &.{
+            0x0801, 0x0802, 0x0803, 0x0820, 0x0805, 0x0806,
+            0x0807, 0x0808, 0x0809, 0x0821, 0x080a, 0x080b,
+            0x080d, 0x080f, 0x080e, 0x080c, 0x0810, 0x0812,
+            0x0813, 0x0814, 0x0811, 0x0815, 0x0816, 0x0817,
+        },
+        else => null,
     };
 }
 
@@ -788,6 +931,318 @@ pub const Document = struct {
                 else => {},
             }
         }
+    }
+
+    /// Validates emission object sources through pack, channel, and track UID
+    /// references, including the permitted common speaker layouts.
+    pub fn validateEmissionProfileObjectSources(self: Document) !void {
+        try self.validateEmissionProfileObjectTopology();
+        const maximum_channels = emissionMaximumLayoutChannels(
+            try self.emissionProfileLevel(),
+        );
+
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            if (declaration.identifier.kind == .object) {
+                try self.validateEmissionObjectSource(
+                    declaration.identifier.primary,
+                    maximum_channels,
+                );
+            }
+        }
+        try self.validateEmissionFormatOwnership();
+    }
+
+    fn validateEmissionFormatOwnership(self: Document) !void {
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            const identifier = declaration.identifier;
+            switch (identifier.kind) {
+                .pack_format => {
+                    if (identifier.typeLabel() != 0x0003) continue;
+                    _ = try self.emissionPackChannels(identifier.primary);
+                    if (try self.directReferenceCount(
+                        .object,
+                        .pack_format,
+                        identifier.primary,
+                    ) == 0) {
+                        return error.UnreferencedAdmEmissionProfilePack;
+                    }
+                },
+                .channel_format => {
+                    if (try self.directReferenceCount(
+                        .pack_format,
+                        .channel_format,
+                        identifier.primary,
+                    ) != 1) {
+                        return error.InvalidAdmEmissionProfileChannelParent;
+                    }
+                },
+                .track_uid => {
+                    if (try self.directReferenceCount(
+                        .object,
+                        .track_uid,
+                        identifier.primary,
+                    ) != 1) {
+                        return error.InvalidAdmEmissionProfileTrackParent;
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn validateEmissionObjectSource(
+        self: Document,
+        object_primary: u32,
+        maximum_channels: usize,
+    ) !void {
+        var child_count: usize = 0;
+        var track_count: usize = 0;
+        var pack_primary: ?u32 = null;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .object or
+                owner.primary != object_primary)
+            {
+                continue;
+            }
+            switch (reference.kind) {
+                .object => child_count += 1,
+                .pack_format => {
+                    if (pack_primary != null)
+                        return error.InvalidAdmEmissionProfileObjectSource;
+                    pack_primary = (reference.identifier orelse
+                        return error.InvalidAdmEmissionProfileObjectSource).primary;
+                },
+                .track_uid => {
+                    if (reference.virtual_silent_track)
+                        return error.SilentAdmEmissionProfileTrack;
+                    track_count += 1;
+                },
+                else => {},
+            }
+        }
+
+        if (child_count != 0) {
+            if (pack_primary != null or track_count != 0)
+                return error.InvalidAdmEmissionProfileObjectSource;
+            var children = self.references();
+            while (try children.next()) |reference| {
+                const owner = reference.owner orelse continue;
+                if (!reference.direct_owner or
+                    owner.kind != .object or
+                    owner.primary != object_primary or
+                    reference.kind != .object)
+                {
+                    continue;
+                }
+                const child = reference.identifier orelse
+                    return error.InvalidAdmEmissionProfileObjectSource;
+                try self.validateEmissionNestedObjectPack(child.primary);
+            }
+            return;
+        }
+
+        const pack = pack_primary orelse
+            return error.InvalidAdmEmissionProfileObjectSource;
+        const channels = try self.emissionPackChannels(pack);
+        if (channels.len > maximum_channels)
+            return error.AdmEmissionProfileLayoutChannelLimitExceeded;
+        if (track_count != channels.len)
+            return error.InvalidAdmEmissionProfileTrackCount;
+
+        var seen_channels: [24]bool = @splat(false);
+        var tracks = self.references();
+        while (try tracks.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .object or
+                owner.primary != object_primary or
+                reference.kind != .track_uid)
+            {
+                continue;
+            }
+            if (reference.virtual_silent_track)
+                return error.SilentAdmEmissionProfileTrack;
+            const track_uid = reference.identifier orelse
+                return error.InvalidAdmEmissionProfileTrackReference;
+            if (!try self.containsIdentifierValue(
+                .track_uid,
+                track_uid.primary,
+                null,
+            )) {
+                return error.InvalidAdmEmissionProfileTrackReference;
+            }
+            const channel = try self.emissionTrackUidChannel(
+                track_uid.primary,
+                pack,
+            );
+            const channel_index = channels.indexOf(channel) orelse
+                return error.InvalidAdmEmissionProfileTrackReference;
+            if (seen_channels[channel_index])
+                return error.InvalidAdmEmissionProfileTrackReference;
+            seen_channels[channel_index] = true;
+        }
+        for (seen_channels[0..channels.len]) |seen| {
+            if (!seen) return error.InvalidAdmEmissionProfileTrackReference;
+        }
+    }
+
+    fn validateEmissionNestedObjectPack(
+        self: Document,
+        object_primary: u32,
+    ) !void {
+        var pack_primary: ?u32 = null;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .object or
+                owner.primary != object_primary or
+                reference.kind != .pack_format)
+            {
+                continue;
+            }
+            if (pack_primary != null)
+                return error.InvalidAdmEmissionProfileNestedObjectPack;
+            pack_primary = (reference.identifier orelse
+                return error.InvalidAdmEmissionProfileNestedObjectPack).primary;
+        }
+        const primary = pack_primary orelse
+            return error.InvalidAdmEmissionProfileNestedObjectPack;
+        const type_label: u16 = @intCast(primary >> 16);
+        const definition_index: u16 = @truncate(primary);
+        if (type_label != 0x0003 or definition_index < 0x1000)
+            return error.InvalidAdmEmissionProfileNestedObjectPack;
+    }
+
+    fn emissionPackChannels(
+        self: Document,
+        pack_primary: u32,
+    ) !EmissionPackChannels {
+        const type_label: u16 = @intCast(pack_primary >> 16);
+        const definition_index: u16 = @truncate(pack_primary);
+        var channels = EmissionPackChannels{};
+        if (type_label == 0x0001) {
+            const indexes = commonEmissionPackChannelIndexes(
+                definition_index,
+            ) orelse return error.InvalidAdmEmissionProfilePackReference;
+            for (indexes) |index| {
+                try channels.append(
+                    (@as(u32, 0x0001) << 16) | @as(u32, index),
+                );
+            }
+            return channels;
+        }
+        if (type_label != 0x0003 or definition_index < 0x1000)
+            return error.InvalidAdmEmissionProfilePackReference;
+
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .pack_format or
+                owner.primary != pack_primary or
+                reference.kind != .channel_format)
+            {
+                continue;
+            }
+            const channel = reference.identifier orelse
+                return error.InvalidAdmEmissionProfilePackReference;
+            if (channel.typeLabel() != 0x0003)
+                return error.InvalidAdmEmissionProfilePackReference;
+            try channels.append(channel.primary);
+        }
+        if (channels.len != 1)
+            return error.InvalidAdmEmissionProfilePackReference;
+        return channels;
+    }
+
+    fn emissionTrackUidChannel(
+        self: Document,
+        track_uid_primary: u32,
+        pack_primary: u32,
+    ) !u32 {
+        var referenced_pack: ?u32 = null;
+        var referenced_channel: ?u32 = null;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .track_uid or
+                owner.primary != track_uid_primary)
+            {
+                continue;
+            }
+            switch (reference.kind) {
+                .pack_format => {
+                    if (referenced_pack != null)
+                        return error.InvalidAdmEmissionProfileTrackReference;
+                    referenced_pack = (reference.identifier orelse
+                        return error.InvalidAdmEmissionProfileTrackReference).primary;
+                },
+                .channel_format => {
+                    if (referenced_channel != null)
+                        return error.InvalidAdmEmissionProfileTrackReference;
+                    referenced_channel = (reference.identifier orelse
+                        return error.InvalidAdmEmissionProfileTrackReference).primary;
+                },
+                .track_format => return error.InvalidAdmEmissionProfileTrackReference,
+                else => {},
+            }
+        }
+        if (referenced_pack != pack_primary)
+            return error.InvalidAdmEmissionProfileTrackReference;
+        return referenced_channel orelse
+            error.InvalidAdmEmissionProfileTrackReference;
+    }
+
+    fn directReferenceCount(
+        self: Document,
+        owner_kind: adm.IdentifierKind,
+        reference_kind: ReferenceKind,
+        identifier_primary: u32,
+    ) !usize {
+        var count: usize = 0;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            if (!reference.direct_owner or
+                reference.kind != reference_kind or
+                reference.virtual_silent_track)
+            {
+                continue;
+            }
+            const owner = reference.owner orelse continue;
+            const identifier = reference.identifier orelse continue;
+            if (owner.kind == owner_kind and
+                identifier.primary == identifier_primary)
+            {
+                count += 1;
+            }
+        }
+        return count;
+    }
+
+    fn containsIdentifierValue(
+        self: Document,
+        kind: adm.IdentifierKind,
+        primary: u32,
+        secondary: ?u32,
+    ) !bool {
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            const identifier = declaration.identifier;
+            if (identifier.kind == kind and
+                identifier.primary == primary and
+                identifier.secondary == secondary)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     fn validateEmissionContentOwner(
@@ -3876,6 +4331,413 @@ test "ADM XML emission profile requires every content in a programme" {
     try std.testing.expectError(
         error.UnreferencedAdmEmissionProfileContent,
         document.validateEmissionProfileObjectTopology(),
+    );
+}
+
+test "ADM XML emission profile validates complete object sources" {
+    const document = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\    <audioContentIDRef>ACO_1002</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioContent audioContentID="ACO_1002">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioObjectIDRef>AO_1003</audioObjectIDRef>
+        \\  </audioObject>
+        \\  <audioObject audioObjectID="AO_1002">
+        \\    <audioPackFormatIDRef>AP_00010002</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioObject audioObjectID="AO_1003">
+        \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000003</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioPackFormat audioPackFormatID="AP_00031001">
+        \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+        \\  </audioPackFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001"/>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010001</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010002</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <audioTrackUID UID="ATU_00000002">
+        \\    <audioChannelFormatIDRef>AC_00010002</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010002</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <audioTrackUID UID="ATU_00000003">
+        \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try document.validateEmissionProfileObjectSources();
+}
+
+test "ADM XML emission profile registers every permitted common pack" {
+    const cases = [_]struct {
+        index: u16,
+        channels: usize,
+    }{
+        .{ .index = 0x0001, .channels = 1 },
+        .{ .index = 0x0002, .channels = 2 },
+        .{ .index = 0x000a, .channels = 3 },
+        .{ .index = 0x0003, .channels = 6 },
+        .{ .index = 0x000c, .channels = 5 },
+        .{ .index = 0x000f, .channels = 8 },
+        .{ .index = 0x001b, .channels = 7 },
+        .{ .index = 0x0004, .channels = 8 },
+        .{ .index = 0x001c, .channels = 7 },
+        .{ .index = 0x0005, .channels = 10 },
+        .{ .index = 0x001e, .channels = 9 },
+        .{ .index = 0x0017, .channels = 12 },
+        .{ .index = 0x001f, .channels = 11 },
+        .{ .index = 0x0009, .channels = 24 },
+        .{ .index = 0x0010, .channels = 22 },
+        .{ .index = 0x0801, .channels = 1 },
+        .{ .index = 0x0802, .channels = 2 },
+        .{ .index = 0x080a, .channels = 3 },
+        .{ .index = 0x0803, .channels = 6 },
+        .{ .index = 0x080c, .channels = 5 },
+        .{ .index = 0x080f, .channels = 8 },
+        .{ .index = 0x081b, .channels = 7 },
+        .{ .index = 0x0804, .channels = 8 },
+        .{ .index = 0x081c, .channels = 7 },
+        .{ .index = 0x0805, .channels = 10 },
+        .{ .index = 0x081e, .channels = 9 },
+        .{ .index = 0x0817, .channels = 12 },
+        .{ .index = 0x081f, .channels = 11 },
+        .{ .index = 0x0809, .channels = 24 },
+        .{ .index = 0x0810, .channels = 22 },
+    };
+    for (cases) |case| {
+        const channels = commonEmissionPackChannelIndexes(case.index).?;
+        try std.testing.expectEqual(case.channels, channels.len);
+        for (channels, 0..) |channel, index| {
+            for (channels[0..index]) |previous| {
+                try std.testing.expect(channel != previous);
+            }
+        }
+    }
+    try std.testing.expectEqual(
+        @as(?[]const u16, null),
+        commonEmissionPackChannelIndexes(0x0006),
+    );
+}
+
+test "ADM XML emission profile enforces conditional object sources" {
+    const missing_leaf_pack = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileObjectSource,
+        missing_leaf_pack.validateEmissionProfileObjectSources(),
+    );
+
+    const source_on_branch = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioObject audioObjectID="AO_1002">
+        \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioPackFormat audioPackFormatID="AP_00031001">
+        \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+        \\  </audioPackFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001"/>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <audioTrackUID UID="ATU_00000002">
+        \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileObjectSource,
+        source_on_branch.validateEmissionProfileObjectSources(),
+    );
+}
+
+test "ADM XML emission profile restricts nested and common packs" {
+    const nested_speaker_source = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\  </audioObject>
+        \\  <audioObject audioObjectID="AO_1002">
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileNestedObjectPack,
+        nested_speaker_source.validateEmissionProfileObjectSources(),
+    );
+
+    const unsupported_common_pack = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioPackFormatIDRef>AP_00010006</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010001</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010006</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfilePackReference,
+        unsupported_common_pack.validateEmissionProfileObjectSources(),
+    );
+
+    const excessive_level_one_layout = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioPackFormatIDRef>AP_00010009</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010018</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010009</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.AdmEmissionProfileLayoutChannelLimitExceeded,
+        excessive_level_one_layout.validateEmissionProfileObjectSources(),
+    );
+}
+
+test "ADM XML emission profile validates exact track mappings" {
+    const wrong_common_channel = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010001</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileTrackReference,
+        wrong_common_channel.validateEmissionProfileObjectSources(),
+    );
+
+    const duplicate_channel = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioPackFormatIDRef>AP_00010002</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010001</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010002</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <audioTrackUID UID="ATU_00000002">
+        \\    <audioChannelFormatIDRef>AC_00010001</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010002</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileTrackReference,
+        duplicate_channel.validateEmissionProfileObjectSources(),
+    );
+
+    const silent_track = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000000</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.SilentAdmEmissionProfileTrack,
+        silent_track.validateEmissionProfileObjectSources(),
+    );
+}
+
+test "ADM XML emission profile requires every declared source to be used" {
+    const orphan_track = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <audioTrackUID UID="ATU_00000002">
+        \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileTrackParent,
+        orphan_track.validateEmissionProfileObjectSources(),
+    );
+
+    const orphan_pack = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\  </audioObject>
+        \\  <audioPackFormat audioPackFormatID="AP_00031001">
+        \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+        \\  </audioPackFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001"/>
+        \\  <audioTrackUID UID="ATU_00000001">
+        \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.UnreferencedAdmEmissionProfilePack,
+        orphan_pack.validateEmissionProfileObjectSources(),
     );
 }
 
