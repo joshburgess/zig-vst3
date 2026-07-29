@@ -3508,12 +3508,12 @@ test "installed package exposes file-backed audio writers" {
         \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
         \\    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
         \\  </audioObject>
-        \\  <audioPackFormat audioPackFormatID="AP_00021001">
+        \\  <audioPackFormat audioPackFormatID="AP_00021001" audioPackFormatName="Stereo Downmix" typeLabel="0002" typeDefinition="Matrix">
         \\    <audioChannelFormatIDRef>AC_00021001</audioChannelFormatIDRef>
         \\    <inputPackFormatIDRef>AP_00010001</inputPackFormatIDRef>
         \\    <outputPackFormatIDRef>AP_00010002</outputPackFormatIDRef>
         \\  </audioPackFormat>
-        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001" audioChannelFormatName="Left Downmix" typeLabel="0002" typeDefinition="Matrix">
         \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
         \\      <outputChannelFormatIDRef>AC_00010001</outputChannelFormatIDRef>
         \\      <matrix>
@@ -3521,11 +3521,11 @@ test "installed package exposes file-backed audio writers" {
         \\      </matrix>
         \\    </audioBlockFormatMatrix>
         \\  </audioChannelFormat>
-        \\  <audioTrackUID UID="ATU_00000001">
+        \\  <audioTrackUID UID="ATU_00000001" sampleRate="48000" bitDepth="24">
         \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
         \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
         \\  </audioTrackUID>
-        \\  <audioTrackUID UID="ATU_00000002">
+        \\  <audioTrackUID UID="ATU_00000002" sampleRate="48000" bitDepth="24">
         \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
         \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
         \\  </audioTrackUID>
@@ -3548,6 +3548,7 @@ test "installed package exposes file-backed audio writers" {
     try emission_adm.validateEmissionProfileObjectParameters();
     try emission_adm.validateEmissionProfileComplementaryParameters();
     try emission_adm.validateEmissionProfileProgrammeContentMetadata();
+    try emission_adm.validateEmissionProfileFormatMetadata();
     var wav = try plugin.dsp.WavFileWriter.initWithRiffMetadata(
         std.testing.io,
         wav_file,

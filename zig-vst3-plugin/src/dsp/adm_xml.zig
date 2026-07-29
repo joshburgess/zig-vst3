@@ -292,6 +292,24 @@ const EmissionLanguageSet = struct {
     }
 };
 
+const EmissionFormatOwnerKind = enum {
+    matrix_pack,
+    objects_pack,
+    matrix_channel,
+    objects_channel,
+    track_uid,
+};
+
+const EmissionFormatOwner = struct {
+    kind: EmissionFormatOwnerKind,
+    depth: usize,
+    channel_references: usize = 0,
+    input_references: usize = 0,
+    output_references: usize = 0,
+    block_count: usize = 0,
+    pack_references: usize = 0,
+};
+
 fn emissionProfileLimits(
     level: EmissionProfileLevel,
 ) EmissionElementCounts {
@@ -689,6 +707,71 @@ fn validateEmissionRequiredName(
     const characters = utf8ScalarCount(decoded);
     if (characters == 0 or characters > 64)
         return error.InvalidAdmEmissionProfileName;
+}
+
+fn emissionRequiredAttributeValue(
+    element: xml.StartElement,
+    attribute_name: []const u8,
+    expected: []const u8,
+) !void {
+    const encoded = try element.attribute(attribute_name) orelse
+        return error.MissingAdmEmissionProfileFormatAttribute;
+    var storage: [max_profile_text_bytes]u8 = undefined;
+    const decoded = try xml.decodeContent(&storage, encoded);
+    if (!std.mem.eql(u8, decoded, expected))
+        return error.InvalidAdmEmissionProfileFormatAttribute;
+}
+
+fn validateEmissionFormatDeclarationAttributes(
+    element: xml.StartElement,
+    identifier_attribute: []const u8,
+    name_attribute: []const u8,
+    type_label: u16,
+) !void {
+    try validateEmissionAttributes(
+        element,
+        &.{
+            identifier_attribute,
+            name_attribute,
+            "typeLabel",
+            "typeDefinition",
+        },
+        error.InvalidAdmEmissionProfileFormatAttribute,
+    );
+    try validateEmissionRequiredName(element, name_attribute);
+    const expected_label, const expected_definition = switch (type_label) {
+        0x0002 => .{ "0002", "Matrix" },
+        0x0003 => .{ "0003", "Objects" },
+        else => return error.InvalidAdmEmissionProfileFormatAttribute,
+    };
+    try emissionRequiredAttributeValue(
+        element,
+        "typeLabel",
+        expected_label,
+    );
+    try emissionRequiredAttributeValue(
+        element,
+        "typeDefinition",
+        expected_definition,
+    );
+}
+
+fn validateEmissionTrackUidAttributes(element: xml.StartElement) !void {
+    try validateEmissionAttributes(
+        element,
+        &.{ "UID", "sampleRate", "bitDepth" },
+        error.InvalidAdmEmissionProfileTrackAttribute,
+    );
+    for ([_][]const u8{ "sampleRate", "bitDepth" }) |attribute_name| {
+        const encoded = try element.attribute(attribute_name);
+        if (encoded == null) continue;
+        var storage: [32]u8 = undefined;
+        const raw = try xml.decodeContent(&storage, encoded.?);
+        const value = std.fmt.parseInt(u32, raw, 10) catch
+            return error.InvalidAdmEmissionProfileTrackAttribute;
+        if (value == 0)
+            return error.InvalidAdmEmissionProfileTrackAttribute;
+    }
 }
 
 fn emissionRequiredFlagAttribute(
@@ -1555,6 +1638,102 @@ fn readEmissionContentMetadata(
     return error.InvalidAdmEmissionProfileContentMetadata;
 }
 
+fn noteEmissionFormatChild(
+    owner: *EmissionFormatOwner,
+    element: xml.StartElement,
+) !void {
+    const name = element.localName();
+    switch (owner.kind) {
+        .matrix_pack => {
+            if (std.mem.eql(u8, name, "audioChannelFormatIDRef")) {
+                owner.channel_references += 1;
+            } else if (std.mem.eql(u8, name, "inputPackFormatIDRef")) {
+                owner.input_references += 1;
+            } else if (std.mem.eql(u8, name, "outputPackFormatIDRef")) {
+                owner.output_references += 1;
+            } else {
+                return error.InvalidAdmEmissionProfilePackSubelement;
+            }
+            try validateEmissionAttributes(
+                element,
+                &.{},
+                error.InvalidAdmEmissionProfileReferenceAttribute,
+            );
+        },
+        .objects_pack => {
+            if (!std.mem.eql(u8, name, "audioChannelFormatIDRef"))
+                return error.InvalidAdmEmissionProfilePackSubelement;
+            owner.channel_references += 1;
+            try validateEmissionAttributes(
+                element,
+                &.{},
+                error.InvalidAdmEmissionProfileReferenceAttribute,
+            );
+        },
+        .matrix_channel => {
+            if (!std.mem.eql(u8, name, "audioBlockFormatMatrix"))
+                return error.InvalidAdmEmissionProfileChannelSubelement;
+            owner.block_count += 1;
+        },
+        .objects_channel => {
+            if (!std.mem.eql(u8, name, "audioBlockFormatObjects"))
+                return error.InvalidAdmEmissionProfileChannelSubelement;
+            owner.block_count += 1;
+        },
+        .track_uid => {
+            if (std.mem.eql(u8, name, "audioPackFormatIDRef")) {
+                owner.pack_references += 1;
+            } else if (std.mem.eql(
+                u8,
+                name,
+                "audioChannelFormatIDRef",
+            )) {
+                owner.channel_references += 1;
+            } else {
+                return error.InvalidAdmEmissionProfileTrackSubelement;
+            }
+            try validateEmissionAttributes(
+                element,
+                &.{},
+                error.InvalidAdmEmissionProfileReferenceAttribute,
+            );
+        },
+    }
+}
+
+fn validateEmissionFormatOwner(owner: EmissionFormatOwner) !void {
+    switch (owner.kind) {
+        .matrix_pack => {
+            if (owner.channel_references == 0 or
+                owner.channel_references > 24 or
+                owner.input_references != 1 or
+                owner.output_references != 1)
+            {
+                return error.InvalidAdmEmissionProfilePackStructure;
+            }
+        },
+        .objects_pack => {
+            if (owner.channel_references != 1)
+                return error.InvalidAdmEmissionProfilePackStructure;
+        },
+        .matrix_channel => {
+            if (owner.block_count != 1)
+                return error.InvalidAdmEmissionProfileChannelStructure;
+        },
+        .objects_channel => {
+            if (owner.block_count == 0)
+                return error.InvalidAdmEmissionProfileChannelStructure;
+        },
+        .track_uid => {
+            if (owner.pack_references != 1 or
+                owner.channel_references != 1)
+            {
+                return error.InvalidAdmEmissionProfileTrackStructure;
+            }
+        },
+    }
+}
+
 fn skipEmissionElement(
     events: *xml.EventIterator,
     start: xml.StartElement,
@@ -2339,6 +2518,89 @@ pub const Document = struct {
                 else => {},
             }
         }
+    }
+
+    /// Validates local pack, channel, and track UID metadata and structure.
+    pub fn validateEmissionProfileFormatMetadata(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileProgrammeContentMetadata();
+        var owner: ?EmissionFormatOwner = null;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (owner) |*current| {
+                        if (element.depth == current.depth + 1)
+                            try noteEmissionFormatChild(current, element);
+                        continue;
+                    }
+                    const name = element.localName();
+                    if (std.mem.eql(u8, name, "audioPackFormat")) {
+                        const type_label = try emissionElementTypeLabel(
+                            element,
+                            "audioPackFormatID",
+                        );
+                        try validateEmissionFormatDeclarationAttributes(
+                            element,
+                            "audioPackFormatID",
+                            "audioPackFormatName",
+                            type_label,
+                        );
+                        owner = .{
+                            .kind = if (type_label == 0x0002)
+                                .matrix_pack
+                            else
+                                .objects_pack,
+                            .depth = element.depth,
+                        };
+                    } else if (std.mem.eql(
+                        u8,
+                        name,
+                        "audioChannelFormat",
+                    )) {
+                        const type_label = try emissionElementTypeLabel(
+                            element,
+                            "audioChannelFormatID",
+                        );
+                        try validateEmissionFormatDeclarationAttributes(
+                            element,
+                            "audioChannelFormatID",
+                            "audioChannelFormatName",
+                            type_label,
+                        );
+                        owner = .{
+                            .kind = if (type_label == 0x0002)
+                                .matrix_channel
+                            else
+                                .objects_channel,
+                            .depth = element.depth,
+                        };
+                    } else if (std.mem.eql(u8, name, "audioTrackUID")) {
+                        try validateEmissionTrackUidAttributes(element);
+                        owner = .{
+                            .kind = .track_uid,
+                            .depth = element.depth,
+                        };
+                    } else {
+                        continue;
+                    }
+                    if (element.self_closing) {
+                        try validateEmissionFormatOwner(owner.?);
+                        owner = null;
+                    }
+                },
+                .end => |element| {
+                    const current = owner orelse continue;
+                    if (element.depth != current.depth) continue;
+                    try validateEmissionFormatOwner(current);
+                    owner = null;
+                },
+                else => {},
+            }
+        }
+        if (owner != null)
+            return error.InvalidAdmEmissionProfileFormatStructure;
     }
 
     fn validateEmissionComplementaryParameterGroup(
@@ -7516,16 +7778,16 @@ const valid_emission_object_parameters_xml =
     \\      <positionOffset coordinate="azimuth">0.0</positionOffset>
     \\    </alternativeValueSet>
     \\  </audioObject>
-    \\  <audioPackFormat audioPackFormatID="AP_00031001">
+    \\  <audioPackFormat audioPackFormatID="AP_00031001" audioPackFormatName="Commentary Object" typeLabel="0003" typeDefinition="Objects">
     \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
     \\  </audioPackFormat>
-    \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+    \\  <audioChannelFormat audioChannelFormatID="AC_00031001" audioChannelFormatName="Commentary Object" typeLabel="0003" typeDefinition="Objects">
     \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
     \\      <position coordinate="azimuth">0.0</position>
     \\      <position coordinate="elevation">0.0</position>
     \\    </audioBlockFormatObjects>
     \\  </audioChannelFormat>
-    \\  <audioTrackUID UID="ATU_00000001">
+    \\  <audioTrackUID UID="ATU_00000001" sampleRate="48000" bitDepth="24">
     \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
     \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
     \\  </audioTrackUID>
@@ -8028,6 +8290,109 @@ test "ADM XML emission profile validates dialogue classification" {
         "    <audioContentIDRef>ACO_1001</audioContentIDRef>",
         "    <audioContentIDRef>ACO_1001</audioContentIDRef>\n" ++
             "    <authoringInformation/>",
+    );
+}
+
+fn expectEmissionFormatMetadataReplacement(
+    expected_error: anyerror,
+    needle: []const u8,
+    replacement: []const u8,
+) !void {
+    const replaced = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        needle,
+        replacement,
+    );
+    defer std.testing.allocator.free(replaced);
+    try std.testing.expect(!std.mem.eql(
+        u8,
+        replaced,
+        valid_emission_object_parameters_xml,
+    ));
+    const document = try Document.init(replaced);
+    try std.testing.expectError(
+        expected_error,
+        document.validateEmissionProfileFormatMetadata(),
+    );
+}
+
+test "ADM XML emission profile validates format metadata" {
+    const document = try Document.init(
+        valid_emission_object_parameters_xml,
+    );
+    try document.validateEmissionProfileFormatMetadata();
+}
+
+test "ADM XML emission profile requires format attributes" {
+    try expectEmissionFormatMetadataReplacement(
+        error.MissingAdmEmissionProfileName,
+        " audioPackFormatName=\"Commentary Object\"",
+        "",
+    );
+    try expectEmissionFormatMetadataReplacement(
+        error.InvalidAdmEmissionProfileFormatAttribute,
+        "typeLabel=\"0003\" typeDefinition=\"Objects\"",
+        "typeLabel=\"0002\" typeDefinition=\"Objects\"",
+    );
+    try expectEmissionFormatMetadataReplacement(
+        error.InvalidAdmEmissionProfileFormatAttribute,
+        "typeLabel=\"0003\" typeDefinition=\"Objects\"",
+        "typeLabel=\"0003\" typeDefinition=\"Matrix\"",
+    );
+    try expectEmissionFormatMetadataReplacement(
+        error.InvalidAdmEmissionProfileFormatAttribute,
+        " typeDefinition=\"Objects\">",
+        " typeDefinition=\"Objects\" importance=\"10\">",
+    );
+    try expectEmissionFormatMetadataReplacement(
+        error.InvalidAdmEmissionProfileFormatAttribute,
+        "audioChannelFormatName=\"Commentary Object\"",
+        "audioChannelFormatName=\"Commentary Object\" frequency=\"120\"",
+    );
+}
+
+test "ADM XML emission profile restricts format structure" {
+    try expectEmissionFormatMetadataReplacement(
+        error.InvalidAdmEmissionProfilePackSubelement,
+        "    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>\n" ++
+            "  </audioPackFormat>",
+        "    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>\n" ++
+            "    <absoluteDistance>1.0</absoluteDistance>\n" ++
+            "  </audioPackFormat>",
+    );
+    try expectEmissionFormatMetadataReplacement(
+        error.InvalidAdmEmissionProfileReferenceAttribute,
+        "<audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>",
+        "<audioChannelFormatIDRef role=\"main\">AC_00031001</audioChannelFormatIDRef>",
+    );
+    try expectEmissionFormatMetadataReplacement(
+        error.InvalidAdmEmissionProfileChannelSubelement,
+        "    <audioBlockFormatObjects audioBlockFormatID=\"AB_00031001_00000001\">",
+        "    <frequency typeDefinition=\"lowPass\">120</frequency>\n" ++
+            "    <audioBlockFormatObjects audioBlockFormatID=\"AB_00031001_00000001\">",
+    );
+}
+
+test "ADM XML emission profile restricts track metadata" {
+    try expectEmissionFormatMetadataReplacement(
+        error.InvalidAdmEmissionProfileTrackAttribute,
+        " sampleRate=\"48000\"",
+        " sampleRate=\"0\"",
+    );
+    try expectEmissionFormatMetadataReplacement(
+        error.InvalidAdmEmissionProfileTrackAttribute,
+        " bitDepth=\"24\">",
+        " bitDepth=\"24\" custom=\"value\">",
+    );
+    try expectEmissionFormatMetadataReplacement(
+        error.InvalidAdmEmissionProfileTrackSubelement,
+        "    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>\n" ++
+            "  </audioTrackUID>",
+        "    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>\n" ++
+            "    <audioMXFLookUp>1</audioMXFLookUp>\n" ++
+            "  </audioTrackUID>",
     );
 }
 
