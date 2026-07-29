@@ -3475,15 +3475,24 @@ test "installed package exposes file-backed audio writers" {
         \\<audioFormatExtended version="ITU-R_BS.2076-3">
         \\  <audioProgramme audioProgrammeID="APR_1001">
         \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\    <audioContentIDRef>ACO_1002</audioContentIDRef>
         \\  </audioProgramme>
         \\  <audioContent audioContentID="ACO_1001">
         \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
         \\  </audioContent>
+        \\  <audioContent audioContentID="ACO_1002">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\  </audioContent>
         \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioComplementaryObjectIDRef>AO_1002</audioComplementaryObjectIDRef>
         \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
         \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
         \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0001"/>
         \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0002"/>
+        \\  </audioObject>
+        \\  <audioObject audioObjectID="AO_1002">
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
         \\  </audioObject>
         \\  <audioPackFormat audioPackFormatID="AP_00021001">
         \\    <audioChannelFormatIDRef>AC_00021001</audioChannelFormatIDRef>
@@ -3502,6 +3511,10 @@ test "installed package exposes file-backed audio writers" {
         \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
         \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
         \\  </audioTrackUID>
+        \\  <audioTrackUID UID="ATU_00000002">
+        \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
         \\  <profileList>
         \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
         \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
@@ -3517,6 +3530,7 @@ test "installed package exposes file-backed audio writers" {
     try emission_adm.validateEmissionProfileObjectTopology();
     try emission_adm.validateEmissionProfileObjectSources();
     try emission_adm.validateEmissionProfileMatrices();
+    try emission_adm.validateEmissionProfileComplementaryObjects();
     var wav = try plugin.dsp.WavFileWriter.initWithRiffMetadata(
         std.testing.io,
         wav_file,

@@ -201,6 +201,12 @@ const EmissionMatrixPack = struct {
     channels: EmissionPackChannels,
 };
 
+const EmissionComplementaryLimits = struct {
+    groups: usize,
+    non_complementary_tracks: usize,
+    independent_groups: usize,
+};
+
 fn emissionProfileLimits(
     level: EmissionProfileLevel,
 ) EmissionElementCounts {
@@ -274,6 +280,29 @@ fn emissionMaximumLayoutChannels(
         .level_0 => std.math.maxInt(usize),
         .level_1 => 12,
         .level_2 => 24,
+    };
+}
+
+fn emissionComplementaryLimits(
+    level: EmissionProfileLevel,
+) EmissionComplementaryLimits {
+    const unlimited = std.math.maxInt(usize);
+    return switch (level) {
+        .level_0 => .{
+            .groups = unlimited,
+            .non_complementary_tracks = unlimited,
+            .independent_groups = unlimited,
+        },
+        .level_1 => .{
+            .groups = 8,
+            .non_complementary_tracks = 16,
+            .independent_groups = 16,
+        },
+        .level_2 => .{
+            .groups = 14,
+            .non_complementary_tracks = 28,
+            .independent_groups = 16,
+        },
     };
 }
 
@@ -1074,6 +1103,295 @@ pub const Document = struct {
                 try self.validateEmissionMatrixChannelParent(identifier);
             }
         }
+    }
+
+    /// Validates complementary-object groups and their profile-level derived
+    /// counts.
+    pub fn validateEmissionProfileComplementaryObjects(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileMatrices();
+        const limits = emissionComplementaryLimits(
+            try self.emissionProfileLevel(),
+        );
+        var group_count: usize = 0;
+        var independent_group_count: usize = 0;
+        var non_complementary_track_count: usize = 0;
+
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            const object = declaration.identifier;
+            if (object.kind != .object) continue;
+
+            const complementary_parent_count =
+                try self.emissionComplementaryParentCount(object.primary);
+            if (complementary_parent_count > 1)
+                return error.InvalidAdmEmissionProfileComplementaryObject;
+            const complementary_child_count =
+                try self.emissionComplementaryChildCount(object.primary);
+            const parent = try self.emissionObjectParent(object.primary);
+            if (parent.kind != .content) {
+                if (complementary_parent_count != 0 or
+                    complementary_child_count != 0)
+                {
+                    return error.InvalidAdmEmissionProfileComplementaryObject;
+                }
+                continue;
+            }
+
+            if (complementary_child_count != 0) {
+                if (complementary_parent_count != 0)
+                    return error.InvalidAdmEmissionProfileComplementaryObject;
+                group_count = std.math.add(
+                    usize,
+                    group_count,
+                    1,
+                ) catch
+                    return error.AdmEmissionProfileComplementaryGroupLimitExceeded;
+                independent_group_count = std.math.add(
+                    usize,
+                    independent_group_count,
+                    1,
+                ) catch
+                    return error.AdmEmissionProfileIndependentGroupLimitExceeded;
+                const group_tracks =
+                    try self.validateEmissionComplementaryGroup(
+                        object,
+                        complementary_child_count,
+                    );
+                non_complementary_track_count = std.math.add(
+                    usize,
+                    non_complementary_track_count,
+                    group_tracks,
+                ) catch
+                    return error.AdmEmissionProfileNonComplementaryTrackLimitExceeded;
+            } else if (complementary_parent_count == 0) {
+                independent_group_count = std.math.add(
+                    usize,
+                    independent_group_count,
+                    1,
+                ) catch
+                    return error.AdmEmissionProfileIndependentGroupLimitExceeded;
+                non_complementary_track_count = std.math.add(
+                    usize,
+                    non_complementary_track_count,
+                    try self.emissionObjectTrackCount(object.primary),
+                ) catch
+                    return error.AdmEmissionProfileNonComplementaryTrackLimitExceeded;
+            }
+        }
+
+        if (group_count > limits.groups)
+            return error.AdmEmissionProfileComplementaryGroupLimitExceeded;
+        if (independent_group_count == 0 or
+            independent_group_count > limits.independent_groups)
+        {
+            return error.AdmEmissionProfileIndependentGroupLimitExceeded;
+        }
+        if (non_complementary_track_count == 0 or
+            non_complementary_track_count > limits.non_complementary_tracks)
+        {
+            return error.AdmEmissionProfileNonComplementaryTrackLimitExceeded;
+        }
+    }
+
+    fn validateEmissionComplementaryGroup(
+        self: Document,
+        root: adm.Identifier,
+        child_count: usize,
+    ) !usize {
+        const source_type = try self.emissionObjectSourceType(root.primary);
+        var maximum_tracks = try self.emissionObjectTrackCount(root.primary);
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .object or
+                owner.primary != root.primary or
+                reference.kind != .complementary_object)
+            {
+                continue;
+            }
+            const child = reference.identifier orelse
+                return error.InvalidAdmEmissionProfileComplementaryObject;
+            const child_parent = try self.emissionObjectParent(child.primary);
+            if (child_parent.kind != .content or
+                try self.emissionComplementaryChildCount(child.primary) != 0 or
+                try self.emissionComplementaryParentCount(child.primary) != 1)
+            {
+                return error.InvalidAdmEmissionProfileComplementaryObject;
+            }
+            if (try self.emissionObjectSourceType(child.primary) != source_type)
+                return error.InvalidAdmEmissionProfileComplementaryPackType;
+            maximum_tracks = @max(
+                maximum_tracks,
+                try self.emissionObjectTrackCount(child.primary),
+            );
+        }
+        try self.validateEmissionComplementaryProgrammeInclusion(
+            root.primary,
+            child_count + 1,
+        );
+        return maximum_tracks;
+    }
+
+    fn validateEmissionComplementaryProgrammeInclusion(
+        self: Document,
+        root_primary: u32,
+        group_size: usize,
+    ) !void {
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            const programme = declaration.identifier;
+            if (programme.kind != .programme) continue;
+            var included: usize = @intFromBool(
+                try self.emissionProgrammeIncludesObject(
+                    programme.primary,
+                    root_primary,
+                ),
+            );
+            var reference_iterator = self.references();
+            while (try reference_iterator.next()) |reference| {
+                const owner = reference.owner orelse continue;
+                if (!reference.direct_owner or
+                    owner.kind != .object or
+                    owner.primary != root_primary or
+                    reference.kind != .complementary_object)
+                {
+                    continue;
+                }
+                const child = reference.identifier orelse
+                    return error.InvalidAdmEmissionProfileComplementaryObject;
+                included += @intFromBool(
+                    try self.emissionProgrammeIncludesObject(
+                        programme.primary,
+                        child.primary,
+                    ),
+                );
+            }
+            if (included != 0 and included != 1 and included != group_size)
+                return error.InvalidAdmEmissionProfileComplementaryProgramme;
+        }
+    }
+
+    fn emissionProgrammeIncludesObject(
+        self: Document,
+        programme_primary: u32,
+        object_primary: u32,
+    ) !bool {
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            if (!reference.direct_owner or reference.kind != .content)
+                continue;
+            const owner = reference.owner orelse continue;
+            const content = reference.identifier orelse continue;
+            if (owner.kind == .programme and
+                owner.primary == programme_primary and
+                content.primary == object_primary)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn emissionComplementaryChildCount(
+        self: Document,
+        object_primary: u32,
+    ) !usize {
+        var count: usize = 0;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (reference.direct_owner and
+                owner.kind == .object and
+                owner.primary == object_primary and
+                reference.kind == .complementary_object)
+            {
+                count = std.math.add(usize, count, 1) catch
+                    return error.AdmEmissionProfileComplementaryGroupLimitExceeded;
+            }
+        }
+        return count;
+    }
+
+    fn emissionComplementaryParentCount(
+        self: Document,
+        object_primary: u32,
+    ) !usize {
+        var count: usize = 0;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            if (!reference.direct_owner or
+                reference.kind != .complementary_object)
+            {
+                continue;
+            }
+            const child = reference.identifier orelse continue;
+            if (child.primary == object_primary) {
+                count = std.math.add(usize, count, 1) catch
+                    return error.InvalidAdmEmissionProfileComplementaryObject;
+            }
+        }
+        return count;
+    }
+
+    fn emissionObjectSourceType(
+        self: Document,
+        object_primary: u32,
+    ) !u16 {
+        var child_count: usize = 0;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .object or
+                owner.primary != object_primary)
+            {
+                continue;
+            }
+            if (reference.kind == .pack_format) {
+                const pack = reference.identifier orelse
+                    return error.InvalidAdmEmissionProfileComplementaryObject;
+                return pack.typeLabel() orelse
+                    error.InvalidAdmEmissionProfileComplementaryObject;
+            }
+            if (reference.kind == .object) child_count += 1;
+        }
+        if (child_count != 0) return 0x0003;
+        return error.InvalidAdmEmissionProfileComplementaryObject;
+    }
+
+    fn emissionObjectTrackCount(
+        self: Document,
+        object_primary: u32,
+    ) !usize {
+        var count: usize = 0;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .object or
+                owner.primary != object_primary)
+            {
+                continue;
+            }
+            if (reference.kind == .track_uid) {
+                count = std.math.add(usize, count, 1) catch
+                    return error.AdmEmissionProfileNonComplementaryTrackLimitExceeded;
+            } else if (reference.kind == .object) {
+                count = std.math.add(
+                    usize,
+                    count,
+                    try self.emissionObjectTrackCount(
+                        (reference.identifier orelse
+                            return error.InvalidAdmEmissionProfileComplementaryObject).primary,
+                    ),
+                ) catch
+                    return error.AdmEmissionProfileNonComplementaryTrackLimitExceeded;
+            }
+        }
+        return count;
     }
 
     fn emissionMatrixPack(
@@ -5177,6 +5495,366 @@ test "ADM XML emission profile validates matrix coefficients" {
         error.InvalidAdmEmissionProfileMatrixBlockAttribute,
         "audioBlockFormatID=\"AB_00021001_00000001\"",
         "audioBlockFormatID=\"AB_00021001_00000001\" rtime=\"00:00:00.00000\"",
+    );
+}
+
+const valid_emission_complementary_xml =
+    \\<audioFormatExtended version="ITU-R_BS.2076-3">
+    \\  <audioProgramme audioProgrammeID="APR_1001">
+    \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+    \\    <audioContentIDRef>ACO_1002</audioContentIDRef>
+    \\    <audioContentIDRef>ACO_1003</audioContentIDRef>
+    \\  </audioProgramme>
+    \\  <audioProgramme audioProgrammeID="APR_1002">
+    \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+    \\  </audioProgramme>
+    \\  <audioContent audioContentID="ACO_1001">
+    \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+    \\  </audioContent>
+    \\  <audioContent audioContentID="ACO_1002">
+    \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+    \\  </audioContent>
+    \\  <audioContent audioContentID="ACO_1003">
+    \\    <audioObjectIDRef>AO_1003</audioObjectIDRef>
+    \\  </audioContent>
+    \\  <audioObject audioObjectID="AO_1001">
+    \\    <audioComplementaryObjectIDRef>AO_1002</audioComplementaryObjectIDRef>
+    \\    <audioComplementaryObjectIDRef>AO_1003</audioComplementaryObjectIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+    \\  </audioObject>
+    \\  <audioObject audioObjectID="AO_1002">
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
+    \\  </audioObject>
+    \\  <audioObject audioObjectID="AO_1003">
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\    <audioTrackUIDRef>ATU_00000003</audioTrackUIDRef>
+    \\  </audioObject>
+    \\  <audioTrackUID UID="ATU_00000001">
+    \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\  </audioTrackUID>
+    \\  <audioTrackUID UID="ATU_00000002">
+    \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\  </audioTrackUID>
+    \\  <audioTrackUID UID="ATU_00000003">
+    \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\  </audioTrackUID>
+    \\  <profileList>
+    \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+    \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+    \\  </profileList>
+    \\</audioFormatExtended>
+;
+
+fn expectEmissionComplementaryReplacement(
+    expected_error: anyerror,
+    needle: []const u8,
+    replacement: []const u8,
+) !void {
+    const replaced = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_complementary_xml,
+        needle,
+        replacement,
+    );
+    defer std.testing.allocator.free(replaced);
+    try std.testing.expect(!std.mem.eql(
+        u8,
+        replaced,
+        valid_emission_complementary_xml,
+    ));
+    const document = try Document.init(replaced);
+    try std.testing.expectError(
+        expected_error,
+        document.validateEmissionProfileComplementaryObjects(),
+    );
+}
+
+fn writeEmissionIndependentObjects(
+    output: *std.Io.Writer.Allocating,
+    level: u8,
+    pack_indexes: []const u16,
+    complementary_group: bool,
+) !void {
+    try output.writer.print(
+        "<audioFormatExtended version=\"ITU-R_BS.2076-3\">\n" ++
+            "  <audioProgramme audioProgrammeID=\"APR_1001\">\n",
+        .{},
+    );
+    for (pack_indexes, 0..) |_, object_index| {
+        try output.writer.print(
+            "    <audioContentIDRef>ACO_{X:0>4}</audioContentIDRef>\n",
+            .{0x1001 + object_index},
+        );
+    }
+    try output.writer.print("  </audioProgramme>\n", .{});
+
+    for (pack_indexes, 0..) |_, object_index| {
+        try output.writer.print(
+            "  <audioContent audioContentID=\"ACO_{X:0>4}\">\n" ++
+                "    <audioObjectIDRef>AO_{X:0>4}</audioObjectIDRef>\n" ++
+                "  </audioContent>\n",
+            .{ 0x1001 + object_index, 0x1001 + object_index },
+        );
+    }
+
+    var next_track: usize = 1;
+    for (pack_indexes, 0..) |pack_index, object_index| {
+        const channels = commonEmissionPackChannelIndexes(pack_index).?;
+        try output.writer.print(
+            "  <audioObject audioObjectID=\"AO_{X:0>4}\">\n" ++
+                "    <audioPackFormatIDRef>AP_0001{X:0>4}</audioPackFormatIDRef>\n",
+            .{ 0x1001 + object_index, pack_index },
+        );
+        if (complementary_group and object_index == 0) {
+            for (1..pack_indexes.len) |child_index| {
+                try output.writer.print(
+                    "    <audioComplementaryObjectIDRef>AO_{X:0>4}</audioComplementaryObjectIDRef>\n",
+                    .{0x1001 + child_index},
+                );
+            }
+        }
+        for (channels) |_| {
+            try output.writer.print(
+                "    <audioTrackUIDRef>ATU_{X:0>8}</audioTrackUIDRef>\n",
+                .{next_track},
+            );
+            next_track += 1;
+        }
+        try output.writer.print("  </audioObject>\n", .{});
+    }
+
+    next_track = 1;
+    for (pack_indexes) |pack_index| {
+        const channels = commonEmissionPackChannelIndexes(pack_index).?;
+        for (channels) |channel_index| {
+            try output.writer.print(
+                "  <audioTrackUID UID=\"ATU_{X:0>8}\">\n" ++
+                    "    <audioChannelFormatIDRef>AC_0001{X:0>4}</audioChannelFormatIDRef>\n" ++
+                    "    <audioPackFormatIDRef>AP_0001{X:0>4}</audioPackFormatIDRef>\n" ++
+                    "  </audioTrackUID>\n",
+                .{ next_track, channel_index, pack_index },
+            );
+            next_track += 1;
+        }
+    }
+
+    try output.writer.print(
+        "  <profileList>\n" ++
+            "    <profile profileName=\"Advanced sound system: ADM and S-ADM profile for emission\"\n" ++
+            "      profileVersion=\"1\" profileLevel=\"{d}\">ITU-R BS.2168</profile>\n" ++
+            "  </profileList>\n" ++
+            "</audioFormatExtended>\n",
+        .{level},
+    );
+}
+
+test "ADM XML emission profile validates complementary object groups" {
+    const document = try Document.init(valid_emission_complementary_xml);
+    try document.validateEmissionProfileComplementaryObjects();
+
+    const level_zero = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_complementary_xml,
+        "profileLevel=\"1\"",
+        "profileLevel=\"0\"",
+    );
+    defer std.testing.allocator.free(level_zero);
+    const level_zero_document = try Document.init(level_zero);
+    try level_zero_document.validateEmissionProfileComplementaryObjects();
+
+    const level_two = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_complementary_xml,
+        "profileLevel=\"1\"",
+        "profileLevel=\"2\"",
+    );
+    defer std.testing.allocator.free(level_two);
+    const level_two_document = try Document.init(level_two);
+    try level_two_document.validateEmissionProfileComplementaryObjects();
+}
+
+test "ADM XML emission profile rejects invalid complementary ownership" {
+    try expectEmissionComplementaryReplacement(
+        error.InvalidAdmEmissionProfileComplementaryObject,
+        "  <audioObject audioObjectID=\"AO_1002\">\n",
+        "  <audioObject audioObjectID=\"AO_1002\">\n" ++
+            "    <audioComplementaryObjectIDRef>AO_1003</audioComplementaryObjectIDRef>\n",
+    );
+    try expectEmissionComplementaryReplacement(
+        error.InvalidAdmEmissionProfileComplementaryObject,
+        "  <audioObject audioObjectID=\"AO_1003\">\n",
+        "  <audioObject audioObjectID=\"AO_1003\">\n" ++
+            "    <audioComplementaryObjectIDRef>AO_1002</audioComplementaryObjectIDRef>\n",
+    );
+}
+
+test "ADM XML emission profile requires whole complementary programme groups" {
+    const without_third = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_complementary_xml,
+        "    <audioContentIDRef>ACO_1003</audioContentIDRef>\n",
+        "",
+    );
+    defer std.testing.allocator.free(without_third);
+    const partial = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        without_third,
+        "  <audioContent audioContentID=\"ACO_1001\">",
+        "  <audioProgramme audioProgrammeID=\"APR_1003\">\n" ++
+            "    <audioContentIDRef>ACO_1003</audioContentIDRef>\n" ++
+            "  </audioProgramme>\n" ++
+            "  <audioContent audioContentID=\"ACO_1001\">",
+    );
+    defer std.testing.allocator.free(partial);
+    const document = try Document.init(partial);
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileComplementaryProgramme,
+        document.validateEmissionProfileComplementaryObjects(),
+    );
+}
+
+test "ADM XML emission profile requires one complementary source type" {
+    const member_object = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_complementary_xml,
+        \\  <audioObject audioObjectID="AO_1002">
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
+        \\  </audioObject>
+    ,
+        \\  <audioObject audioObjectID="AO_1002">
+        \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
+        \\  </audioObject>
+        ,
+    );
+    defer std.testing.allocator.free(member_object);
+    const member_track = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        member_object,
+        \\  <audioTrackUID UID="ATU_00000002">
+        \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+    ,
+        \\  <audioTrackUID UID="ATU_00000002">
+        \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+        \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+        \\  </audioTrackUID>
+        ,
+    );
+    defer std.testing.allocator.free(member_track);
+    const mixed_sources = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        member_track,
+        "  <audioTrackUID UID=\"ATU_00000001\">",
+        \\  <audioPackFormat audioPackFormatID="AP_00031001">
+        \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+        \\  </audioPackFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001"/>
+        \\  <audioTrackUID UID="ATU_00000001">
+        ,
+    );
+    defer std.testing.allocator.free(mixed_sources);
+    const document = try Document.init(mixed_sources);
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileComplementaryPackType,
+        document.validateEmissionProfileComplementaryObjects(),
+    );
+}
+
+test "ADM XML emission profile enforces derived complementary limits" {
+    var excessive_tracks: std.Io.Writer.Allocating =
+        .init(std.testing.allocator);
+    defer excessive_tracks.deinit();
+    try writeEmissionIndependentObjects(
+        &excessive_tracks,
+        1,
+        &.{ 0x0017, 0x0003 },
+        false,
+    );
+    const track_document = try Document.init(excessive_tracks.written());
+    try std.testing.expectError(
+        error.AdmEmissionProfileNonComplementaryTrackLimitExceeded,
+        track_document.validateEmissionProfileComplementaryObjects(),
+    );
+
+    var excessive_groups: std.Io.Writer.Allocating =
+        .init(std.testing.allocator);
+    defer excessive_groups.deinit();
+    try writeEmissionIndependentObjects(
+        &excessive_groups,
+        2,
+        &([_]u16{0x0001} ** 17),
+        false,
+    );
+    const group_document = try Document.init(excessive_groups.written());
+    try std.testing.expectError(
+        error.AdmEmissionProfileIndependentGroupLimitExceeded,
+        group_document.validateEmissionProfileComplementaryObjects(),
+    );
+
+    var complementary_tracks: std.Io.Writer.Allocating =
+        .init(std.testing.allocator);
+    defer complementary_tracks.deinit();
+    try writeEmissionIndependentObjects(
+        &complementary_tracks,
+        1,
+        &.{ 0x000f, 0x000f, 0x000f },
+        true,
+    );
+    const complementary_document = try Document.init(
+        complementary_tracks.written(),
+    );
+    try complementary_document.validateEmissionProfileComplementaryObjects();
+}
+
+test "ADM XML emission profile exposes complementary level limits" {
+    const level_zero = emissionComplementaryLimits(.level_0);
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        level_zero.groups,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        level_zero.non_complementary_tracks,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        level_zero.independent_groups,
+    );
+    const level_one = emissionComplementaryLimits(.level_1);
+    try std.testing.expectEqual(@as(usize, 8), level_one.groups);
+    try std.testing.expectEqual(
+        @as(usize, 16),
+        level_one.non_complementary_tracks,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 16),
+        level_one.independent_groups,
+    );
+    const level_two = emissionComplementaryLimits(.level_2);
+    try std.testing.expectEqual(@as(usize, 14), level_two.groups);
+    try std.testing.expectEqual(
+        @as(usize, 28),
+        level_two.non_complementary_tracks,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 16),
+        level_two.independent_groups,
     );
 }
 
