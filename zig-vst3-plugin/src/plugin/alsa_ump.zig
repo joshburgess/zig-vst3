@@ -28,6 +28,13 @@ pub const OutputStatistics = struct {
 };
 
 pub fn Backend(comptime Api: type) type {
+    return BackendWithContract(Api, AlsaUmpContract);
+}
+
+pub fn BackendWithContract(
+    comptime Api: type,
+    comptime Contract: type,
+) type {
     return struct {
         const Self = @This();
 
@@ -55,21 +62,25 @@ pub fn Backend(comptime Api: type) type {
 
         /// Keep the backend at a stable address from `open` through `close`.
         pub fn open(self: *Self, client_name: []const u8) !void {
-            if (self.opened) return error.AlsaUmpBackendAlreadyOpen;
+            if (self.opened) return Contract.backend_already_open;
             if (client_name.len == 0)
-                return error.EmptyAlsaUmpClientName;
+                return Contract.empty_client_name;
             if (!std.unicode.utf8ValidateSlice(client_name) or
                 std.mem.indexOfScalar(u8, client_name, 0) != null)
-                return error.InvalidAlsaUmpClientName;
-            try requireAvailable(Api);
+                return Contract.invalid_client_name;
+            try requireAvailable(Api, Contract);
+            if (@hasDecl(Api, "acquire"))
+                try Api.acquire(client_name);
             self.opened = true;
             _ = self.refreshTopology() catch |open_error| {
                 self.opened = false;
+                if (@hasDecl(Api, "release")) Api.release();
                 return open_error;
             };
         }
 
         pub fn close(self: *Self) void {
+            const was_open = self.opened;
             self.stopInput();
             if (self.output_session) |session| {
                 self.final_output_statistics =
@@ -82,6 +93,7 @@ pub fn Backend(comptime Api: type) type {
             self.topology_generation = 0;
             self.topology_fingerprint = 0;
             self.resetParser();
+            if (was_open and @hasDecl(Api, "release")) Api.release();
         }
 
         pub fn isOpen(self: *const Self) bool {
@@ -94,9 +106,9 @@ pub fn Backend(comptime Api: type) type {
         }
 
         pub fn nowNanoseconds(self: *const Self) !u64 {
-            if (!self.opened) return error.AlsaUmpBackendNotOpen;
+            if (!self.opened) return Contract.backend_not_open;
             const result = Api.nowNanoseconds();
-            if (result == 0) return error.AlsaUmpClockUnavailable;
+            if (result == 0) return Contract.clock_unavailable;
             return result;
         }
 
@@ -105,7 +117,9 @@ pub fn Backend(comptime Api: type) type {
         }
 
         pub fn refreshTopology(self: *Self) !u64 {
-            if (!self.opened) return error.AlsaUmpBackendNotOpen;
+            if (!self.opened) return Contract.backend_not_open;
+            if (@hasDecl(Api, "refreshTopology"))
+                try Api.refreshTopology();
             const fingerprint = try topologyFingerprint(Api);
             if (self.topology_generation == 0 or
                 fingerprint != self.topology_fingerprint)
@@ -127,24 +141,30 @@ pub fn Backend(comptime Api: type) type {
             self: *Self,
             output: []device_catalog.DeviceDescriptor,
         ) !usize {
-            if (!self.opened) return error.AlsaUmpBackendNotOpen;
+            if (!self.opened) return Contract.backend_not_open;
+            if (@hasDecl(Api, "refreshTopology"))
+                try Api.refreshTopology();
             const initial_fingerprint = try topologyFingerprint(Api);
             var count: usize = 0;
             count = try enumerateDirection(
                 Api,
+                Contract,
                 .input,
                 output,
                 count,
             );
             count = try enumerateDirection(
                 Api,
+                Contract,
                 .output,
                 output,
                 count,
             );
+            if (@hasDecl(Api, "refreshTopology"))
+                try Api.refreshTopology();
             const final_fingerprint = try topologyFingerprint(Api);
             if (final_fingerprint != initial_fingerprint)
-                return error.AlsaUmpTopologyChanged;
+                return Contract.topology_changed;
             if (self.topology_generation == 0 or
                 final_fingerprint != self.topology_fingerprint)
             {
@@ -160,11 +180,12 @@ pub fn Backend(comptime Api: type) type {
             self: *Self,
             identifier: device_catalog.DeviceIdentifier,
         ) !void {
-            if (!self.opened) return error.AlsaUmpBackendNotOpen;
+            if (!self.opened) return Contract.backend_not_open;
             if (self.input_running.load(.acquire))
-                return error.AlsaUmpInputAlreadyRunning;
+                return Contract.input_already_running;
             _ = try resolveIdentifier(
                 Api,
+                Contract,
                 .input,
                 identifier,
                 null,
@@ -176,10 +197,11 @@ pub fn Backend(comptime Api: type) type {
             self: *Self,
             identifier: device_catalog.DeviceIdentifier,
         ) !void {
-            if (!self.opened) return error.AlsaUmpBackendNotOpen;
+            if (!self.opened) return Contract.backend_not_open;
             var storage: [Api.maximum_open_name_bytes]u8 = undefined;
             const length = try resolveIdentifier(
                 Api,
+                Contract,
                 .output,
                 identifier,
                 &storage,
@@ -196,7 +218,7 @@ pub fn Backend(comptime Api: type) type {
 
         pub fn clearInputSelection(self: *Self) !void {
             if (self.input_running.load(.acquire))
-                return error.AlsaUmpInputAlreadyRunning;
+                return Contract.input_already_running;
             self.selected_input = null;
         }
 
@@ -213,14 +235,15 @@ pub fn Backend(comptime Api: type) type {
             self: *Self,
             callback: standalone.UmpInputCallback,
         ) !void {
-            if (!self.opened) return error.AlsaUmpBackendNotOpen;
+            if (!self.opened) return Contract.backend_not_open;
             if (self.input_running.load(.acquire))
-                return error.AlsaUmpInputAlreadyRunning;
+                return Contract.input_already_running;
             const identifier = self.selected_input orelse
-                return error.AlsaUmpInputNotSelected;
+                return Contract.input_not_selected;
             var storage: [Api.maximum_open_name_bytes]u8 = undefined;
             const length = try resolveIdentifier(
                 Api,
+                Contract,
                 .input,
                 identifier,
                 &storage,
@@ -256,9 +279,9 @@ pub fn Backend(comptime Api: type) type {
             self: *Self,
             packet: standalone.TimestampedUmpPacket,
         ) !void {
-            if (!self.opened) return error.AlsaUmpBackendNotOpen;
+            if (!self.opened) return Contract.backend_not_open;
             const session = self.output_session orelse
-                return error.AlsaUmpOutputNotSelected;
+                return Contract.output_not_selected;
             if (!packet.valid() or packet.timestamp_nanoseconds == 0)
                 return error.InvalidUmpPacket;
             try Api.send(
@@ -313,7 +336,7 @@ pub fn Backend(comptime Api: type) type {
 
         pub fn resetInputStatistics(self: *Self) !void {
             if (self.input_running.load(.acquire))
-                return error.AlsaUmpInputAlreadyRunning;
+                return Contract.input_already_running;
             self.received_count.store(0, .release);
             self.malformed_count.store(0, .release);
             self.final_read_failures = 0;
@@ -425,6 +448,29 @@ pub fn Backend(comptime Api: type) type {
 
 pub const AlsaUmpBackend = Backend(AlsaUmpSystemApi);
 
+const AlsaUmpContract = struct {
+    const backend_already_open = error.AlsaUmpBackendAlreadyOpen;
+    const backend_not_open = error.AlsaUmpBackendNotOpen;
+    const clock_unavailable = error.AlsaUmpClockUnavailable;
+    const device_name_too_long = error.AlsaUmpDeviceNameTooLong;
+    const device_not_found = error.AlsaUmpDeviceNotFound;
+    const device_storage_too_small = error.AlsaUmpDeviceStorageTooSmall;
+    const empty_client_name = error.EmptyAlsaUmpClientName;
+    const input_already_running = error.AlsaUmpInputAlreadyRunning;
+    const input_not_selected = error.AlsaUmpInputNotSelected;
+    const invalid_client_name = error.InvalidAlsaUmpClientName;
+    const invalid_device_name = error.InvalidAlsaUmpDeviceName;
+    const invalid_endpoint_identity =
+        error.InvalidAlsaUmpEndpointIdentity;
+    const library_unavailable = error.AlsaUmpLibraryUnavailable;
+    const open_name_storage_too_small =
+        error.AlsaUmpOpenNameStorageTooSmall;
+    const output_not_selected = error.AlsaUmpOutputNotSelected;
+    const topology_changed = error.AlsaUmpTopologyChanged;
+    const input_identifier_prefix = "alsaump-input:";
+    const output_identifier_prefix = "alsaump-output:";
+};
+
 const Direction = enum(u8) {
     input,
     output,
@@ -439,13 +485,14 @@ fn wordCount(word: u32) u3 {
     };
 }
 
-fn requireAvailable(comptime Api: type) !void {
+fn requireAvailable(comptime Api: type, comptime Contract: type) !void {
     if (!Api.supported) return error.UnsupportedPlatform;
-    if (!Api.available()) return error.AlsaUmpLibraryUnavailable;
+    if (!Api.available()) return Contract.library_unavailable;
 }
 
 fn enumerateDirection(
     comptime Api: type,
+    comptime Contract: type,
     direction: Direction,
     output: []device_catalog.DeviceDescriptor,
     initial_count: usize,
@@ -458,13 +505,14 @@ fn enumerateDirection(
     const device_count = try Api.deviceCount(direction);
     for (0..device_count) |index| {
         if (count == output.len)
-            return error.AlsaUmpDeviceStorageTooSmall;
+            return Contract.device_storage_too_small;
         const identity = try Api.deviceIdentity(
             direction,
             index,
             &identity_storage,
         );
         const identifier = try endpointIdentifier(
+            Contract,
             direction,
             identity,
         );
@@ -473,7 +521,11 @@ fn enumerateDirection(
             index,
             &raw_name_storage,
         );
-        const name = try boundedDeviceName(raw_name, &name_storage);
+        const name = try boundedDeviceName(
+            Contract,
+            raw_name,
+            &name_storage,
+        );
         output[count] = try device_catalog.DeviceDescriptor.init(
             if (direction == .input)
                 .midi_input
@@ -490,15 +542,19 @@ fn enumerateDirection(
     return count;
 }
 
-fn boundedDeviceName(raw: []const u8, storage: []u8) ![]const u8 {
+fn boundedDeviceName(
+    comptime Contract: type,
+    raw: []const u8,
+    storage: []u8,
+) ![]const u8 {
     if (raw.len == 0 or !std.unicode.utf8ValidateSlice(raw) or
         std.mem.indexOfScalar(u8, raw, 0) != null)
-        return error.InvalidAlsaUmpDeviceName;
+        return Contract.invalid_device_name;
     var source_length = @min(raw.len, storage.len);
     while (source_length != 0 and
         !std.unicode.utf8ValidateSlice(raw[0..source_length]))
         source_length -= 1;
-    if (source_length == 0) return error.AlsaUmpDeviceNameTooLong;
+    if (source_length == 0) return Contract.device_name_too_long;
     for (raw[0..source_length], 0..) |byte, index| {
         storage[index] = if (byte == '\n' or byte == '\r')
             ' '
@@ -509,18 +565,19 @@ fn boundedDeviceName(raw: []const u8, storage: []u8) ![]const u8 {
 }
 
 fn endpointIdentifier(
+    comptime Contract: type,
     direction: Direction,
     identity: []const u8,
 ) !device_catalog.DeviceIdentifier {
     if (identity.len == 0 or !std.unicode.utf8ValidateSlice(identity) or
         std.mem.indexOfScalar(u8, identity, 0) != null)
-        return error.InvalidAlsaUmpEndpointIdentity;
+        return Contract.invalid_endpoint_identity;
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(identity, &digest, .{});
     const prefix = if (direction == .input)
-        "alsaump-input:"
+        Contract.input_identifier_prefix
     else
-        "alsaump-output:";
+        Contract.output_identifier_prefix;
     var storage: [device_catalog.maximum_device_identifier_bytes]u8 =
         undefined;
     const encoded = std.fmt.bytesToHex(digest, .lower);
@@ -536,6 +593,7 @@ fn endpointIdentifier(
 
 fn resolveIdentifier(
     comptime Api: type,
+    comptime Contract: type,
     direction: Direction,
     identifier: device_catalog.DeviceIdentifier,
     output: ?[]u8,
@@ -550,7 +608,11 @@ fn resolveIdentifier(
             index,
             &identity_storage,
         );
-        const candidate = try endpointIdentifier(direction, identity);
+        const candidate = try endpointIdentifier(
+            Contract,
+            direction,
+            identity,
+        );
         if (!candidate.eql(&identifier)) continue;
         const open_name = try Api.deviceOpenName(
             direction,
@@ -559,12 +621,12 @@ fn resolveIdentifier(
         );
         if (output) |destination| {
             if (destination.len < open_name.len)
-                return error.AlsaUmpOpenNameStorageTooSmall;
+                return Contract.open_name_storage_too_small;
             @memcpy(destination[0..open_name.len], open_name);
         }
         return open_name.len;
     }
-    return error.AlsaUmpDeviceNotFound;
+    return Contract.device_not_found;
 }
 
 fn topologyFingerprint(comptime Api: type) !u64 {

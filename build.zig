@@ -3,6 +3,50 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const windows_midi_sdk_path = b.option(
+        []const u8,
+        "windows-midi-sdk-path",
+        "Path to an extracted Windows MIDI Services SDK package",
+    ) orelse ".windows-midi-sdk";
+    const windows_cppwinrt_include_path = b.option(
+        []const u8,
+        "windows-cppwinrt-include-path",
+        "Path to the Windows SDK C++/WinRT include directory",
+    ) orelse
+        b.graph.environ_map.get("ZIG_WINDOWS_CPPWINRT_INCLUDE") orelse
+        readOptionalPathFile(
+            b,
+            b.pathJoin(&.{
+                windows_midi_sdk_path,
+                "cppwinrt-include-path.txt",
+            }),
+        );
+    const windows_msvc_include_path = b.option(
+        []const u8,
+        "windows-msvc-include-path",
+        "Path to the MSVC C++ standard-library include directory",
+    ) orelse
+        b.graph.environ_map.get("ZIG_WINDOWS_MSVC_INCLUDE") orelse
+        readOptionalPathFile(
+            b,
+            b.pathJoin(&.{
+                windows_midi_sdk_path,
+                "msvc-include-path.txt",
+            }),
+        );
+    const windows_sdk_winrt_include_path = b.option(
+        []const u8,
+        "windows-sdk-winrt-include-path",
+        "Path to the Windows SDK WinRT include directory",
+    ) orelse
+        b.graph.environ_map.get("ZIG_WINDOWS_SDK_WINRT_INCLUDE") orelse
+        readOptionalPathFile(
+            b,
+            b.pathJoin(&.{
+                windows_midi_sdk_path,
+                "windows-sdk-winrt-include-path.txt",
+            }),
+        );
     validateCrossMsvcPrerequisites(b, target);
     const native_macos =
         target.result.os.tag == .macos and
@@ -81,6 +125,18 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
+    const zig_vst3_native_ump = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/plugin/alsa_ump.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addAlsaUmpBackend(b, zig_vst3_native_ump, target);
+    zig_vst3_native_ump.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
     const zig_vst3_alsa_ump = b.addModule("zig-vst3-alsaump", .{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/alsa_ump.zig",
@@ -88,10 +144,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    addAlsaUmpBackend(b, zig_vst3_alsa_ump, target);
     zig_vst3_alsa_ump.addImport(
-        "zig-vst3-plugin-core",
-        zig_vst3_plugin_core,
+        "zig-vst3-native-ump",
+        zig_vst3_native_ump,
     );
     const zig_vst3_win_midi = b.addModule("zig-vst3-winmidi", .{
         .root_source_file = b.path(
@@ -102,6 +157,30 @@ pub fn build(b: *std.Build) void {
     });
     addWinMidiBackend(b, zig_vst3_win_midi, target);
     zig_vst3_win_midi.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_win_ump = b.addModule("zig-vst3-winump", .{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/win_ump.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addWinUmpBackend(
+        b,
+        zig_vst3_win_ump,
+        target,
+        windows_midi_sdk_path,
+        windows_cppwinrt_include_path,
+        windows_msvc_include_path,
+        windows_sdk_winrt_include_path,
+    );
+    zig_vst3_win_ump.addImport(
+        "zig-vst3-native-ump",
+        zig_vst3_native_ump,
+    );
+    zig_vst3_win_ump.addImport(
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
@@ -1248,6 +1327,22 @@ pub fn build(b: *std.Build) void {
             &alsa_midi_link_smoke.step,
         );
     }
+    const zig_vst3_alsa_ump_implementation_tests = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/plugin/alsa_ump.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addAlsaUmpBackend(
+        b,
+        zig_vst3_alsa_ump_implementation_tests,
+        target,
+    );
+    zig_vst3_alsa_ump_implementation_tests.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
     const zig_vst3_alsa_ump_test_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/alsa_ump.zig",
@@ -1255,14 +1350,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    addAlsaUmpBackend(
-        b,
-        zig_vst3_alsa_ump_test_module,
-        target,
-    );
     zig_vst3_alsa_ump_test_module.addImport(
-        "zig-vst3-plugin-core",
-        zig_vst3_plugin_core,
+        "zig-vst3-native-ump",
+        zig_vst3_alsa_ump_implementation_tests,
     );
     const zig_vst3_alsa_ump_tests = b.addTest(.{
         .root_module = zig_vst3_alsa_ump_test_module,
@@ -1305,6 +1395,22 @@ pub fn build(b: *std.Build) void {
             .target = alsa_target,
             .optimize = .ReleaseSafe,
         });
+        const alsa_ump_implementation = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/plugin/alsa_ump.zig",
+            ),
+            .target = alsa_target,
+            .optimize = .ReleaseSafe,
+        });
+        addAlsaUmpBackend(
+            b,
+            alsa_ump_implementation,
+            alsa_target,
+        );
+        alsa_ump_implementation.addImport(
+            "zig-vst3-plugin-core",
+            alsa_ump_core,
+        );
         const alsa_ump_module = b.createModule(.{
             .root_source_file = b.path(
                 "zig-vst3-plugin/src/alsa_ump.zig",
@@ -1312,14 +1418,9 @@ pub fn build(b: *std.Build) void {
             .target = alsa_target,
             .optimize = .ReleaseSafe,
         });
-        addAlsaUmpBackend(
-            b,
-            alsa_ump_module,
-            alsa_target,
-        );
         alsa_ump_module.addImport(
-            "zig-vst3-plugin-core",
-            alsa_ump_core,
+            "zig-vst3-native-ump",
+            alsa_ump_implementation,
         );
         const alsa_ump_tests = b.addTest(.{
             .root_module = alsa_ump_module,
@@ -1426,6 +1527,121 @@ pub fn build(b: *std.Build) void {
         win_midi_module,
     );
     win_midi_test_step.dependOn(&win_midi_link_smoke.step);
+    const zig_vst3_win_ump_shared_tests = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/plugin/alsa_ump.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addAlsaUmpBackend(
+        b,
+        zig_vst3_win_ump_shared_tests,
+        target,
+    );
+    zig_vst3_win_ump_shared_tests.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_win_ump_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/win_ump.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addWinUmpBackend(
+        b,
+        zig_vst3_win_ump_test_module,
+        target,
+        windows_midi_sdk_path,
+        windows_cppwinrt_include_path,
+        windows_msvc_include_path,
+        windows_sdk_winrt_include_path,
+    );
+    zig_vst3_win_ump_test_module.addImport(
+        "zig-vst3-native-ump",
+        zig_vst3_win_ump_shared_tests,
+    );
+    zig_vst3_win_ump_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_win_ump_tests = b.addTest(.{
+        .root_module = zig_vst3_win_ump_test_module,
+    });
+    const win_ump_test_step = b.step(
+        "test-winump",
+        "Run Windows UMP tests and compile the optional backend",
+    );
+    win_ump_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_win_ump_tests).step,
+    );
+    const win_ump_shared = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/plugin/alsa_ump.zig",
+        ),
+        .target = win_midi_target,
+        .optimize = .ReleaseSafe,
+    });
+    win_ump_shared.addImport(
+        "zig-vst3-plugin-core",
+        win_midi_core,
+    );
+    const win_ump_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/win_ump.zig",
+        ),
+        .target = win_midi_target,
+        .optimize = .ReleaseSafe,
+    });
+    addWinUmpBackend(
+        b,
+        win_ump_module,
+        win_midi_target,
+        windows_midi_sdk_path,
+        windows_cppwinrt_include_path,
+        windows_msvc_include_path,
+        windows_sdk_winrt_include_path,
+    );
+    win_ump_module.addImport(
+        "zig-vst3-native-ump",
+        win_ump_shared,
+    );
+    win_ump_module.addImport(
+        "zig-vst3-plugin-core",
+        win_midi_core,
+    );
+    const win_ump_tests = b.addTest(.{
+        .root_module = win_ump_module,
+    });
+    const native_windows_msvc =
+        target.result.os.tag == .windows and
+        target.result.abi == .msvc;
+    if (!native_windows_msvc) {
+        win_ump_test_step.dependOn(&win_ump_tests.step);
+    }
+    const win_ump_link_smoke = b.addExecutable(.{
+        .name = "win-ump-link-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/win_ump_link_smoke.zig",
+            ),
+            .target = win_midi_target,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    win_ump_link_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        win_midi_core,
+    );
+    win_ump_link_smoke.root_module.addImport(
+        "zig-vst3-winump",
+        win_ump_module,
+    );
+    if (!native_windows_msvc) {
+        win_ump_test_step.dependOn(&win_ump_link_smoke.step);
+    }
     const zig_vst3_win_window_test_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/win_window.zig",
@@ -2959,6 +3175,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(alsa_midi_test_step);
     test_step.dependOn(alsa_ump_test_step);
     test_step.dependOn(win_midi_test_step);
+    test_step.dependOn(win_ump_test_step);
     test_step.dependOn(win_window_test_step);
     test_step.dependOn(cocoa_window_test_step);
     test_step.dependOn(x11_window_test_step);
@@ -3009,6 +3226,7 @@ pub fn build(b: *std.Build) void {
         gui_examples,
         zig_vst3_wasapi_tests,
         zig_vst3_win_midi_tests,
+        zig_vst3_win_ump_tests,
         zig_vst3_win_window_tests,
     });
     addExamplePluginTestDependencies(
@@ -3506,6 +3724,153 @@ fn addWinMidiBackend(
         },
     });
     module.linkSystemLibrary("winmm", .{});
+}
+
+fn addWinUmpBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+    sdk_root: []const u8,
+    cppwinrt_include_path: ?[]const u8,
+    msvc_include_path: ?[]const u8,
+    sdk_winrt_include_path: ?[]const u8,
+) void {
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.link_libc = true;
+    const generated_header = b.pathJoin(&.{
+        sdk_root,
+        "generated",
+        "winrt",
+        "Microsoft.Windows.Devices.Midi2.h",
+    });
+    const sdk_available = available: {
+        if (std.fs.path.isAbsolute(generated_header)) {
+            std.Io.Dir.accessAbsolute(
+                b.graph.io,
+                generated_header,
+                .{},
+            ) catch break :available false;
+        } else {
+            std.Io.Dir.cwd().access(
+                b.graph.io,
+                generated_header,
+                .{},
+            ) catch break :available false;
+        }
+        break :available true;
+    };
+    const generated_include: std.Build.LazyPath =
+        if (std.fs.path.isAbsolute(sdk_root))
+            .{ .cwd_relative = b.pathJoin(&.{ sdk_root, "generated" }) }
+        else
+            b.path(b.pathJoin(&.{ sdk_root, "generated" }));
+    const native_include: std.Build.LazyPath =
+        if (std.fs.path.isAbsolute(sdk_root))
+            .{
+                .cwd_relative = b.pathJoin(
+                    &.{ sdk_root, "build", "native", "include" },
+                ),
+            }
+        else
+            b.path(b.pathJoin(
+                &.{ sdk_root, "build", "native", "include" },
+            ));
+    if (target.result.os.tag == .windows and
+        target.result.abi == .msvc and
+        sdk_available)
+    {
+        const cppwinrt_include = cppwinrt_include_path orelse
+            @panic(
+                "native Windows UMP requires " ++
+                    "-Dwindows-cppwinrt-include-path or " ++
+                    "ZIG_WINDOWS_CPPWINRT_INCLUDE",
+            );
+        const msvc_include = msvc_include_path orelse
+            @panic(
+                "native Windows UMP requires " ++
+                    "-Dwindows-msvc-include-path or " ++
+                    "ZIG_WINDOWS_MSVC_INCLUDE",
+            );
+        const sdk_winrt_include = sdk_winrt_include_path orelse
+            @panic(
+                "native Windows UMP requires " ++
+                    "-Dwindows-sdk-winrt-include-path or " ++
+                    "ZIG_WINDOWS_SDK_WINRT_INCLUDE",
+            );
+        module.addIncludePath(generated_include);
+        module.addIncludePath(native_include);
+        module.addSystemIncludePath(directoryPath(b, cppwinrt_include));
+        module.addSystemIncludePath(directoryPath(b, msvc_include));
+        module.addSystemIncludePath(directoryPath(b, sdk_winrt_include));
+        module.addCSourceFile(.{
+            .file = b.path(
+                "zig-vst3-plugin/src/plugin/win_ump_shim.cpp",
+            ),
+            .flags = &.{
+                "-std=c++20",
+                "-fexceptions",
+                "-Wno-unknown-pragmas",
+                "-Wno-unused-command-line-argument",
+            },
+        });
+        module.linkSystemLibrary("msvcprt", .{});
+        module.linkSystemLibrary("msvcrt", .{});
+        module.linkSystemLibrary("vcruntime", .{});
+        module.linkSystemLibrary("ole32", .{});
+        module.linkSystemLibrary("runtimeobject", .{});
+        module.linkSystemLibrary("windowsapp", .{});
+        return;
+    }
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/win_ump_unavailable.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+}
+
+fn directoryPath(
+    b: *std.Build,
+    path: []const u8,
+) std.Build.LazyPath {
+    return if (std.fs.path.isAbsolute(path))
+        .{ .cwd_relative = path }
+    else
+        b.path(path);
+}
+
+fn readOptionalPathFile(
+    b: *std.Build,
+    path: []const u8,
+) ?[]const u8 {
+    const contents = if (std.fs.path.isAbsolute(path)) contents: {
+        const directory_name = std.fs.path.dirname(path) orelse return null;
+        const file_name = std.fs.path.basename(path);
+        const directory = std.Io.Dir.openDirAbsolute(
+            b.graph.io,
+            directory_name,
+            .{},
+        ) catch return null;
+        defer directory.close(b.graph.io);
+        break :contents directory.readFileAlloc(
+            b.graph.io,
+            file_name,
+            b.allocator,
+            .limited(4096),
+        ) catch return null;
+    } else std.Io.Dir.cwd().readFileAlloc(
+        b.graph.io,
+        path,
+        b.allocator,
+        .limited(4096),
+    ) catch return null;
+    const trimmed = std.mem.trim(u8, contents, " \t\r\n");
+    return if (trimmed.len == 0) null else trimmed;
 }
 
 fn addWinWindowBackend(

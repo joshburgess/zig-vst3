@@ -78,9 +78,16 @@ jobs:
           )
           zig libc $libcFile
           "ZIG_LIBC_FILE=$libcFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Prepare Windows MIDI SDK
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: scripts/prepare_windows_midi_sdk.ps1
       - name: Fetch pinned VST3 SDK
         shell: bash
         run: scripts/fetch_sdk.sh
+      - name: Test Windows UMP bridge
+        if: runner.os == 'Windows'
+        run: zig build test-winump -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
       - name: Build
         if: runner.os != 'Windows'
         run: zig build
@@ -203,7 +210,8 @@ jobs:
             xcb-util-cursor \
             xcb-util-keysyms \
             libxkbcommon \
-            libxkbcommon-x11
+            libxkbcommon-x11 \
+            wayland-protocols
           pacman -Q lv2 lv2lint
       - uses: actions/checkout@v6
       - uses: mlugg/setup-zig@v2

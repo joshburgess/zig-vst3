@@ -1,6 +1,6 @@
-const implementation = @import("zig-vst3-native-ump");
+const implementation = @import("plugin/win_ump.zig");
 
-pub const Backend = implementation.AlsaUmpBackend;
+pub const Backend = implementation.WinUmpBackend;
 pub const InputStatistics = implementation.InputStatistics;
 pub const OutputStatistics = implementation.OutputStatistics;
 

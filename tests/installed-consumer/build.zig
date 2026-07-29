@@ -72,6 +72,10 @@ pub fn build(b: *std.Build) void {
         dependency.module("zig-vst3-winmidi"),
     );
     core_tests.root_module.addImport(
+        "zig-vst3-winump",
+        dependency.module("zig-vst3-winump"),
+    );
+    core_tests.root_module.addImport(
         "zig-vst3-winwindow",
         dependency.module("zig-vst3-winwindow"),
     );

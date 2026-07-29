@@ -161,15 +161,23 @@ pub fn ReflectedEditController(comptime Config: type) type {
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
 
             fn init(self: *Controller) void {
+                const initializes_controller_state_in_place =
+                    has_controller_state and
+                    @hasDecl(ControllerState, "initInto");
                 self.* = .{
                     .parameter_state = ParameterState.init(Config.parameter_set),
                     .parameters = undefined,
                     .editor_state = if (has_editor_state) EditorState.init() else .{},
-                    .controller_state = if (has_controller_state and @hasDecl(ControllerState, "init"))
+                    .controller_state = if (initializes_controller_state_in_place)
+                        undefined
+                    else if (has_controller_state and @hasDecl(ControllerState, "init"))
                         ControllerState.init()
                     else
                         .{},
                 };
+                if (comptime initializes_controller_state_in_place) {
+                    self.controller_state.initInto();
+                }
                 self.parameters = .{
                     .set = Config.parameter_set,
                     .state = &self.parameter_state,
@@ -1263,6 +1271,50 @@ test "reflected edit controller owns isolated optional controller state" {
     try std.testing.expectEqual(@as(usize, 1), test_controller_state_deinit_count);
     _ = second.vtable.release(second);
     try std.testing.expectEqual(@as(usize, 2), test_controller_state_deinit_count);
+}
+
+test "reflected edit controller initializes large state in place" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const State = struct {
+        storage: [1024 * 1024]u8,
+        marker: usize,
+
+        pub fn initInto(self: *@This()) void {
+            test_controller_state_init_count += 1;
+            self.marker = 41;
+        }
+    };
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "InPlaceStateController";
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+        pub const ControllerState = State;
+    });
+
+    test_controller_state_init_count = 0;
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        TestController.create(
+            @ptrCast(&ivsteditcontroller.iedit_controller_iid),
+            &controller_out,
+        ),
+    );
+    const controller: *ivsteditcontroller.IEditController =
+        @ptrCast(@alignCast(
+            controller_out orelse return error.MissingController,
+        ));
+    defer _ = controller.vtable.release(controller);
+
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        test_controller_state_init_count,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 41),
+        TestController.controllerState(controller).marker,
+    );
 }
 
 test "reflected edit controller rejects malformed host requests" {

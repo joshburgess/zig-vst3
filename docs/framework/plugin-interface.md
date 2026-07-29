@@ -384,7 +384,7 @@ A product may use the music analyzer and reusable playback renderer or convert t
 
 `Midi1InputDevice` and `Midi1OutputDevice` use owned three-byte channel messages with nanosecond timestamps. `Midi1InputQueue(capacity)` is a bounded single-producer, single-consumer bridge from the device callback to the audio callback. Producers must submit nondecreasing timestamps. `Midi1BlockScheduler` converts absolute timestamps to floor-rounded sample offsets, clamps late packets to offset zero, and retains future packets or packets that exceed the current event-buffer capacity. Its device callback adapter counts rejected packets atomically. Keep the scheduler at a stable address while the device retains its callback. Stop both callbacks before reset, and do not attach multiple producers or consumers to one scheduler. `Midi1EventBuffer` converts block-relative device packets into checked plugin events without allocation. Its validity and event view reject a corrupted public count, and `reset` restores the buffer. The scheduler validates that destination before removing any queued packet. `Midi1OutputSink` converts emitted events back to MIDI 1 and reports sent, unsupported, and rejected messages separately.
 
-`UmpInputDevice` and `UmpOutputDevice` provide the same timestamped device boundary for complete Universal MIDI Packets. `UmpInputQueue(capacity)` and `UmpBlockScheduler(capacity)` preserve 32, 64, 96, and 128-bit packets in fixed storage, enforce nondecreasing producer timestamps, assign floor-rounded sample offsets, clamp late packets to offset zero, and retain future or capacity-limited packets. `UmpBlockBuffer(capacity)` deliberately carries raw packets rather than narrowing Utility, System, SysEx, Flex Data, Stream, or MIDI 2 messages into the plugin event model. Its checked `packets` view rejects a corrupted public count, `reset` restores it, and the scheduler validates it before consuming queued input. `UmpOutputDevice.sendBlock` converts valid block-relative offsets back to absolute nanosecond timestamps, continues after individual backend rejections, and reports sent, invalid, and rejected packets separately. The same stable-address, one-producer, one-consumer, and stopped-before-reset rules apply. Linux connects these contracts to ALSA UMP RawMIDI. Native Windows MIDI Services remains open.
+`UmpInputDevice` and `UmpOutputDevice` provide the same timestamped device boundary for complete Universal MIDI Packets. `UmpInputQueue(capacity)` and `UmpBlockScheduler(capacity)` preserve 32, 64, 96, and 128-bit packets in fixed storage, enforce nondecreasing producer timestamps, assign floor-rounded sample offsets, clamp late packets to offset zero, and retain future or capacity-limited packets. `UmpBlockBuffer(capacity)` deliberately carries raw packets rather than narrowing Utility, System, SysEx, Flex Data, Stream, or MIDI 2 messages into the plugin event model. Its checked `packets` view rejects a corrupted public count, `reset` restores it, and the scheduler validates it before consuming queued input. `UmpOutputDevice.sendBlock` converts valid block-relative offsets back to absolute nanosecond timestamps, continues after individual backend rejections, and reports sent, invalid, and rejected packets separately. The same stable-address, one-producer, one-consumer, and stopped-before-reset rules apply. Linux connects these contracts to ALSA UMP RawMIDI. Windows connects them to the optional Windows MIDI Services App SDK backend.
 
 `DeviceCatalog(capacity)` is a control-thread discovery snapshot with bounded UTF-8 identifiers and display names. Refresh validates the entire replacement, rejects duplicate identifiers and defaults, and publishes a new generation only after success. Unified audio devices and directional audio input or output endpoints are distinct kinds, so platforms with independent capture and render defaults do not need synthetic device pairs. Selection resolves a requested stable identifier first, then the platform default, then the first device of that kind.
 
@@ -616,6 +616,58 @@ WinMM short-message output owns a 256-message native scheduling queue and worker
 
 Injected tests cover discovery, directional identifiers, input adaptation, retained input and output statistics, future timestamp forwarding, queue rejection, transactional selection, topology polling, failure, stop, and retry. The shared native C queue test covers ordering, saturation, and cancellation. A fully linked ReleaseSafe executable compiles for Windows x86-64 GNU. Run `zig build test-winmidi`. Physical enumeration, input timing, future-output timing accuracy, output delivery and cancellation, busy-device behavior, hot-plug polling, unplug handling, stop, reconnect, and teardown remain external Windows tests.
 
+## Windows UMP Device Backend
+
+The optional `zig-vst3-winump` module connects the complete UMP device contracts to Windows MIDI Services. Its App SDK is an isolated build-time dependency. Builds that do not provide the SDK compile an unavailable stub, so ordinary plugin binaries and the WinMM backend do not acquire it.
+
+From a Windows source checkout, download the pinned package, verify its SHA-256 digest, and generate its C++/WinRT projection:
+
+```powershell
+pwsh -File scripts/prepare_windows_midi_sdk.ps1
+zig build test-winump
+```
+
+The preparation script locates the matching Windows SDK C++/WinRT and WinRT platform headers plus the installed MSVC C++ standard library. It records all three include paths inside the prepared SDK directory for later Zig builds. `-Dwindows-cppwinrt-include-path`, `-Dwindows-sdk-winrt-include-path`, and `-Dwindows-msvc-include-path` override those recorded paths when a build uses a separate toolchain.
+
+To keep the SDK outside the checkout, pass the same directory to both commands:
+
+```powershell
+pwsh -File scripts/prepare_windows_midi_sdk.ps1 `
+    -SdkDirectory C:\SDKs\zig-vst3-midi
+zig build test-winump `
+    -Dwindows-midi-sdk-path=C:\SDKs\zig-vst3-midi
+```
+
+The backend must remain at a stable address from `open` through `close`. Open and close it on the same control thread because that thread owns the Windows Runtime apartment:
+
+```zig
+const win_ump = @import("zig-vst3-winump");
+
+var backend = win_ump.Backend{};
+try backend.open("My Standalone");
+defer backend.close();
+
+var devices: [64]plug.plugin.DeviceDescriptor = undefined;
+const count = try backend.enumerate(&devices);
+for (devices[0..count]) |descriptor| {
+    if (descriptor.kind == .midi_input) {
+        try backend.selectInput(descriptor.identifier);
+        break;
+    }
+}
+
+var scheduler = plug.plugin.UmpBlockScheduler(256){};
+var input = backend.inputDevice();
+try input.start(scheduler.inputCallback());
+defer input.stop();
+```
+
+Discovery uses endpoint device IDs as persisted identities and active function blocks to determine direction. Function-block directions are interpreted from the device's point of view. A block output is therefore an application input, while a block input is an application output. Endpoints without active declarations remain available in both directions.
+
+Input callbacks convert QueryPerformanceCounter timestamps to monotonic nanoseconds and pass complete UMP words into the retained packet assembler. Output accepts exactly one complete 32-, 64-, 96-, or 128-bit packet and converts its absolute nanosecond timestamp back to QueryPerformanceCounter ticks. `outputStatistics` reports admission attempts, service-accepted packets, late submissions, rejections, queue-full responses, and write failures. A delivered count means that the service accepted the packet, not that a physical endpoint confirmed transmission.
+
+Injected tests cover SDK acquisition and release, refreshed topology, directional identifiers, fragmented 128-bit packet reconstruction, complete-packet output, and unavailable builds. Run `zig build test-winump`. Native service startup, physical endpoint discovery, all packet widths, input and output timestamp accuracy, hot-plug, unplug recovery, and teardown remain external Windows tests.
+
 `DeviceRecoveryController` turns catalog reconciliation into a transactional control-thread recovery operation. Its callback stops affected devices, applies the candidate selection, and restarts them. The controller publishes the candidate only after the callback succeeds. Failed fallback or restart attempts retain the active selection and retry on the next call. A returning preferred device replaces its fallback, and `requestRecovery` supports a backend-reported failure when the identifier did not change. Build replacement catalogs and run recovery away from the audio thread.
 
 `DeviceFailureSource` exposes monotonic failure counters for unified audio, directional audio, and directional MIDI devices. `DeviceFailureMonitorSet(capacity)` establishes a baseline when each source is added, combines new increases across sources, ignores counter resets after restart, and commits no baselines if any source read fails. CoreAudio maps combined-session failures to unified audio and split-session failures to their input or output AUHAL unit. WASAPI and ALSA PCM map native device-failure counts to the configured audio directions. CoreMIDI, WinMM, and ALSA RawMIDI map retained input disconnect, driver, or read failures. Keep every backend at a stable address while its source is registered:
@@ -741,7 +793,7 @@ Injected backend tests cover title validation, lifecycle, visibility, resize, ev
 
 Injected tests cover duplicate registration, capacity, malformed retained entries, ready descriptors, timer deadlines, missed intervals, clock regression, callback removal, and exact reference releases. The focused gate also compiles ReleaseSafe Linux x86-64, Linux AArch64, and unsupported Windows paths. Run `zig build test-linux-run-loop`. Physical VSTGUI registration, X11 input delivery, timer cadence under load, close ordering, and teardown remain external Linux checks.
 
-Optional PipeWire integration, native Windows MIDI Services, physical Linux UMP timing and recovery, physical disparate-device clock-correction confirmation, physical Linux VSTGUI confirmation, and physical restart or fallback confirmation remain open.
+Optional PipeWire integration, physical Linux and Windows UMP timing and recovery, physical disparate-device clock-correction confirmation, physical Linux VSTGUI confirmation, and physical restart or fallback confirmation remain open.
 
 A high-level or low-level processor that changes host-visible state may declare `bindHostRequests`. The framework supplies a component-owned, format-neutral `HostRequestSink`. Call `markChanged` with `HostChange`, or `markChanges` for a group, then call `dispatchPending` outside processing. `HostChange` covers component reload, audio I/O, parameter values, latency, parameter titles, MIDI CC assignments, note expression, I/O titles, prefetchable support, routing information, keyswitches, and parameter ID mapping. `markLatencyChanged` and `markIoChanged` remain convenience methods. Topology mutations mark audio I/O automatically. Pending changes coalesce into one component-to-controller message and one host `restartComponent` call. A missing peer or failed host call restores the complete set for retry without losing changes marked concurrently. Adopt prepared processing changes only at a block boundary. See [DSP Utilities](dsp.md#dynamic-latency) for the latency ordering contract and Fixed Rate Processor example.
 

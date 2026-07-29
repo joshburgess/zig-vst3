@@ -119,6 +119,12 @@ exe.root_module.addImport(
     dep.module("zig-vst3-winmidi"),
 );
 
+// Add only to a Windows standalone target that uses UMP devices:
+exe.root_module.addImport(
+    "zig-vst3-winump",
+    dep.module("zig-vst3-winump"),
+);
+
 // Add only to a Windows standalone target with a top-level window:
 exe.root_module.addImport(
     "zig-vst3-winwindow",
@@ -156,7 +162,7 @@ exe.root_module.addImport(
 );
 ```
 
-Import them in your code with the same names passed to `addImport`. The package also exposes `zig-vst3-plugin-core` for core-only use. Optional device modules link their platform frameworks and libraries only into targets that import them.
+Import them in your code with the same names passed to `addImport`. The package also exposes `zig-vst3-plugin-core` for core-only use. Optional device modules link their platform frameworks and libraries only into targets that import them. Native Windows UMP additionally requires the pinned Windows MIDI Services SDK package at build time. See [Plugin Interface](docs/framework/plugin-interface.md#windows-ump-device-backend) for setup details.
 
 ## Quick Start
 
