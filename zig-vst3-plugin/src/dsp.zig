@@ -103,6 +103,8 @@ pub const AdmIdentifierKind = adm.IdentifierKind;
 pub const AdmDirectSpeakerRouter = adm_render.DirectSpeakerRouter;
 pub const AdmDirectSpeakerPositionRouter =
     adm_render.DirectSpeakerPositionRouter;
+pub const AdmPolarPointSourcePanner =
+    adm_render.PolarPointSourcePanner;
 pub const AdmCartesianPointSourcePanner =
     adm_render.CartesianPointSourcePanner;
 pub const AdmDirectSpeakerRoute = adm_render.DirectSpeakerRoute;

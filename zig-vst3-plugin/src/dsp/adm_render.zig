@@ -1,5 +1,6 @@
 const std = @import("std");
 const adm = @import("adm.zig");
+const adm_polar_panner = @import("adm_polar_panner.zig");
 const adm_xml = @import("adm_xml.zig");
 
 pub const maximum_input_channels = adm_xml.max_adm_matrix_coefficients;
@@ -22,6 +23,7 @@ pub const OutputSpeaker = struct {
     label: []const u8,
     is_lfe: bool = false,
     nominal_polar: PolarPosition,
+    reproduction_polar: ?PolarPosition = null,
     allocentric: CartesianPosition,
 };
 
@@ -44,6 +46,91 @@ pub const DirectSpeakerRoute = union(enum) {
     polar_panner: PolarPosition,
     cartesian_panner: CartesianPosition,
 };
+
+/// Computes directional gains from nominal and measured polar positions.
+/// LFE outputs remain addressable by index but receive no panner gain.
+pub fn PolarPointSourcePanner(comptime Sample: type) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError(
+            "PolarPointSourcePanner supports f32 and f64 samples",
+        );
+
+    return struct {
+        const Self = @This();
+
+        output_count: usize,
+        core: adm_polar_panner.Panner(Sample),
+
+        pub fn init(outputs: []const OutputSpeaker) !Self {
+            try validateOutputLayout(outputs);
+            var speakers: [maximum_output_channels]adm_polar_panner.Speaker =
+                undefined;
+            var speaker_count: usize = 0;
+            for (outputs, 0..) |output, output_index| {
+                if (output.is_lfe) continue;
+                const label = normalizeSpeakerLabel(output.label) orelse
+                    return error.InvalidAdmRendererSpeakerLabel;
+                const reproduction =
+                    output.reproduction_polar orelse output.nominal_polar;
+                speakers[speaker_count] = .{
+                    .output_index = @intCast(output_index),
+                    .label = label,
+                    .nominal = pannerPolarPosition(output.nominal_polar),
+                    .actual = pannerPolarPosition(reproduction),
+                };
+                speaker_count += 1;
+            }
+            if (speaker_count < 2)
+                return error.MissingAdmRendererPannerOutput;
+            return .{
+                .output_count = outputs.len,
+                .core = try adm_polar_panner.Panner(Sample).init(
+                    outputs.len,
+                    speakers[0..speaker_count],
+                ),
+            };
+        }
+
+        pub fn calculateGains(
+            self: *const Self,
+            position: PolarPosition,
+            gains: []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (!validPolar(position))
+                return error.InvalidAdmRendererPolarPosition;
+            try self.core.calculateGains(
+                pannerPolarPosition(position),
+                gains,
+            );
+        }
+
+        pub fn mix(
+            self: *const Self,
+            position: PolarPosition,
+            input_gain: Sample,
+            input: []const Sample,
+            outputs: []const []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (!validPolar(position))
+                return error.InvalidAdmRendererPolarPosition;
+            try self.core.mix(
+                pannerPolarPosition(position),
+                input_gain,
+                input,
+                outputs,
+            );
+        }
+
+        pub fn valid(self: *const Self) bool {
+            return self.output_count > 0 and
+                self.output_count <= maximum_output_channels and
+                self.core.output_count == self.output_count and
+                self.core.valid();
+        }
+    };
+}
 
 /// Computes bounded, energy-preserving gains for allocentric room positions.
 /// The output layout is caller-owned; LFE speakers are retained but excluded.
@@ -707,6 +794,59 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
             }
         }
 
+        pub fn mixWithPolarFallback(
+            self: *const Self,
+            panner: *const PolarPointSourcePanner(Sample),
+            input: []const Sample,
+            outputs: []const []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (panner.output_count != self.output_count)
+                return error.AdmRendererOutputCountMismatch;
+            switch (self.route) {
+                .polar_panner => |position| try panner.mix(
+                    position,
+                    self.gain,
+                    input,
+                    outputs,
+                ),
+                .cartesian_panner => {
+                    return error.AdmRendererCartesianPointPannerRequired;
+                },
+                .output, .discard => try self.mix(input, outputs),
+            }
+        }
+
+        pub fn mixWithPointSourceFallback(
+            self: *const Self,
+            polar_panner: *const PolarPointSourcePanner(Sample),
+            cartesian_panner: *const CartesianPointSourcePanner(Sample),
+            input: []const Sample,
+            outputs: []const []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (polar_panner.output_count != self.output_count or
+                cartesian_panner.output_count != self.output_count)
+            {
+                return error.AdmRendererOutputCountMismatch;
+            }
+            switch (self.route) {
+                .polar_panner => |position| try polar_panner.mix(
+                    position,
+                    self.gain,
+                    input,
+                    outputs,
+                ),
+                .cartesian_panner => |position| try cartesian_panner.mix(
+                    position,
+                    self.gain,
+                    input,
+                    outputs,
+                ),
+                .output, .discard => try self.mix(input, outputs),
+            }
+        }
+
         pub fn valid(self: *const Self) bool {
             if (self.output_count == 0 or
                 self.output_count > maximum_output_channels or
@@ -849,6 +989,10 @@ fn validateOutputLayout(outputs: []const OutputSpeaker) !void {
             !validCartesian(output.allocentric))
         {
             return error.InvalidAdmRendererSpeakerPosition;
+        }
+        if (output.reproduction_polar) |position| {
+            if (!validPolar(position))
+                return error.InvalidAdmRendererSpeakerPosition;
         }
         const label_is_lfe = std.mem.eql(u8, label, "LFE1") or
             std.mem.eql(u8, label, "LFE2");
@@ -1387,6 +1531,15 @@ fn validPolar(position: PolarPosition) bool {
         position.elevation_degrees >= -90.0 and
         position.elevation_degrees <= 90.0 and
         position.distance >= 0.0;
+}
+
+fn pannerPolarPosition(
+    position: PolarPosition,
+) adm_polar_panner.PolarPosition {
+    return .{
+        .azimuth_degrees = position.azimuth_degrees,
+        .elevation_degrees = position.elevation_degrees,
+    };
 }
 
 fn validCartesian(position: CartesianPosition) bool {
@@ -2312,6 +2465,129 @@ test "ADM position router selects Cartesian speakers and preserves fallbacks" {
     try std.testing.expectEqualDeep([_]f64{ 5.0, 6.0 }, right);
 }
 
+test "ADM polar point panner uses reproduction positions and excludes LFE" {
+    const base = testPolarFiveLayout();
+    var layout: [base.len + 1]OutputSpeaker = undefined;
+    @memcpy(layout[0..base.len], &base);
+    layout[0].reproduction_polar = .{
+        .azimuth_degrees = 24,
+        .elevation_degrees = 0,
+    };
+    layout[base.len] = .{
+        .label = "LFE1",
+        .is_lfe = true,
+        .nominal_polar = .{
+            .azimuth_degrees = 0,
+            .elevation_degrees = 0,
+        },
+        .allocentric = .{ .x = 0, .y = 0, .z = 0 },
+    };
+    const panner = try PolarPointSourcePanner(f64).init(&layout);
+    var gains: [layout.len]f64 = undefined;
+    try panner.calculateGains(
+        .{ .azimuth_degrees = 24, .elevation_degrees = 0 },
+        &gains,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        gains[0],
+        0.000_000_001,
+    );
+    for (gains[1..]) |gain| {
+        try std.testing.expectApproxEqAbs(
+            @as(f64, 0.0),
+            gain,
+            0.000_000_001,
+        );
+    }
+
+    try panner.calculateGains(
+        .{ .azimuth_degrees = -145, .elevation_degrees = -40 },
+        &gains,
+    );
+    var power: f64 = 0.0;
+    for (gains[0..base.len]) |gain| power += gain * gain;
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        power,
+        0.000_000_001,
+    );
+    try std.testing.expectEqual(@as(f64, 0.0), gains[base.len]);
+}
+
+test "ADM polar point panner implements stereo rear attenuation" {
+    const layout = [_]OutputSpeaker{
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 1, .y = 1, .z = 0 },
+        },
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -1, .y = 1, .z = 0 },
+        },
+    };
+    const panner = try PolarPointSourcePanner(f32).init(&layout);
+    var gains: [layout.len]f32 = undefined;
+    try panner.calculateGains(
+        .{ .azimuth_degrees = 180, .elevation_degrees = 0 },
+        &gains,
+    );
+    for (gains) |gain| {
+        try std.testing.expectApproxEqAbs(
+            @as(f32, 0.5),
+            gain,
+            0.000_001,
+        );
+    }
+}
+
+test "ADM polar point panner mixes DirectSpeakers fallback routes" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <position coordinate="azimuth">65</position>
+        \\      <position coordinate="elevation">25</position>
+        \\      <gain>0.5</gain>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const layout = testPolarFiveLayout();
+    const router = try DirectSpeakerPositionRouter(f32).init(
+        &block,
+        &layout,
+        .{},
+    );
+    try std.testing.expect(router.route == .polar_panner);
+    const panner = try PolarPointSourcePanner(f32).init(&layout);
+    var expected: [layout.len]f32 = undefined;
+    try panner.calculateGains(
+        .{ .azimuth_degrees = 65, .elevation_degrees = 25 },
+        &expected,
+    );
+
+    const input = [_]f32{ 2.0, std.math.nan(f32) };
+    var storage: [layout.len][2]f32 = @splat(@splat(0.0));
+    var outputs: [layout.len][]f32 = undefined;
+    for (&storage, &outputs) |*channel, *output| output.* = channel;
+    try router.mixWithPolarFallback(&panner, &input, &outputs);
+    for (storage, expected) |channel, gain| {
+        try std.testing.expectApproxEqAbs(gain, channel[0], 0.000_001);
+        try std.testing.expectEqual(@as(f32, 0.0), channel[1]);
+    }
+}
+
 test "ADM Cartesian point panner preserves power across a cube layout" {
     const outputs = testCartesianCubeLayout();
     const panner = try CartesianPointSourcePanner(f64).init(&outputs);
@@ -2549,6 +2825,51 @@ test "ADM position router discards unmatched LFE without mutating output" {
             .{},
         ),
     );
+}
+
+fn testPolarFiveLayout() [5]OutputSpeaker {
+    return .{
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -1, .y = 1, .z = 0 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 1, .y = 1, .z = 0 },
+        },
+        .{
+            .label = "M+000",
+            .nominal_polar = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 0, .y = 1, .z = 0 },
+        },
+        .{
+            .label = "M+110",
+            .nominal_polar = .{
+                .azimuth_degrees = 110,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -1, .y = -1, .z = 0 },
+        },
+        .{
+            .label = "M-110",
+            .nominal_polar = .{
+                .azimuth_degrees = -110,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 1, .y = -1, .z = 0 },
+        },
+    };
 }
 
 fn testCartesianCubeLayout() [8]OutputSpeaker {

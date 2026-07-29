@@ -3538,6 +3538,91 @@ test "installed package exposes file-backed audio writers" {
         &cartesian_gains,
     );
     try std.testing.expectEqual(@as(f32, 1.0), cartesian_gains[0]);
+    const polar_layout = [_]plugin.dsp.AdmOutputSpeaker{
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -1, .y = 1 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 1, .y = 1 },
+        },
+        .{
+            .label = "M+000",
+            .nominal_polar = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+            },
+            .reproduction_polar = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 0, .y = 1 },
+        },
+        .{
+            .label = "M+110",
+            .nominal_polar = .{
+                .azimuth_degrees = 110,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -1, .y = -1 },
+        },
+        .{
+            .label = "M-110",
+            .nominal_polar = .{
+                .azimuth_degrees = -110,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 1, .y = -1 },
+        },
+    };
+    const polar_panner =
+        try plugin.dsp.AdmPolarPointSourcePanner(f32).init(
+            &polar_layout,
+        );
+    var polar_gains: [polar_layout.len]f32 = undefined;
+    try polar_panner.calculateGains(
+        plugin.dsp.AdmPolarPosition{
+            .azimuth_degrees = 0,
+            .elevation_degrees = 0,
+        },
+        &polar_gains,
+    );
+    try std.testing.expectEqual(@as(f32, 1.0), polar_gains[2]);
+    const polar_cartesian_panner =
+        try plugin.dsp.AdmCartesianPointSourcePanner(f32).init(
+            &polar_layout,
+        );
+    const polar_router =
+        try plugin.dsp.AdmDirectSpeakerPositionRouter(f32).init(
+            &direct_block,
+            &polar_layout,
+            .{},
+        );
+    var polar_storage: [polar_layout.len][speaker_input.len]f32 =
+        @splat(@splat(0.0));
+    var polar_outputs: [polar_layout.len][]f32 = undefined;
+    for (&polar_storage, &polar_outputs) |*channel, *output| {
+        output.* = channel;
+    }
+    try polar_router.mixWithPointSourceFallback(
+        &polar_panner,
+        &polar_cartesian_panner,
+        &speaker_input,
+        &polar_outputs,
+    );
+    try std.testing.expectEqualDeep(
+        speaker_input,
+        polar_storage[2],
+    );
     const frequency = plugin.dsp.AdmXmlFrequency{
         .low_pass_hz = 120.0,
     };
