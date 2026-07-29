@@ -3475,6 +3475,7 @@ test "installed package exposes file-backed audio writers" {
         \\<audioFormatExtended version="ITU-R_BS.2076-3">
         \\  <audioProgramme audioProgrammeID="APR_1001" audioProgrammeName="Multilingual" audioProgrammeLanguage="und">
         \\    <audioProgrammeLabel language="eng">Main programme</audioProgrammeLabel>
+        \\    <audioProgrammeLabel language="fra">Programme principal</audioProgrammeLabel>
         \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
         \\    <audioContentIDRef>ACO_1002</audioContentIDRef>
         \\    <loudnessMetadata>
@@ -3483,6 +3484,7 @@ test "installed package exposes file-backed audio writers" {
         \\  </audioProgramme>
         \\  <audioContent audioContentID="ACO_1001" audioContentName="Main" audioContentLanguage="eng">
         \\    <audioContentLabel language="eng">Main</audioContentLabel>
+        \\    <audioContentLabel language="fra">Principal</audioContentLabel>
         \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
         \\    <loudnessMetadata>
         \\      <dialogueLoudness>-24.0</dialogueLoudness>
@@ -3490,6 +3492,7 @@ test "installed package exposes file-backed audio writers" {
         \\    <dialogue dialogueContentKind="5">1</dialogue>
         \\  </audioContent>
         \\  <audioContent audioContentID="ACO_1002" audioContentName="Alternative" audioContentLanguage="fra">
+        \\    <audioContentLabel language="eng">Alternative</audioContentLabel>
         \\    <audioContentLabel language="fra">Alternative</audioContentLabel>
         \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
         \\    <loudnessMetadata>
@@ -3498,6 +3501,8 @@ test "installed package exposes file-backed audio writers" {
         \\    <dialogue dialogueContentKind="5">1</dialogue>
         \\  </audioContent>
         \\  <audioObject audioObjectID="AO_1001" audioObjectName="Main" interact="0">
+        \\    <audioComplementaryObjectGroupLabel language="eng">Language</audioComplementaryObjectGroupLabel>
+        \\    <audioComplementaryObjectGroupLabel language="fra">Langue</audioComplementaryObjectGroupLabel>
         \\    <audioComplementaryObjectIDRef>AO_1002</audioComplementaryObjectIDRef>
         \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
         \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
@@ -3550,6 +3555,8 @@ test "installed package exposes file-backed audio writers" {
     try emission_adm.validateEmissionProfileProgrammeContentMetadata();
     try emission_adm.validateEmissionProfileFormatMetadata();
     try emission_adm.validateEmissionProfileObjectBlocks();
+    try emission_adm.validateEmissionProfileComplementaryLabels();
+    try emission_adm.validateEmissionProfileConsistentLabelLanguages();
     var wav = try plugin.dsp.WavFileWriter.initWithRiffMetadata(
         std.testing.io,
         wav_file,

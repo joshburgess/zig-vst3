@@ -290,6 +290,10 @@ const EmissionLanguageSet = struct {
             return error.DuplicateAdmEmissionProfileLabelLanguage;
         self.words[word] |= mask;
     }
+
+    fn eql(self: EmissionLanguageSet, other: EmissionLanguageSet) bool {
+        return std.mem.eql(u64, &self.words, &other.words);
+    }
 };
 
 const EmissionFormatOwnerKind = enum {
@@ -1825,6 +1829,108 @@ fn readEmissionObjectBlockSyntax(
     return error.InvalidAdmEmissionProfileBlockSubelement;
 }
 
+const EmissionObjectLabels = struct {
+    languages: EmissionLanguageSet = .{},
+    complementary_references: usize = 0,
+    label_count: usize = 0,
+};
+
+fn readEmissionObjectLabels(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !EmissionObjectLabels {
+    var result = EmissionObjectLabels{};
+    if (start.self_closing) return result;
+    while (try events.next()) |event| {
+        switch (event) {
+            .start => |element| {
+                if (element.depth != start.depth + 1) continue;
+                const name = element.localName();
+                if (std.mem.eql(
+                    u8,
+                    name,
+                    "audioComplementaryObjectGroupLabel",
+                )) {
+                    result.label_count += 1;
+                    try readEmissionProfileLabel(
+                        events,
+                        element,
+                        &result.languages,
+                    );
+                } else if (std.mem.eql(
+                    u8,
+                    name,
+                    "audioComplementaryObjectIDRef",
+                )) {
+                    result.complementary_references += 1;
+                    try readEmissionReferenceElement(events, element);
+                } else if (std.mem.eql(
+                    u8,
+                    name,
+                    "audioPackFormatIDRef",
+                ) or std.mem.eql(
+                    u8,
+                    name,
+                    "audioObjectIDRef",
+                ) or std.mem.eql(
+                    u8,
+                    name,
+                    "audioTrackUIDRef",
+                )) {
+                    try readEmissionReferenceElement(events, element);
+                }
+            },
+            .end => |element| {
+                if (element.depth == start.depth and
+                    std.mem.eql(u8, element.name, start.name))
+                {
+                    if (result.label_count != 0 and
+                        result.complementary_references == 0)
+                    {
+                        return error.InvalidAdmEmissionProfileComplementaryLabelOwner;
+                    }
+                    return result;
+                }
+            },
+            else => {},
+        }
+    }
+    return error.InvalidAdmEmissionProfileComplementaryLabel;
+}
+
+fn readEmissionOwnerLabelLanguages(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+    label_name: []const u8,
+) !EmissionLanguageSet {
+    var languages = EmissionLanguageSet{};
+    if (start.self_closing) return languages;
+    while (try events.next()) |event| {
+        switch (event) {
+            .start => |element| {
+                if (element.depth == start.depth + 1 and
+                    std.mem.eql(u8, element.localName(), label_name))
+                {
+                    try readEmissionProfileLabel(
+                        events,
+                        element,
+                        &languages,
+                    );
+                }
+            },
+            .end => |element| {
+                if (element.depth == start.depth and
+                    std.mem.eql(u8, element.name, start.name))
+                {
+                    return languages;
+                }
+            },
+            else => {},
+        }
+    }
+    return error.InvalidAdmEmissionProfileLabel;
+}
+
 fn skipEmissionElement(
     events: *xml.EventIterator,
     start: xml.StartElement,
@@ -2758,6 +2864,72 @@ pub const Document = struct {
                 }
                 break;
             } else return error.InvalidAdmBlockSequence;
+        }
+    }
+
+    /// Validates complementary group labels and object reference attributes.
+    pub fn validateEmissionProfileComplementaryLabels(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileObjectBlocks();
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (!std.mem.eql(u8, element.localName(), "audioObject"))
+                        continue;
+                    _ = try readEmissionObjectLabels(&events, element);
+                },
+                else => {},
+            }
+        }
+    }
+
+    /// Checks the profile's recommended cross-element label languages.
+    pub fn validateEmissionProfileConsistentLabelLanguages(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileComplementaryLabels();
+        var expected: ?EmissionLanguageSet = null;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    const name = element.localName();
+                    const languages = if (std.mem.eql(
+                        u8,
+                        name,
+                        "audioProgramme",
+                    ))
+                        try readEmissionOwnerLabelLanguages(
+                            &events,
+                            element,
+                            "audioProgrammeLabel",
+                        )
+                    else if (std.mem.eql(u8, name, "audioContent"))
+                        try readEmissionOwnerLabelLanguages(
+                            &events,
+                            element,
+                            "audioContentLabel",
+                        )
+                    else if (std.mem.eql(u8, name, "audioObject")) blk: {
+                        const labels = try readEmissionObjectLabels(
+                            &events,
+                            element,
+                        );
+                        if (labels.complementary_references == 0) continue;
+                        break :blk labels.languages;
+                    } else continue;
+
+                    if (expected) |wanted| {
+                        if (!wanted.eql(languages))
+                            return error.InconsistentAdmEmissionProfileLabelLanguages;
+                    } else {
+                        expected = languages;
+                    }
+                },
+                else => {},
+            }
         }
     }
 
@@ -8830,6 +9002,170 @@ test "ADM XML file block validation rejects serial frames" {
     try std.testing.expectError(
         error.AdmEmissionProfileSerialBlocksRequireSerialValidation,
         document.validateEmissionProfileObjectBlocks(),
+    );
+}
+
+const valid_emission_labels_xml =
+    \\<audioFormatExtended version="ITU-R_BS.2076-3">
+    \\  <audioProgramme audioProgrammeID="APR_1001" audioProgrammeName="Programme" audioProgrammeLanguage="und">
+    \\    <audioProgrammeLabel language="eng">Programme</audioProgrammeLabel>
+    \\    <audioProgrammeLabel language="deu">Programm</audioProgrammeLabel>
+    \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+    \\    <audioContentIDRef>ACO_1002</audioContentIDRef>
+    \\    <loudnessMetadata>
+    \\      <integratedLoudness>-23.0</integratedLoudness>
+    \\    </loudnessMetadata>
+    \\  </audioProgramme>
+    \\  <audioContent audioContentID="ACO_1001" audioContentName="Main" audioContentLanguage="eng">
+    \\    <audioContentLabel language="eng">Main</audioContentLabel>
+    \\    <audioContentLabel language="deu">Hauptfassung</audioContentLabel>
+    \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+    \\    <loudnessMetadata>
+    \\      <dialogueLoudness>-24.0</dialogueLoudness>
+    \\    </loudnessMetadata>
+    \\    <dialogue dialogueContentKind="5">1</dialogue>
+    \\  </audioContent>
+    \\  <audioContent audioContentID="ACO_1002" audioContentName="Alternative" audioContentLanguage="deu">
+    \\    <audioContentLabel language="eng">Alternative</audioContentLabel>
+    \\    <audioContentLabel language="deu">Alternative</audioContentLabel>
+    \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+    \\    <loudnessMetadata>
+    \\      <dialogueLoudness>-24.0</dialogueLoudness>
+    \\    </loudnessMetadata>
+    \\    <dialogue dialogueContentKind="5">1</dialogue>
+    \\  </audioContent>
+    \\  <audioObject audioObjectID="AO_1001" audioObjectName="Main" interact="0">
+    \\    <audioComplementaryObjectGroupLabel language="eng">Language</audioComplementaryObjectGroupLabel>
+    \\    <audioComplementaryObjectGroupLabel language="deu">Sprache</audioComplementaryObjectGroupLabel>
+    \\    <audioComplementaryObjectIDRef>AO_1002</audioComplementaryObjectIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+    \\  </audioObject>
+    \\  <audioObject audioObjectID="AO_1002" audioObjectName="Alternative" interact="0">
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
+    \\  </audioObject>
+    \\  <audioTrackUID UID="ATU_00000001" sampleRate="48000" bitDepth="24">
+    \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\  </audioTrackUID>
+    \\  <audioTrackUID UID="ATU_00000002" sampleRate="48000" bitDepth="24">
+    \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\  </audioTrackUID>
+    \\  <profileList>
+    \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+    \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+    \\  </profileList>
+    \\</audioFormatExtended>
+;
+
+fn expectEmissionLabelReplacement(
+    expected_error: anyerror,
+    needle: []const u8,
+    replacement: []const u8,
+) !void {
+    const replaced = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_labels_xml,
+        needle,
+        replacement,
+    );
+    defer std.testing.allocator.free(replaced);
+    try std.testing.expect(!std.mem.eql(
+        u8,
+        replaced,
+        valid_emission_labels_xml,
+    ));
+    const document = try Document.init(replaced);
+    try std.testing.expectError(
+        expected_error,
+        document.validateEmissionProfileComplementaryLabels(),
+    );
+}
+
+test "ADM XML emission profile validates complementary labels" {
+    const document = try Document.init(valid_emission_labels_xml);
+    try document.validateEmissionProfileComplementaryLabels();
+    try document.validateEmissionProfileConsistentLabelLanguages();
+
+    const without_labels = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_labels_xml,
+        "    <audioComplementaryObjectGroupLabel language=\"eng\">Language</audioComplementaryObjectGroupLabel>\n" ++
+            "    <audioComplementaryObjectGroupLabel language=\"deu\">Sprache</audioComplementaryObjectGroupLabel>\n",
+        "",
+    );
+    defer std.testing.allocator.free(without_labels);
+    const unlabeled_document = try Document.init(without_labels);
+    try unlabeled_document.validateEmissionProfileComplementaryLabels();
+}
+
+test "ADM XML emission profile restricts complementary labels" {
+    try expectEmissionLabelReplacement(
+        error.MissingAdmEmissionProfileLanguage,
+        "audioComplementaryObjectGroupLabel language=\"eng\"",
+        "audioComplementaryObjectGroupLabel",
+    );
+    try expectEmissionLabelReplacement(
+        error.InvalidAdmEmissionProfileLanguage,
+        "audioComplementaryObjectGroupLabel language=\"eng\"",
+        "audioComplementaryObjectGroupLabel language=\"ENG\"",
+    );
+    try expectEmissionLabelReplacement(
+        error.InvalidAdmEmissionProfileLabel,
+        ">Language</audioComplementaryObjectGroupLabel>",
+        "></audioComplementaryObjectGroupLabel>",
+    );
+    try expectEmissionLabelReplacement(
+        error.InvalidAdmEmissionProfileLabelAttribute,
+        "audioComplementaryObjectGroupLabel language=\"eng\"",
+        "audioComplementaryObjectGroupLabel language=\"eng\" role=\"menu\"",
+    );
+    try expectEmissionLabelReplacement(
+        error.DuplicateAdmEmissionProfileLabelLanguage,
+        "audioComplementaryObjectGroupLabel language=\"deu\"",
+        "audioComplementaryObjectGroupLabel language=\"eng\"",
+    );
+    try expectEmissionLabelReplacement(
+        error.InvalidAdmEmissionProfileReferenceAttribute,
+        "<audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>",
+        "<audioPackFormatIDRef role=\"main\">AP_00010001</audioPackFormatIDRef>",
+    );
+}
+
+test "ADM XML emission profile requires labels on complementary leaders" {
+    try expectEmissionLabelReplacement(
+        error.InvalidAdmEmissionProfileComplementaryLabelOwner,
+        "    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>\n" ++
+            "    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>",
+        "    <audioComplementaryObjectGroupLabel language=\"eng\">Invalid</audioComplementaryObjectGroupLabel>\n" ++
+            "    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>\n" ++
+            "    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>",
+    );
+    try expectEmissionLabelReplacement(
+        error.InvalidAdmEmissionProfileComplementaryLabelOwner,
+        "    <audioComplementaryObjectIDRef>AO_1002</audioComplementaryObjectIDRef>\n",
+        "",
+    );
+}
+
+test "ADM XML emission profile checks recommended label languages" {
+    const inconsistent = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_labels_xml,
+        "    <audioContentLabel language=\"deu\">Alternative</audioContentLabel>\n",
+        "",
+    );
+    defer std.testing.allocator.free(inconsistent);
+    const document = try Document.init(inconsistent);
+    try document.validateEmissionProfileComplementaryLabels();
+    try std.testing.expectError(
+        error.InconsistentAdmEmissionProfileLabelLanguages,
+        document.validateEmissionProfileConsistentLabelLanguages(),
     );
 }
 
