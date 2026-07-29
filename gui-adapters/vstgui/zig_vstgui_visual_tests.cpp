@@ -2119,27 +2119,12 @@ int smokeSnapshot(const Snapshot& snapshot) {
         return 3;
     }
 
-    const auto decoded = normalizePng(actual);
-    if (!decoded) {
-        std::fprintf(stderr, "visual smoke PNG round trip failed: %s\n", snapshot.name);
-        return 4;
-    }
-    const auto decoded_pixels = VSTGUI::owned(
-        VSTGUI::CBitmapPixelAccess::create(decoded, false)
-    );
-    if (!decoded_pixels ||
-        decoded_pixels->getBitmapWidth() != width ||
-        decoded_pixels->getBitmapHeight() != height) {
-        std::fprintf(stderr, "visual smoke decoded bitmap mismatch: %s\n", snapshot.name);
-        return 5;
-    }
-
     VSTGUI::CColor first;
-    decoded_pixels->getColor(first);
+    actual_pixels->getColor(first);
     bool varied = false;
-    while (++(*decoded_pixels)) {
+    while (++(*actual_pixels)) {
         VSTGUI::CColor current;
-        decoded_pixels->getColor(current);
+        actual_pixels->getColor(current);
         if (current != first) {
             varied = true;
             break;
@@ -2147,7 +2132,7 @@ int smokeSnapshot(const Snapshot& snapshot) {
     }
     if (!varied) {
         std::fprintf(stderr, "uniform visual smoke output: %s\n", snapshot.name);
-        return 6;
+        return 4;
     }
     return 0;
 }

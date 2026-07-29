@@ -1754,7 +1754,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
-            return self.openContentReader(
+            const reader_id = self.openContentReader(
                 object,
                 content_type,
                 range,
@@ -1762,6 +1762,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
+            return encodeRef(raw.ARAContentReaderRef, reader_id);
         }
 
         fn isAudioModificationContentAvailable(
@@ -1808,7 +1809,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
-            return self.openContentReader(
+            const reader_id = self.openContentReader(
                 object,
                 content_type,
                 range,
@@ -1816,6 +1817,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
+            return encodeRef(raw.ARAContentReaderRef, reader_id);
         }
 
         fn isPlaybackRegionContentAvailable(
@@ -1862,7 +1864,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
-            return self.openContentReader(
+            const reader_id = self.openContentReader(
                 object,
                 content_type,
                 range,
@@ -1870,6 +1872,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
+            return encodeRef(raw.ARAContentReaderRef, reader_id);
         }
 
         fn getContentReaderEventCount(
@@ -2744,7 +2747,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             object: ContentObject,
             content_type: raw.ARAContentType,
             range_pointer: [*c]const raw.ARAContentTimeRange,
-        ) Error!raw.ARAContentReaderRef {
+        ) Error!ContentReaderId {
             if (self.contentAvailable(object, content_type) !=
                 raw.kARATrue)
                 return error.ContentReaderUnavailable;
@@ -2780,13 +2783,10 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                     .range = range,
                     .event_count = count,
                 };
-                return encodeRef(
-                    raw.ARAContentReaderRef,
-                    ContentReaderId{
-                        .index = @intCast(index),
-                        .generation = slot.generation,
-                    },
-                );
+                return .{
+                    .index = @intCast(index),
+                    .generation = slot.generation,
+                };
             }
             return error.CapacityExceeded;
         }
