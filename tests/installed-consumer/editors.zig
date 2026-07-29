@@ -1989,9 +1989,32 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         parsed_channel_list.value.entries[0].channel,
     );
 
+    const categories = [_][]const u8{"Keyboard"};
+    const programs = [_]plugin.process.MidiCiPropertyProgram{.{
+        .title = "Concert Grand",
+        .bank_program = .{ 0, 0, 0 },
+        .categories = &categories,
+    }};
+    const program_list = plugin.process.MidiCiPropertyProgramList{
+        .entries = &programs,
+    };
+    property_json.clearRetainingCapacity();
+    try program_list.writeJson(&property_json.writer);
+    const parsed_program_list =
+        try plugin.process.MidiCiPropertyProgramList.parseJson(
+            std.testing.allocator,
+            property_json.written(),
+        );
+    defer parsed_program_list.deinit();
+    try std.testing.expectEqualStrings(
+        "Concert Grand",
+        parsed_program_list.value.entries[0].title,
+    );
+
     const resources = [_]plugin.process.MidiCiPropertyResource{
         .{ .resource = "DeviceInfo" },
         .{ .resource = "ChannelList", .can_subscribe = true },
+        plugin.process.midi_ci_property_program_list_resource,
     };
     const resource_list = plugin.process.MidiCiPropertyResourceList{
         .entries = &resources,

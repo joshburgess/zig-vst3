@@ -6,6 +6,9 @@ pub const maximum_links = 64;
 pub const maximum_channels = 256;
 pub const maximum_resources = 256;
 pub const maximum_media_types = 16;
+pub const maximum_programs = 2_048;
+pub const maximum_program_categories = 64;
+pub const maximum_program_tags = 64;
 
 pub const Link = struct {
     resource: []const u8,
@@ -262,6 +265,91 @@ pub const ChannelList = struct {
     }
 };
 
+pub const Program = struct {
+    title: []const u8,
+    bank_program: [3]u7,
+    categories: []const []const u8 = &.{},
+    tags: []const []const u8 = &.{},
+
+    pub fn valid(self: Program) bool {
+        return self.categories.len <= maximum_program_categories and
+            self.tags.len <= maximum_program_tags;
+    }
+};
+
+pub const ProgramList = struct {
+    entries: []const Program,
+
+    pub fn valid(self: ProgramList) bool {
+        if (self.entries.len > maximum_programs) return false;
+        for (self.entries) |entry| {
+            if (!entry.valid()) return false;
+        }
+        return true;
+    }
+
+    pub fn writeJson(self: ProgramList, writer: anytype) !void {
+        if (!self.valid()) return error.InvalidMidiCiProgramList;
+        try writer.writeByte('[');
+        for (self.entries, 0..) |entry, index| {
+            if (index != 0) try writer.writeByte(',');
+            try writer.writeAll("{\"title\":");
+            try writeString(writer, entry.title);
+            try writer.print(
+                ",\"bankPC\":[{d},{d},{d}]",
+                .{
+                    entry.bank_program[0],
+                    entry.bank_program[1],
+                    entry.bank_program[2],
+                },
+            );
+            if (entry.categories.len != 0) {
+                try writer.writeAll(",\"category\":[");
+                try writeStrings(writer, entry.categories);
+                try writer.writeByte(']');
+            }
+            if (entry.tags.len != 0) {
+                try writer.writeAll(",\"tags\":[");
+                try writeStrings(writer, entry.tags);
+                try writer.writeByte(']');
+            }
+            try writer.writeByte('}');
+        }
+        try writer.writeByte(']');
+    }
+
+    pub fn parseJson(
+        allocator: std.mem.Allocator,
+        source: []const u8,
+    ) !std.json.Parsed(ProgramList) {
+        try validatePropertyData(source);
+        var parsed = try std.json.parseFromSlice(
+            []const ProgramWire,
+            allocator,
+            source,
+            .{ .ignore_unknown_fields = true },
+        );
+        errdefer parsed.deinit();
+        if (parsed.value.len > maximum_programs)
+            return error.InvalidMidiCiProgramList;
+        const entries = try parsed.arena.allocator().alloc(
+            Program,
+            parsed.value.len,
+        );
+        for (parsed.value, entries) |wire, *entry| {
+            entry.* = .{
+                .title = wire.title,
+                .bank_program = wire.bankPC,
+                .categories = wire.category,
+                .tags = wire.tags,
+            };
+        }
+        const value = ProgramList{ .entries = entries };
+        if (!value.valid()) return error.InvalidMidiCiProgramList;
+        return transferParsed(ProgramList, parsed.arena, value);
+    }
+};
+
 pub const SetSupport = enum {
     none,
     full,
@@ -297,6 +385,12 @@ pub const Resource = struct {
         }
         return true;
     }
+};
+
+pub const program_list_resource = Resource{
+    .resource = "ProgramList",
+    .require_res_id = true,
+    .can_paginate = true,
 };
 
 pub const ResourceList = struct {
@@ -449,6 +543,13 @@ const ChannelWire = struct {
     links: []const Link = &.{},
 };
 
+const ProgramWire = struct {
+    title: []const u8,
+    bankPC: [3]u7,
+    category: []const []const u8 = &.{},
+    tags: []const []const u8 = &.{},
+};
+
 const ResourceWire = struct {
     resource: []const u8,
     canGet: bool = true,
@@ -488,6 +589,13 @@ fn writeString(writer: anytype, source: []const u8) !void {
     try writer.print("{f}", .{
         std.json.fmt(source, .{ .escape_unicode = true }),
     });
+}
+
+fn writeStrings(writer: anytype, values: []const []const u8) !void {
+    for (values, 0..) |value, index| {
+        if (index != 0) try writer.writeByte(',');
+        try writeString(writer, value);
+    }
 }
 
 fn writeLink(link: Link, writer: anytype) !void {
@@ -589,6 +697,76 @@ test "ChannelList round trips channels clusters programs and links" {
     );
 }
 
+test "ProgramList round trips program identities categories and tags" {
+    const categories = [_][]const u8{ "Keyboard", "Acoustic" };
+    const tags = [_][]const u8{ "Bright", "Layered" };
+    const entries = [_]Program{
+        .{
+            .title = "Concert Grand",
+            .bank_program = .{ 0, 0, 0 },
+            .categories = &categories,
+            .tags = &tags,
+        },
+        .{
+            .title = "Warm Pad",
+            .bank_program = .{ 1, 2, 63 },
+        },
+    };
+    const expected = ProgramList{ .entries = &entries };
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    try expected.writeJson(&output.writer);
+    const parsed = try ProgramList.parseJson(
+        std.testing.allocator,
+        output.written(),
+    );
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(usize, 2), parsed.value.entries.len);
+    try std.testing.expectEqual(
+        [3]u7{ 1, 2, 63 },
+        parsed.value.entries[1].bank_program,
+    );
+    try std.testing.expectEqualStrings(
+        "Acoustic",
+        parsed.value.entries[0].categories[1],
+    );
+    try std.testing.expectEqualStrings(
+        "Layered",
+        parsed.value.entries[0].tags[1],
+    );
+}
+
+test "ProgramList rejects missing and out-of-range bank program values" {
+    const invalid = [_][]const u8{
+        "[{\"title\":\"Missing\"}]",
+        "[{\"title\":\"Short\",\"bankPC\":[0,1]}]",
+        "[{\"title\":\"High\",\"bankPC\":[0,0,128]}]",
+    };
+    for (invalid) |source| {
+        if (ProgramList.parseJson(std.testing.allocator, source)) |parsed| {
+            parsed.deinit();
+            return error.TestExpectedError;
+        } else |_| {}
+    }
+}
+
+test "ProgramList enforces product category and tag capacities" {
+    const too_many_categories = [_][]const u8{""} **
+        (maximum_program_categories + 1);
+    const too_many_tags = [_][]const u8{""} **
+        (maximum_program_tags + 1);
+    try std.testing.expect(!(Program{
+        .title = "Too Many",
+        .bank_program = .{ 0, 0, 0 },
+        .categories = &too_many_categories,
+    }).valid());
+    try std.testing.expect(!(Program{
+        .title = "Too Many",
+        .bank_program = .{ 0, 0, 0 },
+        .tags = &too_many_tags,
+    }).valid());
+}
+
 test "Foundational resources reject malformed bounds" {
     try std.testing.expectError(
         error.InvalidMidiCiChannelList,
@@ -620,6 +798,7 @@ test "ResourceList applies defaults and round trips capability overrides" {
             .can_subscribe = true,
             .can_paginate = true,
         },
+        program_list_resource,
         .{
             .resource = "X-Sample",
             .can_get = false,
@@ -638,15 +817,17 @@ test "ResourceList applies defaults and round trips capability overrides" {
         output.written(),
     );
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(usize, 3), parsed.value.entries.len);
+    try std.testing.expectEqual(@as(usize, 4), parsed.value.entries.len);
     try std.testing.expect(parsed.value.entries[0].can_get);
+    try std.testing.expect(parsed.value.entries[2].require_res_id);
+    try std.testing.expect(parsed.value.entries[2].can_paginate);
     try std.testing.expectEqual(
         SetSupport.full,
-        parsed.value.entries[2].can_set,
+        parsed.value.entries[3].can_set,
     );
     try std.testing.expectEqual(
         property_json.Encoding.mcoded7,
-        parsed.value.entries[2].encodings[0],
+        parsed.value.entries[3].encodings[0],
     );
 }
 

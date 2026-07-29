@@ -341,6 +341,10 @@ pub const MidiCiPropertyDeviceInfo = midi_ci_property_resources.DeviceInfo;
 pub const MidiCiPropertyClusterType = midi_ci_property_resources.ClusterType;
 pub const MidiCiPropertyChannel = midi_ci_property_resources.Channel;
 pub const MidiCiPropertyChannelList = midi_ci_property_resources.ChannelList;
+pub const MidiCiPropertyProgram = midi_ci_property_resources.Program;
+pub const MidiCiPropertyProgramList = midi_ci_property_resources.ProgramList;
+pub const midi_ci_property_program_list_resource =
+    midi_ci_property_resources.program_list_resource;
 pub const MidiCiPropertySetSupport = midi_ci_property_resources.SetSupport;
 pub const MidiCiPropertyResource = midi_ci_property_resources.Resource;
 pub const MidiCiPropertyResourceList = midi_ci_property_resources.ResourceList;
