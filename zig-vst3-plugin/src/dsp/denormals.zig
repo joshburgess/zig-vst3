@@ -74,9 +74,9 @@ fn readMxcsr() u32 {
 
 fn writeMxcsr(value: u32) void {
     const stored = value;
-    asm volatile ("ldmxcsr (%[address])"
+    asm volatile ("ldmxcsr (%%rax)"
         :
-        : [address] "r" (&stored),
+        : [address] "{rax}" (&stored),
         : .{ .memory = true, .mxcsr = true });
 }
 
