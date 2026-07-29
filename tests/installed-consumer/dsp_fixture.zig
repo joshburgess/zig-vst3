@@ -4389,3 +4389,59 @@ test "installed package exposes advanced filter SIMD publication and transport A
     }, 120.0, .half, 0.01);
     try std.testing.expect(chorus.valid());
 }
+
+test "installed package exposes ADM common layout speaker mapping" {
+    const document = try plugin.dsp.AdmXmlDocument.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <speakerLabel>M+000</speakerLabel>
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <gain>0.5</gain>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const layout = [_]plugin.dsp.AdmOutputSpeaker{
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30.0,
+                .elevation_degrees = 0.0,
+            },
+            .allocentric = .{ .x = -1.0, .y = 1.0 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30.0,
+                .elevation_degrees = 0.0,
+            },
+            .allocentric = .{ .x = 1.0, .y = 1.0 },
+        },
+    };
+    const context = plugin.dsp.AdmDirectSpeakerRoutingContext{
+        .common_pack_mapping = plugin.dsp.AdmDirectSpeakerCommonPackMapping{
+            .input_pack = try plugin.dsp.AdmIdentifier.parse("AP_00010005"),
+            .output_layout_name = "0+2+0",
+        },
+    };
+    const router =
+        try plugin.dsp.AdmDirectSpeakerPositionRouter(f32).init(
+            &block,
+            &layout,
+            context,
+        );
+    const input = [_]f32{ 2.0, -4.0 };
+    var left: [input.len]f32 = @splat(0.0);
+    var right: [input.len]f32 = @splat(0.0);
+    const outputs = [_][]f32{ &left, &right };
+    try router.mix(&input, &outputs);
+    const gain: f32 = @sqrt(0.5) * 0.5;
+    try std.testing.expectApproxEqAbs(gain * 2.0, left[0], 0.000_001);
+    try std.testing.expectApproxEqAbs(gain * -4.0, left[1], 0.000_001);
+    try std.testing.expectEqualDeep(left, right);
+}

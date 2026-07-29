@@ -1,6 +1,8 @@
 pub const aiff_writer = @import("dsp/aiff_writer.zig");
 pub const adm = @import("dsp/adm.zig");
 pub const adm_diffuse = @import("dsp/adm_diffuse.zig");
+pub const adm_direct_speaker_mapping =
+    @import("dsp/adm_direct_speaker_mapping.zig");
 pub const adm_render = @import("dsp/adm_render.zig");
 pub const adm_time = @import("dsp/adm_time.zig");
 pub const adm_xml = @import("dsp/adm_xml.zig");
@@ -115,6 +117,8 @@ pub const AdmCartesianExtentPanner =
 pub const AdmDirectSpeakerRoute = adm_render.DirectSpeakerRoute;
 pub const AdmDirectSpeakerRoutingContext =
     adm_render.DirectSpeakerRoutingContext;
+pub const AdmDirectSpeakerCommonPackMapping =
+    adm_render.DirectSpeakerCommonPackMapping;
 pub const AdmObjectRenderingContext =
     adm_render.ObjectRenderingContext;
 pub const AdmObjectPointGainPlan =
@@ -862,6 +866,7 @@ test {
     _ = aiff_writer;
     _ = adm_render;
     _ = adm_diffuse;
+    _ = adm_direct_speaker_mapping;
     _ = audio_block;
     _ = audio_file_reader;
     _ = audio_metadata;

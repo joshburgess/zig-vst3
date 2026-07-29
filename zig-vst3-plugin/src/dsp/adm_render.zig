@@ -1,6 +1,8 @@
 const std = @import("std");
 const adm = @import("adm.zig");
 const adm_cartesian_extent = @import("adm_cartesian_extent.zig");
+const adm_direct_speaker_mapping =
+    @import("adm_direct_speaker_mapping.zig");
 const adm_polar_extent = @import("adm_polar_extent.zig");
 const adm_polar_panner = @import("adm_polar_panner.zig");
 const adm_time = @import("adm_time.zig");
@@ -43,6 +45,12 @@ pub const DirectSpeakerRoutingContext = struct {
     screen_edges: ?ScreenEdges = null,
     /// Overrides the internal Cartesian screen-lock transform when supplied.
     cartesian_screen_locked_nominal: ?CartesianPosition = null,
+    common_pack_mapping: ?DirectSpeakerCommonPackMapping = null,
+};
+
+pub const DirectSpeakerCommonPackMapping = struct {
+    input_pack: adm.Identifier,
+    output_layout_name: []const u8,
 };
 
 pub const ObjectRenderingContext = struct {
@@ -51,6 +59,7 @@ pub const ObjectRenderingContext = struct {
 };
 
 pub const DirectSpeakerRoute = union(enum) {
+    mapped: adm_direct_speaker_mapping.GainVector,
     output: u8,
     discard,
     polar_panner: PolarPosition,
@@ -1757,6 +1766,9 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
                         0.0;
                 },
                 .discard => 0.0,
+                .mapped => {
+                    return error.AdmRendererMultipleOutputsRequired;
+                },
                 .polar_panner, .cartesian_panner => {
                     return error.AdmRendererPointPannerRequired;
                 },
@@ -1783,6 +1795,38 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
             const output_index = switch (self.route) {
                 .output => |index| index,
                 .discard => return,
+                .mapped => |mapping| {
+                    for (
+                        outputs,
+                        mapping.slice(),
+                    ) |output, mapping_gain| {
+                        if (mapping_gain != 0.0 and
+                            slicesOverlap(Sample, input, output))
+                        {
+                            return error.AdmRendererAliasedBuffers;
+                        }
+                    }
+                    var gains: [maximum_output_channels]Sample =
+                        @splat(0.0);
+                    for (
+                        gains[0..self.output_count],
+                        mapping.slice(),
+                    ) |*gain, mapping_gain| {
+                        const combined =
+                            @as(f64, self.gain) * mapping_gain;
+                        gain.* = if (std.math.isFinite(combined))
+                            @floatCast(combined)
+                        else
+                            0.0;
+                    }
+                    mixGainVector(
+                        Sample,
+                        input,
+                        outputs,
+                        gains[0..self.output_count],
+                    );
+                    return;
+                },
                 .polar_panner, .cartesian_panner => {
                     return error.AdmRendererPointPannerRequired;
                 },
@@ -1823,7 +1867,7 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
                 .polar_panner => {
                     return error.AdmRendererPolarPointPannerRequired;
                 },
-                .output, .discard => try self.mix(input, outputs),
+                .mapped, .output, .discard => try self.mix(input, outputs),
             }
         }
 
@@ -1846,7 +1890,7 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
                 .cartesian_panner => {
                     return error.AdmRendererCartesianPointPannerRequired;
                 },
-                .output, .discard => try self.mix(input, outputs),
+                .mapped, .output, .discard => try self.mix(input, outputs),
             }
         }
 
@@ -1876,7 +1920,7 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
                     input,
                     outputs,
                 ),
-                .output, .discard => try self.mix(input, outputs),
+                .mapped, .output, .discard => try self.mix(input, outputs),
             }
         }
 
@@ -1888,6 +1932,8 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
                 return false;
             }
             return switch (self.route) {
+                .mapped => |mapping| mapping.output_count ==
+                    self.output_count and mapping.valid(),
                 .output => |index| index < self.output_count,
                 .discard => true,
                 .polar_panner => |position| validPolar(position),
@@ -1908,6 +1954,43 @@ pub fn resolveDirectSpeakerRoute(
         return error.AdmRendererRequiresDirectSpeakersBlock;
     }
     try validateOutputLayout(outputs);
+    if (context.common_pack_mapping) |mapping_context| {
+        if (mapping_context.output_layout_name.len == 0 or
+            mapping_context.output_layout_name.len > 64 or
+            !std.unicode.utf8ValidateSlice(
+                mapping_context.output_layout_name,
+            ) or
+            std.mem.indexOfScalar(
+                u8,
+                mapping_context.output_layout_name,
+                0,
+            ) != null)
+        {
+            return error.InvalidAdmRendererOutputLayoutName;
+        }
+        const speaker_labels = block.speakerLabelSlice();
+        if (speaker_labels.len == 1) {
+            const input_label = normalizeSpeakerLabel(
+                speaker_labels[0].value(),
+            );
+            if (input_label) |label| {
+                var output_labels: [maximum_output_channels][]const u8 = undefined;
+                for (outputs, 0..) |output, output_index| {
+                    output_labels[output_index] =
+                        normalizeSpeakerLabel(output.label) orelse
+                        return error.InvalidAdmRendererSpeakerLabel;
+                }
+                if (adm_direct_speaker_mapping.resolve(
+                    mapping_context.input_pack,
+                    mapping_context.output_layout_name,
+                    label,
+                    output_labels[0..outputs.len],
+                )) |mapping| {
+                    return .{ .mapped = mapping };
+                }
+            }
+        }
+    }
     const input_is_lfe = directSpeakerIsLfe(block);
 
     for (block.speakerLabelSlice()) |speaker_label| {
@@ -6421,6 +6504,188 @@ test "ADM position router normalizes labels and classifies LFE metadata" {
         @as(u8, 1),
         fallback_lfe_route.output,
     );
+}
+
+test "ADM position router applies common layout speaker mappings" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <speakerLabel>urn:itu:bs:2051:2:speaker:M+000</speakerLabel>
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <gain>0.5</gain>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = [_]OutputSpeaker{
+        .{
+            .label = "urn:itu:bs:2051:3:speaker:M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -1, .y = 1 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 1, .y = 1 },
+        },
+    };
+    const context = DirectSpeakerRoutingContext{
+        .common_pack_mapping = .{
+            .input_pack = try adm.Identifier.parse("AP_00010005"),
+            .output_layout_name = "0+2+0",
+        },
+    };
+    const router = try DirectSpeakerPositionRouter(f32).init(
+        &block,
+        &outputs,
+        context,
+    );
+    const mapping = switch (router.route) {
+        .mapped => |value| value,
+        else => return error.TestUnexpectedResult,
+    };
+    const root_half: f64 = @sqrt(0.5);
+    try std.testing.expectApproxEqAbs(
+        root_half,
+        mapping.gains[0],
+        1.0e-15,
+    );
+    try std.testing.expectApproxEqAbs(
+        root_half,
+        mapping.gains[1],
+        1.0e-15,
+    );
+    try std.testing.expectError(
+        error.AdmRendererMultipleOutputsRequired,
+        router.processSample(1.0),
+    );
+
+    const input = [_]f32{ 2.0, std.math.nan(f32), -4.0 };
+    var left = [_]f32{ 1.0, 1.0, 1.0 };
+    var right = [_]f32{ -1.0, -1.0, -1.0 };
+    const output_buffers = [_][]f32{ &left, &right };
+    try router.mix(&input, &output_buffers);
+    const scaled: f32 = @floatCast(root_half);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0) + scaled,
+        left[0],
+        0.000_001,
+    );
+    try std.testing.expectEqual(@as(f32, 1.0), left[1]);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0) - 2.0 * scaled,
+        left[2],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, -1.0) + scaled,
+        right[0],
+        0.000_001,
+    );
+    try std.testing.expectEqual(@as(f32, -1.0), right[1]);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, -1.0) - 2.0 * scaled,
+        right[2],
+        0.000_001,
+    );
+}
+
+test "ADM common layout mapping preserves fallback and transactional errors" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <speakerLabel>M+000</speakerLabel>
+        \\      <speakerLabel>M+030</speakerLabel>
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = [_]OutputSpeaker{
+        .{
+            .label = "M+000",
+            .nominal_polar = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 0, .y = 1 },
+        },
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -1, .y = 1 },
+        },
+    };
+    const common_pack = try adm.Identifier.parse("AP_00010005");
+    const skipped = try resolveDirectSpeakerRoute(
+        &block,
+        &outputs,
+        .{ .common_pack_mapping = .{
+            .input_pack = common_pack,
+            .output_layout_name = "0+2+0",
+        } },
+    );
+    try std.testing.expectEqual(@as(u8, 0), skipped.output);
+
+    try std.testing.expectError(
+        error.InvalidAdmRendererOutputLayoutName,
+        resolveDirectSpeakerRoute(
+            &block,
+            &outputs,
+            .{ .common_pack_mapping = .{
+                .input_pack = common_pack,
+                .output_layout_name = "",
+            } },
+        ),
+    );
+
+    var single_label_block = block;
+    single_label_block.speaker_label_count = 1;
+    const router = try DirectSpeakerPositionRouter(f64).init(
+        &single_label_block,
+        &outputs,
+        .{ .common_pack_mapping = .{
+            .input_pack = common_pack,
+            .output_layout_name = "0+2+0",
+        } },
+    );
+    var aliased = [_]f64{ 1.0, 2.0 };
+    var untouched = [_]f64{ 3.0, 4.0 };
+    const aliased_outputs = [_][]f64{ &aliased, &untouched };
+    try std.testing.expectError(
+        error.AdmRendererAliasedBuffers,
+        router.mix(&aliased, &aliased_outputs),
+    );
+    try std.testing.expectEqualDeep([_]f64{ 1.0, 2.0 }, aliased);
+    try std.testing.expectEqualDeep([_]f64{ 3.0, 4.0 }, untouched);
+
+    const local_pack = try adm.Identifier.parse("AP_00011001");
+    const ordinary = try resolveDirectSpeakerRoute(
+        &single_label_block,
+        &outputs,
+        .{ .common_pack_mapping = .{
+            .input_pack = local_pack,
+            .output_layout_name = "0+2+0",
+        } },
+    );
+    try std.testing.expectEqual(@as(u8, 0), ordinary.output);
 }
 
 test "ADM position router selects Cartesian speakers and preserves fallbacks" {
