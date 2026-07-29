@@ -135,7 +135,9 @@ pub const Processor = struct {
     ) void {
         const input = context.inputChannel(0) orelse return;
         const output = context.outputChannel(0) orelse return;
-        @memcpy(output, input);
+        for (input, output) |sample, *destination| {
+            destination.* = sample;
+        }
     }
 
     pub fn kernelBackendName(self: *const Processor) []const u8 {
@@ -211,4 +213,21 @@ test "C kernel probe processes mono blocks without allocation" {
     try std.testing.expect(report.clean());
     try std.testing.expectEqualSlices(f32, &input, &output);
     try std.testing.expectEqualStrings(backendName(processor.kernel.backend), processor.kernelBackendName());
+}
+
+test "C kernel probe supports in-place 64-bit audio buffers" {
+    var processor = try Processor.init(std.testing.allocator);
+    var samples = [_]f64{ 0.25, -0.5, 1.0, -1.0 };
+    const expected = samples;
+    const inputs = [_][]const f64{&samples};
+    const outputs = [_][]f64{&samples};
+    var context = try plug.process.ProcessContext(f64).init(
+        48_000,
+        &inputs,
+        &outputs,
+    );
+
+    processor.process64(&context);
+
+    try std.testing.expectEqualSlices(f64, &expected, &samples);
 }

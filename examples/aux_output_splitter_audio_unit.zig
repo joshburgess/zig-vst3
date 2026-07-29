@@ -32,7 +32,9 @@ const AuxiliaryOutputSplitter = struct {
                 continue;
             const output = context.outputChannel(channel_index) orelse
                 continue;
-            @memcpy(output, input);
+            for (input, output) |sample, *destination| {
+                destination.* = sample;
+            }
         }
 
         const left = context.inputChannel(0) orelse return;
@@ -44,10 +46,16 @@ const AuxiliaryOutputSplitter = struct {
             }
         }
         if (context.auxiliaryOutputBus(1)) |stereo_bus| {
-            if (stereo_bus.channel(0)) |output|
-                @memcpy(output, left);
-            if (stereo_bus.channel(1)) |output|
-                @memcpy(output, right);
+            if (stereo_bus.channel(0)) |output| {
+                for (left, output) |sample, *destination| {
+                    destination.* = sample;
+                }
+            }
+            if (stereo_bus.channel(1)) |output| {
+                for (right, output) |sample, *destination| {
+                    destination.* = sample;
+                }
+            }
         }
     }
 };

@@ -148,7 +148,9 @@ pub const Processor = struct {
             self.active_fixed_rate = requested;
         }
         if (!self.supported or !self.active_fixed_rate or input.len > maximum_host_frames) {
-            @memcpy(output, input);
+            for (input, output) |sample, *destination| {
+                destination.* = sample;
+            }
             return;
         }
         const processed = if (Sample == f32)
@@ -156,7 +158,9 @@ pub const Processor = struct {
         else
             processBlock(f64, &self.pipeline64, &self.model64, input, output);
         if (!processed) {
-            @memcpy(output, input);
+            for (input, output) |sample, *destination| {
+                destination.* = sample;
+            }
             self.reset();
         }
     }
@@ -320,6 +324,27 @@ test "fixed-rate processor falls back safely outside its bounded rate ratio" {
     var context = try plug.process.ProcessContext(f64).init(1_234_567.8, &inputs, &outputs);
     processor.process64(&context);
     try std.testing.expectEqualSlices(f64, &input, &output);
+}
+
+test "fixed-rate fallback supports in-place audio buffers" {
+    const allocator = std.testing.allocator;
+    const processor = try allocator.create(Processor);
+    defer allocator.destroy(processor);
+    processor.initInPlace();
+    processor.prepare(.{ .sample_rate = 1_234_567.8, .max_block_size = 64 });
+    var samples = [_]f64{ 0.25, -0.5 };
+    const expected = samples;
+    const inputs = [_][]const f64{&samples};
+    const outputs = [_][]f64{&samples};
+    var context = try plug.process.ProcessContext(f64).init(
+        1_234_567.8,
+        &inputs,
+        &outputs,
+    );
+
+    processor.process64(&context);
+
+    try std.testing.expectEqualSlices(f64, &expected, &samples);
 }
 
 test "fixed-rate processor flushes subnormal output without leaking thread policy" {

@@ -37,10 +37,14 @@ fn processBlock(comptime Sample: type, context: *plug.process.ProcessContext(Sam
     }
     if (context.auxiliaryOutputBus(1)) |stereo_bus| {
         if (stereo_bus.channel(0)) |auxiliary_left| {
-            @memcpy(auxiliary_left, left);
+            for (left, auxiliary_left) |sample, *destination| {
+                destination.* = sample;
+            }
         }
         if (stereo_bus.channel(1)) |auxiliary_right| {
-            @memcpy(auxiliary_right, right);
+            for (right, auxiliary_right) |sample, *destination| {
+                destination.* = sample;
+            }
         }
     }
 }
