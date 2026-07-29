@@ -11,6 +11,28 @@
 
 namespace ZigVstgui {
 
+namespace {
+
+uint32_t firstSetBit(uint32_t value) {
+    uint32_t index = 0;
+    while ((value & 1u) == 0u) {
+        value >>= 1u;
+        ++index;
+    }
+    return index;
+}
+
+uint32_t countSetBits(uint32_t value) {
+    uint32_t count = 0;
+    while (value != 0) {
+        value &= value - 1u;
+        ++count;
+    }
+    return count;
+}
+
+}
+
 StepSequencerView::StepSequencerView(
     const VSTGUI::CRect& size,
     StepSequencerControl* value_owner,
@@ -104,7 +126,7 @@ StepSequencerControl::StepSequencerControl(
     for (uint32_t step = 0; step < description.step_count; ++step) {
         parameter_ids[step] = description.parameter_ids[step];
     }
-    if (selection_mask != 0) cursor_step = static_cast<uint32_t>(__builtin_ctz(selection_mask));
+    if (selection_mask != 0) cursor_step = firstSetBit(selection_mask);
     anchor_step = cursor_step;
 }
 
@@ -379,8 +401,8 @@ void StepSequencerControl::storeSelection() {
 
 void StepSequencerControl::syncAccessibility() {
     char value[160] {};
-    const uint32_t selected_count = static_cast<uint32_t>(__builtin_popcount(selection_mask));
-    const uint32_t active_count = static_cast<uint32_t>(__builtin_popcount(active_mask));
+    const uint32_t selected_count = countSetBits(selection_mask);
+    const uint32_t active_count = countSetBits(active_mask);
     const char* status = edit_failed ? ", last edit rejected" : "";
     if (playhead_step >= 0) {
         std::snprintf(value, sizeof(value), "Step %u, %s, %u selected, %u active, playhead %u%s",

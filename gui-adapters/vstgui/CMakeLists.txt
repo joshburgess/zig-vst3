@@ -50,6 +50,9 @@ set_target_properties(vstgui PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Release/libs"
     ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release/libs"
 )
+if(APPLE)
+    target_compile_options(vstgui PRIVATE -Wno-error=deprecated-declarations)
+endif()
 
 set(ZIG_VSTGUI_ADAPTER_SOURCES
     zig_vstgui_adapter.cpp

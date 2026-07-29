@@ -4,9 +4,7 @@
 
 #include <windows.h>
 #include <commctrl.h>
-#include <uiautomationclient.h>
-#include <uiautomationcore.h>
-#include <uiautomationcoreapi.h>
+#include <uiautomation.h>
 
 #include <atomic>
 #include <memory>

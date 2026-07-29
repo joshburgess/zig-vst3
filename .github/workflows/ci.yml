@@ -52,7 +52,15 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgtkmm-3.0-dev libx11-dev
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libgtkmm-3.0-dev \
+            libx11-dev \
+            libxcb-cursor-dev \
+            libxcb-keysyms1-dev \
+            libxcb-util-dev \
+            libxcb-xkb-dev \
+            libxkbcommon-x11-dev
       - name: Fetch pinned VST3 SDK
         shell: bash
         run: scripts/fetch_sdk.sh
@@ -100,7 +108,15 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgtkmm-3.0-dev libx11-dev
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libgtkmm-3.0-dev \
+            libx11-dev \
+            libxcb-cursor-dev \
+            libxcb-keysyms1-dev \
+            libxcb-util-dev \
+            libxcb-xkb-dev \
+            libxkbcommon-x11-dev
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Build Steinberg validator
@@ -134,7 +150,11 @@ jobs:
             lv2lint \
             ninja \
             pkgconf \
-            sord
+            sord \
+            xcb-util \
+            xcb-util-cursor \
+            xcb-util-keysyms \
+            libxkbcommon
           pacman -Q lv2 lv2lint
       - uses: actions/checkout@v6
       - uses: mlugg/setup-zig@v2
