@@ -426,6 +426,8 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 .release_context = release_context,
                 .release_callback = release_callback,
             };
+            for (&self.content_readers) |*slot|
+                slot.generation = 1;
             try self.setDocumentName(cString(
                 properties.name,
                 limits.name_bytes,
@@ -4700,10 +4702,11 @@ test "ARA controller publishes typed provider content readers" {
             },
         );
         std.debug.print(
-            "ARA content reader identity mismatch: reader=0x{x} expected=0x{x}\n",
+            "ARA content reader identity mismatch: reader=0x{x} expected=0x{x} slot_generation={d}\n",
             .{
                 @intFromPtr(reader.?),
                 @intFromPtr(expected_reader.?),
+                controller.content_readers[0].generation,
             },
         );
         return error.TestUnexpectedResult;
