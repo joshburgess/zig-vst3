@@ -17,6 +17,9 @@
 
 #if defined(_WIN32)
 #include <objbase.h>
+#ifdef small
+#undef small
+#endif
 #endif
 
 namespace {
