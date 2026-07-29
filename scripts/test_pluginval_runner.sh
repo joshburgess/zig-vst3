@@ -37,6 +37,16 @@ expect_result unknown 'active count = 0'
 tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-pluginval-runner-test.XXXXXX")"
 trap 'rm -rf "$tmp_root"' EXIT HUP INT TERM
 mkdir -p "$tmp_root/fake.vst3" "$tmp_root/success" "$tmp_root/failure"
+verdict_path="$tmp_root/pluginval-verdict.txt"
+printf 'Validation started\nSUCCESS\n\n' > "$verdict_path"
+[ "$(pluginval_output_result "$verdict_path")" = "success" ]
+printf 'Validation started\r\nFAILED\r\n' > "$verdict_path"
+[ "$(pluginval_output_result "$verdict_path")" = "failure" ]
+printf 'Validation started\nSUCCESS\nteardown pending\n' > "$verdict_path"
+[ "$(pluginval_output_result "$verdict_path")" = "incomplete" ]
+: > "$verdict_path"
+[ "$(pluginval_output_result "$verdict_path")" = "incomplete" ]
+[ "$(pluginval_output_result "$tmp_root/missing-verdict.txt")" = "incomplete" ]
 printf 'fixture\n' > "$tmp_root/fake.vst3/module.bin"
 fake_pluginval="$tmp_root/fake-pluginval"
 {

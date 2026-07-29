@@ -187,6 +187,19 @@ if [ -n "$pluginval_app" ]; then
                     break
                     ;;
             esac
+            output_result="$(pluginval_output_result "$stdout_path")"
+            case "$output_result" in
+                success)
+                    status=0
+                    classification=succeeded_from_output
+                    break
+                    ;;
+                failure)
+                    status=1
+                    classification=failed_from_output
+                    break
+                    ;;
+            esac
             attempts=$((attempts + 1))
             sleep 0.1
         done

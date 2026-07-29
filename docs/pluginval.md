@@ -44,7 +44,7 @@ Run the strictness level 10 gate:
 zig build pluginval-strict-examples
 ```
 
-The aggregate targets serialize their per-plugin runs. Each invocation writes pluginval artifacts under `${TMPDIR:-/tmp}/zig-vst3-pluginval`. Set `PLUGINVAL_OUTPUT_DIR` to retain them elsewhere. The wrapper prints the exact run directory before starting pluginval. `runner-status.txt` records whether the run succeeded, failed, timed out, received a signal, failed during bootstrap, or was interrupted. On macOS, `launchctl-state.txt` preserves the last observed service state.
+The aggregate targets serialize their per-plugin runs. Each invocation writes pluginval artifacts under `${TMPDIR:-/tmp}/zig-vst3-pluginval`. Set `PLUGINVAL_OUTPUT_DIR` to retain them elsewhere. The wrapper prints the exact run directory before starting pluginval. `runner-status.txt` records whether the run succeeded, failed, timed out, received a signal, failed during bootstrap, or was interrupted. On macOS, `launchctl-state.txt` preserves the last observed service state. An observed process exit or signal has priority. If the GUI service remains active after validation, the wrapper accepts only `SUCCESS` or `FAILED` as the final nonempty output line, then removes the service.
 
 The default strictness level is `5`, matching pluginval's usual minimum compatibility bar. Override it with `PLUGINVAL_STRICTNESS`:
 
@@ -70,7 +70,7 @@ Do not use the historical concurrent-startup reports to explain an isolated plug
 
 On July 20, 2026, the serialized aggregate targets passed all 14 example plugins at strictness 5 and strictness 10 after three Sample Player defects were isolated and fixed. The defects were crossed parameter-backed range clamping, GUI delivery from a worker-thread parameter callback, and a null `createView` name at the VST3 boundary. Each failure stopped the matrix and preserved its artifact directory before another launch. A separate AppKit registration abort occurred before any plugin image loaded and was classified as a launcher failure from its crash stack, not assumed to be a plugin result.
 
-The runner parser, timeout bounds, signal classification, and public shell syntax are part of `zig build test`. A passing parser test does not replace a real pluginval run. It makes failures from the real run easier to classify and preserves enough state for diagnosis.
+The runner parser, terminal-verdict handling, timeout bounds, signal classification, and public shell syntax are part of `zig build test`. A passing parser test does not replace a real pluginval run. It makes failures from the real run easier to classify and preserves enough state for diagnosis.
 
 The CI pluginval jobs run on macOS, Linux, and Windows. The Linux job installs the pluginval runtime libraries, runs under `xvfb-run`, and sets `--skip-gui-tests` because the runners have no display server. The headless command-line path does not verify native editor behavior.
 

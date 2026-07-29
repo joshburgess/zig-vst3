@@ -26,3 +26,21 @@ pluginval_service_result() {
         printf 'unknown\n'
     fi
 }
+
+pluginval_output_result() {
+    output_path="$1"
+    if [ ! -f "$output_path" ]; then
+        printf 'incomplete\n'
+        return
+    fi
+    final_line="$(
+        sed '/^[[:space:]]*$/d' "$output_path" |
+            tail -n 1 |
+            tr -d '\r'
+    )"
+    case "$final_line" in
+        SUCCESS) printf 'success\n' ;;
+        FAILED) printf 'failure\n' ;;
+        *) printf 'incomplete\n' ;;
+    esac
+}
