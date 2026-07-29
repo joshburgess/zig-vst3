@@ -20,6 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check retired comparison references
+        run: scripts/check_retired_reference.sh
       - name: Check prose punctuation
         run: |
           em_dash="$(printf '\342\200\224')"
