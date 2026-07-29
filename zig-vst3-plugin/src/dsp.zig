@@ -109,6 +109,8 @@ pub const AdmPolarExtentPanner =
     adm_render.PolarExtentPanner;
 pub const AdmCartesianPointSourcePanner =
     adm_render.CartesianPointSourcePanner;
+pub const AdmCartesianExtentPanner =
+    adm_render.CartesianExtentPanner;
 pub const AdmDirectSpeakerRoute = adm_render.DirectSpeakerRoute;
 pub const AdmDirectSpeakerRoutingContext =
     adm_render.DirectSpeakerRoutingContext;
@@ -118,6 +120,8 @@ pub const AdmObjectPointGainPlan =
     adm_render.ObjectPointGainPlan;
 pub const AdmObjectPolarExtentGainPlan =
     adm_render.ObjectPolarExtentGainPlan;
+pub const AdmObjectCartesianExtentGainPlan =
+    adm_render.ObjectCartesianExtentGainPlan;
 pub const AdmOutputSpeaker = adm_render.OutputSpeaker;
 pub const AdmPolarPosition = adm_render.PolarPosition;
 pub const AdmCartesianPosition = adm_render.CartesianPosition;

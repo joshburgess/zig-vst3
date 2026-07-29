@@ -1,5 +1,6 @@
 const std = @import("std");
 const adm = @import("adm.zig");
+const adm_cartesian_extent = @import("adm_cartesian_extent.zig");
 const adm_polar_extent = @import("adm_polar_extent.zig");
 const adm_polar_panner = @import("adm_polar_panner.zig");
 const adm_xml = @import("adm_xml.zig");
@@ -479,6 +480,112 @@ pub fn CartesianPointSourcePanner(comptime Sample: type) type {
     };
 }
 
+/// Computes extent gains for allocentric room positions without allocation.
+pub fn CartesianExtentPanner(comptime Sample: type) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError(
+            "CartesianExtentPanner supports f32 and f64 samples",
+        );
+
+    return struct {
+        const Self = @This();
+        const Core = adm_cartesian_extent.Panner(
+            Sample,
+            maximum_output_channels,
+        );
+
+        output_count: usize,
+        point_panner: CartesianPointSourcePanner(Sample),
+        core: Core,
+
+        pub fn init(
+            point_panner: *const CartesianPointSourcePanner(Sample),
+        ) !Self {
+            if (!point_panner.valid())
+                return error.InvalidAdmRendererState;
+            var positions: [maximum_output_channels]adm_cartesian_extent.Position =
+                undefined;
+            for (
+                point_panner.positions[0..point_panner.output_count],
+                positions[0..point_panner.output_count],
+            ) |source, *target| {
+                target.* = .{
+                    .x = source.x,
+                    .y = source.y,
+                    .z = source.z,
+                };
+            }
+            return .{
+                .output_count = point_panner.output_count,
+                .point_panner = point_panner.*,
+                .core = try Core.init(
+                    positions[0..point_panner.output_count],
+                    point_panner.enabled[0..point_panner.output_count],
+                ),
+            };
+        }
+
+        pub fn calculateGains(
+            self: *const Self,
+            position: CartesianPosition,
+            size_x: f64,
+            size_y: f64,
+            size_z: f64,
+            gains: []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (gains.len != self.output_count)
+                return error.AdmRendererOutputCountMismatch;
+            var point_gains: [maximum_output_channels]Sample = undefined;
+            try self.point_panner.calculateGains(
+                position,
+                point_gains[0..self.output_count],
+            );
+            if (size_x == 0.0 and size_y == 0.0 and size_z == 0.0) {
+                @memcpy(gains, point_gains[0..self.output_count]);
+                return;
+            }
+            try self.core.calculateGains(
+                .{ .x = position.x, .y = position.y, .z = position.z },
+                size_x,
+                size_y,
+                size_z,
+                point_gains[0..self.output_count],
+                gains,
+            );
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (!(self.output_count > 0 and
+                self.output_count <= maximum_output_channels and
+                self.point_panner.output_count == self.output_count and
+                self.core.output_count == self.output_count and
+                self.point_panner.valid() and
+                self.core.valid() and
+                self.point_panner.panner_output_count ==
+                    self.core.panner_output_count))
+            {
+                return false;
+            }
+            for (
+                self.point_panner.positions[0..self.output_count],
+                self.point_panner.enabled[0..self.output_count],
+                self.core.positions[0..self.output_count],
+                self.core.enabled[0..self.output_count],
+            ) |point_position, point_enabled, core_position, core_enabled| {
+                if (point_enabled != core_enabled or
+                    point_position.x != core_position.x or
+                    point_position.y != core_position.y or
+                    point_position.z != core_position.z)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+    };
+}
+
 /// Precomputes direct and diffuse gains for one static Objects block.
 pub fn ObjectPointGainPlan(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
@@ -495,6 +602,7 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
         const SpatialPanner = union(enum) {
             point: PointPanners,
             polar_extent: *const PolarExtentPanner(Sample),
+            cartesian_extent: *const CartesianExtentPanner(Sample),
         };
 
         output_count: usize,
@@ -563,6 +671,39 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
             );
         }
 
+        pub fn initCartesianExtent(
+            block: *const adm_xml.BlockFormat,
+            outputs: []const OutputSpeaker,
+            panner: *const CartesianExtentPanner(Sample),
+            context: ObjectRenderingContext,
+        ) !Self {
+            if (block.identifier.typeLabel() != 0x0003 or
+                block.channel_identifier.typeLabel() != 0x0003)
+            {
+                return error.AdmRendererRequiresObjectsBlock;
+            }
+            if (!block.cartesian)
+                return error.AdmRendererCartesianObjectsBlockRequired;
+            if (!std.math.isFinite(block.width) or
+                !std.math.isFinite(block.height) or
+                !std.math.isFinite(block.depth) or
+                block.width < 0.0 or
+                block.width > 1.0 or
+                block.height < 0.0 or
+                block.height > 1.0 or
+                block.depth < 0.0 or
+                block.depth > 1.0)
+            {
+                return error.InvalidAdmObjectExtent;
+            }
+            return initWithPanner(
+                block,
+                outputs,
+                .{ .cartesian_extent = panner },
+                context,
+            );
+        }
+
         fn initWithPanner(
             block: *const adm_xml.BlockFormat,
             outputs: []const OutputSpeaker,
@@ -597,6 +738,14 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
                 .polar_extent => |panner| {
                     if (block.cartesian)
                         return error.AdmRendererPolarObjectsBlockRequired;
+                    if (panner.output_count != outputs.len)
+                        return error.AdmRendererOutputCountMismatch;
+                    if (!panner.valid())
+                        return error.InvalidAdmRendererState;
+                },
+                .cartesian_extent => |panner| {
+                    if (!block.cartesian)
+                        return error.AdmRendererCartesianObjectsBlockRequired;
                     if (panner.output_count != outputs.len)
                         return error.AdmRendererOutputCountMismatch;
                     if (!panner.valid())
@@ -647,6 +796,15 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
                     .polar_extent => |panner| {
                         try panner.calculateGains(
                             try cartesianToPolar(branch_position),
+                            block.width,
+                            block.height,
+                            block.depth,
+                            branch_gains[0..outputs.len],
+                        );
+                    },
+                    .cartesian_extent => |panner| {
+                        try panner.calculateGains(
+                            branch_position,
                             block.width,
                             block.height,
                             block.depth,
@@ -774,6 +932,7 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
 }
 
 pub const ObjectPolarExtentGainPlan = ObjectPointGainPlan;
+pub const ObjectCartesianExtentGainPlan = ObjectPointGainPlan;
 
 pub fn StaticMatrixMixer(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
@@ -2880,6 +3039,393 @@ test "ADM polar extent panner matches independent gain vectors" {
     try std.testing.expectEqual(
         @as([outputs.len]f64, @splat(7.0)),
         gains,
+    );
+}
+
+test "ADM Cartesian extent panner matches independent gain vectors" {
+    const outputs = testCartesianCubeLayout();
+    const point_panner = try CartesianPointSourcePanner(f64).init(&outputs);
+    var panner = try CartesianExtentPanner(f64).init(&point_panner);
+    try std.testing.expect(panner.valid());
+
+    const Case = struct {
+        position: CartesianPosition,
+        size_x: f64,
+        size_y: f64,
+        size_z: f64,
+        expected: [8]f64,
+    };
+    const cases = [_]Case{
+        .{
+            .position = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+            .size_x = 0.25,
+            .size_y = 0.25,
+            .size_z = 0.25,
+            .expected = .{
+                0.34075868105644258,
+                0.34075868105644258,
+                0.34075868105644258,
+                0.34075868105644258,
+                0.36590097196464733,
+                0.36590097196464733,
+                0.36590097196464733,
+                0.36590097196464733,
+            },
+        },
+        .{
+            .position = .{ .x = 0.6, .y = -0.3, .z = 0.2 },
+            .size_x = 0.4,
+            .size_y = 0.2,
+            .size_z = 0.7,
+            .expected = .{
+                0.16216529426220688,
+                0.32387243774913788,
+                0.25478406622697408,
+                0.50884831433256217,
+                0.16272582626349621,
+                0.36144228853327637,
+                0.25566473938943218,
+                0.56787573690083426,
+            },
+        },
+        .{
+            .position = .{ .x = -1.0, .y = -1.0, .z = -1.0 },
+            .size_x = 1.0,
+            .size_y = 1.0,
+            .size_z = 1.0,
+            .expected = .{
+                0.30770529128711621,
+                0.2828445680662614,
+                0.33439371880198532,
+                0.30770529128711621,
+                0.39172407933447062,
+                0.35474619952625336,
+                0.43136333157770024,
+                0.39172407933447062,
+            },
+        },
+        .{
+            .position = .{ .x = 0.8, .y = 0.5, .z = -0.6 },
+            .size_x = 0.05,
+            .size_y = 0.8,
+            .size_z = 0.3,
+            .expected = .{
+                0.084244206869162355,
+                0.51107495761065436,
+                0.076503382913228959,
+                0.46411456208702628,
+                0.086437701558761848,
+                0.52438198781686562,
+                0.077661107148142408,
+                0.47113799890568081,
+            },
+        },
+    };
+    var gains: [outputs.len]f64 = undefined;
+    for (cases) |case| {
+        try panner.calculateGains(
+            case.position,
+            case.size_x,
+            case.size_y,
+            case.size_z,
+            &gains,
+        );
+        try std.testing.expectApproxEqAbs(
+            @as(f64, 1.0),
+            gainVectorPower(f64, &gains),
+            0.000_000_001,
+        );
+        for (gains, case.expected) |actual, expected| {
+            try std.testing.expectApproxEqAbs(
+                expected,
+                actual,
+                0.000_000_001,
+            );
+        }
+    }
+
+    try panner.calculateGains(
+        .{ .x = 0.6, .y = -0.3, .z = 0.2 },
+        0.0,
+        0.0,
+        0.0,
+        &gains,
+    );
+    var point_gains: [outputs.len]f64 = undefined;
+    try point_panner.calculateGains(
+        .{ .x = 0.6, .y = -0.3, .z = 0.2 },
+        &point_gains,
+    );
+    try std.testing.expectEqualDeep(point_gains, gains);
+
+    var outputs_with_lfe: [outputs.len + 1]OutputSpeaker = undefined;
+    @memcpy(outputs_with_lfe[0..outputs.len], &outputs);
+    outputs_with_lfe[outputs.len] = .{
+        .label = "LFE1",
+        .is_lfe = true,
+        .nominal_polar = .{
+            .azimuth_degrees = 0.0,
+            .elevation_degrees = 0.0,
+        },
+        .allocentric = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+    };
+    const lfe_point =
+        try CartesianPointSourcePanner(f64).init(&outputs_with_lfe);
+    const lfe_extent =
+        try CartesianExtentPanner(f64).init(&lfe_point);
+    var lfe_gains: [outputs_with_lfe.len]f64 = undefined;
+    try lfe_extent.calculateGains(
+        cases[1].position,
+        cases[1].size_x,
+        cases[1].size_y,
+        cases[1].size_z,
+        &lfe_gains,
+    );
+    for (lfe_gains[0..outputs.len], cases[1].expected) |actual, expected| {
+        try std.testing.expectApproxEqAbs(
+            expected,
+            actual,
+            0.000_000_001,
+        );
+    }
+    try std.testing.expectEqual(@as(f64, 0.0), lfe_gains[outputs.len]);
+
+    const stereo_outputs = [_]OutputSpeaker{
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30.0,
+                .elevation_degrees = 0.0,
+            },
+            .allocentric = .{ .x = -1.0, .y = 1.0, .z = 0.0 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30.0,
+                .elevation_degrees = 0.0,
+            },
+            .allocentric = .{ .x = 1.0, .y = 1.0, .z = 0.0 },
+        },
+    };
+    const stereo_point =
+        try CartesianPointSourcePanner(f32).init(&stereo_outputs);
+    const stereo_extent =
+        try CartesianExtentPanner(f32).init(&stereo_point);
+    var stereo_gains: [stereo_outputs.len]f32 = undefined;
+    try stereo_extent.calculateGains(
+        .{ .x = 0.5, .y = 0.0, .z = 0.0 },
+        0.5,
+        0.0,
+        0.0,
+        &stereo_gains,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.550152941340817),
+        stereo_gains[0],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.835063914400597),
+        stereo_gains[1],
+        0.000_001,
+    );
+    var irrelevant_extent_gains: [stereo_outputs.len]f32 = undefined;
+    try stereo_extent.calculateGains(
+        .{ .x = 0.5, .y = 0.0, .z = 0.0 },
+        0.5,
+        1.0,
+        1.0,
+        &irrelevant_extent_gains,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.53202693),
+        irrelevant_extent_gains[0],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.84672743),
+        irrelevant_extent_gains[1],
+        0.000_001,
+    );
+
+    gains = @splat(7.0);
+    try std.testing.expectError(
+        error.InvalidAdmCartesianExtent,
+        panner.calculateGains(
+            .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+            std.math.nan(f64),
+            0.0,
+            0.0,
+            &gains,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as([outputs.len]f64, @splat(7.0)),
+        gains,
+    );
+    panner.core.output_count = 0;
+    try std.testing.expect(!panner.valid());
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        panner.calculateGains(
+            .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+            0.2,
+            0.2,
+            0.2,
+            &gains,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as([outputs.len]f64, @splat(7.0)),
+        gains,
+    );
+}
+
+test "ADM Cartesian extent panner uses the full grid for three height planes" {
+    const Core = adm_cartesian_extent.Panner(f64, 12);
+    const positions = [_]adm_cartesian_extent.Position{
+        .{ .x = -1.0, .y = 1.0, .z = -1.0 },
+        .{ .x = 1.0, .y = 1.0, .z = -1.0 },
+        .{ .x = -1.0, .y = -1.0, .z = -1.0 },
+        .{ .x = 1.0, .y = -1.0, .z = -1.0 },
+        .{ .x = -1.0, .y = 1.0, .z = 0.0 },
+        .{ .x = 1.0, .y = 1.0, .z = 0.0 },
+        .{ .x = -1.0, .y = -1.0, .z = 0.0 },
+        .{ .x = 1.0, .y = -1.0, .z = 0.0 },
+        .{ .x = -1.0, .y = 1.0, .z = 1.0 },
+        .{ .x = 1.0, .y = 1.0, .z = 1.0 },
+        .{ .x = -1.0, .y = -1.0, .z = 1.0 },
+        .{ .x = 1.0, .y = -1.0, .z = 1.0 },
+    };
+    const enabled = [_]bool{true} ** positions.len;
+    const point_gains = [_]f64{
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.34012925309777514,
+        0.39824018841171216,
+        0.46814775458714158,
+        0.54813059533491437,
+        0.1733045105708482,
+        0.20291351100722366,
+        0.23853319508582088,
+        0.27928648796967115,
+    };
+    const expected = [_]f64{
+        0.01816511816486498,
+        0.020626421203745013,
+        0.025913009820218116,
+        0.029424122120061194,
+        0.33317542085399693,
+        0.37831939780946811,
+        0.47528333557135988,
+        0.53968238365619559,
+        0.18052107677948265,
+        0.20498098234280759,
+        0.25751797444351238,
+        0.292410660926957,
+    };
+    const panner = try Core.init(&positions, &enabled);
+    var gains: [positions.len]f64 = undefined;
+    try panner.calculateGains(
+        .{ .x = 0.1, .y = -0.2, .z = 0.3 },
+        0.3,
+        0.6,
+        0.4,
+        &point_gains,
+        &gains,
+    );
+    for (gains, expected) |actual, expected_gain| {
+        try std.testing.expectApproxEqAbs(
+            expected_gain,
+            actual,
+            0.000_000_001,
+        );
+    }
+}
+
+test "ADM Cartesian extent Objects plan applies extent and diffuse gain" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X">0.6</position>
+        \\      <position coordinate="Y">-0.3</position>
+        \\      <position coordinate="Z">0.2</position>
+        \\      <width>0.4</width>
+        \\      <height>0.2</height>
+        \\      <depth>0.7</depth>
+        \\      <gain>0.5</gain>
+        \\      <diffuse>0.36</diffuse>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = testCartesianCubeLayout();
+    const point_panner = try CartesianPointSourcePanner(f32).init(&outputs);
+    const extent_panner = try CartesianExtentPanner(f32).init(&point_panner);
+    const plan =
+        try ObjectCartesianExtentGainPlan(f32).initCartesianExtent(
+            &block,
+            &outputs,
+            &extent_panner,
+            .{},
+        );
+    try std.testing.expect(plan.valid());
+
+    const expected = [_]f32{
+        0.16216529426220688,
+        0.32387243774913788,
+        0.25478406622697408,
+        0.50884831433256217,
+        0.16272582626349621,
+        0.36144228853327637,
+        0.25566473938943218,
+        0.56787573690083426,
+    };
+    for (
+        plan.directGainSlice(),
+        plan.diffuseGainSlice(),
+        expected,
+    ) |direct, diffuse, spatial| {
+        try std.testing.expectApproxEqAbs(
+            spatial * 0.4,
+            direct,
+            0.000_001,
+        );
+        try std.testing.expectApproxEqAbs(
+            spatial * 0.3,
+            diffuse,
+            0.000_001,
+        );
+    }
+
+    var polar_block = block;
+    polar_block.cartesian = false;
+    try std.testing.expectError(
+        error.AdmRendererCartesianObjectsBlockRequired,
+        ObjectCartesianExtentGainPlan(f32).initCartesianExtent(
+            &polar_block,
+            &outputs,
+            &extent_panner,
+            .{},
+        ),
+    );
+    var invalid_block = block;
+    invalid_block.width = 1.1;
+    try std.testing.expectError(
+        error.InvalidAdmObjectExtent,
+        ObjectCartesianExtentGainPlan(f32).initCartesianExtent(
+            &invalid_block,
+            &outputs,
+            &extent_panner,
+            .{},
+        ),
     );
 }
 

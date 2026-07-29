@@ -3645,6 +3645,64 @@ test "installed package exposes file-backed audio writers" {
         extent_power,
         0.000_001,
     );
+    const cartesian_extent_panner =
+        try plugin.dsp.AdmCartesianExtentPanner(f32).init(
+            &polar_cartesian_panner,
+        );
+    var cartesian_extent_gains: [polar_layout.len]f32 = undefined;
+    try cartesian_extent_panner.calculateGains(
+        .{ .x = 0.25, .y = 0.0, .z = 0.0 },
+        0.4,
+        0.2,
+        0.1,
+        &cartesian_extent_gains,
+    );
+    var cartesian_extent_power: f32 = 0.0;
+    for (cartesian_extent_gains) |gain| {
+        cartesian_extent_power += gain * gain;
+    }
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0),
+        cartesian_extent_power,
+        0.000_001,
+    );
+    const cartesian_extent_adm = try plugin.dsp.AdmXmlDocument.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031002">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031002_00000001">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X">0.25</position>
+        \\      <position coordinate="Y">0</position>
+        \\      <position coordinate="Z">0</position>
+        \\      <width>0.4</width>
+        \\      <height>0.2</height>
+        \\      <depth>0.1</depth>
+        \\      <gain>0.5</gain>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var cartesian_extent_blocks = cartesian_extent_adm.blocks();
+    const cartesian_extent_block =
+        (try cartesian_extent_blocks.next()).?;
+    const cartesian_extent_plan =
+        try plugin.dsp.AdmObjectCartesianExtentGainPlan(
+            f32,
+        ).initCartesianExtent(
+            &cartesian_extent_block,
+            &polar_layout,
+            &cartesian_extent_panner,
+            object_context,
+        );
+    var cartesian_plan_power: f32 = 0.0;
+    for (cartesian_extent_plan.directGainSlice()) |gain| {
+        cartesian_plan_power += gain * gain;
+    }
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.25),
+        cartesian_plan_power,
+        0.000_001,
+    );
     const polar_router =
         try plugin.dsp.AdmDirectSpeakerPositionRouter(f32).init(
             &direct_block,
