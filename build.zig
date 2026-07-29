@@ -4359,8 +4359,8 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
         module.linkFramework("UniformTypeIdentifiers", .{});
     } else if (target.result.os.tag == .linux) {
         module.addLibraryPath(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs"));
-        module.linkSystemLibrary(":libstdc++.so", .{ .use_pkg_config = .no });
-        module.linkSystemLibrary(":libgcc_s.so.1", .{ .use_pkg_config = .no });
+        module.linkSystemLibrary("zig_vstgui_stdcxx", .{ .use_pkg_config = .no });
+        module.linkSystemLibrary("zig_vstgui_gcc_s", .{ .use_pkg_config = .no });
         for ([_][]const u8{
             "X11",            "freetype2",      "xcb",         "xcb-util",       "xcb-cursor", "xcb-keysyms", "xcb-xkb",
             "xkbcommon",      "xkbcommon-x11",  "glib-2.0",    "cairo",          "pangocairo", "pangoft2",    "fontconfig",

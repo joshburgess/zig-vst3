@@ -162,7 +162,7 @@ if(UNIX AND NOT APPLE)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/Release/libs")
     file(COPY_FILE
         "${ZIG_VSTGUI_CXX_RUNTIME}"
-        "${CMAKE_BINARY_DIR}/Release/libs/libstdc++.so"
+        "${CMAKE_BINARY_DIR}/Release/libs/libzig_vstgui_stdcxx.so"
         ONLY_IF_DIFFERENT
     )
     execute_process(
@@ -178,7 +178,7 @@ if(UNIX AND NOT APPLE)
     endif()
     file(COPY_FILE
         "${ZIG_VSTGUI_UNWIND_RUNTIME}"
-        "${CMAKE_BINARY_DIR}/Release/libs/libgcc_s.so.1"
+        "${CMAKE_BINARY_DIR}/Release/libs/libzig_vstgui_gcc_s.so"
         ONLY_IF_DIFFERENT
     )
 endif()
