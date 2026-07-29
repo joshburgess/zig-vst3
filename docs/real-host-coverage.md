@@ -46,11 +46,11 @@ Current state:
 - The native Mono Gain bundle links the production VSTGUI parameter backend, publishes the platform widget only after successful attachment, and declares the native UI class and parent feature in generated Turtle.
 - The UI fixture cross-builds for Linux aarch64, Linux x86-64, and Windows x86-64 GNU.
 - Generated Turtle can associate a plugin with a separate UI resource, class, and binary.
+- The complete generated bundle passes the LV2 1.18.10 RDF schema validator and warning-fatal `lv2lint` 0.16.2 in direct-distribution mode. The validator loads and verifies both native descriptors.
 - Automated smoke coverage proves native widget publication and descriptor loading without a physical host. External host scheduling and external Turtle discovery remain unproven.
 
 Useful next slices:
 
-- Run `lv2lint` against a generated bundle containing core, presets, and UI metadata.
 - Load the linked VSTGUI UI on each supported platform and test it in at least two LV2 hosts.
 - Confirm native parent and child ownership, automation in both directions, gesture touch notifications, idle cadence, both resize directions, show and hide, two instances, close, reopen, session reload, and teardown.
 - Exercise Worker delivery on a real asynchronous host worker thread and confirm responses arrive on a later `run`.

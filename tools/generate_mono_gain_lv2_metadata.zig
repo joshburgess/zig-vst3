@@ -41,6 +41,19 @@ pub fn main(init: std.process.Init) !void {
         };
     const metadata = core.lv2.metadata.Metadata{
         .class_uri = "http://lv2plug.in/ns/lv2core#AmplifierPlugin",
+        .description = "A mono gain reference plugin for the zig-vst3 plugin framework.",
+        .short_description = "Mono gain reference plugin",
+        .is_live = true,
+        .project = .{
+            .uri = "https://github.com/joshburgess/zig-vst3",
+            .name = "zig-vst3",
+            .license_uri = "https://spdx.org/licenses/MIT.html",
+            .maintainer = .{
+                .name = "Josh Burgess",
+                .email_uri = "mailto:joshburgesswebdev@gmail.com",
+                .homepage_uri = "https://github.com/joshburgess",
+            },
+        },
         .presets = &presets,
         .ui = ui,
     };

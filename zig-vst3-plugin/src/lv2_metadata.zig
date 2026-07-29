@@ -20,10 +20,27 @@ pub const UiMetadata = struct {
     class_uri: []const u8,
 };
 
+pub const MaintainerMetadata = struct {
+    name: []const u8,
+    email_uri: []const u8,
+    homepage_uri: []const u8,
+};
+
+pub const ProjectMetadata = struct {
+    uri: []const u8,
+    name: []const u8,
+    license_uri: []const u8,
+    maintainer: MaintainerMetadata,
+};
+
 pub const Metadata = struct {
     class_uri: []const u8 = "http://lv2plug.in/ns/lv2core#Plugin",
     minor_version: u32 = 0,
     micro_version: u32 = 1,
+    description: ?[]const u8 = null,
+    short_description: ?[]const u8 = null,
+    is_live: bool = false,
+    project: ?ProjectMetadata = null,
     presets: []const FactoryPreset = &.{},
     ui: ?UiMetadata = null,
 };
@@ -106,11 +123,13 @@ pub fn Generator(
                 "@prefix atom: <http://lv2plug.in/ns/ext/atom#> .\n" ++
                     "@prefix bufsz: <http://lv2plug.in/ns/ext/buf-size#> .\n" ++
                     "@prefix doap: <http://usefulinc.com/ns/doap#> .\n" ++
+                    "@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n" ++
                     "@prefix lv2:  <http://lv2plug.in/ns/lv2core#> .\n" ++
                     "@prefix midi: <http://lv2plug.in/ns/ext/midi#> .\n" ++
                     "@prefix opts: <http://lv2plug.in/ns/ext/options#> .\n" ++
                     "@prefix patch: <http://lv2plug.in/ns/ext/patch#> .\n" ++
                     "@prefix pgm:  <http://kxstudio.sf.net/ns/lv2ext/programs#> .\n" ++
+                    "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" ++
                     "@prefix state: <http://lv2plug.in/ns/ext/state#> .\n" ++
                     "@prefix time: <http://lv2plug.in/ns/ext/time#> .\n" ++
                     "@prefix ui:   <http://lv2plug.in/ns/extensions/ui#> .\n" ++
@@ -122,6 +141,19 @@ pub fn Generator(
             try writer.writeAll(metadata.class_uri);
             try writer.writeAll("> ;\n    doap:name ");
             try writeTurtleString(writer, Plugin.name);
+            if (metadata.description) |description| {
+                try writer.writeAll(" ;\n    doap:description ");
+                try writeTurtleString(writer, description);
+            }
+            if (metadata.short_description) |short_description| {
+                try writer.writeAll(" ;\n    doap:shortdesc ");
+                try writeTurtleString(writer, short_description);
+            }
+            if (metadata.project) |project| {
+                try writer.writeAll(" ;\n    lv2:project <");
+                try writer.writeAll(project.uri);
+                try writer.writeByte('>');
+            }
             try writer.print(
                 " ;\n    lv2:minorVersion {d} ;\n    lv2:microVersion {d} ;\n",
                 .{ metadata.minor_version, metadata.micro_version },
@@ -134,6 +166,8 @@ pub fn Generator(
             try writer.writeAll(
                 "    lv2:optionalFeature lv2:hardRTCapable , opts:options",
             );
+            if (metadata.is_live)
+                try writer.writeAll(" , lv2:isLive");
             if (Adapter.worker_enabled)
                 try writer.writeAll(" , work:schedule");
             try writer.writeAll(
@@ -175,12 +209,33 @@ pub fn Generator(
                 try writer.writeAll(
                     "> ;\n" ++
                         "    lv2:requiredFeature ui:parent ;\n" ++
-                        "    lv2:optionalFeature ui:resize , ui:touch ;\n" ++
+                        "    lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch ;\n" ++
                         "    lv2:extensionData ui:idleInterface , ui:resize , ui:showInterface",
                 );
                 if (has_programs)
                     try writer.writeAll(" , pgm:UIInterface");
                 try writer.writeAll(" .\n");
+            }
+            if (metadata.project) |project| {
+                try writer.writeAll("\n<");
+                try writer.writeAll(project.uri);
+                try writer.writeAll(
+                    ">\n    a doap:Project ;\n    doap:name ",
+                );
+                try writeTurtleString(writer, project.name);
+                try writer.writeAll(" ;\n    doap:license <");
+                try writer.writeAll(project.license_uri);
+                try writer.writeAll(
+                    "> ;\n    doap:maintainer [\n" ++
+                        "        a foaf:Person ;\n" ++
+                        "        foaf:name ",
+                );
+                try writeTurtleString(writer, project.maintainer.name);
+                try writer.writeAll(" ;\n        foaf:mbox <");
+                try writer.writeAll(project.maintainer.email_uri);
+                try writer.writeAll("> ;\n        foaf:homepage <");
+                try writer.writeAll(project.maintainer.homepage_uri);
+                try writer.writeAll(">\n    ] .\n");
             }
         }
 
@@ -359,6 +414,25 @@ pub fn Generator(
                 return error.InvalidLv2BinaryName;
             if (!validText(Plugin.name))
                 return error.InvalidLv2MetadataText;
+            if (metadata.description) |description| {
+                if (!validText(description))
+                    return error.InvalidLv2MetadataText;
+            }
+            if (metadata.short_description) |short_description| {
+                if (!validText(short_description))
+                    return error.InvalidLv2MetadataText;
+            }
+            if (metadata.project) |project| {
+                if (!validUri(project.uri) or
+                    !validUri(project.license_uri) or
+                    !validUri(project.maintainer.homepage_uri))
+                    return error.InvalidLv2MetadataUri;
+                if (!validMailtoUri(project.maintainer.email_uri))
+                    return error.InvalidLv2MaintainerEmail;
+                if (!validText(project.name) or
+                    !validText(project.maintainer.name))
+                    return error.InvalidLv2MetadataText;
+            }
             if (metadata.ui) |ui| {
                 if (!validUri(ui.uri) or !validUri(ui.class_uri) or
                     std.mem.eql(u8, ui.uri, plugin_uri))
@@ -576,6 +650,16 @@ fn validUri(value: []const u8) bool {
     return true;
 }
 
+fn validMailtoUri(value: []const u8) bool {
+    const prefix = "mailto:";
+    if (!std.mem.startsWith(u8, value, prefix) or
+        value.len == prefix.len)
+        return false;
+    const address = value[prefix.len..];
+    const at = std.mem.indexOfScalar(u8, address, '@') orelse return false;
+    return at != 0 and at + 1 < address.len and validUri(value);
+}
+
 fn validFileName(value: []const u8) bool {
     if (value.len == 0 or
         std.mem.eql(u8, value, ".") or
@@ -685,6 +769,19 @@ test "LV2 metadata generator writes ports workers and presets" {
     };
     const metadata = Metadata{
         .class_uri = "http://lv2plug.in/ns/lv2core#AmplifierPlugin",
+        .description = "A metadata generator probe.",
+        .short_description = "Metadata probe",
+        .is_live = true,
+        .project = .{
+            .uri = "https://example.test/project",
+            .name = "Metadata Project",
+            .license_uri = "https://example.test/license",
+            .maintainer = .{
+                .name = "Project Maintainer",
+                .email_uri = "mailto:maintainer@example.test",
+                .homepage_uri = "https://example.test/maintainer",
+            },
+        },
         .presets = &presets,
         .ui = .{
             .uri = "https://example.test/metadata#ui",
@@ -755,11 +852,54 @@ test "LV2 metadata generator writes ports workers and presets" {
             null,
     );
     try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "doap:description \"A metadata generator probe.\"",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, plugin, "doap:shortdesc \"Metadata probe\"") !=
+            null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "lv2:project <https://example.test/project>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "lv2:optionalFeature lv2:hardRTCapable , opts:options , lv2:isLive",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "doap:license <https://example.test/license>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "foaf:mbox <mailto:maintainer@example.test>",
+        ) != null,
+    );
+    try std.testing.expect(
         std.mem.indexOf(u8, plugin, "ui:ui <https://example.test/metadata#ui>") !=
             null,
     );
     try std.testing.expect(
-        std.mem.indexOf(u8, plugin, "ui:idleInterface") != null,
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch",
+        ) != null,
     );
     try std.testing.expect(
         std.mem.indexOf(u8, plugin, "pgm:UIInterface") != null,
@@ -860,6 +1000,38 @@ test "LV2 metadata generator rejects malformed presets" {
                 .uri = "https://example.test/metadata#ui",
                 .binary_name = "../probe-ui.so",
                 .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+            },
+        }),
+    );
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2MaintainerEmail,
+        Generated.writePlugin(&writer, .{
+            .project = .{
+                .uri = "https://example.test/project",
+                .name = "Metadata Project",
+                .license_uri = "https://example.test/license",
+                .maintainer = .{
+                    .name = "Project Maintainer",
+                    .email_uri = "maintainer@example.test",
+                    .homepage_uri = "https://example.test/maintainer",
+                },
+            },
+        }),
+    );
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2MetadataUri,
+        Generated.writePlugin(&writer, .{
+            .project = .{
+                .uri = "relative-project",
+                .name = "Metadata Project",
+                .license_uri = "https://example.test/license",
+                .maintainer = .{
+                    .name = "Project Maintainer",
+                    .email_uri = "mailto:maintainer@example.test",
+                    .homepage_uri = "https://example.test/maintainer",
+                },
             },
         }),
     );

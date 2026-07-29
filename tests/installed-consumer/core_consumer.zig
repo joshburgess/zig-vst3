@@ -873,6 +873,19 @@ test "installed core package runs an LV2 audio control descriptor" {
     var metadata_bytes: [4096]u8 = undefined;
     var metadata_writer = std.Io.Writer.fixed(&metadata_bytes);
     try Metadata.writePlugin(&metadata_writer, .{
+        .description = "Installed metadata consumer.",
+        .short_description = "Installed consumer",
+        .is_live = true,
+        .project = .{
+            .uri = "https://example.test/installed-project",
+            .name = "Installed Project",
+            .license_uri = "https://example.test/license",
+            .maintainer = .{
+                .name = "Installed Maintainer",
+                .email_uri = "mailto:maintainer@example.test",
+                .homepage_uri = "https://example.test/maintainer",
+            },
+        },
         .ui = .{
             .uri = "https://example.test/installed-lv2-gain#ui",
             .binary_name = "installed_lv2_gain_ui.so",
@@ -890,7 +903,14 @@ test "installed core package runs an LV2 audio control descriptor" {
         std.mem.indexOf(
             u8,
             metadata_writer.buffered(),
-            "ui:idleInterface",
+            "lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            metadata_writer.buffered(),
+            "doap:license <https://example.test/license>",
         ) != null,
     );
     try std.testing.expect(
