@@ -3849,6 +3849,7 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .yes });
     } else if (target.result.os.tag == .windows) {
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/msvcprt.lib"));
+        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/msvcrt.lib"));
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/vcruntime.lib"));
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/ucrt.lib"));
         for ([_][]const u8{

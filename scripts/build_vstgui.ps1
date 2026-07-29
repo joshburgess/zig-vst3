@@ -43,6 +43,7 @@ function Copy-MsvcRuntimeLibraries {
   $Directories = Get-ZigLibcDirectories
   $Libraries = @(
     @{ Source = Join-Path $Directories["msvc_lib_dir"] "msvcprt.lib"; Name = "msvcprt.lib" },
+    @{ Source = Join-Path $Directories["msvc_lib_dir"] "msvcrt.lib"; Name = "msvcrt.lib" },
     @{ Source = Join-Path $Directories["msvc_lib_dir"] "vcruntime.lib"; Name = "vcruntime.lib" },
     @{ Source = Join-Path $Directories["crt_dir"] "ucrt.lib"; Name = "ucrt.lib" }
   )
