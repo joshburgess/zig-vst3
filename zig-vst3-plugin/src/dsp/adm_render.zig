@@ -4,6 +4,46 @@ const adm_xml = @import("adm_xml.zig");
 
 pub const maximum_input_channels = adm_xml.max_adm_matrix_coefficients;
 pub const maximum_output_channels: usize = 64;
+const position_tolerance: f64 = 1.0e-5;
+
+pub const PolarPosition = struct {
+    azimuth_degrees: f64,
+    elevation_degrees: f64,
+    distance: f64 = 1.0,
+};
+
+pub const CartesianPosition = struct {
+    x: f64,
+    y: f64,
+    z: f64 = 0.0,
+};
+
+pub const OutputSpeaker = struct {
+    label: []const u8,
+    is_lfe: bool = false,
+    nominal_polar: PolarPosition,
+    allocentric: CartesianPosition,
+};
+
+pub const ScreenEdges = struct {
+    left_azimuth_degrees: f64,
+    right_azimuth_degrees: f64,
+    bottom_elevation_degrees: f64,
+    top_elevation_degrees: f64,
+};
+
+pub const DirectSpeakerRoutingContext = struct {
+    screen_edges: ?ScreenEdges = null,
+    /// Supply the standard screen-lock transform result for Cartesian metadata.
+    cartesian_screen_locked_nominal: ?CartesianPosition = null,
+};
+
+pub const DirectSpeakerRoute = union(enum) {
+    output: u8,
+    discard,
+    polar_panner: PolarPosition,
+    cartesian_panner: CartesianPosition,
+};
 
 pub fn StaticMatrixMixer(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
@@ -270,6 +310,562 @@ pub fn DirectSpeakerRouter(comptime Sample: type) type {
     };
 }
 
+pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError(
+            "DirectSpeakerPositionRouter supports f32 and f64 samples",
+        );
+
+    return struct {
+        const Self = @This();
+
+        output_count: usize,
+        route: DirectSpeakerRoute,
+        gain: Sample,
+
+        pub fn init(
+            block: *const adm_xml.BlockFormat,
+            outputs: []const OutputSpeaker,
+            context: DirectSpeakerRoutingContext,
+        ) !Self {
+            if (block.identifier.typeLabel() != 0x0001 or
+                block.channel_identifier.typeLabel() != 0x0001)
+            {
+                return error.AdmRendererRequiresDirectSpeakersBlock;
+            }
+            const route = try resolveDirectSpeakerRoute(
+                block,
+                outputs,
+                context,
+            );
+            return .{
+                .output_count = outputs.len,
+                .route = route,
+                .gain = try renderGain(Sample, block.gain),
+            };
+        }
+
+        pub fn processSample(
+            self: *const Self,
+            input: Sample,
+        ) !Sample {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (!std.math.isFinite(input)) return 0.0;
+            return switch (self.route) {
+                .output => blk: {
+                    const output = input * self.gain;
+                    break :blk if (std.math.isFinite(output))
+                        output
+                    else
+                        0.0;
+                },
+                .discard => 0.0,
+                .polar_panner, .cartesian_panner => {
+                    return error.AdmRendererPointPannerRequired;
+                },
+            };
+        }
+
+        pub fn mix(
+            self: *const Self,
+            input: []const Sample,
+            outputs: []const []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (outputs.len != self.output_count)
+                return error.AdmRendererOutputCountMismatch;
+            for (outputs, 0..) |output, output_index| {
+                if (output.len != input.len)
+                    return error.AdmRendererBufferLengthMismatch;
+                for (outputs[0..output_index]) |previous| {
+                    if (slicesOverlap(Sample, previous, output))
+                        return error.AdmRendererAliasedBuffers;
+                }
+            }
+
+            const output_index = switch (self.route) {
+                .output => |index| index,
+                .discard => return,
+                .polar_panner, .cartesian_panner => {
+                    return error.AdmRendererPointPannerRequired;
+                },
+            };
+            const target = outputs[output_index];
+            if (slicesOverlap(Sample, input, target))
+                return error.AdmRendererAliasedBuffers;
+            for (input, target) |input_sample, *output_sample| {
+                if (!std.math.isFinite(input_sample)) continue;
+                if (!std.math.isFinite(output_sample.*)) {
+                    output_sample.* = 0.0;
+                    continue;
+                }
+                const mixed = output_sample.* + input_sample * self.gain;
+                output_sample.* = if (std.math.isFinite(mixed))
+                    mixed
+                else
+                    0.0;
+            }
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.output_count == 0 or
+                self.output_count > maximum_output_channels or
+                !std.math.isFinite(self.gain))
+            {
+                return false;
+            }
+            return switch (self.route) {
+                .output => |index| index < self.output_count,
+                .discard => true,
+                .polar_panner => |position| validPolar(position),
+                .cartesian_panner => |position| validCartesian(position),
+            };
+        }
+    };
+}
+
+pub fn resolveDirectSpeakerRoute(
+    block: *const adm_xml.BlockFormat,
+    outputs: []const OutputSpeaker,
+    context: DirectSpeakerRoutingContext,
+) !DirectSpeakerRoute {
+    if (block.identifier.typeLabel() != 0x0001 or
+        block.channel_identifier.typeLabel() != 0x0001)
+    {
+        return error.AdmRendererRequiresDirectSpeakersBlock;
+    }
+    try validateOutputLayout(outputs);
+    const input_is_lfe = directSpeakerIsLfe(block);
+
+    for (block.speakerLabelSlice()) |speaker_label| {
+        const normalized = normalizeSpeakerLabel(
+            speaker_label.value(),
+        ) orelse continue;
+        for (outputs, 0..) |output, output_index| {
+            if (output.is_lfe != input_is_lfe) continue;
+            const output_label = normalizeSpeakerLabel(output.label) orelse
+                return error.InvalidAdmRendererSpeakerLabel;
+            if (std.mem.eql(u8, normalized, output_label)) {
+                return .{ .output = @intCast(output_index) };
+            }
+        }
+    }
+
+    if (block.cartesian) {
+        const bounds = try cartesianBounds(block);
+        var nominal = CartesianPosition{
+            .x = bounds.x.nominal,
+            .y = bounds.y.nominal,
+            .z = bounds.z.nominal,
+        };
+        if (hasScreenEdgeLock(block) and
+            context.cartesian_screen_locked_nominal != null)
+        {
+            nominal = context.cartesian_screen_locked_nominal.?;
+            if (!validCartesian(nominal))
+                return error.InvalidAdmRendererScreenGeometry;
+        }
+        if (try closestCartesianOutput(
+            outputs,
+            bounds,
+            nominal,
+            input_is_lfe,
+        )) |output_index| {
+            return .{ .output = @intCast(output_index) };
+        }
+        if (!input_is_lfe)
+            return .{ .cartesian_panner = nominal };
+    } else {
+        const bounds = try polarBounds(block);
+        var nominal = PolarPosition{
+            .azimuth_degrees = bounds.azimuth.nominal,
+            .elevation_degrees = bounds.elevation.nominal,
+            .distance = bounds.distance.nominal,
+        };
+        if (context.screen_edges) |screen_edges| {
+            try validateScreenEdges(screen_edges);
+            applyPolarScreenEdgeLock(block, screen_edges, &nominal);
+        }
+        if (try closestPolarOutput(
+            outputs,
+            bounds,
+            nominal,
+            input_is_lfe,
+        )) |output_index| {
+            return .{ .output = @intCast(output_index) };
+        }
+        if (!input_is_lfe)
+            return .{ .polar_panner = nominal };
+    }
+
+    for (outputs, 0..) |output, output_index| {
+        const label = normalizeSpeakerLabel(output.label) orelse
+            return error.InvalidAdmRendererSpeakerLabel;
+        if (output.is_lfe and std.mem.eql(u8, label, "LFE1"))
+            return .{ .output = @intCast(output_index) };
+    }
+    return .discard;
+}
+
+const CoordinateBounds = struct {
+    nominal: f64,
+    minimum: f64,
+    maximum: f64,
+};
+
+const PolarBounds = struct {
+    azimuth: CoordinateBounds,
+    elevation: CoordinateBounds,
+    distance: CoordinateBounds,
+};
+
+const CartesianBounds = struct {
+    x: CoordinateBounds,
+    y: CoordinateBounds,
+    z: CoordinateBounds,
+};
+
+fn validateOutputLayout(outputs: []const OutputSpeaker) !void {
+    if (outputs.len == 0 or outputs.len > maximum_output_channels)
+        return error.InvalidAdmRendererOutputCount;
+    for (outputs, 0..) |output, index| {
+        const label = normalizeSpeakerLabel(output.label) orelse
+            return error.InvalidAdmRendererSpeakerLabel;
+        if (!validPolar(output.nominal_polar) or
+            !validCartesian(output.allocentric))
+        {
+            return error.InvalidAdmRendererSpeakerPosition;
+        }
+        const label_is_lfe = std.mem.eql(u8, label, "LFE1") or
+            std.mem.eql(u8, label, "LFE2");
+        if (label_is_lfe != output.is_lfe)
+            return error.InvalidAdmRendererSpeakerType;
+        for (outputs[0..index]) |previous| {
+            const previous_label =
+                normalizeSpeakerLabel(previous.label) orelse
+                return error.InvalidAdmRendererSpeakerLabel;
+            if (std.mem.eql(u8, label, previous_label))
+                return error.DuplicateAdmRendererSpeakerLabel;
+        }
+    }
+}
+
+fn directSpeakerIsLfe(block: *const adm_xml.BlockFormat) bool {
+    if (block.channel_frequency.isLfe()) return true;
+    for (block.speakerLabelSlice()) |speaker_label| {
+        const label = normalizeSpeakerLabel(
+            speaker_label.value(),
+        ) orelse continue;
+        if (std.mem.eql(u8, label, "LFE1") or
+            std.mem.eql(u8, label, "LFE2"))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn normalizeSpeakerLabel(label: []const u8) ?[]const u8 {
+    var normalized = label;
+    const urn_prefix = "urn:itu:bs:2051:";
+    if (std.mem.startsWith(u8, normalized, urn_prefix)) {
+        const remainder = normalized[urn_prefix.len..];
+        const separator = std.mem.indexOfScalar(u8, remainder, ':') orelse
+            return null;
+        if (separator == 0) return null;
+        for (remainder[0..separator]) |byte| {
+            if (!std.ascii.isDigit(byte)) return null;
+        }
+        const speaker_prefix = "speaker:";
+        const suffix = remainder[separator + 1 ..];
+        if (!std.mem.startsWith(u8, suffix, speaker_prefix)) return null;
+        normalized = suffix[speaker_prefix.len..];
+    }
+    if (std.mem.eql(u8, normalized, "LFE") or
+        std.mem.eql(u8, normalized, "LFEL"))
+    {
+        normalized = "LFE1";
+    } else if (std.mem.eql(u8, normalized, "LFER")) {
+        normalized = "LFE2";
+    }
+    const standard_labels = [_][]const u8{
+        "M+000", "M+030",  "M-030", "M+SC",  "M-SC",
+        "M+060", "M-060",  "M+090", "M-090", "M+110",
+        "M-110", "M+135",  "M-135", "M+180", "U+000",
+        "U+030", "U-030",  "U+045", "U-045", "U+090",
+        "U-090", "U+110",  "U-110", "U+135", "U-135",
+        "U+180", "UH+180", "B+000", "B+045", "B-045",
+        "T+000", "LFE1",   "LFE2",
+    };
+    for (standard_labels) |standard| {
+        if (std.mem.eql(u8, normalized, standard)) return normalized;
+    }
+    return null;
+}
+
+fn polarBounds(block: *const adm_xml.BlockFormat) !PolarBounds {
+    return .{
+        .azimuth = try coordinateBounds(block, .azimuth, 0.0),
+        .elevation = try coordinateBounds(block, .elevation, 0.0),
+        .distance = try coordinateBounds(block, .distance, 1.0),
+    };
+}
+
+fn cartesianBounds(block: *const adm_xml.BlockFormat) !CartesianBounds {
+    return .{
+        .x = try coordinateBounds(block, .x, 0.0),
+        .y = try coordinateBounds(block, .y, 0.0),
+        .z = try coordinateBounds(block, .z, 0.0),
+    };
+}
+
+fn coordinateBounds(
+    block: *const adm_xml.BlockFormat,
+    coordinate: adm_xml.Coordinate,
+    default_nominal: f64,
+) !CoordinateBounds {
+    var nominal: ?f64 = null;
+    var minimum: ?f64 = null;
+    var maximum: ?f64 = null;
+    for (block.positionSlice()) |position| {
+        if (position.coordinate != coordinate) continue;
+        switch (position.bound) {
+            .exact => nominal = position.value,
+            .minimum => minimum = position.value,
+            .maximum => maximum = position.value,
+        }
+    }
+    const value = nominal orelse default_nominal;
+    const result = CoordinateBounds{
+        .nominal = value,
+        .minimum = minimum orelse value,
+        .maximum = maximum orelse value,
+    };
+    if (!std.math.isFinite(result.nominal) or
+        !std.math.isFinite(result.minimum) or
+        !std.math.isFinite(result.maximum))
+    {
+        return error.InvalidAdmRendererPositionBounds;
+    }
+    if (coordinate == .azimuth) {
+        if (!insideAngleRange(
+            result.nominal,
+            result.minimum,
+            result.maximum,
+            0.0,
+        )) {
+            return error.InvalidAdmRendererPositionBounds;
+        }
+    } else if (result.minimum > result.maximum or
+        result.nominal < result.minimum or
+        result.nominal > result.maximum)
+    {
+        return error.InvalidAdmRendererPositionBounds;
+    }
+    return result;
+}
+
+fn closestPolarOutput(
+    outputs: []const OutputSpeaker,
+    bounds: PolarBounds,
+    nominal: PolarPosition,
+    input_is_lfe: bool,
+) !?usize {
+    const target = polarToCartesian(nominal);
+    var closest: ?usize = null;
+    var closest_distance: f64 = std.math.inf(f64);
+    var tied = false;
+    for (outputs, 0..) |output, output_index| {
+        if (output.is_lfe != input_is_lfe or
+            !polarWithinBounds(output.nominal_polar, bounds))
+        {
+            continue;
+        }
+        const distance = cartesianDistance(
+            polarToCartesian(output.nominal_polar),
+            target,
+        );
+        if (!std.math.isFinite(distance))
+            return error.InvalidAdmRendererSpeakerPosition;
+        if (distance < closest_distance - position_tolerance) {
+            closest = output_index;
+            closest_distance = distance;
+            tied = false;
+        } else if (@abs(distance - closest_distance) < position_tolerance) {
+            tied = true;
+        }
+    }
+    return if (tied) null else closest;
+}
+
+fn closestCartesianOutput(
+    outputs: []const OutputSpeaker,
+    bounds: CartesianBounds,
+    nominal: CartesianPosition,
+    input_is_lfe: bool,
+) !?usize {
+    var closest: ?usize = null;
+    var closest_distance: f64 = std.math.inf(f64);
+    var tied = false;
+    for (outputs, 0..) |output, output_index| {
+        if (output.is_lfe != input_is_lfe or
+            !cartesianWithinBounds(output.allocentric, bounds))
+        {
+            continue;
+        }
+        const distance = cartesianDistance(output.allocentric, nominal);
+        if (!std.math.isFinite(distance))
+            return error.InvalidAdmRendererSpeakerPosition;
+        if (distance < closest_distance - position_tolerance) {
+            closest = output_index;
+            closest_distance = distance;
+            tied = false;
+        } else if (@abs(distance - closest_distance) < position_tolerance) {
+            tied = true;
+        }
+    }
+    return if (tied) null else closest;
+}
+
+fn polarWithinBounds(
+    speaker: PolarPosition,
+    bounds: PolarBounds,
+) bool {
+    return (insideAngleRange(
+        speaker.azimuth_degrees,
+        bounds.azimuth.minimum,
+        bounds.azimuth.maximum,
+        position_tolerance,
+    ) or
+        @abs(speaker.elevation_degrees) >= 90.0 - position_tolerance) and
+        speaker.elevation_degrees >=
+            bounds.elevation.minimum - position_tolerance and
+        speaker.elevation_degrees <=
+            bounds.elevation.maximum + position_tolerance and
+        speaker.distance >= bounds.distance.minimum - position_tolerance and
+        speaker.distance <= bounds.distance.maximum + position_tolerance;
+}
+
+fn cartesianWithinBounds(
+    speaker: CartesianPosition,
+    bounds: CartesianBounds,
+) bool {
+    return withinLinearBounds(speaker.x, bounds.x) and
+        withinLinearBounds(speaker.y, bounds.y) and
+        withinLinearBounds(speaker.z, bounds.z);
+}
+
+fn withinLinearBounds(value: f64, bounds: CoordinateBounds) bool {
+    return value >= bounds.minimum - position_tolerance and
+        value <= bounds.maximum + position_tolerance;
+}
+
+fn insideAngleRange(
+    angle: f64,
+    start: f64,
+    end: f64,
+    tolerance: f64,
+) bool {
+    if (start == -180.0 and end == 180.0) return true;
+    const arc = positiveAngle(end - start);
+    const offset = positiveAngle(angle - start);
+    return offset <= arc + tolerance or
+        offset >= 360.0 - tolerance;
+}
+
+fn positiveAngle(angle: f64) f64 {
+    var normalized = @mod(angle, 360.0);
+    if (normalized < 0.0) normalized += 360.0;
+    return normalized;
+}
+
+fn polarToCartesian(position: PolarPosition) CartesianPosition {
+    const azimuth =
+        -position.azimuth_degrees * std.math.pi / 180.0;
+    const elevation =
+        position.elevation_degrees * std.math.pi / 180.0;
+    const elevation_cosine = @cos(elevation);
+    return .{
+        .x = @sin(azimuth) * elevation_cosine * position.distance,
+        .y = @cos(azimuth) * elevation_cosine * position.distance,
+        .z = @sin(elevation) * position.distance,
+    };
+}
+
+fn cartesianDistance(
+    left: CartesianPosition,
+    right: CartesianPosition,
+) f64 {
+    const x = left.x - right.x;
+    const y = left.y - right.y;
+    const z = left.z - right.z;
+    return @sqrt(x * x + y * y + z * z);
+}
+
+fn validPolar(position: PolarPosition) bool {
+    return std.math.isFinite(position.azimuth_degrees) and
+        std.math.isFinite(position.elevation_degrees) and
+        std.math.isFinite(position.distance) and
+        position.azimuth_degrees >= -180.0 and
+        position.azimuth_degrees <= 180.0 and
+        position.elevation_degrees >= -90.0 and
+        position.elevation_degrees <= 90.0 and
+        position.distance >= 0.0;
+}
+
+fn validCartesian(position: CartesianPosition) bool {
+    return std.math.isFinite(position.x) and
+        std.math.isFinite(position.y) and
+        std.math.isFinite(position.z);
+}
+
+fn hasScreenEdgeLock(block: *const adm_xml.BlockFormat) bool {
+    for (block.positionSlice()) |position| {
+        if (position.screen_edge_lock != null) return true;
+    }
+    return false;
+}
+
+fn validateScreenEdges(edges: ScreenEdges) !void {
+    if (!std.math.isFinite(edges.left_azimuth_degrees) or
+        !std.math.isFinite(edges.right_azimuth_degrees) or
+        !std.math.isFinite(edges.bottom_elevation_degrees) or
+        !std.math.isFinite(edges.top_elevation_degrees) or
+        edges.left_azimuth_degrees < -180.0 or
+        edges.left_azimuth_degrees > 180.0 or
+        edges.right_azimuth_degrees < -180.0 or
+        edges.right_azimuth_degrees > 180.0 or
+        edges.bottom_elevation_degrees < -90.0 or
+        edges.bottom_elevation_degrees > 90.0 or
+        edges.top_elevation_degrees < -90.0 or
+        edges.top_elevation_degrees > 90.0 or
+        edges.bottom_elevation_degrees > edges.top_elevation_degrees)
+    {
+        return error.InvalidAdmRendererScreenGeometry;
+    }
+}
+
+fn applyPolarScreenEdgeLock(
+    block: *const adm_xml.BlockFormat,
+    edges: ScreenEdges,
+    nominal: *PolarPosition,
+) void {
+    for (block.positionSlice()) |position| {
+        if (position.bound != .exact) continue;
+        const edge = position.screen_edge_lock orelse continue;
+        switch (edge) {
+            .left => nominal.azimuth_degrees =
+                edges.left_azimuth_degrees,
+            .right => nominal.azimuth_degrees =
+                edges.right_azimuth_degrees,
+            .bottom => nominal.elevation_degrees =
+                edges.bottom_elevation_degrees,
+            .top => nominal.elevation_degrees =
+                edges.top_elevation_degrees,
+        }
+    }
+}
+
 fn renderGain(
     comptime Sample: type,
     gain_value: adm_xml.Gain,
@@ -511,5 +1107,445 @@ test "ADM direct speaker router rejects ambiguous and aliased routes" {
     try std.testing.expectEqualDeep(
         [_]f64{ 1.0, 2.0 },
         aliased,
+    );
+}
+
+test "ADM position router selects the nearest bounded polar speaker" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <position coordinate="azimuth" bound="min">20</position>
+        \\      <position coordinate="azimuth">25</position>
+        \\      <position coordinate="azimuth" bound="max">40</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <position coordinate="distance">1</position>
+        \\      <gain>0.5</gain>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = [_]OutputSpeaker{
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -0.5, .y = 1.0 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 0.5, .y = 1.0 },
+        },
+    };
+    const router = try DirectSpeakerPositionRouter(f32).init(
+        &block,
+        &outputs,
+        .{},
+    );
+    switch (router.route) {
+        .output => |index| try std.testing.expectEqual(
+            @as(u8, 0),
+            index,
+        ),
+        else => return error.TestUnexpectedResult,
+    }
+
+    const input = [_]f32{ 2.0, -4.0 };
+    var left = [_]f32{ 1.0, 1.0 };
+    var right = [_]f32{ 1.0, 1.0 };
+    const output_buffers = [_][]f32{ &left, &right };
+    try router.mix(&input, &output_buffers);
+    try std.testing.expectEqualDeep([_]f32{ 2.0, -1.0 }, left);
+    try std.testing.expectEqualDeep([_]f32{ 1.0, 1.0 }, right);
+}
+
+test "ADM position router handles circular bounds poles and ties" {
+    try std.testing.expect(insideAngleRange(
+        180.0,
+        90.0,
+        -90.0,
+        position_tolerance,
+    ));
+    try std.testing.expect(!insideAngleRange(
+        0.0,
+        90.0,
+        -90.0,
+        position_tolerance,
+    ));
+    try std.testing.expect(insideAngleRange(
+        -170.0,
+        -180.0,
+        180.0,
+        position_tolerance,
+    ));
+
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <position coordinate="azimuth" bound="min">-30</position>
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="azimuth" bound="max">30</position>
+        \\      <position coordinate="elevation">0</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = [_]OutputSpeaker{
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -0.5, .y = 1.0 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 0.5, .y = 1.0 },
+        },
+        .{
+            .label = "T+000",
+            .nominal_polar = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 90,
+            },
+            .allocentric = .{ .x = 0.0, .y = 0.0, .z = 1.0 },
+        },
+        .{
+            .label = "M+135",
+            .nominal_polar = .{
+                .azimuth_degrees = 135,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -1.0, .y = -1.0 },
+        },
+    };
+    const route = try resolveDirectSpeakerRoute(&block, &outputs, .{});
+    switch (route) {
+        .polar_panner => |position| {
+            try std.testing.expectEqual(@as(f64, 0.0), position.azimuth_degrees);
+            try std.testing.expectEqual(
+                @as(f64, 0.0),
+                position.elevation_degrees,
+            );
+        },
+        else => return error.TestUnexpectedResult,
+    }
+    try std.testing.expect(polarWithinBounds(
+        outputs[2].nominal_polar,
+        .{
+            .azimuth = .{
+                .nominal = 120,
+                .minimum = 110,
+                .maximum = 130,
+            },
+            .elevation = .{
+                .nominal = 90,
+                .minimum = 90,
+                .maximum = 90,
+            },
+            .distance = .{
+                .nominal = 1,
+                .minimum = 1,
+                .maximum = 1,
+            },
+        },
+    ));
+
+    var wrapped_block = block;
+    wrapped_block.positions[0].value = 90;
+    wrapped_block.positions[1].value = 180;
+    wrapped_block.positions[2].value = -90;
+    const wrapped_route = try resolveDirectSpeakerRoute(
+        &wrapped_block,
+        &outputs,
+        .{},
+    );
+    try std.testing.expectEqual(@as(u8, 3), wrapped_route.output);
+}
+
+test "ADM position router applies polar screen edges to nominal only" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <position coordinate="azimuth" bound="min">-40</position>
+        \\      <position coordinate="azimuth" screenEdgeLock="right">0</position>
+        \\      <position coordinate="azimuth" bound="max">40</position>
+        \\      <position coordinate="elevation">0</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = [_]OutputSpeaker{
+        .{
+            .label = "M+000",
+            .nominal_polar = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 0.0, .y = 1.0 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 0.5, .y = 1.0 },
+        },
+    };
+    const route = try resolveDirectSpeakerRoute(
+        &block,
+        &outputs,
+        .{
+            .screen_edges = .{
+                .left_azimuth_degrees = 30,
+                .right_azimuth_degrees = -30,
+                .bottom_elevation_degrees = -15,
+                .top_elevation_degrees = 15,
+            },
+        },
+    );
+    switch (route) {
+        .output => |index| try std.testing.expectEqual(
+            @as(u8, 1),
+            index,
+        ),
+        else => return error.TestUnexpectedResult,
+    }
+}
+
+test "ADM position router normalizes labels and classifies LFE metadata" {
+    const label_document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <speakerLabel>urn:itu:bs:2051:2:speaker:M+030</speakerLabel>
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var label_blocks = label_document.blocks();
+    const label_block = (try label_blocks.next()).?;
+    const ordinary_output = [_]OutputSpeaker{.{
+        .label = "M+030",
+        .nominal_polar = .{
+            .azimuth_degrees = 30,
+            .elevation_degrees = 0,
+        },
+        .allocentric = .{ .x = -0.5, .y = 1.0 },
+    }};
+    const label_route = try resolveDirectSpeakerRoute(
+        &label_block,
+        &ordinary_output,
+        .{},
+    );
+    try std.testing.expectEqual(
+        @as(u8, 0),
+        label_route.output,
+    );
+
+    const lfe_document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <frequency typeDefinition="lowPass">120</frequency>
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <speakerLabel>LFER</speakerLabel>
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var lfe_blocks = lfe_document.blocks();
+    const lfe_block = (try lfe_blocks.next()).?;
+    const lfe_outputs = [_]OutputSpeaker{
+        .{
+            .label = "M+000",
+            .nominal_polar = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 0.0, .y = 1.0 },
+        },
+        .{
+            .label = "LFE1",
+            .is_lfe = true,
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -1.0, .y = 1.0 },
+        },
+        .{
+            .label = "LFE2",
+            .is_lfe = true,
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 1.0, .y = 1.0 },
+        },
+    };
+    const exact_lfe_route = try resolveDirectSpeakerRoute(
+        &lfe_block,
+        &lfe_outputs,
+        .{},
+    );
+    try std.testing.expectEqual(
+        @as(u8, 2),
+        exact_lfe_route.output,
+    );
+
+    var fallback_block = lfe_block;
+    fallback_block.speaker_label_count = 0;
+    fallback_block.positions[0].value = 180;
+    const fallback_lfe_route = try resolveDirectSpeakerRoute(
+        &fallback_block,
+        &lfe_outputs,
+        .{},
+    );
+    try std.testing.expectEqual(
+        @as(u8, 1),
+        fallback_lfe_route.output,
+    );
+}
+
+test "ADM position router selects Cartesian speakers and preserves fallbacks" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X" bound="min">0</position>
+        \\      <position coordinate="X">0.2</position>
+        \\      <position coordinate="X" bound="max">0.5</position>
+        \\      <position coordinate="Y" bound="min">0.4</position>
+        \\      <position coordinate="Y">0.5</position>
+        \\      <position coordinate="Y" bound="max">0.6</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = [_]OutputSpeaker{
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = 0.25, .y = 0.5 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = 0,
+            },
+            .allocentric = .{ .x = -0.25, .y = 0.5 },
+        },
+    };
+    const route = try resolveDirectSpeakerRoute(&block, &outputs, .{});
+    try std.testing.expectEqual(@as(u8, 0), route.output);
+
+    var fallback_block = block;
+    fallback_block.positions[0].value = -0.5;
+    fallback_block.positions[1].value = -0.4;
+    fallback_block.positions[2].value = -0.3;
+    const fallback_router =
+        try DirectSpeakerPositionRouter(f64).init(
+            &fallback_block,
+            &outputs,
+            .{},
+        );
+    switch (fallback_router.route) {
+        .cartesian_panner => |position| try std.testing.expectEqual(
+            @as(f64, -0.4),
+            position.x,
+        ),
+        else => return error.TestUnexpectedResult,
+    }
+    const input = [_]f64{ 1.0, 2.0 };
+    var left = [_]f64{ 3.0, 4.0 };
+    var right = [_]f64{ 5.0, 6.0 };
+    const output_buffers = [_][]f64{ &left, &right };
+    try std.testing.expectError(
+        error.AdmRendererPointPannerRequired,
+        fallback_router.mix(&input, &output_buffers),
+    );
+    try std.testing.expectError(
+        error.AdmRendererPointPannerRequired,
+        fallback_router.processSample(1.0),
+    );
+    try std.testing.expectEqualDeep([_]f64{ 3.0, 4.0 }, left);
+    try std.testing.expectEqualDeep([_]f64{ 5.0, 6.0 }, right);
+}
+
+test "ADM position router discards unmatched LFE without mutating output" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <frequency typeDefinition="lowPass">100</frequency>
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <position coordinate="azimuth">180</position>
+        \\      <position coordinate="elevation">0</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = [_]OutputSpeaker{.{
+        .label = "M+000",
+        .nominal_polar = .{
+            .azimuth_degrees = 0,
+            .elevation_degrees = 0,
+        },
+        .allocentric = .{ .x = 0.0, .y = 1.0 },
+    }};
+    const router = try DirectSpeakerPositionRouter(f32).init(
+        &block,
+        &outputs,
+        .{},
+    );
+    try std.testing.expect(router.route == .discard);
+    try std.testing.expectEqual(@as(f32, 0.0), try router.processSample(1.0));
+    const input = [_]f32{ 1.0, 2.0 };
+    var output = [_]f32{ 3.0, 4.0 };
+    const output_buffers = [_][]f32{&output};
+    try router.mix(&input, &output_buffers);
+    try std.testing.expectEqualDeep([_]f32{ 3.0, 4.0 }, output);
+
+    var invalid_outputs = outputs;
+    invalid_outputs[0].is_lfe = true;
+    try std.testing.expectError(
+        error.InvalidAdmRendererSpeakerType,
+        DirectSpeakerPositionRouter(f32).init(
+            &block,
+            &invalid_outputs,
+            .{},
+        ),
     );
 }

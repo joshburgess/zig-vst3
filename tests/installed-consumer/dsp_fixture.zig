@@ -3496,6 +3496,50 @@ test "installed package exposes file-backed audio writers" {
         speaker_input,
         speaker_output,
     );
+    const speaker_layout = [_]plugin.dsp.AdmOutputSpeaker{.{
+        .label = "M+000",
+        .nominal_polar = plugin.dsp.AdmPolarPosition{
+            .azimuth_degrees = 0.0,
+            .elevation_degrees = 0.0,
+        },
+        .allocentric = plugin.dsp.AdmCartesianPosition{
+            .x = 0.0,
+            .y = 1.0,
+        },
+    }};
+    const position_router =
+        try plugin.dsp.AdmDirectSpeakerPositionRouter(f32).init(
+            &direct_block,
+            &speaker_layout,
+            plugin.dsp.AdmDirectSpeakerRoutingContext{
+                .screen_edges = plugin.dsp.AdmScreenEdges{
+                    .left_azimuth_degrees = 30.0,
+                    .right_azimuth_degrees = -30.0,
+                    .bottom_elevation_degrees = -15.0,
+                    .top_elevation_degrees = 15.0,
+                },
+            },
+        );
+    try std.testing.expectEqual(
+        @as(u8, 0),
+        position_router.route.output,
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0.25),
+        try position_router.processSample(0.25),
+    );
+    const frequency = plugin.dsp.AdmXmlFrequency{
+        .low_pass_hz = 120.0,
+    };
+    try std.testing.expect(frequency.isLfe());
+    try std.testing.expectEqual(
+        @as(u8, 0),
+        (try plugin.dsp.resolveAdmDirectSpeakerRoute(
+            &direct_block,
+            &speaker_layout,
+            .{},
+        )).output,
+    );
     const emission_adm = try plugin.dsp.AdmXmlDocument.init(
         \\<audioFormatExtended version="ITU-R_BS.2076-3">
         \\  <audioProgramme audioProgrammeID="APR_1001" audioProgrammeName="Multilingual" audioProgrammeLanguage="und">

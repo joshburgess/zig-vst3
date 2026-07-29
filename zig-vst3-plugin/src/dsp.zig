@@ -101,6 +101,17 @@ pub const AdmChannelAllocationView = adm.View;
 pub const AdmIdentifier = adm.Identifier;
 pub const AdmIdentifierKind = adm.IdentifierKind;
 pub const AdmDirectSpeakerRouter = adm_render.DirectSpeakerRouter;
+pub const AdmDirectSpeakerPositionRouter =
+    adm_render.DirectSpeakerPositionRouter;
+pub const AdmDirectSpeakerRoute = adm_render.DirectSpeakerRoute;
+pub const AdmDirectSpeakerRoutingContext =
+    adm_render.DirectSpeakerRoutingContext;
+pub const AdmOutputSpeaker = adm_render.OutputSpeaker;
+pub const AdmPolarPosition = adm_render.PolarPosition;
+pub const AdmCartesianPosition = adm_render.CartesianPosition;
+pub const AdmScreenEdges = adm_render.ScreenEdges;
+pub const resolveAdmDirectSpeakerRoute =
+    adm_render.resolveDirectSpeakerRoute;
 pub const AdmStaticMatrixMixer = adm_render.StaticMatrixMixer;
 pub const maximum_adm_renderer_input_channels =
     adm_render.maximum_input_channels;
@@ -115,6 +126,7 @@ pub const AdmXmlCoordinate = adm_xml.Coordinate;
 pub const AdmXmlDocument = adm_xml.Document;
 pub const AdmXmlGain = adm_xml.Gain;
 pub const AdmXmlGainUnit = adm_xml.GainUnit;
+pub const AdmXmlFrequency = adm_xml.Frequency;
 pub const AdmXmlHeadphoneVirtualise = adm_xml.HeadphoneVirtualise;
 pub const AdmXmlHoaNormalization = adm_xml.HoaNormalization;
 pub const AdmXmlJumpPosition = adm_xml.JumpPosition;

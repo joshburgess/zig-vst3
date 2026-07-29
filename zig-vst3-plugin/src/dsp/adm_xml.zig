@@ -2525,6 +2525,17 @@ pub const Gain = struct {
     unit: GainUnit = .linear,
 };
 
+pub const Frequency = struct {
+    low_pass_hz: ?f64 = null,
+    high_pass_hz: ?f64 = null,
+
+    pub fn isLfe(self: Frequency) bool {
+        return self.low_pass_hz != null and
+            self.high_pass_hz == null and
+            self.low_pass_hz.? <= 120.0;
+    }
+};
+
 pub const JumpPosition = struct {
     enabled: bool = false,
     interpolation_length: ?adm_time.Value = null,
@@ -2622,6 +2633,7 @@ pub const BlockFormat = struct {
     identifier: adm.Identifier,
     channel_identifier: adm.Identifier,
     channel_name: ?AdmText,
+    channel_frequency: Frequency = .{},
     rtime: adm_time.Value,
     rtime_explicit: bool,
     duration: ?adm_time.Value,
@@ -6550,6 +6562,7 @@ pub const BlockIterator = struct {
     afe_depth: ?usize = null,
     channel_identifier: ?adm.Identifier = null,
     channel_name: ?AdmText = null,
+    channel_frequency: Frequency = .{},
     channel_depth: ?usize = null,
     channel_storage: [max_identifier_bytes]u8 = undefined,
     identifier_storage: [max_identifier_bytes]u8 = undefined,
@@ -6601,10 +6614,48 @@ pub const BlockIterator = struct {
                         if (element.self_closing) {
                             self.channel_identifier = null;
                             self.channel_name = null;
+                            self.channel_frequency = .{};
                             self.channel_depth = null;
                         } else {
                             self.channel_identifier = identifier;
+                            self.channel_frequency = .{};
                             self.channel_depth = element.depth;
+                        }
+                        continue;
+                    }
+                    if (std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "frequency",
+                    )) {
+                        const channel_depth = self.channel_depth orelse
+                            return error.InvalidAdmFrequencyOwner;
+                        if (element.depth != channel_depth + 1)
+                            return error.InvalidAdmFrequencyOwner;
+                        const type_definition =
+                            try element.attribute("typeDefinition") orelse
+                            return error.MissingAdmFrequencyType;
+                        const value = try self.readFloatElement(element);
+                        if (value < 0.0)
+                            return error.InvalidAdmFrequency;
+                        if (std.mem.eql(
+                            u8,
+                            type_definition,
+                            "lowPass",
+                        )) {
+                            if (self.channel_frequency.low_pass_hz != null)
+                                return error.DuplicateAdmFrequency;
+                            self.channel_frequency.low_pass_hz = value;
+                        } else if (std.mem.eql(
+                            u8,
+                            type_definition,
+                            "highPass",
+                        )) {
+                            if (self.channel_frequency.high_pass_hz != null)
+                                return error.DuplicateAdmFrequency;
+                            self.channel_frequency.high_pass_hz = value;
+                        } else {
+                            return error.InvalidAdmFrequencyType;
                         }
                         continue;
                     }
@@ -6637,6 +6688,7 @@ pub const BlockIterator = struct {
                     {
                         self.channel_identifier = null;
                         self.channel_name = null;
+                        self.channel_frequency = .{};
                         self.channel_depth = null;
                     }
                     if (self.afe_depth == element.depth and
@@ -6681,6 +6733,7 @@ pub const BlockIterator = struct {
             .identifier = identifier,
             .channel_identifier = channel,
             .channel_name = channel_name,
+            .channel_frequency = self.channel_frequency,
             .rtime = if (encoded_rtime) |value|
                 try adm_time.Value.parse(value)
             else
@@ -8110,21 +8163,58 @@ fn validatePositionBounds(positions: []const Position) !void {
         }
         if (minimum) |minimum_value| {
             if (maximum) |maximum_value| {
-                if (minimum_value > maximum_value)
+                if (coordinate != .azimuth and
+                    minimum_value > maximum_value)
+                {
                     return error.InvalidAdmPositionBounds;
+                }
             }
         }
         if (exact) |value| {
-            if (minimum) |minimum_value| {
-                if (value < minimum_value)
-                    return error.InvalidAdmPositionBounds;
-            }
-            if (maximum) |maximum_value| {
-                if (value > maximum_value)
-                    return error.InvalidAdmPositionBounds;
+            if (coordinate == .azimuth) {
+                if (minimum != null and maximum != null) {
+                    if (!insideAdmAngleRange(
+                        value,
+                        minimum.?,
+                        maximum.?,
+                    )) {
+                        return error.InvalidAdmPositionBounds;
+                    }
+                } else {
+                    if (minimum) |minimum_value| {
+                        if (value < minimum_value)
+                            return error.InvalidAdmPositionBounds;
+                    }
+                    if (maximum) |maximum_value| {
+                        if (value > maximum_value)
+                            return error.InvalidAdmPositionBounds;
+                    }
+                }
+            } else {
+                if (minimum) |minimum_value| {
+                    if (value < minimum_value)
+                        return error.InvalidAdmPositionBounds;
+                }
+                if (maximum) |maximum_value| {
+                    if (value > maximum_value)
+                        return error.InvalidAdmPositionBounds;
+                }
             }
         }
     }
+}
+
+fn insideAdmAngleRange(value: f64, start: f64, end: f64) bool {
+    if (start == -180.0 and end == 180.0) return true;
+    const arc = positiveAdmAngle(end - start);
+    const offset = positiveAdmAngle(value - start);
+    return offset <= arc;
+}
+
+fn positiveAdmAngle(value: f64) f64 {
+    var normalized = @mod(value, 360.0);
+    if (normalized < 0.0) normalized += 360.0;
+    return normalized;
 }
 
 fn hasExactPosition(
@@ -12281,6 +12371,82 @@ test "ADM XML validates DirectSpeakers and Cartesian Objects parameters" {
     try std.testing.expectEqual(
         @as(?f64, 0.25),
         object.object_divergence.position_range,
+    );
+}
+
+test "ADM XML exposes channel frequency and circular speaker bounds" {
+    const document = try Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <frequency typeDefinition="lowPass">120</frequency>
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <position coordinate="azimuth" bound="min">90</position>
+        \\      <position coordinate="azimuth">180</position>
+        \\      <position coordinate="azimuth" bound="max">-90</position>
+        \\      <position coordinate="elevation">0</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    try std.testing.expect(block.channel_frequency.isLfe());
+    try std.testing.expectEqual(
+        @as(?f64, 120.0),
+        block.channel_frequency.low_pass_hz,
+    );
+    try std.testing.expectEqual(
+        @as(?f64, null),
+        block.channel_frequency.high_pass_hz,
+    );
+
+    const high_pass_document = try Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <frequency typeDefinition="lowPass">80</frequency>
+        \\    <frequency typeDefinition="highPass">20</frequency>
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var high_pass_blocks = high_pass_document.blocks();
+    const high_pass_block = (try high_pass_blocks.next()).?;
+    try std.testing.expect(!high_pass_block.channel_frequency.isLfe());
+}
+
+test "ADM XML rejects malformed channel frequency metadata" {
+    try std.testing.expectError(
+        error.DuplicateAdmFrequency,
+        Document.init(
+            \\<audioFormatExtended>
+            \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+            \\    <frequency typeDefinition="lowPass">120</frequency>
+            \\    <frequency typeDefinition="lowPass">80</frequency>
+            \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+            \\      <position coordinate="azimuth">0</position>
+            \\      <position coordinate="elevation">0</position>
+            \\    </audioBlockFormatDirectSpeakers>
+            \\  </audioChannelFormat>
+            \\</audioFormatExtended>
+        ),
+    );
+
+    try std.testing.expectError(
+        error.InvalidAdmFrequencyType,
+        Document.init(
+            \\<audioFormatExtended>
+            \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+            \\    <frequency typeDefinition="bandPass">120</frequency>
+            \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+            \\      <position coordinate="azimuth">0</position>
+            \\      <position coordinate="elevation">0</position>
+            \\    </audioBlockFormatDirectSpeakers>
+            \\  </audioChannelFormat>
+            \\</audioFormatExtended>
+        ),
     );
 }
 
