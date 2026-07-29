@@ -3473,7 +3473,9 @@ test "installed package exposes file-backed audio writers" {
     );
     const emission_adm = try plugin.dsp.AdmXmlDocument.init(
         \\<audioFormatExtended version="ITU-R_BS.2076-3">
-        \\  <audioProgramme audioProgrammeID="APR_1001"/>
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
         \\  <audioContent audioContentID="ACO_1001">
         \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
         \\  </audioContent>
@@ -3494,6 +3496,7 @@ test "installed package exposes file-backed audio writers" {
     );
     try emission_adm.validateEmissionProfileSubelementLimits();
     try emission_adm.validateEmissionProfileIdentifiers();
+    try emission_adm.validateEmissionProfileObjectTopology();
     var wav = try plugin.dsp.WavFileWriter.initWithRiffMetadata(
         std.testing.io,
         wav_file,

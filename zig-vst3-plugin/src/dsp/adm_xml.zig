@@ -171,6 +171,11 @@ const EmissionSubelementCounts = struct {
     }
 };
 
+const EmissionObjectParent = struct {
+    kind: adm.IdentifierKind,
+    primary: u32,
+};
+
 fn emissionProfileLimits(
     level: EmissionProfileLevel,
 ) EmissionElementCounts {
@@ -765,6 +770,95 @@ pub const Document = struct {
             }
         }
         try self.validateEmissionAlternativeValueSetIdentifiers();
+    }
+
+    /// Validates content reachability and the profile's object ownership
+    /// and nesting constraints.
+    pub fn validateEmissionProfileObjectTopology(self: Document) !void {
+        try self.validateEmissionProfileIdentifiers();
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            switch (declaration.identifier.kind) {
+                .content => try self.validateEmissionContentOwner(
+                    declaration.identifier,
+                ),
+                .object => try self.validateEmissionObjectAncestry(
+                    declaration.identifier,
+                ),
+                else => {},
+            }
+        }
+    }
+
+    fn validateEmissionContentOwner(
+        self: Document,
+        content: adm.Identifier,
+    ) !void {
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            if (reference.tag_target or
+                !reference.direct_owner or
+                reference.kind != .content)
+            {
+                continue;
+            }
+            const owner = reference.owner orelse continue;
+            const identifier = reference.identifier orelse continue;
+            if (owner.kind == .programme and identifier.eql(content)) return;
+        }
+        return error.UnreferencedAdmEmissionProfileContent;
+    }
+
+    fn validateEmissionObjectAncestry(
+        self: Document,
+        object: adm.Identifier,
+    ) !void {
+        var visited: [2]u32 = undefined;
+        visited[0] = object.primary;
+        var visited_count: usize = 1;
+        var parent = try self.emissionObjectParent(object.primary);
+        var nesting_level: usize = 0;
+        while (parent.kind == .object) {
+            for (visited[0..visited_count]) |primary| {
+                if (primary == parent.primary)
+                    return error.CyclicAdmEmissionProfileObjectReference;
+            }
+            nesting_level += 1;
+            if (nesting_level > 1)
+                return error.AdmEmissionProfileObjectNestingLimitExceeded;
+            visited[visited_count] = parent.primary;
+            visited_count += 1;
+            parent = try self.emissionObjectParent(parent.primary);
+        }
+        if (parent.kind != .content)
+            return error.InvalidAdmEmissionProfileObjectParent;
+    }
+
+    fn emissionObjectParent(
+        self: Document,
+        object_primary: u32,
+    ) !EmissionObjectParent {
+        var result: ?EmissionObjectParent = null;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            if (reference.tag_target or
+                !reference.direct_owner or
+                reference.kind != .object)
+            {
+                continue;
+            }
+            const identifier = reference.identifier orelse continue;
+            if (identifier.primary != object_primary) continue;
+            const owner = reference.owner orelse continue;
+            if (owner.kind != .content and owner.kind != .object) continue;
+            if (result != null)
+                return error.InvalidAdmEmissionProfileObjectParent;
+            result = .{
+                .kind = owner.kind,
+                .primary = owner.primary,
+            };
+        }
+        return result orelse error.InvalidAdmEmissionProfileObjectParent;
     }
 
     fn validateEmissionContentReference(
@@ -3624,6 +3718,164 @@ test "ADM XML emission profile validates alternative value set identifiers" {
     try std.testing.expectError(
         error.InvalidAdmEmissionAlternativeValueSetOwner,
         indirect_owner.validateEmissionProfileIdentifiers(),
+    );
+}
+
+test "ADM XML emission profile accepts object nesting through level two" {
+    const document = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\  </audioObject>
+        \\  <audioObject audioObjectID="AO_1002"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try document.validateEmissionProfileObjectTopology();
+}
+
+test "ADM XML emission profile rejects invalid object ownership" {
+    const orphan = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioObject audioObjectID="AO_1002"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileObjectParent,
+        orphan.validateEmissionProfileObjectTopology(),
+    );
+
+    const multiple_parents = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\    <audioObjectIDRef>AO_1003</audioObjectIDRef>
+        \\  </audioObject>
+        \\  <audioObject audioObjectID="AO_1002"/>
+        \\  <audioObject audioObjectID="AO_1003">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileObjectParent,
+        multiple_parents.validateEmissionProfileObjectTopology(),
+    );
+}
+
+test "ADM XML emission profile rejects excessive or cyclic object nesting" {
+    const excessive = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\  </audioObject>
+        \\  <audioObject audioObjectID="AO_1002">
+        \\    <audioObjectIDRef>AO_1003</audioObjectIDRef>
+        \\  </audioObject>
+        \\  <audioObject audioObjectID="AO_1003"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.AdmEmissionProfileObjectNestingLimitExceeded,
+        excessive.validateEmissionProfileObjectTopology(),
+    );
+
+    const cycle = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioObject audioObjectID="AO_1002">
+        \\    <audioObjectIDRef>AO_1003</audioObjectIDRef>
+        \\  </audioObject>
+        \\  <audioObject audioObjectID="AO_1003">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.CyclicAdmEmissionProfileObjectReference,
+        cycle.validateEmissionProfileObjectTopology(),
+    );
+}
+
+test "ADM XML emission profile requires every content in a programme" {
+    const document = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioContent audioContentID="ACO_1002">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioObject audioObjectID="AO_1002"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.UnreferencedAdmEmissionProfileContent,
+        document.validateEmissionProfileObjectTopology(),
     );
 }
 
