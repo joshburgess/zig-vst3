@@ -45,9 +45,7 @@ function Copy-MsvcRuntimeLibraries {
     @{ Source = Join-Path $Directories["msvc_lib_dir"] "msvcprt.lib"; Name = "msvcprt.lib" },
     @{ Source = Join-Path $Directories["msvc_lib_dir"] "msvcrt.lib"; Name = "msvcrt.lib" },
     @{ Source = Join-Path $Directories["msvc_lib_dir"] "vcruntime.lib"; Name = "vcruntime.lib" },
-    @{ Source = Join-Path $Directories["crt_dir"] "ucrt.lib"; Name = "ucrt.lib" },
-    @{ Source = Join-Path $Directories["msvc_lib_dir"] "libvcruntime.lib"; Name = "libvcruntime.lib" },
-    @{ Source = Join-Path $Directories["crt_dir"] "libucrt.lib"; Name = "libucrt.lib" }
+    @{ Source = Join-Path $Directories["crt_dir"] "ucrt.lib"; Name = "ucrt.lib" }
   )
   New-Item -ItemType Directory -Path $Destination -Force | Out-Null
   foreach ($Library in $Libraries) {
