@@ -3951,6 +3951,16 @@ test "installed package exposes file-backed audio writers" {
         .channel_count = 2,
         .frame_count = 48_000,
     });
+    const namespaced_adm = try plugin.dsp.AdmXmlDocument.init(
+        \\<a:audioFormatExtended xmlns:a="urn:adm" xmlns:v="urn:vendor">
+        \\  <a:audioObject audioObjectID="AO_1001"/>
+        \\  <v:audioObject audioObjectID="AO_1002"/>
+        \\</a:audioFormatExtended>
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        namespaced_adm.declaration_count,
+    );
     var serial_flow_state =
         plugin.dsp.AdmXmlEmissionSerialFlowState{};
     try std.testing.expect(!serial_flow_state.initialized);

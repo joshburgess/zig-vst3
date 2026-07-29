@@ -636,7 +636,7 @@ fn validateEmissionObjectAttributes(element: xml.StartElement) !void {
     var attributes = xml.AttributeIterator.init(element.attributes);
     while (try attributes.next()) |attribute| {
         if (isXmlNamespaceDeclaration(attribute.name)) continue;
-        const name = attribute.localName();
+        const name = attribute.name;
         if (std.mem.eql(u8, name, "audioObjectID")) continue;
         if (std.mem.eql(u8, name, "audioObjectName")) {
             if (name_seen) return error.DuplicateXmlLocalAttribute;
@@ -858,7 +858,7 @@ fn isEmissionObjectReferenceOrLabel(name: []const u8) bool {
 }
 
 fn readEmissionObjectInteraction(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !EmissionObjectInteraction {
     if (start.self_closing)
@@ -878,7 +878,7 @@ fn readEmissionObjectInteraction(
     var attributes = xml.AttributeIterator.init(start.attributes);
     while (try attributes.next()) |attribute| {
         if (isXmlNamespaceDeclaration(attribute.name)) continue;
-        const name = attribute.localName();
+        const name = attribute.name;
         if (!std.mem.eql(u8, name, "onOffInteract") and
             !std.mem.eql(u8, name, "gainInteract") and
             !std.mem.eql(u8, name, "positionInteract"))
@@ -1000,7 +1000,7 @@ const EmissionRangeBound = enum {
 };
 
 fn readEmissionGainInteractionRange(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !struct { EmissionRangeBound, f64, Gain } {
     const bound = try emissionRangeBound(start);
@@ -1031,7 +1031,7 @@ fn readEmissionGainInteractionRange(
 }
 
 fn readEmissionPositionInteractionRange(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !struct { EmissionPositionCoordinate, EmissionRangeBound, f64 } {
     const coordinate = try emissionPositionCoordinate(start);
@@ -1058,7 +1058,7 @@ fn readEmissionPositionInteractionRange(
 }
 
 fn readEmissionGain(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !Gain {
     const unit = try emissionGainUnitAttribute(start);
@@ -1077,7 +1077,7 @@ fn readEmissionGain(
 }
 
 fn readEmissionPositionOffset(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !EmissionPositionOffset {
     const coordinate = try emissionPositionCoordinate(start);
@@ -1099,7 +1099,7 @@ fn readEmissionPositionOffset(
 }
 
 fn readEmissionAlternativeValueSet(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
     parent_interaction: ?EmissionObjectInteraction,
 ) !EmissionAlternativeParameters {
@@ -1328,13 +1328,13 @@ fn validateAdmAttributes(
     while (try attributes.next()) |attribute| {
         if (isXmlNamespaceDeclaration(attribute.name)) continue;
         for (allowed) |name| {
-            if (std.mem.eql(u8, attribute.localName(), name)) break;
+            if (std.mem.eql(u8, attribute.name, name)) break;
         } else return invalid_error;
     }
 }
 
 fn readEmissionSimpleElement(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
     decoded_storage: []u8,
 ) ![]const u8 {
@@ -1387,7 +1387,7 @@ fn readEmissionSimpleElement(
 }
 
 fn readEmissionProfileLabel(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
     languages: *EmissionLanguageSet,
 ) !void {
@@ -1418,7 +1418,7 @@ fn readEmissionProfileLabel(
 }
 
 fn readEmissionLoudnessMetadata(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !void {
     try validateEmissionAttributes(
@@ -1489,7 +1489,7 @@ fn readEmissionLoudnessMetadata(
 }
 
 fn readEmissionDialogue(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !void {
     var storage: [16]u8 = undefined;
@@ -1518,7 +1518,7 @@ fn readEmissionDialogue(
 }
 
 fn readEmissionReferenceElement(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !void {
     try validateEmissionAttributes(
@@ -1616,7 +1616,7 @@ fn greatestCommonDivisor(left: u64, right: u64) u64 {
 }
 
 fn readEmissionSerialFrameFormat(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !void {
     try validateEmissionAttributes(
@@ -1707,7 +1707,7 @@ fn readEmissionSerialFrameFormat(
 }
 
 fn readEmissionSerialFrameHeader(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !void {
     try validateEmissionAttributes(
@@ -1772,7 +1772,7 @@ fn readEmissionSerialFrameHeader(
 
 fn readEmissionSerialAudioTrack(
     document: Document,
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
     transport_identifier: []const u8,
 ) !void {
@@ -1867,7 +1867,7 @@ fn readEmissionSerialAudioTrack(
 
 fn readEmissionSerialTransport(
     document: Document,
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
     declared_tracks: usize,
 ) !void {
@@ -1947,7 +1947,7 @@ fn readEmissionSerialTransport(
 }
 
 fn readEmissionProgrammeMetadata(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !void {
     try validateEmissionAttributes(
@@ -2030,7 +2030,7 @@ fn readEmissionProgrammeMetadata(
 }
 
 fn readEmissionContentMetadata(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !void {
     try validateEmissionAttributes(
@@ -2213,7 +2213,7 @@ fn validateEmissionFormatOwner(owner: EmissionFormatOwner) !void {
 }
 
 fn readEmissionObjectBlockSyntax(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !void {
     return readEmissionObjectBlockSyntaxWithTiming(events, start, .file);
@@ -2225,7 +2225,7 @@ const EmissionBlockTiming = enum {
 };
 
 fn readEmissionObjectBlockSyntaxWithTiming(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
     timing: EmissionBlockTiming,
 ) !void {
@@ -2355,7 +2355,7 @@ const EmissionObjectLabels = struct {
 };
 
 fn readEmissionObjectLabels(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !EmissionObjectLabels {
     var result = EmissionObjectLabels{};
@@ -2418,7 +2418,7 @@ fn readEmissionObjectLabels(
 }
 
 fn readEmissionOwnerLabelLanguages(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
     label_name: []const u8,
 ) !EmissionLanguageSet {
@@ -2451,7 +2451,7 @@ fn readEmissionOwnerLabelLanguages(
 }
 
 fn skipEmissionElement(
-    events: *xml.EventIterator,
+    events: *MetadataEventIterator,
     start: xml.StartElement,
 ) !void {
     if (start.self_closing) return;
@@ -2721,8 +2721,48 @@ pub const BlockFormat = struct {
     }
 };
 
+const MetadataEventIterator = struct {
+    events: xml.EventIterator,
+    namespace_name: ?xml.NamespaceName,
+
+    fn init(document: Document) MetadataEventIterator {
+        return .{
+            .events = document.xml_document.iterator(),
+            .namespace_name = document.namespace_name,
+        };
+    }
+
+    fn next(self: *MetadataEventIterator) !?xml.Event {
+        const event = (try self.events.next()) orelse return null;
+        return switch (event) {
+            .start => |source| blk: {
+                var element = source;
+                if (!try xml.namespaceNamesEql(
+                    self.namespace_name,
+                    element.namespace_name,
+                )) {
+                    element.name = "";
+                }
+                break :blk .{ .start = element };
+            },
+            .end => |source| blk: {
+                var element = source;
+                if (!try xml.namespaceNamesEql(
+                    self.namespace_name,
+                    element.namespace_name,
+                )) {
+                    element.name = "";
+                }
+                break :blk .{ .end = element };
+            },
+            .text => |text| .{ .text = text },
+        };
+    }
+};
+
 pub const Document = struct {
     xml_document: xml.Document,
+    namespace_name: ?xml.NamespaceName,
     declaration_count: usize,
     reference_count: usize,
     profile_count: usize,
@@ -2734,6 +2774,7 @@ pub const Document = struct {
     pub fn init(bytes: []const u8) !Document {
         const xml_document = try xml.Document.init(bytes);
         var afe_count: usize = 0;
+        var namespace_name: ?xml.NamespaceName = null;
         var events = xml_document.iterator();
         while (try events.next()) |event| {
             switch (event) {
@@ -2744,6 +2785,7 @@ pub const Document = struct {
                         "audioFormatExtended",
                     )) {
                         afe_count += 1;
+                        namespace_name = element.namespace_name;
                     }
                 },
                 else => {},
@@ -2754,6 +2796,7 @@ pub const Document = struct {
 
         var document = Document{
             .xml_document = xml_document,
+            .namespace_name = namespace_name,
             .declaration_count = 0,
             .reference_count = 0,
             .profile_count = 0,
@@ -2791,6 +2834,10 @@ pub const Document = struct {
         try document.validateCardinalities();
         try document.validateBlockSequences();
         return document;
+    }
+
+    fn metadataEvents(self: Document) MetadataEventIterator {
+        return MetadataEventIterator.init(self);
     }
 
     pub fn declarations(self: Document) DeclarationIterator {
@@ -2976,7 +3023,7 @@ pub const Document = struct {
         var owner_depth: [xml.max_depth]?usize = @splat(null);
         var counts: [xml.max_depth]EmissionSubelementCounts =
             @splat(.{});
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -3281,7 +3328,7 @@ pub const Document = struct {
         self: Document,
     ) !void {
         try self.validateEmissionProfileComplementaryParameters();
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -3303,7 +3350,7 @@ pub const Document = struct {
     ) !void {
         try self.validateEmissionProfileProgrammeContentMetadata();
         var owner: ?EmissionFormatOwner = null;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -3452,7 +3499,7 @@ pub const Document = struct {
         self: Document,
     ) !void {
         try self.validateEmissionProfileObjectBlocks();
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -3471,7 +3518,7 @@ pub const Document = struct {
     ) !void {
         try self.validateEmissionProfileComplementaryLabels();
         var expected: ?EmissionLanguageSet = null;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -3636,7 +3683,7 @@ pub const Document = struct {
         }
 
         var track_count: usize = 0;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -3714,7 +3761,7 @@ pub const Document = struct {
         var frame_count: usize = 0;
         var header_count: usize = 0;
         var format_extended_count: usize = 0;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -3791,7 +3838,7 @@ pub const Document = struct {
                 declared_tracks += 1;
         }
 
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4056,7 +4103,7 @@ pub const Document = struct {
     fn emissionSerialFrameFlowFields(
         self: Document,
     ) !EmissionSerialFrameFlowFields {
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4123,7 +4170,7 @@ pub const Document = struct {
     }
 
     fn validateEmissionSerialObjectBlockSyntax(self: Document) !void {
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4146,7 +4193,7 @@ pub const Document = struct {
     }
 
     fn emissionSerialFrameDuration(self: Document) !adm_time.Value {
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4175,7 +4222,7 @@ pub const Document = struct {
         wanted: []const u8,
     ) !usize {
         var count: usize = 0;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4209,7 +4256,7 @@ pub const Document = struct {
     ) !usize {
         var count: usize = 0;
         var matching_transport_depth: ?usize = null;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4267,7 +4314,7 @@ pub const Document = struct {
     ) !usize {
         var count: usize = 0;
         var audio_track_depth: ?usize = null;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4314,7 +4361,7 @@ pub const Document = struct {
     fn validateEmissionObjectBlockSyntax(self: Document) !void {
         var frame_depth: ?usize = null;
         var afe_depth: ?usize = null;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4535,7 +4582,7 @@ pub const Document = struct {
         wanted: adm.Identifier,
         parent_interaction: ?EmissionObjectInteraction,
     ) !EmissionAlternativeParameters {
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4575,7 +4622,7 @@ pub const Document = struct {
     ) !EmissionObjectParameterState {
         var object_depth: ?usize = null;
         var state: ?EmissionObjectParameterState = null;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4775,7 +4822,7 @@ pub const Document = struct {
     ) !bool {
         var object_depth: ?usize = null;
         var uses_position_controls = false;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -4969,7 +5016,7 @@ pub const Document = struct {
                 },
                 else => return error.InvalidAdmEmissionProfileLanguageOwner,
             };
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -5003,7 +5050,7 @@ pub const Document = struct {
         content_primary: u32,
     ) !bool {
         var owner_depth: ?usize = null;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -5089,7 +5136,7 @@ pub const Document = struct {
             else => return error.InvalidAdmEmissionProfileLoudnessOwner,
         };
         var owner_depth: ?usize = null;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -5451,7 +5498,7 @@ pub const Document = struct {
         var matrix_channel_depth: ?usize = null;
         var matrix_block_depth: ?usize = null;
         var matrix_depth: ?usize = null;
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -5554,7 +5601,7 @@ pub const Document = struct {
                             if (!isXmlNamespaceDeclaration(attribute.name) and
                                 !std.mem.eql(
                                     u8,
-                                    attribute.localName(),
+                                    attribute.name,
                                     "audioBlockFormatID",
                                 ))
                             {
@@ -5574,7 +5621,7 @@ pub const Document = struct {
                         element.attributes,
                     );
                     while (try attributes.next()) |attribute| {
-                        const name = attribute.localName();
+                        const name = attribute.name;
                         if (!isXmlNamespaceDeclaration(attribute.name) and
                             !std.mem.eql(u8, name, "gain") and
                             !std.mem.eql(u8, name, "gainUnit"))
@@ -6021,7 +6068,7 @@ pub const Document = struct {
         var object_primary: [xml.max_depth]?u32 = @splat(null);
         var object_depth: [xml.max_depth]?usize = @splat(null);
         var next_sequence: [xml.max_depth]u64 = @splat(1);
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -6082,7 +6129,7 @@ pub const Document = struct {
     }
 
     fn validateEmissionProfileDocumentVersion(self: Document) !void {
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -6273,7 +6320,7 @@ pub const Document = struct {
     }
 
     fn hasSerialFrameRoot(self: Document) !bool {
-        var events = self.xml_document.iterator();
+        var events = self.metadataEvents();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -6382,7 +6429,7 @@ pub const ProfileIterator = struct {
         }
     };
 
-    events: xml.EventIterator,
+    events: MetadataEventIterator,
     scope: Scope = .audio_format_extended,
     owner_depth: ?usize = null,
     profile_list_depth: ?usize = null,
@@ -6394,12 +6441,12 @@ pub const ProfileIterator = struct {
     reference_storage: [max_profile_text_bytes]u8 = undefined,
 
     fn init(document: Document) ProfileIterator {
-        return .{ .events = document.xml_document.iterator() };
+        return .{ .events = document.metadataEvents() };
     }
 
     fn initSerialHeader(document: Document) ProfileIterator {
         return .{
-            .events = document.xml_document.iterator(),
+            .events = document.metadataEvents(),
             .scope = .serial_frame_header,
         };
     }
@@ -6568,7 +6615,7 @@ pub const ProfileIterator = struct {
 };
 
 pub const TagIterator = struct {
-    events: xml.EventIterator,
+    events: MetadataEventIterator,
     afe_depth: ?usize = null,
     tag_list_depth: ?usize = null,
     tag_group_depth: ?usize = null,
@@ -6581,7 +6628,7 @@ pub const TagIterator = struct {
     identifier_storage: [max_identifier_bytes]u8 = undefined,
 
     fn init(document: Document) TagIterator {
-        return .{ .events = document.xml_document.iterator() };
+        return .{ .events = document.metadataEvents() };
     }
 
     /// Returned text and identifiers remain valid until the next iterator call.
@@ -6756,7 +6803,7 @@ pub const TagIterator = struct {
 };
 
 pub const BlockIterator = struct {
-    events: xml.EventIterator,
+    events: MetadataEventIterator,
     afe_depth: ?usize = null,
     channel_identifier: ?adm.Identifier = null,
     channel_name: ?AdmText = null,
@@ -6767,7 +6814,7 @@ pub const BlockIterator = struct {
     value_storage: [max_profile_text_bytes]u8 = undefined,
 
     fn init(document: Document) BlockIterator {
-        return .{ .events = document.xml_document.iterator() };
+        return .{ .events = document.metadataEvents() };
     }
 
     /// Returned identifiers remain valid until the next iterator call.
@@ -7693,12 +7740,12 @@ pub const BlockIterator = struct {
 };
 
 pub const DeclarationIterator = struct {
-    events: xml.EventIterator,
+    events: MetadataEventIterator,
     afe_depth: ?usize = null,
     identifier_storage: [max_identifier_bytes]u8 = undefined,
 
     fn init(document: Document) DeclarationIterator {
-        return .{ .events = document.xml_document.iterator() };
+        return .{ .events = document.metadataEvents() };
     }
 
     /// The returned identifier remains valid until the next iterator call.
@@ -7753,7 +7800,7 @@ pub const DeclarationIterator = struct {
 };
 
 pub const ReferenceIterator = struct {
-    events: xml.EventIterator,
+    events: MetadataEventIterator,
     afe_depth: ?usize = null,
     tag_group_depth: ?usize = null,
     owners: [xml.max_depth]?adm.Identifier = @splat(null),
@@ -7762,7 +7809,7 @@ pub const ReferenceIterator = struct {
     identifier_storage: [max_identifier_bytes]u8 = undefined,
 
     fn init(document: Document) ReferenceIterator {
-        return .{ .events = document.xml_document.iterator() };
+        return .{ .events = document.metadataEvents() };
     }
 
     /// Returned identifiers remain valid until the next iterator call.
@@ -8674,6 +8721,71 @@ test "ADM XML validates a namespaced custom reference graph" {
     try std.testing.expect(try document.contains(
         try adm.Identifier.parse("AB_00031001_00000001"),
     ));
+}
+
+test "ADM XML resolves typed namespace identity" {
+    const default_namespace = try Document.init(
+        \\<audioFormatExtended xmlns="urn:adm">
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        default_namespace.declaration_count,
+    );
+
+    const aliased_namespace = try Document.init(
+        \\<a:audioFormatExtended xmlns:a="urn:&#97;dm" xmlns:b="urn:adm">
+        \\  <b:audioObject audioObjectID="AO_1001"/>
+        \\</a:audioFormatExtended>
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        aliased_namespace.declaration_count,
+    );
+
+    const foreign_element = try Document.init(
+        \\<a:audioFormatExtended xmlns:a="urn:adm" xmlns:b="urn:other">
+        \\  <b:audioObject audioObjectID="AO_1001"/>
+        \\</a:audioFormatExtended>
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        foreign_element.declaration_count,
+    );
+    try std.testing.expect(!try foreign_element.contains(
+        try adm.Identifier.parse("AO_1001"),
+    ));
+
+    const undeclared_default = try Document.init(
+        \\<audioFormatExtended xmlns="urn:adm">
+        \\  <audioObject xmlns="" audioObjectID="AO_1001"/>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        undeclared_default.declaration_count,
+    );
+
+    const foreign_wrapper = try Document.init(
+        \\<w:wrapper xmlns:w="urn:wrapper">
+        \\  <a:audioFormatExtended xmlns:a="urn:adm">
+        \\    <a:audioObject audioObjectID="AO_1001"/>
+        \\  </a:audioFormatExtended>
+        \\</w:wrapper>
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        foreign_wrapper.declaration_count,
+    );
+    try std.testing.expectError(
+        error.MissingAdmIdentifier,
+        Document.init(
+            \\<audioFormatExtended xmlns:v="urn:vendor">
+            \\  <audioObject v:audioObjectID="AO_1001"/>
+            \\</audioFormatExtended>
+        ),
+    );
 }
 
 test "ADM XML resolves common definitions and rejects missing custom ones" {

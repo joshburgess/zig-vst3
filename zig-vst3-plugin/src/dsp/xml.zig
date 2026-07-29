@@ -1,6 +1,9 @@
 const std = @import("std");
 
 pub const max_depth: usize = 64;
+pub const max_namespace_uri_bytes: usize = 2048;
+pub const xml_namespace_uri = "http://www.w3.org/XML/1998/namespace";
+pub const xmlns_namespace_uri = "http://www.w3.org/2000/xmlns/";
 
 pub const Document = struct {
     bytes: []const u8,
@@ -54,37 +57,78 @@ pub const Event = union(enum) {
     text: Text,
 };
 
+pub const NamespaceName = struct {
+    encoded: []const u8,
+
+    pub fn eql(self: NamespaceName, other: NamespaceName) !bool {
+        return encodedContentEql(self.encoded, other.encoded);
+    }
+
+    pub fn eqlBytes(self: NamespaceName, decoded: []const u8) !bool {
+        return encodedContentEql(self.encoded, decoded);
+    }
+};
+
+pub fn namespaceNamesEql(
+    left: ?NamespaceName,
+    right: ?NamespaceName,
+) !bool {
+    if (left) |left_name| {
+        const right_name = right orelse return false;
+        return left_name.eql(right_name);
+    }
+    return right == null;
+}
+
 pub const StartElement = struct {
     name: []const u8,
     attributes: []const u8,
     depth: usize,
     self_closing: bool,
+    namespace_name: ?NamespaceName,
 
     pub fn localName(self: StartElement) []const u8 {
         return qualifiedLocalName(self.name);
     }
 
-    pub fn attribute(self: StartElement, wanted_local_name: []const u8) !?[]const u8 {
-        var found: ?[]const u8 = null;
+    pub fn attribute(self: StartElement, wanted_name: []const u8) !?[]const u8 {
         var iterator = AttributeIterator.init(self.attributes);
         while (try iterator.next()) |attribute_value| {
-            if (!std.mem.eql(
+            if (std.mem.eql(u8, attribute_value.name, wanted_name))
+                return attribute_value.value;
+        }
+        return null;
+    }
+
+    pub fn namespaceDeclaration(
+        self: StartElement,
+        prefix: []const u8,
+    ) !?NamespaceName {
+        var iterator = AttributeIterator.init(self.attributes);
+        while (try iterator.next()) |attribute_value| {
+            if (prefix.len == 0) {
+                if (std.mem.eql(u8, attribute_value.name, "xmlns"))
+                    return .{ .encoded = attribute_value.value };
+                continue;
+            }
+            if (!std.mem.startsWith(
                 u8,
-                attribute_value.localName(),
-                wanted_local_name,
+                attribute_value.name,
+                "xmlns:",
             )) {
                 continue;
             }
-            if (found != null) return error.DuplicateXmlLocalAttribute;
-            found = attribute_value.value;
+            if (std.mem.eql(u8, attribute_value.name[6..], prefix))
+                return .{ .encoded = attribute_value.value };
         }
-        return found;
+        return null;
     }
 };
 
 pub const EndElement = struct {
     name: []const u8,
     depth: usize,
+    namespace_name: ?NamespaceName,
 
     pub fn localName(self: EndElement) []const u8 {
         return qualifiedLocalName(self.name);
@@ -161,7 +205,7 @@ pub const AttributeIterator = struct {
 pub const EventIterator = struct {
     bytes: []const u8,
     offset: usize,
-    names: [max_depth][]const u8 = undefined,
+    elements: [max_depth]StartElement = undefined,
     depth: usize = 0,
 
     pub fn init(bytes: []const u8) EventIterator {
@@ -228,20 +272,25 @@ pub const EventIterator = struct {
                 " \t\r\n",
             );
         }
-        try validateAttributes(attributes);
         const element_depth = self.depth;
-        if (!self_closing) {
-            if (self.depth == max_depth) return error.XmlNestingTooDeep;
-            self.names[self.depth] = name;
-            self.depth += 1;
-        }
-        self.offset = closing + 1;
-        return .{ .start = .{
+        var element = StartElement{
             .name = name,
             .attributes = attributes,
             .depth = element_depth,
             .self_closing = self_closing,
-        } };
+            .namespace_name = null,
+        };
+        try validateAttributes(attributes);
+        try self.validateNamespaceDeclarations(element);
+        element.namespace_name = try self.resolveElementNamespace(element);
+        try self.validateAttributeNamespaces(element);
+        if (!self_closing) {
+            if (self.depth == max_depth) return error.XmlNestingTooDeep;
+            self.elements[self.depth] = element;
+            self.depth += 1;
+        }
+        self.offset = closing + 1;
+        return .{ .start = element };
     }
 
     fn readEnd(self: *EventIterator) !Event {
@@ -257,11 +306,144 @@ pub const EventIterator = struct {
             return error.InvalidXmlEndElement;
         if (self.depth == 0) return error.UnexpectedXmlEndElement;
         const name = self.bytes[name_start..name_end];
-        if (!std.mem.eql(u8, name, self.names[self.depth - 1]))
+        try validateQualifiedName(name);
+        const start = self.elements[self.depth - 1];
+        if (!std.mem.eql(u8, name, start.name))
             return error.MismatchedXmlElement;
         self.depth -= 1;
         self.offset = cursor + 1;
-        return .{ .end = .{ .name = name, .depth = self.depth } };
+        return .{ .end = .{
+            .name = name,
+            .depth = self.depth,
+            .namespace_name = start.namespace_name,
+        } };
+    }
+
+    fn validateNamespaceDeclarations(
+        self: *const EventIterator,
+        element: StartElement,
+    ) !void {
+        try validateQualifiedName(element.name);
+        const element_prefix = qualifiedPrefix(element.name);
+        if (element_prefix) |prefix| {
+            if (std.mem.eql(u8, prefix, "xmlns"))
+                return error.ReservedXmlNamespacePrefix;
+        }
+
+        var attributes = AttributeIterator.init(element.attributes);
+        while (try attributes.next()) |attribute| {
+            try validateQualifiedName(attribute.name);
+            if (!isNamespaceDeclaration(attribute.name)) continue;
+            const namespace_name = NamespaceName{
+                .encoded = attribute.value,
+            };
+            try validateNamespaceUri(namespace_name);
+            const prefix = namespaceDeclarationPrefix(attribute.name);
+            if (prefix) |declared_prefix| {
+                if (declared_prefix.len == 0)
+                    return error.InvalidXmlQualifiedName;
+                if (namespace_name.encoded.len == 0)
+                    return error.EmptyXmlPrefixedNamespace;
+                if (std.mem.eql(u8, declared_prefix, "xmlns"))
+                    return error.ReservedXmlNamespacePrefix;
+                if (std.mem.eql(u8, declared_prefix, "xml")) {
+                    if (!try namespace_name.eqlBytes(xml_namespace_uri))
+                        return error.InvalidXmlNamespaceBinding;
+                } else if (try namespace_name.eqlBytes(xml_namespace_uri)) {
+                    return error.InvalidXmlNamespaceBinding;
+                }
+            } else if (try namespace_name.eqlBytes(xml_namespace_uri)) {
+                return error.InvalidXmlNamespaceBinding;
+            }
+            if (try namespace_name.eqlBytes(xmlns_namespace_uri))
+                return error.InvalidXmlNamespaceBinding;
+        }
+        _ = self;
+    }
+
+    fn resolveElementNamespace(
+        self: *const EventIterator,
+        element: StartElement,
+    ) !?NamespaceName {
+        const prefix = qualifiedPrefix(element.name);
+        if (prefix) |value| return self.resolvePrefix(element, value);
+        const default_name = try self.resolvePrefix(element, "");
+        if (default_name) |name| {
+            if (name.encoded.len == 0) return null;
+        }
+        return default_name;
+    }
+
+    fn validateAttributeNamespaces(
+        self: *const EventIterator,
+        element: StartElement,
+    ) !void {
+        var attributes = AttributeIterator.init(element.attributes);
+        var attribute_index: usize = 0;
+        while (try attributes.next()) |attribute| : (attribute_index += 1) {
+            if (isNamespaceDeclaration(attribute.name)) continue;
+            const namespace_name = try self.attributeNamespace(
+                element,
+                attribute,
+            );
+            var previous = AttributeIterator.init(element.attributes);
+            var previous_index: usize = 0;
+            while (previous_index < attribute_index) : (previous_index += 1) {
+                const prior = (try previous.next()) orelse
+                    return error.InvalidXmlAttribute;
+                if (isNamespaceDeclaration(prior.name)) continue;
+                if (!std.mem.eql(
+                    u8,
+                    prior.localName(),
+                    attribute.localName(),
+                )) {
+                    continue;
+                }
+                const prior_namespace = try self.attributeNamespace(
+                    element,
+                    prior,
+                );
+                if (try namespaceNamesEql(
+                    prior_namespace,
+                    namespace_name,
+                )) {
+                    return error.DuplicateXmlExpandedAttribute;
+                }
+            }
+        }
+    }
+
+    fn attributeNamespace(
+        self: *const EventIterator,
+        element: StartElement,
+        attribute: Attribute,
+    ) !?NamespaceName {
+        const prefix = qualifiedPrefix(attribute.name) orelse return null;
+        if (std.mem.eql(u8, prefix, "xml"))
+            return .{ .encoded = xml_namespace_uri };
+        return self.resolvePrefix(element, prefix);
+    }
+
+    fn resolvePrefix(
+        self: *const EventIterator,
+        element: StartElement,
+        prefix: []const u8,
+    ) !?NamespaceName {
+        if (std.mem.eql(u8, prefix, "xml"))
+            return .{ .encoded = xml_namespace_uri };
+        if (try element.namespaceDeclaration(prefix)) |binding|
+            return binding;
+        var ancestor_count = self.depth;
+        while (ancestor_count != 0) {
+            ancestor_count -= 1;
+            if (try self.elements[ancestor_count]
+                .namespaceDeclaration(prefix)) |binding|
+            {
+                return binding;
+            }
+        }
+        if (prefix.len == 0) return null;
+        return error.UndeclaredXmlNamespacePrefix;
     }
 
     fn skipComment(self: *EventIterator) !void {
@@ -300,6 +482,44 @@ pub fn qualifiedLocalName(qualified_name: []const u8) []const u8 {
     const separator = std.mem.lastIndexOfScalar(u8, qualified_name, ':') orelse
         return qualified_name;
     return qualified_name[separator + 1 ..];
+}
+
+fn qualifiedPrefix(qualified_name: []const u8) ?[]const u8 {
+    const separator = std.mem.indexOfScalar(u8, qualified_name, ':') orelse
+        return null;
+    return qualified_name[0..separator];
+}
+
+fn validateQualifiedName(name: []const u8) !void {
+    const first = std.mem.indexOfScalar(u8, name, ':') orelse {
+        try validateNamespaceComponent(name);
+        return;
+    };
+    if (first == 0 or first + 1 == name.len)
+        return error.InvalidXmlQualifiedName;
+    if (std.mem.indexOfScalarPos(u8, name, first + 1, ':') != null)
+        return error.InvalidXmlQualifiedName;
+    try validateNamespaceComponent(name[0..first]);
+    try validateNamespaceComponent(name[first + 1 ..]);
+}
+
+fn validateNamespaceComponent(name: []const u8) !void {
+    if (name.len == 0 or !isNameStartByte(name[0]) or name[0] == ':')
+        return error.InvalidXmlQualifiedName;
+    for (name[1..]) |byte| {
+        if (!isNameByte(byte) or byte == ':')
+            return error.InvalidXmlQualifiedName;
+    }
+}
+
+fn isNamespaceDeclaration(name: []const u8) bool {
+    return std.mem.eql(u8, name, "xmlns") or
+        std.mem.startsWith(u8, name, "xmlns:");
+}
+
+fn namespaceDeclarationPrefix(name: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, name, "xmlns")) return null;
+    return name[6..];
 }
 
 pub fn decodedContentBytes(encoded: []const u8) !usize {
@@ -360,6 +580,102 @@ pub fn decodeContent(destination: []u8, encoded: []const u8) ![]const u8 {
         source_offset = entity.end;
     }
     return destination[0..required];
+}
+
+fn encodedContentEql(left: []const u8, right: []const u8) !bool {
+    var left_offset: usize = 0;
+    var right_offset: usize = 0;
+    while (true) {
+        const left_codepoint = try nextEncodedCodepoint(
+            left,
+            &left_offset,
+        );
+        const right_codepoint = try nextEncodedCodepoint(
+            right,
+            &right_offset,
+        );
+        if (left_codepoint == null or right_codepoint == null)
+            return left_codepoint == null and right_codepoint == null;
+        if (left_codepoint.? != right_codepoint.?) return false;
+    }
+}
+
+fn validateNamespaceUri(namespace_name: NamespaceName) !void {
+    var storage: [max_namespace_uri_bytes]u8 = undefined;
+    const decoded = decodeContent(
+        &storage,
+        namespace_name.encoded,
+    ) catch |err| switch (err) {
+        error.XmlDecodeBufferTooSmall => return error.XmlNamespaceUriTooLong,
+        else => return err,
+    };
+    if (decoded.len == 0) return;
+    _ = std.Uri.parse(decoded) catch {
+        _ = std.Uri.parseAfterScheme("", decoded) catch
+            return error.InvalidXmlNamespaceUri;
+    };
+
+    var offset: usize = 0;
+    var fragment_seen = false;
+    while (try nextEncodedCodepoint(
+        namespace_name.encoded,
+        &offset,
+    )) |codepoint| {
+        if (codepoint == '#') {
+            if (fragment_seen) return error.InvalidXmlNamespaceUri;
+            fragment_seen = true;
+        }
+        if (codepoint == '%') {
+            const high = (try nextEncodedCodepoint(
+                namespace_name.encoded,
+                &offset,
+            )) orelse return error.InvalidXmlNamespaceUri;
+            const low = (try nextEncodedCodepoint(
+                namespace_name.encoded,
+                &offset,
+            )) orelse return error.InvalidXmlNamespaceUri;
+            if (high > 0x7f or low > 0x7f or
+                !std.ascii.isHex(@intCast(high)) or
+                !std.ascii.isHex(@intCast(low)))
+            {
+                return error.InvalidXmlNamespaceUri;
+            }
+            continue;
+        }
+        if (codepoint > 0x7f or
+            (!std.ascii.isAlphanumeric(@intCast(codepoint)) and
+                std.mem.indexOfScalar(
+                    u8,
+                    "-._~:/?#[]@!$&'()*+,;=",
+                    @intCast(codepoint),
+                ) == null))
+        {
+            return error.InvalidXmlNamespaceUri;
+        }
+    }
+}
+
+fn nextEncodedCodepoint(
+    encoded: []const u8,
+    offset: *usize,
+) !?u21 {
+    if (offset.* == encoded.len) return null;
+    if (encoded[offset.*] == '&') {
+        const entity = try parseEntity(encoded, offset.*);
+        offset.* = entity.end;
+        return entity.codepoint;
+    }
+    const length = std.unicode.utf8ByteSequenceLength(
+        encoded[offset.*],
+    ) catch return error.InvalidXmlEncoding;
+    const end = std.math.add(usize, offset.*, length) catch
+        return error.InvalidXmlEncoding;
+    if (end > encoded.len) return error.InvalidXmlEncoding;
+    const codepoint = std.unicode.utf8Decode(
+        encoded[offset.*..end],
+    ) catch return error.InvalidXmlEncoding;
+    offset.* = end;
+    return codepoint;
 }
 
 fn validateAttributes(bytes: []const u8) !void {
@@ -506,10 +822,16 @@ test "XML document iterates namespaces attributes text and empty elements" {
     try std.testing.expectEqualStrings("root", root.localName());
     try std.testing.expectEqualStrings(
         "urn:test",
-        (try root.attribute("ebu")).?,
+        (try root.namespaceDeclaration("ebu")).?.encoded,
+    );
+    try std.testing.expect(
+        try root.namespace_name.?.eqlBytes("urn:test"),
     );
     const item = (try iterator.next()).?.start;
     try std.testing.expectEqualStrings("one", (try item.attribute("id")).?);
+    try std.testing.expect(
+        try item.namespace_name.?.eql(root.namespace_name.?),
+    );
     try std.testing.expectEqualStrings(
         "value &amp; more",
         (try iterator.next()).?.text.bytes,
@@ -556,6 +878,103 @@ test "XML document rejects malformed structure attributes and entities" {
     try std.testing.expectError(
         error.InvalidXmlContent,
         Document.init("<root>invalid ]]></root>"),
+    );
+}
+
+test "XML document enforces namespace bindings and expanded attributes" {
+    try std.testing.expectError(
+        error.UndeclaredXmlNamespacePrefix,
+        Document.init("<p:root/>"),
+    );
+    try std.testing.expectError(
+        error.InvalidXmlQualifiedName,
+        Document.init("<a:b:c xmlns:a=\"urn:a\"/>"),
+    );
+    try std.testing.expectError(
+        error.InvalidXmlQualifiedName,
+        Document.init("<a:1item xmlns:a=\"urn:a\"/>"),
+    );
+    try std.testing.expectError(
+        error.EmptyXmlPrefixedNamespace,
+        Document.init("<root xmlns:p=\"\"><p:item/></root>"),
+    );
+    try std.testing.expectError(
+        error.InvalidXmlNamespaceBinding,
+        Document.init(
+            "<root xmlns:xml=\"urn:not-xml\"/>",
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidXmlNamespaceBinding,
+        Document.init(
+            "<root xmlns:p=\"http://www.w3.org/XML/1998/namespace\"/>",
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidXmlNamespaceBinding,
+        Document.init(
+            "<root xmlns=\"http://www.w3.org/2000/xmlns/\"/>",
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidXmlNamespaceUri,
+        Document.init("<root xmlns:p=\"urn:not valid\"/>"),
+    );
+    try std.testing.expectError(
+        error.InvalidXmlNamespaceUri,
+        Document.init("<root xmlns:p=\"urn:bad%escape\"/>"),
+    );
+    try std.testing.expectError(
+        error.InvalidXmlNamespaceUri,
+        Document.init("<root xmlns:p=\"urn:bad#one#two\"/>"),
+    );
+    try std.testing.expectError(
+        error.ReservedXmlNamespacePrefix,
+        Document.init(
+            "<xmlns:root xmlns:xmlns=\"urn:namespace\"/>",
+        ),
+    );
+    try std.testing.expectError(
+        error.DuplicateXmlExpandedAttribute,
+        Document.init(
+            "<root xmlns:a=\"urn:same\" xmlns:b=\"urn:same\" " ++
+                "a:value=\"one\" b:value=\"two\"/>",
+        ),
+    );
+
+    const scoped = try Document.init(
+        "<root xmlns=\"urn:outer\" xmlns:a=\"urn:attribute\">" ++
+            "<child value=\"plain\" a:value=\"qualified\">" ++
+            "<leaf xmlns=\"urn:inner\"/></child>" ++
+            "<plain xmlns=\"\"/></root>",
+    );
+    var events = scoped.iterator();
+    const root = (try events.next()).?.start;
+    try std.testing.expect(
+        try root.namespace_name.?.eqlBytes("urn:outer"),
+    );
+    const child = (try events.next()).?.start;
+    try std.testing.expect(
+        try child.namespace_name.?.eqlBytes("urn:outer"),
+    );
+    try std.testing.expectEqualStrings(
+        "plain",
+        (try child.attribute("value")).?,
+    );
+    try std.testing.expectEqualStrings(
+        "qualified",
+        (try child.attribute("a:value")).?,
+    );
+    const leaf = (try events.next()).?.start;
+    try std.testing.expect(
+        try leaf.namespace_name.?.eqlBytes("urn:inner"),
+    );
+    _ = try events.next();
+    const plain = (try events.next()).?.start;
+    try std.testing.expect(plain.namespace_name == null);
+
+    _ = try Document.init(
+        "<root xmlns=\"relative/namespace\"/>",
     );
 }
 
