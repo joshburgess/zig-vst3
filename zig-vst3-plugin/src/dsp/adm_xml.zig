@@ -2343,6 +2343,19 @@ fn profilesEqual(left: Profile, right: Profile) bool {
         std.mem.eql(u8, left.reference, right.reference);
 }
 
+fn isEmissionProfile(profile: Profile) bool {
+    return std.mem.eql(
+        u8,
+        profile.name,
+        "Advanced sound system: ADM and S-ADM profile for emission",
+    ) and
+        std.mem.eql(u8, profile.version, "1") and
+        (std.mem.eql(u8, profile.level, "0") or
+            std.mem.eql(u8, profile.level, "1") or
+            std.mem.eql(u8, profile.level, "2")) and
+        std.mem.eql(u8, profile.reference, "ITU-R BS.2168");
+}
+
 pub const Tag = struct {
     group_index: usize,
     value: []const u8,
@@ -2594,6 +2607,10 @@ pub const Document = struct {
 
     pub fn profiles(self: Document) ProfileIterator {
         return ProfileIterator.init(self);
+    }
+
+    fn serialHeaderProfiles(self: Document) ProfileIterator {
+        return ProfileIterator.initSerialHeader(self);
     }
 
     pub fn blocks(self: Document) BlockIterator {
@@ -3581,6 +3598,45 @@ pub const Document = struct {
                 return error.InvalidAdmEmissionProfileSerialTrackMapping;
             }
         }
+    }
+
+    /// Validates S-ADM header profiles and their embedded ADM counterparts.
+    pub fn validateEmissionProfileSerialHeaderProfiles(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileSerialTransportTracks();
+
+        var outer = self.serialHeaderProfiles();
+        var index: usize = 0;
+        while (try outer.next()) |profile| : (index += 1) {
+            var inner = self.serialHeaderProfiles();
+            var previous_index: usize = 0;
+            while (previous_index < index) : (previous_index += 1) {
+                const previous = (try inner.next()) orelse
+                    return error.InvalidAdmProfileIteration;
+                if (profilesEqual(profile, previous))
+                    return error.DuplicateAdmEmissionProfileSerialHeaderProfile;
+            }
+        }
+
+        var emission_profiles: usize = 0;
+        var header_profiles = self.serialHeaderProfiles();
+        while (try header_profiles.next()) |header_profile| {
+            if (!isEmissionProfile(header_profile)) continue;
+            emission_profiles += 1;
+            var found = false;
+            var embedded_profiles = self.profiles();
+            while (try embedded_profiles.next()) |embedded_profile| {
+                if (profilesEqual(header_profile, embedded_profile)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                return error.MismatchedAdmEmissionProfileSerialHeaderProfile;
+        }
+        if (emission_profiles == 0)
+            return error.MissingAdmEmissionProfileSerialHeaderProfile;
     }
 
     fn emissionSerialTransportIdCount(
@@ -5633,8 +5689,21 @@ pub const Document = struct {
 };
 
 pub const ProfileIterator = struct {
+    const Scope = enum {
+        audio_format_extended,
+        serial_frame_header,
+
+        fn elementName(self: Scope) []const u8 {
+            return switch (self) {
+                .audio_format_extended => "audioFormatExtended",
+                .serial_frame_header => "frameHeader",
+            };
+        }
+    };
+
     events: xml.EventIterator,
-    afe_depth: ?usize = null,
+    scope: Scope = .audio_format_extended,
+    owner_depth: ?usize = null,
     profile_list_depth: ?usize = null,
     profile_list_seen: bool = false,
     profiles_in_list: usize = 0,
@@ -5647,6 +5716,13 @@ pub const ProfileIterator = struct {
         return .{ .events = document.xml_document.iterator() };
     }
 
+    fn initSerialHeader(document: Document) ProfileIterator {
+        return .{
+            .events = document.xml_document.iterator(),
+            .scope = .serial_frame_header,
+        };
+    }
+
     /// Returned fields remain valid until the next iterator call.
     pub fn next(self: *ProfileIterator) !?Profile {
         while (try self.events.next()) |event| {
@@ -5655,22 +5731,28 @@ pub const ProfileIterator = struct {
                     if (std.mem.eql(
                         u8,
                         element.localName(),
-                        "audioFormatExtended",
+                        self.scope.elementName(),
                     )) {
-                        self.afe_depth = if (element.self_closing)
+                        self.owner_depth = if (element.self_closing)
                             null
                         else
                             element.depth;
                         continue;
                     }
-                    if (!insideAfe(self.afe_depth, element.depth)) continue;
+                    const owner_depth = self.owner_depth orelse continue;
+                    if (element.depth <= owner_depth) continue;
                     if (std.mem.eql(u8, element.localName(), "profileList")) {
-                        const afe_depth = self.afe_depth orelse
-                            return error.InvalidAdmProfileListOwner;
-                        if (element.depth != afe_depth + 1)
+                        if (element.depth != owner_depth + 1)
                             return error.InvalidAdmProfileListOwner;
                         if (self.profile_list_seen)
                             return error.MultipleAdmProfileLists;
+                        if (self.scope == .serial_frame_header) {
+                            try validateEmissionAttributes(
+                                element,
+                                &.{},
+                                error.InvalidAdmEmissionProfileSerialProfileListAttribute,
+                            );
+                        }
                         if (element.self_closing)
                             return error.EmptyAdmProfileList;
                         self.profile_list_seen = true;
@@ -5678,12 +5760,25 @@ pub const ProfileIterator = struct {
                         self.profiles_in_list = 0;
                         continue;
                     }
-                    if (!std.mem.eql(u8, element.localName(), "profile"))
+                    if (!std.mem.eql(u8, element.localName(), "profile")) {
+                        if (self.scope == .serial_frame_header and
+                            self.profile_list_depth != null)
+                        {
+                            return error.InvalidAdmEmissionProfileSerialProfileListSubelement;
+                        }
                         continue;
+                    }
                     const list_depth = self.profile_list_depth orelse
                         return error.InvalidAdmProfileOwner;
                     if (element.depth != list_depth + 1)
                         return error.InvalidAdmProfileOwner;
+                    if (self.scope == .serial_frame_header) {
+                        try validateEmissionAttributes(
+                            element,
+                            &.{ "profileName", "profileVersion", "profileLevel" },
+                            error.InvalidAdmEmissionProfileSerialProfileAttribute,
+                        );
+                    }
                     if (element.self_closing)
                         return error.EmptyAdmProfileReference;
                     const profile = try self.readProfile(element);
@@ -5698,17 +5793,24 @@ pub const ProfileIterator = struct {
                             return error.EmptyAdmProfileList;
                         self.profile_list_depth = null;
                     }
-                    if (self.afe_depth == element.depth and
+                    if (self.owner_depth == element.depth and
                         std.mem.eql(
                             u8,
                             element.localName(),
-                            "audioFormatExtended",
+                            self.scope.elementName(),
                         ))
                     {
-                        self.afe_depth = null;
+                        self.owner_depth = null;
                     }
                 },
-                else => {},
+                .text => |text| {
+                    if (self.scope == .serial_frame_header and
+                        self.profile_list_depth != null and
+                        std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                    {
+                        return error.InvalidAdmEmissionProfileSerialProfileListText;
+                    }
+                },
             }
         }
         return null;
@@ -10127,6 +10229,12 @@ const valid_serial_transport_xml =
     \\    </transportTrackFormat>
 ;
 
+const valid_serial_profile_list_xml =
+    \\    <profileList>
+    \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+    \\    </profileList>
+;
+
 fn makeValidSerialEmissionFrame() ![]u8 {
     const framed_start = try std.mem.replaceOwned(
         u8,
@@ -10137,9 +10245,7 @@ fn makeValidSerialEmissionFrame() ![]u8 {
             "  <frameHeader>\n" ++
             "    <frameFormat frameFormatID=\"FF_00000001\" start=\"00:00:00.00000\" duration=\"00:00:00.01000\" type=\"header\" timeReference=\"local\"/>\n" ++
             valid_serial_transport_xml ++ "\n" ++
-            "    <profileList>\n" ++
-            "      <profile profileName=\"Advanced sound system: ADM and S-ADM profile for emission\" profileVersion=\"1\" profileLevel=\"1\">ITU-R BS.2168</profile>\n" ++
-            "    </profileList>\n" ++
+            valid_serial_profile_list_xml ++ "\n" ++
             "  </frameHeader>\n" ++
             "  <audioFormatExtended version=\"ITU-R_BS.2076-3\">",
     );
@@ -10159,6 +10265,7 @@ test "ADM XML emission profile validates the serial frame envelope" {
     const document = try Document.init(framed);
     try document.validateEmissionProfileSerialFrameEnvelope();
     try document.validateEmissionProfileSerialTransportTracks();
+    try document.validateEmissionProfileSerialHeaderProfiles();
 }
 
 test "ADM XML emission profile restricts the serial frame envelope" {
@@ -10196,9 +10303,7 @@ test "ADM XML emission profile restricts the serial frame envelope" {
         },
         .{
             .expected = error.InvalidAdmEmissionProfileSerialFrameHeader,
-            .needle = "    <profileList>\n" ++
-                "      <profile profileName=\"Advanced sound system: ADM and S-ADM profile for emission\" profileVersion=\"1\" profileLevel=\"1\">ITU-R BS.2168</profile>\n" ++
-                "    </profileList>\n",
+            .needle = valid_serial_profile_list_xml ++ "\n",
             .replacement = "",
         },
     };
@@ -10274,6 +10379,120 @@ test "ADM XML emission profile restricts serial transport tracks" {
             document.validateEmissionProfileSerialTransportTracks(),
         );
     }
+}
+
+test "ADM XML emission profile restricts serial header profiles" {
+    const framed = try makeValidSerialEmissionFrame();
+    defer std.testing.allocator.free(framed);
+    const cases = [_]struct {
+        expected: anyerror,
+        replacement: []const u8,
+    }{
+        .{
+            .expected = error.DuplicateAdmEmissionProfileSerialHeaderProfile,
+            .replacement =
+            \\    <profileList>
+            \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+            \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+            \\    </profileList>
+            ,
+        },
+        .{
+            .expected = error.MissingAdmEmissionProfileSerialHeaderProfile,
+            .replacement =
+            \\    <profileList>
+            \\      <profile profileName="Other profile" profileVersion="1" profileLevel="1">Example</profile>
+            \\    </profileList>
+            ,
+        },
+        .{
+            .expected = error.MismatchedAdmEmissionProfileSerialHeaderProfile,
+            .replacement =
+            \\    <profileList>
+            \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1" profileLevel="2">ITU-R BS.2168</profile>
+            \\    </profileList>
+            ,
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialProfileAttribute,
+            .replacement =
+            \\    <profileList>
+            \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1" profileLevel="1" custom="1">ITU-R BS.2168</profile>
+            \\    </profileList>
+            ,
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialProfileListAttribute,
+            .replacement =
+            \\    <profileList custom="1">
+            \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+            \\    </profileList>
+            ,
+        },
+        .{
+            .expected = error.MissingAdmProfileLevel,
+            .replacement =
+            \\    <profileList>
+            \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1">ITU-R BS.2168</profile>
+            \\    </profileList>
+            ,
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialProfileListSubelement,
+            .replacement =
+            \\    <profileList>
+            \\      <custom/>
+            \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+            \\    </profileList>
+            ,
+        },
+    };
+    for (cases) |case| {
+        const replaced = try std.mem.replaceOwned(
+            u8,
+            std.testing.allocator,
+            framed,
+            valid_serial_profile_list_xml,
+            case.replacement,
+        );
+        defer std.testing.allocator.free(replaced);
+        const document = try Document.init(replaced);
+        try std.testing.expectError(
+            case.expected,
+            document.validateEmissionProfileSerialHeaderProfiles(),
+        );
+    }
+
+    const additional_profile =
+        \\    <profileList>
+        \\      <profile profileName="Other profile" profileVersion="1" profileLevel="1">Example</profile>
+        \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\    </profileList>
+    ;
+    const with_additional = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        framed,
+        valid_serial_profile_list_xml,
+        additional_profile,
+    );
+    defer std.testing.allocator.free(with_additional);
+    const additional_document = try Document.init(with_additional);
+    try additional_document.validateEmissionProfileSerialHeaderProfiles();
+
+    const encoded_reference = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        framed,
+        valid_serial_profile_list_xml,
+        \\    <profileList>
+        \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1" profileLevel="1">ITU-R&#32;BS.2168</profile>
+        \\    </profileList>
+        ,
+    );
+    defer std.testing.allocator.free(encoded_reference);
+    const encoded_document = try Document.init(encoded_reference);
+    try encoded_document.validateEmissionProfileSerialHeaderProfiles();
 }
 
 const valid_emission_complementary_parameters_xml =
