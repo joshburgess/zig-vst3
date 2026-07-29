@@ -32,7 +32,8 @@ pub const Identifier = struct {
         else
             null;
         if (secondary) |value| {
-            if (value == 0) return error.UndefinedAdmIdentifier;
+            if (value == 0 and shape.kind != .block_format)
+                return error.UndefinedAdmIdentifier;
         }
         return .{
             .kind = shape.kind,
@@ -469,6 +470,7 @@ test "ADM identifiers cover every standardized core family" {
         .{ .raw = "ATU_00000001", .kind = .track_uid },
         .{ .raw = "AVS_1001_0001", .kind = .alternative_value_set },
         .{ .raw = "AB_00031001_00000001", .kind = .block_format },
+        .{ .raw = "AB_00031001_00000000", .kind = .block_format },
     };
     for (cases) |case| {
         const identifier = try Identifier.parse(case.raw);

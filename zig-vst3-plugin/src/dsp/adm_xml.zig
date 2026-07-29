@@ -2109,15 +2109,60 @@ fn readEmissionObjectBlockSyntax(
     events: *xml.EventIterator,
     start: xml.StartElement,
 ) !void {
-    try validateEmissionAttributes(
-        start,
-        &.{ "audioBlockFormatID", "rtime", "duration" },
-        error.InvalidAdmEmissionProfileBlockAttribute,
-    );
-    if (try start.attribute("rtime") == null or
-        try start.attribute("duration") == null)
-    {
-        return error.MissingAdmEmissionProfileBlockTiming;
+    return readEmissionObjectBlockSyntaxWithTiming(events, start, .file);
+}
+
+const EmissionBlockTiming = enum {
+    file,
+    serial,
+};
+
+fn readEmissionObjectBlockSyntaxWithTiming(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+    timing: EmissionBlockTiming,
+) !void {
+    switch (timing) {
+        .file => {
+            try validateEmissionAttributes(
+                start,
+                &.{ "audioBlockFormatID", "rtime", "duration" },
+                error.InvalidAdmEmissionProfileBlockAttribute,
+            );
+            if (try start.attribute("rtime") == null or
+                try start.attribute("duration") == null)
+            {
+                return error.MissingAdmEmissionProfileBlockTiming;
+            }
+        },
+        .serial => {
+            try validateEmissionAttributes(
+                start,
+                &.{
+                    "audioBlockFormatID",
+                    "initializeBlock",
+                    "lstart",
+                    "lduration",
+                },
+                error.InvalidAdmEmissionProfileSerialBlockAttribute,
+            );
+            const initialize = try start.attribute("initializeBlock");
+            const lstart = try start.attribute("lstart");
+            const lduration = try start.attribute("lduration");
+            if (initialize) |_| {
+                try emissionRequiredAttributeValueAs(
+                    start,
+                    "initializeBlock",
+                    "1",
+                    error.InvalidAdmEmissionProfileSerialInitializeBlock,
+                    error.InvalidAdmEmissionProfileSerialInitializeBlock,
+                );
+                if (lstart != null or lduration != null)
+                    return error.InvalidAdmEmissionProfileSerialInitializeBlock;
+            } else if (lstart == null or lduration == null) {
+                return error.MissingAdmEmissionProfileSerialBlockTiming;
+            }
+        },
     }
     if (start.self_closing) return;
 
@@ -2482,6 +2527,9 @@ pub const BlockFormat = struct {
     rtime: adm_time.Value,
     rtime_explicit: bool,
     duration: ?adm_time.Value,
+    lstart: ?adm_time.Value = null,
+    lduration: ?adm_time.Value = null,
+    initialize_block: ?bool = null,
     gain: Gain = .{},
     importance: u8 = 10,
     jump_position: JumpPosition = .{},
@@ -3637,6 +3685,186 @@ pub const Document = struct {
         }
         if (emission_profiles == 0)
             return error.MissingAdmEmissionProfileSerialHeaderProfile;
+    }
+
+    /// Validates S-ADM Objects block timing and initialization within a frame.
+    pub fn validateEmissionProfileSerialObjectBlocks(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileSerialHeaderProfiles();
+        try self.validateEmissionSerialObjectBlockSyntax();
+        const frame_duration = try self.emissionSerialFrameDuration();
+        const minimum_duration = adm_time.Value{
+            .whole_seconds = 0,
+            .fractional_numerator = 5,
+            .fractional_denominator = 1000,
+            .format = .decimal,
+        };
+        const zero = zeroAdmTime();
+        var coordinate_system: ?bool = null;
+
+        var block_iterator = self.blocks();
+        while (try block_iterator.next()) |block| {
+            if (block.identifier.typeLabel() != 0x0003) continue;
+            if (block.position_count != 3)
+                return error.InvalidAdmEmissionProfileBlockPosition;
+            if (coordinate_system) |expected| {
+                if (block.cartesian != expected)
+                    return error.MixedAdmEmissionProfileCoordinateSystems;
+            } else {
+                coordinate_system = block.cartesian;
+            }
+            if (block.jump_position.interpolation_length != null)
+                return error.InvalidAdmEmissionProfileJumpPosition;
+            const linear_gain = emissionGainLinear(
+                block.gain.value,
+                block.gain.unit,
+            );
+            if (!std.math.isFinite(linear_gain) or
+                linear_gain > @sqrt(10.0))
+            {
+                return error.InvalidAdmEmissionProfileObjectBlockGain;
+            }
+
+            const sequence = block.identifier.secondary orelse
+                return error.InvalidAdmBlockIdentifier;
+            var previous_timed: ?BlockFormat = null;
+            var preceding_blocks: usize = 0;
+            var earlier = self.blocks();
+            while (try earlier.next()) |candidate| {
+                if (!candidate.channel_identifier.eql(
+                    block.channel_identifier,
+                )) {
+                    continue;
+                }
+                if (candidate.identifier.eql(block.identifier)) break;
+                preceding_blocks += 1;
+                if (candidate.initialize_block == null)
+                    previous_timed = candidate;
+            }
+
+            if (block.initialize_block != null) {
+                if (sequence != 0 or preceding_blocks != 0)
+                    return error.InvalidAdmEmissionProfileSerialInitializeBlock;
+                var has_timed_block = false;
+                var candidates = self.blocks();
+                while (try candidates.next()) |candidate| {
+                    if (candidate.channel_identifier.eql(
+                        block.channel_identifier,
+                    ) and candidate.initialize_block == null) {
+                        has_timed_block = true;
+                        break;
+                    }
+                }
+                if (!has_timed_block)
+                    return error.MissingAdmEmissionProfileSerialBlockTiming;
+                continue;
+            }
+
+            if (sequence == 0)
+                return error.InvalidAdmEmissionProfileSerialBlockIdentifier;
+            const lstart = block.lstart orelse
+                return error.MissingAdmEmissionProfileSerialBlockTiming;
+            const lduration = block.lduration orelse
+                return error.MissingAdmEmissionProfileSerialBlockTiming;
+            if (lduration.compare(zero) != .eq and
+                lduration.compare(minimum_duration) == .lt)
+            {
+                return error.InvalidAdmEmissionProfileSerialBlockDuration;
+            }
+            if (previous_timed) |previous| {
+                const previous_start = previous.lstart orelse
+                    return error.MissingAdmEmissionProfileSerialBlockTiming;
+                const previous_duration = previous.lduration orelse
+                    return error.MissingAdmEmissionProfileSerialBlockTiming;
+                if (!previous_start.sumEquals(previous_duration, lstart))
+                    return error.InvalidAdmEmissionProfileSerialBlockTiming;
+                const previous_sequence = previous.identifier.secondary orelse
+                    return error.InvalidAdmBlockIdentifier;
+                const expected_sequence = std.math.add(
+                    u32,
+                    previous_sequence,
+                    1,
+                ) catch
+                    return error.InvalidAdmEmissionProfileSerialBlockIdentifier;
+                if (sequence != expected_sequence)
+                    return error.InvalidAdmEmissionProfileSerialBlockIdentifier;
+            } else if (lstart.compare(zero) != .eq) {
+                return error.InvalidAdmEmissionProfileSerialBlockTiming;
+            }
+
+            var has_later_timed_block = false;
+            var found_current = false;
+            var remainder = self.blocks();
+            while (try remainder.next()) |candidate| {
+                if (!candidate.channel_identifier.eql(
+                    block.channel_identifier,
+                )) {
+                    continue;
+                }
+                if (!found_current) {
+                    found_current = candidate.identifier.eql(block.identifier);
+                    continue;
+                }
+                if (candidate.initialize_block == null) {
+                    has_later_timed_block = true;
+                    break;
+                }
+            }
+            if (!has_later_timed_block and
+                !lstart.sumEquals(lduration, frame_duration))
+            {
+                return error.InvalidAdmEmissionProfileSerialFrameCoverage;
+            }
+        }
+    }
+
+    fn validateEmissionSerialObjectBlockSyntax(self: Document) !void {
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "audioBlockFormatObjects",
+                    )) {
+                        continue;
+                    }
+                    try readEmissionObjectBlockSyntaxWithTiming(
+                        &events,
+                        element,
+                        .serial,
+                    );
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn emissionSerialFrameDuration(self: Document) !adm_time.Value {
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "frameFormat",
+                    )) {
+                        continue;
+                    }
+                    const encoded = try element.attribute("duration") orelse
+                        return error.MissingAdmEmissionProfileSerialFrameFormatAttribute;
+                    var storage: [64]u8 = undefined;
+                    const raw = try xml.decodeContent(&storage, encoded);
+                    return adm_time.Value.parse(raw) catch
+                        return error.InvalidAdmEmissionProfileSerialFrameTime;
+                },
+                else => {},
+            }
+        }
+        return error.MissingAdmEmissionProfileSerialFrameFormatAttribute;
     }
 
     fn emissionSerialTransportIdCount(
@@ -5556,6 +5784,7 @@ pub const Document = struct {
     }
 
     fn validateBlockSequences(self: Document) !void {
+        const serial_frame = try self.hasSerialFrameRoot();
         var block_iterator = self.blocks();
         while (try block_iterator.next()) |block| {
             if (block.identifier.primary != block.channel_identifier.primary)
@@ -5583,8 +5812,11 @@ pub const Document = struct {
             }
             const sequence = block.identifier.secondary orelse
                 return error.InvalidAdmBlockIdentifier;
-            if (sequence != @as(u32, @intCast(preceding_blocks + 1)))
+            if (!serial_frame and
+                sequence != @as(u32, @intCast(preceding_blocks + 1)))
+            {
                 return error.InvalidAdmBlockSequence;
+            }
 
             if (channel_block_count == 1) {
                 var remainder = self.blocks();
@@ -5597,12 +5829,27 @@ pub const Document = struct {
                     }
                 }
             }
-            if (channel_block_count > 1 and
+            if (!serial_frame and
+                channel_block_count > 1 and
                 (!block.rtime_explicit or block.duration == null))
             {
                 return error.MissingDynamicAdmBlockTiming;
             }
         }
+    }
+
+    fn hasSerialFrameRoot(self: Document) !bool {
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (element.depth == 0)
+                        return std.mem.eql(u8, element.localName(), "frame");
+                },
+                else => {},
+            }
+        }
+        return false;
     }
 
     fn validateChannelEntries(
@@ -6203,6 +6450,9 @@ pub const BlockIterator = struct {
 
         const encoded_rtime = try start.attribute("rtime");
         const encoded_duration = try start.attribute("duration");
+        const encoded_lstart = try start.attribute("lstart");
+        const encoded_lduration = try start.attribute("lduration");
+        const encoded_initialize = try start.attribute("initializeBlock");
         var block = BlockFormat{
             .identifier = identifier,
             .channel_identifier = channel,
@@ -6214,6 +6464,18 @@ pub const BlockIterator = struct {
             .rtime_explicit = encoded_rtime != null,
             .duration = if (encoded_duration) |value|
                 try adm_time.Value.parse(value)
+            else
+                null,
+            .lstart = if (encoded_lstart) |value|
+                try adm_time.Value.parse(value)
+            else
+                null,
+            .lduration = if (encoded_lduration) |value|
+                try adm_time.Value.parse(value)
+            else
+                null,
+            .initialize_block = if (encoded_initialize) |value|
+                try parseAdmFlag(value)
             else
                 null,
         };
@@ -6285,6 +6547,7 @@ pub const BlockIterator = struct {
                             return error.InvalidAdmInterpolationLength;
                         if (interpolation) |length| {
                             const duration = block.duration orelse
+                                block.lduration orelse
                                 return error.UnboundedAdmInterpolation;
                             if (length.compare(duration) == .gt)
                                 return error.AdmInterpolationExceedsDuration;
@@ -10229,6 +10492,14 @@ const valid_serial_transport_xml =
     \\    </transportTrackFormat>
 ;
 
+const valid_serial_object_transport_xml =
+    \\    <transportTrackFormat transportID="TP_0001" transportName="PCM" numTracks="1" numIDs="1">
+    \\      <audioTrack trackID="1" formatLabel="0001" formatDefinition="PCM">
+    \\        <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+    \\      </audioTrack>
+    \\    </transportTrackFormat>
+;
+
 const valid_serial_profile_list_xml =
     \\    <profileList>
     \\      <profile profileName="Advanced sound system: ADM and S-ADM profile for emission" profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
@@ -10245,6 +10516,38 @@ fn makeValidSerialEmissionFrame() ![]u8 {
             "  <frameHeader>\n" ++
             "    <frameFormat frameFormatID=\"FF_00000001\" start=\"00:00:00.00000\" duration=\"00:00:00.01000\" type=\"header\" timeReference=\"local\"/>\n" ++
             valid_serial_transport_xml ++ "\n" ++
+            valid_serial_profile_list_xml ++ "\n" ++
+            "  </frameHeader>\n" ++
+            "  <audioFormatExtended version=\"ITU-R_BS.2076-3\">",
+    );
+    defer std.testing.allocator.free(framed_start);
+    return std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        framed_start,
+        "</audioFormatExtended>",
+        "</audioFormatExtended>\n</frame>",
+    );
+}
+
+fn makeValidSerialEmissionObjectFrame() ![]u8 {
+    const serial_timing = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "rtime=\"00:00:00.00000\" duration=\"00:00:01.00000\"",
+        "lstart=\"00:00:00.00000\" lduration=\"00:00:01.00000\"",
+    );
+    defer std.testing.allocator.free(serial_timing);
+    const framed_start = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        serial_timing,
+        "<audioFormatExtended version=\"ITU-R_BS.2076-3\">",
+        "<frame version=\"ITU-R_BS.2125-1\">\n" ++
+            "  <frameHeader>\n" ++
+            "    <frameFormat frameFormatID=\"FF_00000001\" start=\"00:00:00.00000\" duration=\"00:00:01.00000\" type=\"header\" timeReference=\"local\"/>\n" ++
+            valid_serial_object_transport_xml ++ "\n" ++
             valid_serial_profile_list_xml ++ "\n" ++
             "  </frameHeader>\n" ++
             "  <audioFormatExtended version=\"ITU-R_BS.2076-3\">",
@@ -10493,6 +10796,163 @@ test "ADM XML emission profile restricts serial header profiles" {
     defer std.testing.allocator.free(encoded_reference);
     const encoded_document = try Document.init(encoded_reference);
     try encoded_document.validateEmissionProfileSerialHeaderProfiles();
+}
+
+test "ADM XML emission profile validates serial object block timing" {
+    const framed = try makeValidSerialEmissionObjectFrame();
+    defer std.testing.allocator.free(framed);
+    const document = try Document.init(framed);
+    try document.validateEmissionProfileSerialObjectBlocks();
+    var blocks = document.blocks();
+    const block = (try blocks.next()) orelse
+        return error.MissingAdmEmissionProfileSerialBlockTiming;
+    try std.testing.expect(block.lstart != null);
+    try std.testing.expect(block.lduration != null);
+    try std.testing.expect(block.initialize_block == null);
+
+    const split_blocks = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        framed,
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001" lstart="00:00:00.00000" lduration="00:00:01.00000">
+        \\      <position coordinate="azimuth">0.0</position>
+        \\      <position coordinate="elevation">0.0</position>
+        \\      <position coordinate="distance">1.0</position>
+        \\    </audioBlockFormatObjects>
+    ,
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000007" lstart="0S48000" lduration="24000S48000">
+        \\      <position coordinate="azimuth">0.0</position>
+        \\      <position coordinate="elevation">0.0</position>
+        \\      <position coordinate="distance">1.0</position>
+        \\    </audioBlockFormatObjects>
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000008" lstart="24000S48000" lduration="00:00:00.50000">
+        \\      <position coordinate="azimuth">0.0</position>
+        \\      <position coordinate="elevation">0.0</position>
+        \\      <position coordinate="distance">1.0</position>
+        \\    </audioBlockFormatObjects>
+        ,
+    );
+    defer std.testing.allocator.free(split_blocks);
+    const split_document = try Document.init(split_blocks);
+    try split_document.validateEmissionProfileSerialObjectBlocks();
+
+    const discontinuous = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        split_blocks,
+        "lstart=\"24000S48000\"",
+        "lstart=\"23000S48000\"",
+    );
+    defer std.testing.allocator.free(discontinuous);
+    const discontinuous_document = try Document.init(discontinuous);
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileSerialBlockTiming,
+        discontinuous_document.validateEmissionProfileSerialObjectBlocks(),
+    );
+
+    const skipped_counter = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        split_blocks,
+        "AB_00031001_00000008",
+        "AB_00031001_00000009",
+    );
+    defer std.testing.allocator.free(skipped_counter);
+    const skipped_counter_document = try Document.init(skipped_counter);
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileSerialBlockIdentifier,
+        skipped_counter_document.validateEmissionProfileSerialObjectBlocks(),
+    );
+
+    const initialized = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        framed,
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001" lstart="00:00:00.00000" lduration="00:00:01.00000">
+    ,
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000000" initializeBlock="1">
+        \\      <position coordinate="azimuth">0.0</position>
+        \\      <position coordinate="elevation">0.0</position>
+        \\      <position coordinate="distance">1.0</position>
+        \\    </audioBlockFormatObjects>
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000009" lstart="00:00:00.00000" lduration="00:00:01.00000">
+        ,
+    );
+    defer std.testing.allocator.free(initialized);
+    const initialized_document = try Document.init(initialized);
+    try initialized_document.validateEmissionProfileSerialObjectBlocks();
+
+    const invalid_initialize_id = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        initialized,
+        "AB_00031001_00000000",
+        "AB_00031001_0000000a",
+    );
+    defer std.testing.allocator.free(invalid_initialize_id);
+    const invalid_initialize_document = try Document.init(
+        invalid_initialize_id,
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileSerialInitializeBlock,
+        invalid_initialize_document.validateEmissionProfileSerialObjectBlocks(),
+    );
+}
+
+test "ADM XML emission profile restricts serial object block timing" {
+    const framed = try makeValidSerialEmissionObjectFrame();
+    defer std.testing.allocator.free(framed);
+    const cases = [_]struct {
+        expected: anyerror,
+        needle: []const u8,
+        replacement: []const u8,
+    }{
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialBlockAttribute,
+            .needle = "lstart=\"00:00:00.00000\"",
+            .replacement = "rtime=\"00:00:00.00000\"",
+        },
+        .{
+            .expected = error.MissingAdmEmissionProfileSerialBlockTiming,
+            .needle = " lduration=\"00:00:01.00000\"",
+            .replacement = "",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialBlockDuration,
+            .needle = "lduration=\"00:00:01.00000\"",
+            .replacement = "lduration=\"00:00:00.00499\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialBlockTiming,
+            .needle = "lstart=\"00:00:00.00000\"",
+            .replacement = "lstart=\"00:00:00.00500\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialFrameCoverage,
+            .needle = "lduration=\"00:00:01.00000\"",
+            .replacement = "lduration=\"00:00:00.50000\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialBlockIdentifier,
+            .needle = "audioBlockFormatID=\"AB_00031001_00000001\"",
+            .replacement = "audioBlockFormatID=\"AB_00031001_00000000\"",
+        },
+    };
+    for (cases) |case| {
+        const replaced = try std.mem.replaceOwned(
+            u8,
+            std.testing.allocator,
+            framed,
+            case.needle,
+            case.replacement,
+        );
+        defer std.testing.allocator.free(replaced);
+        const document = try Document.init(replaced);
+        try std.testing.expectError(
+            case.expected,
+            document.validateEmissionProfileSerialObjectBlocks(),
+        );
+    }
 }
 
 const valid_emission_complementary_parameters_xml =
