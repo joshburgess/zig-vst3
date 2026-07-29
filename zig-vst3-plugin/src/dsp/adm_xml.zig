@@ -77,6 +77,100 @@ const EmissionElementCounts = struct {
     }
 };
 
+const EmissionSubelementOwner = enum {
+    programme,
+    content,
+    object,
+};
+
+const EmissionSubelementLimits = struct {
+    programme_content: usize,
+    programme_labels: usize,
+    content_labels: usize,
+    object_children: usize,
+    complementary_objects: usize,
+    alternative_value_sets: usize,
+    complementary_labels: usize,
+};
+
+const EmissionSubelementCounts = struct {
+    programme_content_refs: usize = 0,
+    programme_alternative_refs: usize = 0,
+    programme_labels: usize = 0,
+    content_labels: usize = 0,
+    object_children: usize = 0,
+    complementary_objects: usize = 0,
+    alternative_value_sets: usize = 0,
+    complementary_labels: usize = 0,
+
+    fn note(
+        self: *EmissionSubelementCounts,
+        owner: EmissionSubelementOwner,
+        local_name: []const u8,
+        limits: EmissionSubelementLimits,
+    ) !void {
+        const count, const limit = switch (owner) {
+            .programme => if (std.mem.eql(
+                u8,
+                local_name,
+                "audioContentIDRef",
+            ))
+                .{ &self.programme_content_refs, limits.programme_content }
+            else if (std.mem.eql(
+                u8,
+                local_name,
+                "alternativeValueSetIDRef",
+            ))
+                .{ &self.programme_alternative_refs, limits.programme_content }
+            else if (std.mem.eql(
+                u8,
+                local_name,
+                "audioProgrammeLabel",
+            ))
+                .{ &self.programme_labels, limits.programme_labels }
+            else
+                return,
+            .content => if (std.mem.eql(
+                u8,
+                local_name,
+                "audioContentLabel",
+            ))
+                .{ &self.content_labels, limits.content_labels }
+            else
+                return,
+            .object => if (std.mem.eql(
+                u8,
+                local_name,
+                "audioObjectIDRef",
+            ))
+                .{ &self.object_children, limits.object_children }
+            else if (std.mem.eql(
+                u8,
+                local_name,
+                "audioComplementaryObjectIDRef",
+            ))
+                .{ &self.complementary_objects, limits.complementary_objects }
+            else if (std.mem.eql(
+                u8,
+                local_name,
+                "alternativeValueSet",
+            ))
+                .{ &self.alternative_value_sets, limits.alternative_value_sets }
+            else if (std.mem.eql(
+                u8,
+                local_name,
+                "audioComplementaryObjectGroupLabel",
+            ))
+                .{ &self.complementary_labels, limits.complementary_labels }
+            else
+                return,
+        };
+        count.* += 1;
+        if (count.* > limit)
+            return error.AdmEmissionProfileSubelementLimitExceeded;
+    }
+};
+
 fn emissionProfileLimits(
     level: EmissionProfileLevel,
 ) EmissionElementCounts {
@@ -104,6 +198,41 @@ fn emissionProfileLimits(
             .pack_formats = 56,
             .channel_formats = 56,
             .track_uids = 56,
+        },
+    };
+}
+
+fn emissionSubelementLimits(
+    level: EmissionProfileLevel,
+) EmissionSubelementLimits {
+    const unlimited = std.math.maxInt(usize);
+    return switch (level) {
+        .level_0 => .{
+            .programme_content = unlimited,
+            .programme_labels = unlimited,
+            .content_labels = unlimited,
+            .object_children = unlimited,
+            .complementary_objects = unlimited,
+            .alternative_value_sets = unlimited,
+            .complementary_labels = unlimited,
+        },
+        .level_1 => .{
+            .programme_content = 16,
+            .programme_labels = 4,
+            .content_labels = 4,
+            .object_children = 16,
+            .complementary_objects = 15,
+            .alternative_value_sets = 8,
+            .complementary_labels = 4,
+        },
+        .level_2 => .{
+            .programme_content = 28,
+            .programme_labels = 8,
+            .content_labels = 8,
+            .object_children = 28,
+            .complementary_objects = 27,
+            .alternative_value_sets = 16,
+            .complementary_labels = 8,
         },
     };
 }
@@ -521,6 +650,71 @@ pub const Document = struct {
         if (counts.exceeds(limits))
             return error.AdmEmissionProfileElementLimitExceeded;
         return level;
+    }
+
+    /// Validates the profile level's maximum occurrences for direct
+    /// programme, content, and object children.
+    pub fn validateEmissionProfileSubelementLimits(
+        self: Document,
+    ) !void {
+        const level = try self.validateEmissionProfileElementLimits();
+        const limits = emissionSubelementLimits(level);
+        var owner: [xml.max_depth]?EmissionSubelementOwner =
+            @splat(null);
+        var owner_depth: [xml.max_depth]?usize = @splat(null);
+        var counts: [xml.max_depth]EmissionSubelementCounts =
+            @splat(.{});
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (element.depth != 0) {
+                        owner[element.depth] = owner[element.depth - 1];
+                        owner_depth[element.depth] =
+                            owner_depth[element.depth - 1];
+                    }
+                    if (owner[element.depth]) |current_owner| {
+                        const current_depth =
+                            owner_depth[element.depth] orelse
+                            return error.InvalidAdmEmissionProfileOwnerState;
+                        if (current_depth + 1 == element.depth) {
+                            try counts[current_depth].note(
+                                current_owner,
+                                element.localName(),
+                                limits,
+                            );
+                        }
+                    }
+                    const next_owner: ?EmissionSubelementOwner =
+                        if (std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioProgramme",
+                        ))
+                            .programme
+                        else if (std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioContent",
+                        ))
+                            .content
+                        else if (std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioObject",
+                        ))
+                            .object
+                        else
+                            null;
+                    if (next_owner) |value| {
+                        owner[element.depth] = value;
+                        owner_depth[element.depth] = element.depth;
+                        counts[element.depth] = .{};
+                    }
+                },
+                else => {},
+            }
+        }
     }
 
     /// Validates the supported BS.2168 identifier and content-link subset.
@@ -3430,6 +3624,112 @@ test "ADM XML emission profile validates alternative value set identifiers" {
     try std.testing.expectError(
         error.InvalidAdmEmissionAlternativeValueSetOwner,
         indirect_owner.validateEmissionProfileIdentifiers(),
+    );
+}
+
+test "ADM XML emission profile sub-element counters cover every level limit" {
+    for ([_]EmissionProfileLevel{ .level_1, .level_2 }) |level| {
+        const limits = emissionSubelementLimits(level);
+        const cases = [_]struct {
+            owner: EmissionSubelementOwner,
+            local_name: []const u8,
+            limit: usize,
+        }{
+            .{
+                .owner = .programme,
+                .local_name = "audioContentIDRef",
+                .limit = limits.programme_content,
+            },
+            .{
+                .owner = .programme,
+                .local_name = "alternativeValueSetIDRef",
+                .limit = limits.programme_content,
+            },
+            .{
+                .owner = .programme,
+                .local_name = "audioProgrammeLabel",
+                .limit = limits.programme_labels,
+            },
+            .{
+                .owner = .content,
+                .local_name = "audioContentLabel",
+                .limit = limits.content_labels,
+            },
+            .{
+                .owner = .object,
+                .local_name = "audioObjectIDRef",
+                .limit = limits.object_children,
+            },
+            .{
+                .owner = .object,
+                .local_name = "audioComplementaryObjectIDRef",
+                .limit = limits.complementary_objects,
+            },
+            .{
+                .owner = .object,
+                .local_name = "alternativeValueSet",
+                .limit = limits.alternative_value_sets,
+            },
+            .{
+                .owner = .object,
+                .local_name = "audioComplementaryObjectGroupLabel",
+                .limit = limits.complementary_labels,
+            },
+        };
+        for (cases) |case| {
+            var counts = EmissionSubelementCounts{};
+            for (0..case.limit) |_| {
+                try counts.note(case.owner, case.local_name, limits);
+            }
+            try std.testing.expectError(
+                error.AdmEmissionProfileSubelementLimitExceeded,
+                counts.note(case.owner, case.local_name, limits),
+            );
+        }
+    }
+}
+
+test "ADM XML emission profile enforces direct sub-element limits" {
+    const boundary = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioProgrammeLabel/>
+        \\    <audioProgrammeLabel/>
+        \\    <audioProgrammeLabel/>
+        \\    <audioProgrammeLabel/>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001"/>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try boundary.validateEmissionProfileSubelementLimits();
+
+    const overflow = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\    <audioProgrammeLabel/>
+        \\    <audioProgrammeLabel/>
+        \\    <audioProgrammeLabel/>
+        \\    <audioProgrammeLabel/>
+        \\    <audioProgrammeLabel/>
+        \\  </audioProgramme>
+        \\  <audioContent audioContentID="ACO_1001"/>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.AdmEmissionProfileSubelementLimitExceeded,
+        overflow.validateEmissionProfileSubelementLimits(),
     );
 }
 
