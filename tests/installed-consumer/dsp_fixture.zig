@@ -3369,7 +3369,7 @@ test "installed package exposes file-backed audio writers" {
         \\<audioFormatExtended version="ITU-R_BS.2076-3">
         \\  <profileList>
         \\    <profile profileName="Production Profile"
-        \\      profileVersion="1.0.0" profileLevel="1">ITU-R BS.XXXX</profile>
+        \\      profileVersion="1.0.0" profileLevel="1">ITU-R <![CDATA[BS.&<draft>]]></profile>
         \\  </profileList>
         \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
         \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001"
@@ -3401,6 +3401,10 @@ test "installed package exposes file-backed audio writers" {
     try std.testing.expectEqualStrings(
         "Production Profile",
         installed_profile.name,
+    );
+    try std.testing.expectEqualStrings(
+        "ITU-R BS.&<draft>",
+        installed_profile.reference,
     );
     try std.testing.expectEqual(
         @as(usize, 1),
@@ -3953,8 +3957,10 @@ test "installed package exposes file-backed audio writers" {
     });
     const namespaced_adm = try plugin.dsp.AdmXmlDocument.init(
         \\<a:audioFormatExtended xmlns:a="urn:adm" xmlns:v="urn:vendor" v:session="fixture">
-        \\  <a:audioObject audioObjectID="AO_1001"/>
-        \\  <v:audioObject audioObjectID="AO_1002"/>
+        \\  <a:audioObject audioObjectID="AO_1001">
+        \\    <a:audioPackFormatIDRef><![CDATA[AP_00010002]]></a:audioPackFormatIDRef>
+        \\  </a:audioObject>
+        \\  <v:audioObject audioObjectID="AO_1002"><![CDATA[literal < & >]]></v:audioObject>
         \\</a:audioFormatExtended>
     );
     try std.testing.expectEqual(
@@ -3980,7 +3986,7 @@ test "installed package exposes file-backed audio writers" {
         installed_extension.parent_element_name,
     );
     try std.testing.expectEqualStrings(
-        "<v:audioObject audioObjectID=\"AO_1002\"/>",
+        "<v:audioObject audioObjectID=\"AO_1002\"><![CDATA[literal < & >]]></v:audioObject>",
         installed_extension.source,
     );
     try std.testing.expect((try installed_extensions.next()) == null);

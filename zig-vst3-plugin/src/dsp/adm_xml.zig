@@ -1344,18 +1344,11 @@ fn readEmissionSimpleElement(
     while (try events.next()) |event| {
         switch (event) {
             .text => |text| {
-                const next_offset = std.math.add(
-                    usize,
+                encoded_bytes = xml.appendEncodedText(
+                    &encoded_storage,
                     encoded_bytes,
-                    text.bytes.len,
+                    text,
                 ) catch return error.AdmEmissionProfileParameterTooLong;
-                if (next_offset > encoded_storage.len)
-                    return error.AdmEmissionProfileParameterTooLong;
-                @memcpy(
-                    encoded_storage[encoded_bytes..next_offset],
-                    text.bytes,
-                );
-                encoded_bytes = next_offset;
             },
             .start => return error.NestedAdmEmissionProfileParameter,
             .end => |element| {
@@ -6959,18 +6952,11 @@ pub const ProfileIterator = struct {
         while (try self.events.next()) |event| {
             switch (event) {
                 .text => |text| {
-                    const next_offset = std.math.add(
-                        usize,
+                    encoded_bytes = xml.appendEncodedText(
+                        &encoded_reference,
                         encoded_bytes,
-                        text.bytes.len,
+                        text,
                     ) catch return error.AdmProfileValueTooLong;
-                    if (next_offset > encoded_reference.len)
-                        return error.AdmProfileValueTooLong;
-                    @memcpy(
-                        encoded_reference[encoded_bytes..next_offset],
-                        text.bytes,
-                    );
-                    encoded_bytes = next_offset;
                 },
                 .start => return error.NestedAdmProfileReference,
                 .end => |element| {
@@ -7153,18 +7139,11 @@ pub const TagIterator = struct {
         while (try self.events.next()) |event| {
             switch (event) {
                 .text => |text| {
-                    const next_offset = std.math.add(
-                        usize,
+                    encoded_bytes = xml.appendEncodedText(
+                        &encoded_storage,
                         encoded_bytes,
-                        text.bytes.len,
+                        text,
                     ) catch return error.AdmTagValueTooLong;
-                    if (next_offset > encoded_storage.len)
-                        return error.AdmTagValueTooLong;
-                    @memcpy(
-                        encoded_storage[encoded_bytes..next_offset],
-                        text.bytes,
-                    );
-                    encoded_bytes = next_offset;
                 },
                 .start => return error.NestedAdmTagValue,
                 .end => |element| {
@@ -8079,18 +8058,11 @@ pub const BlockIterator = struct {
         while (try self.events.next()) |event| {
             switch (event) {
                 .text => |text| {
-                    const next_offset = std.math.add(
-                        usize,
+                    encoded_bytes = xml.appendEncodedText(
+                        &encoded_storage,
                         encoded_bytes,
-                        text.bytes.len,
+                        text,
                     ) catch return error.AdmBlockValueTooLong;
-                    if (next_offset > encoded_storage.len)
-                        return error.AdmBlockValueTooLong;
-                    @memcpy(
-                        encoded_storage[encoded_bytes..next_offset],
-                        text.bytes,
-                    );
-                    encoded_bytes = next_offset;
                 },
                 .start => return error.NestedAdmBlockParameter,
                 .end => |element| {
@@ -8296,18 +8268,11 @@ pub const ReferenceIterator = struct {
         while (try self.events.next()) |event| {
             switch (event) {
                 .text => |text| {
-                    const next_offset = std.math.add(
-                        usize,
+                    encoded_bytes = xml.appendEncodedText(
+                        &encoded_storage,
                         encoded_bytes,
-                        text.bytes.len,
+                        text,
                     ) catch return error.AdmIdentifierTooLong;
-                    if (next_offset > encoded_storage.len)
-                        return error.AdmIdentifierTooLong;
-                    @memcpy(
-                        encoded_storage[encoded_bytes..next_offset],
-                        text.bytes,
-                    );
-                    encoded_bytes = next_offset;
                 },
                 .start => return error.NestedAdmXmlReference,
                 .end => |element| {
@@ -9179,7 +9144,7 @@ test "ADM XML preserves owned foreign extension subtrees" {
     const bytes =
         \\<a:audioFormatExtended xmlns:a="urn:adm" xmlns:v="urn:ven&#100;or" v:session="one &amp; two">
         \\  <a:audioObject audioObjectID="AO_1001" v:priority='high' a:future="standard">
-        \\    <v:control mode="wide"><v:nested><!--keep--><?vendor keep?><v:audioFormatExtended/><a:audioObject audioObjectID="AO_9999"/></v:nested></v:control>
+        \\    <v:control mode="wide"><![CDATA[literal < & >]]><v:nested><!--keep--><?vendor keep?><v:audioFormatExtended/><a:audioObject audioObjectID="AO_9999"/></v:nested></v:control>
         \\    <o:empty xmlns:o="urn:other"/>
         \\    <plain xmlns=""/>
         \\  </a:audioObject>
@@ -9226,6 +9191,11 @@ test "ADM XML preserves owned foreign extension subtrees" {
         u8,
         control.source,
         "<!--keep--><?vendor keep?><v:audioFormatExtended/>",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        control.source,
+        "<![CDATA[literal < & >]]>",
     ) != null);
     try std.testing.expect(std.mem.indexOf(
         u8,
@@ -9301,7 +9271,7 @@ test "ADM XML resolves common definitions and rejects missing custom ones" {
     _ = try Document.init(
         \\<audioFormatExtended>
         \\  <audioObject audioObjectID="AO_1001">
-        \\    <audioPackFormatIDRef>AP_00010002</audioPackFormatIDRef>
+        \\    <audioPackFormatIDRef><![CDATA[AP_00010002]]></audioPackFormatIDRef>
         \\    <audioTrackUIDRef>ATU_00000000</audioTrackUIDRef>
         \\  </audioObject>
         \\</audioFormatExtended>
@@ -13232,7 +13202,7 @@ test "ADM XML exposes tag groups and typed targets" {
         \\  <audioObject audioObjectID="AO_1001"/>
         \\  <tagList>
         \\    <tagGroup>
-        \\      <tag class="format">NGA &amp; immersive</tag>
+        \\      <tag class="format">NGA &amp; <![CDATA[immersive <mix>]]></tag>
         \\      <tag>final</tag>
         \\      <audioProgrammeIDRef>APR_1001</audioProgrammeIDRef>
         \\      <audioContentIDRef>ACO_1001</audioContentIDRef>
@@ -13251,7 +13221,10 @@ test "ADM XML exposes tag groups and typed targets" {
     var items = document.tags();
     const first = (try items.next()).?.tag;
     try std.testing.expectEqual(@as(usize, 0), first.group_index);
-    try std.testing.expectEqualStrings("NGA & immersive", first.value);
+    try std.testing.expectEqualStrings(
+        "NGA & immersive <mix>",
+        first.value,
+    );
     try std.testing.expectEqualStrings("format", first.class.?);
     const second = (try items.next()).?.tag;
     try std.testing.expectEqualStrings("final", second.value);
@@ -13325,7 +13298,7 @@ test "ADM XML exposes block timing and common parameters" {
         \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
         \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001"
         \\      rtime="00:00:00.00000" duration="00:00:01.00000">
-        \\      <gain gainUnit="dB">-6.0</gain>
+        \\      <gain gainUnit="dB"><![CDATA[-6.0]]></gain>
         \\      <importance>8</importance>
         \\      <jumpPosition interpolationLength="12000S48000">1</jumpPosition>
         \\      <headLocked>1</headLocked>

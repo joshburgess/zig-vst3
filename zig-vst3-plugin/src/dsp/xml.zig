@@ -142,6 +142,12 @@ pub const EndElement = struct {
 pub const Text = struct {
     bytes: []const u8,
     depth: usize,
+    kind: TextKind,
+};
+
+pub const TextKind = enum {
+    escaped,
+    cdata,
 };
 
 pub const Attribute = struct {
@@ -239,6 +245,13 @@ pub const EventIterator = struct {
                 try self.skipProcessingInstruction();
                 continue;
             }
+            if (std.mem.startsWith(
+                u8,
+                self.bytes[self.offset..],
+                "<![CDATA[",
+            )) {
+                return @as(?Event, try self.readCdata());
+            }
             if (std.mem.startsWith(u8, self.bytes[self.offset..], "<!"))
                 return error.UnsupportedXmlDeclaration;
             if (std.mem.startsWith(u8, self.bytes[self.offset..], "</"))
@@ -259,7 +272,29 @@ pub const EventIterator = struct {
         ) orelse self.bytes.len;
         const bytes = self.bytes[start..self.offset];
         try validateXmlContent(bytes);
-        return .{ .text = .{ .bytes = bytes, .depth = self.depth } };
+        return .{ .text = .{
+            .bytes = bytes,
+            .depth = self.depth,
+            .kind = .escaped,
+        } };
+    }
+
+    fn readCdata(self: *EventIterator) !Event {
+        const content_start = self.offset + "<![CDATA[".len;
+        const relative_end = std.mem.indexOf(
+            u8,
+            self.bytes[content_start..],
+            "]]>",
+        ) orelse return error.UnclosedXmlCdata;
+        const content_end = content_start + relative_end;
+        const bytes = self.bytes[content_start..content_end];
+        try validateXmlCharacters(bytes);
+        self.offset = content_end + "]]>".len;
+        return .{ .text = .{
+            .bytes = bytes,
+            .depth = self.depth,
+            .kind = .cdata,
+        } };
     }
 
     fn readStart(self: *EventIterator) !Event {
@@ -597,6 +632,60 @@ pub fn decodeContent(destination: []u8, encoded: []const u8) ![]const u8 {
     return destination[0..required];
 }
 
+pub fn appendEncodedText(
+    destination: []u8,
+    offset: usize,
+    text: Text,
+) !usize {
+    if (offset > destination.len) return error.XmlTextBufferTooSmall;
+    const required = switch (text.kind) {
+        .escaped => text.bytes.len,
+        .cdata => blk: {
+            var length: usize = 0;
+            for (text.bytes) |byte| {
+                const encoded_length: usize = switch (byte) {
+                    '&' => "&amp;".len,
+                    '<' => "&lt;".len,
+                    '>' => "&gt;".len,
+                    else => 1,
+                };
+                length = std.math.add(
+                    usize,
+                    length,
+                    encoded_length,
+                ) catch return error.XmlTextBufferTooSmall;
+            }
+            break :blk length;
+        },
+    };
+    const end = std.math.add(usize, offset, required) catch
+        return error.XmlTextBufferTooSmall;
+    if (end > destination.len) return error.XmlTextBufferTooSmall;
+
+    switch (text.kind) {
+        .escaped => @memcpy(destination[offset..end], text.bytes),
+        .cdata => {
+            var cursor = offset;
+            for (text.bytes) |byte| {
+                // Escaping `>` prevents adjacent fragments from forming `]]>`.
+                const encoded = switch (byte) {
+                    '&' => "&amp;",
+                    '<' => "&lt;",
+                    '>' => "&gt;",
+                    else => {
+                        destination[cursor] = byte;
+                        cursor += 1;
+                        continue;
+                    },
+                };
+                @memcpy(destination[cursor..][0..encoded.len], encoded);
+                cursor += encoded.len;
+            }
+        },
+    }
+    return end;
+}
+
 fn encodedContentEql(left: []const u8, right: []const u8) !bool {
     var left_offset: usize = 0;
     var right_offset: usize = 0;
@@ -880,6 +969,73 @@ test "XML document iterates namespaces attributes text and empty elements" {
         (try iterator.next()).?.end.localName(),
     );
     try std.testing.expect((try iterator.next()) == null);
+}
+
+test "XML document preserves CDATA as literal text" {
+    const document = try Document.init(
+        "<root>escaped &amp; <![CDATA[literal < & >]]> tail</root>",
+    );
+    var iterator = document.iterator();
+    _ = (try iterator.next()).?.start;
+
+    const escaped = (try iterator.next()).?.text;
+    try std.testing.expectEqual(TextKind.escaped, escaped.kind);
+    try std.testing.expectEqualStrings("escaped &amp; ", escaped.bytes);
+
+    const cdata = (try iterator.next()).?.text;
+    try std.testing.expectEqual(TextKind.cdata, cdata.kind);
+    try std.testing.expectEqualStrings("literal < & >", cdata.bytes);
+
+    const tail = (try iterator.next()).?.text;
+    try std.testing.expectEqual(TextKind.escaped, tail.kind);
+    try std.testing.expectEqualStrings(" tail", tail.bytes);
+    _ = (try iterator.next()).?.end;
+    try std.testing.expect((try iterator.next()) == null);
+
+    var encoded: [64]u8 = undefined;
+    var encoded_bytes: usize = 0;
+    encoded_bytes = try appendEncodedText(&encoded, encoded_bytes, escaped);
+    encoded_bytes = try appendEncodedText(&encoded, encoded_bytes, cdata);
+    encoded_bytes = try appendEncodedText(&encoded, encoded_bytes, tail);
+    var decoded: [64]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "escaped & literal < & > tail",
+        try decodeContent(&decoded, encoded[0..encoded_bytes]),
+    );
+}
+
+test "XML CDATA validation and encoded append are transactional" {
+    try std.testing.expectError(
+        error.XmlTextOutsideRoot,
+        Document.init("<![CDATA[not outside]]><root/>"),
+    );
+    try std.testing.expectError(
+        error.UnclosedXmlCdata,
+        Document.init("<root><![CDATA[open</root>"),
+    );
+    try std.testing.expectError(
+        error.InvalidXmlCharacter,
+        Document.init("<root><![CDATA[\x01]]></root>"),
+    );
+    try std.testing.expectError(
+        error.UnsupportedXmlDeclaration,
+        Document.init("<!DOCTYPE root><root/>"),
+    );
+
+    var destination = [_]u8{'x'} ** 4;
+    try std.testing.expectError(
+        error.XmlTextBufferTooSmall,
+        appendEncodedText(&destination, 0, .{
+            .bytes = "&",
+            .depth = 1,
+            .kind = .cdata,
+        }),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &([_]u8{'x'} ** 4),
+        &destination,
+    );
 }
 
 test "XML document rejects malformed structure attributes and entities" {
