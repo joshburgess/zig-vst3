@@ -3873,19 +3873,7 @@ fn forceMsvcRuntimeSymbols(
     target: std.Build.ResolvedTarget,
 ) void {
     if (target.result.os.tag != .windows or target.result.abi != .msvc) return;
-    for ([_][]const u8{
-        "__vcrt_initialize",
-        "__vcrt_uninitialize",
-        "__vcrt_uninitialize_critical",
-        "__vcrt_thread_attach",
-        "__vcrt_thread_detach",
-        "_is_c_termination_complete",
-        "__acrt_initialize",
-        "__acrt_uninitialize",
-        "__acrt_uninitialize_critical",
-        "__acrt_thread_attach",
-        "__acrt_thread_detach",
-    }) |symbol| compile.forceUndefinedSymbol(symbol);
+    compile.forceUndefinedSymbol("__scrt_stub_for_acrt_initialize");
 }
 
 fn addVst3BundleDependencies(
