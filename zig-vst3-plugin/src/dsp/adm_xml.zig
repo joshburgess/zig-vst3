@@ -796,13 +796,23 @@ fn emissionOptionalPositiveAttribute(
     element: xml.StartElement,
     attribute_name: []const u8,
 ) !?u32 {
+    return emissionOptionalPositiveAttributeAs(
+        element,
+        attribute_name,
+        error.InvalidAdmEmissionProfileTrackAttribute,
+    );
+}
+
+fn emissionOptionalPositiveAttributeAs(
+    element: xml.StartElement,
+    attribute_name: []const u8,
+    invalid_error: anyerror,
+) !?u32 {
     const encoded = try element.attribute(attribute_name) orelse return null;
     var storage: [32]u8 = undefined;
     const raw = try xml.decodeContent(&storage, encoded);
-    const value = std.fmt.parseInt(u32, raw, 10) catch
-        return error.InvalidAdmEmissionProfileTrackAttribute;
-    if (value == 0)
-        return error.InvalidAdmEmissionProfileTrackAttribute;
+    const value = std.fmt.parseInt(u32, raw, 10) catch return invalid_error;
+    if (value == 0) return invalid_error;
     return value;
 }
 
@@ -1651,6 +1661,182 @@ fn readEmissionSerialFrameHeader(
         }
     }
     return error.InvalidAdmEmissionProfileSerialFrameHeader;
+}
+
+fn readEmissionSerialAudioTrack(
+    document: Document,
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+    transport_identifier: []const u8,
+) !void {
+    try validateEmissionAttributes(
+        start,
+        &.{ "trackID", "formatLabel", "formatDefinition" },
+        error.InvalidAdmEmissionProfileSerialAudioTrackAttribute,
+    );
+    const track_id = try emissionOptionalPositiveAttributeAs(
+        start,
+        "trackID",
+        error.InvalidAdmEmissionProfileSerialAudioTrackAttribute,
+    ) orelse return error.MissingAdmEmissionProfileSerialAudioTrackAttribute;
+    if (try document.emissionSerialTrackIdCount(
+        transport_identifier,
+        track_id,
+    ) != 1) {
+        return error.DuplicateAdmEmissionProfileSerialTrackIdentifier;
+    }
+    try emissionRequiredAttributeValueAs(
+        start,
+        "formatLabel",
+        "0001",
+        error.MissingAdmEmissionProfileSerialAudioTrackAttribute,
+        error.InvalidAdmEmissionProfileSerialAudioTrackAttribute,
+    );
+    try emissionRequiredAttributeValueAs(
+        start,
+        "formatDefinition",
+        "PCM",
+        error.MissingAdmEmissionProfileSerialAudioTrackAttribute,
+        error.InvalidAdmEmissionProfileSerialAudioTrackAttribute,
+    );
+    if (start.self_closing)
+        return error.InvalidAdmEmissionProfileSerialAudioTrack;
+    var reference_count: usize = 0;
+    while (try events.next()) |event| {
+        switch (event) {
+            .start => |element| {
+                if (element.depth != start.depth + 1 or
+                    !std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "audioTrackUIDRef",
+                    ))
+                {
+                    return error.InvalidAdmEmissionProfileSerialAudioTrackSubelement;
+                }
+                reference_count += 1;
+                if (reference_count > 1)
+                    return error.InvalidAdmEmissionProfileSerialAudioTrack;
+                try validateEmissionAttributes(
+                    element,
+                    &.{},
+                    error.InvalidAdmEmissionProfileReferenceAttribute,
+                );
+                var storage: [max_identifier_bytes]u8 = undefined;
+                const raw = try readEmissionSimpleElement(
+                    events,
+                    element,
+                    &storage,
+                );
+                const identifier = try adm.Identifier.parse(raw);
+                if (identifier.kind != .track_uid or identifier.primary == 0)
+                    return error.InvalidAdmEmissionProfileSerialTrackReference;
+                if (!try document.containsIdentifierValue(
+                    .track_uid,
+                    identifier.primary,
+                    identifier.secondary,
+                )) {
+                    return error.InvalidAdmEmissionProfileSerialTrackReference;
+                }
+            },
+            .end => |element| {
+                if (element.depth != start.depth or
+                    !std.mem.eql(u8, element.name, start.name))
+                {
+                    return error.InvalidAdmEmissionProfileSerialAudioTrackSubelement;
+                }
+                if (reference_count != 1)
+                    return error.InvalidAdmEmissionProfileSerialAudioTrack;
+                return;
+            },
+            .text => |text| {
+                if (std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                    return error.InvalidAdmEmissionProfileSerialAudioTrackSubelement;
+            },
+        }
+    }
+    return error.InvalidAdmEmissionProfileSerialAudioTrack;
+}
+
+fn readEmissionSerialTransport(
+    document: Document,
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+    declared_tracks: usize,
+) !void {
+    try validateEmissionAttributes(
+        start,
+        &.{ "transportID", "transportName", "numTracks", "numIDs" },
+        error.InvalidAdmEmissionProfileSerialTransportAttribute,
+    );
+    const encoded_identifier = try start.attribute("transportID") orelse
+        return error.MissingAdmEmissionProfileSerialTransportAttribute;
+    var identifier_storage: [16]u8 = undefined;
+    const identifier = try xml.decodeContent(
+        &identifier_storage,
+        encoded_identifier,
+    );
+    if (identifier.len != 7 or
+        !std.mem.eql(u8, identifier[0..3], "TP_"))
+    {
+        return error.InvalidAdmEmissionProfileSerialTransportIdentifier;
+    }
+    for (identifier[3..]) |byte| {
+        if (!std.ascii.isHex(byte))
+            return error.InvalidAdmEmissionProfileSerialTransportIdentifier;
+    }
+    if (try document.emissionSerialTransportIdCount(identifier) != 1)
+        return error.DuplicateAdmEmissionProfileSerialTransportIdentifier;
+    try validateEmissionRequiredName(start, "transportName");
+    const num_tracks = try emissionOptionalPositiveAttributeAs(
+        start,
+        "numTracks",
+        error.InvalidAdmEmissionProfileSerialTransportAttribute,
+    ) orelse return error.MissingAdmEmissionProfileSerialTransportAttribute;
+    const num_ids = try emissionOptionalPositiveAttributeAs(
+        start,
+        "numIDs",
+        error.InvalidAdmEmissionProfileSerialTransportAttribute,
+    ) orelse return error.MissingAdmEmissionProfileSerialTransportAttribute;
+    if (num_tracks != num_ids or num_ids > declared_tracks)
+        return error.InvalidAdmEmissionProfileSerialTransportCount;
+    if (start.self_closing)
+        return error.InvalidAdmEmissionProfileSerialTransport;
+
+    var audio_track_count: usize = 0;
+    while (try events.next()) |event| {
+        switch (event) {
+            .start => |element| {
+                if (element.depth != start.depth + 1 or
+                    !std.mem.eql(u8, element.localName(), "audioTrack"))
+                {
+                    return error.InvalidAdmEmissionProfileSerialTransportSubelement;
+                }
+                audio_track_count += 1;
+                try readEmissionSerialAudioTrack(
+                    document,
+                    events,
+                    element,
+                    identifier,
+                );
+            },
+            .end => |element| {
+                if (element.depth != start.depth or
+                    !std.mem.eql(u8, element.name, start.name))
+                {
+                    return error.InvalidAdmEmissionProfileSerialTransportSubelement;
+                }
+                if (audio_track_count != num_tracks)
+                    return error.InvalidAdmEmissionProfileSerialTransportCount;
+                return;
+            },
+            .text => |text| {
+                if (std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                    return error.InvalidAdmEmissionProfileSerialTransportSubelement;
+            },
+        }
+    }
+    return error.InvalidAdmEmissionProfileSerialTransport;
 }
 
 fn readEmissionProgrammeMetadata(
@@ -3349,6 +3535,193 @@ pub const Document = struct {
         {
             return error.InvalidAdmEmissionProfileSerialFrame;
         }
+    }
+
+    /// Validates S-ADM transport tracks and their ADM track UID mapping.
+    pub fn validateEmissionProfileSerialTransportTracks(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileSerialFrameEnvelope();
+        var declared_tracks: usize = 0;
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            if (declaration.identifier.kind == .track_uid)
+                declared_tracks += 1;
+        }
+
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "transportTrackFormat",
+                    )) {
+                        continue;
+                    }
+                    try readEmissionSerialTransport(
+                        self,
+                        &events,
+                        element,
+                        declared_tracks,
+                    );
+                },
+                else => {},
+            }
+        }
+
+        declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            const identifier = declaration.identifier;
+            if (identifier.kind != .track_uid) continue;
+            if (try self.emissionSerialTrackReferenceCount(
+                identifier.primary,
+            ) != 1) {
+                return error.InvalidAdmEmissionProfileSerialTrackMapping;
+            }
+        }
+    }
+
+    fn emissionSerialTransportIdCount(
+        self: Document,
+        wanted: []const u8,
+    ) !usize {
+        var count: usize = 0;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "transportTrackFormat",
+                    )) {
+                        continue;
+                    }
+                    const encoded = try element.attribute("transportID") orelse
+                        continue;
+                    var storage: [16]u8 = undefined;
+                    const identifier = try xml.decodeContent(
+                        &storage,
+                        encoded,
+                    );
+                    if (std.ascii.eqlIgnoreCase(identifier, wanted))
+                        count += 1;
+                },
+                else => {},
+            }
+        }
+        return count;
+    }
+
+    fn emissionSerialTrackIdCount(
+        self: Document,
+        transport_identifier: []const u8,
+        wanted: u32,
+    ) !usize {
+        var count: usize = 0;
+        var matching_transport_depth: ?usize = null;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    const name = element.localName();
+                    if (std.mem.eql(u8, name, "transportTrackFormat")) {
+                        const encoded =
+                            try element.attribute("transportID") orelse
+                            continue;
+                        var storage: [16]u8 = undefined;
+                        const identifier = try xml.decodeContent(
+                            &storage,
+                            encoded,
+                        );
+                        if (std.ascii.eqlIgnoreCase(
+                            identifier,
+                            transport_identifier,
+                        )) {
+                            matching_transport_depth = element.depth;
+                        }
+                        continue;
+                    }
+                    const depth = matching_transport_depth orelse continue;
+                    if (element.depth != depth + 1 or
+                        !std.mem.eql(u8, name, "audioTrack"))
+                    {
+                        continue;
+                    }
+                    const track_id = try emissionOptionalPositiveAttributeAs(
+                        element,
+                        "trackID",
+                        error.InvalidAdmEmissionProfileSerialAudioTrackAttribute,
+                    ) orelse continue;
+                    if (track_id == wanted) count += 1;
+                },
+                .end => |element| {
+                    if (matching_transport_depth == element.depth and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "transportTrackFormat",
+                        ))
+                    {
+                        matching_transport_depth = null;
+                    }
+                },
+                else => {},
+            }
+        }
+        return count;
+    }
+
+    fn emissionSerialTrackReferenceCount(
+        self: Document,
+        wanted_primary: u32,
+    ) !usize {
+        var count: usize = 0;
+        var audio_track_depth: ?usize = null;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    const name = element.localName();
+                    if (std.mem.eql(u8, name, "audioTrack")) {
+                        audio_track_depth = if (element.self_closing)
+                            null
+                        else
+                            element.depth;
+                        continue;
+                    }
+                    const depth = audio_track_depth orelse continue;
+                    if (element.depth != depth + 1 or
+                        !std.mem.eql(u8, name, "audioTrackUIDRef"))
+                    {
+                        continue;
+                    }
+                    var storage: [max_identifier_bytes]u8 = undefined;
+                    const raw = try readEmissionSimpleElement(
+                        &events,
+                        element,
+                        &storage,
+                    );
+                    const identifier = try adm.Identifier.parse(raw);
+                    if (identifier.kind == .track_uid and
+                        identifier.primary == wanted_primary)
+                    {
+                        count += 1;
+                    }
+                },
+                .end => |element| {
+                    if (audio_track_depth == element.depth and
+                        std.mem.eql(u8, element.localName(), "audioTrack"))
+                    {
+                        audio_track_depth = null;
+                    }
+                },
+                else => {},
+            }
+        }
+        return count;
     }
 
     fn validateEmissionObjectBlockSyntax(self: Document) !void {
@@ -9743,20 +10116,32 @@ test "ADM XML emission profile checks recommended programme languages" {
         .validateEmissionProfileRecommendedProgrammeLanguages();
 }
 
+const valid_serial_transport_xml =
+    \\    <transportTrackFormat transportID="TP_0001" transportName="PCM" numTracks="2" numIDs="2">
+    \\      <audioTrack trackID="1" formatLabel="0001" formatDefinition="PCM">
+    \\        <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+    \\      </audioTrack>
+    \\      <audioTrack trackID="2" formatLabel="0001" formatDefinition="PCM">
+    \\        <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
+    \\      </audioTrack>
+    \\    </transportTrackFormat>
+;
+
 fn makeValidSerialEmissionFrame() ![]u8 {
     const framed_start = try std.mem.replaceOwned(
         u8,
         std.testing.allocator,
         valid_emission_labels_xml,
         "<audioFormatExtended version=\"ITU-R_BS.2076-3\">",
-        \\<frame version="ITU-R_BS.2125-1">
-        \\  <frameHeader>
-        \\    <frameFormat frameFormatID="FF_00000001" start="00:00:00.00000" duration="00:00:00.01000" type="header" timeReference="local"/>
-        \\    <transportTrackFormat/>
-        \\    <profileList/>
-        \\  </frameHeader>
-        \\  <audioFormatExtended version="ITU-R_BS.2076-3">
-        ,
+        "<frame version=\"ITU-R_BS.2125-1\">\n" ++
+            "  <frameHeader>\n" ++
+            "    <frameFormat frameFormatID=\"FF_00000001\" start=\"00:00:00.00000\" duration=\"00:00:00.01000\" type=\"header\" timeReference=\"local\"/>\n" ++
+            valid_serial_transport_xml ++ "\n" ++
+            "    <profileList>\n" ++
+            "      <profile profileName=\"Advanced sound system: ADM and S-ADM profile for emission\" profileVersion=\"1\" profileLevel=\"1\">ITU-R BS.2168</profile>\n" ++
+            "    </profileList>\n" ++
+            "  </frameHeader>\n" ++
+            "  <audioFormatExtended version=\"ITU-R_BS.2076-3\">",
     );
     defer std.testing.allocator.free(framed_start);
     return std.mem.replaceOwned(
@@ -9773,6 +10158,7 @@ test "ADM XML emission profile validates the serial frame envelope" {
     defer std.testing.allocator.free(framed);
     const document = try Document.init(framed);
     try document.validateEmissionProfileSerialFrameEnvelope();
+    try document.validateEmissionProfileSerialTransportTracks();
 }
 
 test "ADM XML emission profile restricts the serial frame envelope" {
@@ -9805,12 +10191,14 @@ test "ADM XML emission profile restricts the serial frame envelope" {
         },
         .{
             .expected = error.InvalidAdmEmissionProfileSerialFrameHeader,
-            .needle = "    <transportTrackFormat/>\n",
+            .needle = valid_serial_transport_xml,
             .replacement = "",
         },
         .{
             .expected = error.InvalidAdmEmissionProfileSerialFrameHeader,
-            .needle = "    <profileList/>\n",
+            .needle = "    <profileList>\n" ++
+                "      <profile profileName=\"Advanced sound system: ADM and S-ADM profile for emission\" profileVersion=\"1\" profileLevel=\"1\">ITU-R BS.2168</profile>\n" ++
+                "    </profileList>\n",
             .replacement = "",
         },
     };
@@ -9827,6 +10215,63 @@ test "ADM XML emission profile restricts the serial frame envelope" {
         try std.testing.expectError(
             case.expected,
             document.validateEmissionProfileSerialFrameEnvelope(),
+        );
+    }
+}
+
+test "ADM XML emission profile restricts serial transport tracks" {
+    const framed = try makeValidSerialEmissionFrame();
+    defer std.testing.allocator.free(framed);
+    const cases = [_]struct {
+        expected: anyerror,
+        needle: []const u8,
+        replacement: []const u8,
+    }{
+        .{
+            .expected = error.DuplicateAdmEmissionProfileSerialTransportIdentifier,
+            .needle = valid_serial_transport_xml,
+            .replacement = valid_serial_transport_xml ++ "\n" ++
+                valid_serial_transport_xml,
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialTransportCount,
+            .needle = "numTracks=\"2\"",
+            .replacement = "numTracks=\"1\"",
+        },
+        .{
+            .expected = error.DuplicateAdmEmissionProfileSerialTrackIdentifier,
+            .needle = "trackID=\"2\"",
+            .replacement = "trackID=\"1\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialAudioTrackAttribute,
+            .needle = "formatDefinition=\"PCM\"",
+            .replacement = "formatDefinition=\"FLOAT\"",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialTrackReference,
+            .needle = "        <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>",
+            .replacement = "        <audioTrackUIDRef>ATU_00000003</audioTrackUIDRef>",
+        },
+        .{
+            .expected = error.InvalidAdmEmissionProfileSerialTrackMapping,
+            .needle = "        <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>",
+            .replacement = "        <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>",
+        },
+    };
+    for (cases) |case| {
+        const replaced = try std.mem.replaceOwned(
+            u8,
+            std.testing.allocator,
+            framed,
+            case.needle,
+            case.replacement,
+        );
+        defer std.testing.allocator.free(replaced);
+        const document = try Document.init(replaced);
+        try std.testing.expectError(
+            case.expected,
+            document.validateEmissionProfileSerialTransportTracks(),
         );
     }
 }
