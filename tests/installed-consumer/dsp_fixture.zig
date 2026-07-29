@@ -3865,6 +3865,7 @@ test "installed package exposes file-backed audio writers" {
         \\    <audioContentIDRef>ACO_1002</audioContentIDRef>
         \\    <loudnessMetadata>
         \\      <integratedLoudness>-23.0</integratedLoudness>
+        \\      <dialogueLoudness>-24.0</dialogueLoudness>
         \\    </loudnessMetadata>
         \\  </audioProgramme>
         \\  <audioContent audioContentID="ACO_1001" audioContentName="Main" audioContentLanguage="eng">
@@ -3943,6 +3944,7 @@ test "installed package exposes file-backed audio writers" {
     try emission_adm.validateEmissionProfileComplementaryLabels();
     try emission_adm.validateEmissionProfileConsistentLabelLanguages();
     try emission_adm.validateEmissionProfileRecommendedProgrammeLanguages();
+    try emission_adm.validateEmissionProfileRecommendedDialogueLoudness();
     try emission_adm.validateEmissionProfilePcmEssence(.{
         .sample_rate = 48_000,
         .bit_depth = 24,

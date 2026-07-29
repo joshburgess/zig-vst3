@@ -3593,6 +3593,35 @@ pub const Document = struct {
         }
     }
 
+    /// Checks the recommended dialogue-loudness presence for content that
+    /// metadata classifies as containing dialogue.
+    pub fn validateEmissionProfileRecommendedDialogueLoudness(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileProgrammeContentMetadata();
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            const owner = declaration.identifier;
+            const contains_dialogue = switch (owner.kind) {
+                .content => try self.emissionContentContainsDialogue(
+                    owner.primary,
+                ),
+                .programme => try self.emissionProgrammeContainsDialogue(
+                    owner.primary,
+                ),
+                else => continue,
+            };
+            if (contains_dialogue and
+                !try self.emissionOwnerHasDialogueLoudness(
+                    owner.kind,
+                    owner.primary,
+                ))
+            {
+                return error.MissingAdmEmissionProfileRecommendedDialogueLoudness;
+            }
+        }
+    }
+
     /// Validates file-level PCM properties and Objects block coverage.
     pub fn validateEmissionProfilePcmEssence(
         self: Document,
@@ -4967,6 +4996,137 @@ pub const Document = struct {
             }
         }
         return error.MissingAdmEmissionProfileLanguageOwner;
+    }
+
+    fn emissionContentContainsDialogue(
+        self: Document,
+        content_primary: u32,
+    ) !bool {
+        var owner_depth: ?usize = null;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (owner_depth) |depth| {
+                        if (element.depth == depth + 1 and
+                            std.mem.eql(
+                                u8,
+                                element.localName(),
+                                "dialogue",
+                            ))
+                        {
+                            var storage: [16]u8 = undefined;
+                            const raw = try readEmissionSimpleElement(
+                                &events,
+                                element,
+                                &storage,
+                            );
+                            const value = std.fmt.parseInt(
+                                u8,
+                                raw,
+                                10,
+                            ) catch
+                                return error.InvalidAdmEmissionProfileDialogue;
+                            return value != 0;
+                        }
+                        continue;
+                    }
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "audioContent",
+                    )) {
+                        continue;
+                    }
+                    const identifier = try emissionElementIdentifier(
+                        element,
+                        "audioContentID",
+                        .content,
+                    );
+                    if (identifier.primary == content_primary)
+                        owner_depth = element.depth;
+                },
+                .end => |element| {
+                    if (owner_depth == element.depth)
+                        return error.MissingAdmEmissionProfileDialogue;
+                },
+                else => {},
+            }
+        }
+        return error.MissingAdmEmissionProfileLanguageOwner;
+    }
+
+    fn emissionProgrammeContainsDialogue(
+        self: Document,
+        programme_primary: u32,
+    ) !bool {
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .programme or
+                owner.primary != programme_primary or
+                reference.kind != .content)
+            {
+                continue;
+            }
+            const content = reference.identifier orelse
+                return error.InvalidAdmEmissionProfileProgrammeContent;
+            if (try self.emissionContentContainsDialogue(content.primary))
+                return true;
+        }
+        return false;
+    }
+
+    fn emissionOwnerHasDialogueLoudness(
+        self: Document,
+        kind: adm.IdentifierKind,
+        primary: u32,
+    ) !bool {
+        const element_name, const identifier_name = switch (kind) {
+            .programme => .{ "audioProgramme", "audioProgrammeID" },
+            .content => .{ "audioContent", "audioContentID" },
+            else => return error.InvalidAdmEmissionProfileLoudnessOwner,
+        };
+        var owner_depth: ?usize = null;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (owner_depth) |depth| {
+                        if (element.depth == depth + 2 and
+                            std.mem.eql(
+                                u8,
+                                element.localName(),
+                                "dialogueLoudness",
+                            ))
+                        {
+                            return true;
+                        }
+                        continue;
+                    }
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        element_name,
+                    )) {
+                        continue;
+                    }
+                    const identifier = try emissionElementIdentifier(
+                        element,
+                        identifier_name,
+                        kind,
+                    );
+                    if (identifier.primary == primary)
+                        owner_depth = element.depth;
+                },
+                .end => |element| {
+                    if (owner_depth == element.depth) return false;
+                },
+                else => {},
+            }
+        }
+        return error.MissingAdmEmissionProfileLoudnessOwner;
     }
 
     fn emissionComplementaryChildCount(
@@ -11020,6 +11180,74 @@ test "ADM XML emission profile checks recommended programme languages" {
     );
     try single_language_document
         .validateEmissionProfileRecommendedProgrammeLanguages();
+}
+
+test "ADM XML emission profile checks recommended dialogue loudness" {
+    const document = try Document.init(valid_emission_labels_xml);
+    try std.testing.expectError(
+        error.MissingAdmEmissionProfileRecommendedDialogueLoudness,
+        document.validateEmissionProfileRecommendedDialogueLoudness(),
+    );
+
+    const programme_dialogue = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_labels_xml,
+        "      <integratedLoudness>-23.0</integratedLoudness>",
+        "      <integratedLoudness>-23.0</integratedLoudness>\n" ++
+            "      <dialogueLoudness>-24.0</dialogueLoudness>",
+    );
+    defer std.testing.allocator.free(programme_dialogue);
+    const complete_document = try Document.init(programme_dialogue);
+    try complete_document
+        .validateEmissionProfileRecommendedDialogueLoudness();
+
+    const mixed_content = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        programme_dialogue,
+        "<dialogue dialogueContentKind=\"5\">1</dialogue>",
+        "<dialogue mixedContentKind=\"0\">2</dialogue>",
+    );
+    defer std.testing.allocator.free(mixed_content);
+    const mixed_content_document = try Document.init(mixed_content);
+    try mixed_content_document
+        .validateEmissionProfileRecommendedDialogueLoudness();
+
+    const missing_content_dialogue = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        programme_dialogue,
+        "    <audioContentLabel language=\"deu\">Hauptfassung</audioContentLabel>\n" ++
+            "    <audioObjectIDRef>AO_1001</audioObjectIDRef>\n" ++
+            "    <loudnessMetadata>\n" ++
+            "      <dialogueLoudness>-24.0</dialogueLoudness>",
+        "    <audioContentLabel language=\"deu\">Hauptfassung</audioContentLabel>\n" ++
+            "    <audioObjectIDRef>AO_1001</audioObjectIDRef>\n" ++
+            "    <loudnessMetadata>\n" ++
+            "      <integratedLoudness>-24.0</integratedLoudness>",
+    );
+    defer std.testing.allocator.free(missing_content_dialogue);
+    const missing_content_document = try Document.init(
+        missing_content_dialogue,
+    );
+    try std.testing.expectError(
+        error.MissingAdmEmissionProfileRecommendedDialogueLoudness,
+        missing_content_document
+            .validateEmissionProfileRecommendedDialogueLoudness(),
+    );
+
+    const non_dialogue_values = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_labels_xml,
+        "<dialogue dialogueContentKind=\"5\">1</dialogue>",
+        "<dialogue nonDialogueContentKind=\"0\">0</dialogue>",
+    );
+    defer std.testing.allocator.free(non_dialogue_values);
+    const non_dialogue_document = try Document.init(non_dialogue_values);
+    try non_dialogue_document
+        .validateEmissionProfileRecommendedDialogueLoudness();
 }
 
 const valid_serial_transport_xml =
