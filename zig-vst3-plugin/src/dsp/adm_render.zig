@@ -2837,6 +2837,10 @@ fn normalizeSpeakerLabel(label: []const u8) ?[]const u8 {
     return null;
 }
 
+pub fn canonicalSpeakerLabel(label: []const u8) ?[]const u8 {
+    return normalizeSpeakerLabel(label);
+}
+
 fn polarBounds(block: *const adm_xml.BlockFormat) !PolarBounds {
     return .{
         .azimuth = try coordinateBounds(block, .azimuth, 0.0),

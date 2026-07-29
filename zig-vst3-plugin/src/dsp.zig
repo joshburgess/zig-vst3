@@ -1,5 +1,6 @@
 pub const aiff_writer = @import("dsp/aiff_writer.zig");
 pub const adm = @import("dsp/adm.zig");
+pub const adm_diffuse = @import("dsp/adm_diffuse.zig");
 pub const adm_render = @import("dsp/adm_render.zig");
 pub const adm_time = @import("dsp/adm_time.zig");
 pub const adm_xml = @import("dsp/adm_xml.zig");
@@ -124,6 +125,8 @@ pub const AdmObjectCartesianExtentGainPlan =
     adm_render.ObjectCartesianExtentGainPlan;
 pub const AdmObjectGainTimeline =
     adm_render.ObjectGainTimeline;
+pub const AdmObjectDiffuseProcessor =
+    adm_diffuse.ObjectDiffuseProcessor;
 pub const AdmOutputSpeaker = adm_render.OutputSpeaker;
 pub const AdmPolarPosition = adm_render.PolarPosition;
 pub const AdmCartesianPosition = adm_render.CartesianPosition;
@@ -137,6 +140,10 @@ pub const adm_polar_extent_spreading_direction_count =
     adm_render.polar_extent_spreading_direction_count;
 pub const maximum_adm_renderer_output_channels =
     adm_render.maximum_output_channels;
+pub const adm_object_diffuse_filter_length =
+    adm_diffuse.filter_length;
+pub const adm_object_direct_delay_samples =
+    adm_diffuse.direct_delay_samples;
 pub const AdmXmlDeclaration = adm_xml.Declaration;
 pub const AdmXmlDeclarationIterator = adm_xml.DeclarationIterator;
 pub const AdmXmlBlockFormat = adm_xml.BlockFormat;
@@ -854,6 +861,7 @@ pub const fillWindow = window.fill;
 test {
     _ = aiff_writer;
     _ = adm_render;
+    _ = adm_diffuse;
     _ = audio_block;
     _ = audio_file_reader;
     _ = audio_metadata;

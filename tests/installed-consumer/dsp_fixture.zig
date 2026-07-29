@@ -3666,6 +3666,53 @@ test "installed package exposes file-backed audio writers" {
         timed_direct_storage[2][1],
         0.000_001,
     );
+    var diffuse_processor =
+        try plugin.dsp.AdmObjectDiffuseProcessor(
+            f32,
+            polar_layout.len,
+        ).init(&polar_layout);
+    var timed_direct_inputs: [polar_layout.len][]const f32 = undefined;
+    var timed_diffuse_inputs: [polar_layout.len][]const f32 = undefined;
+    var rendered_storage: [polar_layout.len][timed_input.len]f32 =
+        @splat(@splat(0.0));
+    var rendered_outputs: [polar_layout.len][]f32 = undefined;
+    for (
+        &timed_direct_storage,
+        &timed_direct_inputs,
+        &timed_diffuse_storage,
+        &timed_diffuse_inputs,
+        &rendered_storage,
+        &rendered_outputs,
+    ) |
+        *direct_samples,
+        *direct_input,
+        *diffuse_samples,
+        *diffuse_input,
+        *rendered_samples,
+        *rendered_output,
+    | {
+        direct_input.* = direct_samples;
+        diffuse_input.* = diffuse_samples;
+        rendered_output.* = rendered_samples;
+    }
+    try diffuse_processor.process(
+        &timed_direct_inputs,
+        &timed_diffuse_inputs,
+        &rendered_outputs,
+    );
+    try std.testing.expectEqual(
+        plugin.dsp.adm_object_direct_delay_samples,
+        diffuse_processor.latencySamples(),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 512),
+        plugin.dsp.adm_object_diffuse_filter_length,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 0.0, 0.0 },
+        &rendered_storage[2],
+    );
     var extent_gain_storage: [
         plugin.dsp.adm_polar_extent_spreading_direction_count *
             polar_layout.len
