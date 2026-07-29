@@ -86,6 +86,8 @@ pub const StartElement = struct {
     depth: usize,
     self_closing: bool,
     namespace_name: ?NamespaceName,
+    source_start: usize,
+    source_end: usize,
 
     pub fn localName(self: StartElement) []const u8 {
         return qualifiedLocalName(self.name);
@@ -129,6 +131,8 @@ pub const EndElement = struct {
     name: []const u8,
     depth: usize,
     namespace_name: ?NamespaceName,
+    source_start: usize,
+    source_end: usize,
 
     pub fn localName(self: EndElement) []const u8 {
         return qualifiedLocalName(self.name);
@@ -143,6 +147,7 @@ pub const Text = struct {
 pub const Attribute = struct {
     name: []const u8,
     value: []const u8,
+    source: []const u8,
 
     pub fn localName(self: Attribute) []const u8 {
         return qualifiedLocalName(self.name);
@@ -190,7 +195,11 @@ pub const AttributeIterator = struct {
         const value = self.bytes[value_start..self.offset];
         try validateXmlContent(value);
         self.offset += 1;
-        return .{ .name = name, .value = value };
+        return .{
+            .name = name,
+            .value = value,
+            .source = self.bytes[name_start..self.offset],
+        };
     }
 
     fn skipWhitespace(self: *AttributeIterator) void {
@@ -254,6 +263,7 @@ pub const EventIterator = struct {
     }
 
     fn readStart(self: *EventIterator) !Event {
+        const source_start = self.offset;
         const name_start = self.offset + 1;
         const name_end = try scanName(self.bytes, name_start);
         const name = self.bytes[name_start..name_end];
@@ -279,6 +289,8 @@ pub const EventIterator = struct {
             .depth = element_depth,
             .self_closing = self_closing,
             .namespace_name = null,
+            .source_start = source_start,
+            .source_end = closing + 1,
         };
         try validateAttributes(attributes);
         try self.validateNamespaceDeclarations(element);
@@ -294,6 +306,7 @@ pub const EventIterator = struct {
     }
 
     fn readEnd(self: *EventIterator) !Event {
+        const source_start = self.offset;
         const name_start = self.offset + 2;
         const name_end = try scanName(self.bytes, name_start);
         var cursor = name_end;
@@ -316,6 +329,8 @@ pub const EventIterator = struct {
             .name = name,
             .depth = self.depth,
             .namespace_name = start.namespace_name,
+            .source_start = source_start,
+            .source_end = cursor + 1,
         } };
     }
 
@@ -382,7 +397,7 @@ pub const EventIterator = struct {
         var attribute_index: usize = 0;
         while (try attributes.next()) |attribute| : (attribute_index += 1) {
             if (isNamespaceDeclaration(attribute.name)) continue;
-            const namespace_name = try self.attributeNamespace(
+            const namespace_name = try self.attributeNamespaceName(
                 element,
                 attribute,
             );
@@ -399,7 +414,7 @@ pub const EventIterator = struct {
                 )) {
                     continue;
                 }
-                const prior_namespace = try self.attributeNamespace(
+                const prior_namespace = try self.attributeNamespaceName(
                     element,
                     prior,
                 );
@@ -413,7 +428,7 @@ pub const EventIterator = struct {
         }
     }
 
-    fn attributeNamespace(
+    pub fn attributeNamespaceName(
         self: *const EventIterator,
         element: StartElement,
         attribute: Attribute,
@@ -821,6 +836,10 @@ test "XML document iterates namespaces attributes text and empty elements" {
     const root = (try iterator.next()).?.start;
     try std.testing.expectEqualStrings("root", root.localName());
     try std.testing.expectEqualStrings(
+        "<ebu:root xmlns:ebu=\"urn:test\">",
+        document.bytes[root.source_start..root.source_end],
+    );
+    try std.testing.expectEqualStrings(
         "urn:test",
         (try root.namespaceDeclaration("ebu")).?.encoded,
     );
@@ -844,8 +863,17 @@ test "XML document iterates namespaces attributes text and empty elements" {
     const empty = (try iterator.next()).?.start;
     try std.testing.expect(empty.self_closing);
     try std.testing.expectEqualStrings(
+        "<empty/>",
+        document.bytes[empty.source_start..empty.source_end],
+    );
+    const item_end = (try iterator.next()).?.end;
+    try std.testing.expectEqualStrings(
         "item",
-        (try iterator.next()).?.end.localName(),
+        item_end.localName(),
+    );
+    try std.testing.expectEqualStrings(
+        "</ebu:item>",
+        document.bytes[item_end.source_start..item_end.source_end],
     );
     try std.testing.expectEqualStrings(
         "root",

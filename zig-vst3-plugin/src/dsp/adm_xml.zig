@@ -2724,6 +2724,7 @@ pub const BlockFormat = struct {
 const MetadataEventIterator = struct {
     events: xml.EventIterator,
     namespace_name: ?xml.NamespaceName,
+    afe_depth: ?usize = null,
 
     fn init(document: Document) MetadataEventIterator {
         return .{
@@ -2733,30 +2734,367 @@ const MetadataEventIterator = struct {
     }
 
     fn next(self: *MetadataEventIterator) !?xml.Event {
-        const event = (try self.events.next()) orelse return null;
-        return switch (event) {
-            .start => |source| blk: {
-                var element = source;
-                if (!try xml.namespaceNamesEql(
-                    self.namespace_name,
-                    element.namespace_name,
-                )) {
-                    element.name = "";
+        while (try self.events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    const namespace_matches = try xml.namespaceNamesEql(
+                        self.namespace_name,
+                        element.namespace_name,
+                    );
+                    if (namespace_matches and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioFormatExtended",
+                        ))
+                    {
+                        self.afe_depth = if (element.self_closing)
+                            null
+                        else
+                            element.depth;
+                    }
+                    if (insideAfe(self.afe_depth, element.depth) and
+                        !namespace_matches)
+                    {
+                        if (!element.self_closing)
+                            try skipXmlSubtree(&self.events, element);
+                        continue;
+                    }
+                    return event;
+                },
+                .end => |element| {
+                    if (self.afe_depth == element.depth and
+                        try xml.namespaceNamesEql(
+                            self.namespace_name,
+                            element.namespace_name,
+                        ) and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioFormatExtended",
+                        ))
+                    {
+                        self.afe_depth = null;
+                    }
+                    return event;
+                },
+                .text => return event,
+            }
+        }
+        return null;
+    }
+};
+
+fn skipXmlSubtree(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !void {
+    while (try events.next()) |event| {
+        switch (event) {
+            .end => |element| {
+                if (element.depth == start.depth and
+                    std.mem.eql(u8, element.name, start.name))
+                {
+                    return;
                 }
-                break :blk .{ .start = element };
             },
-            .end => |source| blk: {
-                var element = source;
-                if (!try xml.namespaceNamesEql(
-                    self.namespace_name,
-                    element.namespace_name,
-                )) {
-                    element.name = "";
-                }
-                break :blk .{ .end = element };
-            },
-            .text => |text| .{ .text = text },
+            else => {},
+        }
+    }
+    return error.UnclosedAdmExtension;
+}
+
+fn extensionDeclarationOwner(
+    element: xml.StartElement,
+    storage: []u8,
+) !?adm.Identifier {
+    const spec = declarationSpec(element.localName()) orelse return null;
+    const encoded = try element.attribute(spec.attribute_name) orelse
+        return error.MissingAdmIdentifier;
+    const raw = try xml.decodeContent(storage, encoded);
+    const identifier = try adm.Identifier.parse(raw);
+    if (identifier.kind != spec.kind)
+        return error.InvalidAdmDeclarationKind;
+    return identifier;
+}
+
+pub const Extension = struct {
+    qualified_name: []const u8,
+    namespace_uri: ?[]const u8,
+    attributes: []const u8,
+    source: []const u8,
+    source_offset: usize,
+    depth: usize,
+    parent_element_name: []const u8,
+    declaration_owner: ?adm.Identifier,
+
+    pub fn localName(self: Extension) []const u8 {
+        return xml.qualifiedLocalName(self.qualified_name);
+    }
+};
+
+pub const ExtensionIterator = struct {
+    document: Document,
+    events: xml.EventIterator,
+    afe_depth: ?usize = null,
+    element_names: [xml.max_depth]?[]const u8 = @splat(null),
+    owners: [xml.max_depth]?adm.Identifier = @splat(null),
+    owner_storage: [xml.max_depth][max_identifier_bytes]u8 = undefined,
+    namespace_uri_storage: [xml.max_namespace_uri_bytes]u8 = undefined,
+
+    fn init(document: Document) ExtensionIterator {
+        return .{
+            .document = document,
+            .events = document.xml_document.iterator(),
         };
+    }
+
+    /// Returned namespace and owner identifier storage remain valid until
+    /// the next iterator call.
+    pub fn next(self: *ExtensionIterator) !?Extension {
+        while (try self.events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    const inherited_owner = if (element.depth == 0)
+                        null
+                    else
+                        self.owners[element.depth - 1];
+                    self.owners[element.depth] = inherited_owner;
+                    self.element_names[element.depth] = null;
+
+                    const namespace_matches = try xml.namespaceNamesEql(
+                        self.document.namespace_name,
+                        element.namespace_name,
+                    );
+                    if (namespace_matches and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioFormatExtended",
+                        ))
+                    {
+                        self.afe_depth = if (element.self_closing)
+                            null
+                        else
+                            element.depth;
+                        self.element_names[element.depth] =
+                            element.localName();
+                        self.owners[element.depth] = null;
+                        continue;
+                    }
+                    if (!insideAfe(self.afe_depth, element.depth))
+                        continue;
+                    if (!namespace_matches)
+                        return try self.readExtension(element);
+
+                    self.element_names[element.depth] =
+                        element.localName();
+                    if (try extensionDeclarationOwner(
+                        element,
+                        &self.owner_storage[element.depth],
+                    )) |identifier| {
+                        self.owners[element.depth] = identifier;
+                    }
+                },
+                .end => |element| {
+                    if (self.afe_depth == element.depth and
+                        try xml.namespaceNamesEql(
+                            self.document.namespace_name,
+                            element.namespace_name,
+                        ) and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioFormatExtended",
+                        ))
+                    {
+                        self.afe_depth = null;
+                    }
+                },
+                else => {},
+            }
+        }
+        return null;
+    }
+
+    fn readExtension(
+        self: *ExtensionIterator,
+        element: xml.StartElement,
+    ) !Extension {
+        const parent_element_name = if (element.depth == 0)
+            null
+        else
+            self.element_names[element.depth - 1];
+        const parent = parent_element_name orelse
+            return error.InvalidAdmExtensionOwner;
+        const source_end = if (element.self_closing)
+            element.source_end
+        else blk: {
+            try skipXmlSubtree(&self.events, element);
+            break :blk self.events.offset;
+        };
+        const namespace_uri = if (element.namespace_name) |namespace_name|
+            try xml.decodeContent(
+                &self.namespace_uri_storage,
+                namespace_name.encoded,
+            )
+        else
+            null;
+        return .{
+            .qualified_name = element.name,
+            .namespace_uri = namespace_uri,
+            .attributes = element.attributes,
+            .source = self.document.xml_document.bytes[element.source_start..source_end],
+            .source_offset = element.source_start,
+            .depth = element.depth,
+            .parent_element_name = parent,
+            .declaration_owner = self.owners[element.depth],
+        };
+    }
+};
+
+pub const ExtensionAttribute = struct {
+    qualified_name: []const u8,
+    namespace_uri: []const u8,
+    encoded_value: []const u8,
+    source: []const u8,
+    element_name: []const u8,
+    declaration_owner: ?adm.Identifier,
+
+    pub fn localName(self: ExtensionAttribute) []const u8 {
+        return xml.qualifiedLocalName(self.qualified_name);
+    }
+
+    pub fn decodeValue(
+        self: ExtensionAttribute,
+        destination: []u8,
+    ) ![]const u8 {
+        return xml.decodeContent(destination, self.encoded_value);
+    }
+};
+
+pub const ExtensionAttributeIterator = struct {
+    document: Document,
+    events: xml.EventIterator,
+    afe_depth: ?usize = null,
+    owners: [xml.max_depth]?adm.Identifier = @splat(null),
+    owner_storage: [xml.max_depth][max_identifier_bytes]u8 = undefined,
+    namespace_uri_storage: [xml.max_namespace_uri_bytes]u8 = undefined,
+    current_element: ?xml.StartElement = null,
+    attributes: xml.AttributeIterator = xml.AttributeIterator.init(""),
+
+    fn init(document: Document) ExtensionAttributeIterator {
+        return .{
+            .document = document,
+            .events = document.xml_document.iterator(),
+        };
+    }
+
+    /// Returned namespace and owner identifier storage remain valid until
+    /// the next iterator call.
+    pub fn next(
+        self: *ExtensionAttributeIterator,
+    ) !?ExtensionAttribute {
+        while (true) {
+            if (self.current_element) |element| {
+                while (try self.attributes.next()) |attribute| {
+                    if (isXmlNamespaceDeclaration(attribute.name) or
+                        std.mem.indexOfScalar(
+                            u8,
+                            attribute.name,
+                            ':',
+                        ) == null)
+                    {
+                        continue;
+                    }
+                    const namespace_name =
+                        (try self.events.attributeNamespaceName(
+                            element,
+                            attribute,
+                        )) orelse return error.InvalidAdmExtensionNamespace;
+                    if (try xml.namespaceNamesEql(
+                        self.document.namespace_name,
+                        namespace_name,
+                    )) {
+                        continue;
+                    }
+                    const namespace_uri = try xml.decodeContent(
+                        &self.namespace_uri_storage,
+                        namespace_name.encoded,
+                    );
+                    return .{
+                        .qualified_name = attribute.name,
+                        .namespace_uri = namespace_uri,
+                        .encoded_value = attribute.value,
+                        .source = attribute.source,
+                        .element_name = element.localName(),
+                        .declaration_owner = self.owners[element.depth],
+                    };
+                }
+                self.current_element = null;
+            }
+
+            const event = (try self.events.next()) orelse return null;
+            switch (event) {
+                .start => |element| {
+                    const inherited_owner = if (element.depth == 0)
+                        null
+                    else
+                        self.owners[element.depth - 1];
+                    self.owners[element.depth] = inherited_owner;
+                    const namespace_matches = try xml.namespaceNamesEql(
+                        self.document.namespace_name,
+                        element.namespace_name,
+                    );
+                    const is_afe = namespace_matches and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioFormatExtended",
+                        );
+                    if (is_afe) {
+                        self.afe_depth = if (element.self_closing)
+                            null
+                        else
+                            element.depth;
+                        self.owners[element.depth] = null;
+                    } else if (!insideAfe(
+                        self.afe_depth,
+                        element.depth,
+                    )) {
+                        continue;
+                    } else if (!namespace_matches) {
+                        if (!element.self_closing)
+                            try skipXmlSubtree(&self.events, element);
+                        continue;
+                    } else if (try extensionDeclarationOwner(
+                        element,
+                        &self.owner_storage[element.depth],
+                    )) |identifier| {
+                        self.owners[element.depth] = identifier;
+                    }
+                    self.current_element = element;
+                    self.attributes =
+                        xml.AttributeIterator.init(element.attributes);
+                },
+                .end => |element| {
+                    if (self.afe_depth == element.depth and
+                        try xml.namespaceNamesEql(
+                            self.document.namespace_name,
+                            element.namespace_name,
+                        ) and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioFormatExtended",
+                        ))
+                    {
+                        self.afe_depth = null;
+                    }
+                },
+                else => {},
+            }
+        }
     }
 };
 
@@ -2770,22 +3108,50 @@ pub const Document = struct {
     tag_count: usize,
     tag_target_count: usize,
     block_count: usize,
+    extension_count: usize,
+    extension_attribute_count: usize,
 
     pub fn init(bytes: []const u8) !Document {
         const xml_document = try xml.Document.init(bytes);
         var afe_count: usize = 0;
         var namespace_name: ?xml.NamespaceName = null;
+        var afe_depth: ?usize = null;
+        var foreign_depth: ?usize = null;
         var events = xml_document.iterator();
         while (try events.next()) |event| {
             switch (event) {
                 .start => |element| {
+                    if (foreign_depth != null) continue;
+                    if (insideAfe(afe_depth, element.depth)) {
+                        if (!try xml.namespaceNamesEql(
+                            namespace_name,
+                            element.namespace_name,
+                        )) {
+                            if (!element.self_closing)
+                                foreign_depth = element.depth;
+                            continue;
+                        }
+                    }
                     if (std.mem.eql(
                         u8,
                         element.localName(),
                         "audioFormatExtended",
                     )) {
                         afe_count += 1;
-                        namespace_name = element.namespace_name;
+                        if (afe_count == 1) {
+                            namespace_name = element.namespace_name;
+                            afe_depth = if (element.self_closing)
+                                null
+                            else
+                                element.depth;
+                        }
+                    }
+                },
+                .end => |element| {
+                    if (foreign_depth == element.depth) {
+                        foreign_depth = null;
+                    } else if (afe_depth == element.depth) {
+                        afe_depth = null;
                     }
                 },
                 else => {},
@@ -2804,6 +3170,8 @@ pub const Document = struct {
             .tag_count = 0,
             .tag_target_count = 0,
             .block_count = 0,
+            .extension_count = 0,
+            .extension_attribute_count = 0,
         };
         var declaration_iterator = document.declarations();
         while (try declaration_iterator.next()) |_| {
@@ -2828,6 +3196,15 @@ pub const Document = struct {
         var block_iterator = document.blocks();
         while (try block_iterator.next()) |_| {
             document.block_count += 1;
+        }
+        var extension_iterator = document.extensions();
+        while (try extension_iterator.next()) |_| {
+            document.extension_count += 1;
+        }
+        var extension_attribute_iterator =
+            document.extensionAttributes();
+        while (try extension_attribute_iterator.next()) |_| {
+            document.extension_attribute_count += 1;
         }
         try document.validateDuplicateDeclarations();
         try document.validateReferences();
@@ -2862,6 +3239,16 @@ pub const Document = struct {
 
     pub fn tags(self: Document) TagIterator {
         return TagIterator.init(self);
+    }
+
+    pub fn extensions(self: Document) ExtensionIterator {
+        return ExtensionIterator.init(self);
+    }
+
+    pub fn extensionAttributes(
+        self: Document,
+    ) ExtensionAttributeIterator {
+        return ExtensionAttributeIterator.init(self);
     }
 
     pub fn contains(self: Document, wanted: adm.Identifier) !bool {
@@ -8786,6 +9173,128 @@ test "ADM XML resolves typed namespace identity" {
             \\</audioFormatExtended>
         ),
     );
+}
+
+test "ADM XML preserves owned foreign extension subtrees" {
+    const bytes =
+        \\<a:audioFormatExtended xmlns:a="urn:adm" xmlns:v="urn:ven&#100;or" v:session="one &amp; two">
+        \\  <a:audioObject audioObjectID="AO_1001" v:priority='high' a:future="standard">
+        \\    <v:control mode="wide"><v:nested><!--keep--><?vendor keep?><v:audioFormatExtended/><a:audioObject audioObjectID="AO_9999"/></v:nested></v:control>
+        \\    <o:empty xmlns:o="urn:other"/>
+        \\    <plain xmlns=""/>
+        \\  </a:audioObject>
+        \\  <v:root/>
+        \\</a:audioFormatExtended>
+    ;
+    const document = try Document.init(bytes);
+    try std.testing.expectEqual(@as(usize, 1), document.declaration_count);
+    try std.testing.expectEqual(@as(usize, 4), document.extension_count);
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        document.extension_attribute_count,
+    );
+    try std.testing.expect(!try document.contains(
+        try adm.Identifier.parse("AO_9999"),
+    ));
+
+    var extensions = document.extensions();
+    const control = (try extensions.next()).?;
+    try std.testing.expectEqualStrings("v:control", control.qualified_name);
+    try std.testing.expectEqualStrings("control", control.localName());
+    try std.testing.expectEqualStrings(
+        "urn:vendor",
+        control.namespace_uri.?,
+    );
+    try std.testing.expectEqualStrings(
+        "audioObject",
+        control.parent_element_name,
+    );
+    try std.testing.expectEqualStrings(
+        "AO_1001",
+        control.declaration_owner.?.raw,
+    );
+    try std.testing.expectEqual(
+        std.mem.indexOf(u8, bytes, "<v:control").?,
+        control.source_offset,
+    );
+    try std.testing.expect(std.mem.startsWith(
+        u8,
+        control.source,
+        "<v:control mode=\"wide\">",
+    ));
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        control.source,
+        "<!--keep--><?vendor keep?><v:audioFormatExtended/>",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        control.source,
+        "<a:audioObject audioObjectID=\"AO_9999\"/>",
+    ) != null);
+    try std.testing.expect(std.mem.endsWith(
+        u8,
+        control.source,
+        "</v:control>",
+    ));
+
+    const empty = (try extensions.next()).?;
+    try std.testing.expectEqualStrings("urn:other", empty.namespace_uri.?);
+    try std.testing.expectEqualStrings(
+        "<o:empty xmlns:o=\"urn:other\"/>",
+        empty.source,
+    );
+    try std.testing.expectEqualStrings(
+        "AO_1001",
+        empty.declaration_owner.?.raw,
+    );
+
+    const unqualified = (try extensions.next()).?;
+    try std.testing.expect(unqualified.namespace_uri == null);
+    try std.testing.expectEqualStrings("<plain xmlns=\"\"/>", unqualified.source);
+    try std.testing.expectEqualStrings(
+        "audioObject",
+        unqualified.parent_element_name,
+    );
+
+    const root_extension = (try extensions.next()).?;
+    try std.testing.expectEqualStrings("v:root", root_extension.qualified_name);
+    try std.testing.expectEqualStrings(
+        "audioFormatExtended",
+        root_extension.parent_element_name,
+    );
+    try std.testing.expect(root_extension.declaration_owner == null);
+    try std.testing.expect((try extensions.next()) == null);
+
+    var extension_attributes = document.extensionAttributes();
+    const session = (try extension_attributes.next()).?;
+    try std.testing.expectEqualStrings("v:session", session.qualified_name);
+    try std.testing.expectEqualStrings("session", session.localName());
+    try std.testing.expectEqualStrings("urn:vendor", session.namespace_uri);
+    try std.testing.expectEqualStrings(
+        "audioFormatExtended",
+        session.element_name,
+    );
+    try std.testing.expectEqualStrings(
+        "v:session=\"one &amp; two\"",
+        session.source,
+    );
+    var decoded_value: [32]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "one & two",
+        try session.decodeValue(&decoded_value),
+    );
+    try std.testing.expect(session.declaration_owner == null);
+
+    const priority = (try extension_attributes.next()).?;
+    try std.testing.expectEqualStrings("v:priority", priority.qualified_name);
+    try std.testing.expectEqualStrings("v:priority='high'", priority.source);
+    try std.testing.expectEqualStrings("audioObject", priority.element_name);
+    try std.testing.expectEqualStrings(
+        "AO_1001",
+        priority.declaration_owner.?.raw,
+    );
+    try std.testing.expect((try extension_attributes.next()) == null);
 }
 
 test "ADM XML resolves common definitions and rejects missing custom ones" {

@@ -3952,7 +3952,7 @@ test "installed package exposes file-backed audio writers" {
         .frame_count = 48_000,
     });
     const namespaced_adm = try plugin.dsp.AdmXmlDocument.init(
-        \\<a:audioFormatExtended xmlns:a="urn:adm" xmlns:v="urn:vendor">
+        \\<a:audioFormatExtended xmlns:a="urn:adm" xmlns:v="urn:vendor" v:session="fixture">
         \\  <a:audioObject audioObjectID="AO_1001"/>
         \\  <v:audioObject audioObjectID="AO_1002"/>
         \\</a:audioFormatExtended>
@@ -3960,6 +3960,48 @@ test "installed package exposes file-backed audio writers" {
     try std.testing.expectEqual(
         @as(usize, 1),
         namespaced_adm.declaration_count,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        namespaced_adm.extension_count,
+    );
+    var installed_extensions: plugin.dsp.AdmXmlExtensionIterator = namespaced_adm.extensions();
+    const installed_extension: plugin.dsp.AdmXmlExtension = (try installed_extensions.next()).?;
+    try std.testing.expectEqualStrings(
+        "v:audioObject",
+        installed_extension.qualified_name,
+    );
+    try std.testing.expectEqualStrings(
+        "urn:vendor",
+        installed_extension.namespace_uri.?,
+    );
+    try std.testing.expectEqualStrings(
+        "audioFormatExtended",
+        installed_extension.parent_element_name,
+    );
+    try std.testing.expectEqualStrings(
+        "<v:audioObject audioObjectID=\"AO_1002\"/>",
+        installed_extension.source,
+    );
+    try std.testing.expect((try installed_extensions.next()) == null);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        namespaced_adm.extension_attribute_count,
+    );
+    var installed_extension_attributes: plugin.dsp.AdmXmlExtensionAttributeIterator =
+        namespaced_adm.extensionAttributes();
+    const installed_extension_attribute: plugin.dsp.AdmXmlExtensionAttribute =
+        (try installed_extension_attributes.next()).?;
+    try std.testing.expectEqualStrings(
+        "v:session",
+        installed_extension_attribute.qualified_name,
+    );
+    try std.testing.expectEqualStrings(
+        "fixture",
+        installed_extension_attribute.encoded_value,
+    );
+    try std.testing.expect(
+        (try installed_extension_attributes.next()) == null,
     );
     var serial_flow_state =
         plugin.dsp.AdmXmlEmissionSerialFlowState{};

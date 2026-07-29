@@ -167,6 +167,11 @@ pub const AdmXmlCartesianExclusionZone =
     adm_xml.CartesianExclusionZone;
 pub const AdmXmlCoordinate = adm_xml.Coordinate;
 pub const AdmXmlDocument = adm_xml.Document;
+pub const AdmXmlExtension = adm_xml.Extension;
+pub const AdmXmlExtensionAttribute = adm_xml.ExtensionAttribute;
+pub const AdmXmlExtensionAttributeIterator =
+    adm_xml.ExtensionAttributeIterator;
+pub const AdmXmlExtensionIterator = adm_xml.ExtensionIterator;
 pub const AdmXmlGain = adm_xml.Gain;
 pub const AdmXmlGainUnit = adm_xml.GainUnit;
 pub const AdmXmlFrequency = adm_xml.Frequency;
