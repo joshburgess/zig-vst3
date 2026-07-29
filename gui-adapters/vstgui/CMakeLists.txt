@@ -90,7 +90,6 @@ if(APPLE)
 elseif(WIN32)
     list(APPEND ZIG_VSTGUI_ADAPTER_SOURCES
         zig_vstgui_accessibility_windows.cpp
-        zig_vstgui_windows_crt.cpp
     )
 endif()
 

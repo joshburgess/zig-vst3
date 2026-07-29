@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
 #include <new>
 #include <string>
 
@@ -32,6 +35,16 @@ void guardedCall(Function&& function) {
     try {
         function();
     } catch (...) {
+    }
+}
+
+bool diagnosticsEnabled() {
+    return std::getenv("ZIG_VSTGUI_DIAGNOSTICS") != nullptr;
+}
+
+void reportCreateFailure(const char* reason) {
+    if (diagnosticsEnabled()) {
+        std::fprintf(stderr, "VSTGUI editor creation failed: %s\n", reason);
     }
 }
 
@@ -732,11 +745,17 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         progress_indicator_count
     );
     if (editor && !editor->valid()) {
+        reportCreateFailure("the constructed editor is incomplete");
         delete editor;
         return nullptr;
     }
+    if (!editor) reportCreateFailure("editor allocation failed");
     return editor;
+    } catch (const std::exception& failure) {
+        reportCreateFailure(failure.what());
+        return nullptr;
     } catch (...) {
+        reportCreateFailure("an unknown C++ exception was raised");
         return nullptr;
     }
 }

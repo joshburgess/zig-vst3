@@ -658,42 +658,25 @@ pub fn build(b: *std.Build) void {
         "test-ara",
         "Run ARA API, VST3 companion, ABI, and cross-build tests",
     );
-    ara_test_step.dependOn(&b.addRunArtifact(ara_tests).step);
-    ara_test_step.dependOn(
-        &b.addRunArtifact(ara_vst3_tests).step,
+    const ara_native_test_step = b.step(
+        "test-ara-native",
+        "Run native ARA API and VST3 companion tests",
     );
-    ara_test_step.dependOn(
-        &b.addRunArtifact(ara_model_tests).step,
-    );
-    ara_test_step.dependOn(
-        &b.addRunArtifact(ara_controller_tests).step,
-    );
-    ara_test_step.dependOn(
-        &b.addRunArtifact(ara_factory_tests).step,
-    );
-    ara_test_step.dependOn(
-        &b.addRunArtifact(ara_extension_tests).step,
-    );
-    ara_test_step.dependOn(
-        &b.addRunArtifact(
-            ara_playback_renderer_tests,
-        ).step,
-    );
-    ara_test_step.dependOn(
-        &b.addRunArtifact(ara_content_fades_tests).step,
-    );
-    ara_test_step.dependOn(
-        &b.addRunArtifact(ara_source_cache_tests).step,
-    );
-    ara_test_step.dependOn(
-        &b.addRunArtifact(ara_tuning_analysis_tests).step,
-    );
-    ara_test_step.dependOn(
-        &b.addRunArtifact(ara_tempo_warp_tests).step,
-    );
-    ara_test_step.dependOn(
-        &b.addRunArtifact(ara_registration_tests).step,
-    );
+    addRunArtifactDependencies(b, ara_native_test_step, &.{
+        ara_tests,
+        ara_vst3_tests,
+        ara_model_tests,
+        ara_controller_tests,
+        ara_factory_tests,
+        ara_extension_tests,
+        ara_playback_renderer_tests,
+        ara_content_fades_tests,
+        ara_source_cache_tests,
+        ara_tuning_analysis_tests,
+        ara_tempo_warp_tests,
+        ara_registration_tests,
+    });
+    ara_test_step.dependOn(ara_native_test_step);
     const ara_cross_targets = [_]std.Build.ResolvedTarget{
         b.resolveTargetQuery(.{
             .cpu_arch = .aarch64,
@@ -2891,6 +2874,27 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(dsp_fixture_builds_step);
     test_step.dependOn(lv2_test_step);
 
+    const windows_native_test_step = b.step(
+        "test-windows-native",
+        "Run native Windows unit, GUI, ARA, audio, MIDI, and window tests",
+    );
+    addRunArtifactDependencies(b, windows_native_test_step, &.{
+        focused_vst3_tests,
+        zig_vst3_plugin_core_tests,
+        zig_vst3_plugin_tests,
+        realtime_source_audit,
+        gui_examples,
+        zig_vst3_wasapi_tests,
+        zig_vst3_win_midi_tests,
+        zig_vst3_win_window_tests,
+    });
+    addExamplePluginTestDependencies(
+        b,
+        windows_native_test_step,
+        &example_plugins,
+    );
+    windows_native_test_step.dependOn(ara_native_test_step);
+
     const sanitizer_step = addScriptCheckStep(b, .{
         .step_name = "test-vstgui-sanitizers",
         .description = "Run native VSTGUI tests with address and undefined-behavior sanitizers",
@@ -3851,6 +3855,12 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
             "wayland-client", "wayland-cursor", "wayland-egl", "wayland-server", "pthread",    "dl",
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .yes });
     } else if (target.result.os.tag == .windows) {
+        module.addCSourceFile(.{
+            .file = b.path(
+                "gui-adapters/vstgui/zig_vstgui_windows_crt.cpp",
+            ),
+            .flags = &.{"-std=c++17"},
+        });
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/msvcprt.lib"));
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/msvcrt.lib"));
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/vcruntime.lib"));

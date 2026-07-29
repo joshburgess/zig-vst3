@@ -93,11 +93,12 @@ jobs:
       - name: Test
         if: runner.os == 'Linux'
         env:
+          ZIG_VSTGUI_DIAGNOSTICS: 1
           VSTGUI_RUN_VISUAL_TESTS: OFF
         run: xvfb-run -a zig build test
       - name: Test
         if: runner.os == 'Windows'
-        run: zig build test -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
+        run: zig build test-windows-native -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
 
   raw-api-abi:
     name: Raw API ABI (${{ matrix.os }})
