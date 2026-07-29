@@ -42,6 +42,7 @@ const Budget = struct {
     lookahead_limiter_ns_per_sample: f64 = 2_000.0,
     inter_sample_limiter_ns_per_sample: f64 = 5_000.0,
     multiband_compressor_ns_per_sample: f64 = 5_000.0,
+    adm_diffuse_ns_per_output_sample: f64 = 5_000.0,
     snapshot_publication_ns: f64 = 1_000.0,
     snapshot_read_ns: f64 = 1_000.0,
     contended_snapshot_publication_ns: f64 = 2_000.0,
@@ -146,6 +147,7 @@ pub fn main() !void {
     try benchFixedRatePipeline();
     try benchAdvancedFilterDesign();
     try benchAdvancedDynamics();
+    try benchAdmDiffuse();
     try benchRealtimePublication();
     try benchVorbisInverseMdct();
     try benchDispatchedKernels();
@@ -414,6 +416,91 @@ fn benchAdvancedDynamics() !void {
         sample_count,
         budget.multiband_compressor_ns_per_sample,
     );
+}
+
+fn benchAdmDiffuse() !void {
+    std.debug.print("\nADM diffuse processing\n", .{});
+    inline for (.{ f32, f64 }) |Sample| {
+        inline for (.{ 16, 64, 512 }) |block_frames| {
+            try benchAdmDiffuseBlock(Sample, block_frames);
+        }
+    }
+}
+
+fn benchAdmDiffuseBlock(
+    comptime Sample: type,
+    comptime block_frames: usize,
+) !void {
+    const layout = [_]plug.dsp.AdmOutputSpeaker{
+        admDiffuseSpeaker("M+030", 30, 0, -1, 1, 0),
+        admDiffuseSpeaker("M-030", -30, 0, 1, 1, 0),
+        admDiffuseSpeaker("M+000", 0, 0, 0, 1, 0),
+        admDiffuseSpeaker("M+110", 110, 0, -1, -1, 0),
+        admDiffuseSpeaker("M-110", -110, 0, 1, -1, 0),
+        admDiffuseSpeaker("M+180", 180, 0, 0, -1, 0),
+        admDiffuseSpeaker("U+030", 30, 30, -1, 1, 1),
+        admDiffuseSpeaker("U-030", -30, 30, 1, 1, 1),
+        admDiffuseSpeaker("U+110", 110, 30, -1, -1, 1),
+        admDiffuseSpeaker("U-110", -110, 30, 1, -1, 1),
+        admDiffuseSpeaker("U+000", 0, 30, 0, 1, 1),
+        admDiffuseSpeaker("UH+180", 180, 45, 0, -1, 1),
+    };
+    const Processor =
+        plug.dsp.AdmObjectDiffuseProcessor(Sample, layout.len);
+    var processor = try Processor.init(&layout);
+    var direct_storage: [layout.len][block_frames]Sample =
+        @splat(@splat(@as(Sample, 0.125)));
+    var diffuse_storage: [layout.len][block_frames]Sample =
+        @splat(@splat(@as(Sample, 0.25)));
+    var output_storage: [layout.len][block_frames]Sample = undefined;
+    var direct_inputs: [layout.len][]const Sample = undefined;
+    var diffuse_inputs: [layout.len][]const Sample = undefined;
+    var outputs: [layout.len][]Sample = undefined;
+    for (0..layout.len) |index| {
+        direct_inputs[index] = &direct_storage[index];
+        diffuse_inputs[index] = &diffuse_storage[index];
+        outputs[index] = &output_storage[index];
+    }
+
+    const block_iterations = 32_768 / block_frames;
+    var timer = try Timer.start();
+    var checksum: f64 = 0;
+    for (0..block_iterations) |_| {
+        try processor.process(
+            &direct_inputs,
+            &diffuse_inputs,
+            &outputs,
+        );
+        checksum += @floatCast(output_storage[0][block_frames - 1]);
+    }
+    std.mem.doNotOptimizeAway(checksum);
+    try requireRate(
+        std.fmt.comptimePrint(
+            "12-channel ADM diffuse {s}, {d}-frame blocks",
+            .{ @typeName(Sample), block_frames },
+        ),
+        try timer.read(),
+        block_iterations * block_frames * layout.len,
+        budget.adm_diffuse_ns_per_output_sample,
+    );
+}
+
+fn admDiffuseSpeaker(
+    label: []const u8,
+    azimuth_degrees: f64,
+    elevation_degrees: f64,
+    x: f64,
+    y: f64,
+    z: f64,
+) plug.dsp.AdmOutputSpeaker {
+    return .{
+        .label = label,
+        .nominal_polar = .{
+            .azimuth_degrees = azimuth_degrees,
+            .elevation_degrees = elevation_degrees,
+        },
+        .allocentric = .{ .x = x, .y = y, .z = z },
+    };
 }
 
 fn benchRealtimePublication() !void {

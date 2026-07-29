@@ -158,7 +158,7 @@ pub fn ObjectDiffuseProcessor(
                     self.direct_history[output_index][self.direct_write_index] = direct_input;
                     self.diffuse_history[output_index][self.diffuse_write_index] = diffuse_input;
 
-                    var diffuse_output: f128 = 0.0;
+                    var diffuse_output: f64 = 0.0;
                     if (diffuse_input != 0.0) {
                         self.diffuse_remaining[output_index] =
                             filter_length;
@@ -174,16 +174,16 @@ pub fn ObjectDiffuseProcessor(
                                     offset) %
                                 filter_length;
                             diffuse_output +=
-                                @as(f128, coefficient) *
+                                @as(f64, coefficient) *
                                 @as(
-                                    f128,
+                                    f64,
                                     self.diffuse_history[output_index][history_index],
                                 );
                         }
                         self.diffuse_remaining[output_index] -= 1;
                     }
                     const combined =
-                        @as(f128, direct_output) + diffuse_output;
+                        @as(f64, direct_output) + diffuse_output;
                     outputs[output_index][frame] =
                         if (std.math.isFinite(combined) and
                         combined >= -std.math.floatMax(Sample) and
@@ -503,6 +503,51 @@ test "ADM diffuse processing aligns direct and diffuse paths across partitions" 
     try std.testing.expectEqual(
         direct_delay_samples,
         whole.latencySamples(),
+    );
+}
+
+test "ADM diffuse dense convolution tracks a wide reference" {
+    const layout = testLayout();
+    var processor =
+        try ObjectDiffuseProcessor(f64, layout.len).init(&layout);
+    var direct_storage: [2][filter_length]f64 =
+        @splat(@splat(0.0));
+    var diffuse_storage: [2][filter_length]f64 =
+        @splat(@splat(0.0));
+    for (&diffuse_storage[0], 0..) |*sample, index| {
+        sample.* = @sin(
+            @as(f64, @floatFromInt(index + 1)) * 0.173,
+        );
+    }
+    const direct_inputs = [_][]const f64{
+        &direct_storage[0],
+        &direct_storage[1],
+    };
+    const diffuse_inputs = [_][]const f64{
+        &diffuse_storage[0],
+        &diffuse_storage[1],
+    };
+    var output_storage: [2][filter_length]f64 = undefined;
+    const outputs = [_][]f64{
+        &output_storage[0],
+        &output_storage[1],
+    };
+    try processor.process(&direct_inputs, &diffuse_inputs, &outputs);
+
+    const coefficients = try processor.filterCoefficients(0);
+    var reference: f128 = 0;
+    for (coefficients, 0..) |coefficient, offset| {
+        reference +=
+            @as(f128, coefficient) *
+            @as(
+                f128,
+                diffuse_storage[0][filter_length - 1 - offset],
+            );
+    }
+    try std.testing.expectApproxEqAbs(
+        @as(f64, @floatCast(reference)),
+        output_storage[0][filter_length - 1],
+        2.0e-14,
     );
 }
 
