@@ -146,6 +146,8 @@ pub const AdmHoaMatrixDecoder = adm_hoa_decoder.MatrixDecoder;
 pub const maximum_supported_adm_hoa_order =
     adm_hoa_decoder.maximum_supported_order;
 pub const AdmBinauralStereoMixer = adm_binaural.StereoMixer;
+pub const AdmBinauralStereoGainTimeline =
+    adm_binaural.StereoGainTimeline;
 pub const maximum_adm_renderer_input_channels =
     adm_render.maximum_input_channels;
 pub const adm_polar_extent_spreading_direction_count =

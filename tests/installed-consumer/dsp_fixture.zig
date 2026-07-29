@@ -4552,3 +4552,63 @@ test "installed package exposes ADM binaural stereo mixing" {
     );
     try std.testing.expectEqualDeep(right, right_output);
 }
+
+test "installed package exposes timed ADM binaural gain" {
+    const document = try plugin.dsp.AdmXmlDocument.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00051001" audioChannelFormatName="RightEar">
+        \\    <audioBlockFormatBinaural audioBlockFormatID="AB_00051001_00000001"
+        \\      rtime="0.00000" duration="1.00000">
+        \\      <gain>1</gain>
+        \\    </audioBlockFormatBinaural>
+        \\    <audioBlockFormatBinaural audioBlockFormatID="AB_00051001_00000002"
+        \\      rtime="1.00000" duration="1.00000">
+        \\      <gain>0.5</gain>
+        \\      <jumpPosition>1</jumpPosition>
+        \\    </audioBlockFormatBinaural>
+        \\  </audioChannelFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00051002" audioChannelFormatName="LeftEar">
+        \\    <audioBlockFormatBinaural audioBlockFormatID="AB_00051002_00000001"
+        \\      rtime="0.00000" duration="1.00000">
+        \\      <gain>0.25</gain>
+        \\    </audioBlockFormatBinaural>
+        \\    <audioBlockFormatBinaural audioBlockFormatID="AB_00051002_00000002"
+        \\      rtime="1.00000" duration="1.00000">
+        \\      <gain>1</gain>
+        \\    </audioBlockFormatBinaural>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var iterator = document.blocks();
+    const right_blocks = [_]plugin.dsp.AdmXmlBlockFormat{
+        (try iterator.next()).?,
+        (try iterator.next()).?,
+    };
+    const left_blocks = [_]plugin.dsp.AdmXmlBlockFormat{
+        (try iterator.next()).?,
+        (try iterator.next()).?,
+    };
+    const sequences = [_][]const plugin.dsp.AdmXmlBlockFormat{
+        &right_blocks,
+        &left_blocks,
+    };
+    const timeline =
+        try plugin.dsp.AdmBinauralStereoGainTimeline(f32, 2).init(
+            &sequences,
+            4,
+        );
+    const input: [8]f32 = @splat(1.0);
+    const inputs = [_][]const f32{ &input, &input };
+    var left: [input.len]f32 = undefined;
+    var right: [input.len]f32 = undefined;
+    const outputs = [_][]f32{ &left, &right };
+    try timeline.process(0, &inputs, &outputs);
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.25, 0.25, 0.25, 0.25, 0.25, 0.4375, 0.625, 0.8125 },
+        left,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f32{ 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5 },
+        right,
+    );
+}
