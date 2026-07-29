@@ -23,6 +23,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -3427,6 +3428,9 @@ int testEditableLabelsAndProgress() {
 
 int main() {
 #define RUN_TEST(name, base) \
+    if (std::getenv("ZIG_VSTGUI_DIAGNOSTICS")) { \
+        std::fprintf(stderr, "running %s\n", #name); \
+    } \
     if (const int result = name(); result != 0) { \
         std::fprintf(stderr, "%s failed at assertion %d\n", #name, result); \
         return base + result; \
@@ -3447,6 +3451,9 @@ int main() {
     RUN_TEST(testGalleryLayoutExtents, 130)
     RUN_TEST(testParameterWorkspaceLayout, 140)
     RUN_TEST(testMeterBallistics, 150)
+    if (std::getenv("ZIG_VSTGUI_DIAGNOSTICS")) {
+        std::fprintf(stderr, "running testGraphs\n");
+    }
     VSTGUI::init(nullptr);
     const int graph_result = testGraphs();
     VSTGUI::exit();

@@ -98,6 +98,8 @@ jobs:
         run: xvfb-run -a zig build test
       - name: Test
         if: runner.os == 'Windows'
+        env:
+          ZIG_VSTGUI_DIAGNOSTICS: 1
         run: zig build test-windows-native -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
 
   raw-api-abi:

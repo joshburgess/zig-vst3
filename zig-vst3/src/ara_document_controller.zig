@@ -112,7 +112,8 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                     ContentObject,
                     raw.ARAContentType,
                     ?raw.ARAContentTimeRange,
-                ) ?usize,
+                    *usize,
+                ) bool,
                 event_data: *const fn (
                     ?*anyopaque,
                     ContentObject,
@@ -2756,12 +2757,14 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                         return error.InvalidProperties;
                     break :blk value;
                 };
-            const count = provider.vtable.event_count(
+            var count: usize = 0;
+            if (!provider.vtable.event_count(
                 provider.context,
                 object,
                 content_type,
                 range,
-            ) orelse return error.ContentReaderUnavailable;
+                &count,
+            )) return error.ContentReaderUnavailable;
             if (count > std.math.maxInt(i32))
                 return error.ContentCountOverflow;
             for (&self.content_readers, 0..) |*slot, index| {
@@ -4551,11 +4554,13 @@ test "ARA controller publishes typed provider content readers" {
             object: TestController.ContentObject,
             content_type: raw.ARAContentType,
             range: ?raw.ARAContentTimeRange,
-        ) ?usize {
+            output: *usize,
+        ) bool {
             _ = object;
             _ = content_type;
             _ = range;
-            return state(context).notes.len;
+            output.* = state(context).notes.len;
+            return true;
         }
 
         fn data(
@@ -4781,12 +4786,14 @@ test "ARA controller routes validated analysis requests and host notifications" 
             object: TestController.ContentObject,
             content_type: raw.ARAContentType,
             range: ?raw.ARAContentTimeRange,
-        ) ?usize {
+            output: *usize,
+        ) bool {
             _ = context;
             _ = object;
             _ = content_type;
             _ = range;
-            return null;
+            _ = output;
+            return false;
         }
 
         fn data(

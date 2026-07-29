@@ -4137,59 +4137,67 @@ pub fn Analyzer(
             object: ControllerType.ContentObject,
             content_type: raw.ARAContentType,
             range: ?raw.ARAContentTimeRange,
-        ) ?usize {
+            output: *usize,
+        ) bool {
             if (!isAvailable(context, object, content_type))
-                return null;
+                return false;
             if (content_type == raw.kARAContentTypeNotes) {
-                const self = fromContext(context) orelse return null;
+                const self = fromContext(context) orelse return false;
                 const source_id = switch (object) {
                     .audio_source => |id| id,
-                    else => return null,
+                    else => return false,
                 };
-                const slot = self.findSlot(source_id) orelse return null;
+                const slot = self.findSlot(source_id) orelse return false;
                 var count: usize = 0;
                 for (slot.notes[0..slot.note_count]) |note| {
                     if (noteIntersectsRange(note, range))
                         count += 1;
                 }
-                return count;
+                output.* = count;
+                return true;
             }
             if (content_type == raw.kARAContentTypeBarSignatures) {
-                const self = fromContext(context) orelse return null;
+                const self = fromContext(context) orelse return false;
                 const source_id = switch (object) {
                     .audio_source => |id| id,
-                    else => return null,
+                    else => return false,
                 };
-                const slot = self.findSlot(source_id) orelse return null;
-                return slot.bar_signature_count;
+                const slot = self.findSlot(source_id) orelse return false;
+                output.* = slot.bar_signature_count;
+                return true;
             }
             if (content_type == raw.kARAContentTypeKeySignatures) {
-                const self = fromContext(context) orelse return null;
+                const self = fromContext(context) orelse return false;
                 const source_id = switch (object) {
                     .audio_source => |id| id,
-                    else => return null,
+                    else => return false,
                 };
-                const slot = self.findSlot(source_id) orelse return null;
-                return slot.key_signature_count;
+                const slot = self.findSlot(source_id) orelse return false;
+                output.* = slot.key_signature_count;
+                return true;
             }
             if (content_type == raw.kARAContentTypeSheetChords) {
-                const self = fromContext(context) orelse return null;
+                const self = fromContext(context) orelse return false;
                 const source_id = switch (object) {
                     .audio_source => |id| id,
-                    else => return null,
+                    else => return false,
                 };
-                const slot = self.findSlot(source_id) orelse return null;
-                return slot.chord_count;
+                const slot = self.findSlot(source_id) orelse return false;
+                output.* = slot.chord_count;
+                return true;
             }
-            if (content_type != raw.kARAContentTypeTempoEntries)
-                return 1;
-            const self = fromContext(context) orelse return null;
+            if (content_type != raw.kARAContentTypeTempoEntries) {
+                output.* = 1;
+                return true;
+            }
+            const self = fromContext(context) orelse return false;
             const source_id = switch (object) {
                 .audio_source => |id| id,
-                else => return null,
+                else => return false,
             };
-            const slot = self.findSlot(source_id) orelse return null;
-            return slot.tempo_entry_count;
+            const slot = self.findSlot(source_id) orelse return false;
+            output.* = slot.tempo_entry_count;
+            return true;
         }
 
         fn eventData(

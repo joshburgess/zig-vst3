@@ -880,7 +880,7 @@ fn binding(self: anytype) ?*Binding {
     return @ptrCast(@alignCast(self.context orelse return null));
 }
 
-const View = vst_plug_view.PlugView(1, struct {
+const View = vst_plug_view.PlugView(2, struct {
     pub fn attached(self: anytype, parent: ?*anyopaque, platform_type: types.FIDString) types.tresult {
         const state = binding(self) orelse return types.kResultFalse;
         const platform: Platform = if (std.mem.eql(u8, std.mem.span(platform_type), std.mem.span(iplugview.PlatformType.kPlatformTypeNSView)))
@@ -1028,6 +1028,23 @@ const View = vst_plug_view.PlugView(1, struct {
         }
     }
 });
+
+test "editor view retains both Linux platform protocols" {
+    var view: View = .{};
+    try std.testing.expectEqual(
+        types.kResultOk,
+        view.addPlatform(
+            iplugview.PlatformType.kPlatformTypeX11EmbedWindowID,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        view.addPlatform(
+            iplugview.PlatformType.kPlatformTypeWaylandSurfaceID,
+        ),
+    );
+    try std.testing.expectEqual(@as(types.uint32, 2), view.platform_count);
+}
 
 pub fn create(
     controller: *ivsteditcontroller.IEditController,

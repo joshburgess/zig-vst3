@@ -3,14 +3,16 @@
 
 #include "wasapi_shim.h"
 
+#include <windows.h>
+
 #include <audioclient.h>
 #include <avrt.h>
+#include <propkeydef.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <ks.h>
 #include <ksmedia.h>
 #include <mmdeviceapi.h>
 #include <propvarutil.h>
-#include <windows.h>
 
 #include <stdlib.h>
 #include <string.h>

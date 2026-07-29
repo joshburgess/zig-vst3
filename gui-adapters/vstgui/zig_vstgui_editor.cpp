@@ -453,7 +453,18 @@ ZigVstguiEditor::~ZigVstguiEditor() {
 }
 
 bool ZigVstguiEditor::valid() const {
-    return parameter_count > 0 && frame && parameter_update_timer;
+    const bool complete =
+        parameter_count > 0 && frame && parameter_update_timer;
+    if (!complete && std::getenv("ZIG_VSTGUI_DIAGNOSTICS")) {
+        std::fprintf(
+            stderr,
+            "VSTGUI editor state: parameters=%u frame=%s timer=%s\n",
+            parameter_count,
+            frame ? "ready" : "missing",
+            parameter_update_timer ? "ready" : "missing"
+        );
+    }
+    return complete;
 }
 
 bool ZigVstguiEditor::open(void* parent, ZigVstguiPlatform platform) {

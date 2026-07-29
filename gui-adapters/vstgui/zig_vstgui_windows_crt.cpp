@@ -1,5 +1,7 @@
 #if defined(_WIN32)
 
+#pragma comment(linker, "/ignore:4217")
+
 extern "C" {
 extern bool (__cdecl* zig_vstgui_acrt_initialize_import)()
     __asm__("__imp___acrt_initialize");
