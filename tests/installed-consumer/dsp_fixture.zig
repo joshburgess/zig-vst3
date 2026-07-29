@@ -4517,3 +4517,38 @@ test "installed package exposes bounded ADM HOA matrix decoding" {
         plugin.dsp.maximum_supported_adm_hoa_order,
     );
 }
+
+test "installed package exposes ADM binaural stereo mixing" {
+    const document = try plugin.dsp.AdmXmlDocument.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00051001" audioChannelFormatName="RightEar">
+        \\    <audioBlockFormatBinaural audioBlockFormatID="AB_00051001_00000001"/>
+        \\  </audioChannelFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00051002" audioChannelFormatName="LeftEar">
+        \\    <audioBlockFormatBinaural audioBlockFormatID="AB_00051002_00000001">
+        \\      <gain>0.5</gain>
+        \\    </audioBlockFormatBinaural>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var iterator = document.blocks();
+    const blocks = [_]plugin.dsp.AdmXmlBlockFormat{
+        (try iterator.next()).?,
+        (try iterator.next()).?,
+    };
+    const mixer = try plugin.dsp.AdmBinauralStereoMixer(f32).init(
+        &blocks,
+    );
+    const right = [_]f32{ 3.0, -1.0 };
+    const left = [_]f32{ 2.0, 4.0 };
+    const inputs = [_][]const f32{ &right, &left };
+    var left_output: [left.len]f32 = undefined;
+    var right_output: [right.len]f32 = undefined;
+    const outputs = [_][]f32{ &left_output, &right_output };
+    try mixer.process(&inputs, &outputs);
+    try std.testing.expectEqualDeep(
+        [_]f32{ 1.0, 2.0 },
+        left_output,
+    );
+    try std.testing.expectEqualDeep(right, right_output);
+}

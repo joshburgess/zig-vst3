@@ -1,5 +1,6 @@
 pub const aiff_writer = @import("dsp/aiff_writer.zig");
 pub const adm = @import("dsp/adm.zig");
+pub const adm_binaural = @import("dsp/adm_binaural.zig");
 pub const adm_diffuse = @import("dsp/adm_diffuse.zig");
 pub const adm_direct_speaker_mapping =
     @import("dsp/adm_direct_speaker_mapping.zig");
@@ -144,6 +145,7 @@ pub const AdmMatrixCoefficientMixer =
 pub const AdmHoaMatrixDecoder = adm_hoa_decoder.MatrixDecoder;
 pub const maximum_supported_adm_hoa_order =
     adm_hoa_decoder.maximum_supported_order;
+pub const AdmBinauralStereoMixer = adm_binaural.StereoMixer;
 pub const maximum_adm_renderer_input_channels =
     adm_render.maximum_input_channels;
 pub const adm_polar_extent_spreading_direction_count =
@@ -870,6 +872,7 @@ pub const fillWindow = window.fill;
 
 test {
     _ = aiff_writer;
+    _ = adm_binaural;
     _ = adm_render;
     _ = adm_hoa_decoder;
     _ = adm_diffuse;
