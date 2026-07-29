@@ -195,6 +195,8 @@ zig build lint-lv2-mono-gain
 
 Set `LV2_VALIDATE` or `LV2LINT` to explicit executable paths when the tools are outside `PATH`. The gate validates the three generated Turtle files, loads both native descriptors, enables direct-distribution checks, and treats warnings as failures.
 
+CI runs the same gate in an isolated Linux job with the pinned SDK and uploads the validated bundle.
+
 The bundle is written to `zig-out/bundle/zig_vst3_mono_gain.lv2`. The LV2 core wrapper covers audio and control ports, bounded Atom Sequences with typed MIDI channel events, preserved raw system, SysEx, Program Change, and Channel Pressure messages, arbitrary bounded non-MIDI Atom bodies, segmented sample-offset time Position transport, block-length options, freewheeling/offline process-mode signaling, latency, activation, parameter and bounded component state, and optional bounded Worker requests and responses. The UI bridge adapts the shared editor model to native-parent attachment, control-port updates, host writes, optional touch gestures, idle, show, hide, resize, and teardown callbacks. The optional VSTGUI backend supplies parameter-driven sliders, toggles, and menus plus the native child widget. The metadata generator derives ports and presets from declarations, accepts validated project, license, maintainer, description, live-use, and UI declarations, and publishes the linked VSTGUI UI resource and binary on supported desktop targets. The generated bundle passes independent RDF schema validation and warning-fatal `lv2lint` 0.16.2 validation in direct-distribution mode. External-host confirmation, advanced custom-component bindings, and dynamic bus topology remain open.
 
 Build target bundle layouts:

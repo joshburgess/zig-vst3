@@ -44,6 +44,14 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
           use-cache: ${{ matrix.os != 'windows-latest' }}
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libgtkmm-3.0-dev libx11-dev
+      - name: Fetch pinned VST3 SDK
+        shell: bash
+        run: scripts/fetch_sdk.sh
       - name: Build
         run: zig build
       - name: Test
@@ -100,6 +108,43 @@ jobs:
         with:
           name: validated-vst3-bundles-${{ matrix.os }}
           path: zig-out/bundle/
+          if-no-files-found: error
+
+  lv2-distribution:
+    name: LV2 distribution
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 30
+    container: archlinux:base
+    steps:
+      - name: Install validation and UI build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            cmake \
+            gcc \
+            git \
+            gtk3 \
+            gtkmm3 \
+            libx11 \
+            lv2 \
+            lv2lint \
+            ninja \
+            pkgconf \
+            sord
+          pacman -Q lv2 lv2lint
+      - uses: actions/checkout@v6
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Fetch pinned VST3 SDK
+        run: scripts/fetch_sdk.sh
+      - name: Validate LV2 distribution
+        run: zig build lint-lv2-mono-gain
+      - name: Upload validated LV2 bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: validated-lv2-bundle
+          path: zig-out/bundle/zig_vst3_mono_gain.lv2/
           if-no-files-found: error
 
   pluginval:
