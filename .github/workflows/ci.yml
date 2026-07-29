@@ -100,10 +100,13 @@ jobs:
           fi
           nm -A .vst3-sdk/vstgui-adapter-build/Release/libs/*.a |
             grep -E '[[:space:]]fork$' || true
-          while IFS= read -r object; do
+          while IFS= read -r -d '' object; do
             nm -A "$object" 2>/dev/null |
               grep -E '[[:space:]]fork$' || true
-          done < <(rg --files .zig-cache | rg '_zcu\.o$')
+          done < <(
+            find .zig-cache -type f \
+              \( -name '*.o' -o -name '*.a' \) -print0
+          )
           exit 1
       - name: Build
         if: runner.os == 'Windows'
