@@ -2099,10 +2099,7 @@ int runSnapshot(
     ) ? 0 : 4;
 }
 
-int smokeSnapshot(
-    const Snapshot& snapshot,
-    const std::filesystem::path& output
-) {
+int smokeSnapshot(const Snapshot& snapshot) {
     const auto actual = render(snapshot);
     if (!actual || !actual->getPlatformBitmap()) return 1;
     const auto actual_pixels = VSTGUI::owned(
@@ -2113,16 +2110,14 @@ int smokeSnapshot(
     const auto height = actual_pixels->getBitmapHeight();
     if (width == 0 || height == 0) return 3;
 
-    const auto path = output / (std::string(snapshot.name) + ".smoke.png");
-    if (!writePng(actual, path)) return 4;
-    const auto decoded = loadPng(path);
-    if (!decoded) return 5;
+    const auto decoded = normalizePng(actual);
+    if (!decoded) return 4;
     const auto decoded_pixels = VSTGUI::owned(
         VSTGUI::CBitmapPixelAccess::create(decoded, false)
     );
     if (!decoded_pixels ||
         decoded_pixels->getBitmapWidth() != width ||
-        decoded_pixels->getBitmapHeight() != height) return 6;
+        decoded_pixels->getBitmapHeight() != height) return 5;
 
     VSTGUI::CColor first;
     decoded_pixels->getColor(first);
@@ -2137,7 +2132,7 @@ int smokeSnapshot(
     }
     if (!varied) {
         std::fprintf(stderr, "uniform visual smoke output: %s\n", snapshot.name);
-        return 7;
+        return 6;
     }
     return 0;
 }
@@ -2604,7 +2599,7 @@ int main(int argc, char** argv) {
             result = std::max(
                 result,
                 smoke
-                    ? smokeSnapshot(snapshot, output)
+                    ? smokeSnapshot(snapshot)
                     : runSnapshot(snapshot, references, output, update)
             );
         }
@@ -2686,7 +2681,7 @@ int main(int argc, char** argv) {
             result = std::max(
                 result,
                 smoke
-                    ? smokeSnapshot(snapshot, output)
+                    ? smokeSnapshot(snapshot)
                     : runSnapshot(snapshot, references, output, update)
             );
         }

@@ -50,6 +50,12 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             context: ?*anyopaque,
             vtable: *const VTable,
 
+            pub const Query = struct {
+                object: ContentObject,
+                content_type: raw.ARAContentType,
+                range: ?raw.ARAContentTimeRange,
+            };
+
             pub const VTable = struct {
                 archive_size: ?*const fn (
                     ?*anyopaque,
@@ -101,26 +107,21 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                     ?*anyopaque,
                     *const ContentObject,
                     raw.ARAContentType,
-                ) callconv(.c) bool,
+                ) bool,
                 grade: *const fn (
                     ?*anyopaque,
                     *const ContentObject,
                     raw.ARAContentType,
-                ) callconv(.c) raw.ARAContentGrade,
+                ) raw.ARAContentGrade,
                 event_count: *const fn (
                     ?*anyopaque,
-                    *const ContentObject,
-                    raw.ARAContentType,
-                    ?*const raw.ARAContentTimeRange,
-                    *usize,
-                ) callconv(.c) bool,
+                    *const Query,
+                ) ?usize,
                 event_data: *const fn (
                     ?*anyopaque,
-                    *const ContentObject,
-                    raw.ARAContentType,
-                    ?*const raw.ARAContentTimeRange,
+                    *const Query,
                     usize,
-                ) callconv(.c) ?*const anyopaque,
+                ) ?*const anyopaque,
             };
         };
 
@@ -1903,11 +1904,14 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(error.ContentReaderUnavailable);
                 return null;
             };
+            const query = ContentProvider.Query{
+                .object = reader.object,
+                .content_type = reader.content_type,
+                .range = reader.range,
+            };
             return provider.vtable.event_data(
                 provider.context,
-                &reader.object,
-                reader.content_type,
-                if (reader.range) |*range| range else null,
+                &query,
                 @intCast(event_index),
             );
         }
@@ -2757,14 +2761,15 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                         return error.InvalidProperties;
                     break :blk value;
                 };
-            var count: usize = 0;
-            if (!provider.vtable.event_count(
+            const query = ContentProvider.Query{
+                .object = object,
+                .content_type = content_type,
+                .range = range,
+            };
+            const count = provider.vtable.event_count(
                 provider.context,
-                &object,
-                content_type,
-                if (range) |*value| value else null,
-                &count,
-            )) return error.ContentReaderUnavailable;
+                &query,
+            ) orelse return error.ContentReaderUnavailable;
             if (count > std.math.maxInt(i32))
                 return error.ContentCountOverflow;
             for (&self.content_readers, 0..) |*slot, index| {
@@ -4532,7 +4537,7 @@ test "ARA controller publishes typed provider content readers" {
             context: ?*anyopaque,
             object: *const TestController.ContentObject,
             content_type: raw.ARAContentType,
-        ) callconv(.c) bool {
+        ) bool {
             _ = state(context);
             return object.* == .audio_source and
                 content_type == raw.kARAContentTypeNotes;
@@ -4542,7 +4547,7 @@ test "ARA controller publishes typed provider content readers" {
             context: ?*anyopaque,
             object: *const TestController.ContentObject,
             content_type: raw.ARAContentType,
-        ) callconv(.c) raw.ARAContentGrade {
+        ) raw.ARAContentGrade {
             _ = context;
             _ = object;
             _ = content_type;
@@ -4551,28 +4556,18 @@ test "ARA controller publishes typed provider content readers" {
 
         fn count(
             context: ?*anyopaque,
-            object: *const TestController.ContentObject,
-            content_type: raw.ARAContentType,
-            range: ?*const raw.ARAContentTimeRange,
-            output: *usize,
-        ) callconv(.c) bool {
-            _ = object;
-            _ = content_type;
-            _ = range;
-            output.* = state(context).notes.len;
-            return true;
+            query: *const TestController.ContentProvider.Query,
+        ) ?usize {
+            _ = query;
+            return state(context).notes.len;
         }
 
         fn data(
             context: ?*anyopaque,
-            object: *const TestController.ContentObject,
-            content_type: raw.ARAContentType,
-            range: ?*const raw.ARAContentTimeRange,
+            query: *const TestController.ContentProvider.Query,
             event_index: usize,
-        ) callconv(.c) ?*const anyopaque {
-            _ = object;
-            _ = content_type;
-            _ = range;
+        ) ?*const anyopaque {
+            _ = query;
             const provider = state(context);
             if (event_index >= provider.notes.len) return null;
             return &provider.notes[event_index];
@@ -4763,7 +4758,7 @@ test "ARA controller routes validated analysis requests and host notifications" 
             context: ?*anyopaque,
             object: *const TestController.ContentObject,
             content_type: raw.ARAContentType,
-        ) callconv(.c) bool {
+        ) bool {
             _ = context;
             _ = object;
             _ = content_type;
@@ -4774,7 +4769,7 @@ test "ARA controller routes validated analysis requests and host notifications" 
             context: ?*anyopaque,
             object: *const TestController.ContentObject,
             content_type: raw.ARAContentType,
-        ) callconv(.c) raw.ARAContentGrade {
+        ) raw.ARAContentGrade {
             _ = context;
             _ = object;
             _ = content_type;
@@ -4783,30 +4778,20 @@ test "ARA controller routes validated analysis requests and host notifications" 
 
         fn count(
             context: ?*anyopaque,
-            object: *const TestController.ContentObject,
-            content_type: raw.ARAContentType,
-            range: ?*const raw.ARAContentTimeRange,
-            output: *usize,
-        ) callconv(.c) bool {
+            query: *const TestController.ContentProvider.Query,
+        ) ?usize {
             _ = context;
-            _ = object;
-            _ = content_type;
-            _ = range;
-            _ = output;
-            return false;
+            _ = query;
+            return null;
         }
 
         fn data(
             context: ?*anyopaque,
-            object: *const TestController.ContentObject,
-            content_type: raw.ARAContentType,
-            range: ?*const raw.ARAContentTimeRange,
+            query: *const TestController.ContentProvider.Query,
             event_index: usize,
-        ) callconv(.c) ?*const anyopaque {
+        ) ?*const anyopaque {
             _ = context;
-            _ = object;
-            _ = content_type;
-            _ = range;
+            _ = query;
             _ = event_index;
             return null;
         }

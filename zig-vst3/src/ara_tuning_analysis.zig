@@ -4078,7 +4078,7 @@ pub fn Analyzer(
             context: ?*anyopaque,
             object: *const ControllerType.ContentObject,
             content_type: raw.ARAContentType,
-        ) callconv(.c) bool {
+        ) bool {
             const self = fromContext(context) orelse return false;
             const source_id = switch (object.*) {
                 .audio_source => |id| id,
@@ -4106,7 +4106,7 @@ pub fn Analyzer(
             context: ?*anyopaque,
             object: *const ControllerType.ContentObject,
             content_type: raw.ARAContentType,
-        ) callconv(.c) raw.ARAContentGrade {
+        ) raw.ARAContentGrade {
             if (!isAvailable(context, object, content_type))
                 return raw.kARAContentGradeInitial;
             const self = fromContext(context) orelse
@@ -4134,90 +4134,80 @@ pub fn Analyzer(
 
         fn eventCount(
             context: ?*anyopaque,
-            object: *const ControllerType.ContentObject,
-            content_type: raw.ARAContentType,
-            range: ?*const raw.ARAContentTimeRange,
-            output: *usize,
-        ) callconv(.c) bool {
-            if (!isAvailable(context, object, content_type))
-                return false;
+            query: *const ControllerType.ContentProvider.Query,
+        ) ?usize {
+            if (!isAvailable(
+                context,
+                &query.object,
+                query.content_type,
+            ))
+                return null;
+            const object = &query.object;
+            const content_type = query.content_type;
             if (content_type == raw.kARAContentTypeNotes) {
-                const self = fromContext(context) orelse return false;
+                const self = fromContext(context) orelse return null;
                 const source_id = switch (object.*) {
                     .audio_source => |id| id,
-                    else => return false,
+                    else => return null,
                 };
-                const slot = self.findSlot(source_id) orelse return false;
-                const requested_range =
-                    if (range) |value| value.* else null;
+                const slot = self.findSlot(source_id) orelse return null;
                 var count: usize = 0;
                 for (slot.notes[0..slot.note_count]) |note| {
-                    if (noteIntersectsRange(note, requested_range))
+                    if (noteIntersectsRange(note, query.range))
                         count += 1;
                 }
-                output.* = count;
-                return true;
+                return count;
             }
             if (content_type == raw.kARAContentTypeBarSignatures) {
-                const self = fromContext(context) orelse return false;
+                const self = fromContext(context) orelse return null;
                 const source_id = switch (object.*) {
                     .audio_source => |id| id,
-                    else => return false,
+                    else => return null,
                 };
-                const slot = self.findSlot(source_id) orelse return false;
-                output.* = slot.bar_signature_count;
-                return true;
+                const slot = self.findSlot(source_id) orelse return null;
+                return slot.bar_signature_count;
             }
             if (content_type == raw.kARAContentTypeKeySignatures) {
-                const self = fromContext(context) orelse return false;
+                const self = fromContext(context) orelse return null;
                 const source_id = switch (object.*) {
                     .audio_source => |id| id,
-                    else => return false,
+                    else => return null,
                 };
-                const slot = self.findSlot(source_id) orelse return false;
-                output.* = slot.key_signature_count;
-                return true;
+                const slot = self.findSlot(source_id) orelse return null;
+                return slot.key_signature_count;
             }
             if (content_type == raw.kARAContentTypeSheetChords) {
-                const self = fromContext(context) orelse return false;
+                const self = fromContext(context) orelse return null;
                 const source_id = switch (object.*) {
                     .audio_source => |id| id,
-                    else => return false,
+                    else => return null,
                 };
-                const slot = self.findSlot(source_id) orelse return false;
-                output.* = slot.chord_count;
-                return true;
+                const slot = self.findSlot(source_id) orelse return null;
+                return slot.chord_count;
             }
-            if (content_type != raw.kARAContentTypeTempoEntries) {
-                output.* = 1;
-                return true;
-            }
-            const self = fromContext(context) orelse return false;
-            const source_id = switch (object.*) {
-                .audio_source => |id| id,
-                else => return false,
-            };
-            const slot = self.findSlot(source_id) orelse return false;
-            output.* = slot.tempo_entry_count;
-            return true;
-        }
-
-        fn eventData(
-            context: ?*anyopaque,
-            object: *const ControllerType.ContentObject,
-            content_type: raw.ARAContentType,
-            range: ?*const raw.ARAContentTimeRange,
-            event_index: usize,
-        ) callconv(.c) ?*const anyopaque {
+            if (content_type != raw.kARAContentTypeTempoEntries)
+                return 1;
             const self = fromContext(context) orelse return null;
             const source_id = switch (object.*) {
                 .audio_source => |id| id,
                 else => return null,
             };
             const slot = self.findSlot(source_id) orelse return null;
-            const requested_range =
-                if (range) |value| value.* else null;
-            return switch (content_type) {
+            return slot.tempo_entry_count;
+        }
+
+        fn eventData(
+            context: ?*anyopaque,
+            query: *const ControllerType.ContentProvider.Query,
+            event_index: usize,
+        ) ?*const anyopaque {
+            const self = fromContext(context) orelse return null;
+            const source_id = switch (query.object) {
+                .audio_source => |id| id,
+                else => return null,
+            };
+            const slot = self.findSlot(source_id) orelse return null;
+            return switch (query.content_type) {
                 raw.kARAContentTypeNotes => notes: {
                     if (slot.note_status != .detected and
                         slot.note_status != .approved)
@@ -4226,7 +4216,7 @@ pub fn Analyzer(
                     for (slot.notes[0..slot.note_count]) |*note| {
                         if (!noteIntersectsRange(
                             note.*,
-                            requested_range,
+                            query.range,
                         ))
                             continue;
                         if (matching_index == event_index)
