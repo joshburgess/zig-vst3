@@ -243,10 +243,22 @@ const EmissionObjectParameterState = struct {
     top_level: bool,
     interact: bool,
     interaction: ?EmissionObjectInteraction = null,
-    gain: ?f64 = null,
+    gain: ?Gain = null,
     position: ?EmissionPositionOffset = null,
     uses_position_controls: bool = false,
     has_alternative_value_sets: bool = false,
+};
+
+const EmissionAlternativeParameters = struct {
+    gain: ?Gain = null,
+    interaction: ?EmissionObjectInteraction = null,
+    position: ?EmissionPositionOffset = null,
+
+    fn usesPositionControls(self: EmissionAlternativeParameters) bool {
+        return self.position != null or
+            (self.interaction != null and
+                self.interaction.?.position_range != null);
+    }
 };
 
 fn emissionProfileLimits(
@@ -821,7 +833,7 @@ fn readEmissionPositionInteractionRange(
 fn readEmissionGain(
     events: *xml.EventIterator,
     start: xml.StartElement,
-) !f64 {
+) !Gain {
     const unit = try emissionGainUnitAttribute(start);
     try validateEmissionAttributes(
         start,
@@ -830,10 +842,11 @@ fn readEmissionGain(
     );
     var storage: [max_profile_text_bytes]u8 = undefined;
     const raw = try readEmissionSimpleElement(events, start, &storage);
-    const linear = try parseEmissionGainLinear(raw, unit);
+    const value = try parseAdmMatrixGain(raw, unit);
+    const linear = emissionGainLinear(value, unit);
     if (linear < 0.0 or linear > emissionMaximumLinearGain())
         return error.InvalidAdmEmissionProfileObjectGain;
-    return linear;
+    return .{ .value = value, .unit = unit };
 }
 
 fn readEmissionPositionOffset(
@@ -862,7 +875,7 @@ fn readEmissionAlternativeValueSet(
     events: *xml.EventIterator,
     start: xml.StartElement,
     parent_interaction: ?EmissionObjectInteraction,
-) !bool {
+) !EmissionAlternativeParameters {
     _ = try emissionElementIdentifier(
         start,
         "alternativeValueSetID",
@@ -873,11 +886,9 @@ fn readEmissionAlternativeValueSet(
         &.{"alternativeValueSetID"},
         error.InvalidAdmEmissionProfileAlternativeValueSet,
     );
-    if (start.self_closing) return false;
+    if (start.self_closing) return .{};
 
-    var gain: ?f64 = null;
-    var position: ?EmissionPositionOffset = null;
-    var interaction: ?EmissionObjectInteraction = null;
+    var result = EmissionAlternativeParameters{};
     while (try events.next()) |event| {
         switch (event) {
             .text => |text| {
@@ -889,21 +900,27 @@ fn readEmissionAlternativeValueSet(
                     return error.InvalidAdmEmissionProfileAlternativeValueSet;
                 const name = element.localName();
                 if (std.mem.eql(u8, name, "gain")) {
-                    if (gain != null)
+                    if (result.gain != null)
                         return error.InvalidAdmEmissionProfileAlternativeValueSet;
-                    gain = try readEmissionGain(events, element);
+                    result.gain = try readEmissionGain(events, element);
                     continue;
                 }
                 if (std.mem.eql(u8, name, "positionOffset")) {
-                    if (position != null)
+                    if (result.position != null)
                         return error.InvalidAdmEmissionProfileAlternativeValueSet;
-                    position = try readEmissionPositionOffset(events, element);
+                    result.position = try readEmissionPositionOffset(
+                        events,
+                        element,
+                    );
                     continue;
                 }
                 if (std.mem.eql(u8, name, "audioObjectInteraction")) {
-                    if (interaction != null or parent_interaction == null)
+                    if (result.interaction != null or
+                        parent_interaction == null)
+                    {
                         return error.InvalidAdmEmissionProfileAlternativeInteraction;
-                    interaction = try readEmissionObjectInteraction(
+                    }
+                    result.interaction = try readEmissionObjectInteraction(
                         events,
                         element,
                     );
@@ -922,7 +939,7 @@ fn readEmissionAlternativeValueSet(
         }
     } else return error.InvalidAdmEmissionProfileAlternativeValueSet;
 
-    if (interaction) |alternative| {
+    if (result.interaction) |alternative| {
         if (!emissionInteractionBaseEqual(
             parent_interaction.?,
             alternative,
@@ -932,16 +949,18 @@ fn readEmissionAlternativeValueSet(
     }
     if (parent_interaction) |parent| {
         try validateEmissionGainWithinRange(
-            gain orelse 1.0,
+            if (result.gain) |value|
+                emissionGainLinear(value.value, value.unit)
+            else
+                1.0,
             parent.gain_range,
         );
         try validateEmissionPositionWithinRange(
-            position,
+            result.position,
             parent.position_range,
         );
     }
-    return position != null or
-        (interaction != null and interaction.?.position_range != null);
+    return result;
 }
 
 fn validateEmissionGainWithinRange(
@@ -973,6 +992,16 @@ fn emissionInteractionBaseEqual(
 ) bool {
     return std.meta.eql(parent.gain_range, alternative.gain_range) and
         std.meta.eql(parent.position_range, alternative.position_range);
+}
+
+fn emissionObjectParametersEqual(
+    left: EmissionObjectParameterState,
+    right: EmissionObjectParameterState,
+) bool {
+    return left.interact == right.interact and
+        std.meta.eql(left.interaction, right.interaction) and
+        std.meta.eql(left.gain, right.gain) and
+        std.meta.eql(left.position, right.position);
 }
 
 fn emissionObjectBlockHasNeutralPosition(block: BlockFormat) bool {
@@ -1013,11 +1042,6 @@ fn emissionObjectBlockHasNeutralPosition(block: BlockFormat) bool {
 
 fn emissionMaximumLinearGain() f64 {
     return std.math.pow(f64, 10.0, 21.0 / 20.0);
-}
-
-fn parseEmissionGainLinear(raw: []const u8, unit: GainUnit) !f64 {
-    const value = try parseAdmMatrixGain(raw, unit);
-    return emissionGainLinear(value, unit);
 }
 
 fn emissionGainLinear(value: f64, unit: GainUnit) f64 {
@@ -1857,8 +1881,256 @@ pub const Document = struct {
         self: Document,
     ) !void {
         try self.validateEmissionProfileComplementaryObjects();
-        var objects: [xml.max_depth]?EmissionObjectParameterState =
-            @splat(null);
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            if (declaration.identifier.kind != .object) continue;
+            _ = try self.emissionObjectParameterState(
+                declaration.identifier.primary,
+            );
+        }
+    }
+
+    /// Validates complementary object parameters and programme overrides.
+    pub fn validateEmissionProfileComplementaryParameters(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileObjectParameters();
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            if (declaration.identifier.kind == .programme) {
+                try self.validateEmissionProgrammeAlternativeReferences(
+                    declaration.identifier.primary,
+                );
+                continue;
+            }
+            if (declaration.identifier.kind != .object) continue;
+            const child_count = try self.emissionComplementaryChildCount(
+                declaration.identifier.primary,
+            );
+            if (child_count == 0) continue;
+            try self.validateEmissionComplementaryParameterGroup(
+                declaration.identifier,
+                child_count + 1,
+            );
+        }
+    }
+
+    fn validateEmissionComplementaryParameterGroup(
+        self: Document,
+        root: adm.Identifier,
+        group_size: usize,
+    ) !void {
+        const root_parameters = try self.emissionObjectParameterState(
+            root.primary,
+        );
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .object or
+                owner.primary != root.primary or
+                reference.kind != .complementary_object)
+            {
+                continue;
+            }
+            const member = reference.identifier orelse
+                return error.InvalidAdmEmissionProfileComplementaryObject;
+            const member_parameters = try self.emissionObjectParameterState(
+                member.primary,
+            );
+            if (!emissionObjectParametersEqual(
+                root_parameters,
+                member_parameters,
+            )) {
+                return error.InvalidAdmEmissionProfileComplementaryParameters;
+            }
+        }
+
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            if (declaration.identifier.kind != .programme) continue;
+            try self.validateEmissionProgrammeComplementaryAlternatives(
+                declaration.identifier.primary,
+                root,
+                root_parameters,
+                group_size,
+            );
+        }
+    }
+
+    fn validateEmissionProgrammeAlternativeReferences(
+        self: Document,
+        programme_primary: u32,
+    ) !void {
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .programme or
+                owner.primary != programme_primary or
+                reference.kind != .alternative_value_set)
+            {
+                continue;
+            }
+            const alternative = reference.identifier orelse
+                return error.InvalidAdmEmissionProfileProgrammeAlternative;
+            if (!try self.emissionProgrammeIncludesObject(
+                programme_primary,
+                alternative.primary,
+            )) {
+                return error.InvalidAdmEmissionProfileProgrammeAlternative;
+            }
+            _ = try self.emissionProgrammeAlternativeForObject(
+                programme_primary,
+                alternative.primary,
+            );
+        }
+    }
+
+    fn validateEmissionProgrammeComplementaryAlternatives(
+        self: Document,
+        programme_primary: u32,
+        root: adm.Identifier,
+        root_parameters: EmissionObjectParameterState,
+        group_size: usize,
+    ) !void {
+        var included_count: usize = @intFromBool(
+            try self.emissionProgrammeIncludesObject(
+                programme_primary,
+                root.primary,
+            ),
+        );
+        var referenced_count: usize = 0;
+        var first_parameters: ?EmissionAlternativeParameters = null;
+        if (try self.emissionProgrammeAlternativeForObject(
+            programme_primary,
+            root.primary,
+        )) |alternative| {
+            referenced_count += 1;
+            first_parameters = try self.emissionAlternativeValueSetParameters(
+                alternative,
+                root_parameters.interaction,
+            );
+        }
+
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .object or
+                owner.primary != root.primary or
+                reference.kind != .complementary_object)
+            {
+                continue;
+            }
+            const member = reference.identifier orelse
+                return error.InvalidAdmEmissionProfileComplementaryObject;
+            included_count += @intFromBool(
+                try self.emissionProgrammeIncludesObject(
+                    programme_primary,
+                    member.primary,
+                ),
+            );
+            const alternative =
+                try self.emissionProgrammeAlternativeForObject(
+                    programme_primary,
+                    member.primary,
+                ) orelse continue;
+            referenced_count += 1;
+            const member_parameters = try self.emissionObjectParameterState(
+                member.primary,
+            );
+            const alternative_parameters =
+                try self.emissionAlternativeValueSetParameters(
+                    alternative,
+                    member_parameters.interaction,
+                );
+            if (first_parameters) |expected| {
+                if (!std.meta.eql(expected, alternative_parameters))
+                    return error.InvalidAdmEmissionProfileComplementaryAlternative;
+            } else {
+                first_parameters = alternative_parameters;
+            }
+        }
+        if (included_count == group_size and
+            referenced_count != 0 and
+            referenced_count != group_size)
+        {
+            return error.InvalidAdmEmissionProfileComplementaryAlternative;
+        }
+    }
+
+    fn emissionProgrammeAlternativeForObject(
+        self: Document,
+        programme_primary: u32,
+        object_primary: u32,
+    ) !?adm.Identifier {
+        var result: ?adm.Identifier = null;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .programme or
+                owner.primary != programme_primary or
+                reference.kind != .alternative_value_set)
+            {
+                continue;
+            }
+            const alternative = reference.identifier orelse
+                return error.InvalidAdmEmissionProfileProgrammeAlternative;
+            if (alternative.primary != object_primary) continue;
+            if (result != null)
+                return error.InvalidAdmEmissionProfileProgrammeAlternative;
+            result = alternative;
+        }
+        return result;
+    }
+
+    fn emissionAlternativeValueSetParameters(
+        self: Document,
+        wanted: adm.Identifier,
+        parent_interaction: ?EmissionObjectInteraction,
+    ) !EmissionAlternativeParameters {
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "alternativeValueSet",
+                    )) {
+                        continue;
+                    }
+                    const identifier = try emissionElementIdentifier(
+                        element,
+                        "alternativeValueSetID",
+                        .alternative_value_set,
+                    );
+                    if (identifier.kind != wanted.kind or
+                        identifier.primary != wanted.primary or
+                        identifier.secondary != wanted.secondary)
+                    {
+                        continue;
+                    }
+                    return readEmissionAlternativeValueSet(
+                        &events,
+                        element,
+                        parent_interaction,
+                    );
+                },
+                else => {},
+            }
+        }
+        return error.InvalidAdmEmissionProfileProgrammeAlternative;
+    }
+
+    fn emissionObjectParameterState(
+        self: Document,
+        object_primary: u32,
+    ) !EmissionObjectParameterState {
+        var object_depth: ?usize = null;
+        var state: ?EmissionObjectParameterState = null;
         var events = self.xml_document.iterator();
         while (try events.next()) |event| {
             switch (event) {
@@ -1870,6 +2142,7 @@ pub const Document = struct {
                             "audioObjectID",
                             .object,
                         );
+                        if (identifier.primary != object_primary) continue;
                         try validateEmissionObjectAttributes(element);
                         const interact = try emissionRequiredFlagAttribute(
                             element,
@@ -1880,77 +2153,95 @@ pub const Document = struct {
                         );
                         if (element.self_closing)
                             return error.InvalidAdmEmissionProfileObjectParameters;
-                        objects[element.depth] = .{
+                        object_depth = element.depth;
+                        state = .{
                             .primary = identifier.primary,
                             .top_level = parent.kind == .content,
                             .interact = interact,
                         };
                         continue;
                     }
-                    if (element.depth == 0) continue;
-                    const state = &(objects[element.depth - 1] orelse
-                        continue);
-                    if (isEmissionObjectReferenceOrLabel(name)) continue;
+                    const depth = object_depth orelse continue;
+                    if (element.depth != depth + 1) continue;
+                    const parameters = &(state orelse
+                        return error.InvalidAdmEmissionProfileObjectParameters);
+                    if (isEmissionObjectReferenceOrLabel(name)) {
+                        try skipEmissionElement(&events, element);
+                        continue;
+                    }
                     if (std.mem.eql(u8, name, "audioObjectInteraction")) {
-                        if (!state.top_level or state.interaction != null)
+                        if (!parameters.top_level or
+                            parameters.interaction != null)
+                        {
                             return error.InvalidAdmEmissionProfileObjectInteraction;
-                        state.interaction = try readEmissionObjectInteraction(
-                            &events,
-                            element,
-                        );
-                        if (state.interaction.?.position_range != null)
-                            state.uses_position_controls = true;
+                        }
+                        parameters.interaction =
+                            try readEmissionObjectInteraction(
+                                &events,
+                                element,
+                            );
+                        if (parameters.interaction.?.position_range != null)
+                            parameters.uses_position_controls = true;
                         continue;
                     }
                     if (std.mem.eql(u8, name, "gain")) {
-                        if (!state.top_level or state.gain != null)
+                        if (!parameters.top_level or parameters.gain != null)
                             return error.InvalidAdmEmissionProfileObjectGain;
-                        state.gain = try readEmissionGain(&events, element);
-                        continue;
-                    }
-                    if (std.mem.eql(u8, name, "positionOffset")) {
-                        if (!state.top_level or state.position != null)
-                            return error.InvalidAdmEmissionProfilePositionOffset;
-                        state.position = try readEmissionPositionOffset(
+                        parameters.gain = try readEmissionGain(
                             &events,
                             element,
                         );
-                        state.uses_position_controls = true;
+                        continue;
+                    }
+                    if (std.mem.eql(u8, name, "positionOffset")) {
+                        if (!parameters.top_level or
+                            parameters.position != null)
+                        {
+                            return error.InvalidAdmEmissionProfilePositionOffset;
+                        }
+                        parameters.position = try readEmissionPositionOffset(
+                            &events,
+                            element,
+                        );
+                        parameters.uses_position_controls = true;
                         continue;
                     }
                     if (std.mem.eql(u8, name, "alternativeValueSet")) {
-                        if (!state.top_level)
+                        if (!parameters.top_level)
                             return error.InvalidAdmEmissionProfileAlternativeValueSet;
-                        state.has_alternative_value_sets = true;
+                        parameters.has_alternative_value_sets = true;
                         try skipEmissionElement(&events, element);
                         continue;
                     }
                     return error.InvalidAdmEmissionProfileObjectSubelement;
                 },
                 .end => |element| {
-                    if (!std.mem.eql(
-                        u8,
-                        element.localName(),
-                        "audioObject",
-                    )) {
-                        continue;
-                    }
-                    var state = objects[element.depth] orelse
-                        return error.InvalidAdmEmissionProfileObjectParameters;
-                    if (state.has_alternative_value_sets and
-                        try self.validateEmissionObjectAlternativeValueSets(
-                            state.primary,
-                            state.interaction,
+                    if (object_depth != element.depth or
+                        !std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioObject",
                         ))
                     {
-                        state.uses_position_controls = true;
+                        continue;
                     }
-                    try self.validateEmissionObjectParameterState(state);
-                    objects[element.depth] = null;
+                    var result = state orelse
+                        return error.InvalidAdmEmissionProfileObjectParameters;
+                    if (result.has_alternative_value_sets and
+                        try self.validateEmissionObjectAlternativeValueSets(
+                            result.primary,
+                            result.interaction,
+                        ))
+                    {
+                        result.uses_position_controls = true;
+                    }
+                    try self.validateEmissionObjectParameterState(result);
+                    return result;
                 },
                 else => {},
             }
         }
+        return error.InvalidAdmEmissionProfileObjectParameters;
     }
 
     fn validateEmissionObjectParameterState(
@@ -1961,7 +2252,10 @@ pub const Document = struct {
             return error.InvalidAdmEmissionProfileObjectInteraction;
         if (state.interaction) |interaction| {
             try validateEmissionGainWithinRange(
-                state.gain orelse 1.0,
+                if (state.gain) |gain|
+                    emissionGainLinear(gain.value, gain.unit)
+                else
+                    1.0,
                 interaction.gain_range,
             );
             try validateEmissionPositionWithinRange(
@@ -2065,11 +2359,12 @@ pub const Document = struct {
                     {
                         continue;
                     }
-                    if (try readEmissionAlternativeValueSet(
+                    const parameters = try readEmissionAlternativeValueSet(
                         &events,
                         element,
                         parent_interaction,
-                    )) {
+                    );
+                    if (parameters.usesPositionControls()) {
                         uses_position_controls = true;
                     }
                 },
@@ -7082,6 +7377,215 @@ test "ADM XML emission profile accepts Cartesian object controls" {
     defer std.testing.allocator.free(cartesian_block);
     const document = try Document.init(cartesian_block);
     try document.validateEmissionProfileObjectParameters();
+}
+
+const valid_emission_complementary_parameters_xml =
+    \\<audioFormatExtended version="ITU-R_BS.2076-3">
+    \\  <audioProgramme audioProgrammeID="APR_1001">
+    \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+    \\    <audioContentIDRef>ACO_1002</audioContentIDRef>
+    \\    <alternativeValueSetIDRef>AVS_1001_0001</alternativeValueSetIDRef>
+    \\    <alternativeValueSetIDRef>AVS_1002_0001</alternativeValueSetIDRef>
+    \\  </audioProgramme>
+    \\  <audioContent audioContentID="ACO_1001">
+    \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+    \\  </audioContent>
+    \\  <audioContent audioContentID="ACO_1002">
+    \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+    \\  </audioContent>
+    \\  <audioObject audioObjectID="AO_1001" audioObjectName="English" interact="1">
+    \\    <audioComplementaryObjectIDRef>AO_1002</audioComplementaryObjectIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+    \\    <audioObjectInteraction onOffInteract="0" gainInteract="1">
+    \\      <gainInteractionRange bound="min" gainUnit="dB">-6.0</gainInteractionRange>
+    \\      <gainInteractionRange bound="max" gainUnit="dB">6.0</gainInteractionRange>
+    \\    </audioObjectInteraction>
+    \\    <gain gainUnit="dB">-3.0</gain>
+    \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0001">
+    \\      <gain gainUnit="dB">0.0</gain>
+    \\      <audioObjectInteraction onOffInteract="0" gainInteract="0">
+    \\        <gainInteractionRange bound="min" gainUnit="dB">-6.0</gainInteractionRange>
+    \\        <gainInteractionRange bound="max" gainUnit="dB">6.0</gainInteractionRange>
+    \\      </audioObjectInteraction>
+    \\    </alternativeValueSet>
+    \\  </audioObject>
+    \\  <audioObject audioObjectID="AO_1002" audioObjectName="French" interact="1">
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
+    \\    <audioObjectInteraction onOffInteract="0" gainInteract="1">
+    \\      <gainInteractionRange bound="min" gainUnit="dB">-6.0</gainInteractionRange>
+    \\      <gainInteractionRange bound="max" gainUnit="dB">6.0</gainInteractionRange>
+    \\    </audioObjectInteraction>
+    \\    <gain gainUnit="dB">-3.0</gain>
+    \\    <alternativeValueSet alternativeValueSetID="AVS_1002_0001">
+    \\      <gain gainUnit="dB">0.0</gain>
+    \\      <audioObjectInteraction onOffInteract="0" gainInteract="0">
+    \\        <gainInteractionRange bound="min" gainUnit="dB">-6.0</gainInteractionRange>
+    \\        <gainInteractionRange bound="max" gainUnit="dB">6.0</gainInteractionRange>
+    \\      </audioObjectInteraction>
+    \\    </alternativeValueSet>
+    \\  </audioObject>
+    \\  <audioTrackUID UID="ATU_00000001">
+    \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\  </audioTrackUID>
+    \\  <audioTrackUID UID="ATU_00000002">
+    \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\  </audioTrackUID>
+    \\  <profileList>
+    \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+    \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+    \\  </profileList>
+    \\</audioFormatExtended>
+;
+
+fn expectEmissionComplementaryParameterReplacement(
+    expected_error: anyerror,
+    needle: []const u8,
+    replacement: []const u8,
+) !void {
+    const replaced = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_complementary_parameters_xml,
+        needle,
+        replacement,
+    );
+    defer std.testing.allocator.free(replaced);
+    try std.testing.expect(!std.mem.eql(
+        u8,
+        replaced,
+        valid_emission_complementary_parameters_xml,
+    ));
+    const document = try Document.init(replaced);
+    try std.testing.expectError(
+        expected_error,
+        document.validateEmissionProfileComplementaryParameters(),
+    );
+}
+
+test "ADM XML emission profile validates complementary parameters" {
+    const document = try Document.init(
+        valid_emission_complementary_parameters_xml,
+    );
+    try document.validateEmissionProfileComplementaryParameters();
+
+    const without_alternatives = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_complementary_parameters_xml,
+        "    <alternativeValueSetIDRef>AVS_1001_0001</alternativeValueSetIDRef>\n" ++
+            "    <alternativeValueSetIDRef>AVS_1002_0001</alternativeValueSetIDRef>\n",
+        "",
+    );
+    defer std.testing.allocator.free(without_alternatives);
+    const static_document = try Document.init(without_alternatives);
+    try static_document.validateEmissionProfileComplementaryParameters();
+
+    const fixed_first = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_complementary_parameters_xml,
+        "    <audioContentIDRef>ACO_1002</audioContentIDRef>\n" ++
+            "    <alternativeValueSetIDRef>AVS_1002_0001</alternativeValueSetIDRef>\n",
+        "",
+    );
+    defer std.testing.allocator.free(fixed_first);
+    const fixed_programmes = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        fixed_first,
+        "  <audioContent audioContentID=\"ACO_1001\">",
+        "  <audioProgramme audioProgrammeID=\"APR_1002\">\n" ++
+            "    <audioContentIDRef>ACO_1002</audioContentIDRef>\n" ++
+            "    <alternativeValueSetIDRef>AVS_1002_0001</alternativeValueSetIDRef>\n" ++
+            "  </audioProgramme>\n" ++
+            "  <audioContent audioContentID=\"ACO_1001\">",
+    );
+    defer std.testing.allocator.free(fixed_programmes);
+    const fixed_document = try Document.init(fixed_programmes);
+    try fixed_document.validateEmissionProfileComplementaryParameters();
+}
+
+test "ADM XML emission profile requires equal complementary defaults" {
+    try expectEmissionComplementaryParameterReplacement(
+        error.InvalidAdmEmissionProfileComplementaryParameters,
+        "    <gain gainUnit=\"dB\">-3.0</gain>\n" ++
+            "    <alternativeValueSet alternativeValueSetID=\"AVS_1002_0001\">",
+        "    <gain gainUnit=\"dB\">-2.0</gain>\n" ++
+            "    <alternativeValueSet alternativeValueSetID=\"AVS_1002_0001\">",
+    );
+    try expectEmissionComplementaryParameterReplacement(
+        error.InvalidAdmEmissionProfileComplementaryParameters,
+        "  <audioObject audioObjectID=\"AO_1002\" audioObjectName=\"French\" interact=\"1\">\n" ++
+            "    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>\n" ++
+            "    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>\n" ++
+            "    <audioObjectInteraction onOffInteract=\"0\" gainInteract=\"1\">",
+        "  <audioObject audioObjectID=\"AO_1002\" audioObjectName=\"French\" interact=\"1\">\n" ++
+            "    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>\n" ++
+            "    <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>\n" ++
+            "    <audioObjectInteraction onOffInteract=\"0\" gainInteract=\"0\">",
+    );
+}
+
+test "ADM XML emission profile requires complete programme alternatives" {
+    try expectEmissionComplementaryParameterReplacement(
+        error.InvalidAdmEmissionProfileComplementaryAlternative,
+        "    <alternativeValueSetIDRef>AVS_1002_0001</alternativeValueSetIDRef>\n",
+        "",
+    );
+    try expectEmissionComplementaryParameterReplacement(
+        error.InvalidAdmEmissionProfileComplementaryAlternative,
+        "      <gain gainUnit=\"dB\">0.0</gain>\n" ++
+            "      <audioObjectInteraction onOffInteract=\"0\" gainInteract=\"0\">\n" ++
+            "        <gainInteractionRange bound=\"min\" gainUnit=\"dB\">-6.0</gainInteractionRange>\n" ++
+            "        <gainInteractionRange bound=\"max\" gainUnit=\"dB\">6.0</gainInteractionRange>\n" ++
+            "      </audioObjectInteraction>\n" ++
+            "    </alternativeValueSet>\n" ++
+            "  </audioObject>\n" ++
+            "  <audioTrackUID UID=\"ATU_00000001\">",
+        "      <gain gainUnit=\"dB\">-1.0</gain>\n" ++
+            "      <audioObjectInteraction onOffInteract=\"0\" gainInteract=\"0\">\n" ++
+            "        <gainInteractionRange bound=\"min\" gainUnit=\"dB\">-6.0</gainInteractionRange>\n" ++
+            "        <gainInteractionRange bound=\"max\" gainUnit=\"dB\">6.0</gainInteractionRange>\n" ++
+            "      </audioObjectInteraction>\n" ++
+            "    </alternativeValueSet>\n" ++
+            "  </audioObject>\n" ++
+            "  <audioTrackUID UID=\"ATU_00000001\">",
+    );
+    try expectEmissionComplementaryParameterReplacement(
+        error.InvalidAdmEmissionProfileProgrammeAlternative,
+        "    <alternativeValueSetIDRef>AVS_1001_0001</alternativeValueSetIDRef>\n",
+        "    <alternativeValueSetIDRef>AVS_1001_0001</alternativeValueSetIDRef>\n" ++
+            "    <alternativeValueSetIDRef>AVS_1001_0001</alternativeValueSetIDRef>\n",
+    );
+
+    const unassociated_content = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_complementary_parameters_xml,
+        "    <audioContentIDRef>ACO_1002</audioContentIDRef>\n",
+        "",
+    );
+    defer std.testing.allocator.free(unassociated_content);
+    const unassociated_programme = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        unassociated_content,
+        "  <audioContent audioContentID=\"ACO_1001\">",
+        "  <audioProgramme audioProgrammeID=\"APR_1002\">\n" ++
+            "    <audioContentIDRef>ACO_1002</audioContentIDRef>\n" ++
+            "  </audioProgramme>\n" ++
+            "  <audioContent audioContentID=\"ACO_1001\">",
+    );
+    defer std.testing.allocator.free(unassociated_programme);
+    const document = try Document.init(unassociated_programme);
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileProgrammeAlternative,
+        document.validateEmissionProfileComplementaryParameters(),
+    );
 }
 
 test "ADM XML emission profile validates complete object sources" {

@@ -3532,6 +3532,7 @@ test "installed package exposes file-backed audio writers" {
     try emission_adm.validateEmissionProfileMatrices();
     try emission_adm.validateEmissionProfileComplementaryObjects();
     try emission_adm.validateEmissionProfileObjectParameters();
+    try emission_adm.validateEmissionProfileComplementaryParameters();
     var wav = try plugin.dsp.WavFileWriter.initWithRiffMetadata(
         std.testing.io,
         wav_file,
