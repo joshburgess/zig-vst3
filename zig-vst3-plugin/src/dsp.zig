@@ -1,5 +1,6 @@
 pub const aiff_writer = @import("dsp/aiff_writer.zig");
 pub const adm = @import("dsp/adm.zig");
+pub const adm_render = @import("dsp/adm_render.zig");
 pub const adm_time = @import("dsp/adm_time.zig");
 pub const adm_xml = @import("dsp/adm_xml.zig");
 pub const audio_block = @import("dsp/audio_block.zig");
@@ -99,6 +100,9 @@ pub const AdmChannelAllocationIterator = adm.Iterator;
 pub const AdmChannelAllocationView = adm.View;
 pub const AdmIdentifier = adm.Identifier;
 pub const AdmIdentifierKind = adm.IdentifierKind;
+pub const AdmStaticMatrixMixer = adm_render.StaticMatrixMixer;
+pub const maximum_adm_renderer_input_channels =
+    adm_render.maximum_input_channels;
 pub const AdmXmlDeclaration = adm_xml.Declaration;
 pub const AdmXmlDeclarationIterator = adm_xml.DeclarationIterator;
 pub const AdmXmlBlockFormat = adm_xml.BlockFormat;
@@ -808,6 +812,7 @@ pub const fillWindow = window.fill;
 
 test {
     _ = aiff_writer;
+    _ = adm_render;
     _ = audio_block;
     _ = audio_file_reader;
     _ = audio_metadata;

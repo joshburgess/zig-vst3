@@ -3471,6 +3471,16 @@ test "installed package exposes file-backed audio writers" {
         "mix",
         coefficient.gain_variable.?.value(),
     );
+    const matrix_inputs = [_]plugin.dsp.AdmIdentifier{
+        try plugin.dsp.AdmIdentifier.parse("AC_00010001"),
+    };
+    try std.testing.expectError(
+        error.UnsupportedDynamicAdmMatrixCoefficient,
+        plugin.dsp.AdmStaticMatrixMixer(f32).init(
+            &matrix_block,
+            &matrix_inputs,
+        ),
+    );
     const emission_adm = try plugin.dsp.AdmXmlDocument.init(
         \\<audioFormatExtended version="ITU-R_BS.2076-3">
         \\  <audioProgramme audioProgrammeID="APR_1001" audioProgrammeName="Multilingual" audioProgrammeLanguage="und">
