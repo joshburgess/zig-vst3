@@ -24,22 +24,22 @@ for file in $files; do
     fi
 done
 
-if rg -n 'gui-adapters|zig_vstgui_|@cImport' $files; then
+if grep -nE 'gui-adapters|zig_vstgui_|@cImport' $files; then
     printf 'public GUI examples must not import adapter internals or native adapter symbols\n' >&2
     exit 1
 fi
 
-if rg -n '@import\("zig-vst3-plugin"\)' $authoring_files; then
+if grep -nE '@import\("zig-vst3-plugin"\)' $authoring_files; then
     printf 'ordinary GUI authoring examples must use the zig-vst3.vstgui surface\n' >&2
     exit 1
 fi
 
-if ! rg -q '@import\("zig-vst3-plugin"\)\.gui' examples/gui/lifecycle.zig; then
+if ! grep -qE '@import\("zig-vst3-plugin"\)\.gui' examples/gui/lifecycle.zig; then
     printf 'the lifecycle example must name the toolkit-neutral adapter contract explicitly\n' >&2
     exit 1
 fi
 
-if ! rg -q '@import\("zig-vst3"\)' examples/sample_player_editor.zig; then
+if ! grep -qE '@import\("zig-vst3"\)' examples/sample_player_editor.zig; then
     printf 'sample_player_editor.zig must import the public zig-vst3 package\n' >&2
     exit 1
 fi

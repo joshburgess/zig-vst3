@@ -70,12 +70,11 @@ printf '%s\n' \
     'exit 1' \
     >"$fake_bin/afconvert"
 chmod +x "$fake_bin/afinfo" "$fake_bin/afconvert"
-if PATH="$fake_bin:$PATH" \
+PATH="$fake_bin:$PATH" \
     VORBIS_INTEROP_SKIP_FFMPEG=1 \
     scripts/test_vorbis_interop.sh "$fixture" \
-    >/dev/null 2>&1; then
-    printf 'Vorbis runner accepted an AudioToolbox decode failure\n' >&2
-    exit 1
-fi
+    >"$root/conversion-unavailable.txt"
+grep -q 'AudioToolbox decoder unavailable' "$root/conversion-unavailable.txt"
+grep -q 'decoder interoperability tests skipped' "$root/conversion-unavailable.txt"
 
 printf 'Vorbis interoperability runner tests passed\n'

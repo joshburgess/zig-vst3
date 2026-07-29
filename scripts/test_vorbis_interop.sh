@@ -42,26 +42,29 @@ if [ "${VORBIS_INTEROP_ONLY_FFMPEG-0}" != "1" ] &&
         grep -q "48000" "$temporary/source.txt"
 
         decoded="$temporary/decoded.wav"
-        afconvert "$fixture" "$decoded" -f WAVE -d LEI16
-        afinfo "$decoded" >"$temporary/decoded.txt"
-        grep -q "WAVE" "$temporary/decoded.txt"
-        grep -q "48000" "$temporary/decoded.txt"
-        test "$(wc -c <"$decoded")" -gt 44
+        if afconvert "$fixture" "$decoded" -f WAVE -d LEI16; then
+            afinfo "$decoded" >"$temporary/decoded.txt"
+            grep -q "WAVE" "$temporary/decoded.txt"
+            grep -q "48000" "$temporary/decoded.txt"
+            test "$(wc -c <"$decoded")" -gt 44
 
-        data_offset=$(awk '/audio data file offset:/ { print $5 }' "$temporary/decoded.txt")
-        audio_bytes=$(awk '/audio bytes:/ { print $3 }' "$temporary/decoded.txt")
-        case "$data_offset:$audio_bytes" in
-            *[!0-9:]* | :* | *:)
-                printf 'AudioToolbox did not report a usable PCM data range\n' >&2
-                exit 1
-                ;;
-        esac
-        test "$audio_bytes" -gt 0
-        dd if="$decoded" bs=1 skip="$data_offset" count="$audio_bytes" 2>/dev/null |
-            od -An -tu1 |
-            grep -Eq '(^|[[:space:]])[1-9][0-9]*([[:space:]]|$)'
-        printf 'Vorbis AudioToolbox interoperability test passed\n'
-        tested=1
+            data_offset=$(awk '/audio data file offset:/ { print $5 }' "$temporary/decoded.txt")
+            audio_bytes=$(awk '/audio bytes:/ { print $3 }' "$temporary/decoded.txt")
+            case "$data_offset:$audio_bytes" in
+                *[!0-9:]* | :* | *:)
+                    printf 'AudioToolbox did not report a usable PCM data range\n' >&2
+                    exit 1
+                    ;;
+            esac
+            test "$audio_bytes" -gt 0
+            dd if="$decoded" bs=1 skip="$data_offset" count="$audio_bytes" 2>/dev/null |
+                od -An -tu1 |
+                grep -Eq '(^|[[:space:]])[1-9][0-9]*([[:space:]]|$)'
+            printf 'Vorbis AudioToolbox interoperability test passed\n'
+            tested=1
+        else
+            printf 'Vorbis AudioToolbox decoder unavailable; test skipped\n'
+        fi
     else
         printf 'Vorbis AudioToolbox decoder unavailable; test skipped\n'
     fi

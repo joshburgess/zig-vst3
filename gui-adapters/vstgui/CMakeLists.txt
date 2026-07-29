@@ -170,6 +170,7 @@ add_custom_target(zig_vstgui_visual_tests_run
     COMMAND $<TARGET_FILE:zig_vstgui_visual_tests>
         "${CMAKE_CURRENT_LIST_DIR}/testdata/visual"
         "${CMAKE_BINARY_DIR}/visual-regression"
+        ${ZIG_VSTGUI_VISUAL_TEST_ARGS}
     DEPENDS zig_vstgui_visual_tests
 )
 

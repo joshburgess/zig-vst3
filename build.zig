@@ -14,13 +14,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const ara_translate = b.addTranslateC(.{
-        .root_source_file = b.path("vendor/ARA_API/ARAInterface.h"),
-        .target = target,
-        .optimize = optimize,
-    });
-    ara_translate.addIncludePath(b.path("vendor/ARA_API"));
-    const ara_raw = ara_translate.createModule();
+    const ara_raw = createAraRawModule(b, target, optimize);
     const zig_vst3_ara = b.addModule("zig-vst3-ara", .{
         .root_source_file = b.path("zig-vst3/src/ara_api.zig"),
         .target = target,
@@ -715,16 +709,6 @@ pub fn build(b: *std.Build) void {
         }),
     };
     for (ara_cross_targets) |ara_target| {
-        const ara_cross_translate = b.addTranslateC(.{
-            .root_source_file = b.path(
-                "vendor/ARA_API/ARAInterface.h",
-            ),
-            .target = ara_target,
-            .optimize = .ReleaseSafe,
-        });
-        ara_cross_translate.addIncludePath(
-            b.path("vendor/ARA_API"),
-        );
         const ara_cross_module = b.createModule(.{
             .root_source_file = b.path("zig-vst3/src/ara_api.zig"),
             .target = ara_target,
@@ -732,7 +716,7 @@ pub fn build(b: *std.Build) void {
         });
         ara_cross_module.addImport(
             "ara-raw",
-            ara_cross_translate.createModule(),
+            createAraRawModule(b, ara_target, .ReleaseSafe),
         );
         const ara_cross_tests = b.addTest(.{
             .root_module = ara_cross_module,
@@ -2000,7 +1984,9 @@ pub fn build(b: *std.Build) void {
     );
     const run_audio_unit_v2_abi =
         b.addRunArtifact(audio_unit_v2_abi_harness);
-    audio_unit_test_step.dependOn(&run_audio_unit_v2_abi.step);
+    if (b.graph.host.result.os.tag == .macos) {
+        audio_unit_test_step.dependOn(&run_audio_unit_v2_abi.step);
+    }
     audio_unit_test_step.dependOn(audio_unit_cross_build_step);
 
     const mono_gain_audio_unit_module = b.createModule(.{
@@ -2855,7 +2841,9 @@ pub fn build(b: *std.Build) void {
     });
     test_step.dependOn(core_midi_test_step);
     test_step.dependOn(audio_unit_cross_build_step);
-    test_step.dependOn(&run_audio_unit_v2_abi.step);
+    if (b.graph.host.result.os.tag == .macos) {
+        test_step.dependOn(&run_audio_unit_v2_abi.step);
+    }
     test_step.dependOn(ara_test_step);
     test_step.dependOn(core_audio_test_step);
     test_step.dependOn(wasapi_test_step);
@@ -3783,6 +3771,42 @@ fn validateCrossMsvcPrerequisites(
     );
 }
 
+fn createAraRawModule(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Module {
+    const translate = b.addTranslateC(.{
+        .root_source_file = b.path("vendor/ARA_API/ARAInterface.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    translate.addIncludePath(b.path("vendor/ARA_API"));
+    return switch (target.result.cpu.arch) {
+        .x86, .x86_64 => blk: {
+            const pack_bindings = b.addExecutable(.{
+                .name = "pack-ara-bindings",
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path("tools/pack_ara_bindings.zig"),
+                    .target = b.graph.host,
+                    .optimize = .ReleaseSafe,
+                }),
+            });
+            const run = b.addRunArtifact(pack_bindings);
+            run.addFileArg(translate.getOutput());
+            const packed_bindings =
+                run.addOutputFileArg("ARAInterface.zig");
+            break :blk b.createModule(.{
+                .root_source_file = packed_bindings,
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            });
+        },
+        else => translate.createModule(),
+    };
+}
+
 fn hasReferenceEditor(short_name: []const u8) bool {
     return std.mem.eql(u8, short_name, "gain") or
         std.mem.eql(u8, short_name, "bypass") or
@@ -3809,19 +3833,21 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
         ".vst3-sdk/vstgui-adapter-build/Release/libs/libzig_vstgui_adapter.a";
     module.addObjectFile(b.path(adapter_library_path));
     module.addObjectFile(b.path(library_path));
-    module.linkSystemLibrary("c++", .{});
     if (target.result.os.tag == .macos) {
+        module.linkSystemLibrary("c++", .{});
         module.linkFramework("Cocoa", .{});
         module.linkFramework("QuartzCore", .{});
         module.linkFramework("Accelerate", .{});
         module.linkFramework("UniformTypeIdentifiers", .{});
     } else if (target.result.os.tag == .linux) {
+        module.linkSystemLibrary("stdc++", .{});
         for ([_][]const u8{
             "X11",            "freetype2",      "xcb",         "xcb-util",       "xcb-cursor", "xcb-keysyms", "xcb-xkb",
             "xkbcommon",      "xkbcommon-x11",  "glib-2.0",    "cairo",          "pangocairo", "pangoft2",    "fontconfig",
             "wayland-client", "wayland-cursor", "wayland-egl", "wayland-server", "pthread",    "dl",
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .yes });
     } else if (target.result.os.tag == .windows) {
+        module.linkSystemLibrary("c++", .{});
         for ([_][]const u8{
             "comctl32", "d2d1", "dwrite",        "gdi32", "ole32", "oleaut32", "shell32", "shlwapi", "uiautomationcore",
             "user32",   "uuid", "windowscodecs",

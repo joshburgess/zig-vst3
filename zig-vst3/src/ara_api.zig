@@ -1,6 +1,19 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const raw = @import("ara-raw");
+
+comptime {
+    if (builtin.cpu.arch == .x86 or builtin.cpu.arch == .x86_64) {
+        if (@sizeOf(raw.ARAInterfaceConfiguration) != 20 or
+            @alignOf(raw.ARAInterfaceConfiguration) != 1 or
+            @sizeOf(raw.ARAPlaybackRegionProperties) != 76 or
+            @alignOf(raw.ARAPlaybackRegionProperties) != 1)
+        {
+            @compileError("ARA x86 bindings do not match the packed C ABI");
+        }
+    }
+}
 
 pub const current_generation: raw.ARAAPIGeneration =
     raw.kARAAPIGeneration_2_3_Final;

@@ -8,8 +8,11 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $SourceDir = Join-Path $Root "gui-adapters/vstgui"
 $BuildDir = Join-Path $Root ".vst3-sdk/vstgui-adapter-build"
+$VisualTestArgs = $env:VSTGUI_VISUAL_TEST_ARGS
+if ($null -eq $VisualTestArgs) { $VisualTestArgs = "" }
 
 cmake -S $SourceDir -B $BuildDir `
+  "-DZIG_VSTGUI_VISUAL_TEST_ARGS=$VisualTestArgs" `
   -DVSTGUI_STANDALONE=OFF `
   -DVSTGUI_STANDALONE_EXAMPLES=OFF `
   -DVSTGUI_TOOLS=OFF `

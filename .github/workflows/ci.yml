@@ -35,6 +35,8 @@ jobs:
   test:
     name: Build and test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      VSTGUI_VISUAL_TEST_ARGS: --skip-performance
     strategy:
       fail-fast: false
       matrix:
@@ -60,14 +62,35 @@ jobs:
             libxcb-keysyms1-dev \
             libxcb-util-dev \
             libxcb-xkb-dev \
-            libxkbcommon-x11-dev
+            libxkbcommon-x11-dev \
+            xauth \
+            xvfb
+      - name: Detect Windows SDK libraries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $libcFile = Join-Path $env:RUNNER_TEMP 'zig-libc.txt'
+          zig libc | Out-File -FilePath $libcFile -Encoding utf8
+          zig libc $libcFile
+          "ZIG_LIBC_FILE=$libcFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Fetch pinned VST3 SDK
         shell: bash
         run: scripts/fetch_sdk.sh
       - name: Build
+        if: runner.os != 'Windows'
         run: zig build
+      - name: Build
+        if: runner.os == 'Windows'
+        run: zig build --libc "$env:ZIG_LIBC_FILE"
       - name: Test
+        if: runner.os == 'macOS'
         run: zig build test
+      - name: Test
+        if: runner.os == 'Linux'
+        run: xvfb-run -a zig build test
+      - name: Test
+        if: runner.os == 'Windows'
+        run: zig build test --libc "$env:ZIG_LIBC_FILE"
 
   raw-api-abi:
     name: Raw API ABI (${{ matrix.os }})

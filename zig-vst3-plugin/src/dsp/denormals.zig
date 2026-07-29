@@ -16,6 +16,8 @@ const flush_mask: Control = switch (builtin.cpu.arch) {
     else => 0,
 };
 
+var cached_mxcsr_mask = std.atomic.Value(u32).init(0);
+
 /// Restore on the same thread that entered the scope. Do not copy an active scope.
 pub const Scope = struct {
     previous: Control = 0,
@@ -24,7 +26,7 @@ pub const Scope = struct {
     pub fn enter() Scope {
         if (!supported) return .{};
         const previous = readControl();
-        const enabled = previous | flush_mask;
+        const enabled = previous | effectiveFlushMask();
         if (enabled != previous) writeControl(enabled);
         return .{ .previous = previous, .changed = enabled != previous };
     }
@@ -37,7 +39,16 @@ pub const Scope = struct {
 };
 
 pub fn flushToZeroEnabled() bool {
-    return supported and readControl() & flush_mask == flush_mask;
+    if (!supported) return false;
+    const mask = effectiveFlushMask();
+    return readControl() & mask == mask;
+}
+
+fn effectiveFlushMask() Control {
+    return switch (comptime builtin.cpu.arch) {
+        .x86_64 => flush_mask & readMxcsrMask(),
+        else => flush_mask,
+    };
 }
 
 fn readControl() Control {
@@ -77,6 +88,20 @@ fn writeMxcsr(value: u32) void {
         :
         : [value] "m" (stored),
         : .{ .mxcsr = true });
+}
+
+fn readMxcsrMask() u32 {
+    const cached = cached_mxcsr_mask.load(.monotonic);
+    if (cached != 0) return cached;
+
+    var state: [512]u8 align(16) = undefined;
+    asm volatile ("fxsave %[state]"
+        : [state] "=m" (state),
+    );
+    const detected = std.mem.readInt(u32, state[28..32], .little);
+    const mask = if (detected == 0) 0x0000_ffbf else detected;
+    cached_mxcsr_mask.store(mask, .monotonic);
+    return mask;
 }
 
 test "flush-to-zero scope restores the exact control state" {
