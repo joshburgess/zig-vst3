@@ -3473,15 +3473,29 @@ test "installed package exposes file-backed audio writers" {
     );
     const emission_adm = try plugin.dsp.AdmXmlDocument.init(
         \\<audioFormatExtended version="ITU-R_BS.2076-3">
-        \\  <audioProgramme audioProgrammeID="APR_1001">
+        \\  <audioProgramme audioProgrammeID="APR_1001" audioProgrammeName="Multilingual" audioProgrammeLanguage="und">
+        \\    <audioProgrammeLabel language="eng">Main programme</audioProgrammeLabel>
         \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
         \\    <audioContentIDRef>ACO_1002</audioContentIDRef>
+        \\    <loudnessMetadata>
+        \\      <integratedLoudness>-23.0</integratedLoudness>
+        \\    </loudnessMetadata>
         \\  </audioProgramme>
-        \\  <audioContent audioContentID="ACO_1001">
+        \\  <audioContent audioContentID="ACO_1001" audioContentName="Main" audioContentLanguage="eng">
+        \\    <audioContentLabel language="eng">Main</audioContentLabel>
         \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\    <loudnessMetadata>
+        \\      <dialogueLoudness>-24.0</dialogueLoudness>
+        \\    </loudnessMetadata>
+        \\    <dialogue dialogueContentKind="5">1</dialogue>
         \\  </audioContent>
-        \\  <audioContent audioContentID="ACO_1002">
+        \\  <audioContent audioContentID="ACO_1002" audioContentName="Alternative" audioContentLanguage="fra">
+        \\    <audioContentLabel language="fra">Alternative</audioContentLabel>
         \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\    <loudnessMetadata>
+        \\      <dialogueLoudness>-24.0</dialogueLoudness>
+        \\    </loudnessMetadata>
+        \\    <dialogue dialogueContentKind="5">1</dialogue>
         \\  </audioContent>
         \\  <audioObject audioObjectID="AO_1001" audioObjectName="Main" interact="0">
         \\    <audioComplementaryObjectIDRef>AO_1002</audioComplementaryObjectIDRef>
@@ -3533,6 +3547,7 @@ test "installed package exposes file-backed audio writers" {
     try emission_adm.validateEmissionProfileComplementaryObjects();
     try emission_adm.validateEmissionProfileObjectParameters();
     try emission_adm.validateEmissionProfileComplementaryParameters();
+    try emission_adm.validateEmissionProfileProgrammeContentMetadata();
     var wav = try plugin.dsp.WavFileWriter.initWithRiffMetadata(
         std.testing.io,
         wav_file,

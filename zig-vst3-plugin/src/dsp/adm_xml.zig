@@ -6,6 +6,24 @@ const xml = @import("xml.zig");
 const max_identifier_bytes: usize = 20;
 const max_profile_text_bytes: usize = 128;
 const max_emission_name_bytes: usize = 64 * 4;
+const emission_language_word_count: usize = (26 * 26 * 26 + 63) / 64;
+const iso_639_2_codes =
+    "aarabkaceachadaadyafaafhafrainakaakkalbalealgaltamhanganpapaaraarcargarmarnarpartarwasmastathaus" ++
+    "avaaveawaaymazebadbaibakbalbambanbaqbasbatbejbelbembenberbhobihbikbinbisblabntbodbosbrabrebtkbua" ++
+    "bugbulburbyncadcaicarcatcaucebcelceschachbchechgchichkchmchnchochpchrchuchvchycmccnrcopcorcoscpe" ++
+    "cpfcppcrecrhcrpcsbcuscymczedakdandardaydeldendeudgrdindivdoidradsbduadumdutdyudzoefiegyekaellelx" ++
+    "engenmepoesteuseweewofanfaofasfatfijfilfinfiufonfrafrefrmfrofrrfrsfryfulfurgaagaygbagemgeogergez" ++
+    "gilglagleglgglvgmhgohgongorgotgrbgrcgregrngswgujgwihaihathauhawhebherhilhimhinhithmnhmohrvhsbhun" ++
+    "huphyeibaiboiceidoiiiijoikuileiloinaincindineinhipkirairoislitajavjbojpnjprjrbkaakabkackalkamkan" ++
+    "karkaskatkaukawkazkbdkhakhikhmkhokikkinkirkmbkokkomkonkorkoskpekrckrlkrokrukuakumkurkutladlahlam" ++
+    "laolatlavlezlimlinlitlollozltzlualublugluilunluolusmacmadmagmahmaimakmalmanmaomapmarmasmaymdfmdr" ++
+    "menmgamicminmismkdmkhmlgmltmncmnimnomohmonmosmrimsamulmunmusmwlmwrmyamynmyvnahnainapnaunavnblnde" ++
+    "ndondsnepnewnianicniunldnnonobnognonnornqonsonubnwcnyanymnynnyonziociojioriormosaossotaotopaapag" ++
+    "palpampanpappaupeoperphiphnplipolponporprapropusquerajraprarroarohromronrumrunruprussadsagsahsai" ++
+    "salsamsansassatscnscoselsemsgasgnshnsidsinsiositslaslksloslvsmasmesmismjsmnsmosmssnasndsnksogsom" ++
+    "sonsotspasqisrdsrnsrpsrrssasswsuksunsussuxswaswesycsyrtahtaitamtatteltemtertettgktglthatibtigtir" ++
+    "tivtkltlhtlitmhtogtontpitsitsntsotuktumtupturtuttvltwityvudmugauigukrumbundurduzbvaivenvievolvot" ++
+    "wakwalwarwaswelwenwlnwolxalxhoyaoyapyidyorypkzapzblzenzghzhazhozndzulzunzxxzza";
 pub const max_adm_positions: usize = 9;
 pub const max_adm_speaker_labels: usize = 16;
 pub const max_adm_speaker_label_bytes: usize = 64;
@@ -258,6 +276,19 @@ const EmissionAlternativeParameters = struct {
         return self.position != null or
             (self.interaction != null and
                 self.interaction.?.position_range != null);
+    }
+};
+
+const EmissionLanguageSet = struct {
+    words: [emission_language_word_count]u64 = @splat(0),
+
+    fn note(self: *EmissionLanguageSet, code: [3]u8) !void {
+        const index = emissionLanguageIndex(code);
+        const word = index / 64;
+        const mask = @as(u64, 1) << @intCast(index % 64);
+        if (self.words[word] & mask != 0)
+            return error.DuplicateAdmEmissionProfileLabelLanguage;
+        self.words[word] |= mask;
     }
 };
 
@@ -599,6 +630,65 @@ fn utf8ScalarCount(bytes: []const u8) usize {
         if (byte & 0xc0 != 0x80) count += 1;
     }
     return count;
+}
+
+fn emissionLanguageIndex(code: [3]u8) usize {
+    return (@as(usize, code[0] - 'a') * 26 * 26) +
+        (@as(usize, code[1] - 'a') * 26) +
+        @as(usize, code[2] - 'a');
+}
+
+fn isIso6392Code(code: []const u8) bool {
+    if (code.len != 3) return false;
+    for (code) |byte| {
+        if (byte < 'a' or byte > 'z') return false;
+    }
+    if (std.mem.order(u8, code, "qaa") != .lt and
+        std.mem.order(u8, code, "qtz") != .gt)
+    {
+        return true;
+    }
+    var low: usize = 0;
+    var high: usize = iso_639_2_codes.len / 3;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const candidate = iso_639_2_codes[middle * 3 ..][0..3];
+        switch (std.mem.order(u8, code, candidate)) {
+            .lt => high = middle,
+            .eq => return true,
+            .gt => low = middle + 1,
+        }
+    }
+    return false;
+}
+
+fn emissionRequiredLanguageAttribute(
+    element: xml.StartElement,
+    attribute_name: []const u8,
+) ![3]u8 {
+    const encoded = try element.attribute(attribute_name) orelse
+        return error.MissingAdmEmissionProfileLanguage;
+    var storage: [16]u8 = undefined;
+    const decoded = try xml.decodeContent(&storage, encoded);
+    if (!isIso6392Code(decoded))
+        return error.InvalidAdmEmissionProfileLanguage;
+    return decoded[0..3].*;
+}
+
+fn validateEmissionRequiredName(
+    element: xml.StartElement,
+    attribute_name: []const u8,
+) !void {
+    const encoded = try element.attribute(attribute_name) orelse
+        return error.MissingAdmEmissionProfileName;
+    var storage: [max_emission_name_bytes]u8 = undefined;
+    const decoded = xml.decodeContent(&storage, encoded) catch |err| switch (err) {
+        error.XmlDecodeBufferTooSmall => return error.InvalidAdmEmissionProfileName,
+        else => return err,
+    };
+    const characters = utf8ScalarCount(decoded);
+    if (characters == 0 or characters > 64)
+        return error.InvalidAdmEmissionProfileName;
 }
 
 fn emissionRequiredFlagAttribute(
@@ -1149,6 +1239,320 @@ fn readEmissionSimpleElement(
         }
     }
     return error.UnclosedAdmEmissionProfileParameter;
+}
+
+fn readEmissionProfileLabel(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+    languages: *EmissionLanguageSet,
+) !void {
+    try validateEmissionAttributes(
+        start,
+        &.{"language"},
+        error.InvalidAdmEmissionProfileLabelAttribute,
+    );
+    const language = try emissionRequiredLanguageAttribute(
+        start,
+        "language",
+    );
+    try languages.note(language);
+    var storage: [max_emission_name_bytes]u8 = undefined;
+    const value = readEmissionSimpleElement(
+        events,
+        start,
+        &storage,
+    ) catch |err| switch (err) {
+        error.AdmEmissionProfileParameterTooLong,
+        error.EmptyAdmEmissionProfileParameter,
+        => return error.InvalidAdmEmissionProfileLabel,
+        else => return err,
+    };
+    const characters = utf8ScalarCount(value);
+    if (characters == 0 or characters > 64)
+        return error.InvalidAdmEmissionProfileLabel;
+}
+
+fn readEmissionLoudnessMetadata(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !void {
+    try validateEmissionAttributes(
+        start,
+        &.{},
+        error.InvalidAdmEmissionProfileLoudnessAttribute,
+    );
+    if (start.self_closing)
+        return error.MissingAdmEmissionProfileLoudnessValue;
+    var integrated_seen = false;
+    var dialogue_seen = false;
+    while (try events.next()) |event| {
+        switch (event) {
+            .start => |element| {
+                if (element.depth != start.depth + 1)
+                    return error.InvalidAdmEmissionProfileLoudnessSubelement;
+                try validateEmissionAttributes(
+                    element,
+                    &.{},
+                    error.InvalidAdmEmissionProfileLoudnessAttribute,
+                );
+                const name = element.localName();
+                const seen = if (std.mem.eql(
+                    u8,
+                    name,
+                    "integratedLoudness",
+                ))
+                    &integrated_seen
+                else if (std.mem.eql(
+                    u8,
+                    name,
+                    "dialogueLoudness",
+                ))
+                    &dialogue_seen
+                else
+                    return error.InvalidAdmEmissionProfileLoudnessSubelement;
+                if (seen.*)
+                    return error.DuplicateAdmEmissionProfileLoudnessValue;
+                seen.* = true;
+                var storage: [max_profile_text_bytes]u8 = undefined;
+                const raw = try readEmissionSimpleElement(
+                    events,
+                    element,
+                    &storage,
+                );
+                const value = std.fmt.parseFloat(f64, raw) catch
+                    return error.InvalidAdmEmissionProfileLoudnessValue;
+                if (!std.math.isFinite(value))
+                    return error.InvalidAdmEmissionProfileLoudnessValue;
+            },
+            .end => |element| {
+                if (element.depth != start.depth or
+                    !std.mem.eql(u8, element.name, start.name))
+                {
+                    return error.InvalidAdmEmissionProfileLoudnessSubelement;
+                }
+                if (!integrated_seen and !dialogue_seen)
+                    return error.MissingAdmEmissionProfileLoudnessValue;
+                return;
+            },
+            .text => |text| {
+                if (std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                    return error.InvalidAdmEmissionProfileLoudnessSubelement;
+            },
+        }
+    }
+    return error.InvalidAdmEmissionProfileLoudnessSubelement;
+}
+
+fn readEmissionDialogue(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !void {
+    var storage: [16]u8 = undefined;
+    const raw = try readEmissionSimpleElement(events, start, &storage);
+    const dialogue = std.fmt.parseInt(u8, raw, 10) catch
+        return error.InvalidAdmEmissionProfileDialogue;
+    const attribute_name: []const u8, const maximum: u8 = switch (dialogue) {
+        0 => .{ "nonDialogueContentKind", 3 },
+        1 => .{ "dialogueContentKind", 6 },
+        2 => .{ "mixedContentKind", 4 },
+        else => return error.InvalidAdmEmissionProfileDialogue,
+    };
+    try validateEmissionAttributes(
+        start,
+        &.{attribute_name},
+        error.InvalidAdmEmissionProfileDialogueAttribute,
+    );
+    const encoded_kind = try start.attribute(attribute_name) orelse
+        return error.MissingAdmEmissionProfileDialogueKind;
+    var kind_storage: [16]u8 = undefined;
+    const raw_kind = try xml.decodeContent(&kind_storage, encoded_kind);
+    const kind = std.fmt.parseInt(u8, raw_kind, 10) catch
+        return error.InvalidAdmEmissionProfileDialogueKind;
+    if (kind > maximum)
+        return error.InvalidAdmEmissionProfileDialogueKind;
+}
+
+fn readEmissionReferenceElement(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !void {
+    try validateEmissionAttributes(
+        start,
+        &.{},
+        error.InvalidAdmEmissionProfileReferenceAttribute,
+    );
+    var storage: [max_identifier_bytes]u8 = undefined;
+    _ = try readEmissionSimpleElement(events, start, &storage);
+}
+
+fn readEmissionProgrammeMetadata(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !void {
+    try validateEmissionAttributes(
+        start,
+        &.{
+            "audioProgrammeID",
+            "audioProgrammeName",
+            "audioProgrammeLanguage",
+        },
+        error.InvalidAdmEmissionProfileProgrammeAttribute,
+    );
+    try validateEmissionRequiredName(start, "audioProgrammeName");
+    _ = try emissionRequiredLanguageAttribute(
+        start,
+        "audioProgrammeLanguage",
+    );
+    if (start.self_closing)
+        return error.InvalidAdmEmissionProfileProgrammeMetadata;
+
+    var content_references: usize = 0;
+    var loudness_count: usize = 0;
+    var label_languages = EmissionLanguageSet{};
+    while (try events.next()) |event| {
+        switch (event) {
+            .start => |element| {
+                if (element.depth != start.depth + 1)
+                    return error.InvalidAdmEmissionProfileProgrammeSubelement;
+                const name = element.localName();
+                if (std.mem.eql(u8, name, "audioContentIDRef")) {
+                    content_references += 1;
+                    try readEmissionReferenceElement(events, element);
+                } else if (std.mem.eql(
+                    u8,
+                    name,
+                    "audioProgrammeLabel",
+                )) {
+                    try readEmissionProfileLabel(
+                        events,
+                        element,
+                        &label_languages,
+                    );
+                } else if (std.mem.eql(
+                    u8,
+                    name,
+                    "loudnessMetadata",
+                )) {
+                    loudness_count += 1;
+                    if (loudness_count > 1)
+                        return error.DuplicateAdmEmissionProfileLoudnessMetadata;
+                    try readEmissionLoudnessMetadata(events, element);
+                } else if (std.mem.eql(
+                    u8,
+                    name,
+                    "alternativeValueSetIDRef",
+                )) {
+                    try readEmissionReferenceElement(events, element);
+                } else {
+                    return error.InvalidAdmEmissionProfileProgrammeSubelement;
+                }
+            },
+            .end => |element| {
+                if (element.depth != start.depth or
+                    !std.mem.eql(u8, element.name, start.name))
+                {
+                    return error.InvalidAdmEmissionProfileProgrammeSubelement;
+                }
+                if (content_references == 0)
+                    return error.MissingAdmEmissionProfileProgrammeContent;
+                if (loudness_count != 1)
+                    return error.MissingAdmEmissionProfileLoudnessMetadata;
+                return;
+            },
+            .text => |text| {
+                if (std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                    return error.InvalidAdmEmissionProfileProgrammeSubelement;
+            },
+        }
+    }
+    return error.InvalidAdmEmissionProfileProgrammeMetadata;
+}
+
+fn readEmissionContentMetadata(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !void {
+    try validateEmissionAttributes(
+        start,
+        &.{
+            "audioContentID",
+            "audioContentName",
+            "audioContentLanguage",
+        },
+        error.InvalidAdmEmissionProfileContentAttribute,
+    );
+    try validateEmissionRequiredName(start, "audioContentName");
+    _ = try emissionRequiredLanguageAttribute(
+        start,
+        "audioContentLanguage",
+    );
+    if (start.self_closing)
+        return error.InvalidAdmEmissionProfileContentMetadata;
+
+    var object_references: usize = 0;
+    var loudness_count: usize = 0;
+    var dialogue_count: usize = 0;
+    var label_languages = EmissionLanguageSet{};
+    while (try events.next()) |event| {
+        switch (event) {
+            .start => |element| {
+                if (element.depth != start.depth + 1)
+                    return error.InvalidAdmEmissionProfileContentSubelement;
+                const name = element.localName();
+                if (std.mem.eql(u8, name, "audioObjectIDRef")) {
+                    object_references += 1;
+                    if (object_references > 1)
+                        return error.InvalidAdmEmissionProfileContentReference;
+                    try readEmissionReferenceElement(events, element);
+                } else if (std.mem.eql(
+                    u8,
+                    name,
+                    "audioContentLabel",
+                )) {
+                    try readEmissionProfileLabel(
+                        events,
+                        element,
+                        &label_languages,
+                    );
+                } else if (std.mem.eql(
+                    u8,
+                    name,
+                    "loudnessMetadata",
+                )) {
+                    loudness_count += 1;
+                    if (loudness_count > 1)
+                        return error.DuplicateAdmEmissionProfileLoudnessMetadata;
+                    try readEmissionLoudnessMetadata(events, element);
+                } else if (std.mem.eql(u8, name, "dialogue")) {
+                    dialogue_count += 1;
+                    if (dialogue_count > 1)
+                        return error.DuplicateAdmEmissionProfileDialogue;
+                    try readEmissionDialogue(events, element);
+                } else {
+                    return error.InvalidAdmEmissionProfileContentSubelement;
+                }
+            },
+            .end => |element| {
+                if (element.depth != start.depth or
+                    !std.mem.eql(u8, element.name, start.name))
+                {
+                    return error.InvalidAdmEmissionProfileContentSubelement;
+                }
+                if (object_references != 1)
+                    return error.InvalidAdmEmissionProfileContentReference;
+                if (loudness_count != 1)
+                    return error.MissingAdmEmissionProfileLoudnessMetadata;
+                if (dialogue_count != 1)
+                    return error.MissingAdmEmissionProfileDialogue;
+                return;
+            },
+            .text => |text| {
+                if (std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                    return error.InvalidAdmEmissionProfileContentSubelement;
+            },
+        }
+    }
+    return error.InvalidAdmEmissionProfileContentMetadata;
 }
 
 fn skipEmissionElement(
@@ -1912,6 +2316,28 @@ pub const Document = struct {
                 declaration.identifier,
                 child_count + 1,
             );
+        }
+    }
+
+    /// Validates programme and content names, languages, labels, loudness,
+    /// dialogue classification, and permitted direct sub-elements.
+    pub fn validateEmissionProfileProgrammeContentMetadata(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileComplementaryParameters();
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    const name = element.localName();
+                    if (std.mem.eql(u8, name, "audioProgramme")) {
+                        try readEmissionProgrammeMetadata(&events, element);
+                    } else if (std.mem.eql(u8, name, "audioContent")) {
+                        try readEmissionContentMetadata(&events, element);
+                    }
+                },
+                else => {},
+            }
         }
     }
 
@@ -7050,11 +7476,23 @@ test "ADM XML emission profile exposes complementary level limits" {
 
 const valid_emission_object_parameters_xml =
     \\<audioFormatExtended version="ITU-R_BS.2076-3">
-    \\  <audioProgramme audioProgrammeID="APR_1001">
+    \\  <audioProgramme audioProgrammeID="APR_1001" audioProgrammeName="News" audioProgrammeLanguage="eng">
+    \\    <audioProgrammeLabel language="eng">Evening News</audioProgrammeLabel>
+    \\    <audioProgrammeLabel language="deu">Abendnachrichten</audioProgrammeLabel>
     \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+    \\    <loudnessMetadata>
+    \\      <integratedLoudness>-23.0</integratedLoudness>
+    \\      <dialogueLoudness>-24.0</dialogueLoudness>
+    \\    </loudnessMetadata>
     \\  </audioProgramme>
-    \\  <audioContent audioContentID="ACO_1001">
+    \\  <audioContent audioContentID="ACO_1001" audioContentName="Commentary" audioContentLanguage="eng">
+    \\    <audioContentLabel language="eng">Commentary</audioContentLabel>
+    \\    <audioContentLabel language="fra">Commentaires</audioContentLabel>
     \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+    \\    <loudnessMetadata>
+    \\      <integratedLoudness>-24.0</integratedLoudness>
+    \\    </loudnessMetadata>
+    \\    <dialogue dialogueContentKind="5">1</dialogue>
     \\  </audioContent>
     \\  <audioObject audioObjectID="AO_1001" audioObjectName="Commentary" interact="1">
     \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
@@ -7260,12 +7698,24 @@ test "ADM XML emission profile rejects parameters on nested objects" {
         u8,
         std.testing.allocator,
         valid_emission_object_parameters_xml,
-        \\  <audioContent audioContentID="ACO_1001">
+        \\  <audioContent audioContentID="ACO_1001" audioContentName="Commentary" audioContentLanguage="eng">
+        \\    <audioContentLabel language="eng">Commentary</audioContentLabel>
+        \\    <audioContentLabel language="fra">Commentaires</audioContentLabel>
         \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\    <loudnessMetadata>
+        \\      <integratedLoudness>-24.0</integratedLoudness>
+        \\    </loudnessMetadata>
+        \\    <dialogue dialogueContentKind="5">1</dialogue>
         \\  </audioContent>
     ,
-        \\  <audioContent audioContentID="ACO_1001">
+        \\  <audioContent audioContentID="ACO_1001" audioContentName="Commentary" audioContentLanguage="eng">
+        \\    <audioContentLabel language="eng">Commentary</audioContentLabel>
+        \\    <audioContentLabel language="fra">Commentaires</audioContentLabel>
         \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\    <loudnessMetadata>
+        \\      <integratedLoudness>-24.0</integratedLoudness>
+        \\    </loudnessMetadata>
+        \\    <dialogue dialogueContentKind="5">1</dialogue>
         \\  </audioContent>
         \\  <audioObject audioObjectID="AO_1001" audioObjectName="Parent" interact="0">
         \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
@@ -7377,6 +7827,208 @@ test "ADM XML emission profile accepts Cartesian object controls" {
     defer std.testing.allocator.free(cartesian_block);
     const document = try Document.init(cartesian_block);
     try document.validateEmissionProfileObjectParameters();
+}
+
+fn expectEmissionMetadataReplacement(
+    expected_error: anyerror,
+    needle: []const u8,
+    replacement: []const u8,
+) !void {
+    const replaced = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        needle,
+        replacement,
+    );
+    defer std.testing.allocator.free(replaced);
+    try std.testing.expect(!std.mem.eql(
+        u8,
+        replaced,
+        valid_emission_object_parameters_xml,
+    ));
+    const document = try Document.init(replaced);
+    try std.testing.expectError(
+        expected_error,
+        document.validateEmissionProfileProgrammeContentMetadata(),
+    );
+}
+
+test "ADM XML emission profile validates programme and content metadata" {
+    const document = try Document.init(
+        valid_emission_object_parameters_xml,
+    );
+    try document.validateEmissionProfileProgrammeContentMetadata();
+
+    const private_language = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "audioProgrammeLanguage=\"eng\"",
+        "audioProgrammeLanguage=\"qaz\"",
+    );
+    defer std.testing.allocator.free(private_language);
+    const private_document = try Document.init(private_language);
+    try private_document.validateEmissionProfileProgrammeContentMetadata();
+
+    try std.testing.expect(isIso6392Code("eng"));
+    try std.testing.expect(isIso6392Code("fre"));
+    try std.testing.expect(isIso6392Code("fra"));
+    try std.testing.expect(isIso6392Code("und"));
+    try std.testing.expect(isIso6392Code("qaz"));
+    try std.testing.expect(!isIso6392Code("aaa"));
+    try std.testing.expect(!isIso6392Code("ENG"));
+    try std.testing.expect(!isIso6392Code("en"));
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        iso_639_2_codes.len % 3,
+    );
+    var code_index: usize = 0;
+    while (code_index < iso_639_2_codes.len / 3) : (code_index += 1) {
+        const code = iso_639_2_codes[code_index * 3 ..][0..3];
+        try std.testing.expect(isIso6392Code(code));
+        if (code_index != 0) {
+            const previous =
+                iso_639_2_codes[(code_index - 1) * 3 ..][0..3];
+            try std.testing.expectEqual(
+                std.math.Order.lt,
+                std.mem.order(u8, previous, code),
+            );
+        }
+    }
+}
+
+test "ADM XML emission profile requires metadata attributes" {
+    try expectEmissionMetadataReplacement(
+        error.MissingAdmEmissionProfileName,
+        " audioProgrammeName=\"News\"",
+        "",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileName,
+        "audioContentName=\"Commentary\"",
+        "audioContentName=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+    );
+    try expectEmissionMetadataReplacement(
+        error.MissingAdmEmissionProfileLanguage,
+        " audioContentLanguage=\"eng\"",
+        "",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileLanguage,
+        "audioProgrammeLanguage=\"eng\"",
+        "audioProgrammeLanguage=\"aaa\"",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileProgrammeAttribute,
+        " audioProgrammeLanguage=\"eng\"",
+        " audioProgrammeLanguage=\"eng\" start=\"00:00:00.00000\"",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileContentAttribute,
+        " audioContentLanguage=\"eng\"",
+        " audioContentLanguage=\"eng\" custom=\"value\"",
+    );
+}
+
+test "ADM XML emission profile validates localized labels" {
+    try expectEmissionMetadataReplacement(
+        error.DuplicateAdmEmissionProfileLabelLanguage,
+        "<audioProgrammeLabel language=\"deu\">Abendnachrichten</audioProgrammeLabel>",
+        "<audioProgrammeLabel language=\"eng\">Evening Bulletin</audioProgrammeLabel>",
+    );
+    try expectEmissionMetadataReplacement(
+        error.MissingAdmEmissionProfileLanguage,
+        "audioContentLabel language=\"fra\"",
+        "audioContentLabel",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileLabel,
+        ">Commentaires</audioContentLabel>",
+        "></audioContentLabel>",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileLabelAttribute,
+        "audioProgrammeLabel language=\"deu\"",
+        "audioProgrammeLabel language=\"deu\" role=\"short\"",
+    );
+}
+
+test "ADM XML emission profile validates loudness metadata" {
+    try expectEmissionMetadataReplacement(
+        error.MissingAdmEmissionProfileLoudnessMetadata,
+        "    <loudnessMetadata>\n" ++
+            "      <integratedLoudness>-24.0</integratedLoudness>\n" ++
+            "    </loudnessMetadata>\n" ++
+            "    <dialogue dialogueContentKind=\"5\">1</dialogue>\n",
+        "    <dialogue dialogueContentKind=\"5\">1</dialogue>\n",
+    );
+    try expectEmissionMetadataReplacement(
+        error.MissingAdmEmissionProfileLoudnessValue,
+        "      <integratedLoudness>-24.0</integratedLoudness>\n",
+        "",
+    );
+    try expectEmissionMetadataReplacement(
+        error.DuplicateAdmEmissionProfileLoudnessValue,
+        "      <integratedLoudness>-24.0</integratedLoudness>",
+        "      <integratedLoudness>-24.0</integratedLoudness>\n" ++
+            "      <integratedLoudness>-23.0</integratedLoudness>",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileLoudnessValue,
+        ">-24.0</dialogueLoudness>",
+        ">nan</dialogueLoudness>",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileLoudnessAttribute,
+        "<loudnessMetadata>",
+        "<loudnessMetadata loudnessMethod=\"ITU-R BS.1770\">",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileLoudnessSubelement,
+        "      <integratedLoudness>-24.0</integratedLoudness>",
+        "      <maxTruePeak>-1.0</maxTruePeak>",
+    );
+}
+
+test "ADM XML emission profile validates dialogue classification" {
+    try expectEmissionMetadataReplacement(
+        error.MissingAdmEmissionProfileDialogue,
+        "    <dialogue dialogueContentKind=\"5\">1</dialogue>\n",
+        "",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileDialogue,
+        ">1</dialogue>",
+        ">3</dialogue>",
+    );
+    try expectEmissionMetadataReplacement(
+        error.MissingAdmEmissionProfileDialogueKind,
+        " dialogueContentKind=\"5\"",
+        "",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileDialogueAttribute,
+        "dialogue dialogueContentKind=\"5\"",
+        "dialogue nonDialogueContentKind=\"1\"",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileDialogueKind,
+        "dialogueContentKind=\"5\"",
+        "dialogueContentKind=\"7\"",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileContentSubelement,
+        "    <dialogue dialogueContentKind=\"5\">1</dialogue>",
+        "    <dialogue dialogueContentKind=\"5\">1</dialogue>\n" ++
+            "    <authoringInformation/>",
+    );
+    try expectEmissionMetadataReplacement(
+        error.InvalidAdmEmissionProfileProgrammeSubelement,
+        "    <audioContentIDRef>ACO_1001</audioContentIDRef>",
+        "    <audioContentIDRef>ACO_1001</audioContentIDRef>\n" ++
+            "    <authoringInformation/>",
+    );
 }
 
 const valid_emission_complementary_parameters_xml =
