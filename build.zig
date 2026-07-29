@@ -3841,6 +3841,7 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
         module.linkFramework("UniformTypeIdentifiers", .{});
     } else if (target.result.os.tag == .linux) {
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/libstdc++.so"));
+        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/libgcc_s.so.1"));
         for ([_][]const u8{
             "X11",            "freetype2",      "xcb",         "xcb-util",       "xcb-cursor", "xcb-keysyms", "xcb-xkb",
             "xkbcommon",      "xkbcommon-x11",  "glib-2.0",    "cairo",          "pangocairo", "pangoft2",    "fontconfig",
@@ -3849,7 +3850,6 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
     } else if (target.result.os.tag == .windows) {
         module.linkSystemLibrary("msvcprt", .{ .use_pkg_config = .no });
         module.linkSystemLibrary("vcruntime", .{ .use_pkg_config = .no });
-        module.linkSystemLibrary("ucrt", .{ .use_pkg_config = .no });
         for ([_][]const u8{
             "comctl32", "d2d1", "dwrite",        "gdi32", "ole32", "oleaut32", "shell32", "shlwapi", "uiautomationcore",
             "user32",   "uuid", "windowscodecs",

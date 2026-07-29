@@ -144,6 +144,22 @@ if(UNIX AND NOT APPLE)
         "${CMAKE_BINARY_DIR}/Release/libs/libstdc++.so"
         ONLY_IF_DIFFERENT
     )
+    execute_process(
+        COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=libgcc_s.so.1
+        OUTPUT_VARIABLE ZIG_VSTGUI_UNWIND_RUNTIME
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE ZIG_VSTGUI_UNWIND_RUNTIME_RESULT
+    )
+    if(NOT ZIG_VSTGUI_UNWIND_RUNTIME_RESULT EQUAL 0 OR
+       ZIG_VSTGUI_UNWIND_RUNTIME STREQUAL "libgcc_s.so.1" OR
+       NOT EXISTS "${ZIG_VSTGUI_UNWIND_RUNTIME}")
+        message(FATAL_ERROR "Could not locate the unwind runtime used by ${CMAKE_CXX_COMPILER}")
+    endif()
+    file(COPY_FILE
+        "${ZIG_VSTGUI_UNWIND_RUNTIME}"
+        "${CMAKE_BINARY_DIR}/Release/libs/libgcc_s.so.1"
+        ONLY_IF_DIFFERENT
+    )
 endif()
 
 add_executable(zig_vstgui_adapter_tests zig_vstgui_adapter_tests.cpp)

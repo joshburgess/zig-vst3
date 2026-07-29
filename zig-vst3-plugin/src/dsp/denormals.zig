@@ -74,10 +74,10 @@ fn readMxcsr() u32 {
 
 fn writeMxcsr(value: u32) void {
     const stored = value;
-    asm volatile ("ldmxcsr %[value]"
+    asm volatile ("ldmxcsr (%[address])"
         :
-        : [value] "m" (stored),
-        : .{ .mxcsr = true });
+        : [address] "r" (&stored),
+        : .{ .memory = true, .mxcsr = true });
 }
 
 test "flush-to-zero scope restores the exact control state" {

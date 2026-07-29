@@ -400,10 +400,9 @@ pub fn Approximations(comptime Sample: type) type {
             comptime lane_count: usize,
             source: []const Sample,
         ) @Vector(lane_count, Sample) {
-            const Vector = @Vector(lane_count, Sample);
-            const pointer: *align(@alignOf(Sample)) const Vector =
-                @ptrCast(source.ptr);
-            return pointer.*;
+            var lanes: [lane_count]Sample = undefined;
+            @memcpy(&lanes, source[0..lane_count]);
+            return lanes;
         }
 
         fn storeVector(
@@ -411,10 +410,8 @@ pub fn Approximations(comptime Sample: type) type {
             destination: []Sample,
             value: @Vector(lane_count, Sample),
         ) void {
-            const Vector = @Vector(lane_count, Sample);
-            const pointer: *align(@alignOf(Sample)) Vector =
-                @ptrCast(destination.ptr);
-            pointer.* = value;
+            const lanes: [lane_count]Sample = value;
+            @memcpy(destination[0..lane_count], &lanes);
         }
     };
 }

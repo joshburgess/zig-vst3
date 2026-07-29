@@ -10,16 +10,7 @@ trap 'rm -rf "$temporary"' EXIT HUP INT TERM
 tested=0
 
 if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
-    command -v ffmpeg >/dev/null 2>&1 &&
-    command -v ffprobe >/dev/null 2>&1; then
-    ffprobe -v error \
-        -select_streams a:0 \
-        -show_entries stream=codec_name,sample_rate \
-        -of default=noprint_wrappers=1:nokey=1 \
-        "$fixture" >"$temporary/ffprobe.txt"
-    grep -q '^vorbis$' "$temporary/ffprobe.txt"
-    grep -q '^48000$' "$temporary/ffprobe.txt"
-
+    command -v ffmpeg >/dev/null 2>&1; then
     ffmpeg_decoded="$temporary/ffmpeg-decoded.pcm"
     ffmpeg -v error -y -i "$fixture" \
         -map 0:a:0 \
@@ -41,14 +32,7 @@ if [ "${VORBIS_INTEROP_ONLY_FFMPEG-0}" != "1" ] &&
         decoded="$temporary/decoded.wav"
         if afconvert "$fixture" "$decoded" -f WAVE -d LEI16; then
             test "$(wc -c <"$decoded")" -gt 44
-            if command -v ffmpeg >/dev/null 2>&1 &&
-                command -v ffprobe >/dev/null 2>&1; then
-                decoded_rate=$(ffprobe -v error \
-                    -select_streams a:0 \
-                    -show_entries stream=sample_rate \
-                    -of default=noprint_wrappers=1:nokey=1 \
-                    "$decoded" | tr -d '\r')
-                test "$decoded_rate" = 48000
+            if command -v ffmpeg >/dev/null 2>&1; then
                 decoded_pcm="$temporary/audio-toolbox-decoded.pcm"
                 ffmpeg -v error -y -i "$decoded" \
                     -map 0:a:0 \

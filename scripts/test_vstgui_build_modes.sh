@@ -24,6 +24,7 @@ chmod +x "$fake_bin/zig"
 build_cmake_log="$temporary/build-cmake.log"
 build_zig_log="$temporary/build-zig.log"
 PATH="$fake_bin:$PATH" \
+VSTGUI_RUN_VISUAL_TESTS=ON \
 VSTGUI_MODE_TEST_CMAKE_LOG="$build_cmake_log" \
 VSTGUI_MODE_TEST_ZIG_LOG="$build_zig_log" \
   "$root/scripts/build_vstgui.sh" build
