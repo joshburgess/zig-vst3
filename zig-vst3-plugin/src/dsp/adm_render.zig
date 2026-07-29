@@ -45,6 +45,277 @@ pub const DirectSpeakerRoute = union(enum) {
     cartesian_panner: CartesianPosition,
 };
 
+/// Computes bounded, energy-preserving gains for allocentric room positions.
+/// The output layout is caller-owned; LFE speakers are retained but excluded.
+pub fn CartesianPointSourcePanner(comptime Sample: type) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError(
+            "CartesianPointSourcePanner supports f32 and f64 samples",
+        );
+
+    return struct {
+        const Self = @This();
+        const layout_tolerance: f64 = 0.001;
+
+        output_count: usize,
+        panner_output_count: usize,
+        positions: [maximum_output_channels]CartesianPosition = undefined,
+        enabled: [maximum_output_channels]bool = undefined,
+
+        pub fn init(outputs: []const OutputSpeaker) !Self {
+            try validateOutputLayout(outputs);
+            var result = Self{
+                .output_count = outputs.len,
+                .panner_output_count = 0,
+            };
+            for (outputs, 0..) |output, output_index| {
+                result.positions[output_index] = output.allocentric;
+                result.enabled[output_index] = !output.is_lfe;
+                if (!output.is_lfe) result.panner_output_count += 1;
+            }
+            if (result.panner_output_count == 0)
+                return error.MissingAdmRendererPannerOutput;
+            try result.validateLayout();
+            return result;
+        }
+
+        pub fn calculateGains(
+            self: *const Self,
+            position: CartesianPosition,
+            gains: []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (gains.len != self.output_count)
+                return error.AdmRendererOutputCountMismatch;
+            try validatePannerPosition(position);
+
+            var raw_gains: [maximum_output_channels]f64 =
+                @splat(0.0);
+            var power: f64 = 0.0;
+            for (0..self.output_count) |output_index| {
+                if (!self.enabled[output_index]) continue;
+                const value = self.outputGain(position, output_index);
+                if (!std.math.isFinite(value) or value < 0.0)
+                    return error.InvalidAdmRendererPannerGain;
+                raw_gains[output_index] = value;
+                power += value * value;
+            }
+            if (!std.math.isFinite(power) or power <= 0.0)
+                return error.InvalidAdmRendererPannerGain;
+            const normalization = 1.0 / @sqrt(power);
+            for (gains, raw_gains[0..self.output_count]) |*gain, raw| {
+                const normalized: Sample =
+                    @floatCast(raw * normalization);
+                if (!std.math.isFinite(normalized))
+                    return error.InvalidAdmRendererPannerGain;
+                gain.* = normalized;
+            }
+        }
+
+        pub fn mix(
+            self: *const Self,
+            position: CartesianPosition,
+            input_gain: Sample,
+            input: []const Sample,
+            outputs: []const []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (!std.math.isFinite(input_gain))
+                return error.InvalidAdmRendererGain;
+            try validateMixBuffers(Sample, input, outputs, self.output_count);
+
+            var gains: [maximum_output_channels]Sample = undefined;
+            try self.calculateGains(position, gains[0..self.output_count]);
+            for (outputs, gains[0..self.output_count]) |output, gain| {
+                if (gain == 0.0) continue;
+                const combined_gain = input_gain * gain;
+                if (!std.math.isFinite(combined_gain))
+                    return error.InvalidAdmRendererGain;
+                for (input, output) |input_sample, *output_sample| {
+                    if (!std.math.isFinite(input_sample)) continue;
+                    if (!std.math.isFinite(output_sample.*)) {
+                        output_sample.* = 0.0;
+                        continue;
+                    }
+                    const mixed =
+                        output_sample.* + input_sample * combined_gain;
+                    output_sample.* = if (std.math.isFinite(mixed))
+                        mixed
+                    else
+                        0.0;
+                }
+            }
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.output_count == 0 or
+                self.output_count > maximum_output_channels or
+                self.panner_output_count == 0 or
+                self.panner_output_count > self.output_count)
+            {
+                return false;
+            }
+            var enabled_count: usize = 0;
+            for (
+                self.positions[0..self.output_count],
+                self.enabled[0..self.output_count],
+            ) |position, enabled| {
+                if (!validCartesian(position)) return false;
+                if (!enabled) continue;
+                enabled_count += 1;
+            }
+            if (enabled_count != self.panner_output_count) return false;
+            self.validateLayout() catch return false;
+            return true;
+        }
+
+        fn validateLayout(self: *const Self) !void {
+            for (
+                self.positions[0..self.output_count],
+                self.enabled[0..self.output_count],
+                0..,
+            ) |position, enabled, index| {
+                if (!enabled) continue;
+                if (!insideUnitCube(position, layout_tolerance) or
+                    !onUnitCubeSurface(position, layout_tolerance))
+                {
+                    return error.InvalidAdmRendererCartesianLayout;
+                }
+                for (0..index) |previous| {
+                    if (self.enabled[previous] and
+                        samePosition(
+                            position,
+                            self.positions[previous],
+                            layout_tolerance,
+                        ))
+                    {
+                        return error.DuplicateAdmRendererSpeakerPosition;
+                    }
+                }
+            }
+
+            for (
+                self.positions[0..self.output_count],
+                self.enabled[0..self.output_count],
+            ) |position, enabled| {
+                if (!enabled or
+                    @abs(position.y) >= 1.0 - layout_tolerance)
+                {
+                    continue;
+                }
+                var has_left = false;
+                var has_right = false;
+                for (
+                    self.positions[0..self.output_count],
+                    self.enabled[0..self.output_count],
+                ) |candidate, candidate_enabled| {
+                    if (!candidate_enabled or
+                        @abs(candidate.z - position.z) >= layout_tolerance or
+                        @abs(candidate.y - position.y) >= layout_tolerance)
+                    {
+                        continue;
+                    }
+                    has_left = has_left or
+                        @abs(candidate.x + 1.0) < layout_tolerance;
+                    has_right = has_right or
+                        @abs(candidate.x - 1.0) < layout_tolerance;
+                }
+                if (!has_left or !has_right)
+                    return error.InvalidAdmRendererCartesianLayout;
+            }
+        }
+
+        fn outputGain(
+            self: *const Self,
+            object: CartesianPosition,
+            output_index: usize,
+        ) f64 {
+            const relative = subtractPosition(
+                self.positions[output_index],
+                object,
+            );
+            const z_gain = self.axisGain(
+                relative.z,
+                .z,
+                relative,
+                object,
+            );
+            const y_gain = self.axisGain(
+                relative.y,
+                .y,
+                relative,
+                object,
+            );
+            const x_gain = self.axisGain(
+                relative.x,
+                .x,
+                relative,
+                object,
+            );
+            return x_gain * y_gain * z_gain;
+        }
+
+        const Axis = enum { x, y, z };
+
+        fn axisGain(
+            self: *const Self,
+            coordinate: f64,
+            axis: Axis,
+            reference: CartesianPosition,
+            object: CartesianPosition,
+        ) f64 {
+            var other: ?f64 = null;
+            for (
+                self.positions[0..self.output_count],
+                self.enabled[0..self.output_count],
+            ) |position, enabled| {
+                if (!enabled) continue;
+                const relative = subtractPosition(position, object);
+                if (!axisCandidate(relative, reference, axis, layout_tolerance))
+                    continue;
+                const candidate = axisCoordinate(relative, axis);
+                if (coordinate >= 0.0) {
+                    if (candidate >= coordinate) continue;
+                    if (other == null or candidate > other.?)
+                        other = candidate;
+                } else {
+                    if (candidate <= coordinate) continue;
+                    if (other == null or candidate < other.?)
+                        other = candidate;
+                }
+            }
+            const opposite = other orelse return 1.0;
+            if (sameSign(opposite, coordinate)) return 0.0;
+            return @cos(
+                coordinate / (opposite - coordinate) *
+                    std.math.pi / 2.0,
+            );
+        }
+
+        fn axisCandidate(
+            candidate: CartesianPosition,
+            reference: CartesianPosition,
+            axis: Axis,
+            tolerance: f64,
+        ) bool {
+            return switch (axis) {
+                .z => true,
+                .y => @abs(candidate.z - reference.z) < tolerance,
+                .x => @abs(candidate.z - reference.z) < tolerance and
+                    @abs(candidate.y - reference.y) < tolerance,
+            };
+        }
+
+        fn axisCoordinate(position: CartesianPosition, axis: Axis) f64 {
+            return switch (axis) {
+                .x => position.x,
+                .y => position.y,
+                .z => position.z,
+            };
+        }
+    };
+}
+
 pub fn StaticMatrixMixer(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
         @compileError("StaticMatrixMixer supports f32 and f64 samples");
@@ -404,6 +675,29 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
                     mixed
                 else
                     0.0;
+            }
+        }
+
+        pub fn mixWithCartesianFallback(
+            self: *const Self,
+            panner: *const CartesianPointSourcePanner(Sample),
+            input: []const Sample,
+            outputs: []const []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (panner.output_count != self.output_count)
+                return error.AdmRendererOutputCountMismatch;
+            switch (self.route) {
+                .cartesian_panner => |position| try panner.mix(
+                    position,
+                    self.gain,
+                    input,
+                    outputs,
+                ),
+                .polar_panner => {
+                    return error.AdmRendererPolarPointPannerRequired;
+                },
+                .output, .discard => try self.mix(input, outputs),
             }
         }
 
@@ -819,6 +1113,50 @@ fn validCartesian(position: CartesianPosition) bool {
         std.math.isFinite(position.z);
 }
 
+fn validatePannerPosition(position: CartesianPosition) !void {
+    if (!validCartesian(position) or !insideUnitCube(position, 0.0))
+        return error.InvalidAdmRendererCartesianPosition;
+}
+
+fn insideUnitCube(position: CartesianPosition, tolerance: f64) bool {
+    return @abs(position.x) <= 1.0 + tolerance and
+        @abs(position.y) <= 1.0 + tolerance and
+        @abs(position.z) <= 1.0 + tolerance;
+}
+
+fn onUnitCubeSurface(position: CartesianPosition, tolerance: f64) bool {
+    return @abs(@abs(position.x) - 1.0) < tolerance or
+        @abs(@abs(position.y) - 1.0) < tolerance or
+        @abs(@abs(position.z) - 1.0) < tolerance;
+}
+
+fn samePosition(
+    left: CartesianPosition,
+    right: CartesianPosition,
+    tolerance: f64,
+) bool {
+    return @abs(left.x - right.x) < tolerance and
+        @abs(left.y - right.y) < tolerance and
+        @abs(left.z - right.z) < tolerance;
+}
+
+fn subtractPosition(
+    left: CartesianPosition,
+    right: CartesianPosition,
+) CartesianPosition {
+    return .{
+        .x = left.x - right.x,
+        .y = left.y - right.y,
+        .z = left.z - right.z,
+    };
+}
+
+fn sameSign(left: f64, right: f64) bool {
+    return (left > 0.0 and right > 0.0) or
+        (left < 0.0 and right < 0.0) or
+        (left == 0.0 and right == 0.0);
+}
+
 fn hasScreenEdgeLock(block: *const adm_xml.BlockFormat) bool {
     for (block.positionSlice()) |position| {
         if (position.screen_edge_lock != null) return true;
@@ -892,6 +1230,26 @@ fn findInputChannel(
         if (channel.eql(target)) return index;
     }
     return null;
+}
+
+fn validateMixBuffers(
+    comptime Sample: type,
+    input: []const Sample,
+    outputs: []const []Sample,
+    expected_output_count: usize,
+) !void {
+    if (outputs.len != expected_output_count)
+        return error.AdmRendererOutputCountMismatch;
+    for (outputs, 0..) |output, output_index| {
+        if (output.len != input.len)
+            return error.AdmRendererBufferLengthMismatch;
+        if (slicesOverlap(Sample, input, output))
+            return error.AdmRendererAliasedBuffers;
+        for (outputs[0..output_index]) |previous| {
+            if (slicesOverlap(Sample, previous, output))
+                return error.AdmRendererAliasedBuffers;
+        }
+    }
 }
 
 fn slicesOverlap(
@@ -1503,6 +1861,198 @@ test "ADM position router selects Cartesian speakers and preserves fallbacks" {
     try std.testing.expectEqualDeep([_]f64{ 5.0, 6.0 }, right);
 }
 
+test "ADM Cartesian point panner preserves power across a cube layout" {
+    const outputs = testCartesianCubeLayout();
+    const panner = try CartesianPointSourcePanner(f64).init(&outputs);
+    var gains: [outputs.len]f64 = undefined;
+    try panner.calculateGains(.{ .x = 0.0, .y = 0.0 }, &gains);
+
+    var power: f64 = 0.0;
+    for (gains) |gain| {
+        try std.testing.expectApproxEqAbs(
+            @as(f64, 1.0 / @sqrt(8.0)),
+            gain,
+            0.000_000_001,
+        );
+        power += gain * gain;
+    }
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        power,
+        0.000_000_001,
+    );
+
+    try panner.calculateGains(.{ .x = 0.5, .y = 0.0 }, &gains);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, @cos(3.0 * std.math.pi / 8.0) * 0.5),
+        gains[0],
+        0.000_000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, @cos(std.math.pi / 8.0) * 0.5),
+        gains[1],
+        0.000_000_001,
+    );
+
+    try panner.calculateGains(
+        .{ .x = -1.0, .y = 1.0, .z = -1.0 },
+        &gains,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        gains[0],
+        0.000_000_001,
+    );
+    for (gains[1..]) |gain| {
+        try std.testing.expectApproxEqAbs(
+            @as(f64, 0.0),
+            gain,
+            0.000_000_001,
+        );
+    }
+
+    var layout_with_lfe: [outputs.len + 1]OutputSpeaker = undefined;
+    @memcpy(layout_with_lfe[0..outputs.len], &outputs);
+    layout_with_lfe[outputs.len] = .{
+        .label = "LFE1",
+        .is_lfe = true,
+        .nominal_polar = .{
+            .azimuth_degrees = 0,
+            .elevation_degrees = 0,
+        },
+        .allocentric = .{ .x = 0, .y = 0, .z = 0 },
+    };
+    const panner_with_lfe =
+        try CartesianPointSourcePanner(f64).init(&layout_with_lfe);
+    var lfe_gains: [layout_with_lfe.len]f64 = undefined;
+    try panner_with_lfe.calculateGains(
+        .{ .x = 0, .y = 0, .z = 0 },
+        &lfe_gains,
+    );
+    try std.testing.expectEqual(@as(f64, 0.0), lfe_gains[outputs.len]);
+}
+
+test "ADM Cartesian point panner mixes DirectSpeakers fallback routes" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X">0</position>
+        \\      <position coordinate="Y">0</position>
+        \\      <position coordinate="Z">0</position>
+        \\      <gain>0.5</gain>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const layout = testCartesianCubeLayout();
+    const router = try DirectSpeakerPositionRouter(f32).init(
+        &block,
+        &layout,
+        .{},
+    );
+    try std.testing.expect(router.route == .cartesian_panner);
+    const panner = try CartesianPointSourcePanner(f32).init(&layout);
+
+    const input = [_]f32{ 2.0, std.math.nan(f32) };
+    var storage: [layout.len][2]f32 = @splat(@splat(0.0));
+    var outputs: [layout.len][]f32 = undefined;
+    for (&storage, &outputs) |*channel, *output| output.* = channel;
+    try router.mixWithCartesianFallback(&panner, &input, &outputs);
+    for (storage) |channel| {
+        try std.testing.expectApproxEqAbs(
+            @as(f32, 1.0 / @sqrt(8.0)),
+            channel[0],
+            0.000_001,
+        );
+        try std.testing.expectEqual(@as(f32, 0.0), channel[1]);
+    }
+
+    var invalid_position_gains: [layout.len]f32 = undefined;
+    try std.testing.expectError(
+        error.InvalidAdmRendererCartesianPosition,
+        panner.calculateGains(
+            .{ .x = 1.01, .y = 0.0 },
+            &invalid_position_gains,
+        ),
+    );
+}
+
+test "ADM Cartesian point panner rejects malformed layouts and aliases" {
+    var duplicate = testCartesianCubeLayout();
+    duplicate[1].allocentric = duplicate[0].allocentric;
+    try std.testing.expectError(
+        error.DuplicateAdmRendererSpeakerPosition,
+        CartesianPointSourcePanner(f32).init(&duplicate),
+    );
+
+    const incomplete_row = [_]OutputSpeaker{.{
+        .label = "M+090",
+        .nominal_polar = .{
+            .azimuth_degrees = 90,
+            .elevation_degrees = 0,
+        },
+        .allocentric = .{ .x = -1, .y = 0, .z = 0 },
+    }};
+    try std.testing.expectError(
+        error.InvalidAdmRendererCartesianLayout,
+        CartesianPointSourcePanner(f64).init(&incomplete_row),
+    );
+    const lfe_only = [_]OutputSpeaker{.{
+        .label = "LFE1",
+        .is_lfe = true,
+        .nominal_polar = .{
+            .azimuth_degrees = 0,
+            .elevation_degrees = 0,
+        },
+        .allocentric = .{ .x = 0, .y = 0, .z = 0 },
+    }};
+    try std.testing.expectError(
+        error.MissingAdmRendererPannerOutput,
+        CartesianPointSourcePanner(f64).init(&lfe_only),
+    );
+
+    const layout = testCartesianCubeLayout();
+    const panner = try CartesianPointSourcePanner(f32).init(&layout);
+    var invalid_state = panner;
+    invalid_state.positions[0] = .{ .x = 0, .y = 0, .z = 0 };
+    try std.testing.expect(!invalid_state.valid());
+    var retained_gains: [layout.len]f32 = @splat(0.25);
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        invalid_state.calculateGains(
+            .{ .x = 0, .y = 0 },
+            &retained_gains,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        [_]f32{0.25} ** layout.len,
+        retained_gains,
+    );
+
+    var aliased = [_]f32{ 1.0, 2.0 };
+    var storage: [layout.len - 1][2]f32 = @splat(@splat(0.0));
+    var outputs: [layout.len][]f32 = undefined;
+    outputs[0] = &aliased;
+    for (&storage, outputs[1..]) |*channel, *output| output.* = channel;
+    try std.testing.expectError(
+        error.AdmRendererAliasedBuffers,
+        panner.mix(
+            .{ .x = 0, .y = 0 },
+            1.0,
+            &aliased,
+            &outputs,
+        ),
+    );
+    try std.testing.expectEqualDeep([_]f32{ 1.0, 2.0 }, aliased);
+    for (storage) |channel| {
+        try std.testing.expectEqualDeep([_]f32{ 0.0, 0.0 }, channel);
+    }
+}
+
 test "ADM position router discards unmatched LFE without mutating output" {
     const document = try adm_xml.Document.init(
         \\<audioFormatExtended>
@@ -1548,4 +2098,73 @@ test "ADM position router discards unmatched LFE without mutating output" {
             .{},
         ),
     );
+}
+
+fn testCartesianCubeLayout() [8]OutputSpeaker {
+    return .{
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = -30,
+            },
+            .allocentric = .{ .x = -1, .y = 1, .z = -1 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = -30,
+            },
+            .allocentric = .{ .x = 1, .y = 1, .z = -1 },
+        },
+        .{
+            .label = "M+110",
+            .nominal_polar = .{
+                .azimuth_degrees = 110,
+                .elevation_degrees = -30,
+            },
+            .allocentric = .{ .x = -1, .y = -1, .z = -1 },
+        },
+        .{
+            .label = "M-110",
+            .nominal_polar = .{
+                .azimuth_degrees = -110,
+                .elevation_degrees = -30,
+            },
+            .allocentric = .{ .x = 1, .y = -1, .z = -1 },
+        },
+        .{
+            .label = "U+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 30,
+            },
+            .allocentric = .{ .x = -1, .y = 1, .z = 1 },
+        },
+        .{
+            .label = "U-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30,
+                .elevation_degrees = 30,
+            },
+            .allocentric = .{ .x = 1, .y = 1, .z = 1 },
+        },
+        .{
+            .label = "U+110",
+            .nominal_polar = .{
+                .azimuth_degrees = 110,
+                .elevation_degrees = 30,
+            },
+            .allocentric = .{ .x = -1, .y = -1, .z = 1 },
+        },
+        .{
+            .label = "U-110",
+            .nominal_polar = .{
+                .azimuth_degrees = -110,
+                .elevation_degrees = 30,
+            },
+            .allocentric = .{ .x = 1, .y = -1, .z = 1 },
+        },
+    };
 }

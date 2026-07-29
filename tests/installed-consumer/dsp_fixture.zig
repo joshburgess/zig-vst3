@@ -3528,6 +3528,16 @@ test "installed package exposes file-backed audio writers" {
         @as(f32, 0.25),
         try position_router.processSample(0.25),
     );
+    const cartesian_panner =
+        try plugin.dsp.AdmCartesianPointSourcePanner(f32).init(
+            &speaker_layout,
+        );
+    var cartesian_gains: [speaker_layout.len]f32 = undefined;
+    try cartesian_panner.calculateGains(
+        plugin.dsp.AdmCartesianPosition{ .x = 0.0, .y = 0.0 },
+        &cartesian_gains,
+    );
+    try std.testing.expectEqual(@as(f32, 1.0), cartesian_gains[0]);
     const frequency = plugin.dsp.AdmXmlFrequency{
         .low_pass_hz = 120.0,
     };
