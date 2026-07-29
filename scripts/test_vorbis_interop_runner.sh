@@ -96,9 +96,27 @@ printf '%s\n' \
     >"$fake_bin/ffmpeg"
 chmod +x "$fake_bin/afinfo" "$fake_bin/afconvert" "$fake_bin/ffprobe" "$fake_bin/ffmpeg"
 PATH="$fake_bin:$PATH" \
-    VORBIS_INTEROP_SKIP_FFMPEG=1 \
     scripts/test_vorbis_interop.sh "$fixture" \
     >"$root/audio-toolbox.txt"
 grep -q 'Vorbis AudioToolbox interoperability test passed' "$root/audio-toolbox.txt"
+
+printf '%s\n' \
+    '#!/bin/sh' \
+    "case \"\$1\" in" \
+    '    *.wav) printf "WAVE\n48000\naudio data file offset: 44\naudio bytes: 0\n" ;;' \
+    '    *) printf "Ogg\n48000\n" ;;' \
+    'esac' \
+    >"$fake_bin/afinfo"
+printf '%s\n' \
+    '#!/bin/sh' \
+    "printf 'RIFF0000000000000000000000000000000000000000\\001\\000\\002\\000' >\"\$2\"" \
+    >"$fake_bin/afconvert"
+chmod +x "$fake_bin/afinfo" "$fake_bin/afconvert"
+PATH="$fake_bin:$PATH" \
+    VORBIS_INTEROP_SKIP_FFMPEG=1 \
+    scripts/test_vorbis_interop.sh "$fixture" \
+    >"$root/audio-toolbox-zero-byte-metadata.txt"
+grep -q 'Vorbis AudioToolbox interoperability test passed' \
+    "$root/audio-toolbox-zero-byte-metadata.txt"
 
 printf 'Vorbis interoperability runner tests passed\n'

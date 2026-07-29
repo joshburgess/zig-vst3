@@ -1,4 +1,5 @@
 const editor_smoke_spec = @import("editor_smoke_spec.zig");
+const builtin = @import("builtin");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
@@ -629,7 +630,16 @@ test "editor smoke controller creates an editor view" {
     const view = controller_iface.vtable.createView(controller_iface, ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
     defer _ = view.vtable.release(view);
 
-    try std.testing.expectEqual(types.kResultOk, view.vtable.isPlatformTypeSupported(view, iplugview.PlatformType.kPlatformTypeNSView));
+    const platform_type = switch (builtin.os.tag) {
+        .macos => iplugview.PlatformType.kPlatformTypeNSView,
+        .windows => iplugview.PlatformType.kPlatformTypeHWND,
+        .linux => iplugview.PlatformType.kPlatformTypeX11EmbedWindowID,
+        else => return error.UnsupportedTestPlatform,
+    };
+    try std.testing.expectEqual(
+        types.kResultOk,
+        view.vtable.isPlatformTypeSupported(view, platform_type),
+    );
     var rect = iplugview.ViewRect{};
     try std.testing.expectEqual(types.kResultOk, view.vtable.getSize(view, &rect));
     try std.testing.expectEqual(@as(types.int32, 720), rect.right);

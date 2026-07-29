@@ -1,4 +1,5 @@
 const gain_spec = @import("gain_spec.zig");
+const builtin = @import("builtin");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
@@ -236,7 +237,16 @@ test "gain controller creates a parameter editor view" {
     defer _ = controller_iface.vtable.release(controller_iface);
     const view = openView(controller_iface, edit_controller.ViewType.kEditor) orelse return error.MissingEditorView;
     defer _ = view.vtable.release(view);
-    try std.testing.expectEqual(types.kResultOk, view.vtable.isPlatformTypeSupported(view, iplugview.PlatformType.kPlatformTypeNSView));
+    const platform_type = switch (builtin.os.tag) {
+        .macos => iplugview.PlatformType.kPlatformTypeNSView,
+        .windows => iplugview.PlatformType.kPlatformTypeHWND,
+        .linux => iplugview.PlatformType.kPlatformTypeX11EmbedWindowID,
+        else => return error.UnsupportedTestPlatform,
+    };
+    try std.testing.expectEqual(
+        types.kResultOk,
+        view.vtable.isPlatformTypeSupported(view, platform_type),
+    );
 }
 
 test "gain controller stores component handler for automation callbacks" {

@@ -41,7 +41,8 @@ if [ "${VORBIS_INTEROP_ONLY_FFMPEG-0}" != "1" ] &&
         if afconvert "$fixture" "$decoded" -f WAVE -d LEI16; then
             [ "$(wc -c <"$decoded")" -gt 44 ] ||
                 fail "AudioToolbox produced an empty WAV"
-            if command -v ffmpeg >/dev/null 2>&1; then
+            if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
+                command -v ffmpeg >/dev/null 2>&1; then
                 decoded_pcm="$temporary/audio-toolbox-decoded.pcm"
                 ffmpeg -v error -y -i "$decoded" \
                     -map 0:a:0 \
@@ -62,15 +63,18 @@ if [ "${VORBIS_INTEROP_ONLY_FFMPEG-0}" != "1" ] &&
                     fail "AudioToolbox reported unexpected WAV metadata"
                 fi
                 data_offset=$(awk '/audio data file offset:/ { print $5 }' "$temporary/decoded.txt")
-                audio_bytes=$(awk '/audio bytes:/ { print $3 }' "$temporary/decoded.txt")
-                case "$data_offset:$audio_bytes" in
-                    *[!0-9:]* | :* | *:)
+                case "$data_offset" in
+                    *[!0-9]* | "")
                         sed -n '1,120p' "$temporary/decoded.txt" >&2
-                        fail "AudioToolbox did not report a usable PCM data range"
+                        fail "AudioToolbox did not report a usable PCM offset"
                         ;;
                 esac
+                file_bytes=$(wc -c <"$decoded")
+                [ "$data_offset" -lt "$file_bytes" ] ||
+                    fail "AudioToolbox reported a PCM offset beyond the WAV"
+                audio_bytes=$((file_bytes - data_offset))
                 [ "$audio_bytes" -gt 0 ] ||
-                    fail "AudioToolbox reported an empty PCM data range"
+                    fail "AudioToolbox produced an empty PCM data range"
                 if ! dd if="$decoded" bs=1 skip="$data_offset" count="$audio_bytes" 2>/dev/null |
                     od -An -tu1 |
                     grep -Eq '(^|[[:space:]])[1-9][0-9]*([[:space:]]|$)'; then
