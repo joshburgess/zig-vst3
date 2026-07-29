@@ -40,6 +40,19 @@ pub const Info = struct {
 pub const AdmMetadata = struct {
     document: adm_xml.Document,
     channel_allocation: adm.View,
+
+    pub fn validateEmissionProfilePcmEssence(
+        self: AdmMetadata,
+        essence: adm_xml.EmissionPcmEssence,
+    ) !void {
+        if (self.channel_allocation.num_tracks != essence.channel_count or
+            self.channel_allocation.num_uids !=
+                self.channel_allocation.num_tracks)
+        {
+            return error.AdmEmissionProfileTrackCountMismatch;
+        }
+        try self.document.validateEmissionProfilePcmEssence(essence);
+    }
 };
 
 pub const AdmMetadataRequirements = struct {
@@ -183,6 +196,26 @@ pub const FileReader = struct {
             .document = document,
             .channel_allocation = channel_allocation,
         };
+    }
+
+    pub fn readEmissionProfileAdmMetadata(
+        self: *const FileReader,
+        xml_storage: []u8,
+        channel_storage: []u8,
+    ) !?AdmMetadata {
+        if (self.info.encoding == .ieee_f32)
+            return error.AdmEmissionProfileRequiresPcmEssence;
+        const metadata = try self.readAdmMetadata(
+            xml_storage,
+            channel_storage,
+        ) orelse return null;
+        try metadata.validateEmissionProfilePcmEssence(.{
+            .sample_rate = self.info.sample_rate,
+            .bit_depth = @intCast(bytesPerSample(self.info.encoding) * 8),
+            .channel_count = self.info.channel_count,
+            .frame_count = self.info.frame_count,
+        });
+        return metadata;
     }
 
     /// Reads complete interleaved frames and returns the number produced.
@@ -1503,6 +1536,13 @@ test "file reader decodes BW64 ADM carriage and audio" {
     try std.testing.expectEqual(
         @as(usize, 0),
         typed_adm.?.document.declaration_count,
+    );
+    try std.testing.expectError(
+        error.MissingAdmEmissionProfileDocumentVersion,
+        reader.readEmissionProfileAdmMetadata(
+            &typed_xml_storage,
+            &typed_channel_storage,
+        ),
     );
     try std.testing.expectError(
         error.AdmMetadataBuffersOverlap,

@@ -75,6 +75,13 @@ pub const EmissionProfileLevel = enum {
     level_2,
 };
 
+pub const EmissionPcmEssence = struct {
+    sample_rate: u32,
+    bit_depth: u16,
+    channel_count: u16,
+    frame_count: u64,
+};
+
 const EmissionElementCounts = struct {
     programmes: usize = 0,
     contents: usize = 0,
@@ -767,15 +774,22 @@ fn validateEmissionTrackUidAttributes(element: xml.StartElement) !void {
         error.InvalidAdmEmissionProfileTrackAttribute,
     );
     for ([_][]const u8{ "sampleRate", "bitDepth" }) |attribute_name| {
-        const encoded = try element.attribute(attribute_name);
-        if (encoded == null) continue;
-        var storage: [32]u8 = undefined;
-        const raw = try xml.decodeContent(&storage, encoded.?);
-        const value = std.fmt.parseInt(u32, raw, 10) catch
-            return error.InvalidAdmEmissionProfileTrackAttribute;
-        if (value == 0)
-            return error.InvalidAdmEmissionProfileTrackAttribute;
+        _ = try emissionOptionalPositiveAttribute(element, attribute_name);
     }
+}
+
+fn emissionOptionalPositiveAttribute(
+    element: xml.StartElement,
+    attribute_name: []const u8,
+) !?u32 {
+    const encoded = try element.attribute(attribute_name) orelse return null;
+    var storage: [32]u8 = undefined;
+    const raw = try xml.decodeContent(&storage, encoded);
+    const value = std.fmt.parseInt(u32, raw, 10) catch
+        return error.InvalidAdmEmissionProfileTrackAttribute;
+    if (value == 0)
+        return error.InvalidAdmEmissionProfileTrackAttribute;
+    return value;
 }
 
 fn emissionRequiredFlagAttribute(
@@ -3009,6 +3023,89 @@ pub const Document = struct {
                 {
                     return error.InvalidAdmEmissionProfileRecommendedProgrammeLanguage;
                 }
+            }
+        }
+    }
+
+    /// Validates file-level PCM properties and Objects block coverage.
+    pub fn validateEmissionProfilePcmEssence(
+        self: Document,
+        essence: EmissionPcmEssence,
+    ) !void {
+        try self.validateEmissionProfileComplementaryLabels();
+        if (essence.sample_rate == 0 or
+            essence.bit_depth == 0 or
+            essence.channel_count == 0)
+        {
+            return error.InvalidAdmEmissionProfilePcmEssence;
+        }
+
+        var track_count: usize = 0;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "audioTrackUID",
+                    )) {
+                        continue;
+                    }
+                    track_count += 1;
+                    if (try emissionOptionalPositiveAttribute(
+                        element,
+                        "sampleRate",
+                    )) |sample_rate| {
+                        if (sample_rate != essence.sample_rate)
+                            return error.AdmEmissionProfileSampleRateMismatch;
+                    }
+                    if (try emissionOptionalPositiveAttribute(
+                        element,
+                        "bitDepth",
+                    )) |bit_depth| {
+                        if (bit_depth != essence.bit_depth)
+                            return error.AdmEmissionProfileBitDepthMismatch;
+                    }
+                },
+                else => {},
+            }
+        }
+        if (track_count != essence.channel_count)
+            return error.AdmEmissionProfileTrackCountMismatch;
+
+        const duration = adm_time.Value{
+            .whole_seconds = essence.frame_count / essence.sample_rate,
+            .fractional_numerator = essence.frame_count % essence.sample_rate,
+            .fractional_denominator = essence.sample_rate,
+            .format = .fractional_samples,
+        };
+        const zero = zeroAdmTime();
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            const channel = declaration.identifier;
+            if (channel.kind != .channel_format or
+                channel.typeLabel() != 0x0003)
+            {
+                continue;
+            }
+            var last: ?BlockFormat = null;
+            var block_iterator = self.blocks();
+            while (try block_iterator.next()) |block| {
+                if (block.channel_identifier.primary != channel.primary)
+                    continue;
+                if (last == null and block.rtime.compare(zero) != .eq)
+                    return error.AdmEmissionProfileEssenceCoverageMismatch;
+                last = block;
+            }
+            const final_block = last orelse
+                return error.AdmEmissionProfileEssenceCoverageMismatch;
+            if (!final_block.rtime.sumEquals(
+                final_block.duration orelse
+                    return error.AdmEmissionProfileEssenceCoverageMismatch,
+                duration,
+            )) {
+                return error.AdmEmissionProfileEssenceCoverageMismatch;
             }
         }
     }
@@ -8981,6 +9078,58 @@ test "ADM XML emission profile validates file object blocks" {
     defer std.testing.allocator.free(zero_duration);
     const zero_document = try Document.init(zero_duration);
     try zero_document.validateEmissionProfileObjectBlocks();
+}
+
+test "ADM XML emission profile validates PCM essence agreement" {
+    const document = try Document.init(
+        valid_emission_object_parameters_xml,
+    );
+    const essence = EmissionPcmEssence{
+        .sample_rate = 48_000,
+        .bit_depth = 24,
+        .channel_count = 1,
+        .frame_count = 48_000,
+    };
+    try document.validateEmissionProfilePcmEssence(essence);
+
+    var mismatch = essence;
+    mismatch.sample_rate = 96_000;
+    try std.testing.expectError(
+        error.AdmEmissionProfileSampleRateMismatch,
+        document.validateEmissionProfilePcmEssence(mismatch),
+    );
+    mismatch = essence;
+    mismatch.bit_depth = 16;
+    try std.testing.expectError(
+        error.AdmEmissionProfileBitDepthMismatch,
+        document.validateEmissionProfilePcmEssence(mismatch),
+    );
+    mismatch = essence;
+    mismatch.channel_count = 2;
+    try std.testing.expectError(
+        error.AdmEmissionProfileTrackCountMismatch,
+        document.validateEmissionProfilePcmEssence(mismatch),
+    );
+    mismatch = essence;
+    mismatch.frame_count -= 1;
+    try std.testing.expectError(
+        error.AdmEmissionProfileEssenceCoverageMismatch,
+        document.validateEmissionProfilePcmEssence(mismatch),
+    );
+
+    const late_start = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "rtime=\"00:00:00.00000\"",
+        "rtime=\"00:00:00.00500\"",
+    );
+    defer std.testing.allocator.free(late_start);
+    const late_document = try Document.init(late_start);
+    try std.testing.expectError(
+        error.AdmEmissionProfileEssenceCoverageMismatch,
+        late_document.validateEmissionProfilePcmEssence(essence),
+    );
 }
 
 test "ADM XML emission profile requires continuous file block timing" {

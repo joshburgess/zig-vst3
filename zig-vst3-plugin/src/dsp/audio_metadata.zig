@@ -99,6 +99,22 @@ pub const RiffMetadata = struct {
         );
         return document;
     }
+
+    pub fn validateEmissionProfileAdm(
+        self: RiffMetadata,
+        essence: adm_xml.EmissionPcmEssence,
+    ) !adm_xml.Document {
+        const document = try self.validateAdm();
+        const allocation = self.channel_allocation orelse
+            return error.MissingAdmChannelAllocation;
+        if (allocation.num_tracks != essence.channel_count or
+            allocation.entries.len != allocation.num_tracks)
+        {
+            return error.AdmEmissionProfileTrackCountMismatch;
+        }
+        try document.validateEmissionProfilePcmEssence(essence);
+        return document;
+    }
 };
 
 pub fn requiredRiffXmlBytes(
@@ -801,6 +817,15 @@ test "composed RIFF metadata validates every chunk before file output" {
     };
     const adm_document = try metadata.validateAdm();
     try std.testing.expectEqual(@as(usize, 0), adm_document.declaration_count);
+    try std.testing.expectError(
+        error.MissingAdmEmissionProfileDocumentVersion,
+        metadata.validateEmissionProfileAdm(.{
+            .sample_rate = 48_000,
+            .bit_depth = 24,
+            .channel_count = 1,
+            .frame_count = 48_000,
+        }),
+    );
     const required = try requiredRiffMetadataBytes(metadata);
     try std.testing.expect(required > 650);
 

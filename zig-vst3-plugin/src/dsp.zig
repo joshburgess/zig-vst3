@@ -117,6 +117,7 @@ pub const AdmXmlPosition = adm_xml.Position;
 pub const AdmXmlPositionBound = adm_xml.PositionBound;
 pub const AdmXmlProfile = adm_xml.Profile;
 pub const AdmXmlEmissionProfileLevel = adm_xml.EmissionProfileLevel;
+pub const AdmXmlEmissionPcmEssence = adm_xml.EmissionPcmEssence;
 pub const AdmXmlProfileIterator = adm_xml.ProfileIterator;
 pub const AdmXmlReference = adm_xml.Reference;
 pub const AdmXmlReferenceIterator = adm_xml.ReferenceIterator;
