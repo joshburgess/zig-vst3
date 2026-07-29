@@ -4445,3 +4445,36 @@ test "installed package exposes ADM common layout speaker mapping" {
     try std.testing.expectApproxEqAbs(gain * -4.0, left[1], 0.000_001);
     try std.testing.expectEqualDeep(left, right);
 }
+
+test "installed package exposes ADM Matrix coefficient delays" {
+    const document = try plugin.dsp.AdmXmlDocument.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+        \\      <matrix>
+        \\        <coefficient gain="0.5" delay="1.5">AC_00010001</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const channels = [_]plugin.dsp.AdmIdentifier{
+        try plugin.dsp.AdmIdentifier.parse("AC_00010001"),
+    };
+    var mixer =
+        try plugin.dsp.AdmMatrixCoefficientMixer(f32, 1).init(
+            &block,
+            &channels,
+            1000.0,
+        );
+    const input = [_]f32{ 2.0, 4.0, 6.0 };
+    const inputs = [_][]const f32{&input};
+    var output: [input.len]f32 = undefined;
+    try mixer.process(&inputs, &output);
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.0, 1.0, 2.0 },
+        output,
+    );
+}

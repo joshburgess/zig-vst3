@@ -1599,6 +1599,217 @@ pub fn StaticMatrixMixer(comptime Sample: type) type {
     };
 }
 
+pub fn MatrixCoefficientMixer(
+    comptime Sample: type,
+    comptime maximum_delay_samples: usize,
+) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError("MatrixCoefficientMixer supports f32 and f64 samples");
+    if (maximum_delay_samples == std.math.maxInt(usize))
+        @compileError("MatrixCoefficientMixer delay capacity is too large");
+
+    return struct {
+        const Self = @This();
+        const history_length = maximum_delay_samples + 1;
+
+        pub const delay_capacity = maximum_delay_samples;
+
+        input_count: usize,
+        term_count: usize,
+        input_indices: [maximum_input_channels]u8 = undefined,
+        gains: [maximum_input_channels]Sample = undefined,
+        delays: [maximum_input_channels]usize = undefined,
+        history: [maximum_input_channels][history_length]Sample =
+            @splat(@splat(0.0)),
+        cursor: usize = 0,
+
+        pub fn init(
+            block: *const adm_xml.BlockFormat,
+            input_channels: []const adm.Identifier,
+            sample_rate: f64,
+        ) !Self {
+            if (block.identifier.typeLabel() != 0x0002 or
+                block.channel_identifier.typeLabel() != 0x0002)
+            {
+                return error.AdmRendererRequiresMatrixBlock;
+            }
+            if (input_channels.len == 0 or
+                input_channels.len > maximum_input_channels)
+            {
+                return error.InvalidAdmRendererInputCount;
+            }
+            if (!std.math.isFinite(sample_rate) or sample_rate <= 0.0)
+                return error.InvalidAdmRendererSampleRate;
+            for (input_channels, 0..) |channel, index| {
+                if (channel.kind != .channel_format)
+                    return error.InvalidAdmRendererInputIdentifier;
+                for (input_channels[0..index]) |previous| {
+                    if (channel.eql(previous))
+                        return error.DuplicateAdmRendererInputIdentifier;
+                }
+            }
+
+            const coefficients = block.matrixCoefficientSlice();
+            if (coefficients.len == 0)
+                return error.MissingAdmRendererMatrixCoefficient;
+            var result = Self{
+                .input_count = input_channels.len,
+                .term_count = coefficients.len,
+            };
+            for (coefficients, 0..) |coefficient, term_index| {
+                if (coefficient.gain_variable != null or
+                    coefficient.phase_variable != null or
+                    coefficient.delay_variable != null)
+                {
+                    return error.UnsupportedVariableAdmMatrixCoefficient;
+                }
+                if (coefficient.phase_degrees != 0.0)
+                    return error.UnsupportedAdmMatrixCoefficientPhase;
+                const identifier = try coefficient.channelIdentifier();
+                const input_index = findInputChannel(
+                    input_channels,
+                    identifier,
+                ) orelse return error.MissingAdmRendererInputChannel;
+                for (result.input_indices[0..term_index]) |previous| {
+                    if (previous == input_index)
+                        return error.DuplicateAdmRendererMatrixCoefficient;
+                }
+                result.input_indices[term_index] =
+                    @intCast(input_index);
+                result.gains[term_index] =
+                    try renderGain(Sample, coefficient.gain);
+                result.delays[term_index] = try matrixDelaySamples(
+                    coefficient.delay_milliseconds,
+                    sample_rate,
+                    maximum_delay_samples,
+                );
+            }
+            return result;
+        }
+
+        pub fn reset(self: *Self) void {
+            self.cursor = 0;
+            for (&self.history) |*term_history|
+                @memset(term_history, 0.0);
+        }
+
+        pub fn processSample(
+            self: *Self,
+            inputs: []const Sample,
+        ) Sample {
+            if (!self.valid() or inputs.len != self.input_count)
+                return 0.0;
+            return self.processSampleUnchecked(inputs);
+        }
+
+        fn processSampleUnchecked(
+            self: *Self,
+            inputs: []const Sample,
+        ) Sample {
+            var output: Sample = 0.0;
+            for (
+                self.input_indices[0..self.term_count],
+                self.gains[0..self.term_count],
+                self.delays[0..self.term_count],
+                0..,
+            ) |input_index, gain, delay, term_index| {
+                const raw_input = inputs[input_index];
+                const input = if (std.math.isFinite(raw_input))
+                    raw_input
+                else
+                    0.0;
+                self.history[term_index][self.cursor] = input;
+                const read_index =
+                    (self.cursor + history_length - delay) %
+                    history_length;
+                const raw_delayed =
+                    self.history[term_index][read_index];
+                const delayed = if (std.math.isFinite(raw_delayed))
+                    raw_delayed
+                else
+                    0.0;
+                output += delayed * gain;
+                if (!std.math.isFinite(output)) output = 0.0;
+            }
+            self.cursor = (self.cursor + 1) % history_length;
+            return output;
+        }
+
+        pub fn process(
+            self: *Self,
+            inputs: []const []const Sample,
+            output: []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (inputs.len != self.input_count)
+                return error.AdmRendererInputCountMismatch;
+            for (inputs) |input| {
+                if (input.len != output.len)
+                    return error.AdmRendererBufferLengthMismatch;
+                if (slicesOverlap(Sample, input, output))
+                    return error.AdmRendererAliasedBuffers;
+            }
+            for (output, 0..) |*output_sample, sample_index| {
+                var samples: [maximum_input_channels]Sample = undefined;
+                for (inputs, 0..) |input, input_index|
+                    samples[input_index] = input[sample_index];
+                output_sample.* = self.processSampleUnchecked(
+                    samples[0..self.input_count],
+                );
+            }
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.input_count == 0 or
+                self.input_count > maximum_input_channels or
+                self.term_count == 0 or
+                self.term_count > maximum_input_channels or
+                self.cursor >= history_length)
+            {
+                return false;
+            }
+            for (
+                self.input_indices[0..self.term_count],
+                self.gains[0..self.term_count],
+                self.delays[0..self.term_count],
+                0..,
+            ) |input_index, gain, delay, term_index| {
+                if (input_index >= self.input_count or
+                    !std.math.isFinite(gain) or
+                    delay > maximum_delay_samples)
+                {
+                    return false;
+                }
+                for (self.input_indices[0..term_index]) |previous| {
+                    if (previous == input_index) return false;
+                }
+            }
+            return true;
+        }
+    };
+}
+
+fn matrixDelaySamples(
+    delay_milliseconds: f64,
+    sample_rate: f64,
+    maximum_delay_samples: usize,
+) !usize {
+    if (!std.math.isFinite(delay_milliseconds) or
+        delay_milliseconds < 0.0)
+    {
+        return error.InvalidAdmRendererMatrixDelay;
+    }
+    const exact_samples =
+        sample_rate * delay_milliseconds / 1000.0;
+    if (!std.math.isFinite(exact_samples))
+        return error.InvalidAdmRendererMatrixDelay;
+    const rounded_samples = @ceil(exact_samples - 0.5);
+    if (rounded_samples <= 0.0) return 0;
+    if (rounded_samples > @as(f64, @floatFromInt(maximum_delay_samples)))
+        return error.AdmRendererMatrixDelayCapacityExceeded;
+    return @intFromFloat(rounded_samples);
+}
+
 pub fn DirectSpeakerRouter(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
         @compileError("DirectSpeakerRouter supports f32 and f64 samples");
@@ -5968,6 +6179,173 @@ test "ADM static matrix mixer rejects unsupported plans transactionally" {
         [_]f32{ 1.0, 2.0 },
         aliased,
     );
+}
+
+test "ADM Matrix coefficient mixer applies rounded delays across partitions" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+        \\      <matrix>
+        \\        <coefficient>AC_00010001</coefficient>
+        \\        <coefficient gain="0.5" delay="1.5">AC_00010002</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const channels = [_]adm.Identifier{
+        try adm.Identifier.parse("AC_00010001"),
+        try adm.Identifier.parse("AC_00010002"),
+    };
+    const Mixer = MatrixCoefficientMixer(f32, 2);
+    var complete = try Mixer.init(&block, &channels, 1000.0);
+    try std.testing.expectEqual(@as(usize, 0), complete.delays[0]);
+    try std.testing.expectEqual(@as(usize, 1), complete.delays[1]);
+    const first = [_]f32{ 1.0, 2.0, 3.0, 4.0 };
+    const second = [_]f32{ 10.0, 20.0, std.math.nan(f32), 40.0 };
+    const inputs = [_][]const f32{ &first, &second };
+    var complete_output: [first.len]f32 = undefined;
+    try complete.process(&inputs, &complete_output);
+    try std.testing.expectEqualDeep(
+        [_]f32{ 1.0, 7.0, 13.0, 4.0 },
+        complete_output,
+    );
+    try std.testing.expectEqual(
+        @as(f32, 20.0),
+        complete.processSample(&.{ 0.0, 0.0 }),
+    );
+
+    var partitioned = try Mixer.init(&block, &channels, 1000.0);
+    var partitioned_output: [first.len]f32 = undefined;
+    const first_inputs = [_][]const f32{
+        first[0..2],
+        second[0..2],
+    };
+    try partitioned.process(
+        &first_inputs,
+        partitioned_output[0..2],
+    );
+    const second_inputs = [_][]const f32{
+        first[2..],
+        second[2..],
+    };
+    try partitioned.process(
+        &second_inputs,
+        partitioned_output[2..],
+    );
+    try std.testing.expectEqualDeep(
+        complete_output,
+        partitioned_output,
+    );
+    partitioned.reset();
+    var reset_output: [first.len]f32 = undefined;
+    try partitioned.process(&inputs, &reset_output);
+    try std.testing.expectEqualDeep(
+        complete_output,
+        reset_output,
+    );
+}
+
+test "ADM Matrix coefficient mixer validates policy and state transactionally" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+        \\      <matrix>
+        \\        <coefficient delay="2.5">AC_00010001</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const channels = [_]adm.Identifier{
+        try adm.Identifier.parse("AC_00010001"),
+    };
+    var mixer = try MatrixCoefficientMixer(f64, 2).init(
+        &block,
+        &channels,
+        1000.0,
+    );
+    try std.testing.expectEqual(@as(usize, 2), mixer.delays[0]);
+    try std.testing.expectError(
+        error.AdmRendererMatrixDelayCapacityExceeded,
+        MatrixCoefficientMixer(f64, 1).init(
+            &block,
+            &channels,
+            1000.0,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidAdmRendererSampleRate,
+        MatrixCoefficientMixer(f64, 2).init(
+            &block,
+            &channels,
+            0.0,
+        ),
+    );
+
+    var invalid_block = block;
+    invalid_block.matrix_coefficients[0].delay_milliseconds = -0.1;
+    try std.testing.expectError(
+        error.InvalidAdmRendererMatrixDelay,
+        MatrixCoefficientMixer(f64, 2).init(
+            &invalid_block,
+            &channels,
+            1000.0,
+        ),
+    );
+    invalid_block = block;
+    invalid_block.matrix_coefficients[0].phase_degrees = 90.0;
+    try std.testing.expectError(
+        error.UnsupportedAdmMatrixCoefficientPhase,
+        MatrixCoefficientMixer(f64, 2).init(
+            &invalid_block,
+            &channels,
+            1000.0,
+        ),
+    );
+    invalid_block = block;
+    invalid_block.matrix_coefficients[0].delay_variable =
+        .{ .len = 1, .bytes = undefined };
+    invalid_block.matrix_coefficients[0]
+        .delay_variable.?.bytes[0] = 'd';
+    try std.testing.expectError(
+        error.UnsupportedVariableAdmMatrixCoefficient,
+        MatrixCoefficientMixer(f64, 2).init(
+            &invalid_block,
+            &channels,
+            1000.0,
+        ),
+    );
+
+    var aliased = [_]f64{ 1.0, 2.0, 3.0 };
+    const aliased_inputs = [_][]const f64{&aliased};
+    try std.testing.expectError(
+        error.AdmRendererAliasedBuffers,
+        mixer.process(&aliased_inputs, &aliased),
+    );
+    try std.testing.expectEqualDeep(
+        [_]f64{ 1.0, 2.0, 3.0 },
+        aliased,
+    );
+    try std.testing.expectEqual(@as(usize, 0), mixer.cursor);
+
+    mixer.cursor = 3;
+    var output = [_]f64{7.0};
+    const input = [_]f64{1.0};
+    const inputs = [_][]const f64{&input};
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        mixer.process(&inputs, &output),
+    );
+    try std.testing.expectEqual(@as(f64, 7.0), output[0]);
+    mixer.reset();
+    try std.testing.expect(mixer.valid());
 }
 
 test "ADM direct speaker router mixes an exact label match" {
