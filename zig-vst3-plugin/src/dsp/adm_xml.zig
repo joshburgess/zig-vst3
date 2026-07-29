@@ -2933,6 +2933,86 @@ pub const Document = struct {
         }
     }
 
+    /// Checks the recommended programme language for multilingual
+    /// complementary-object groups.
+    pub fn validateEmissionProfileRecommendedProgrammeLanguages(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileComplementaryLabels();
+        var programme_iterator = self.declarations();
+        while (try programme_iterator.next()) |declaration| {
+            const programme = declaration.identifier;
+            if (programme.kind != .programme) continue;
+            const programme_language = try self.emissionDeclarationLanguage(
+                .programme,
+                programme.primary,
+            );
+
+            var object_iterator = self.declarations();
+            while (try object_iterator.next()) |object_declaration| {
+                const root = object_declaration.identifier;
+                if (root.kind != .object or
+                    try self.emissionComplementaryChildCount(root.primary) == 0)
+                {
+                    continue;
+                }
+                const root_parent = try self.emissionObjectParent(root.primary);
+                if (root_parent.kind != .content or
+                    !try self.emissionProgrammeIncludesContent(
+                        programme.primary,
+                        root_parent.primary,
+                    ))
+                {
+                    continue;
+                }
+                const root_language = try self.emissionDeclarationLanguage(
+                    .content,
+                    root_parent.primary,
+                );
+                var complete_group = true;
+                var multilingual = false;
+                var reference_iterator = self.references();
+                while (try reference_iterator.next()) |reference| {
+                    const owner = reference.owner orelse continue;
+                    if (!reference.direct_owner or
+                        owner.kind != .object or
+                        owner.primary != root.primary or
+                        reference.kind != .complementary_object)
+                    {
+                        continue;
+                    }
+                    const member = reference.identifier orelse
+                        return error.InvalidAdmEmissionProfileComplementaryObject;
+                    const member_parent = try self.emissionObjectParent(
+                        member.primary,
+                    );
+                    if (member_parent.kind != .content or
+                        !try self.emissionProgrammeIncludesContent(
+                            programme.primary,
+                            member_parent.primary,
+                        ))
+                    {
+                        complete_group = false;
+                        continue;
+                    }
+                    const member_language =
+                        try self.emissionDeclarationLanguage(
+                            .content,
+                            member_parent.primary,
+                        );
+                    multilingual = multilingual or
+                        !std.meta.eql(root_language, member_language);
+                }
+                if (complete_group and
+                    multilingual and
+                    !std.mem.eql(u8, &programme_language, "und"))
+                {
+                    return error.InvalidAdmEmissionProfileRecommendedProgrammeLanguage;
+                }
+            }
+        }
+    }
+
     fn validateEmissionObjectBlockSyntax(self: Document) !void {
         var frame_depth: ?usize = null;
         var afe_depth: ?usize = null;
@@ -3549,6 +3629,75 @@ pub const Document = struct {
             }
         }
         return false;
+    }
+
+    fn emissionProgrammeIncludesContent(
+        self: Document,
+        programme_primary: u32,
+        content_primary: u32,
+    ) !bool {
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            if (!reference.direct_owner or reference.kind != .content)
+                continue;
+            const owner = reference.owner orelse continue;
+            const content = reference.identifier orelse continue;
+            if (owner.kind == .programme and
+                owner.primary == programme_primary and
+                content.primary == content_primary)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn emissionDeclarationLanguage(
+        self: Document,
+        kind: adm.IdentifierKind,
+        primary: u32,
+    ) ![3]u8 {
+        const element_name, const identifier_name, const language_name =
+            switch (kind) {
+                .programme => .{
+                    "audioProgramme",
+                    "audioProgrammeID",
+                    "audioProgrammeLanguage",
+                },
+                .content => .{
+                    "audioContent",
+                    "audioContentID",
+                    "audioContentLanguage",
+                },
+                else => return error.InvalidAdmEmissionProfileLanguageOwner,
+            };
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        element_name,
+                    )) {
+                        continue;
+                    }
+                    const identifier = try emissionElementIdentifier(
+                        element,
+                        identifier_name,
+                        kind,
+                    );
+                    if (identifier.primary == primary) {
+                        return emissionRequiredLanguageAttribute(
+                            element,
+                            language_name,
+                        );
+                    }
+                },
+                else => {},
+            }
+        }
+        return error.MissingAdmEmissionProfileLanguageOwner;
     }
 
     fn emissionComplementaryChildCount(
@@ -9167,6 +9316,41 @@ test "ADM XML emission profile checks recommended label languages" {
         error.InconsistentAdmEmissionProfileLabelLanguages,
         document.validateEmissionProfileConsistentLabelLanguages(),
     );
+}
+
+test "ADM XML emission profile checks recommended programme languages" {
+    const document = try Document.init(valid_emission_labels_xml);
+    try document.validateEmissionProfileRecommendedProgrammeLanguages();
+
+    const non_recommended = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_labels_xml,
+        "audioProgrammeLanguage=\"und\"",
+        "audioProgrammeLanguage=\"eng\"",
+    );
+    defer std.testing.allocator.free(non_recommended);
+    const non_recommended_document = try Document.init(non_recommended);
+    try non_recommended_document.validateEmissionProfileComplementaryLabels();
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileRecommendedProgrammeLanguage,
+        non_recommended_document
+            .validateEmissionProfileRecommendedProgrammeLanguages(),
+    );
+
+    const single_language_content = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        non_recommended,
+        "audioContentLanguage=\"deu\"",
+        "audioContentLanguage=\"eng\"",
+    );
+    defer std.testing.allocator.free(single_language_content);
+    const single_language_document = try Document.init(
+        single_language_content,
+    );
+    try single_language_document
+        .validateEmissionProfileRecommendedProgrammeLanguages();
 }
 
 const valid_emission_complementary_parameters_xml =
