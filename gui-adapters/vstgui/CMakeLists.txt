@@ -57,6 +57,10 @@ if(UNIX AND NOT APPLE)
         vstgui
         PRIVATE zig_vstgui_no_process_file_selector.cpp
     )
+    target_include_directories(
+        vstgui
+        PRIVATE "${VSTGUI_SOURCE_DIR}"
+    )
 endif()
 set_target_properties(vstgui PROPERTIES
     POSITION_INDEPENDENT_CODE ON
