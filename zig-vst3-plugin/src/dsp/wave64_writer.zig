@@ -756,7 +756,7 @@ test "Wave64 writer validates append transactionally" {
     var file = try temporary.dir.createFile(
         std.testing.io,
         "transactional.w64",
-        .{},
+        .{ .read = true },
     );
     defer file.close(std.testing.io);
     var writer = try FileWriter.init(std.testing.io, file, .{

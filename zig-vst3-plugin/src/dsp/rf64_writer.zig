@@ -827,7 +827,7 @@ test "RF64 writer validates append transactionally" {
     var file = try temporary.dir.createFile(
         std.testing.io,
         "transactional.rf64.wav",
-        .{},
+        .{ .read = true },
     );
     defer file.close(std.testing.io);
     var writer = try FileWriter.init(std.testing.io, file, .{

@@ -1754,10 +1754,12 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
-            const reader_id = self.openContentReader(
+            var reader_id: ContentReaderId = undefined;
+            self.openContentReader(
                 object,
                 content_type,
                 range,
+                &reader_id,
             ) catch |failure| {
                 self.record(failure);
                 return null;
@@ -1809,10 +1811,12 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
-            const reader_id = self.openContentReader(
+            var reader_id: ContentReaderId = undefined;
+            self.openContentReader(
                 object,
                 content_type,
                 range,
+                &reader_id,
             ) catch |failure| {
                 self.record(failure);
                 return null;
@@ -1864,10 +1868,12 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
-            const reader_id = self.openContentReader(
+            var reader_id: ContentReaderId = undefined;
+            self.openContentReader(
                 object,
                 content_type,
                 range,
+                &reader_id,
             ) catch |failure| {
                 self.record(failure);
                 return null;
@@ -2747,7 +2753,8 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             object: ContentObject,
             content_type: raw.ARAContentType,
             range_pointer: [*c]const raw.ARAContentTimeRange,
-        ) Error!ContentReaderId {
+            reader_id: *ContentReaderId,
+        ) Error!void {
             if (self.contentAvailable(object, content_type) !=
                 raw.kARATrue)
                 return error.ContentReaderUnavailable;
@@ -2783,10 +2790,11 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                     .range = range,
                     .event_count = count,
                 };
-                return .{
+                reader_id.* = .{
                     .index = @intCast(index),
                     .generation = slot.generation,
                 };
+                return;
             }
             return error.CapacityExceeded;
         }
@@ -4658,7 +4666,23 @@ test "ARA controller publishes typed provider content readers" {
     const reader_id = decodeRef(
         TestController.ContentReaderId,
         reader,
-    ) orelse return error.TestUnexpectedResult;
+    ) orelse {
+        const expected_reader = encodeRef(
+            raw.ARAContentReaderRef,
+            TestController.ContentReaderId{
+                .index = 0,
+                .generation = 1,
+            },
+        );
+        std.debug.print(
+            "ARA content reader identity mismatch: reader=0x{x} expected=0x{x}\n",
+            .{
+                @intFromPtr(reader.?),
+                @intFromPtr(expected_reader.?),
+            },
+        );
+        return error.TestUnexpectedResult;
+    };
     try std.testing.expectEqual(@as(u16, 0), reader_id.index);
     try std.testing.expectEqual(@as(u32, 1), reader_id.generation);
     const resolved_reader = controller.contentReader(reader) orelse

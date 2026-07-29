@@ -2183,9 +2183,8 @@ pub fn CoreAdapterWithParameters(
             while (offset < body_size) {
                 if (body_size - offset < @sizeOf(AtomEvent))
                     return error.InvalidEvents;
-                const event: *const AtomEvent = @ptrCast(
-                    @alignCast(bytes + offset),
-                );
+                const event: *align(1) const AtomEvent =
+                    @ptrCast(bytes + offset);
                 const payload_size: usize = event.body.size;
                 const raw_event_size = std.math.add(
                     usize,
@@ -2285,8 +2284,8 @@ pub fn CoreAdapterWithParameters(
         ) !?PositionUpdate {
             if (payload.len < @sizeOf(AtomObjectBody))
                 return error.InvalidTransport;
-            const object: *const AtomObjectBody =
-                @ptrCast(@alignCast(payload.ptr));
+            const object: *align(1) const AtomObjectBody =
+                @ptrCast(payload.ptr);
             if (object.otype != self.time_position_type) return null;
 
             var update = PositionUpdate{};
@@ -2294,8 +2293,8 @@ pub fn CoreAdapterWithParameters(
             while (offset < payload.len) {
                 if (payload.len - offset < @sizeOf(AtomPropertyBody))
                     return error.InvalidTransport;
-                const property: *const AtomPropertyBody =
-                    @ptrCast(@alignCast(payload.ptr + offset));
+                const property: *align(1) const AtomPropertyBody =
+                    @ptrCast(payload.ptr + offset);
                 const value_size: usize = property.value.size;
                 const raw_size = std.math.add(
                     usize,
@@ -3108,9 +3107,8 @@ pub fn CoreAdapterWithParameters(
             if (offset.* > capacity or
                 padded_size > capacity - offset.*)
                 return error.EventStorageFull;
-            const atom_event: *AtomEvent = @ptrCast(
-                @alignCast(bytes + offset.*),
-            );
+            const atom_event: *align(1) AtomEvent =
+                @ptrCast(bytes + offset.*);
             atom_event.* = .{
                 .time = .{ .frames = @intCast(sample_offset) },
                 .body = .{
@@ -5340,7 +5338,7 @@ test "LV2 Atom MIDI sequences reach input and output event buses" {
         sequence: AtomSequence,
         storage: [192]u8,
     };
-    var input = std.mem.zeroes(SequenceBuffer);
+    var input: SequenceBuffer align(8) = std.mem.zeroes(SequenceBuffer);
     input.sequence.atom = .{
         .size = @sizeOf(AtomSequenceBody) + 144,
         .type = 29,
@@ -5422,7 +5420,7 @@ test "LV2 Atom MIDI sequences reach input and output event buses" {
     );
     integer_value.* = 0x1234_5678;
 
-    var output = std.mem.zeroes(SequenceBuffer);
+    var output: SequenceBuffer align(8) = std.mem.zeroes(SequenceBuffer);
     output.sequence.atom.size =
         @sizeOf(AtomSequenceBody) + output.storage.len;
     const audio_input = [_]f32{0.0} ** 64;
