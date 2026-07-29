@@ -523,6 +523,76 @@ pub const Document = struct {
         return level;
     }
 
+    /// Validates the supported BS.2168 identifier and content-link subset.
+    /// Alternative-value-set parentage and other relationships are separate.
+    pub fn validateEmissionProfileIdentifiers(self: Document) !void {
+        _ = try self.validateEmissionProfileElementLimits();
+        var expected_track_uid: u32 = 1;
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            const identifier = declaration.identifier;
+            switch (identifier.kind) {
+                .programme, .object, .alternative_value_set => {
+                    if (identifier.primary < 0x1001)
+                        return error.InvalidAdmEmissionProfileIdentifier;
+                },
+                .content => {
+                    if (identifier.primary < 0x1001)
+                        return error.InvalidAdmEmissionProfileIdentifier;
+                    try self.validateEmissionContentReference(identifier);
+                },
+                .pack_format, .channel_format => {
+                    const index = identifier.definitionIndex() orelse
+                        return error.InvalidAdmEmissionProfileIdentifier;
+                    if (index < 0x1001)
+                        return error.InvalidAdmEmissionProfileIdentifier;
+                },
+                .block_format => {
+                    const index = identifier.definitionIndex() orelse
+                        return error.InvalidAdmEmissionProfileIdentifier;
+                    if (index < 0x1001)
+                        return error.InvalidAdmEmissionProfileIdentifier;
+                    if (identifier.typeLabel() == 0x0002 and
+                        identifier.secondary != 1)
+                    {
+                        return error.InvalidAdmEmissionProfileIdentifier;
+                    }
+                },
+                .track_uid => {
+                    if (identifier.primary != expected_track_uid)
+                        return error.InvalidAdmEmissionProfileTrackUidSequence;
+                    expected_track_uid = std.math.add(
+                        u32,
+                        expected_track_uid,
+                        1,
+                    ) catch return error.InvalidAdmEmissionProfileTrackUidSequence;
+                },
+                .track_format, .stream_format => return error.ForbiddenAdmEmissionProfileFormat,
+            }
+        }
+    }
+
+    fn validateEmissionContentReference(
+        self: Document,
+        content: adm.Identifier,
+    ) !void {
+        var matching_references: usize = 0;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            if (!reference.direct_owner or reference.kind != .object)
+                continue;
+            const owner = reference.owner orelse continue;
+            if (!owner.eql(content)) continue;
+            const object = reference.identifier orelse
+                return error.InvalidAdmEmissionProfileContentReference;
+            matching_references += 1;
+            if (object.primary != content.primary)
+                return error.InvalidAdmEmissionProfileContentReference;
+        }
+        if (matching_references != 1)
+            return error.InvalidAdmEmissionProfileContentReference;
+    }
+
     fn validateEmissionProfileDocumentVersion(self: Document) !void {
         var events = self.xml_document.iterator();
         while (try events.next()) |event| {
@@ -3144,6 +3214,85 @@ test "ADM XML emission profile enforces core element limits" {
     try std.testing.expectError(
         error.UnsupportedAdmEmissionProfileDocumentVersion,
         wrong_document_version.validateEmissionProfileElementLimits(),
+    );
+}
+
+test "ADM XML emission profile validates core identifiers" {
+    const valid = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001"/>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioPackFormat audioPackFormatID="AP_00031001"/>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <audioTrackUID UID="ATU_00000002"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try valid.validateEmissionProfileIdentifiers();
+
+    const low_programme_id = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1000"/>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileIdentifier,
+        low_programme_id.validateEmissionProfileIdentifiers(),
+    );
+
+    const mismatched_content = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001"/>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioObject audioObjectID="AO_1002"/>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileContentReference,
+        mismatched_content.validateEmissionProfileIdentifiers(),
+    );
+
+    const skipped_track_uid = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001"/>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioTrackUID UID="ATU_00000002"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileTrackUidSequence,
+        skipped_track_uid.validateEmissionProfileIdentifiers(),
     );
 }
 
