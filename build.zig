@@ -3853,10 +3853,10 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
     } else if (target.result.os.tag == .windows) {
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/msvcprt.lib"));
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/msvcrt.lib"));
-        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/libvcruntime.lib"));
-        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/libucrt.lib"));
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/vcruntime.lib"));
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/ucrt.lib"));
+        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/libvcruntime.lib"));
+        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/libucrt.lib"));
         for ([_][]const u8{
             "comctl32", "d2d1", "dwrite",        "gdi32", "ole32", "oleaut32", "shell32", "shlwapi", "uiautomationcore",
             "user32",   "uuid", "windowscodecs",
