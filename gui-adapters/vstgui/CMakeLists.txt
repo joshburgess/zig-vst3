@@ -160,26 +160,6 @@ if(UNIX AND NOT APPLE)
         "${CMAKE_BINARY_DIR}/Release/libs/libgcc_s.so.1"
         ONLY_IF_DIFFERENT
     )
-elseif(MSVC)
-    find_library(ZIG_VSTGUI_MSVCPRT_LIBRARY NAMES msvcprt REQUIRED)
-    find_library(ZIG_VSTGUI_VCRUNTIME_LIBRARY NAMES vcruntime REQUIRED)
-    find_library(ZIG_VSTGUI_UCRT_LIBRARY NAMES ucrt REQUIRED)
-    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/Release/libs")
-    file(COPY_FILE
-        "${ZIG_VSTGUI_MSVCPRT_LIBRARY}"
-        "${CMAKE_BINARY_DIR}/Release/libs/msvcprt.lib"
-        ONLY_IF_DIFFERENT
-    )
-    file(COPY_FILE
-        "${ZIG_VSTGUI_VCRUNTIME_LIBRARY}"
-        "${CMAKE_BINARY_DIR}/Release/libs/vcruntime.lib"
-        ONLY_IF_DIFFERENT
-    )
-    file(COPY_FILE
-        "${ZIG_VSTGUI_UCRT_LIBRARY}"
-        "${CMAKE_BINARY_DIR}/Release/libs/ucrt.lib"
-        ONLY_IF_DIFFERENT
-    )
 endif()
 
 add_executable(zig_vstgui_adapter_tests zig_vstgui_adapter_tests.cpp)
