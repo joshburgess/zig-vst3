@@ -91,8 +91,12 @@ const SamplePlayerControllerState = struct {
     pending_import_name: [maximum_import_name_bytes]u8 = @splat(0),
     pending_import_name_len: u8 = 0,
 
-    pub fn init() SamplePlayerControllerState {
-        return .{ .importer = .init() };
+    pub fn initInto(self: *SamplePlayerControllerState) void {
+        self.importer.initInto();
+        self.published_import_generation = 0;
+        self.transfer_generation = 0;
+        @memset(&self.pending_import_name, 0);
+        self.pending_import_name_len = 0;
     }
 
     pub fn deinit(self: *SamplePlayerControllerState) void {
