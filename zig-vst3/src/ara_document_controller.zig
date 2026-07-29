@@ -1754,17 +1754,23 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
-            var reader_id: ContentReaderId = undefined;
+            var reader_index: u16 = undefined;
+            var reader_generation: u32 = undefined;
             self.openContentReader(
                 object,
                 content_type,
                 range,
-                &reader_id,
+                &reader_index,
+                &reader_generation,
             ) catch |failure| {
                 self.record(failure);
                 return null;
             };
-            return encodeRef(raw.ARAContentReaderRef, reader_id);
+            return encodeRefParts(
+                raw.ARAContentReaderRef,
+                reader_index,
+                reader_generation,
+            );
         }
 
         fn isAudioModificationContentAvailable(
@@ -1811,17 +1817,23 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
-            var reader_id: ContentReaderId = undefined;
+            var reader_index: u16 = undefined;
+            var reader_generation: u32 = undefined;
             self.openContentReader(
                 object,
                 content_type,
                 range,
-                &reader_id,
+                &reader_index,
+                &reader_generation,
             ) catch |failure| {
                 self.record(failure);
                 return null;
             };
-            return encodeRef(raw.ARAContentReaderRef, reader_id);
+            return encodeRefParts(
+                raw.ARAContentReaderRef,
+                reader_index,
+                reader_generation,
+            );
         }
 
         fn isPlaybackRegionContentAvailable(
@@ -1868,17 +1880,23 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 self.record(failure);
                 return null;
             };
-            var reader_id: ContentReaderId = undefined;
+            var reader_index: u16 = undefined;
+            var reader_generation: u32 = undefined;
             self.openContentReader(
                 object,
                 content_type,
                 range,
-                &reader_id,
+                &reader_index,
+                &reader_generation,
             ) catch |failure| {
                 self.record(failure);
                 return null;
             };
-            return encodeRef(raw.ARAContentReaderRef, reader_id);
+            return encodeRefParts(
+                raw.ARAContentReaderRef,
+                reader_index,
+                reader_generation,
+            );
         }
 
         fn getContentReaderEventCount(
@@ -2753,7 +2771,8 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             object: ContentObject,
             content_type: raw.ARAContentType,
             range_pointer: [*c]const raw.ARAContentTimeRange,
-            reader_id: *ContentReaderId,
+            reader_index: *u16,
+            reader_generation: *u32,
         ) Error!void {
             if (self.contentAvailable(object, content_type) !=
                 raw.kARATrue)
@@ -2790,10 +2809,8 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                     .range = range,
                     .event_count = count,
                 };
-                reader_id.* = .{
-                    .index = @intCast(index),
-                    .generation = slot.generation,
-                };
+                reader_index.* = @intCast(index);
+                reader_generation.* = slot.generation;
                 return;
             }
             return error.CapacityExceeded;
@@ -3519,9 +3536,17 @@ fn eraseHostRef(pointer: anytype) ?*anyopaque {
 }
 
 fn encodeRef(comptime Ref: type, id: anytype) Ref {
+    return encodeRefParts(Ref, id.index, id.generation);
+}
+
+fn encodeRefParts(
+    comptime Ref: type,
+    index: u16,
+    generation: u32,
+) Ref {
     const address =
-        (@as(usize, id.generation) << 16) |
-        (@as(usize, id.index) + 1);
+        (@as(usize, generation) << 16) |
+        (@as(usize, index) + 1);
     return @ptrFromInt(address);
 }
 
