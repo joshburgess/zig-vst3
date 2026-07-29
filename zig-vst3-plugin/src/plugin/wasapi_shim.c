@@ -4,7 +4,6 @@
 #include "wasapi_shim.h"
 
 #include <windows.h>
-#include <initguid.h>
 
 #include <audioclient.h>
 #include <avrt.h>
@@ -78,6 +77,48 @@ typedef struct {
     BOOL uninitialize;
 } com_scope;
 
+static const GUID zv3_clsid_mm_device_enumerator = {
+    0xbcde0395,
+    0xe52f,
+    0x467c,
+    {0x8e, 0x3d, 0xc4, 0x57, 0x92, 0x91, 0x69, 0x2e},
+};
+
+static const GUID zv3_iid_mm_device_enumerator = {
+    0xa95664d2,
+    0x9614,
+    0x4f35,
+    {0xa7, 0x46, 0xde, 0x8d, 0xb6, 0x36, 0x17, 0xe6},
+};
+
+static const GUID zv3_iid_mm_notification_client = {
+    0x7991eec9,
+    0x7e89,
+    0x4d85,
+    {0x83, 0x90, 0x6c, 0x70, 0x3c, 0xec, 0x60, 0xc0},
+};
+
+static const GUID zv3_iid_audio_client = {
+    0x1cb9ad4c,
+    0xdbfa,
+    0x4c32,
+    {0xb1, 0x78, 0xc2, 0xf5, 0x68, 0xa7, 0x03, 0xb2},
+};
+
+static const GUID zv3_iid_audio_capture_client = {
+    0xc8adbd64,
+    0xe71e,
+    0x48a0,
+    {0xa4, 0xde, 0x18, 0x5c, 0x39, 0x5c, 0xd3, 0x17},
+};
+
+static const GUID zv3_iid_audio_render_client = {
+    0xf294acfc,
+    0x3146,
+    0x4483,
+    {0xa7, 0xbf, 0xad, 0xdc, 0xa7, 0xc2, 0x60, 0xe2},
+};
+
 static const GUID zv3_ieee_float_subtype = {
     0x00000003,
     0x0000,
@@ -116,10 +157,10 @@ static HRESULT create_enumerator(
     IMMDeviceEnumerator **output
 ) {
     return CoCreateInstance(
-        &CLSID_MMDeviceEnumerator,
+        &zv3_clsid_mm_device_enumerator,
         NULL,
         CLSCTX_INPROC_SERVER,
-        &IID_IMMDeviceEnumerator,
+        &zv3_iid_mm_device_enumerator,
         (void **)output
     );
 }
@@ -495,7 +536,7 @@ int32_t zv3_wasapi_device_channels(
     if (SUCCEEDED(status)) {
         status = IMMDevice_Activate(
             device,
-            &IID_IAudioClient,
+            &zv3_iid_audio_client,
             CLSCTX_INPROC_SERVER,
             NULL,
             (void **)&client
@@ -538,7 +579,7 @@ static HRESULT STDMETHODCALLTYPE notification_query_interface(
         return E_POINTER;
     }
     if (IsEqualIID(identifier, &IID_IUnknown) ||
-        IsEqualIID(identifier, &IID_IMMNotificationClient)) {
+        IsEqualIID(identifier, &zv3_iid_mm_notification_client)) {
         *output = base;
         (void)IMMNotificationClient_AddRef(base);
         return S_OK;
@@ -824,7 +865,7 @@ static HRESULT open_audio_client(
     if (SUCCEEDED(status)) {
         status = IMMDevice_Activate(
             device,
-            &IID_IAudioClient,
+            &zv3_iid_audio_client,
             CLSCTX_INPROC_SERVER,
             NULL,
             (void **)&client
@@ -921,7 +962,7 @@ static HRESULT initialize_audio_clients(
         if (SUCCEEDED(status)) {
             status = IAudioClient_GetService(
                 session->capture_client,
-                &IID_IAudioCaptureClient,
+                &zv3_iid_audio_capture_client,
                 (void **)&session->capture_service
             );
         }
@@ -948,7 +989,7 @@ static HRESULT initialize_audio_clients(
         if (SUCCEEDED(status)) {
             status = IAudioClient_GetService(
                 session->render_client,
-                &IID_IAudioRenderClient,
+                &zv3_iid_audio_render_client,
                 (void **)&session->render_service
             );
         }

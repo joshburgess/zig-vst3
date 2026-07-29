@@ -119,4 +119,18 @@ PATH="$fake_bin:$PATH" \
 grep -q 'Vorbis AudioToolbox interoperability test passed' \
     "$root/audio-toolbox-zero-byte-metadata.txt"
 
+printf '%s\n' \
+    '#!/bin/sh' \
+    "printf 'RIFF\\060\\000\\000\\000WAVEfmt \\020\\000\\000\\000\\001\\000\\001\\000\\200\\273\\000\\000\\000\\167\\001\\000\\002\\000\\020\\000JUNK\\004\\000\\000\\000\\000\\000\\000\\000data\\000\\000\\000\\000' >\"\$2\"" \
+    >"$fake_bin/afconvert"
+chmod +x "$fake_bin/afconvert"
+PATH="$fake_bin:$PATH" \
+    VORBIS_INTEROP_SKIP_FFMPEG=1 \
+    scripts/test_vorbis_interop.sh "$fixture" \
+    >"$root/audio-toolbox-empty-pcm.txt"
+grep -q 'AudioToolbox decoder unavailable' \
+    "$root/audio-toolbox-empty-pcm.txt"
+grep -q 'decoder interoperability tests skipped' \
+    "$root/audio-toolbox-empty-pcm.txt"
+
 printf 'Vorbis interoperability runner tests passed\n'

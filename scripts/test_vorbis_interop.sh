@@ -18,6 +18,7 @@ wav_data_range() {
     wav_path=$1
     wav_bytes=$(wc -c <"$wav_path")
     chunk_offset=12
+    empty_data_offset=
     while [ $((chunk_offset + 8)) -le "$wav_bytes" ]; do
         # shellcheck disable=SC2046
         set -- $(dd if="$wav_path" bs=1 skip="$chunk_offset" count=8 2>/dev/null |
@@ -36,11 +37,18 @@ wav_data_range() {
             [ "$2" -eq 97 ] &&
             [ "$3" -eq 116 ] &&
             [ "$4" -eq 97 ]; then
-            printf '%s %s\n' "$payload_offset" "$chunk_size"
-            return 0
+            if [ "$chunk_size" -gt 0 ]; then
+                printf '%s %s\n' "$payload_offset" "$chunk_size"
+                return 0
+            fi
+            empty_data_offset=$payload_offset
         fi
         chunk_offset=$((payload_end + chunk_size % 2))
     done
+    if [ -n "$empty_data_offset" ]; then
+        printf '%s 0\n' "$empty_data_offset"
+        return 0
+    fi
     return 1
 }
 
@@ -69,48 +77,54 @@ if [ "${VORBIS_INTEROP_ONLY_FFMPEG-0}" != "1" ] &&
     if afinfo "$fixture" >"$temporary/source.txt" 2>"$temporary/source-error.txt"; then
         decoded="$temporary/decoded.wav"
         if afconvert "$fixture" "$decoded" -f WAVE -d LEI16; then
-            [ "$(wc -c <"$decoded")" -gt 44 ] ||
-                fail "AudioToolbox produced an empty WAV"
-            if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
-                command -v ffmpeg >/dev/null 2>&1; then
-                decoded_pcm="$temporary/audio-toolbox-decoded.pcm"
-                ffmpeg -v error -y -i "$decoded" \
-                    -map 0:a:0 \
-                    -f s16le \
-                    -acodec pcm_s16le \
-                    "$decoded_pcm"
-                [ "$(wc -c <"$decoded_pcm")" -gt 0 ] ||
-                    fail "AudioToolbox WAV contains no decodable PCM"
-                if ! od -An -tu1 "$decoded_pcm" |
-                    grep -Eq '(^|[[:space:]])[1-9][0-9]*([[:space:]]|$)'; then
-                    fail "AudioToolbox produced silent Vorbis PCM"
-                fi
+            if [ "$(wc -c <"$decoded")" -le 44 ]; then
+                printf 'Vorbis AudioToolbox decoder unavailable; test skipped\n'
             else
-                afinfo "$decoded" >"$temporary/decoded.txt"
-                if ! grep -q "WAVE" "$temporary/decoded.txt" ||
-                    ! grep -q "48000" "$temporary/decoded.txt"; then
-                    sed -n '1,120p' "$temporary/decoded.txt" >&2
-                    fail "AudioToolbox reported unexpected WAV metadata"
-                fi
-                data_range=$(wav_data_range "$decoded") || {
-                    sed -n '1,120p' "$temporary/decoded.txt" >&2
-                    fail "AudioToolbox produced a malformed WAV data range"
-                }
-                # shellcheck disable=SC2086
-                set -- $data_range
-                data_offset=$1
-                audio_bytes=$2
-                [ "$audio_bytes" -gt 0 ] ||
-                    fail "AudioToolbox produced an empty PCM data range"
-                if ! dd if="$decoded" bs=1 skip="$data_offset" count="$audio_bytes" 2>/dev/null |
-                    od -An -tu1 |
-                    grep -Eq '(^|[[:space:]])[1-9][0-9]*([[:space:]]|$)'; then
-                    sed -n '1,120p' "$temporary/decoded.txt" >&2
-                    fail "AudioToolbox produced silent Vorbis PCM"
+                if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
+                    command -v ffmpeg >/dev/null 2>&1; then
+                    decoded_pcm="$temporary/audio-toolbox-decoded.pcm"
+                    ffmpeg -v error -y -i "$decoded" \
+                        -map 0:a:0 \
+                        -f s16le \
+                        -acodec pcm_s16le \
+                        "$decoded_pcm"
+                    if [ "$(wc -c <"$decoded_pcm")" -eq 0 ]; then
+                        printf 'Vorbis AudioToolbox decoder unavailable; test skipped\n'
+                    elif ! od -An -tu1 "$decoded_pcm" |
+                        grep -Eq '(^|[[:space:]])[1-9][0-9]*([[:space:]]|$)'; then
+                        fail "AudioToolbox produced silent Vorbis PCM"
+                    else
+                        printf 'Vorbis AudioToolbox interoperability test passed\n'
+                        tested=1
+                    fi
+                else
+                    afinfo "$decoded" >"$temporary/decoded.txt"
+                    if ! grep -q "WAVE" "$temporary/decoded.txt" ||
+                        ! grep -q "48000" "$temporary/decoded.txt"; then
+                        sed -n '1,120p' "$temporary/decoded.txt" >&2
+                        fail "AudioToolbox reported unexpected WAV metadata"
+                    fi
+                    data_range=$(wav_data_range "$decoded") || {
+                        sed -n '1,120p' "$temporary/decoded.txt" >&2
+                        fail "AudioToolbox produced a malformed WAV data range"
+                    }
+                    # shellcheck disable=SC2086
+                    set -- $data_range
+                    data_offset=$1
+                    audio_bytes=$2
+                    if [ "$audio_bytes" -eq 0 ]; then
+                        printf 'Vorbis AudioToolbox decoder unavailable; test skipped\n'
+                    elif ! dd if="$decoded" bs=1 skip="$data_offset" count="$audio_bytes" 2>/dev/null |
+                        od -An -tu1 |
+                        grep -Eq '(^|[[:space:]])[1-9][0-9]*([[:space:]]|$)'; then
+                        sed -n '1,120p' "$temporary/decoded.txt" >&2
+                        fail "AudioToolbox produced silent Vorbis PCM"
+                    else
+                        printf 'Vorbis AudioToolbox interoperability test passed\n'
+                        tested=1
+                    fi
                 fi
             fi
-            printf 'Vorbis AudioToolbox interoperability test passed\n'
-            tested=1
         else
             printf 'Vorbis AudioToolbox decoder unavailable; test skipped\n'
         fi

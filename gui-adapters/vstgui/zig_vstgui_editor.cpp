@@ -16,6 +16,7 @@
 #include <cstring>
 
 #if defined(_WIN32)
+#include <windows.h>
 #include <objbase.h>
 #ifdef small
 #undef small
@@ -25,6 +26,29 @@
 namespace {
 
 std::atomic<uint32_t> editor_count {0};
+
+#if defined(_WIN32)
+const int module_anchor = 0;
+
+VSTGUI::PlatformInstanceHandle platformInstanceHandle() {
+    HMODULE module = nullptr;
+    const auto address =
+        reinterpret_cast<LPCWSTR>(&module_anchor);
+    if (GetModuleHandleExW(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            address,
+            &module
+        )) {
+        return module;
+    }
+    return GetModuleHandleW(nullptr);
+}
+#else
+VSTGUI::PlatformInstanceHandle platformInstanceHandle() {
+    return nullptr;
+}
+#endif
 
 const ZigVstgui::Theme& selectedTheme(ZigVstguiThemeKind requested) {
     if (requested == ZIG_VSTGUI_THEME_ALTERNATE) return ZigVstgui::alternateTheme();
@@ -71,7 +95,9 @@ ZigVstgui::RuntimeGuard::RuntimeGuard() {
     );
     com_initialized = SUCCEEDED(com_status);
 #endif
-    if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) VSTGUI::init(nullptr);
+    if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) {
+        VSTGUI::init(platformInstanceHandle());
+    }
 }
 
 ZigVstgui::RuntimeGuard::~RuntimeGuard() {

@@ -4076,11 +4076,11 @@ pub fn Analyzer(
 
         fn isAvailable(
             context: ?*anyopaque,
-            object: ControllerType.ContentObject,
+            object: *const ControllerType.ContentObject,
             content_type: raw.ARAContentType,
         ) bool {
             const self = fromContext(context) orelse return false;
-            const source_id = switch (object) {
+            const source_id = switch (object.*) {
                 .audio_source => |id| id,
                 else => return false,
             };
@@ -4104,14 +4104,14 @@ pub fn Analyzer(
 
         fn grade(
             context: ?*anyopaque,
-            object: ControllerType.ContentObject,
+            object: *const ControllerType.ContentObject,
             content_type: raw.ARAContentType,
         ) raw.ARAContentGrade {
             if (!isAvailable(context, object, content_type))
                 return raw.kARAContentGradeInitial;
             const self = fromContext(context) orelse
                 return raw.kARAContentGradeInitial;
-            const source_id = switch (object) {
+            const source_id = switch (object.*) {
                 .audio_source => |id| id,
                 else => return raw.kARAContentGradeInitial,
             };
@@ -4134,23 +4134,25 @@ pub fn Analyzer(
 
         fn eventCount(
             context: ?*anyopaque,
-            output: *usize,
-            object: ControllerType.ContentObject,
+            object: *const ControllerType.ContentObject,
             content_type: raw.ARAContentType,
-            range: ?raw.ARAContentTimeRange,
+            range: ?*const raw.ARAContentTimeRange,
+            output: *usize,
         ) bool {
             if (!isAvailable(context, object, content_type))
                 return false;
             if (content_type == raw.kARAContentTypeNotes) {
                 const self = fromContext(context) orelse return false;
-                const source_id = switch (object) {
+                const source_id = switch (object.*) {
                     .audio_source => |id| id,
                     else => return false,
                 };
                 const slot = self.findSlot(source_id) orelse return false;
+                const requested_range =
+                    if (range) |value| value.* else null;
                 var count: usize = 0;
                 for (slot.notes[0..slot.note_count]) |note| {
-                    if (noteIntersectsRange(note, range))
+                    if (noteIntersectsRange(note, requested_range))
                         count += 1;
                 }
                 output.* = count;
@@ -4158,7 +4160,7 @@ pub fn Analyzer(
             }
             if (content_type == raw.kARAContentTypeBarSignatures) {
                 const self = fromContext(context) orelse return false;
-                const source_id = switch (object) {
+                const source_id = switch (object.*) {
                     .audio_source => |id| id,
                     else => return false,
                 };
@@ -4168,7 +4170,7 @@ pub fn Analyzer(
             }
             if (content_type == raw.kARAContentTypeKeySignatures) {
                 const self = fromContext(context) orelse return false;
-                const source_id = switch (object) {
+                const source_id = switch (object.*) {
                     .audio_source => |id| id,
                     else => return false,
                 };
@@ -4178,7 +4180,7 @@ pub fn Analyzer(
             }
             if (content_type == raw.kARAContentTypeSheetChords) {
                 const self = fromContext(context) orelse return false;
-                const source_id = switch (object) {
+                const source_id = switch (object.*) {
                     .audio_source => |id| id,
                     else => return false,
                 };
@@ -4191,7 +4193,7 @@ pub fn Analyzer(
                 return true;
             }
             const self = fromContext(context) orelse return false;
-            const source_id = switch (object) {
+            const source_id = switch (object.*) {
                 .audio_source => |id| id,
                 else => return false,
             };
@@ -4202,17 +4204,19 @@ pub fn Analyzer(
 
         fn eventData(
             context: ?*anyopaque,
-            event_index: usize,
-            object: ControllerType.ContentObject,
+            object: *const ControllerType.ContentObject,
             content_type: raw.ARAContentType,
-            range: ?raw.ARAContentTimeRange,
+            range: ?*const raw.ARAContentTimeRange,
+            event_index: usize,
         ) ?*const anyopaque {
             const self = fromContext(context) orelse return null;
-            const source_id = switch (object) {
+            const source_id = switch (object.*) {
                 .audio_source => |id| id,
                 else => return null,
             };
             const slot = self.findSlot(source_id) orelse return null;
+            const requested_range =
+                if (range) |value| value.* else null;
             return switch (content_type) {
                 raw.kARAContentTypeNotes => notes: {
                     if (slot.note_status != .detected and
@@ -4220,7 +4224,10 @@ pub fn Analyzer(
                         break :notes null;
                     var matching_index: usize = 0;
                     for (slot.notes[0..slot.note_count]) |*note| {
-                        if (!noteIntersectsRange(note.*, range))
+                        if (!noteIntersectsRange(
+                            note.*,
+                            requested_range,
+                        ))
                             continue;
                         if (matching_index == event_index)
                             break :notes note;
