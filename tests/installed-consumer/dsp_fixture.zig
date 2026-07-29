@@ -3485,6 +3485,19 @@ test "installed package exposes file-backed audio writers" {
         \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0001"/>
         \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0002"/>
         \\  </audioObject>
+        \\  <audioPackFormat audioPackFormatID="AP_00021001">
+        \\    <audioChannelFormatIDRef>AC_00021001</audioChannelFormatIDRef>
+        \\    <inputPackFormatIDRef>AP_00010001</inputPackFormatIDRef>
+        \\    <outputPackFormatIDRef>AP_00010002</outputPackFormatIDRef>
+        \\  </audioPackFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+        \\      <outputChannelFormatIDRef>AC_00010001</outputChannelFormatIDRef>
+        \\      <matrix>
+        \\        <coefficient gain="0.5">AC_00010003</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
         \\  <audioTrackUID UID="ATU_00000001">
         \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
         \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
@@ -3503,6 +3516,7 @@ test "installed package exposes file-backed audio writers" {
     try emission_adm.validateEmissionProfileIdentifiers();
     try emission_adm.validateEmissionProfileObjectTopology();
     try emission_adm.validateEmissionProfileObjectSources();
+    try emission_adm.validateEmissionProfileMatrices();
     var wav = try plugin.dsp.WavFileWriter.initWithRiffMetadata(
         std.testing.io,
         wav_file,

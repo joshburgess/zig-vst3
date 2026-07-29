@@ -195,6 +195,12 @@ const EmissionPackChannels = struct {
     }
 };
 
+const EmissionMatrixPack = struct {
+    input_pack: u32,
+    output_pack: u32,
+    channels: EmissionPackChannels,
+};
+
 fn emissionProfileLimits(
     level: EmissionProfileLevel,
 ) EmissionElementCounts {
@@ -383,6 +389,94 @@ fn commonEmissionPackChannelIndexes(
         },
         else => null,
     };
+}
+
+fn commonEmissionPackIsMatrixOutput(pack_index: u16) bool {
+    return switch (pack_index) {
+        0x000a,
+        0x000c,
+        0x001b,
+        0x001c,
+        0x001e,
+        0x001f,
+        0x0010,
+        0x080a,
+        0x080c,
+        0x081b,
+        0x081c,
+        0x081e,
+        0x081f,
+        0x0810,
+        => false,
+        else => commonEmissionPackChannelIndexes(pack_index) != null,
+    };
+}
+
+fn emissionCommonPackChannels(pack_primary: u32) !EmissionPackChannels {
+    const type_label: u16 = @intCast(pack_primary >> 16);
+    const pack_index: u16 = @truncate(pack_primary);
+    if (type_label != 0x0001)
+        return error.InvalidAdmEmissionProfileMatrixPack;
+    const indexes = commonEmissionPackChannelIndexes(pack_index) orelse
+        return error.InvalidAdmEmissionProfileMatrixPack;
+    var result = EmissionPackChannels{};
+    for (indexes) |index| {
+        try result.append(
+            (@as(u32, 0x0001) << 16) | @as(u32, index),
+        );
+    }
+    return result;
+}
+
+fn validateEmissionMatrixCoefficients(
+    block: BlockFormat,
+    input_channels: EmissionPackChannels,
+) !void {
+    var used_inputs: [24]bool = @splat(false);
+    for (block.matrixCoefficientSlice()) |coefficient| {
+        const identifier = try coefficient.channelIdentifier();
+        if (identifier.typeLabel() != 0x0001 or
+            !identifier.isCommonDefinition())
+        {
+            return error.InvalidAdmEmissionProfileMatrixCoefficient;
+        }
+        const input_index = input_channels.indexOf(identifier.primary) orelse
+            return error.InvalidAdmEmissionProfileMatrixCoefficient;
+        if (used_inputs[input_index])
+            return error.DuplicateAdmEmissionProfileMatrixCoefficient;
+        used_inputs[input_index] = true;
+        switch (coefficient.gain.unit) {
+            .linear => if (coefficient.gain.value < 0.0 or
+                coefficient.gain.value > 10.0)
+            {
+                return error.InvalidAdmEmissionProfileMatrixGain;
+            },
+            .decibels => if (coefficient.gain.value > 20.0 or
+                (std.math.isInf(coefficient.gain.value) and
+                    coefficient.gain.value > 0.0))
+            {
+                return error.InvalidAdmEmissionProfileMatrixGain;
+            },
+        }
+    }
+}
+
+fn emissionElementTypeLabel(
+    element: xml.StartElement,
+    identifier_attribute: []const u8,
+) !u16 {
+    const encoded = try element.attribute(identifier_attribute) orelse
+        return error.MissingAdmIdentifier;
+    var storage: [max_identifier_bytes]u8 = undefined;
+    const raw = try xml.decodeContent(&storage, encoded);
+    const identifier = try adm.Identifier.parse(raw);
+    return identifier.typeLabel() orelse
+        error.InvalidAdmEmissionProfileFormat;
+}
+
+fn isXmlNamespaceDeclaration(attribute_name: []const u8) bool {
+    return std.mem.eql(u8, attribute_name, "xmlns") or
+        std.mem.startsWith(u8, attribute_name, "xmlns:");
 }
 
 fn profilesEqual(left: Profile, right: Profile) bool {
@@ -951,6 +1045,438 @@ pub const Document = struct {
             }
         }
         try self.validateEmissionFormatOwnership();
+    }
+
+    /// Validates emission downmix definitions against their common input and
+    /// output layouts.
+    pub fn validateEmissionProfileMatrices(self: Document) !void {
+        try self.validateEmissionProfileObjectSources();
+        try self.validateEmissionMatrixXmlSyntax();
+
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            const identifier = declaration.identifier;
+            if (identifier.kind == .pack_format and
+                identifier.typeLabel() == 0x0002)
+            {
+                const matrix_pack = try self.emissionMatrixPack(identifier);
+                try self.validateEmissionMatrixPair(
+                    identifier,
+                    matrix_pack.input_pack,
+                    matrix_pack.output_pack,
+                );
+                try self.validateEmissionMatrixChannels(
+                    matrix_pack,
+                );
+            } else if (identifier.kind == .channel_format and
+                identifier.typeLabel() == 0x0002)
+            {
+                try self.validateEmissionMatrixChannelParent(identifier);
+            }
+        }
+    }
+
+    fn emissionMatrixPack(
+        self: Document,
+        identifier: adm.Identifier,
+    ) !EmissionMatrixPack {
+        var input_pack: ?u32 = null;
+        var output_pack: ?u32 = null;
+        var channels = EmissionPackChannels{};
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .pack_format or
+                owner.primary != identifier.primary)
+            {
+                continue;
+            }
+            const target = reference.identifier orelse
+                return error.InvalidAdmEmissionProfileMatrixPack;
+            switch (reference.kind) {
+                .matrix_input_pack => {
+                    if (input_pack != null)
+                        return error.InvalidAdmEmissionProfileMatrixPack;
+                    input_pack = target.primary;
+                },
+                .matrix_output_pack => {
+                    if (output_pack != null)
+                        return error.InvalidAdmEmissionProfileMatrixPack;
+                    output_pack = target.primary;
+                },
+                .channel_format => {
+                    if (target.typeLabel() != 0x0002 or
+                        target.definitionIndex().? < 0x1000 or
+                        channels.indexOf(target.primary) != null)
+                    {
+                        return error.InvalidAdmEmissionProfileMatrixPack;
+                    }
+                    try channels.append(target.primary);
+                },
+                else => return error.InvalidAdmEmissionProfileMatrixPack,
+            }
+        }
+        if (channels.len == 0)
+            return error.InvalidAdmEmissionProfileMatrixPack;
+
+        const input = input_pack orelse
+            return error.InvalidAdmEmissionProfileMatrixPack;
+        const output = output_pack orelse
+            return error.InvalidAdmEmissionProfileMatrixPack;
+        const input_index: u16 = @truncate(input);
+        const output_index: u16 = @truncate(output);
+        if (@as(u16, @intCast(input >> 16)) != 0x0001 or
+            @as(u16, @intCast(output >> 16)) != 0x0001 or
+            commonEmissionPackChannelIndexes(input_index) == null or
+            !commonEmissionPackIsMatrixOutput(output_index) or
+            input == output)
+        {
+            return error.InvalidAdmEmissionProfileMatrixPack;
+        }
+        if (try self.directReferenceCount(
+            .object,
+            .pack_format,
+            input,
+        ) == 0) {
+            return error.UnreferencedAdmEmissionProfileMatrixInput;
+        }
+        if (try self.directReferenceCount(
+            .object,
+            .pack_format,
+            identifier.primary,
+        ) != 0 or
+            try self.directReferenceCount(
+                .track_uid,
+                .pack_format,
+                identifier.primary,
+            ) != 0)
+        {
+            return error.InvalidAdmEmissionProfileMatrixSourceReference;
+        }
+        return .{
+            .input_pack = input,
+            .output_pack = output,
+            .channels = channels,
+        };
+    }
+
+    fn validateEmissionMatrixPair(
+        self: Document,
+        identifier: adm.Identifier,
+        input_pack: u32,
+        output_pack: u32,
+    ) !void {
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |other| {
+            if (other.identifier.kind != .pack_format or
+                other.identifier.typeLabel() != 0x0002 or
+                other.identifier.primary == identifier.primary)
+            {
+                continue;
+            }
+            const other_pack = try self.emissionMatrixPack(other.identifier);
+            if (other_pack.input_pack == input_pack and
+                other_pack.output_pack == output_pack)
+            {
+                return error.DuplicateAdmEmissionProfileMatrixPair;
+            }
+        }
+    }
+
+    fn validateEmissionMatrixChannels(
+        self: Document,
+        matrix_pack: EmissionMatrixPack,
+    ) !void {
+        const input_channels = try emissionCommonPackChannels(
+            matrix_pack.input_pack,
+        );
+        const output_channels = try emissionCommonPackChannels(
+            matrix_pack.output_pack,
+        );
+        var used_outputs: [24]bool = @splat(false);
+        for (matrix_pack.channels.primaries[0..matrix_pack.channels.len]) |channel| {
+            const block = try self.emissionMatrixChannelBlock(channel);
+            const output = try self.emissionMatrixBlockOutput(block.identifier);
+            const output_index = output_channels.indexOf(output) orelse
+                return error.InvalidAdmEmissionProfileMatrixOutput;
+            if (used_outputs[output_index])
+                return error.DuplicateAdmEmissionProfileMatrixOutput;
+            used_outputs[output_index] = true;
+            try validateEmissionMatrixCoefficients(
+                block,
+                input_channels,
+            );
+            if (try self.directReferenceCount(
+                .track_uid,
+                .channel_format,
+                channel,
+            ) != 0) {
+                return error.InvalidAdmEmissionProfileMatrixSourceReference;
+            }
+        }
+    }
+
+    fn emissionMatrixChannelBlock(
+        self: Document,
+        channel_primary: u32,
+    ) !BlockFormat {
+        var result: ?BlockFormat = null;
+        var block_iterator = self.blocks();
+        while (try block_iterator.next()) |block| {
+            if (block.channel_identifier.kind != .channel_format or
+                block.channel_identifier.primary != channel_primary)
+            {
+                continue;
+            }
+            if (result != null)
+                return error.InvalidAdmEmissionProfileMatrixBlockCount;
+            result = block;
+        }
+        return result orelse
+            error.InvalidAdmEmissionProfileMatrixBlockCount;
+    }
+
+    fn emissionMatrixBlockOutput(
+        self: Document,
+        block: adm.Identifier,
+    ) !u32 {
+        var result: ?u32 = null;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .block_format or
+                owner.primary != block.primary or
+                owner.secondary != block.secondary or
+                reference.kind != .matrix_output_channel)
+            {
+                continue;
+            }
+            if (result != null)
+                return error.InvalidAdmEmissionProfileMatrixOutput;
+            const output = reference.identifier orelse
+                return error.InvalidAdmEmissionProfileMatrixOutput;
+            if (output.typeLabel() != 0x0001 or
+                !output.isCommonDefinition())
+            {
+                return error.InvalidAdmEmissionProfileMatrixOutput;
+            }
+            result = output.primary;
+        }
+        return result orelse
+            error.InvalidAdmEmissionProfileMatrixOutput;
+    }
+
+    fn validateEmissionMatrixChannelParent(
+        self: Document,
+        channel: adm.Identifier,
+    ) !void {
+        var result: ?u32 = null;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            if (!reference.direct_owner or
+                reference.kind != .channel_format)
+            {
+                continue;
+            }
+            const target = reference.identifier orelse continue;
+            if (target.primary != channel.primary) continue;
+            const owner = reference.owner orelse continue;
+            if (owner.kind != .pack_format or owner.typeLabel() != 0x0002)
+                return error.InvalidAdmEmissionProfileMatrixChannelParent;
+            if (result != null)
+                return error.InvalidAdmEmissionProfileMatrixChannelParent;
+            result = owner.primary;
+        }
+        if (result == null)
+            return error.InvalidAdmEmissionProfileMatrixChannelParent;
+    }
+
+    fn validateEmissionMatrixXmlSyntax(self: Document) !void {
+        var afe_depth: ?usize = null;
+        var matrix_pack_depth: ?usize = null;
+        var matrix_channel_depth: ?usize = null;
+        var matrix_block_depth: ?usize = null;
+        var matrix_depth: ?usize = null;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    const local_name = element.localName();
+                    if (std.mem.eql(
+                        u8,
+                        local_name,
+                        "audioFormatExtended",
+                    )) {
+                        afe_depth = element.depth;
+                        continue;
+                    }
+                    if (afe_depth == null) continue;
+                    if (std.mem.eql(u8, local_name, "outputChannelIDRef"))
+                        return error.InvalidAdmEmissionProfileMatrixOutput;
+                    if (matrix_pack_depth) |depth| {
+                        if (element.depth == depth + 1 and
+                            !std.mem.eql(
+                                u8,
+                                local_name,
+                                "audioChannelFormatIDRef",
+                            ) and
+                            !std.mem.eql(
+                                u8,
+                                local_name,
+                                "inputPackFormatIDRef",
+                            ) and
+                            !std.mem.eql(
+                                u8,
+                                local_name,
+                                "outputPackFormatIDRef",
+                            ))
+                        {
+                            return error.InvalidAdmEmissionProfileMatrixElement;
+                        }
+                    }
+                    if (matrix_channel_depth) |depth| {
+                        if (element.depth == depth + 1 and
+                            !std.mem.eql(
+                                u8,
+                                local_name,
+                                "audioBlockFormatMatrix",
+                            ))
+                        {
+                            return error.InvalidAdmEmissionProfileMatrixElement;
+                        }
+                    }
+                    if (matrix_block_depth) |depth| {
+                        if (element.depth == depth + 1 and
+                            !std.mem.eql(
+                                u8,
+                                local_name,
+                                "outputChannelFormatIDRef",
+                            ) and
+                            !std.mem.eql(u8, local_name, "matrix"))
+                        {
+                            return error.InvalidAdmEmissionProfileMatrixElement;
+                        }
+                    }
+                    if (matrix_depth) |depth| {
+                        if (element.depth == depth + 1 and
+                            !std.mem.eql(u8, local_name, "coefficient"))
+                        {
+                            return error.InvalidAdmEmissionProfileMatrixElement;
+                        }
+                    }
+                    if (std.mem.eql(u8, local_name, "audioPackFormat")) {
+                        const type_label = try emissionElementTypeLabel(
+                            element,
+                            "audioPackFormatID",
+                        );
+                        if (type_label == 0x0002) {
+                            if (element.self_closing)
+                                return error.InvalidAdmEmissionProfileMatrixPack;
+                            matrix_pack_depth = element.depth;
+                        }
+                        continue;
+                    }
+                    if (std.mem.eql(u8, local_name, "audioChannelFormat")) {
+                        const type_label = try emissionElementTypeLabel(
+                            element,
+                            "audioChannelFormatID",
+                        );
+                        if (type_label == 0x0002) {
+                            if (element.self_closing)
+                                return error.InvalidAdmEmissionProfileMatrixBlockCount;
+                            matrix_channel_depth = element.depth;
+                        }
+                        continue;
+                    }
+                    if (std.mem.eql(
+                        u8,
+                        local_name,
+                        "audioBlockFormatMatrix",
+                    )) {
+                        var attributes = xml.AttributeIterator.init(
+                            element.attributes,
+                        );
+                        while (try attributes.next()) |attribute| {
+                            if (!isXmlNamespaceDeclaration(attribute.name) and
+                                !std.mem.eql(
+                                    u8,
+                                    attribute.localName(),
+                                    "audioBlockFormatID",
+                                ))
+                            {
+                                return error.InvalidAdmEmissionProfileMatrixBlockAttribute;
+                            }
+                        }
+                        matrix_block_depth = element.depth;
+                        continue;
+                    }
+                    if (std.mem.eql(u8, local_name, "matrix")) {
+                        matrix_depth = element.depth;
+                        continue;
+                    }
+                    if (!std.mem.eql(u8, local_name, "coefficient"))
+                        continue;
+                    var attributes = xml.AttributeIterator.init(
+                        element.attributes,
+                    );
+                    while (try attributes.next()) |attribute| {
+                        const name = attribute.localName();
+                        if (!isXmlNamespaceDeclaration(attribute.name) and
+                            !std.mem.eql(u8, name, "gain") and
+                            !std.mem.eql(u8, name, "gainUnit"))
+                        {
+                            return error.InvalidAdmEmissionProfileMatrixCoefficientAttribute;
+                        }
+                    }
+                },
+                .end => |element| {
+                    if (matrix_pack_depth == element.depth and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioPackFormat",
+                        ))
+                    {
+                        matrix_pack_depth = null;
+                    }
+                    if (matrix_channel_depth == element.depth and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioChannelFormat",
+                        ))
+                    {
+                        matrix_channel_depth = null;
+                    }
+                    if (matrix_block_depth == element.depth and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioBlockFormatMatrix",
+                        ))
+                    {
+                        matrix_block_depth = null;
+                    }
+                    if (matrix_depth == element.depth and
+                        std.mem.eql(u8, element.localName(), "matrix"))
+                    {
+                        matrix_depth = null;
+                    }
+                    if (afe_depth == element.depth and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioFormatExtended",
+                        ))
+                    {
+                        afe_depth = null;
+                    }
+                },
+                else => {},
+            }
+        }
     }
 
     fn validateEmissionFormatOwnership(self: Document) !void {
@@ -2552,15 +3078,19 @@ pub const BlockIterator = struct {
                         coefficient.channel_identifier_bytes[0..raw_identifier.len],
                         raw_identifier,
                     );
-                    coefficient.gain = .{
-                        .value = if (gain_attribute) |raw|
-                            try parseFiniteAdmFloat(raw)
-                        else
-                            1.0,
-                        .unit = if (try element.attribute("gainUnit")) |raw|
+                    const gain_unit =
+                        if (try element.attribute("gainUnit")) |raw|
                             try parseGainUnit(raw)
                         else
-                            .linear,
+                            GainUnit.linear;
+                    coefficient.gain = .{
+                        .value = if (gain_attribute) |raw|
+                            try parseAdmMatrixGain(raw, gain_unit)
+                        else switch (gain_unit) {
+                            .linear => 1.0,
+                            .decibels => 0.0,
+                        },
+                        .unit = gain_unit,
                     };
                     if (gain_variable_attribute) |raw| {
                         coefficient.gain_variable =
@@ -3219,6 +3749,19 @@ fn parseFiniteAdmFloat(encoded: []const u8) !f64 {
         return error.InvalidAdmFloat;
     if (!std.math.isFinite(value)) return error.InvalidAdmFloat;
     return value;
+}
+
+fn parseAdmMatrixGain(encoded: []const u8, unit: GainUnit) !f64 {
+    const value = std.fmt.parseFloat(f64, encoded) catch
+        return error.InvalidAdmFloat;
+    if (std.math.isFinite(value)) return value;
+    if (unit == .decibels and
+        std.math.isInf(value) and
+        value < 0.0)
+    {
+        return value;
+    }
+    return error.InvalidAdmFloat;
 }
 
 fn parseAdmFlag(encoded: []const u8) !bool {
@@ -4334,6 +4877,309 @@ test "ADM XML emission profile requires every content in a programme" {
     );
 }
 
+const valid_emission_matrix_xml =
+    \\<audioFormatExtended version="ITU-R_BS.2076-3">
+    \\  <audioProgramme audioProgrammeID="APR_1001">
+    \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+    \\  </audioProgramme>
+    \\  <audioContent audioContentID="ACO_1001">
+    \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+    \\  </audioContent>
+    \\  <audioObject audioObjectID="AO_1001">
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+    \\  </audioObject>
+    \\  <audioPackFormat audioPackFormatID="AP_00021001">
+    \\    <audioChannelFormatIDRef>AC_00021001</audioChannelFormatIDRef>
+    \\    <audioChannelFormatIDRef>AC_00021002</audioChannelFormatIDRef>
+    \\    <inputPackFormatIDRef>AP_00010001</inputPackFormatIDRef>
+    \\    <outputPackFormatIDRef>AP_00010002</outputPackFormatIDRef>
+    \\  </audioPackFormat>
+    \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+    \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+    \\      <outputChannelFormatIDRef>AC_00010001</outputChannelFormatIDRef>
+    \\      <matrix>
+    \\        <coefficient gain="0.5">AC_00010003</coefficient>
+    \\      </matrix>
+    \\    </audioBlockFormatMatrix>
+    \\  </audioChannelFormat>
+    \\  <audioChannelFormat audioChannelFormatID="AC_00021002">
+    \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021002_00000001">
+    \\      <outputChannelFormatIDRef>AC_00010002</outputChannelFormatIDRef>
+    \\      <matrix>
+    \\        <coefficient gain="-3" gainUnit="dB">AC_00010003</coefficient>
+    \\      </matrix>
+    \\    </audioBlockFormatMatrix>
+    \\  </audioChannelFormat>
+    \\  <audioTrackUID UID="ATU_00000001">
+    \\    <audioChannelFormatIDRef>AC_00010003</audioChannelFormatIDRef>
+    \\    <audioPackFormatIDRef>AP_00010001</audioPackFormatIDRef>
+    \\  </audioTrackUID>
+    \\  <profileList>
+    \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+    \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+    \\  </profileList>
+    \\</audioFormatExtended>
+;
+
+fn expectEmissionMatrixReplacement(
+    expected_error: anyerror,
+    needle: []const u8,
+    replacement: []const u8,
+) !void {
+    const replaced = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_matrix_xml,
+        needle,
+        replacement,
+    );
+    defer std.testing.allocator.free(replaced);
+    try std.testing.expect(!std.mem.eql(
+        u8,
+        replaced,
+        valid_emission_matrix_xml,
+    ));
+    const document = try Document.init(replaced);
+    try std.testing.expectError(
+        expected_error,
+        document.validateEmissionProfileMatrices(),
+    );
+}
+
+test "ADM XML emission profile validates downmix matrices" {
+    const document = try Document.init(valid_emission_matrix_xml);
+    try document.validateEmissionProfileMatrices();
+
+    const negative_infinity = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_matrix_xml,
+        "gain=\"-3\" gainUnit=\"dB\"",
+        "gain=\"-inf\" gainUnit=\"dB\"",
+    );
+    defer std.testing.allocator.free(negative_infinity);
+    const muted_document = try Document.init(negative_infinity);
+    try muted_document.validateEmissionProfileMatrices();
+
+    const default_decibels = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_matrix_xml,
+        "gain=\"-3\" gainUnit=\"dB\"",
+        "gainUnit=\"dB\"",
+    );
+    defer std.testing.allocator.free(default_decibels);
+    const default_document = try Document.init(default_decibels);
+    var blocks = default_document.blocks();
+    _ = (try blocks.next()).?;
+    const default_block = (try blocks.next()).?;
+    try std.testing.expectEqual(
+        GainUnit.decibels,
+        default_block.matrixCoefficientSlice()[0].gain.unit,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        default_block.matrixCoefficientSlice()[0].gain.value,
+    );
+    try default_document.validateEmissionProfileMatrices();
+
+    const namespace_binding = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_matrix_xml,
+        "<coefficient gain=\"0.5\"",
+        "<coefficient xmlns:vendor=\"urn:vendor\" gain=\"0.5\"",
+    );
+    defer std.testing.allocator.free(namespace_binding);
+    const namespace_document = try Document.init(namespace_binding);
+    try namespace_document.validateEmissionProfileMatrices();
+
+    const wrapped_start = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_matrix_xml,
+        "<audioFormatExtended ",
+        "<wrapper><audioFormatExtended ",
+    );
+    defer std.testing.allocator.free(wrapped_start);
+    const wrapped = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        wrapped_start,
+        "</audioFormatExtended>",
+        "</audioFormatExtended></wrapper>",
+    );
+    defer std.testing.allocator.free(wrapped);
+    const wrapped_document = try Document.init(wrapped);
+    try wrapped_document.validateEmissionProfileMatrices();
+
+    const cartesian_input_pack = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_matrix_xml,
+        "AP_00010001",
+        "AP_00010801",
+    );
+    defer std.testing.allocator.free(cartesian_input_pack);
+    const cartesian_input = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        cartesian_input_pack,
+        "AC_00010003",
+        "AC_00010803",
+    );
+    defer std.testing.allocator.free(cartesian_input);
+    const cartesian_input_document = try Document.init(cartesian_input);
+    try cartesian_input_document.validateEmissionProfileMatrices();
+
+    const cartesian_output_pack = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_matrix_xml,
+        "AP_00010002",
+        "AP_00010802",
+    );
+    defer std.testing.allocator.free(cartesian_output_pack);
+    const cartesian_output_left = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        cartesian_output_pack,
+        "AC_00010001",
+        "AC_00010801",
+    );
+    defer std.testing.allocator.free(cartesian_output_left);
+    const cartesian_output = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        cartesian_output_left,
+        "AC_00010002",
+        "AC_00010802",
+    );
+    defer std.testing.allocator.free(cartesian_output);
+    const cartesian_output_document = try Document.init(cartesian_output);
+    try cartesian_output_document.validateEmissionProfileMatrices();
+}
+
+test "ADM XML emission profile validates matrix pack relationships" {
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixPack,
+        "<outputPackFormatIDRef>AP_00010002</outputPackFormatIDRef>",
+        "<outputPackFormatIDRef>AP_00010001</outputPackFormatIDRef>",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixPack,
+        "<outputPackFormatIDRef>AP_00010002</outputPackFormatIDRef>",
+        "<outputPackFormatIDRef>AP_0001000A</outputPackFormatIDRef>",
+    );
+    try expectEmissionMatrixReplacement(
+        error.UnreferencedAdmEmissionProfileMatrixInput,
+        "<inputPackFormatIDRef>AP_00010001</inputPackFormatIDRef>",
+        "<inputPackFormatIDRef>AP_00010003</inputPackFormatIDRef>",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileChannelParent,
+        "    <audioChannelFormatIDRef>AC_00021001</audioChannelFormatIDRef>\n" ++
+            "    <audioChannelFormatIDRef>AC_00021002</audioChannelFormatIDRef>\n",
+        "",
+    );
+
+    try expectEmissionMatrixReplacement(
+        error.DuplicateAdmEmissionProfileMatrixPair,
+        "</audioFormatExtended>",
+        \\  <audioPackFormat audioPackFormatID="AP_00021003">
+        \\    <audioChannelFormatIDRef>AC_00021003</audioChannelFormatIDRef>
+        \\    <inputPackFormatIDRef>AP_00010001</inputPackFormatIDRef>
+        \\    <outputPackFormatIDRef>AP_00010002</outputPackFormatIDRef>
+        \\  </audioPackFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021003">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021003_00000001">
+        \\      <outputChannelFormatIDRef>AC_00010001</outputChannelFormatIDRef>
+        \\      <matrix><coefficient>AC_00010003</coefficient></matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+        ,
+    );
+}
+
+test "ADM XML emission profile validates matrix channel mappings" {
+    try expectEmissionMatrixReplacement(
+        error.DuplicateAdmEmissionProfileMatrixOutput,
+        "<outputChannelFormatIDRef>AC_00010002</outputChannelFormatIDRef>",
+        "<outputChannelFormatIDRef>AC_00010001</outputChannelFormatIDRef>",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixOutput,
+        "<outputChannelFormatIDRef>AC_00010002</outputChannelFormatIDRef>",
+        "<outputChannelFormatIDRef>AC_00010003</outputChannelFormatIDRef>",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixOutput,
+        "<outputChannelFormatIDRef>AC_00010001</outputChannelFormatIDRef>",
+        "<outputChannelIDRef>AC_00010001</outputChannelIDRef>",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixBlockCount,
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021002">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021002_00000001">
+        \\      <outputChannelFormatIDRef>AC_00010002</outputChannelFormatIDRef>
+        \\      <matrix>
+        \\        <coefficient gain="-3" gainUnit="dB">AC_00010003</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+    ,
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021002"/>
+        ,
+    );
+}
+
+test "ADM XML emission profile validates matrix coefficients" {
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixCoefficient,
+        "<coefficient gain=\"0.5\">AC_00010003</coefficient>",
+        "<coefficient gain=\"0.5\">AC_00010001</coefficient>",
+    );
+    try expectEmissionMatrixReplacement(
+        error.DuplicateAdmEmissionProfileMatrixCoefficient,
+        "<coefficient gain=\"0.5\">AC_00010003</coefficient>",
+        "<coefficient gain=\"0.5\">AC_00010003</coefficient>\n" ++
+            "        <coefficient>AC_00010003</coefficient>",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixGain,
+        "gain=\"0.5\"",
+        "gain=\"10.1\"",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixGain,
+        "gain=\"0.5\"",
+        "gain=\"-0.1\"",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixGain,
+        "gain=\"-3\" gainUnit=\"dB\"",
+        "gain=\"20.1\" gainUnit=\"dB\"",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixCoefficientAttribute,
+        "gain=\"0.5\"",
+        "gainVar=\"mix\"",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixElement,
+        "<coefficient gain=\"0.5\">AC_00010003</coefficient>",
+        "<unknown/>\n" ++
+            "        <coefficient>AC_00010003</coefficient>",
+    );
+    try expectEmissionMatrixReplacement(
+        error.InvalidAdmEmissionProfileMatrixBlockAttribute,
+        "audioBlockFormatID=\"AB_00021001_00000001\"",
+        "audioBlockFormatID=\"AB_00021001_00000001\" rtime=\"00:00:00.00000\"",
+    );
+}
+
 test "ADM XML emission profile validates complete object sources" {
     const document = try Document.init(
         \\<audioFormatExtended version="ITU-R_BS.2076-3">
@@ -4433,6 +5279,23 @@ test "ADM XML emission profile registers every permitted common pack" {
         @as(?[]const u16, null),
         commonEmissionPackChannelIndexes(0x0006),
     );
+
+    const forbidden_outputs = [_]u16{
+        0x000a, 0x000c, 0x001b, 0x001c, 0x001e, 0x001f, 0x0010,
+        0x080a, 0x080c, 0x081b, 0x081c, 0x081e, 0x081f, 0x0810,
+    };
+    for (forbidden_outputs) |index| {
+        try std.testing.expect(!commonEmissionPackIsMatrixOutput(index));
+    }
+    for (cases) |case| {
+        var forbidden = false;
+        for (forbidden_outputs) |index| {
+            if (case.index == index) forbidden = true;
+        }
+        if (!forbidden)
+            try std.testing.expect(commonEmissionPackIsMatrixOutput(case.index));
+    }
+    try std.testing.expect(!commonEmissionPackIsMatrixOutput(0x0006));
 }
 
 test "ADM XML emission profile enforces conditional object sources" {
