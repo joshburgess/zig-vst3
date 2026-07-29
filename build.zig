@@ -473,7 +473,6 @@ pub fn build(b: *std.Build) void {
         .root_module = vst3_test_module,
     });
     if (native_vstgui) {
-        forceMsvcRuntimeSymbols(vst3_tests, target);
         vst3_tests.step.dependOn(vstgui_adapter_step);
     }
     const focused_vst3_module = b.createModule(.{
@@ -499,7 +498,6 @@ pub fn build(b: *std.Build) void {
         .root_module = focused_vst3_module,
     });
     if (native_vstgui) {
-        forceMsvcRuntimeSymbols(focused_vst3_tests, target);
         focused_vst3_tests.step.dependOn(vstgui_adapter_step);
     }
     const vst3_module_test_step = b.step(
@@ -2303,7 +2301,6 @@ pub fn build(b: *std.Build) void {
             .name = "zig_vst3_mono_gain_lv2_ui",
             .root_module = ui_module,
         });
-        forceMsvcRuntimeSymbols(ui_library, target);
         ui_library.step.dependOn(vstgui_adapter_step);
         b.installArtifact(ui_library);
         mono_gain_lv2_ui = ui_library;
@@ -2324,7 +2321,6 @@ pub fn build(b: *std.Build) void {
         const ui_tests = b.addTest(.{
             .root_module = ui_test_module,
         });
-        forceMsvcRuntimeSymbols(ui_tests, target);
         ui_tests.step.dependOn(vstgui_adapter_step);
         mono_gain_lv2_ui_tests =
             b.addRunArtifact(ui_tests);
@@ -3687,7 +3683,6 @@ fn addExamplePlugin(
     if (has_reference_editor) library.root_module.addOptions("zig-vst3-gui-options", gui_options);
     if (native_vstgui and has_reference_editor) {
         addVstguiAdapter(library.root_module, target);
-        forceMsvcRuntimeSymbols(library, target);
         library.step.dependOn(vstgui_adapter_step);
     }
     addEntrySymbolsCheck(b, entry_symbols_step, library);
@@ -3701,7 +3696,6 @@ fn addExamplePlugin(
     if (has_reference_editor) plugin_tests.root_module.addOptions("zig-vst3-gui-options", gui_options);
     if (native_vstgui and has_reference_editor) {
         addVstguiAdapter(plugin_tests.root_module, target);
-        forceMsvcRuntimeSymbols(plugin_tests, target);
         plugin_tests.step.dependOn(vstgui_adapter_step);
     }
 
@@ -3859,6 +3853,8 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
     } else if (target.result.os.tag == .windows) {
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/msvcprt.lib"));
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/msvcrt.lib"));
+        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/libvcruntime.lib"));
+        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/libucrt.lib"));
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/vcruntime.lib"));
         module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/ucrt.lib"));
         for ([_][]const u8{
@@ -3866,14 +3862,6 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
             "user32",   "uuid", "windowscodecs",
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .no });
     }
-}
-
-fn forceMsvcRuntimeSymbols(
-    compile: *std.Build.Step.Compile,
-    target: std.Build.ResolvedTarget,
-) void {
-    if (target.result.os.tag != .windows or target.result.abi != .msvc) return;
-    compile.forceUndefinedSymbol("__scrt_stub_for_acrt_initialize");
 }
 
 fn addVst3BundleDependencies(
