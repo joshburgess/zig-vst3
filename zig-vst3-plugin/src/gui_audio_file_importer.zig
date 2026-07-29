@@ -187,10 +187,23 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         worker: Worker,
 
         pub fn init() Self {
-            return .{
-                .model = Model.init(&.{ ".wav", ".aif", ".aiff" }) catch unreachable,
-                .worker = Worker.init(),
-            };
+            var self: Self = undefined;
+            self.initInto();
+            return self;
+        }
+
+        pub fn initInto(self: *Self) void {
+            self.mutex = .init;
+            self.model =
+                Model.init(&.{ ".wav", ".aif", ".aiff" }) catch unreachable;
+            self.failure = .none;
+            self.sample_rate = 0;
+            self.channels = 0;
+            self.sample_frames = 0;
+            self.preview_points = 0;
+            @memset(&self.decoded, 0.0);
+            self.decoded_frames = 0;
+            self.worker = Worker.init();
         }
 
         pub fn deinit(self: *Self) void {

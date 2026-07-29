@@ -294,11 +294,54 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             target_sample_rate: u32,
             options: Options,
         ) void {
-            self.* = .{
-                .options = options,
-                .target_sample_rate = target_sample_rate,
-                .fft = Fft.init(),
-            };
+            @setEvalBranchQuota(
+                maximum_channels * partition_count * fft_size * 8 +
+                    10_000,
+            );
+            self.options = options;
+            for (&self.slots) |*slot| {
+                slot.state = std.atomic.Value(u8).init(
+                    @intFromEnum(SlotState.free),
+                );
+                slot.metadata = .{
+                    .generation = 0,
+                    .sample_rate = 0,
+                    .channels = 0,
+                    .frames = 0,
+                };
+                slot.received_samples = 0;
+                slot.prepared_frames = 0;
+                slot.prepared_partitions = 0;
+                slot.prepared_sample_rate = 0;
+                @memset(&slot.raw, 0.0);
+                @memset(std.mem.asBytes(&slot.head), 0);
+                clearSpectra(&slot.spectra);
+            }
+            self.pending_slot = std.atomic.Value(u8).init(no_slot);
+            self.latest_generation = std.atomic.Value(u64).init(0);
+            self.active_slot = no_slot;
+            self.staging_slot = no_slot;
+            self.target_sample_rate = target_sample_rate;
+            self.fft = Fft.init();
+            @memset(std.mem.asBytes(&self.input_block), 0);
+            self.input_fill = 0;
+            clearSpectra(&self.input_spectra);
+            self.history_head = 0;
+            @memset(std.mem.asBytes(&self.output_block), 0);
+            @memset(std.mem.asBytes(&self.overlap), 0);
+            self.output_index = 0;
+            @memset(std.mem.asBytes(&self.direct_history), 0);
+            self.direct_index = 0;
+        }
+
+        fn clearSpectra(
+            spectra: *[maximum_channels][partition_count][fft_size]Complex,
+        ) void {
+            for (spectra) |*channel| {
+                for (channel) |*partition| {
+                    for (partition) |*value| value.* = .{};
+                }
+            }
         }
 
         pub fn latencySamples(self: *const Self) usize {

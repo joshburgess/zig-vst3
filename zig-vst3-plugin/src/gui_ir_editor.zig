@@ -103,6 +103,25 @@ pub fn Editor(comptime frame_capacity: usize) type {
         rollback_generation: u64 = 0,
         has_rollback: bool = false,
 
+        pub fn initInto(self: *Self) void {
+            @memset(&self.original, 0.0);
+            @memset(&self.edited, 0.0);
+            @memset(&self.rollback, 0.0);
+            self.sample_rate = 0;
+            self.channels = 0;
+            self.original_frames = 0;
+            self.edited_frames = 0;
+            self.generation = 0;
+            self.original_peak = 0.0;
+            self.edited_peak = 0.0;
+            self.dirty = false;
+            self.rollback_frames = 0;
+            self.rollback_peak = 0.0;
+            self.rollback_dirty = false;
+            self.rollback_generation = 0;
+            self.has_rollback = false;
+        }
+
         pub fn loadFrom(self: *Self, importer: anytype) !void {
             if (self.has_rollback) return error.EditPending;
             const source = importer.snapshot();

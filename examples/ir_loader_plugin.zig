@@ -135,10 +135,10 @@ const IRControllerState = struct {
     transfer_generation: u64 = 0,
 
     pub fn initInto(self: *IRControllerState) void {
-        self.* = .{
-            .importer = .init(),
-            .editor = .{},
-        };
+        self.importer.initInto();
+        self.editor.initInto();
+        self.published_import_generation = 0;
+        self.transfer_generation = 0;
     }
 
     pub fn deinit(self: *IRControllerState) void {
