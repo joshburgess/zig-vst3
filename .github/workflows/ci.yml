@@ -100,6 +100,8 @@ jobs:
           fi
           nm -A .vst3-sdk/vstgui-adapter-build/Release/libs/*.a |
             grep -E '[[:space:]]fork$' || true
+          nm -D -A .vst3-sdk/vstgui-adapter-build/Release/libs/*.so |
+            grep -E '[[:space:]]fork(@|$)' || true
           while IFS= read -r -d '' object; do
             nm -A "$object" 2>/dev/null |
               grep -E '[[:space:]]fork$' || true
