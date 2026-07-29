@@ -77,7 +77,7 @@ The current DSP package still has meaningful capabilities that are missing or in
 
 Vorbis encoding is no longer an all-or-nothing gap. The package serializes headers and setup-driven audio packets, plans variable blocks with bounded lookahead, analyzes PCM through a normalized forward MDCT and Bark-domain masking, fits Floor 1 data, plans coupled residue codewords, preflights exact packet and reservoir state, and publishes memory or file output transactionally. FFmpeg decodes the generated fixture to nonsilent PCM in the automated gate. AudioToolbox did not expose a Vorbis decoder in the current environment, so that path is skipped and not claimed. Independent Xiph parity, a broader decoder matrix, external-encoder inputs, and audition remain.
 
-Complementary-object topology, programme inclusion, source-type consistency, and derived profile-level counts are implemented. The remaining complementary-object work in the Audio files row is parameter equality across group members.
+Complementary-object topology, programme inclusion, source-type consistency, and derived profile-level counts are implemented. Object interaction ranges, gains, position offsets, and alternative-value-set overrides are also validated independently. The remaining complementary-object work in the Audio files row is parameter equality across group members and programme-selected alternative-value-set consistency.
 
 ## Recommended Order
 

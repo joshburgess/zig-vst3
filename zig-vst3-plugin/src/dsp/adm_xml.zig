@@ -5,6 +5,7 @@ const xml = @import("xml.zig");
 
 const max_identifier_bytes: usize = 20;
 const max_profile_text_bytes: usize = 128;
+const max_emission_name_bytes: usize = 64 * 4;
 pub const max_adm_positions: usize = 9;
 pub const max_adm_speaker_labels: usize = 16;
 pub const max_adm_speaker_label_bytes: usize = 64;
@@ -205,6 +206,47 @@ const EmissionComplementaryLimits = struct {
     groups: usize,
     non_complementary_tracks: usize,
     independent_groups: usize,
+};
+
+const EmissionInteractionRange = struct {
+    minimum: f64,
+    maximum: f64,
+    minimum_parameter: Gain,
+    maximum_parameter: Gain,
+};
+
+const EmissionPositionCoordinate = enum {
+    azimuth,
+    x,
+};
+
+const EmissionPositionRange = struct {
+    coordinate: EmissionPositionCoordinate,
+    minimum: f64,
+    maximum: f64,
+};
+
+const EmissionObjectInteraction = struct {
+    gain_interact: ?bool = null,
+    position_interact: ?bool = null,
+    gain_range: ?EmissionInteractionRange = null,
+    position_range: ?EmissionPositionRange = null,
+};
+
+const EmissionPositionOffset = struct {
+    coordinate: EmissionPositionCoordinate,
+    value: f64,
+};
+
+const EmissionObjectParameterState = struct {
+    primary: u32,
+    top_level: bool,
+    interact: bool,
+    interaction: ?EmissionObjectInteraction = null,
+    gain: ?f64 = null,
+    position: ?EmissionPositionOffset = null,
+    uses_position_controls: bool = false,
+    has_alternative_value_sets: bool = false,
 };
 
 fn emissionProfileLimits(
@@ -488,6 +530,621 @@ fn validateEmissionMatrixCoefficients(
             },
         }
     }
+}
+
+fn emissionElementIdentifier(
+    element: xml.StartElement,
+    attribute_name: []const u8,
+    kind: adm.IdentifierKind,
+) !adm.Identifier {
+    const encoded = try element.attribute(attribute_name) orelse
+        return error.MissingAdmIdentifier;
+    var storage: [max_identifier_bytes]u8 = undefined;
+    const raw = try xml.decodeContent(&storage, encoded);
+    const identifier = try adm.Identifier.parse(raw);
+    if (identifier.kind != kind) return error.InvalidAdmDeclarationKind;
+    return identifier;
+}
+
+fn validateEmissionObjectAttributes(element: xml.StartElement) !void {
+    var name_seen = false;
+    var interact_seen = false;
+    var attributes = xml.AttributeIterator.init(element.attributes);
+    while (try attributes.next()) |attribute| {
+        if (isXmlNamespaceDeclaration(attribute.name)) continue;
+        const name = attribute.localName();
+        if (std.mem.eql(u8, name, "audioObjectID")) continue;
+        if (std.mem.eql(u8, name, "audioObjectName")) {
+            if (name_seen) return error.DuplicateXmlLocalAttribute;
+            name_seen = true;
+            var storage: [max_emission_name_bytes]u8 = undefined;
+            const decoded = xml.decodeContent(
+                &storage,
+                attribute.value,
+            ) catch |err| switch (err) {
+                error.XmlDecodeBufferTooSmall => return error.InvalidAdmEmissionProfileObjectName,
+                else => return err,
+            };
+            const characters = utf8ScalarCount(decoded);
+            if (characters == 0 or characters > 64)
+                return error.InvalidAdmEmissionProfileObjectName;
+            continue;
+        }
+        if (std.mem.eql(u8, name, "interact")) {
+            if (interact_seen) return error.DuplicateXmlLocalAttribute;
+            interact_seen = true;
+            continue;
+        }
+        return error.InvalidAdmEmissionProfileObjectAttribute;
+    }
+    if (!name_seen) return error.MissingAdmEmissionProfileObjectName;
+    if (!interact_seen) return error.MissingAdmEmissionProfileInteract;
+}
+
+fn utf8ScalarCount(bytes: []const u8) usize {
+    var count: usize = 0;
+    for (bytes) |byte| {
+        if (byte & 0xc0 != 0x80) count += 1;
+    }
+    return count;
+}
+
+fn emissionRequiredFlagAttribute(
+    element: xml.StartElement,
+    attribute_name: []const u8,
+) !bool {
+    const encoded = try element.attribute(attribute_name) orelse
+        return error.MissingAdmEmissionProfileInteractionAttribute;
+    var storage: [8]u8 = undefined;
+    const raw = try xml.decodeContent(&storage, encoded);
+    return parseAdmFlag(raw);
+}
+
+fn emissionOptionalFlagAttribute(
+    element: xml.StartElement,
+    attribute_name: []const u8,
+) !?bool {
+    const encoded = try element.attribute(attribute_name) orelse return null;
+    var storage: [8]u8 = undefined;
+    const raw = try xml.decodeContent(&storage, encoded);
+    return try parseAdmFlag(raw);
+}
+
+fn isEmissionObjectReferenceOrLabel(name: []const u8) bool {
+    return std.mem.eql(u8, name, "audioPackFormatIDRef") or
+        std.mem.eql(u8, name, "audioObjectIDRef") or
+        std.mem.eql(u8, name, "audioTrackUIDRef") or
+        std.mem.eql(u8, name, "audioComplementaryObjectGroupLabel") or
+        std.mem.eql(u8, name, "audioComplementaryObjectIDRef");
+}
+
+fn readEmissionObjectInteraction(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !EmissionObjectInteraction {
+    if (start.self_closing)
+        return error.InvalidAdmEmissionProfileObjectInteraction;
+    var result = EmissionObjectInteraction{
+        .gain_interact = try emissionOptionalFlagAttribute(
+            start,
+            "gainInteract",
+        ),
+        .position_interact = try emissionOptionalFlagAttribute(
+            start,
+            "positionInteract",
+        ),
+    };
+    const on_off = try emissionRequiredFlagAttribute(start, "onOffInteract");
+    if (on_off) return error.InvalidAdmEmissionProfileObjectInteraction;
+    var attributes = xml.AttributeIterator.init(start.attributes);
+    while (try attributes.next()) |attribute| {
+        if (isXmlNamespaceDeclaration(attribute.name)) continue;
+        const name = attribute.localName();
+        if (!std.mem.eql(u8, name, "onOffInteract") and
+            !std.mem.eql(u8, name, "gainInteract") and
+            !std.mem.eql(u8, name, "positionInteract"))
+        {
+            return error.InvalidAdmEmissionProfileInteractionAttribute;
+        }
+    }
+
+    var gain_minimum: ?f64 = null;
+    var gain_maximum: ?f64 = null;
+    var gain_minimum_parameter: ?Gain = null;
+    var gain_maximum_parameter: ?Gain = null;
+    var position_coordinate: ?EmissionPositionCoordinate = null;
+    var position_minimum: ?f64 = null;
+    var position_maximum: ?f64 = null;
+    while (try events.next()) |event| {
+        switch (event) {
+            .text => |text| {
+                if (std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                    return error.InvalidAdmEmissionProfileObjectInteraction;
+            },
+            .start => |element| {
+                const name = element.localName();
+                if (element.depth != start.depth + 1)
+                    return error.InvalidAdmEmissionProfileObjectInteraction;
+                if (std.mem.eql(u8, name, "gainInteractionRange")) {
+                    const bound, const value, const parameter =
+                        try readEmissionGainInteractionRange(events, element);
+                    switch (bound) {
+                        .minimum => {
+                            if (gain_minimum != null)
+                                return error.InvalidAdmEmissionProfileGainInteractionRange;
+                            gain_minimum = value;
+                            gain_minimum_parameter = parameter;
+                        },
+                        .maximum => {
+                            if (gain_maximum != null)
+                                return error.InvalidAdmEmissionProfileGainInteractionRange;
+                            gain_maximum = value;
+                            gain_maximum_parameter = parameter;
+                        },
+                    }
+                    continue;
+                }
+                if (std.mem.eql(u8, name, "positionInteractionRange")) {
+                    const coordinate, const bound, const value =
+                        try readEmissionPositionInteractionRange(
+                            events,
+                            element,
+                        );
+                    if (position_coordinate) |existing| {
+                        if (existing != coordinate)
+                            return error.InvalidAdmEmissionProfilePositionInteractionRange;
+                    } else {
+                        position_coordinate = coordinate;
+                    }
+                    switch (bound) {
+                        .minimum => {
+                            if (position_minimum != null)
+                                return error.InvalidAdmEmissionProfilePositionInteractionRange;
+                            position_minimum = value;
+                        },
+                        .maximum => {
+                            if (position_maximum != null)
+                                return error.InvalidAdmEmissionProfilePositionInteractionRange;
+                            position_maximum = value;
+                        },
+                    }
+                    continue;
+                }
+                return error.InvalidAdmEmissionProfileInteractionSubelement;
+            },
+            .end => |element| {
+                if (element.depth != start.depth or
+                    !std.mem.eql(u8, element.name, start.name))
+                {
+                    return error.InvalidAdmEmissionProfileObjectInteraction;
+                }
+                break;
+            },
+        }
+    } else return error.InvalidAdmEmissionProfileObjectInteraction;
+
+    if (result.gain_interact != null) {
+        result.gain_range = .{
+            .minimum = gain_minimum orelse
+                return error.InvalidAdmEmissionProfileGainInteractionRange,
+            .maximum = gain_maximum orelse
+                return error.InvalidAdmEmissionProfileGainInteractionRange,
+            .minimum_parameter = gain_minimum_parameter orelse
+                return error.InvalidAdmEmissionProfileGainInteractionRange,
+            .maximum_parameter = gain_maximum_parameter orelse
+                return error.InvalidAdmEmissionProfileGainInteractionRange,
+        };
+    } else if (gain_minimum != null or gain_maximum != null) {
+        return error.InvalidAdmEmissionProfileGainInteractionRange;
+    }
+    if (result.position_interact != null) {
+        result.position_range = .{
+            .coordinate = position_coordinate orelse
+                return error.InvalidAdmEmissionProfilePositionInteractionRange,
+            .minimum = position_minimum orelse
+                return error.InvalidAdmEmissionProfilePositionInteractionRange,
+            .maximum = position_maximum orelse
+                return error.InvalidAdmEmissionProfilePositionInteractionRange,
+        };
+    } else if (position_coordinate != null or
+        position_minimum != null or
+        position_maximum != null)
+    {
+        return error.InvalidAdmEmissionProfilePositionInteractionRange;
+    }
+    return result;
+}
+
+const EmissionRangeBound = enum {
+    minimum,
+    maximum,
+};
+
+fn readEmissionGainInteractionRange(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !struct { EmissionRangeBound, f64, Gain } {
+    const bound = try emissionRangeBound(start);
+    const unit = try emissionGainUnitAttribute(start);
+    try validateEmissionAttributes(
+        start,
+        &.{ "bound", "gainUnit" },
+        error.InvalidAdmEmissionProfileGainInteractionRange,
+    );
+    var storage: [max_profile_text_bytes]u8 = undefined;
+    const raw = try readEmissionSimpleElement(events, start, &storage);
+    const parameter_value = try parseAdmMatrixGain(raw, unit);
+    const linear = emissionGainLinear(parameter_value, unit);
+    switch (bound) {
+        .minimum => if (linear < 0.0 or linear > 1.0)
+            return error.InvalidAdmEmissionProfileGainInteractionRange,
+        .maximum => if (linear < 1.0 or
+            linear > emissionMaximumLinearGain())
+        {
+            return error.InvalidAdmEmissionProfileGainInteractionRange;
+        },
+    }
+    return .{
+        bound,
+        linear,
+        .{ .value = parameter_value, .unit = unit },
+    };
+}
+
+fn readEmissionPositionInteractionRange(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !struct { EmissionPositionCoordinate, EmissionRangeBound, f64 } {
+    const coordinate = try emissionPositionCoordinate(start);
+    const bound = try emissionRangeBound(start);
+    try validateEmissionAttributes(
+        start,
+        &.{ "coordinate", "bound" },
+        error.InvalidAdmEmissionProfilePositionInteractionRange,
+    );
+    var storage: [max_profile_text_bytes]u8 = undefined;
+    const raw = try readEmissionSimpleElement(events, start, &storage);
+    const value = try parseFiniteAdmFloat(raw);
+    const limit: f64 = switch (coordinate) {
+        .azimuth => 30.0,
+        .x => 1.0,
+    };
+    switch (bound) {
+        .minimum => if (value < -limit or value > 0.0)
+            return error.InvalidAdmEmissionProfilePositionInteractionRange,
+        .maximum => if (value < 0.0 or value > limit)
+            return error.InvalidAdmEmissionProfilePositionInteractionRange,
+    }
+    return .{ coordinate, bound, value };
+}
+
+fn readEmissionGain(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !f64 {
+    const unit = try emissionGainUnitAttribute(start);
+    try validateEmissionAttributes(
+        start,
+        &.{"gainUnit"},
+        error.InvalidAdmEmissionProfileObjectGain,
+    );
+    var storage: [max_profile_text_bytes]u8 = undefined;
+    const raw = try readEmissionSimpleElement(events, start, &storage);
+    const linear = try parseEmissionGainLinear(raw, unit);
+    if (linear < 0.0 or linear > emissionMaximumLinearGain())
+        return error.InvalidAdmEmissionProfileObjectGain;
+    return linear;
+}
+
+fn readEmissionPositionOffset(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !EmissionPositionOffset {
+    const coordinate = try emissionPositionCoordinate(start);
+    try validateEmissionAttributes(
+        start,
+        &.{"coordinate"},
+        error.InvalidAdmEmissionProfilePositionOffset,
+    );
+    var storage: [max_profile_text_bytes]u8 = undefined;
+    const raw = try readEmissionSimpleElement(events, start, &storage);
+    const value = try parseFiniteAdmFloat(raw);
+    const limit: f64 = switch (coordinate) {
+        .azimuth => 30.0,
+        .x => 1.0,
+    };
+    if (value < -limit or value > limit)
+        return error.InvalidAdmEmissionProfilePositionOffset;
+    return .{ .coordinate = coordinate, .value = value };
+}
+
+fn readEmissionAlternativeValueSet(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+    parent_interaction: ?EmissionObjectInteraction,
+) !bool {
+    _ = try emissionElementIdentifier(
+        start,
+        "alternativeValueSetID",
+        .alternative_value_set,
+    );
+    try validateEmissionAttributes(
+        start,
+        &.{"alternativeValueSetID"},
+        error.InvalidAdmEmissionProfileAlternativeValueSet,
+    );
+    if (start.self_closing) return false;
+
+    var gain: ?f64 = null;
+    var position: ?EmissionPositionOffset = null;
+    var interaction: ?EmissionObjectInteraction = null;
+    while (try events.next()) |event| {
+        switch (event) {
+            .text => |text| {
+                if (std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                    return error.InvalidAdmEmissionProfileAlternativeValueSet;
+            },
+            .start => |element| {
+                if (element.depth != start.depth + 1)
+                    return error.InvalidAdmEmissionProfileAlternativeValueSet;
+                const name = element.localName();
+                if (std.mem.eql(u8, name, "gain")) {
+                    if (gain != null)
+                        return error.InvalidAdmEmissionProfileAlternativeValueSet;
+                    gain = try readEmissionGain(events, element);
+                    continue;
+                }
+                if (std.mem.eql(u8, name, "positionOffset")) {
+                    if (position != null)
+                        return error.InvalidAdmEmissionProfileAlternativeValueSet;
+                    position = try readEmissionPositionOffset(events, element);
+                    continue;
+                }
+                if (std.mem.eql(u8, name, "audioObjectInteraction")) {
+                    if (interaction != null or parent_interaction == null)
+                        return error.InvalidAdmEmissionProfileAlternativeInteraction;
+                    interaction = try readEmissionObjectInteraction(
+                        events,
+                        element,
+                    );
+                    continue;
+                }
+                return error.InvalidAdmEmissionProfileAlternativeValueSet;
+            },
+            .end => |element| {
+                if (element.depth != start.depth or
+                    !std.mem.eql(u8, element.name, start.name))
+                {
+                    return error.InvalidAdmEmissionProfileAlternativeValueSet;
+                }
+                break;
+            },
+        }
+    } else return error.InvalidAdmEmissionProfileAlternativeValueSet;
+
+    if (interaction) |alternative| {
+        if (!emissionInteractionBaseEqual(
+            parent_interaction.?,
+            alternative,
+        )) {
+            return error.InvalidAdmEmissionProfileAlternativeInteraction;
+        }
+    }
+    if (parent_interaction) |parent| {
+        try validateEmissionGainWithinRange(
+            gain orelse 1.0,
+            parent.gain_range,
+        );
+        try validateEmissionPositionWithinRange(
+            position,
+            parent.position_range,
+        );
+    }
+    return position != null or
+        (interaction != null and interaction.?.position_range != null);
+}
+
+fn validateEmissionGainWithinRange(
+    gain: f64,
+    range: ?EmissionInteractionRange,
+) !void {
+    const bounds = range orelse return;
+    if (gain < bounds.minimum or gain > bounds.maximum)
+        return error.AdmEmissionProfileGainOutsideInteractionRange;
+}
+
+fn validateEmissionPositionWithinRange(
+    position: ?EmissionPositionOffset,
+    range: ?EmissionPositionRange,
+) !void {
+    const offset = position orelse return;
+    const bounds = range orelse return;
+    if (offset.coordinate != bounds.coordinate or
+        offset.value < bounds.minimum or
+        offset.value > bounds.maximum)
+    {
+        return error.AdmEmissionProfilePositionOutsideInteractionRange;
+    }
+}
+
+fn emissionInteractionBaseEqual(
+    parent: EmissionObjectInteraction,
+    alternative: EmissionObjectInteraction,
+) bool {
+    return std.meta.eql(parent.gain_range, alternative.gain_range) and
+        std.meta.eql(parent.position_range, alternative.position_range);
+}
+
+fn emissionObjectBlockHasNeutralPosition(block: BlockFormat) bool {
+    var first_required = false;
+    var second_required = false;
+    for (block.positionSlice()) |position| {
+        if (position.bound != .exact) return false;
+        if (block.cartesian) {
+            switch (position.coordinate) {
+                .x => {
+                    if (position.value != 0.0) return false;
+                    first_required = true;
+                },
+                .y => {
+                    if (position.value != 1.0) return false;
+                    second_required = true;
+                },
+                .z => if (position.value != 0.0) return false,
+                else => return false,
+            }
+        } else {
+            switch (position.coordinate) {
+                .azimuth => {
+                    if (position.value != 0.0) return false;
+                    first_required = true;
+                },
+                .elevation => {
+                    if (position.value != 0.0) return false;
+                    second_required = true;
+                },
+                .distance => if (position.value != 1.0) return false,
+                else => return false,
+            }
+        }
+    }
+    return first_required and second_required;
+}
+
+fn emissionMaximumLinearGain() f64 {
+    return std.math.pow(f64, 10.0, 21.0 / 20.0);
+}
+
+fn parseEmissionGainLinear(raw: []const u8, unit: GainUnit) !f64 {
+    const value = try parseAdmMatrixGain(raw, unit);
+    return emissionGainLinear(value, unit);
+}
+
+fn emissionGainLinear(value: f64, unit: GainUnit) f64 {
+    return switch (unit) {
+        .linear => value,
+        .decibels => if (std.math.isInf(value) and value < 0.0)
+            0.0
+        else
+            std.math.pow(f64, 10.0, value / 20.0),
+    };
+}
+
+fn emissionGainUnitAttribute(start: xml.StartElement) !GainUnit {
+    const encoded = try start.attribute("gainUnit") orelse
+        return GainUnit.linear;
+    var storage: [16]u8 = undefined;
+    const raw = try xml.decodeContent(&storage, encoded);
+    return parseGainUnit(raw);
+}
+
+fn emissionPositionCoordinate(
+    start: xml.StartElement,
+) !EmissionPositionCoordinate {
+    const encoded = try start.attribute("coordinate") orelse
+        return error.MissingAdmEmissionProfileCoordinate;
+    var storage: [16]u8 = undefined;
+    const raw = try xml.decodeContent(&storage, encoded);
+    if (std.mem.eql(u8, raw, "azimuth")) return .azimuth;
+    if (std.mem.eql(u8, raw, "X")) return .x;
+    return error.InvalidAdmEmissionProfileCoordinate;
+}
+
+fn emissionRangeBound(start: xml.StartElement) !EmissionRangeBound {
+    const encoded = try start.attribute("bound") orelse
+        return error.MissingAdmEmissionProfileRangeBound;
+    var storage: [8]u8 = undefined;
+    const raw = try xml.decodeContent(&storage, encoded);
+    if (std.mem.eql(u8, raw, "min")) return .minimum;
+    if (std.mem.eql(u8, raw, "max")) return .maximum;
+    return error.InvalidAdmEmissionProfileRangeBound;
+}
+
+fn validateEmissionAttributes(
+    start: xml.StartElement,
+    allowed: []const []const u8,
+    invalid_error: anyerror,
+) !void {
+    var attributes = xml.AttributeIterator.init(start.attributes);
+    while (try attributes.next()) |attribute| {
+        if (isXmlNamespaceDeclaration(attribute.name)) continue;
+        for (allowed) |name| {
+            if (std.mem.eql(u8, attribute.localName(), name)) break;
+        } else return invalid_error;
+    }
+}
+
+fn readEmissionSimpleElement(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+    decoded_storage: []u8,
+) ![]const u8 {
+    if (start.self_closing) return error.EmptyAdmEmissionProfileParameter;
+    var encoded_storage: [max_profile_text_bytes * 5]u8 = undefined;
+    var encoded_bytes: usize = 0;
+    while (try events.next()) |event| {
+        switch (event) {
+            .text => |text| {
+                const next_offset = std.math.add(
+                    usize,
+                    encoded_bytes,
+                    text.bytes.len,
+                ) catch return error.AdmEmissionProfileParameterTooLong;
+                if (next_offset > encoded_storage.len)
+                    return error.AdmEmissionProfileParameterTooLong;
+                @memcpy(
+                    encoded_storage[encoded_bytes..next_offset],
+                    text.bytes,
+                );
+                encoded_bytes = next_offset;
+            },
+            .start => return error.NestedAdmEmissionProfileParameter,
+            .end => |element| {
+                if (element.depth != start.depth or
+                    !std.mem.eql(u8, element.name, start.name))
+                {
+                    return error.InvalidAdmEmissionProfileParameter;
+                }
+                const encoded = std.mem.trim(
+                    u8,
+                    encoded_storage[0..encoded_bytes],
+                    " \t\r\n",
+                );
+                const decoded = xml.decodeContent(
+                    decoded_storage,
+                    encoded,
+                ) catch |err| switch (err) {
+                    error.XmlDecodeBufferTooSmall => return error.AdmEmissionProfileParameterTooLong,
+                    else => return err,
+                };
+                const trimmed = std.mem.trim(u8, decoded, " \t\r\n");
+                if (trimmed.len == 0)
+                    return error.EmptyAdmEmissionProfileParameter;
+                return trimmed;
+            },
+        }
+    }
+    return error.UnclosedAdmEmissionProfileParameter;
+}
+
+fn skipEmissionElement(
+    events: *xml.EventIterator,
+    start: xml.StartElement,
+) !void {
+    if (start.self_closing) return;
+    while (try events.next()) |event| {
+        switch (event) {
+            .end => |element| {
+                if (element.depth == start.depth and
+                    std.mem.eql(u8, element.name, start.name))
+                {
+                    return;
+                }
+            },
+            else => {},
+        }
+    }
+    return error.UnclosedAdmEmissionProfileParameter;
 }
 
 fn emissionElementTypeLabel(
@@ -1193,6 +1850,244 @@ pub const Document = struct {
         {
             return error.AdmEmissionProfileNonComplementaryTrackLimitExceeded;
         }
+    }
+
+    /// Validates the emission profile's audioObject interaction parameters.
+    pub fn validateEmissionProfileObjectParameters(
+        self: Document,
+    ) !void {
+        try self.validateEmissionProfileComplementaryObjects();
+        var objects: [xml.max_depth]?EmissionObjectParameterState =
+            @splat(null);
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    const name = element.localName();
+                    if (std.mem.eql(u8, name, "audioObject")) {
+                        const identifier = try emissionElementIdentifier(
+                            element,
+                            "audioObjectID",
+                            .object,
+                        );
+                        try validateEmissionObjectAttributes(element);
+                        const interact = try emissionRequiredFlagAttribute(
+                            element,
+                            "interact",
+                        );
+                        const parent = try self.emissionObjectParent(
+                            identifier.primary,
+                        );
+                        if (element.self_closing)
+                            return error.InvalidAdmEmissionProfileObjectParameters;
+                        objects[element.depth] = .{
+                            .primary = identifier.primary,
+                            .top_level = parent.kind == .content,
+                            .interact = interact,
+                        };
+                        continue;
+                    }
+                    if (element.depth == 0) continue;
+                    const state = &(objects[element.depth - 1] orelse
+                        continue);
+                    if (isEmissionObjectReferenceOrLabel(name)) continue;
+                    if (std.mem.eql(u8, name, "audioObjectInteraction")) {
+                        if (!state.top_level or state.interaction != null)
+                            return error.InvalidAdmEmissionProfileObjectInteraction;
+                        state.interaction = try readEmissionObjectInteraction(
+                            &events,
+                            element,
+                        );
+                        if (state.interaction.?.position_range != null)
+                            state.uses_position_controls = true;
+                        continue;
+                    }
+                    if (std.mem.eql(u8, name, "gain")) {
+                        if (!state.top_level or state.gain != null)
+                            return error.InvalidAdmEmissionProfileObjectGain;
+                        state.gain = try readEmissionGain(&events, element);
+                        continue;
+                    }
+                    if (std.mem.eql(u8, name, "positionOffset")) {
+                        if (!state.top_level or state.position != null)
+                            return error.InvalidAdmEmissionProfilePositionOffset;
+                        state.position = try readEmissionPositionOffset(
+                            &events,
+                            element,
+                        );
+                        state.uses_position_controls = true;
+                        continue;
+                    }
+                    if (std.mem.eql(u8, name, "alternativeValueSet")) {
+                        if (!state.top_level)
+                            return error.InvalidAdmEmissionProfileAlternativeValueSet;
+                        state.has_alternative_value_sets = true;
+                        try skipEmissionElement(&events, element);
+                        continue;
+                    }
+                    return error.InvalidAdmEmissionProfileObjectSubelement;
+                },
+                .end => |element| {
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "audioObject",
+                    )) {
+                        continue;
+                    }
+                    var state = objects[element.depth] orelse
+                        return error.InvalidAdmEmissionProfileObjectParameters;
+                    if (state.has_alternative_value_sets and
+                        try self.validateEmissionObjectAlternativeValueSets(
+                            state.primary,
+                            state.interaction,
+                        ))
+                    {
+                        state.uses_position_controls = true;
+                    }
+                    try self.validateEmissionObjectParameterState(state);
+                    objects[element.depth] = null;
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn validateEmissionObjectParameterState(
+        self: Document,
+        state: EmissionObjectParameterState,
+    ) !void {
+        if (state.interact != (state.interaction != null))
+            return error.InvalidAdmEmissionProfileObjectInteraction;
+        if (state.interaction) |interaction| {
+            try validateEmissionGainWithinRange(
+                state.gain orelse 1.0,
+                interaction.gain_range,
+            );
+            try validateEmissionPositionWithinRange(
+                state.position,
+                interaction.position_range,
+            );
+        }
+        if (state.uses_position_controls)
+            try self.validateEmissionObjectPositioning(state.primary);
+    }
+
+    fn validateEmissionObjectPositioning(
+        self: Document,
+        object_primary: u32,
+    ) !void {
+        const pack_primary = try self.emissionObjectPack(object_primary);
+        if (@as(u16, @intCast(pack_primary >> 16)) != 0x0003)
+            return error.InvalidAdmEmissionProfilePositionOffset;
+
+        var channels = EmissionPackChannels{};
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .pack_format or
+                owner.primary != pack_primary or
+                reference.kind != .channel_format)
+            {
+                continue;
+            }
+            const channel = reference.identifier orelse
+                return error.InvalidAdmEmissionProfilePositionOffset;
+            try channels.append(channel.primary);
+        }
+        var block_iterator = self.blocks();
+        while (try block_iterator.next()) |block| {
+            if (channels.indexOf(block.channel_identifier.primary) == null)
+                continue;
+            if (!emissionObjectBlockHasNeutralPosition(block))
+                return error.InvalidAdmEmissionProfilePositionOffset;
+        }
+    }
+
+    fn emissionObjectPack(
+        self: Document,
+        object_primary: u32,
+    ) !u32 {
+        var result: ?u32 = null;
+        var reference_iterator = self.references();
+        while (try reference_iterator.next()) |reference| {
+            const owner = reference.owner orelse continue;
+            if (!reference.direct_owner or
+                owner.kind != .object or
+                owner.primary != object_primary)
+            {
+                continue;
+            }
+            if (reference.kind == .object)
+                return error.InvalidAdmEmissionProfilePositionOffset;
+            if (reference.kind != .pack_format) continue;
+            if (result != null)
+                return error.InvalidAdmEmissionProfilePositionOffset;
+            result = (reference.identifier orelse
+                return error.InvalidAdmEmissionProfilePositionOffset).primary;
+        }
+        return result orelse error.InvalidAdmEmissionProfilePositionOffset;
+    }
+
+    fn validateEmissionObjectAlternativeValueSets(
+        self: Document,
+        object_primary: u32,
+        parent_interaction: ?EmissionObjectInteraction,
+    ) !bool {
+        var object_depth: ?usize = null;
+        var uses_position_controls = false;
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "audioObject",
+                    )) {
+                        const identifier = try emissionElementIdentifier(
+                            element,
+                            "audioObjectID",
+                            .object,
+                        );
+                        if (identifier.primary == object_primary)
+                            object_depth = element.depth;
+                        continue;
+                    }
+                    const depth = object_depth orelse continue;
+                    if (element.depth != depth + 1 or
+                        !std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "alternativeValueSet",
+                        ))
+                    {
+                        continue;
+                    }
+                    if (try readEmissionAlternativeValueSet(
+                        &events,
+                        element,
+                        parent_interaction,
+                    )) {
+                        uses_position_controls = true;
+                    }
+                },
+                .end => |element| {
+                    if (object_depth == element.depth and
+                        std.mem.eql(
+                            u8,
+                            element.localName(),
+                            "audioObject",
+                        ))
+                    {
+                        return uses_position_controls;
+                    }
+                },
+                else => {},
+            }
+        }
+        return error.InvalidAdmEmissionProfileAlternativeValueSet;
     }
 
     fn validateEmissionComplementaryGroup(
@@ -5856,6 +6751,337 @@ test "ADM XML emission profile exposes complementary level limits" {
         @as(usize, 16),
         level_two.independent_groups,
     );
+}
+
+const valid_emission_object_parameters_xml =
+    \\<audioFormatExtended version="ITU-R_BS.2076-3">
+    \\  <audioProgramme audioProgrammeID="APR_1001">
+    \\    <audioContentIDRef>ACO_1001</audioContentIDRef>
+    \\  </audioProgramme>
+    \\  <audioContent audioContentID="ACO_1001">
+    \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+    \\  </audioContent>
+    \\  <audioObject audioObjectID="AO_1001" audioObjectName="Commentary" interact="1">
+    \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+    \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+    \\    <audioObjectInteraction onOffInteract="0" gainInteract="1" positionInteract="1">
+    \\      <gainInteractionRange bound="min" gainUnit="dB">-6.0</gainInteractionRange>
+    \\      <gainInteractionRange bound="max" gainUnit="dB">6.0</gainInteractionRange>
+    \\      <positionInteractionRange coordinate="azimuth" bound="min">-10.0</positionInteractionRange>
+    \\      <positionInteractionRange coordinate="azimuth" bound="max">10.0</positionInteractionRange>
+    \\    </audioObjectInteraction>
+    \\    <gain gainUnit="dB">-3.0</gain>
+    \\    <positionOffset coordinate="azimuth">5.0</positionOffset>
+    \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0001">
+    \\      <gain gainUnit="dB">0.0</gain>
+    \\      <audioObjectInteraction onOffInteract="0" gainInteract="0" positionInteract="0">
+    \\        <gainInteractionRange bound="min" gainUnit="dB">-6.0</gainInteractionRange>
+    \\        <gainInteractionRange bound="max" gainUnit="dB">6.0</gainInteractionRange>
+    \\        <positionInteractionRange coordinate="azimuth" bound="min">-10.0</positionInteractionRange>
+    \\        <positionInteractionRange coordinate="azimuth" bound="max">10.0</positionInteractionRange>
+    \\      </audioObjectInteraction>
+    \\      <positionOffset coordinate="azimuth">0.0</positionOffset>
+    \\    </alternativeValueSet>
+    \\  </audioObject>
+    \\  <audioPackFormat audioPackFormatID="AP_00031001">
+    \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+    \\  </audioPackFormat>
+    \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+    \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+    \\      <position coordinate="azimuth">0.0</position>
+    \\      <position coordinate="elevation">0.0</position>
+    \\    </audioBlockFormatObjects>
+    \\  </audioChannelFormat>
+    \\  <audioTrackUID UID="ATU_00000001">
+    \\    <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+    \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+    \\  </audioTrackUID>
+    \\  <profileList>
+    \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+    \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+    \\  </profileList>
+    \\</audioFormatExtended>
+;
+
+fn expectEmissionObjectParameterReplacement(
+    expected_error: anyerror,
+    needle: []const u8,
+    replacement: []const u8,
+) !void {
+    const replaced = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        needle,
+        replacement,
+    );
+    defer std.testing.allocator.free(replaced);
+    try std.testing.expect(!std.mem.eql(
+        u8,
+        replaced,
+        valid_emission_object_parameters_xml,
+    ));
+    const document = try Document.init(replaced);
+    try std.testing.expectError(
+        expected_error,
+        document.validateEmissionProfileObjectParameters(),
+    );
+}
+
+test "ADM XML emission profile validates object interaction parameters" {
+    const document = try Document.init(
+        valid_emission_object_parameters_xml,
+    );
+    try document.validateEmissionProfileObjectParameters();
+
+    const without_parameters = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        \\ interact="1">
+        \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        \\    <audioObjectInteraction onOffInteract="0" gainInteract="1" positionInteract="1">
+        \\      <gainInteractionRange bound="min" gainUnit="dB">-6.0</gainInteractionRange>
+        \\      <gainInteractionRange bound="max" gainUnit="dB">6.0</gainInteractionRange>
+        \\      <positionInteractionRange coordinate="azimuth" bound="min">-10.0</positionInteractionRange>
+        \\      <positionInteractionRange coordinate="azimuth" bound="max">10.0</positionInteractionRange>
+        \\    </audioObjectInteraction>
+        \\    <gain gainUnit="dB">-3.0</gain>
+        \\    <positionOffset coordinate="azimuth">5.0</positionOffset>
+        \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0001">
+        \\      <gain gainUnit="dB">0.0</gain>
+        \\      <audioObjectInteraction onOffInteract="0" gainInteract="0" positionInteract="0">
+        \\        <gainInteractionRange bound="min" gainUnit="dB">-6.0</gainInteractionRange>
+        \\        <gainInteractionRange bound="max" gainUnit="dB">6.0</gainInteractionRange>
+        \\        <positionInteractionRange coordinate="azimuth" bound="min">-10.0</positionInteractionRange>
+        \\        <positionInteractionRange coordinate="azimuth" bound="max">10.0</positionInteractionRange>
+        \\      </audioObjectInteraction>
+        \\      <positionOffset coordinate="azimuth">0.0</positionOffset>
+        \\    </alternativeValueSet>
+    ,
+        \\ interact="0">
+        \\    <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+        \\    <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+        ,
+    );
+    defer std.testing.allocator.free(without_parameters);
+    const static_document = try Document.init(without_parameters);
+    try static_document.validateEmissionProfileObjectParameters();
+}
+
+test "ADM XML emission profile requires object parameter attributes" {
+    const multilingual_name = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "audioObjectName=\"Commentary\"",
+        "audioObjectName=\"评论\"",
+    );
+    defer std.testing.allocator.free(multilingual_name);
+    const multilingual_document = try Document.init(multilingual_name);
+    try multilingual_document.validateEmissionProfileObjectParameters();
+
+    try expectEmissionObjectParameterReplacement(
+        error.MissingAdmEmissionProfileObjectName,
+        " audioObjectName=\"Commentary\"",
+        "",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileObjectName,
+        "audioObjectName=\"Commentary\"",
+        "audioObjectName=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.MissingAdmEmissionProfileInteract,
+        " interact=\"1\"",
+        "",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileObjectAttribute,
+        " interact=\"1\"",
+        " interact=\"1\" disableDucking=\"1\"",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileObjectInteraction,
+        " interact=\"1\"",
+        " interact=\"0\"",
+    );
+}
+
+test "ADM XML emission profile validates interaction ranges" {
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileObjectInteraction,
+        "onOffInteract=\"0\" gainInteract=\"1\"",
+        "onOffInteract=\"1\" gainInteract=\"1\"",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileGainInteractionRange,
+        "      <gainInteractionRange bound=\"max\" gainUnit=\"dB\">6.0</gainInteractionRange>\n",
+        "",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileGainInteractionRange,
+        ">6.0</gainInteractionRange>",
+        ">22.0</gainInteractionRange>",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfilePositionInteractionRange,
+        "coordinate=\"azimuth\" bound=\"max\"",
+        "coordinate=\"X\" bound=\"max\"",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileInteractionAttribute,
+        "positionInteract=\"1\">",
+        "positionInteract=\"1\" divergenceInteract=\"1\">",
+    );
+}
+
+test "ADM XML emission profile bounds object parameter values" {
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileObjectGain,
+        ">-3.0</gain>",
+        ">22.0</gain>",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.AdmEmissionProfileGainOutsideInteractionRange,
+        ">-3.0</gain>",
+        ">-7.0</gain>",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.AdmEmissionProfilePositionOutsideInteractionRange,
+        ">5.0</positionOffset>",
+        ">11.0</positionOffset>",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfilePositionOffset,
+        "<position coordinate=\"azimuth\">0.0</position>",
+        "<position coordinate=\"azimuth\">1.0</position>",
+    );
+}
+
+test "ADM XML emission profile rejects parameters on nested objects" {
+    const nested_content = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+    ,
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001" audioObjectName="Parent" interact="0">
+        \\    <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        \\  </audioObject>
+        ,
+    );
+    defer std.testing.allocator.free(nested_content);
+    const nested_object = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        nested_content,
+        "audioObjectID=\"AO_1001\" audioObjectName=\"Commentary\"",
+        "audioObjectID=\"AO_1002\" audioObjectName=\"Commentary\"",
+    );
+    defer std.testing.allocator.free(nested_object);
+    const nested_alternative = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        nested_object,
+        "alternativeValueSetID=\"AVS_1001_0001\"",
+        "alternativeValueSetID=\"AVS_1002_0001\"",
+    );
+    defer std.testing.allocator.free(nested_alternative);
+    const document = try Document.init(nested_alternative);
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileObjectInteraction,
+        document.validateEmissionProfileObjectParameters(),
+    );
+}
+
+test "ADM XML emission profile validates alternative object parameters" {
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileAlternativeInteraction,
+        "        <positionInteractionRange coordinate=\"azimuth\" bound=\"max\">10.0</positionInteractionRange>",
+        "        <positionInteractionRange coordinate=\"azimuth\" bound=\"max\">9.0</positionInteractionRange>",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileAlternativeInteraction,
+        "        <gainInteractionRange bound=\"min\" gainUnit=\"dB\">-6.0</gainInteractionRange>",
+        "        <gainInteractionRange bound=\"min\" gainUnit=\"linear\">0.5011872336272722</gainInteractionRange>",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.AdmEmissionProfileGainOutsideInteractionRange,
+        "      <gain gainUnit=\"dB\">0.0</gain>",
+        "      <gain gainUnit=\"dB\">-7.0</gain>",
+    );
+    try expectEmissionObjectParameterReplacement(
+        error.InvalidAdmEmissionProfileAlternativeValueSet,
+        "      <positionOffset coordinate=\"azimuth\">0.0</positionOffset>",
+        "      <width>1.0</width>",
+    );
+}
+
+test "ADM XML emission profile accepts Cartesian object controls" {
+    const cartesian_ranges = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        valid_emission_object_parameters_xml,
+        "positionInteractionRange coordinate=\"azimuth\"",
+        "positionInteractionRange coordinate=\"X\"",
+    );
+    defer std.testing.allocator.free(cartesian_ranges);
+    const cartesian_offsets = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        cartesian_ranges,
+        "positionOffset coordinate=\"azimuth\"",
+        "positionOffset coordinate=\"X\"",
+    );
+    defer std.testing.allocator.free(cartesian_offsets);
+    const bounded = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        cartesian_offsets,
+        ">-10.0</positionInteractionRange>",
+        ">-1.0</positionInteractionRange>",
+    );
+    defer std.testing.allocator.free(bounded);
+    const positioned = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        bounded,
+        ">10.0</positionInteractionRange>",
+        ">1.0</positionInteractionRange>",
+    );
+    defer std.testing.allocator.free(positioned);
+    const offset = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        positioned,
+        ">5.0</positionOffset>",
+        ">0.5</positionOffset>",
+    );
+    defer std.testing.allocator.free(offset);
+    const cartesian_block = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        offset,
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">0.0</position>
+        \\      <position coordinate="elevation">0.0</position>
+    ,
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X">0.0</position>
+        \\      <position coordinate="Y">1.0</position>
+        ,
+    );
+    defer std.testing.allocator.free(cartesian_block);
+    const document = try Document.init(cartesian_block);
+    try document.validateEmissionProfileObjectParameters();
 }
 
 test "ADM XML emission profile validates complete object sources" {
