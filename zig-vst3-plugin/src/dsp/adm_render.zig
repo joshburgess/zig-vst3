@@ -34,7 +34,7 @@ pub const ScreenEdges = struct {
 
 pub const DirectSpeakerRoutingContext = struct {
     screen_edges: ?ScreenEdges = null,
-    /// Supply the standard screen-lock transform result for Cartesian metadata.
+    /// Overrides the internal Cartesian screen-lock transform when supplied.
     cartesian_screen_locked_nominal: ?CartesianPosition = null,
 };
 
@@ -276,12 +276,18 @@ pub fn CartesianPointSourcePanner(comptime Sample: type) type {
                 const candidate = axisCoordinate(relative, axis);
                 if (coordinate >= 0.0) {
                     if (candidate >= coordinate) continue;
-                    if (other == null or candidate > other.?)
+                    if (other) |current| {
+                        if (candidate > current) other = candidate;
+                    } else {
                         other = candidate;
+                    }
                 } else {
                     if (candidate <= coordinate) continue;
-                    if (other == null or candidate < other.?)
+                    if (other) |current| {
+                        if (candidate < current) other = candidate;
+                    } else {
                         other = candidate;
+                    }
                 }
             }
             const opposite = other orelse return 1.0;
@@ -752,12 +758,26 @@ pub fn resolveDirectSpeakerRoute(
             .y = bounds.y.nominal,
             .z = bounds.z.nominal,
         };
-        if (hasScreenEdgeLock(block) and
-            context.cartesian_screen_locked_nominal != null)
-        {
-            nominal = context.cartesian_screen_locked_nominal.?;
-            if (!validCartesian(nominal))
-                return error.InvalidAdmRendererScreenGeometry;
+        if (hasScreenEdgeLock(block)) {
+            if (context.cartesian_screen_locked_nominal) |transformed| {
+                nominal = transformed;
+                if (!validCartesian(nominal))
+                    return error.InvalidAdmRendererScreenGeometry;
+            } else if (context.screen_edges) |screen_edges| {
+                try validateScreenEdges(screen_edges);
+                var polar_nominal =
+                    try admCartesianToPolar(nominal);
+                applyPolarScreenEdgeLock(
+                    block,
+                    screen_edges,
+                    &polar_nominal,
+                );
+                compensateCartesianScreenPosition(
+                    outputs,
+                    &polar_nominal,
+                );
+                nominal = try admPolarToCartesian(polar_nominal);
+            }
         }
         if (try closestCartesianOutput(
             outputs,
@@ -1086,6 +1106,268 @@ fn polarToCartesian(position: PolarPosition) CartesianPosition {
     };
 }
 
+const ConversionSector = struct {
+    left_azimuth: f64,
+    right_azimuth: f64,
+    left_x: f64,
+    left_y: f64,
+    right_x: f64,
+    right_y: f64,
+};
+
+fn admPolarToCartesian(position: PolarPosition) !CartesianPosition {
+    if (!validPolar(position))
+        return error.InvalidAdmRendererCartesianPosition;
+
+    const absolute_elevation = @abs(position.elevation_degrees);
+    var planar_radius: f64 = undefined;
+    var z: f64 = undefined;
+    if (absolute_elevation > 30.0) {
+        const adjusted_elevation =
+            45.0 + (90.0 - 45.0) *
+                (absolute_elevation - 30.0) / (90.0 - 30.0);
+        z = position.distance * signValue(position.elevation_degrees);
+        planar_radius = position.distance * @tan(
+            degreesToRadians(90.0 - adjusted_elevation),
+        );
+    } else {
+        const adjusted_elevation =
+            45.0 * position.elevation_degrees / 30.0;
+        z = position.distance * @tan(
+            degreesToRadians(adjusted_elevation),
+        );
+        planar_radius = position.distance;
+    }
+
+    const sector = findConversionSector(
+        position.azimuth_degrees,
+        false,
+    );
+    const azimuth = relativeAngle(
+        sector.right_azimuth,
+        position.azimuth_degrees,
+    );
+    const left_azimuth = relativeAngle(
+        sector.right_azimuth,
+        sector.left_azimuth,
+    );
+    const proportion = mapAzimuthToLinear(
+        left_azimuth,
+        sector.right_azimuth,
+        azimuth,
+    );
+    const result = CartesianPosition{
+        .x = planar_radius *
+            (sector.left_x +
+                proportion * (sector.right_x - sector.left_x)),
+        .y = planar_radius *
+            (sector.left_y +
+                proportion * (sector.right_y - sector.left_y)),
+        .z = z,
+    };
+    if (!validCartesian(result))
+        return error.InvalidAdmRendererCartesianPosition;
+    return result;
+}
+
+fn admCartesianToPolar(position: CartesianPosition) !PolarPosition {
+    try validatePannerPosition(position);
+    const conversion_epsilon = 1.0e-10;
+    if (@abs(position.x) < conversion_epsilon and
+        @abs(position.y) < conversion_epsilon)
+    {
+        if (@abs(position.z) < conversion_epsilon) {
+            return .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+                .distance = 0,
+            };
+        }
+        return .{
+            .azimuth_degrees = 0,
+            .elevation_degrees = 90.0 * signValue(position.z),
+            .distance = @abs(position.z),
+        };
+    }
+
+    const geometric_azimuth =
+        -radiansToDegrees(std.math.atan2(position.x, position.y));
+    const sector = findConversionSector(geometric_azimuth, true);
+    const determinant =
+        sector.left_x * sector.right_y -
+        sector.left_y * sector.right_x;
+    if (@abs(determinant) < conversion_epsilon)
+        return error.InvalidAdmRendererCartesianPosition;
+    const left_gain =
+        (position.x * sector.right_y -
+            position.y * sector.right_x) / determinant;
+    const right_gain =
+        (position.y * sector.left_x -
+            position.x * sector.left_y) / determinant;
+    const planar_radius = left_gain + right_gain;
+    if (!std.math.isFinite(planar_radius) or
+        planar_radius <= conversion_epsilon)
+    {
+        return error.InvalidAdmRendererCartesianPosition;
+    }
+
+    const left_azimuth = relativeAngle(
+        sector.right_azimuth,
+        sector.left_azimuth,
+    );
+    const mapped_azimuth = mapLinearToAzimuth(
+        left_azimuth,
+        sector.right_azimuth,
+        right_gain / planar_radius,
+    );
+    const azimuth = relativeAngle(-180.0, mapped_azimuth);
+    const adjusted_elevation = radiansToDegrees(
+        std.math.atan(position.z / planar_radius),
+    );
+    var elevation: f64 = undefined;
+    var distance: f64 = undefined;
+    if (@abs(adjusted_elevation) > 45.0) {
+        const absolute_elevation =
+            30.0 + (90.0 - 30.0) *
+                (@abs(adjusted_elevation) - 45.0) / (90.0 - 45.0);
+        elevation = absolute_elevation *
+            signValue(adjusted_elevation);
+        distance = @abs(position.z);
+    } else {
+        elevation = adjusted_elevation * 30.0 / 45.0;
+        distance = planar_radius;
+    }
+    const result = PolarPosition{
+        .azimuth_degrees = if (azimuth > 180.0)
+            azimuth - 360.0
+        else
+            azimuth,
+        .elevation_degrees = elevation,
+        .distance = distance,
+    };
+    if (!validPolar(result))
+        return error.InvalidAdmRendererCartesianPosition;
+    return result;
+}
+
+fn findConversionSector(
+    azimuth: f64,
+    cartesian_input: bool,
+) ConversionSector {
+    const front_limit: f64 = if (cartesian_input) 45.0 else 30.0;
+    const side_limit: f64 = if (cartesian_input) 135.0 else 110.0;
+    if (insideAngleRange(azimuth, 0.0, front_limit, 0.0)) {
+        return .{
+            .left_azimuth = 30,
+            .right_azimuth = 0,
+            .left_x = -1,
+            .left_y = 1,
+            .right_x = 0,
+            .right_y = 1,
+        };
+    }
+    if (insideAngleRange(azimuth, -front_limit, 0.0, 0.0)) {
+        return .{
+            .left_azimuth = 0,
+            .right_azimuth = -30,
+            .left_x = 0,
+            .left_y = 1,
+            .right_x = 1,
+            .right_y = 1,
+        };
+    }
+    if (insideAngleRange(
+        azimuth,
+        -side_limit,
+        -front_limit,
+        0.0,
+    )) {
+        return .{
+            .left_azimuth = -30,
+            .right_azimuth = -110,
+            .left_x = 1,
+            .left_y = 1,
+            .right_x = 1,
+            .right_y = -1,
+        };
+    }
+    if (insideAngleRange(
+        azimuth,
+        side_limit,
+        -side_limit,
+        0.0,
+    )) {
+        return .{
+            .left_azimuth = -110,
+            .right_azimuth = 110,
+            .left_x = 1,
+            .left_y = -1,
+            .right_x = -1,
+            .right_y = -1,
+        };
+    }
+    return .{
+        .left_azimuth = 110,
+        .right_azimuth = 30,
+        .left_x = -1,
+        .left_y = -1,
+        .right_x = -1,
+        .right_y = 1,
+    };
+}
+
+fn mapAzimuthToLinear(
+    left_azimuth: f64,
+    right_azimuth: f64,
+    azimuth: f64,
+) f64 {
+    const midpoint = (left_azimuth + right_azimuth) * 0.5;
+    const range = right_azimuth - midpoint;
+    const relative = azimuth - midpoint;
+    const right_gain = 0.5 +
+        @tan(degreesToRadians(relative)) /
+            (2.0 * @tan(degreesToRadians(range)));
+    return 2.0 / std.math.pi *
+        std.math.atan2(right_gain, 1.0 - right_gain);
+}
+
+fn mapLinearToAzimuth(
+    left_azimuth: f64,
+    right_azimuth: f64,
+    linear: f64,
+) f64 {
+    const midpoint = (left_azimuth + right_azimuth) * 0.5;
+    const range = right_azimuth - midpoint;
+    const left_gain = @cos(linear * std.math.pi / 2.0);
+    const right_gain = @sin(linear * std.math.pi / 2.0);
+    const normalized_right = right_gain / (left_gain + right_gain);
+    const relative = radiansToDegrees(std.math.atan(
+        2.0 * (normalized_right - 0.5) *
+            @tan(degreesToRadians(range)),
+    ));
+    return midpoint + relative;
+}
+
+fn relativeAngle(minimum: f64, angle: f64) f64 {
+    if (angle >= minimum) return angle;
+    return angle +
+        360.0 * @ceil((minimum - angle) / 360.0);
+}
+
+fn degreesToRadians(degrees: f64) f64 {
+    return degrees * std.math.pi / 180.0;
+}
+
+fn radiansToDegrees(radians: f64) f64 {
+    return radians * 180.0 / std.math.pi;
+}
+
+fn signValue(value: f64) f64 {
+    if (value > 0.0) return 1.0;
+    if (value < 0.0) return -1.0;
+    return 0.0;
+}
+
 fn cartesianDistance(
     left: CartesianPosition,
     right: CartesianPosition,
@@ -1202,6 +1484,49 @@ fn applyPolarScreenEdgeLock(
                 edges.top_elevation_degrees,
         }
     }
+}
+
+fn compensateCartesianScreenPosition(
+    outputs: []const OutputSpeaker,
+    position: *PolarPosition,
+) void {
+    var has_upper_front_45 = false;
+    for (outputs) |output| {
+        const label = normalizeSpeakerLabel(output.label) orelse continue;
+        if (std.mem.eql(u8, label, "U+045")) {
+            has_upper_front_45 = true;
+            break;
+        }
+    }
+    if (!has_upper_front_45) return;
+
+    const azimuth_radius = piecewiseLinear(
+        position.elevation_degrees,
+        &.{ -90.0, 0.0, 30.0, 90.0 },
+        &.{ 30.0, 30.0, 20.0, 30.0 },
+    );
+    position.azimuth_degrees = piecewiseLinear(
+        position.azimuth_degrees,
+        &.{ -180.0, -30.0, 30.0, 180.0 },
+        &.{ -180.0, -azimuth_radius, azimuth_radius, 180.0 },
+    );
+}
+
+fn piecewiseLinear(
+    value: f64,
+    inputs: *const [4]f64,
+    outputs: *const [4]f64,
+) f64 {
+    if (value <= inputs[0]) return outputs[0];
+    for (1..inputs.len) |index| {
+        if (value > inputs[index]) continue;
+        const proportion =
+            (value - inputs[index - 1]) /
+            (inputs[index] - inputs[index - 1]);
+        return outputs[index - 1] +
+            proportion * (outputs[index] - outputs[index - 1]);
+    }
+    return outputs[outputs.len - 1];
 }
 
 fn renderGain(
@@ -1691,6 +2016,132 @@ test "ADM position router applies polar screen edges to nominal only" {
     }
 }
 
+test "ADM Cartesian screen conversion matches reference layout positions" {
+    const vectors = [_]struct {
+        polar: PolarPosition,
+        cartesian: CartesianPosition,
+    }{
+        .{
+            .polar = .{ .azimuth_degrees = 0, .elevation_degrees = 0 },
+            .cartesian = .{ .x = 0, .y = 1, .z = 0 },
+        },
+        .{
+            .polar = .{ .azimuth_degrees = 30, .elevation_degrees = 0 },
+            .cartesian = .{ .x = -1, .y = 1, .z = 0 },
+        },
+        .{
+            .polar = .{ .azimuth_degrees = -30, .elevation_degrees = 0 },
+            .cartesian = .{ .x = 1, .y = 1, .z = 0 },
+        },
+        .{
+            .polar = .{ .azimuth_degrees = 110, .elevation_degrees = 0 },
+            .cartesian = .{ .x = -1, .y = -1, .z = 0 },
+        },
+        .{
+            .polar = .{ .azimuth_degrees = -110, .elevation_degrees = 0 },
+            .cartesian = .{ .x = 1, .y = -1, .z = 0 },
+        },
+        .{
+            .polar = .{ .azimuth_degrees = 0, .elevation_degrees = 30 },
+            .cartesian = .{ .x = 0, .y = 1, .z = 1 },
+        },
+        .{
+            .polar = .{ .azimuth_degrees = 0, .elevation_degrees = 90 },
+            .cartesian = .{ .x = 0, .y = 0, .z = 1 },
+        },
+    };
+    for (vectors) |vector| {
+        const cartesian = try admPolarToCartesian(vector.polar);
+        try expectCartesianApprox(vector.cartesian, cartesian);
+        const polar = try admCartesianToPolar(vector.cartesian);
+        try expectPolarApprox(vector.polar, polar);
+    }
+
+    for ([_]PolarPosition{
+        .{
+            .azimuth_degrees = -70,
+            .elevation_degrees = 20,
+            .distance = 0.7,
+        },
+        .{
+            .azimuth_degrees = 150,
+            .elevation_degrees = 60,
+            .distance = 0.5,
+        },
+    }) |original| {
+        const round_trip = try admCartesianToPolar(
+            try admPolarToCartesian(original),
+        );
+        try expectPolarApprox(original, round_trip);
+    }
+}
+
+test "ADM position router applies Cartesian screen edges internally" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+        \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X" screenEdgeLock="right">0</position>
+        \\      <position coordinate="Y">1</position>
+        \\      <position coordinate="Z">0</position>
+        \\    </audioBlockFormatDirectSpeakers>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = [_]OutputSpeaker{.{
+        .label = "M+030",
+        .nominal_polar = .{
+            .azimuth_degrees = 30,
+            .elevation_degrees = 0,
+        },
+        .allocentric = .{ .x = -1, .y = 1, .z = 0 },
+    }};
+    const route = try resolveDirectSpeakerRoute(
+        &block,
+        &outputs,
+        .{
+            .screen_edges = .{
+                .left_azimuth_degrees = 30,
+                .right_azimuth_degrees = -30,
+                .bottom_elevation_degrees = -15,
+                .top_elevation_degrees = 15,
+            },
+        },
+    );
+    switch (route) {
+        .cartesian_panner => |position| try expectCartesianApprox(
+            .{ .x = 1, .y = 1, .z = 0 },
+            position,
+        ),
+        else => return error.TestUnexpectedResult,
+    }
+
+    var compensated = PolarPosition{
+        .azimuth_degrees = -30,
+        .elevation_degrees = 30,
+    };
+    const compensated_outputs = [_]OutputSpeaker{.{
+        .label = "U+045",
+        .nominal_polar = .{
+            .azimuth_degrees = 45,
+            .elevation_degrees = 30,
+        },
+        .allocentric = .{ .x = -1, .y = 1, .z = 1 },
+    }};
+    compensateCartesianScreenPosition(
+        &compensated_outputs,
+        &compensated,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, -20),
+        compensated.azimuth_degrees,
+        0.000_000_001,
+    );
+}
+
 test "ADM position router normalizes labels and classifies LFE metadata" {
     const label_document = try adm_xml.Document.init(
         \\<audioFormatExtended>
@@ -2167,4 +2618,34 @@ fn testCartesianCubeLayout() [8]OutputSpeaker {
             .allocentric = .{ .x = 1, .y = -1, .z = 1 },
         },
     };
+}
+
+fn expectCartesianApprox(
+    expected: CartesianPosition,
+    actual: CartesianPosition,
+) !void {
+    try std.testing.expectApproxEqAbs(expected.x, actual.x, 0.000_000_001);
+    try std.testing.expectApproxEqAbs(expected.y, actual.y, 0.000_000_001);
+    try std.testing.expectApproxEqAbs(expected.z, actual.z, 0.000_000_001);
+}
+
+fn expectPolarApprox(
+    expected: PolarPosition,
+    actual: PolarPosition,
+) !void {
+    try std.testing.expectApproxEqAbs(
+        expected.azimuth_degrees,
+        actual.azimuth_degrees,
+        0.000_000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        expected.elevation_degrees,
+        actual.elevation_degrees,
+        0.000_000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        expected.distance,
+        actual.distance,
+        0.000_000_001,
+    );
 }
