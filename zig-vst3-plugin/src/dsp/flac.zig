@@ -1488,18 +1488,15 @@ pub fn readInterleavedFile(
 ) !DecodeResult {
     if (byteSlicesOverlap(encoded_storage, destination))
         return error.OverlappingFlacBuffers;
-    const stat = try file.stat(io);
-    if (stat.size > encoded_storage.len)
-        return error.FlacInputBufferTooSmall;
-    const file_bytes: usize = @intCast(stat.size);
-    if (try file.readPositionalAll(
+    const encoded = try file_reader_io.readBoundedFile(
         io,
-        encoded_storage[0..file_bytes],
-        0,
-    ) != file_bytes)
-        return error.TruncatedFlac;
+        file,
+        encoded_storage,
+        error.FlacInputBufferTooSmall,
+        error.TruncatedFlac,
+    );
     return decodeInterleaved(
-        encoded_storage[0..file_bytes],
+        encoded,
         destination,
     );
 }
@@ -1517,18 +1514,15 @@ pub fn readInterleavedFileRange(
         byteSlicesOverlap(encoded_storage, frame_scratch) or
         byteSlicesOverlap(destination, frame_scratch))
         return error.OverlappingFlacBuffers;
-    const stat = try file.stat(io);
-    if (stat.size > encoded_storage.len)
-        return error.FlacInputBufferTooSmall;
-    const file_bytes: usize = @intCast(stat.size);
-    if (try file.readPositionalAll(
+    const encoded = try file_reader_io.readBoundedFile(
         io,
-        encoded_storage[0..file_bytes],
-        0,
-    ) != file_bytes)
-        return error.TruncatedFlac;
+        file,
+        encoded_storage,
+        error.FlacInputBufferTooSmall,
+        error.TruncatedFlac,
+    );
     return decodeInterleavedRange(
-        encoded_storage[0..file_bytes],
+        encoded,
         first_frame,
         destination,
         frame_scratch,
@@ -1552,18 +1546,15 @@ pub fn readInterleavedFileRangeWithWideScratch(
         byteSlicesOverlap(destination, wide_side_scratch) or
         byteSlicesOverlap(frame_scratch, wide_side_scratch))
         return error.OverlappingFlacBuffers;
-    const stat = try file.stat(io);
-    if (stat.size > encoded_storage.len)
-        return error.FlacInputBufferTooSmall;
-    const file_bytes: usize = @intCast(stat.size);
-    if (try file.readPositionalAll(
+    const encoded = try file_reader_io.readBoundedFile(
         io,
-        encoded_storage[0..file_bytes],
-        0,
-    ) != file_bytes)
-        return error.TruncatedFlac;
+        file,
+        encoded_storage,
+        error.FlacInputBufferTooSmall,
+        error.TruncatedFlac,
+    );
     return decodeInterleavedRangeWithWideScratch(
-        encoded_storage[0..file_bytes],
+        encoded,
         first_frame,
         destination,
         frame_scratch,

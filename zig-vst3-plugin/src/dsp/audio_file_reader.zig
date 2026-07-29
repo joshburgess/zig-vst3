@@ -311,57 +311,138 @@ pub const FileReader = struct {
     }
 };
 
+const RiffChunk = struct {
+    id: [4]u8,
+    source_offset: u64,
+    payload_offset: u64,
+    payload_bytes: u64,
+    padded_end: u64,
+};
+
+const RiffChunkIterator = struct {
+    io: std.Io,
+    file: std.Io.File,
+    end: u64,
+    large_data_bytes: ?u64 = null,
+    offset: u64 = 12,
+
+    fn next(self: *RiffChunkIterator) !?RiffChunk {
+        if (self.offset == self.end) return null;
+        if (self.offset > self.end or self.end - self.offset < 8)
+            return error.TruncatedAudioFile;
+
+        var header: [8]u8 = undefined;
+        try readExactAt(self.io, self.file, self.offset, &header);
+        const size32 = std.mem.readInt(u32, header[4..8], .little);
+        const payload_bytes: u64 = if (self.large_data_bytes) |large|
+            if (std.mem.eql(u8, header[0..4], "data") and
+                size32 == std.math.maxInt(u32))
+                large
+            else
+                size32
+        else
+            size32;
+        const payload_offset = self.offset + 8;
+        const payload_end = std.math.add(
+            u64,
+            payload_offset,
+            payload_bytes,
+        ) catch return error.InvalidAudioFile;
+        const padded_end = std.math.add(
+            u64,
+            payload_end,
+            payload_bytes & 1,
+        ) catch return error.InvalidAudioFile;
+        if (padded_end > self.end) return error.TruncatedAudioFile;
+
+        const chunk = RiffChunk{
+            .id = header[0..4].*,
+            .source_offset = self.offset,
+            .payload_offset = payload_offset,
+            .payload_bytes = payload_bytes,
+            .padded_end = padded_end,
+        };
+        self.offset = padded_end;
+        return chunk;
+    }
+};
+
+const Wave64Chunk = struct {
+    guid: [16]u8,
+    payload_offset: u64,
+    payload_bytes: u64,
+    payload_end: u64,
+    aligned_end: u64,
+};
+
+const Wave64ChunkIterator = struct {
+    io: std.Io,
+    file: std.Io.File,
+    end: u64,
+    offset: u64 = 40,
+
+    fn next(self: *Wave64ChunkIterator) !?Wave64Chunk {
+        if (self.offset == self.end) return null;
+        if (self.offset > self.end or self.end - self.offset < 24)
+            return error.TruncatedAudioFile;
+
+        var header: [24]u8 = undefined;
+        try readExactAt(self.io, self.file, self.offset, &header);
+        const chunk_bytes = std.mem.readInt(
+            u64,
+            header[16..24],
+            .little,
+        );
+        if (chunk_bytes < 24) return error.InvalidAudioFile;
+        const payload_bytes = chunk_bytes - 24;
+        const payload_offset = self.offset + 24;
+        const payload_end = std.math.add(
+            u64,
+            payload_offset,
+            payload_bytes,
+        ) catch return error.InvalidAudioFile;
+        if (payload_end > self.end) return error.TruncatedAudioFile;
+        const aligned_end = try alignForward8(payload_end);
+        if (aligned_end > self.end) return error.TruncatedAudioFile;
+
+        const chunk = Wave64Chunk{
+            .guid = header[0..16].*,
+            .payload_offset = payload_offset,
+            .payload_bytes = payload_bytes,
+            .payload_end = payload_end,
+            .aligned_end = aligned_end,
+        };
+        self.offset = aligned_end;
+        return chunk;
+    }
+};
+
 fn scanRiffMetadataChunk(
     reader: *const FileReader,
     kind: MetadataKind,
     destination: ?[]u8,
 ) !?usize {
     const bounds = try riffBounds(reader);
-    var offset: u64 = 12;
-    while (offset < bounds.end) {
-        if (bounds.end - offset < 8)
-            return error.TruncatedAudioFile;
-        var header: [8]u8 = undefined;
-        try readExactAt(reader.io, reader.file, offset, &header);
-        const size32 = std.mem.readInt(
-            u32,
-            header[4..8],
-            .little,
-        );
-        const payload_bytes: u64 =
-            if ((reader.info.container == .rf64 or
-                reader.info.container == .bw64) and
-            std.mem.eql(u8, header[0..4], "data") and
-            size32 == std.math.maxInt(u32))
-                bounds.rf64_data_bytes
-            else
-                size32;
-        const payload_offset = offset + 8;
-        const payload_end = std.math.add(
-            u64,
-            payload_offset,
-            payload_bytes,
-        ) catch return error.InvalidAudioFile;
-        if (payload_end > bounds.end)
-            return error.TruncatedAudioFile;
+    var chunks = RiffChunkIterator{
+        .io = reader.io,
+        .file = reader.file,
+        .end = bounds.end,
+        .large_data_bytes = if (reader.info.container == .wav)
+            null
+        else
+            bounds.rf64_data_bytes,
+    };
+    while (try chunks.next()) |chunk| {
         if (try chunkMatches(
             reader.io,
             reader.file,
-            header[0..4],
-            payload_offset,
-            payload_bytes,
+            &chunk.id,
+            chunk.payload_offset,
+            chunk.payload_bytes,
             kind,
         )) {
-            const padded_payload = std.math.add(
-                u64,
-                payload_bytes,
-                payload_bytes & 1,
-            ) catch return error.AudioFileSizeOverflow;
-            const total_bytes = std.math.add(
-                u64,
-                8,
-                padded_payload,
-            ) catch return error.AudioFileSizeOverflow;
+            const total_bytes =
+                chunk.padded_end - chunk.source_offset;
             if (total_bytes > std.math.maxInt(usize))
                 return error.MetadataSizeOverflow;
             const required: usize = @intCast(total_bytes);
@@ -371,19 +452,12 @@ fn scanRiffMetadataChunk(
                 try readExactAt(
                     reader.io,
                     reader.file,
-                    offset,
+                    chunk.source_offset,
                     output[0..required],
                 );
             }
             return required;
         }
-        offset = std.math.add(
-            u64,
-            payload_end,
-            payload_bytes & 1,
-        ) catch return error.InvalidAudioFile;
-        if (offset > bounds.end)
-            return error.TruncatedAudioFile;
     }
     return null;
 }
@@ -405,42 +479,26 @@ fn scanWave64MetadataChunk(
         container_header[16..24],
         .little,
     );
-    var offset: u64 = 40;
-    while (offset < end) {
-        if (end - offset < 24) return error.TruncatedAudioFile;
-        var header: [24]u8 = undefined;
-        try readExactAt(reader.io, reader.file, offset, &header);
-        const chunk_bytes = std.mem.readInt(
-            u64,
-            header[16..24],
-            .little,
-        );
-        if (chunk_bytes < 24) return error.InvalidAudioFile;
-        const payload_bytes = chunk_bytes - 24;
-        const payload_offset = offset + 24;
-        const payload_end = std.math.add(
-            u64,
-            payload_offset,
-            payload_bytes,
-        ) catch return error.InvalidAudioFile;
-        if (payload_end > end) return error.TruncatedAudioFile;
-        const aligned_end = try alignForward8(payload_end);
-        if (aligned_end > end) return error.TruncatedAudioFile;
-
+    var chunks = Wave64ChunkIterator{
+        .io = reader.io,
+        .file = reader.file,
+        .end = end,
+    };
+    while (try chunks.next()) |chunk| {
         var matches = std.mem.eql(
             u8,
-            header[0..16],
+            &chunk.guid,
             &desired_guid,
         );
         if (matches and kind == .info) {
-            if (payload_bytes < 4) {
+            if (chunk.payload_bytes < 4) {
                 matches = false;
             } else {
                 var subtype: [4]u8 = undefined;
                 try readExactAt(
                     reader.io,
                     reader.file,
-                    payload_offset,
+                    chunk.payload_offset,
                     &subtype,
                 );
                 matches = std.mem.eql(u8, &subtype, "INFO");
@@ -449,13 +507,13 @@ fn scanWave64MetadataChunk(
         if (matches) {
             var padding: [7]u8 = undefined;
             const padding_bytes: usize = @intCast(
-                aligned_end - payload_end,
+                chunk.aligned_end - chunk.payload_end,
             );
             if (padding_bytes != 0) {
                 try readExactAt(
                     reader.io,
                     reader.file,
-                    payload_end,
+                    chunk.payload_end,
                     padding[0..padding_bytes],
                 );
                 for (padding[0..padding_bytes]) |byte| {
@@ -463,12 +521,12 @@ fn scanWave64MetadataChunk(
                         return error.InvalidWave64MetadataPadding;
                 }
             }
-            if (payload_bytes > std.math.maxInt(u32))
+            if (chunk.payload_bytes > std.math.maxInt(u32))
                 return error.MetadataSizeOverflow;
             const padded_payload = std.math.add(
                 u64,
-                payload_bytes,
-                payload_bytes & 1,
+                chunk.payload_bytes,
+                chunk.payload_bytes & 1,
             ) catch return error.MetadataSizeOverflow;
             const required = std.math.add(
                 u64,
@@ -481,11 +539,12 @@ fn scanWave64MetadataChunk(
             if (destination) |output| {
                 if (output.len < required_length)
                     return error.MetadataBufferTooSmall;
-                const payload_length: usize = @intCast(payload_bytes);
+                const payload_length: usize =
+                    @intCast(chunk.payload_bytes);
                 try readExactAt(
                     reader.io,
                     reader.file,
-                    payload_offset,
+                    chunk.payload_offset,
                     output[8..][0..payload_length],
                 );
                 @memcpy(
@@ -495,15 +554,14 @@ fn scanWave64MetadataChunk(
                 std.mem.writeInt(
                     u32,
                     output[4..8],
-                    @intCast(payload_bytes),
+                    @intCast(chunk.payload_bytes),
                     .little,
                 );
-                if (payload_bytes & 1 != 0)
+                if (chunk.payload_bytes & 1 != 0)
                     output[8 + payload_length] = 0;
             }
             return required_length;
         }
-        offset = aligned_end;
     }
     return null;
 }
@@ -584,39 +642,23 @@ fn parseWav(
     var format: ?ParsedFormat = null;
     var data_offset: ?u64 = null;
     var data_bytes: u64 = 0;
-    var offset: u64 = 12;
-    while (offset < riff_end) {
-        if (riff_end - offset < 8) return error.TruncatedAudioFile;
-        var chunk_header: [8]u8 = undefined;
-        try readExactAt(io, file, offset, &chunk_header);
-        const chunk_bytes: u64 =
-            std.mem.readInt(u32, chunk_header[4..8], .little);
-        const payload_offset = offset + 8;
-        const payload_end = std.math.add(
-            u64,
-            payload_offset,
-            chunk_bytes,
-        ) catch return error.InvalidAudioFile;
-        if (payload_end > riff_end) return error.TruncatedAudioFile;
-
-        if (std.mem.eql(u8, chunk_header[0..4], "fmt ")) {
-            if (format != null or chunk_bytes < 16)
+    var chunks = RiffChunkIterator{
+        .io = io,
+        .file = file,
+        .end = riff_end,
+    };
+    while (try chunks.next()) |chunk| {
+        if (std.mem.eql(u8, &chunk.id, "fmt ")) {
+            if (format != null or chunk.payload_bytes < 16)
                 return error.InvalidAudioFile;
             var bytes: [16]u8 = undefined;
-            try readExactAt(io, file, payload_offset, &bytes);
+            try readExactAt(io, file, chunk.payload_offset, &bytes);
             format = try parseWavFormat(bytes);
-        } else if (std.mem.eql(u8, chunk_header[0..4], "data")) {
+        } else if (std.mem.eql(u8, &chunk.id, "data")) {
             if (data_offset != null) return error.InvalidAudioFile;
-            data_offset = payload_offset;
-            data_bytes = chunk_bytes;
+            data_offset = chunk.payload_offset;
+            data_bytes = chunk.payload_bytes;
         }
-
-        offset = std.math.add(
-            u64,
-            payload_end,
-            chunk_bytes & 1,
-        ) catch return error.InvalidAudioFile;
-        if (offset > riff_end) return error.TruncatedAudioFile;
     }
 
     const parsed = format orelse return error.MissingAudioFormat;
@@ -727,52 +769,26 @@ fn parseLargeRiff(
     var format: ?ParsedFormat = null;
     var data_offset: ?u64 = null;
     var data_bytes: u64 = 0;
-    var offset: u64 = 12;
-    while (offset < riff_end) {
-        if (riff_end - offset < 8) return error.TruncatedAudioFile;
-        var chunk_header: [8]u8 = undefined;
-        try readExactAt(io, file, offset, &chunk_header);
-        const size32 = std.mem.readInt(
-            u32,
-            chunk_header[4..8],
-            .little,
-        );
-        const payload_offset = offset + 8;
-        const chunk_bytes: u64 = if (std.mem.eql(
-            u8,
-            chunk_header[0..4],
-            "data",
-        ) and size32 == std.math.maxInt(u32))
-            declared_data_bytes
-        else
-            size32;
-        const payload_end = std.math.add(
-            u64,
-            payload_offset,
-            chunk_bytes,
-        ) catch return error.InvalidAudioFile;
-        if (payload_end > riff_end) return error.TruncatedAudioFile;
-
-        if (std.mem.eql(u8, chunk_header[0..4], "fmt ")) {
-            if (format != null or chunk_bytes < 16)
+    var chunks = RiffChunkIterator{
+        .io = io,
+        .file = file,
+        .end = riff_end,
+        .large_data_bytes = declared_data_bytes,
+    };
+    while (try chunks.next()) |chunk| {
+        if (std.mem.eql(u8, &chunk.id, "fmt ")) {
+            if (format != null or chunk.payload_bytes < 16)
                 return error.InvalidAudioFile;
             var bytes: [16]u8 = undefined;
-            try readExactAt(io, file, payload_offset, &bytes);
+            try readExactAt(io, file, chunk.payload_offset, &bytes);
             format = try parseWavFormat(bytes);
-        } else if (std.mem.eql(u8, chunk_header[0..4], "data")) {
+        } else if (std.mem.eql(u8, &chunk.id, "data")) {
             if (data_offset != null or
-                chunk_bytes != declared_data_bytes)
+                chunk.payload_bytes != declared_data_bytes)
                 return error.InvalidRf64Sizes;
-            data_offset = payload_offset;
-            data_bytes = chunk_bytes;
+            data_offset = chunk.payload_offset;
+            data_bytes = chunk.payload_bytes;
         }
-
-        offset = std.math.add(
-            u64,
-            payload_end,
-            chunk_bytes & 1,
-        ) catch return error.InvalidAudioFile;
-        if (offset > riff_end) return error.TruncatedAudioFile;
     }
 
     const parsed = format orelse return error.MissingAudioFormat;
@@ -829,45 +845,23 @@ fn parseWave64(
     var format: ?ParsedFormat = null;
     var data_offset: ?u64 = null;
     var data_bytes: u64 = 0;
-    var offset: u64 = 40;
-    while (offset < riff_end) {
-        if (riff_end - offset < 24) return error.TruncatedAudioFile;
-        var chunk_header: [24]u8 = undefined;
-        try readExactAt(io, file, offset, &chunk_header);
-        const chunk_bytes =
-            std.mem.readInt(u64, chunk_header[16..24], .little);
-        if (chunk_bytes < 24) return error.InvalidAudioFile;
-        const payload_bytes = chunk_bytes - 24;
-        const payload_offset = offset + 24;
-        const payload_end = std.math.add(
-            u64,
-            payload_offset,
-            payload_bytes,
-        ) catch return error.InvalidAudioFile;
-        if (payload_end > riff_end) return error.TruncatedAudioFile;
-
-        if (std.mem.eql(
-            u8,
-            chunk_header[0..16],
-            &wave64_format_guid,
-        )) {
-            if (format != null or payload_bytes < 16)
+    var chunks = Wave64ChunkIterator{
+        .io = io,
+        .file = file,
+        .end = riff_end,
+    };
+    while (try chunks.next()) |chunk| {
+        if (std.mem.eql(u8, &chunk.guid, &wave64_format_guid)) {
+            if (format != null or chunk.payload_bytes < 16)
                 return error.InvalidAudioFile;
             var bytes: [16]u8 = undefined;
-            try readExactAt(io, file, payload_offset, &bytes);
+            try readExactAt(io, file, chunk.payload_offset, &bytes);
             format = try parseWavFormat(bytes);
-        } else if (std.mem.eql(
-            u8,
-            chunk_header[0..16],
-            &wave64_data_guid,
-        )) {
+        } else if (std.mem.eql(u8, &chunk.guid, &wave64_data_guid)) {
             if (data_offset != null) return error.InvalidAudioFile;
-            data_offset = payload_offset;
-            data_bytes = payload_bytes;
+            data_offset = chunk.payload_offset;
+            data_bytes = chunk.payload_bytes;
         }
-
-        offset = try alignForward8(payload_end);
-        if (offset > riff_end) return error.TruncatedAudioFile;
     }
 
     const parsed = format orelse return error.MissingAudioFormat;
@@ -1706,6 +1700,25 @@ test "file reader rejects malformed structure and invalid requests" {
         error.FrameIndexOutOfRange,
         reader.readInterleaved(f32, 1, &incomplete),
     );
+
+    try file.setLength(std.testing.io, 53);
+    var missing_padding = [_]u8{ 0, 0, 0, 0 };
+    std.mem.writeInt(u32, &missing_padding, 45, .little);
+    try file.writePositionalAll(std.testing.io, &missing_padding, 4);
+    try file.writePositionalAll(
+        std.testing.io,
+        "iXML\x01\x00\x00\x00x",
+        44,
+    );
+    try std.testing.expectError(
+        error.TruncatedAudioFile,
+        reader.requiredMetadataChunkBytes(.ixml),
+    );
+    try std.testing.expectError(
+        error.TruncatedAudioFile,
+        FileReader.init(std.testing.io, file),
+    );
+
     var hostile = reader;
     var preserved = [_]f32{ 7, 8 };
     const original_preserved = preserved;
