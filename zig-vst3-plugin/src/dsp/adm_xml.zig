@@ -524,7 +524,7 @@ pub const Document = struct {
     }
 
     /// Validates the supported BS.2168 identifier and content-link subset.
-    /// Alternative-value-set parentage and other relationships are separate.
+    /// Other profile relationships require separate validation.
     pub fn validateEmissionProfileIdentifiers(self: Document) !void {
         _ = try self.validateEmissionProfileElementLimits();
         var expected_track_uid: u32 = 1;
@@ -570,6 +570,7 @@ pub const Document = struct {
                 .track_format, .stream_format => return error.ForbiddenAdmEmissionProfileFormat,
             }
         }
+        try self.validateEmissionAlternativeValueSetIdentifiers();
     }
 
     fn validateEmissionContentReference(
@@ -591,6 +592,72 @@ pub const Document = struct {
         }
         if (matching_references != 1)
             return error.InvalidAdmEmissionProfileContentReference;
+    }
+
+    fn validateEmissionAlternativeValueSetIdentifiers(
+        self: Document,
+    ) !void {
+        var object_primary: [xml.max_depth]?u32 = @splat(null);
+        var object_depth: [xml.max_depth]?usize = @splat(null);
+        var next_sequence: [xml.max_depth]u64 = @splat(1);
+        var events = self.xml_document.iterator();
+        while (try events.next()) |event| {
+            switch (event) {
+                .start => |element| {
+                    if (element.depth != 0) {
+                        object_primary[element.depth] =
+                            object_primary[element.depth - 1];
+                        object_depth[element.depth] =
+                            object_depth[element.depth - 1];
+                    }
+                    if (std.mem.eql(u8, element.localName(), "audioObject")) {
+                        const encoded =
+                            try element.attribute("audioObjectID") orelse
+                            return error.MissingAdmIdentifier;
+                        var storage: [max_identifier_bytes]u8 = undefined;
+                        const raw = try xml.decodeContent(&storage, encoded);
+                        const identifier = try adm.Identifier.parse(raw);
+                        if (identifier.kind != .object)
+                            return error.InvalidAdmDeclarationKind;
+                        object_primary[element.depth] = identifier.primary;
+                        object_depth[element.depth] = element.depth;
+                        next_sequence[element.depth] = 1;
+                        continue;
+                    }
+                    if (!std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "alternativeValueSet",
+                    )) {
+                        continue;
+                    }
+                    const parent_depth = object_depth[element.depth] orelse
+                        return error.InvalidAdmEmissionAlternativeValueSetOwner;
+                    if (parent_depth + 1 != element.depth)
+                        return error.InvalidAdmEmissionAlternativeValueSetOwner;
+                    const parent_primary =
+                        object_primary[element.depth] orelse
+                        return error.InvalidAdmEmissionAlternativeValueSetOwner;
+                    const encoded =
+                        try element.attribute("alternativeValueSetID") orelse
+                        return error.MissingAdmIdentifier;
+                    var storage: [max_identifier_bytes]u8 = undefined;
+                    const raw = try xml.decodeContent(&storage, encoded);
+                    const identifier = try adm.Identifier.parse(raw);
+                    if (identifier.kind != .alternative_value_set)
+                        return error.InvalidAdmDeclarationKind;
+                    const sequence = identifier.secondary orelse
+                        return error.InvalidAdmEmissionProfileIdentifier;
+                    if (identifier.primary != parent_primary or
+                        @as(u64, sequence) != next_sequence[parent_depth])
+                    {
+                        return error.InvalidAdmEmissionProfileIdentifier;
+                    }
+                    next_sequence[parent_depth] += 1;
+                },
+                else => {},
+            }
+        }
     }
 
     fn validateEmissionProfileDocumentVersion(self: Document) !void {
@@ -3224,7 +3291,10 @@ test "ADM XML emission profile validates core identifiers" {
         \\  <audioContent audioContentID="ACO_1001">
         \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
         \\  </audioContent>
-        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0001"/>
+        \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0002"/>
+        \\  </audioObject>
         \\  <audioPackFormat audioPackFormatID="AP_00031001"/>
         \\  <audioChannelFormat audioChannelFormatID="AC_00031001"/>
         \\  <audioTrackUID UID="ATU_00000001"/>
@@ -3293,6 +3363,73 @@ test "ADM XML emission profile validates core identifiers" {
     try std.testing.expectError(
         error.InvalidAdmEmissionProfileTrackUidSequence,
         skipped_track_uid.validateEmissionProfileIdentifiers(),
+    );
+}
+
+test "ADM XML emission profile validates alternative value set identifiers" {
+    const mismatched_parent = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001"/>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <alternativeValueSet alternativeValueSetID="AVS_1002_0001"/>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileIdentifier,
+        mismatched_parent.validateEmissionProfileIdentifiers(),
+    );
+
+    const skipped_sequence = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001"/>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0002"/>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionProfileIdentifier,
+        skipped_sequence.validateEmissionProfileIdentifiers(),
+    );
+
+    const indirect_owner = try Document.init(
+        \\<audioFormatExtended version="ITU-R_BS.2076-3">
+        \\  <audioProgramme audioProgrammeID="APR_1001"/>
+        \\  <audioContent audioContentID="ACO_1001">
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </audioContent>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <extension>
+        \\      <alternativeValueSet alternativeValueSetID="AVS_1001_0001"/>
+        \\    </extension>
+        \\  </audioObject>
+        \\  <audioTrackUID UID="ATU_00000001"/>
+        \\  <profileList>
+        \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
+        \\      profileVersion="1" profileLevel="1">ITU-R BS.2168</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    try std.testing.expectError(
+        error.InvalidAdmEmissionAlternativeValueSetOwner,
+        indirect_owner.validateEmissionProfileIdentifiers(),
     );
 }
 

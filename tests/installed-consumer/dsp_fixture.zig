@@ -3477,7 +3477,10 @@ test "installed package exposes file-backed audio writers" {
         \\  <audioContent audioContentID="ACO_1001">
         \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
         \\  </audioContent>
-        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <audioObject audioObjectID="AO_1001">
+        \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0001"/>
+        \\    <alternativeValueSet alternativeValueSetID="AVS_1001_0002"/>
+        \\  </audioObject>
         \\  <audioTrackUID UID="ATU_00000001"/>
         \\  <profileList>
         \\    <profile profileName="Advanced sound system: ADM and S-ADM profile for emission"
