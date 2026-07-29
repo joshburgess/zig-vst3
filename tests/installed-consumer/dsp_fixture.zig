@@ -4478,3 +4478,42 @@ test "installed package exposes ADM Matrix coefficient delays" {
         output,
     );
 }
+
+test "installed package exposes bounded ADM HOA matrix decoding" {
+    const document = try plugin.dsp.AdmXmlDocument.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00041001">
+        \\    <audioBlockFormatHoa audioBlockFormatID="AB_00041001_00000001">
+        \\      <order>0</order>
+        \\      <degree>0</degree>
+        \\      <normalization>SN3D</normalization>
+        \\    </audioBlockFormatHoa>
+        \\  </audioChannelFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00041002">
+        \\    <audioBlockFormatHoa audioBlockFormatID="AB_00041002_00000001">
+        \\      <order>1</order>
+        \\      <degree>0</degree>
+        \\      <normalization>SN3D</normalization>
+        \\    </audioBlockFormatHoa>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var iterator = document.blocks();
+    const blocks = [_]plugin.dsp.AdmXmlBlockFormat{
+        (try iterator.next()).?,
+        (try iterator.next()).?,
+    };
+    const Decoder = plugin.dsp.AdmHoaMatrixDecoder(f32, 2, 1);
+    const decoder = try Decoder.init(&blocks, 1, &.{ 0.5, -1.0 });
+    const first = [_]f32{ 2.0, 4.0 };
+    const second = [_]f32{ 1.0, -3.0 };
+    const inputs = [_][]const f32{ &first, &second };
+    var output: [first.len]f32 = undefined;
+    const outputs = [_][]f32{&output};
+    try decoder.process(&inputs, &outputs);
+    try std.testing.expectEqualDeep([_]f32{ 0.0, 5.0 }, output);
+    try std.testing.expectEqual(
+        @as(u32, 50),
+        plugin.dsp.maximum_supported_adm_hoa_order,
+    );
+}

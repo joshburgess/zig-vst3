@@ -3,6 +3,7 @@ pub const adm = @import("dsp/adm.zig");
 pub const adm_diffuse = @import("dsp/adm_diffuse.zig");
 pub const adm_direct_speaker_mapping =
     @import("dsp/adm_direct_speaker_mapping.zig");
+pub const adm_hoa_decoder = @import("dsp/adm_hoa_decoder.zig");
 pub const adm_render = @import("dsp/adm_render.zig");
 pub const adm_time = @import("dsp/adm_time.zig");
 pub const adm_xml = @import("dsp/adm_xml.zig");
@@ -140,6 +141,9 @@ pub const resolveAdmDirectSpeakerRoute =
 pub const AdmStaticMatrixMixer = adm_render.StaticMatrixMixer;
 pub const AdmMatrixCoefficientMixer =
     adm_render.MatrixCoefficientMixer;
+pub const AdmHoaMatrixDecoder = adm_hoa_decoder.MatrixDecoder;
+pub const maximum_supported_adm_hoa_order =
+    adm_hoa_decoder.maximum_supported_order;
 pub const maximum_adm_renderer_input_channels =
     adm_render.maximum_input_channels;
 pub const adm_polar_extent_spreading_direction_count =
@@ -867,6 +871,7 @@ pub const fillWindow = window.fill;
 test {
     _ = aiff_writer;
     _ = adm_render;
+    _ = adm_hoa_decoder;
     _ = adm_diffuse;
     _ = adm_direct_speaker_mapping;
     _ = audio_block;
