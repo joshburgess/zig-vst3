@@ -101,26 +101,26 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                     ?*anyopaque,
                     *const ContentObject,
                     raw.ARAContentType,
-                ) bool,
+                ) callconv(.c) bool,
                 grade: *const fn (
                     ?*anyopaque,
                     *const ContentObject,
                     raw.ARAContentType,
-                ) raw.ARAContentGrade,
+                ) callconv(.c) raw.ARAContentGrade,
                 event_count: *const fn (
                     ?*anyopaque,
                     *const ContentObject,
                     raw.ARAContentType,
                     ?*const raw.ARAContentTimeRange,
                     *usize,
-                ) bool,
+                ) callconv(.c) bool,
                 event_data: *const fn (
                     ?*anyopaque,
                     *const ContentObject,
                     raw.ARAContentType,
                     ?*const raw.ARAContentTimeRange,
                     usize,
-                ) ?*const anyopaque,
+                ) callconv(.c) ?*const anyopaque,
             };
         };
 
@@ -4532,7 +4532,7 @@ test "ARA controller publishes typed provider content readers" {
             context: ?*anyopaque,
             object: *const TestController.ContentObject,
             content_type: raw.ARAContentType,
-        ) bool {
+        ) callconv(.c) bool {
             _ = state(context);
             return object.* == .audio_source and
                 content_type == raw.kARAContentTypeNotes;
@@ -4542,7 +4542,7 @@ test "ARA controller publishes typed provider content readers" {
             context: ?*anyopaque,
             object: *const TestController.ContentObject,
             content_type: raw.ARAContentType,
-        ) raw.ARAContentGrade {
+        ) callconv(.c) raw.ARAContentGrade {
             _ = context;
             _ = object;
             _ = content_type;
@@ -4555,7 +4555,7 @@ test "ARA controller publishes typed provider content readers" {
             content_type: raw.ARAContentType,
             range: ?*const raw.ARAContentTimeRange,
             output: *usize,
-        ) bool {
+        ) callconv(.c) bool {
             _ = object;
             _ = content_type;
             _ = range;
@@ -4569,7 +4569,7 @@ test "ARA controller publishes typed provider content readers" {
             content_type: raw.ARAContentType,
             range: ?*const raw.ARAContentTimeRange,
             event_index: usize,
-        ) ?*const anyopaque {
+        ) callconv(.c) ?*const anyopaque {
             _ = object;
             _ = content_type;
             _ = range;
@@ -4763,7 +4763,7 @@ test "ARA controller routes validated analysis requests and host notifications" 
             context: ?*anyopaque,
             object: *const TestController.ContentObject,
             content_type: raw.ARAContentType,
-        ) bool {
+        ) callconv(.c) bool {
             _ = context;
             _ = object;
             _ = content_type;
@@ -4774,7 +4774,7 @@ test "ARA controller routes validated analysis requests and host notifications" 
             context: ?*anyopaque,
             object: *const TestController.ContentObject,
             content_type: raw.ARAContentType,
-        ) raw.ARAContentGrade {
+        ) callconv(.c) raw.ARAContentGrade {
             _ = context;
             _ = object;
             _ = content_type;
@@ -4787,7 +4787,7 @@ test "ARA controller routes validated analysis requests and host notifications" 
             content_type: raw.ARAContentType,
             range: ?*const raw.ARAContentTimeRange,
             output: *usize,
-        ) bool {
+        ) callconv(.c) bool {
             _ = context;
             _ = object;
             _ = content_type;
@@ -4802,7 +4802,7 @@ test "ARA controller routes validated analysis requests and host notifications" 
             content_type: raw.ARAContentType,
             range: ?*const raw.ARAContentTimeRange,
             event_index: usize,
-        ) ?*const anyopaque {
+        ) callconv(.c) ?*const anyopaque {
             _ = context;
             _ = object;
             _ = content_type;

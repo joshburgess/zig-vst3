@@ -4078,7 +4078,7 @@ pub fn Analyzer(
             context: ?*anyopaque,
             object: *const ControllerType.ContentObject,
             content_type: raw.ARAContentType,
-        ) bool {
+        ) callconv(.c) bool {
             const self = fromContext(context) orelse return false;
             const source_id = switch (object.*) {
                 .audio_source => |id| id,
@@ -4106,7 +4106,7 @@ pub fn Analyzer(
             context: ?*anyopaque,
             object: *const ControllerType.ContentObject,
             content_type: raw.ARAContentType,
-        ) raw.ARAContentGrade {
+        ) callconv(.c) raw.ARAContentGrade {
             if (!isAvailable(context, object, content_type))
                 return raw.kARAContentGradeInitial;
             const self = fromContext(context) orelse
@@ -4138,7 +4138,7 @@ pub fn Analyzer(
             content_type: raw.ARAContentType,
             range: ?*const raw.ARAContentTimeRange,
             output: *usize,
-        ) bool {
+        ) callconv(.c) bool {
             if (!isAvailable(context, object, content_type))
                 return false;
             if (content_type == raw.kARAContentTypeNotes) {
@@ -4208,7 +4208,7 @@ pub fn Analyzer(
             content_type: raw.ARAContentType,
             range: ?*const raw.ARAContentTimeRange,
             event_index: usize,
-        ) ?*const anyopaque {
+        ) callconv(.c) ?*const anyopaque {
             const self = fromContext(context) orelse return null;
             const source_id = switch (object.*) {
                 .audio_source => |id| id,

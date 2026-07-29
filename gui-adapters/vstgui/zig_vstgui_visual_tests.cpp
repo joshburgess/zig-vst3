@@ -2099,6 +2099,49 @@ int runSnapshot(
     ) ? 0 : 4;
 }
 
+int smokeSnapshot(
+    const Snapshot& snapshot,
+    const std::filesystem::path& output
+) {
+    const auto actual = render(snapshot);
+    if (!actual || !actual->getPlatformBitmap()) return 1;
+    const auto actual_pixels = VSTGUI::owned(
+        VSTGUI::CBitmapPixelAccess::create(actual, false)
+    );
+    if (!actual_pixels) return 2;
+    const auto width = actual_pixels->getBitmapWidth();
+    const auto height = actual_pixels->getBitmapHeight();
+    if (width == 0 || height == 0) return 3;
+
+    const auto path = output / (std::string(snapshot.name) + ".smoke.png");
+    if (!writePng(actual, path)) return 4;
+    const auto decoded = loadPng(path);
+    if (!decoded) return 5;
+    const auto decoded_pixels = VSTGUI::owned(
+        VSTGUI::CBitmapPixelAccess::create(decoded, false)
+    );
+    if (!decoded_pixels ||
+        decoded_pixels->getBitmapWidth() != width ||
+        decoded_pixels->getBitmapHeight() != height) return 6;
+
+    VSTGUI::CColor first;
+    decoded_pixels->getColor(first);
+    bool varied = false;
+    while (++(*decoded_pixels)) {
+        VSTGUI::CColor current;
+        decoded_pixels->getColor(current);
+        if (current != first) {
+            varied = true;
+            break;
+        }
+    }
+    if (!varied) {
+        std::fprintf(stderr, "uniform visual smoke output: %s\n", snapshot.name);
+        return 7;
+    }
+    return 0;
+}
+
 double benchmarkWarmDraw() {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 140)));
@@ -2513,13 +2556,19 @@ int main(int argc, char** argv) {
     const std::filesystem::path references(argv[1]);
     const std::filesystem::path output(argv[2]);
     bool update = false;
+    bool smoke = false;
     bool enforce_performance = true;
     for (int index = 3; index < argc; ++index) {
         const std::string option(argv[index]);
         if (option == "--update") update = true;
+        else if (option == "--platform-smoke") {
+            smoke = true;
+            enforce_performance = false;
+        }
         else if (option == "--skip-performance") enforce_performance = false;
         else return 64;
     }
+    if (update && smoke) return 64;
     if (update) std::filesystem::create_directories(references);
     std::filesystem::create_directories(output);
     ZigVstgui::RuntimeGuard runtime;
@@ -2552,7 +2601,12 @@ int main(int argc, char** argv) {
             irWorkflowStates(),
         };
         for (const auto& snapshot : snapshots) {
-            result = std::max(result, runSnapshot(snapshot, references, output, update));
+            result = std::max(
+                result,
+                smoke
+                    ? smokeSnapshot(snapshot, output)
+                    : runSnapshot(snapshot, references, output, update)
+            );
         }
     }
     if (!update && enforce_performance) {
@@ -2629,7 +2683,12 @@ int main(int argc, char** argv) {
             irWorkspace("ir-loader-high-contrast.png", 720, 660, 1.0, ZIG_VSTGUI_THEME_DEFAULT),
         };
         for (const auto& snapshot : workspace_snapshots) {
-            result = std::max(result, runSnapshot(snapshot, references, output, update));
+            result = std::max(
+                result,
+                smoke
+                    ? smokeSnapshot(snapshot, output)
+                    : runSnapshot(snapshot, references, output, update)
+            );
         }
     }
     return result;

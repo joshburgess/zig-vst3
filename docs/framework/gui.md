@@ -105,6 +105,8 @@ The native adapter test build renders fixed headless references through VSTGUI. 
 
 Each run compares decoded pixels with a channel tolerance of 80 and allows at most 2 percent of pixels to exceed it. The broad channel tolerance absorbs macOS display-profile conversion while exact theme token colors remain covered by unit tests. Geometry, missing regions, large color changes, and state changes still fail the image comparison. A failure writes the actual image and a magenta difference mask under `.vst3-sdk/vstgui-adapter-build/visual-regression`.
 
+Reference comparisons run on the native renderer used to approve the stored images. Other platform renderers use `--platform-smoke`: every scene must render, survive native PNG encoding and decoding with unchanged dimensions, and contain nonuniform output. This preserves Windows Direct2D coverage without interpreting font rasterization and renderer-specific antialiasing as product appearance regressions. It does not replace manual visual confirmation on each platform.
+
 `zig build vstgui-adapter` runs interaction tests and visual comparisons. After intentionally reviewing an appearance change, update the references with:
 
 ```sh

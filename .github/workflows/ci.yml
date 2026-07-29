@@ -100,6 +100,7 @@ jobs:
         if: runner.os == 'Windows'
         env:
           ZIG_VSTGUI_DIAGNOSTICS: 1
+          VSTGUI_VISUAL_TEST_ARGS: --platform-smoke
         run: zig build test-windows-native -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
 
   raw-api-abi:
