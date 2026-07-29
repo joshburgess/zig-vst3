@@ -3564,6 +3564,10 @@ test "installed package exposes file-backed audio writers" {
         .channel_count = 2,
         .frame_count = 48_000,
     });
+    var serial_flow_state =
+        plugin.dsp.AdmXmlEmissionSerialFlowState{};
+    try std.testing.expect(!serial_flow_state.initialized);
+    serial_flow_state.reset();
     var wav = try plugin.dsp.WavFileWriter.initWithRiffMetadata(
         std.testing.io,
         wav_file,
