@@ -2920,133 +2920,6 @@ pub const Extension = struct {
     }
 };
 
-pub const ExtensionIterator = struct {
-    document: Document,
-    events: xml.EventIterator,
-    afe_depth: ?usize = null,
-    element_names: [xml.max_depth]?[]const u8 = @splat(null),
-    owners: [xml.max_depth]?adm.Identifier = @splat(null),
-    owner_storage: [xml.max_depth][max_identifier_bytes]u8 = undefined,
-    namespace_uri_storage: [xml.max_namespace_uri_bytes]u8 = undefined,
-
-    fn init(document: Document) ExtensionIterator {
-        return .{
-            .document = document,
-            .events = document.xml_document.iterator(),
-        };
-    }
-
-    /// Returned namespace and owner identifier storage remain valid until
-    /// the next iterator call.
-    pub fn next(self: *ExtensionIterator) !?Extension {
-        while (try self.events.next()) |event| {
-            switch (event) {
-                .start => |element| {
-                    const inherited_owner = if (element.depth == 0)
-                        null
-                    else
-                        self.owners[element.depth - 1];
-                    self.owners[element.depth] = inherited_owner;
-                    self.element_names[element.depth] = null;
-
-                    const namespace_matches = try xml.namespaceNamesEql(
-                        self.document.namespace_name,
-                        element.namespace_name,
-                    );
-                    if (namespace_matches and
-                        std.mem.eql(
-                            u8,
-                            element.localName(),
-                            "audioFormatExtended",
-                        ))
-                    {
-                        self.afe_depth = if (element.self_closing)
-                            null
-                        else
-                            element.depth;
-                        self.element_names[element.depth] =
-                            element.localName();
-                        self.owners[element.depth] = null;
-                        continue;
-                    }
-                    if (!insideAfe(self.afe_depth, element.depth))
-                        continue;
-                    if (namespace_matches and
-                        !isTypedMetadataElementName(element.localName()))
-                    {
-                        if (!element.self_closing)
-                            try skipXmlSubtree(&self.events, element);
-                        continue;
-                    }
-                    if (!namespace_matches)
-                        return try self.readExtension(element);
-
-                    self.element_names[element.depth] =
-                        element.localName();
-                    if (try extensionDeclarationOwner(
-                        element,
-                        &self.owner_storage[element.depth],
-                    )) |identifier| {
-                        self.owners[element.depth] = identifier;
-                    }
-                },
-                .end => |element| {
-                    if (self.afe_depth == element.depth and
-                        try xml.namespaceNamesEql(
-                            self.document.namespace_name,
-                            element.namespace_name,
-                        ) and
-                        std.mem.eql(
-                            u8,
-                            element.localName(),
-                            "audioFormatExtended",
-                        ))
-                    {
-                        self.afe_depth = null;
-                    }
-                },
-                else => {},
-            }
-        }
-        return null;
-    }
-
-    fn readExtension(
-        self: *ExtensionIterator,
-        element: xml.StartElement,
-    ) !Extension {
-        const parent_element_name = if (element.depth == 0)
-            null
-        else
-            self.element_names[element.depth - 1];
-        const parent = parent_element_name orelse
-            return error.InvalidAdmExtensionOwner;
-        const source_end = if (element.self_closing)
-            element.source_end
-        else blk: {
-            try skipXmlSubtree(&self.events, element);
-            break :blk self.events.offset;
-        };
-        const namespace_uri = if (element.namespace_name) |namespace_name|
-            try xml.decodeContent(
-                &self.namespace_uri_storage,
-                namespace_name.encoded,
-            )
-        else
-            null;
-        return .{
-            .qualified_name = element.name,
-            .namespace_uri = namespace_uri,
-            .attributes = element.attributes,
-            .source = self.document.xml_document.bytes[element.source_start..source_end],
-            .source_offset = element.source_start,
-            .depth = element.depth,
-            .parent_element_name = parent,
-            .declaration_owner = self.owners[element.depth],
-        };
-    }
-};
-
 pub const UntypedElement = struct {
     qualified_name: []const u8,
     namespace_uri: ?[]const u8,
@@ -3062,128 +2935,153 @@ pub const UntypedElement = struct {
     }
 };
 
-pub const UntypedElementIterator = struct {
-    document: Document,
-    events: xml.EventIterator,
-    afe_depth: ?usize = null,
-    element_names: [xml.max_depth]?[]const u8 = @splat(null),
-    owners: [xml.max_depth]?adm.Identifier = @splat(null),
-    owner_storage: [xml.max_depth][max_identifier_bytes]u8 = undefined,
-    namespace_uri_storage: [xml.max_namespace_uri_bytes]u8 = undefined,
+const MetadataElementRelation = enum {
+    foreign,
+    untyped,
+};
 
-    fn init(document: Document) UntypedElementIterator {
-        return .{
-            .document = document,
-            .events = document.xml_document.iterator(),
-        };
-    }
+fn MetadataElementIterator(comptime relation: MetadataElementRelation) type {
+    const Result = switch (relation) {
+        .foreign => Extension,
+        .untyped => UntypedElement,
+    };
+    return struct {
+        document: Document,
+        events: xml.EventIterator,
+        afe_depth: ?usize = null,
+        element_names: [xml.max_depth]?[]const u8 = @splat(null),
+        owners: [xml.max_depth]?adm.Identifier = @splat(null),
+        owner_storage: [xml.max_depth][max_identifier_bytes]u8 = undefined,
+        namespace_uri_storage: [xml.max_namespace_uri_bytes]u8 = undefined,
 
-    /// Returned namespace and owner identifier storage remain valid until
-    /// the next iterator call.
-    pub fn next(self: *UntypedElementIterator) !?UntypedElement {
-        while (try self.events.next()) |event| {
-            switch (event) {
-                .start => |element| {
-                    const inherited_owner = if (element.depth == 0)
-                        null
-                    else
-                        self.owners[element.depth - 1];
-                    self.owners[element.depth] = inherited_owner;
-                    self.element_names[element.depth] = null;
+        const Self = @This();
 
-                    const namespace_matches = try xml.namespaceNamesEql(
-                        self.document.namespace_name,
-                        element.namespace_name,
-                    );
-                    if (namespace_matches and
-                        std.mem.eql(
-                            u8,
-                            element.localName(),
-                            "audioFormatExtended",
-                        ))
-                    {
-                        self.afe_depth = if (element.self_closing)
+        fn init(document: Document) Self {
+            return .{
+                .document = document,
+                .events = document.xml_document.iterator(),
+            };
+        }
+
+        /// Returned namespace and owner identifier storage remain valid until
+        /// the next iterator call.
+        pub fn next(self: *Self) !?Result {
+            while (try self.events.next()) |event| {
+                switch (event) {
+                    .start => |element| {
+                        const inherited_owner = if (element.depth == 0)
                             null
                         else
-                            element.depth;
-                        self.element_names[element.depth] =
-                            element.localName();
-                        self.owners[element.depth] = null;
-                        continue;
-                    }
-                    if (!insideAfe(self.afe_depth, element.depth))
-                        continue;
-                    if (!namespace_matches) {
-                        if (!element.self_closing)
-                            try skipXmlSubtree(&self.events, element);
-                        continue;
-                    }
-                    if (!isTypedMetadataElementName(element.localName()))
-                        return try self.readElement(element);
+                            self.owners[element.depth - 1];
+                        self.owners[element.depth] = inherited_owner;
+                        self.element_names[element.depth] = null;
 
-                    self.element_names[element.depth] =
-                        element.localName();
-                    if (try extensionDeclarationOwner(
-                        element,
-                        &self.owner_storage[element.depth],
-                    )) |identifier| {
-                        self.owners[element.depth] = identifier;
-                    }
-                },
-                .end => |element| {
-                    if (self.afe_depth == element.depth and
-                        try xml.namespaceNamesEql(
+                        const namespace_matches = try xml.namespaceNamesEql(
                             self.document.namespace_name,
                             element.namespace_name,
-                        ) and
-                        std.mem.eql(
-                            u8,
-                            element.localName(),
-                            "audioFormatExtended",
-                        ))
-                    {
-                        self.afe_depth = null;
-                    }
-                },
-                else => {},
-            }
-        }
-        return null;
-    }
+                        );
+                        if (namespace_matches and
+                            std.mem.eql(
+                                u8,
+                                element.localName(),
+                                "audioFormatExtended",
+                            ))
+                        {
+                            self.afe_depth = if (element.self_closing)
+                                null
+                            else
+                                element.depth;
+                            self.element_names[element.depth] =
+                                element.localName();
+                            self.owners[element.depth] = null;
+                            continue;
+                        }
+                        if (!insideAfe(self.afe_depth, element.depth))
+                            continue;
 
-    fn readElement(
-        self: *UntypedElementIterator,
-        element: xml.StartElement,
-    ) !UntypedElement {
-        const parent_element_name = if (element.depth == 0)
-            null
-        else
-            self.element_names[element.depth - 1];
-        const parent = parent_element_name orelse
-            return error.InvalidAdmUntypedElementOwner;
-        const source_end = if (element.self_closing)
-            element.source_end
-        else
-            (try consumeXmlSubtree(&self.events, element)).source_end;
-        const namespace_uri = if (element.namespace_name) |namespace_name|
-            try xml.decodeContent(
-                &self.namespace_uri_storage,
-                namespace_name.encoded,
-            )
-        else
-            null;
-        return .{
-            .qualified_name = element.name,
-            .namespace_uri = namespace_uri,
-            .attributes = element.attributes,
-            .source = self.document.xml_document.bytes[element.source_start..source_end],
-            .source_offset = element.source_start,
-            .depth = element.depth,
-            .parent_element_name = parent,
-            .declaration_owner = self.owners[element.depth],
-        };
-    }
-};
+                        const typed = namespace_matches and
+                            isTypedMetadataElementName(element.localName());
+                        const target = switch (relation) {
+                            .foreign => !namespace_matches,
+                            .untyped => namespace_matches and !typed,
+                        };
+                        if (target) return try self.readElement(element);
+                        if (!typed) {
+                            if (!element.self_closing)
+                                try skipXmlSubtree(&self.events, element);
+                            continue;
+                        }
+
+                        self.element_names[element.depth] =
+                            element.localName();
+                        if (try extensionDeclarationOwner(
+                            element,
+                            &self.owner_storage[element.depth],
+                        )) |identifier| {
+                            self.owners[element.depth] = identifier;
+                        }
+                    },
+                    .end => |element| {
+                        if (self.afe_depth == element.depth and
+                            try xml.namespaceNamesEql(
+                                self.document.namespace_name,
+                                element.namespace_name,
+                            ) and
+                            std.mem.eql(
+                                u8,
+                                element.localName(),
+                                "audioFormatExtended",
+                            ))
+                        {
+                            self.afe_depth = null;
+                        }
+                    },
+                    else => {},
+                }
+            }
+            return null;
+        }
+
+        fn readElement(
+            self: *Self,
+            element: xml.StartElement,
+        ) !Result {
+            const parent_element_name = if (element.depth == 0)
+                null
+            else
+                self.element_names[element.depth - 1];
+            const parent = parent_element_name orelse switch (relation) {
+                .foreign => return error.InvalidAdmExtensionOwner,
+                .untyped => return error.InvalidAdmUntypedElementOwner,
+            };
+            const source_end = if (element.self_closing)
+                element.source_end
+            else
+                (try consumeXmlSubtree(&self.events, element)).source_end;
+            const namespace_uri =
+                if (element.namespace_name) |namespace_name|
+                    try xml.decodeContent(
+                        &self.namespace_uri_storage,
+                        namespace_name.encoded,
+                    )
+                else
+                    null;
+            return .{
+                .qualified_name = element.name,
+                .namespace_uri = namespace_uri,
+                .attributes = element.attributes,
+                .source = self.document.xml_document.bytes[element.source_start..source_end],
+                .source_offset = element.source_start,
+                .depth = element.depth,
+                .parent_element_name = parent,
+                .declaration_owner = self.owners[element.depth],
+            };
+        }
+    };
+}
+
+pub const ExtensionIterator = MetadataElementIterator(.foreign);
+pub const UntypedElementIterator = MetadataElementIterator(.untyped);
 
 pub const ExtensionAttribute = struct {
     qualified_name: []const u8,
