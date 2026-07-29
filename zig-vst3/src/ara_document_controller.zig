@@ -4652,6 +4652,18 @@ test "ARA controller publishes typed provider content readers" {
         null,
     );
     try std.testing.expect(reader != null);
+    const stored_reader = controller.content_readers[0].value orelse
+        return error.TestUnexpectedResult;
+    try std.testing.expectEqual(@as(usize, 2), stored_reader.event_count);
+    const reader_id = decodeRef(
+        TestController.ContentReaderId,
+        reader,
+    ) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(@as(u16, 0), reader_id.index);
+    try std.testing.expectEqual(@as(u32, 1), reader_id.generation);
+    const resolved_reader = controller.contentReader(reader) orelse
+        return error.TestUnexpectedResult;
+    try std.testing.expectEqual(@as(usize, 2), resolved_reader.event_count);
     try std.testing.expectEqual(
         @as(i32, 2),
         api.getContentReaderEventCount.?(

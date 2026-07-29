@@ -2101,23 +2101,38 @@ int runSnapshot(
 
 int smokeSnapshot(const Snapshot& snapshot) {
     const auto actual = render(snapshot);
-    if (!actual || !actual->getPlatformBitmap()) return 1;
+    if (!actual || !actual->getPlatformBitmap()) {
+        std::fprintf(stderr, "visual smoke render failed: %s\n", snapshot.name);
+        return 1;
+    }
     const auto actual_pixels = VSTGUI::owned(
         VSTGUI::CBitmapPixelAccess::create(actual, false)
     );
-    if (!actual_pixels) return 2;
+    if (!actual_pixels) {
+        std::fprintf(stderr, "visual smoke pixel access failed: %s\n", snapshot.name);
+        return 2;
+    }
     const auto width = actual_pixels->getBitmapWidth();
     const auto height = actual_pixels->getBitmapHeight();
-    if (width == 0 || height == 0) return 3;
+    if (width == 0 || height == 0) {
+        std::fprintf(stderr, "visual smoke dimensions are empty: %s\n", snapshot.name);
+        return 3;
+    }
 
     const auto decoded = normalizePng(actual);
-    if (!decoded) return 4;
+    if (!decoded) {
+        std::fprintf(stderr, "visual smoke PNG round trip failed: %s\n", snapshot.name);
+        return 4;
+    }
     const auto decoded_pixels = VSTGUI::owned(
         VSTGUI::CBitmapPixelAccess::create(decoded, false)
     );
     if (!decoded_pixels ||
         decoded_pixels->getBitmapWidth() != width ||
-        decoded_pixels->getBitmapHeight() != height) return 5;
+        decoded_pixels->getBitmapHeight() != height) {
+        std::fprintf(stderr, "visual smoke decoded bitmap mismatch: %s\n", snapshot.name);
+        return 5;
+    }
 
     VSTGUI::CColor first;
     decoded_pixels->getColor(first);
