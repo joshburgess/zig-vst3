@@ -4,7 +4,13 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     validateCrossMsvcPrerequisites(b, target);
-    const native_vstgui = target.result.os.tag == b.graph.host.result.os.tag and
+    const native_macos =
+        target.result.os.tag == .macos and
+        b.graph.host.result.os.tag == .macos and
+        target.result.cpu.arch == b.graph.host.result.cpu.arch;
+    const native_vstgui =
+        target.result.os.tag == b.graph.host.result.os.tag and
+        target.result.cpu.arch == b.graph.host.result.cpu.arch and
         (target.result.os.tag == .macos or target.result.os.tag == .linux or target.result.os.tag == .windows);
     const gui_options = b.addOptions();
     gui_options.addOption(bool, "vstgui_adapter_enabled", native_vstgui);
@@ -72,6 +78,18 @@ pub fn build(b: *std.Build) void {
     });
     addAlsaMidiBackend(b, zig_vst3_alsa_midi, target);
     zig_vst3_alsa_midi.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_alsa_ump = b.addModule("zig-vst3-alsaump", .{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/alsa_ump.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addAlsaUmpBackend(b, zig_vst3_alsa_ump, target);
+    zig_vst3_alsa_ump.addImport(
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
@@ -1230,6 +1248,108 @@ pub fn build(b: *std.Build) void {
             &alsa_midi_link_smoke.step,
         );
     }
+    const zig_vst3_alsa_ump_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/alsa_ump.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addAlsaUmpBackend(
+        b,
+        zig_vst3_alsa_ump_test_module,
+        target,
+    );
+    zig_vst3_alsa_ump_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_alsa_ump_tests = b.addTest(.{
+        .root_module = zig_vst3_alsa_ump_test_module,
+    });
+    const alsa_ump_test_step = b.step(
+        "test-alsaump",
+        "Run ALSA UMP tests and compile Linux backends",
+    );
+    alsa_ump_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_alsa_ump_tests).step,
+    );
+    const ump_scheduler_queue_test = b.addExecutable(.{
+        .name = "ump-scheduler-queue-test",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+        }),
+    });
+    ump_scheduler_queue_test.root_module.addIncludePath(
+        b.path("zig-vst3-plugin/src/plugin"),
+    );
+    ump_scheduler_queue_test.root_module.addCSourceFile(.{
+        .file = b.path("tests/abi/ump_scheduler_queue.c"),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    alsa_ump_test_step.dependOn(
+        &b.addRunArtifact(ump_scheduler_queue_test).step,
+    );
+    for (alsa_targets) |alsa_target| {
+        const alsa_ump_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = alsa_target,
+            .optimize = .ReleaseSafe,
+        });
+        const alsa_ump_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/alsa_ump.zig",
+            ),
+            .target = alsa_target,
+            .optimize = .ReleaseSafe,
+        });
+        addAlsaUmpBackend(
+            b,
+            alsa_ump_module,
+            alsa_target,
+        );
+        alsa_ump_module.addImport(
+            "zig-vst3-plugin-core",
+            alsa_ump_core,
+        );
+        const alsa_ump_tests = b.addTest(.{
+            .root_module = alsa_ump_module,
+        });
+        alsa_ump_test_step.dependOn(&alsa_ump_tests.step);
+        const alsa_ump_link_smoke = b.addExecutable(.{
+            .name = b.fmt(
+                "alsa-ump-link-smoke-{s}",
+                .{@tagName(alsa_target.result.cpu.arch)},
+            ),
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tests/alsa_ump_link_smoke.zig",
+                ),
+                .target = alsa_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        alsa_ump_link_smoke.root_module.addImport(
+            "zig-vst3-plugin-core",
+            alsa_ump_core,
+        );
+        alsa_ump_link_smoke.root_module.addImport(
+            "zig-vst3-alsaump",
+            alsa_ump_module,
+        );
+        alsa_ump_test_step.dependOn(
+            &alsa_ump_link_smoke.step,
+        );
+    }
     const zig_vst3_win_midi_test_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/win_midi.zig",
@@ -1996,7 +2116,8 @@ pub fn build(b: *std.Build) void {
         .name = "zig_vst3_mono_gain_auv2",
         .root_module = mono_gain_audio_unit_module,
     });
-    b.installArtifact(mono_gain_audio_unit);
+    if (target.result.os.tag != .macos or native_macos)
+        b.installArtifact(mono_gain_audio_unit);
     const auxiliary_output_audio_unit_module = b.createModule(.{
         .root_source_file = b.path(
             "examples/aux_output_splitter_audio_unit.zig",
@@ -2018,7 +2139,8 @@ pub fn build(b: *std.Build) void {
         .name = "zig_vst3_aux_output_splitter_auv2",
         .root_module = auxiliary_output_audio_unit_module,
     });
-    b.installArtifact(auxiliary_output_audio_unit);
+    if (target.result.os.tag != .macos or native_macos)
+        b.installArtifact(auxiliary_output_audio_unit);
     const audio_unit_host_smoke = b.addExecutable(.{
         .name = "audio-unit-v2-host-smoke",
         .root_module = b.createModule(.{
@@ -2835,6 +2957,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(wasapi_test_step);
     test_step.dependOn(alsa_test_step);
     test_step.dependOn(alsa_midi_test_step);
+    test_step.dependOn(alsa_ump_test_step);
     test_step.dependOn(win_midi_test_step);
     test_step.dependOn(win_window_test_step);
     test_step.dependOn(cocoa_window_test_step);
@@ -3328,6 +3451,29 @@ fn addAlsaMidiBackend(
     module.addCSourceFile(.{
         .file = b.path(
             "zig-vst3-plugin/src/plugin/alsa_midi_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    module.linkSystemLibrary("dl", .{});
+    module.linkSystemLibrary("pthread", .{});
+}
+
+fn addAlsaUmpBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .linux) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/alsa_ump_shim.c",
         ),
         .flags = &.{
             "-std=c11",

@@ -118,6 +118,19 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libgtkmm-3.0-dev \
+            libx11-dev \
+            libxcb-cursor-dev \
+            libxcb-keysyms1-dev \
+            libxcb-util-dev \
+            libxcb-xkb-dev \
+            libxkbcommon-x11-dev
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Run raw API ABI checks
@@ -182,6 +195,7 @@ jobs:
             libx11 \
             lv2 \
             lv2lint \
+            make \
             ninja \
             pkgconf \
             sord \
@@ -234,14 +248,32 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            xvfb libfreetype6 libfontconfig1 libx11-6 libxext6 \
-            libxinerama1 libxrandr2 libxcursor1 libgl1 libasound2t64 libcurl4
+            libasound2t64 \
+            libcurl4 \
+            libfontconfig1 \
+            libfreetype6 \
+            libgl1 \
+            libgtk-3-dev \
+            libgtkmm-3.0-dev \
+            libx11-dev \
+            libxcb-cursor-dev \
+            libxcb-keysyms1-dev \
+            libxcb-util-dev \
+            libxcb-xkb-dev \
+            libxcursor1 \
+            libxext6 \
+            libxinerama1 \
+            libxkbcommon-x11-dev \
+            libxrandr2 \
+            xvfb
           curl -fL -o pluginval.zip \
             "https://github.com/Tracktion/pluginval/releases/download/${PLUGINVAL_VERSION}/pluginval_Linux.zip"
           unzip -q pluginval.zip -d pluginval-dist
           chmod +x pluginval-dist/pluginval
           echo "PLUGINVAL=$PWD/pluginval-dist/pluginval" >> "$GITHUB_ENV"
           echo "PLUGINVAL_ARGS=--skip-gui-tests" >> "$GITHUB_ENV"
+      - name: Fetch pinned VST3 SDK
+        run: scripts/fetch_sdk.sh
       - name: Run pluginval
         run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}zig build pluginval-examples
       - name: Run pluginval (strictness 10)
@@ -272,6 +304,22 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+      - name: Install native Linux GUI dependencies
+        if: matrix.target == 'x86_64-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libgtkmm-3.0-dev \
+            libx11-dev \
+            libxcb-cursor-dev \
+            libxcb-keysyms1-dev \
+            libxcb-util-dev \
+            libxcb-xkb-dev \
+            libxkbcommon-x11-dev
+      - name: Fetch pinned VST3 SDK for native Linux GUI
+        if: matrix.target == 'x86_64-linux-gnu'
+        run: scripts/fetch_sdk.sh
       - name: Build target
         run: zig build -Dtarget=${{ matrix.target }}
       - name: Build target bundles

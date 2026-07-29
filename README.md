@@ -137,6 +137,12 @@ exe.root_module.addImport(
     dep.module("zig-vst3-alsamidi"),
 );
 
+// Add only to a Linux standalone target that uses UMP devices:
+exe.root_module.addImport(
+    "zig-vst3-alsaump",
+    dep.module("zig-vst3-alsaump"),
+);
+
 // Add only to a Linux standalone target with an X11 top-level window:
 exe.root_module.addImport(
     "zig-vst3-x11window",

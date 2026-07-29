@@ -64,6 +64,10 @@ pub fn build(b: *std.Build) void {
         dependency.module("zig-vst3-alsamidi"),
     );
     core_tests.root_module.addImport(
+        "zig-vst3-alsaump",
+        dependency.module("zig-vst3-alsaump"),
+    );
+    core_tests.root_module.addImport(
         "zig-vst3-winmidi",
         dependency.module("zig-vst3-winmidi"),
     );

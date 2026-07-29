@@ -6,6 +6,7 @@ const core_midi = @import("zig-vst3-coremidi");
 const wasapi = @import("zig-vst3-wasapi");
 const alsa = @import("zig-vst3-alsa");
 const alsa_midi = @import("zig-vst3-alsamidi");
+const alsa_ump = @import("zig-vst3-alsaump");
 const win_midi = @import("zig-vst3-winmidi");
 const win_window = @import("zig-vst3-winwindow");
 const cocoa_window = @import("zig-vst3-cocoawindow");
@@ -96,6 +97,8 @@ test "installed core package exposes format-neutral processor and editor contrac
     );
     try std.testing.expect(@hasDecl(core_midi, "Backend"));
     try std.testing.expect(@hasDecl(core_midi, "InputStatistics"));
+    try std.testing.expect(@hasDecl(alsa_ump, "Backend"));
+    try std.testing.expect(@hasDecl(alsa_ump, "InputStatistics"));
     try std.testing.expect(@hasDecl(wasapi, "Backend"));
     try std.testing.expect(@hasDecl(wasapi, "Statistics"));
     try std.testing.expect(
