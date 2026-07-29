@@ -3601,6 +3601,22 @@ test "installed package exposes file-backed audio writers" {
         try plugin.dsp.AdmCartesianPointSourcePanner(f32).init(
             &polar_layout,
         );
+    const object_context = plugin.dsp.AdmObjectRenderingContext{};
+    const object_plan = try plugin.dsp.AdmObjectPointGainPlan(f32).init(
+        &installed_block,
+        &polar_layout,
+        &polar_panner,
+        &polar_cartesian_panner,
+        object_context,
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0.5),
+        object_plan.directGainSlice()[2],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0.0),
+        object_plan.diffuseGainSlice()[2],
+    );
     const polar_router =
         try plugin.dsp.AdmDirectSpeakerPositionRouter(f32).init(
             &direct_block,

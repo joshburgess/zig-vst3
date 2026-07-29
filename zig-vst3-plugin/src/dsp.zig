@@ -110,6 +110,10 @@ pub const AdmCartesianPointSourcePanner =
 pub const AdmDirectSpeakerRoute = adm_render.DirectSpeakerRoute;
 pub const AdmDirectSpeakerRoutingContext =
     adm_render.DirectSpeakerRoutingContext;
+pub const AdmObjectRenderingContext =
+    adm_render.ObjectRenderingContext;
+pub const AdmObjectPointGainPlan =
+    adm_render.ObjectPointGainPlan;
 pub const AdmOutputSpeaker = adm_render.OutputSpeaker;
 pub const AdmPolarPosition = adm_render.PolarPosition;
 pub const AdmCartesianPosition = adm_render.CartesianPosition;

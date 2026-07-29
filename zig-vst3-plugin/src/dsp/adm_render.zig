@@ -40,6 +40,11 @@ pub const DirectSpeakerRoutingContext = struct {
     cartesian_screen_locked_nominal: ?CartesianPosition = null,
 };
 
+pub const ObjectRenderingContext = struct {
+    reference_screen_edges: ?ScreenEdges = null,
+    reproduction_screen_edges: ?ScreenEdges = null,
+};
+
 pub const DirectSpeakerRoute = union(enum) {
     output: u8,
     discard,
@@ -405,6 +410,218 @@ pub fn CartesianPointSourcePanner(comptime Sample: type) type {
                 .y => position.y,
                 .z => position.z,
             };
+        }
+    };
+}
+
+/// Precomputes direct and diffuse gains for one static point Objects block.
+/// Nonzero extent metadata is rejected until an extent panner is supplied.
+pub fn ObjectPointGainPlan(comptime Sample: type) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError(
+            "ObjectPointGainPlan supports f32 and f64 samples",
+        );
+
+    return struct {
+        const Self = @This();
+
+        output_count: usize,
+        direct_gains: [maximum_output_channels]Sample = undefined,
+        diffuse_gains: [maximum_output_channels]Sample = undefined,
+
+        pub fn init(
+            block: *const adm_xml.BlockFormat,
+            outputs: []const OutputSpeaker,
+            polar_panner: ?*const PolarPointSourcePanner(Sample),
+            cartesian_panner: ?*const CartesianPointSourcePanner(Sample),
+            context: ObjectRenderingContext,
+        ) !Self {
+            if (block.identifier.typeLabel() != 0x0003 or
+                block.channel_identifier.typeLabel() != 0x0003)
+            {
+                return error.AdmRendererRequiresObjectsBlock;
+            }
+            if (block.width != 0.0 or
+                block.height != 0.0 or
+                block.depth != 0.0)
+            {
+                return error.UnsupportedAdmObjectExtent;
+            }
+            if (!std.math.isFinite(block.diffuse) or
+                block.diffuse < 0.0 or
+                block.diffuse > 1.0)
+            {
+                return error.InvalidAdmRendererDiffuse;
+            }
+            try validateOutputLayout(outputs);
+            if (block.cartesian) {
+                const panner = cartesian_panner orelse
+                    return error.AdmRendererCartesianPointPannerRequired;
+                if (panner.output_count != outputs.len)
+                    return error.AdmRendererOutputCountMismatch;
+                if (!panner.valid())
+                    return error.InvalidAdmRendererState;
+            } else {
+                const panner = polar_panner orelse
+                    return error.AdmRendererPolarPointPannerRequired;
+                if (panner.output_count != outputs.len)
+                    return error.AdmRendererOutputCountMismatch;
+                if (!panner.valid())
+                    return error.InvalidAdmRendererState;
+            }
+            try validateObjectRenderingContext(context);
+
+            var position = try objectPosition(block);
+            position = try applyObjectScreenTransforms(
+                block,
+                outputs,
+                context,
+                position,
+            );
+            position = try applyObjectChannelLock(
+                block,
+                outputs,
+                position,
+            );
+
+            const diverged = try objectDivergence(block, position);
+            var combined: [maximum_output_channels]f64 = @splat(0.0);
+            var branch_gains: [maximum_output_channels]Sample = undefined;
+            for (
+                diverged.positions[0..diverged.count],
+                diverged.power_weights[0..diverged.count],
+            ) |branch_position, power_weight| {
+                if (power_weight == 0.0) continue;
+                if (block.cartesian) {
+                    const panner = cartesian_panner orelse
+                        return error.AdmRendererCartesianPointPannerRequired;
+                    try panner.calculateGains(
+                        branch_position,
+                        branch_gains[0..outputs.len],
+                    );
+                } else {
+                    const panner = polar_panner orelse
+                        return error.AdmRendererPolarPointPannerRequired;
+                    try panner.calculateGains(
+                        try cartesianToPolar(branch_position),
+                        branch_gains[0..outputs.len],
+                    );
+                }
+                for (
+                    combined[0..outputs.len],
+                    branch_gains[0..outputs.len],
+                ) |*output_power, branch_gain| {
+                    const gain: f64 = @floatCast(branch_gain);
+                    output_power.* += power_weight * gain * gain;
+                }
+            }
+
+            const block_gain: f64 = @floatCast(
+                try renderGain(Sample, block.gain),
+            );
+            if (block_gain < 0.0)
+                return error.InvalidAdmRendererGain;
+            const direct_scale =
+                block_gain * @sqrt(1.0 - block.diffuse);
+            const diffuse_scale =
+                block_gain * @sqrt(block.diffuse);
+            if (!std.math.isFinite(direct_scale) or
+                !std.math.isFinite(diffuse_scale))
+            {
+                return error.InvalidAdmRendererGain;
+            }
+
+            var result = Self{ .output_count = outputs.len };
+            for (
+                combined[0..outputs.len],
+                result.direct_gains[0..outputs.len],
+                result.diffuse_gains[0..outputs.len],
+            ) |output_power, *direct_gain, *diffuse_gain| {
+                if (!std.math.isFinite(output_power) or output_power < 0.0)
+                    return error.InvalidAdmRendererPannerGain;
+                const spatial_gain = @sqrt(output_power);
+                direct_gain.* = @floatCast(spatial_gain * direct_scale);
+                diffuse_gain.* = @floatCast(spatial_gain * diffuse_scale);
+                if (!std.math.isFinite(direct_gain.*) or
+                    !std.math.isFinite(diffuse_gain.*))
+                {
+                    return error.InvalidAdmRendererGain;
+                }
+            }
+            return result;
+        }
+
+        pub fn directGainSlice(self: *const Self) []const Sample {
+            return self.direct_gains[0..@min(self.output_count, maximum_output_channels)];
+        }
+
+        pub fn diffuseGainSlice(self: *const Self) []const Sample {
+            return self.diffuse_gains[0..@min(self.output_count, maximum_output_channels)];
+        }
+
+        pub fn mix(
+            self: *const Self,
+            input: []const Sample,
+            direct_outputs: []const []Sample,
+            diffuse_outputs: []const []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            try validateMixBuffers(
+                Sample,
+                input,
+                direct_outputs,
+                self.output_count,
+            );
+            try validateMixBuffers(
+                Sample,
+                input,
+                diffuse_outputs,
+                self.output_count,
+            );
+            for (direct_outputs) |direct_output| {
+                for (diffuse_outputs) |diffuse_output| {
+                    if (slicesOverlap(
+                        Sample,
+                        direct_output,
+                        diffuse_output,
+                    )) {
+                        return error.AdmRendererAliasedBuffers;
+                    }
+                }
+            }
+            mixGainVector(
+                Sample,
+                input,
+                direct_outputs,
+                self.directGainSlice(),
+            );
+            mixGainVector(
+                Sample,
+                input,
+                diffuse_outputs,
+                self.diffuseGainSlice(),
+            );
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.output_count == 0 or
+                self.output_count > maximum_output_channels)
+            {
+                return false;
+            }
+            for (
+                self.directGainSlice(),
+                self.diffuseGainSlice(),
+            ) |direct_gain, diffuse_gain| {
+                if (!std.math.isFinite(direct_gain) or
+                    !std.math.isFinite(diffuse_gain) or
+                    direct_gain < 0.0 or
+                    diffuse_gain < 0.0)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
     };
 }
@@ -978,6 +1195,439 @@ const CartesianBounds = struct {
     y: CoordinateBounds,
     z: CoordinateBounds,
 };
+
+const default_object_reference_screen = ScreenEdges{
+    .left_azimuth_degrees = 29.0,
+    .right_azimuth_degrees = -29.0,
+    .bottom_elevation_degrees = -17.3,
+    .top_elevation_degrees = 17.3,
+};
+
+const DivergedObjectPositions = struct {
+    count: usize,
+    power_weights: [3]f64,
+    positions: [3]CartesianPosition,
+};
+
+fn objectPosition(
+    block: *const adm_xml.BlockFormat,
+) !CartesianPosition {
+    for (block.positionSlice()) |position| {
+        if (position.bound != .exact)
+            return error.InvalidAdmRendererObjectPosition;
+        const coordinate_matches = if (block.cartesian)
+            position.coordinate == .x or
+                position.coordinate == .y or
+                position.coordinate == .z
+        else
+            position.coordinate == .azimuth or
+                position.coordinate == .elevation or
+                position.coordinate == .distance;
+        if (!coordinate_matches)
+            return error.InvalidAdmRendererObjectPosition;
+    }
+
+    if (block.cartesian) {
+        const position = CartesianPosition{
+            .x = try exactObjectCoordinate(block, .x, null),
+            .y = try exactObjectCoordinate(block, .y, null),
+            .z = try exactObjectCoordinate(block, .z, 0.0),
+        };
+        if (!validCartesian(position))
+            return error.InvalidAdmRendererObjectPosition;
+        return clipCartesian(position);
+    }
+
+    const polar = PolarPosition{
+        .azimuth_degrees = try exactObjectCoordinate(block, .azimuth, null),
+        .elevation_degrees = try exactObjectCoordinate(block, .elevation, null),
+        .distance = try exactObjectCoordinate(block, .distance, 1.0),
+    };
+    if (!validPolar(polar))
+        return error.InvalidAdmRendererObjectPosition;
+    return polarToCartesian(polar);
+}
+
+fn exactObjectCoordinate(
+    block: *const adm_xml.BlockFormat,
+    coordinate: adm_xml.Coordinate,
+    default_value: ?f64,
+) !f64 {
+    var found: ?f64 = null;
+    for (block.positionSlice()) |position| {
+        if (position.coordinate != coordinate) continue;
+        if (found != null)
+            return error.InvalidAdmRendererObjectPosition;
+        found = position.value;
+    }
+    const value = found orelse default_value orelse
+        return error.MissingAdmRendererObjectPosition;
+    if (!std.math.isFinite(value))
+        return error.InvalidAdmRendererObjectPosition;
+    return value;
+}
+
+fn validateObjectRenderingContext(
+    context: ObjectRenderingContext,
+) !void {
+    if (context.reference_screen_edges) |edges|
+        try validateObjectScreenEdges(edges);
+    if (context.reproduction_screen_edges) |edges|
+        try validateObjectScreenEdges(edges);
+}
+
+fn validateObjectScreenEdges(edges: ScreenEdges) !void {
+    try validateScreenEdges(edges);
+    if (edges.right_azimuth_degrees <= -180.0 or
+        edges.left_azimuth_degrees >= 180.0 or
+        edges.bottom_elevation_degrees <= -90.0 or
+        edges.top_elevation_degrees >= 90.0 or
+        edges.right_azimuth_degrees >= edges.left_azimuth_degrees or
+        edges.bottom_elevation_degrees >= edges.top_elevation_degrees)
+    {
+        return error.InvalidAdmRendererScreenGeometry;
+    }
+}
+
+fn applyObjectScreenTransforms(
+    block: *const adm_xml.BlockFormat,
+    outputs: []const OutputSpeaker,
+    context: ObjectRenderingContext,
+    initial_position: CartesianPosition,
+) !CartesianPosition {
+    const reproduction =
+        context.reproduction_screen_edges orelse return initial_position;
+    var position = initial_position;
+    if (block.screen_ref) {
+        const reference =
+            context.reference_screen_edges orelse
+            default_object_reference_screen;
+        position = try scaleObjectPosition(
+            position,
+            block.cartesian,
+            outputs,
+            reference,
+            reproduction,
+        );
+    }
+    if (hasScreenEdgeLock(block)) {
+        position = try lockObjectPositionToScreen(
+            block,
+            outputs,
+            reproduction,
+            position,
+        );
+    }
+    return position;
+}
+
+fn scaleObjectPosition(
+    position: CartesianPosition,
+    cartesian: bool,
+    outputs: []const OutputSpeaker,
+    reference: ScreenEdges,
+    reproduction: ScreenEdges,
+) !CartesianPosition {
+    var polar = if (cartesian)
+        try admCartesianToPolar(position)
+    else
+        try cartesianToPolar(position);
+    polar.azimuth_degrees = piecewiseLinear(
+        polar.azimuth_degrees,
+        &.{
+            -180.0,
+            reference.right_azimuth_degrees,
+            reference.left_azimuth_degrees,
+            180.0,
+        },
+        &.{
+            -180.0,
+            reproduction.right_azimuth_degrees,
+            reproduction.left_azimuth_degrees,
+            180.0,
+        },
+    );
+    polar.elevation_degrees = piecewiseLinear(
+        polar.elevation_degrees,
+        &.{
+            -90.0,
+            reference.bottom_elevation_degrees,
+            reference.top_elevation_degrees,
+            90.0,
+        },
+        &.{
+            -90.0,
+            reproduction.bottom_elevation_degrees,
+            reproduction.top_elevation_degrees,
+            90.0,
+        },
+    );
+    if (cartesian) compensateCartesianScreenPosition(outputs, &polar);
+    return if (cartesian)
+        admPolarToCartesian(polar)
+    else
+        polarToCartesian(polar);
+}
+
+fn lockObjectPositionToScreen(
+    block: *const adm_xml.BlockFormat,
+    outputs: []const OutputSpeaker,
+    reproduction: ScreenEdges,
+    position: CartesianPosition,
+) !CartesianPosition {
+    var polar = if (block.cartesian)
+        try admCartesianToPolar(position)
+    else
+        try cartesianToPolar(position);
+    applyPolarScreenEdgeLock(block, reproduction, &polar);
+    if (block.cartesian)
+        compensateCartesianScreenPosition(outputs, &polar);
+    return if (block.cartesian)
+        admPolarToCartesian(polar)
+    else
+        polarToCartesian(polar);
+}
+
+fn applyObjectChannelLock(
+    block: *const adm_xml.BlockFormat,
+    outputs: []const OutputSpeaker,
+    position: CartesianPosition,
+) !CartesianPosition {
+    if (!block.channel_lock.enabled) {
+        if (block.channel_lock.max_distance != null)
+            return error.InvalidAdmRendererChannelLock;
+        return position;
+    }
+    if (block.channel_lock.max_distance) |maximum_distance| {
+        if (!std.math.isFinite(maximum_distance) or
+            maximum_distance < 0.0 or
+            maximum_distance > 2.0 * @sqrt(3.0))
+        {
+            return error.InvalidAdmRendererChannelLock;
+        }
+    }
+
+    var best_index: ?usize = null;
+    var best_distance = std.math.inf(f64);
+    for (outputs, 0..) |output, output_index| {
+        if (output.is_lfe) continue;
+        const candidate = objectSpeakerPosition(output, block.cartesian);
+        const ordinary_distance = cartesianDistance(position, candidate);
+        if (block.channel_lock.max_distance) |maximum_distance| {
+            if (ordinary_distance >
+                maximum_distance + position_tolerance)
+            {
+                continue;
+            }
+        }
+        const selection_distance = if (block.cartesian)
+            weightedCartesianDistance(position, candidate)
+        else
+            ordinary_distance;
+        if (!std.math.isFinite(selection_distance))
+            return error.InvalidAdmRendererSpeakerPosition;
+        const current_best = best_index orelse {
+            best_index = output_index;
+            best_distance = selection_distance;
+            continue;
+        };
+        if (selection_distance < best_distance - position_tolerance or
+            (@abs(selection_distance - best_distance) <=
+                position_tolerance and
+                higherObjectSpeakerPriority(output, outputs[current_best])))
+        {
+            best_index = output_index;
+            best_distance = selection_distance;
+        }
+    }
+    const index = best_index orelse return position;
+    return objectSpeakerPosition(outputs[index], block.cartesian);
+}
+
+fn objectSpeakerPosition(
+    output: OutputSpeaker,
+    cartesian: bool,
+) CartesianPosition {
+    if (cartesian) return output.allocentric;
+    var polar = output.reproduction_polar orelse output.nominal_polar;
+    polar.distance = 1.0;
+    return polarToCartesian(polar);
+}
+
+fn weightedCartesianDistance(
+    left: CartesianPosition,
+    right: CartesianPosition,
+) f64 {
+    const x = left.x - right.x;
+    const y = left.y - right.y;
+    const z = left.z - right.z;
+    return @sqrt(
+        x * x / 16.0 +
+            4.0 * y * y +
+            32.0 * z * z,
+    );
+}
+
+fn higherObjectSpeakerPriority(
+    candidate: OutputSpeaker,
+    current: OutputSpeaker,
+) bool {
+    const candidate_position =
+        candidate.reproduction_polar orelse candidate.nominal_polar;
+    const current_position =
+        current.reproduction_polar orelse current.nominal_polar;
+    const candidate_values = [_]f64{
+        @abs(candidate_position.elevation_degrees),
+        candidate_position.elevation_degrees,
+        @abs(candidate_position.azimuth_degrees),
+        candidate_position.azimuth_degrees,
+    };
+    const current_values = [_]f64{
+        @abs(current_position.elevation_degrees),
+        current_position.elevation_degrees,
+        @abs(current_position.azimuth_degrees),
+        current_position.azimuth_degrees,
+    };
+    for (candidate_values, current_values) |candidate_value, current_value| {
+        if (candidate_value < current_value - position_tolerance)
+            return true;
+        if (candidate_value > current_value + position_tolerance)
+            return false;
+    }
+    return false;
+}
+
+fn objectDivergence(
+    block: *const adm_xml.BlockFormat,
+    position: CartesianPosition,
+) !DivergedObjectPositions {
+    const value = block.object_divergence.value;
+    if (!std.math.isFinite(value) or value < 0.0 or value > 1.0)
+        return error.InvalidAdmRendererObjectDivergence;
+    const side_weight = value / (value + 1.0);
+    const center_weight = (1.0 - value) / (value + 1.0);
+
+    if (block.cartesian) {
+        if (block.object_divergence.azimuth_range != null)
+            return error.InvalidAdmRendererObjectDivergence;
+        const range = block.object_divergence.position_range orelse 0.0;
+        if (!std.math.isFinite(range) or range < 0.0 or range > 1.0)
+            return error.InvalidAdmRendererObjectDivergence;
+        return .{
+            .count = 3,
+            .power_weights = .{
+                side_weight,
+                side_weight,
+                center_weight,
+            },
+            .positions = .{
+                clipCartesian(.{
+                    .x = position.x - range,
+                    .y = position.y,
+                    .z = position.z,
+                }),
+                clipCartesian(.{
+                    .x = position.x + range,
+                    .y = position.y,
+                    .z = position.z,
+                }),
+                clipCartesian(position),
+            },
+        };
+    }
+
+    if (block.object_divergence.position_range != null)
+        return error.InvalidAdmRendererObjectDivergence;
+    const range = block.object_divergence.azimuth_range orelse 0.0;
+    if (!std.math.isFinite(range) or range < 0.0 or range > 180.0)
+        return error.InvalidAdmRendererObjectDivergence;
+    const polar = try cartesianToPolar(position);
+    const local_left = polarToCartesian(.{
+        .azimuth_degrees = range,
+        .elevation_degrees = 0.0,
+        .distance = polar.distance,
+    });
+    const local_right = polarToCartesian(.{
+        .azimuth_degrees = -range,
+        .elevation_degrees = 0.0,
+        .distance = polar.distance,
+    });
+    return .{
+        .count = 3,
+        .power_weights = .{
+            side_weight,
+            side_weight,
+            center_weight,
+        },
+        .positions = .{
+            rotateLocalObjectPosition(polar, local_left),
+            rotateLocalObjectPosition(polar, local_right),
+            position,
+        },
+    };
+}
+
+fn rotateLocalObjectPosition(
+    centre: PolarPosition,
+    local: CartesianPosition,
+) CartesianPosition {
+    const basis_x = polarToCartesian(.{
+        .azimuth_degrees = centre.azimuth_degrees - 90.0,
+        .elevation_degrees = 0.0,
+    });
+    const basis_y = polarToCartesian(.{
+        .azimuth_degrees = centre.azimuth_degrees,
+        .elevation_degrees = centre.elevation_degrees,
+    });
+    const basis_z = polarToCartesian(.{
+        .azimuth_degrees = centre.azimuth_degrees,
+        .elevation_degrees = centre.elevation_degrees + 90.0,
+    });
+    return .{
+        .x = basis_x.x * local.x +
+            basis_y.x * local.y +
+            basis_z.x * local.z,
+        .y = basis_x.y * local.x +
+            basis_y.y * local.y +
+            basis_z.y * local.z,
+        .z = basis_x.z * local.x +
+            basis_y.z * local.y +
+            basis_z.z * local.z,
+    };
+}
+
+fn cartesianToPolar(
+    position: CartesianPosition,
+) !PolarPosition {
+    if (!validCartesian(position))
+        return error.InvalidAdmRendererPolarPosition;
+    const planar_distance =
+        @sqrt(position.x * position.x + position.y * position.y);
+    const distance =
+        @sqrt(planar_distance * planar_distance + position.z * position.z);
+    const result = PolarPosition{
+        .azimuth_degrees = if (planar_distance == 0.0)
+            0.0
+        else
+            -radiansToDegrees(std.math.atan2(position.x, position.y)),
+        .elevation_degrees = if (distance == 0.0)
+            0.0
+        else
+            radiansToDegrees(std.math.atan2(position.z, planar_distance)),
+        .distance = distance,
+    };
+    if (!validPolar(result))
+        return error.InvalidAdmRendererPolarPosition;
+    return result;
+}
+
+fn clipCartesian(position: CartesianPosition) CartesianPosition {
+    return .{
+        .x = std.math.clamp(position.x, -1.0, 1.0),
+        .y = std.math.clamp(position.y, -1.0, 1.0),
+        .z = std.math.clamp(position.z, -1.0, 1.0),
+    };
+}
 
 fn validateOutputLayout(outputs: []const OutputSpeaker) !void {
     if (outputs.len == 0 or outputs.len > maximum_output_channels)
@@ -1730,6 +2380,29 @@ fn validateMixBuffers(
     }
 }
 
+fn mixGainVector(
+    comptime Sample: type,
+    input: []const Sample,
+    outputs: []const []Sample,
+    gains: []const Sample,
+) void {
+    for (outputs, gains) |output, gain| {
+        if (gain == 0.0) continue;
+        for (input, output) |input_sample, *output_sample| {
+            if (!std.math.isFinite(input_sample)) continue;
+            if (!std.math.isFinite(output_sample.*)) {
+                output_sample.* = 0.0;
+                continue;
+            }
+            const mixed = output_sample.* + input_sample * gain;
+            output_sample.* = if (std.math.isFinite(mixed))
+                mixed
+            else
+                0.0;
+        }
+    }
+}
+
 fn slicesOverlap(
     comptime Sample: type,
     input: []const Sample,
@@ -1759,6 +2432,499 @@ fn slicesOverlap(
         output_bytes,
     ) catch return true;
     return input_start < output_end and output_start < input_end;
+}
+
+test "ADM point Objects plan applies block gain and diffuse split" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <gain>0.5</gain>
+        \\      <diffuse>0.25</diffuse>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = testPolarFiveLayout();
+    const polar_panner = try PolarPointSourcePanner(f64).init(&outputs);
+    const plan = try ObjectPointGainPlan(f64).init(
+        &block,
+        &outputs,
+        &polar_panner,
+        null,
+        .{},
+    );
+    try std.testing.expect(plan.valid());
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.5 * @sqrt(0.75)),
+        plan.directGainSlice()[2],
+        0.000_000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.25),
+        plan.diffuseGainSlice()[2],
+        0.000_000_001,
+    );
+    for (0..outputs.len) |index| {
+        if (index == 2) continue;
+        try std.testing.expectEqual(
+            @as(f64, 0.0),
+            plan.directGainSlice()[index],
+        );
+        try std.testing.expectEqual(
+            @as(f64, 0.0),
+            plan.diffuseGainSlice()[index],
+        );
+    }
+
+    const input = [_]f64{ 2.0, std.math.nan(f64), -2.0 };
+    var direct_storage: [outputs.len][input.len]f64 =
+        @splat(@splat(0.0));
+    var diffuse_storage: [outputs.len][input.len]f64 =
+        @splat(@splat(0.0));
+    var direct_outputs: [outputs.len][]f64 = undefined;
+    var diffuse_outputs: [outputs.len][]f64 = undefined;
+    for (
+        &direct_storage,
+        &direct_outputs,
+        &diffuse_storage,
+        &diffuse_outputs,
+    ) |*direct, *direct_output, *diffuse, *diffuse_output| {
+        direct_output.* = direct;
+        diffuse_output.* = diffuse;
+    }
+    try plan.mix(&input, &direct_outputs, &diffuse_outputs);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, @sqrt(0.75)),
+        direct_storage[2][0],
+        0.000_000_001,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        direct_storage[2][1],
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, -@sqrt(0.75)),
+        direct_storage[2][2],
+        0.000_000_001,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f64{ 0.5, 0.0, -0.5 },
+        diffuse_storage[2],
+    );
+}
+
+test "ADM point Objects plan combines polar and Cartesian divergence power" {
+    const polar_document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <objectDivergence azimuthRange="30">0.5</objectDivergence>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var polar_blocks = polar_document.blocks();
+    const polar_block = (try polar_blocks.next()).?;
+    const polar_outputs = testPolarFiveLayout();
+    const polar_panner =
+        try PolarPointSourcePanner(f32).init(&polar_outputs);
+    const polar_plan = try ObjectPointGainPlan(f32).init(
+        &polar_block,
+        &polar_outputs,
+        &polar_panner,
+        null,
+        .{},
+    );
+    const equal_gain: f32 = @floatCast(@sqrt(1.0 / 3.0));
+    try std.testing.expectApproxEqAbs(
+        equal_gain,
+        polar_plan.directGainSlice()[0],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        equal_gain,
+        polar_plan.directGainSlice()[1],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        equal_gain,
+        polar_plan.directGainSlice()[2],
+        0.000_001,
+    );
+
+    const cartesian_document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031002">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031002_00000001">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X">0</position>
+        \\      <position coordinate="Y">0</position>
+        \\      <position coordinate="Z">0</position>
+        \\      <objectDivergence positionRange="1">1</objectDivergence>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var cartesian_blocks = cartesian_document.blocks();
+    const cartesian_block = (try cartesian_blocks.next()).?;
+    const cartesian_outputs = testCartesianCubeLayout();
+    const cube_cartesian_panner =
+        try CartesianPointSourcePanner(f64).init(&cartesian_outputs);
+    const cartesian_plan = try ObjectPointGainPlan(f64).init(
+        &cartesian_block,
+        &cartesian_outputs,
+        null,
+        &cube_cartesian_panner,
+        .{},
+    );
+    var power: f64 = 0.0;
+    for (cartesian_plan.directGainSlice()) |gain|
+        power += gain * gain;
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        power,
+        0.000_000_001,
+    );
+    for (0..4) |index| {
+        try std.testing.expectApproxEqAbs(
+            cartesian_plan.directGainSlice()[index],
+            cartesian_plan.directGainSlice()[index + 4],
+            0.000_000_001,
+        );
+    }
+}
+
+test "ADM point Objects transforms screens and locks channels" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">29</position>
+        \\      <position coordinate="elevation">17.3</position>
+        \\      <screenRef>1</screenRef>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    var block = (try blocks.next()).?;
+    const outputs = testPolarFiveLayout();
+    const reproduction = ScreenEdges{
+        .left_azimuth_degrees = 45.0,
+        .right_azimuth_degrees = -45.0,
+        .bottom_elevation_degrees = -25.0,
+        .top_elevation_degrees = 25.0,
+    };
+    const scaled = try applyObjectScreenTransforms(
+        &block,
+        &outputs,
+        .{ .reproduction_screen_edges = reproduction },
+        try objectPosition(&block),
+    );
+    try expectPolarApprox(
+        .{
+            .azimuth_degrees = 45.0,
+            .elevation_degrees = 25.0,
+        },
+        try cartesianToPolar(scaled),
+    );
+
+    const cartesian_input = try admPolarToCartesian(.{
+        .azimuth_degrees = 29.0,
+        .elevation_degrees = 17.3,
+    });
+    block.cartesian = true;
+    block.positions[0] = .{
+        .coordinate = .x,
+        .bound = .exact,
+        .value = cartesian_input.x,
+    };
+    block.positions[1] = .{
+        .coordinate = .y,
+        .bound = .exact,
+        .value = cartesian_input.y,
+    };
+    block.positions[2] = .{
+        .coordinate = .z,
+        .bound = .exact,
+        .value = cartesian_input.z,
+    };
+    block.position_count = 3;
+    const scaled_cartesian = try applyObjectScreenTransforms(
+        &block,
+        &outputs,
+        .{ .reproduction_screen_edges = reproduction },
+        try objectPosition(&block),
+    );
+    try expectPolarApprox(
+        .{
+            .azimuth_degrees = 45.0,
+            .elevation_degrees = 25.0,
+        },
+        try admCartesianToPolar(scaled_cartesian),
+    );
+
+    block.cartesian = false;
+    block.positions[0] = .{
+        .coordinate = .azimuth,
+        .bound = .exact,
+        .value = 29.0,
+        .screen_edge_lock = .right,
+    };
+    block.positions[1] = .{
+        .coordinate = .elevation,
+        .bound = .exact,
+        .value = 17.3,
+        .screen_edge_lock = .bottom,
+    };
+    block.position_count = 2;
+    block.positions[0].screen_edge_lock = .right;
+    block.positions[1].screen_edge_lock = .bottom;
+    block.screen_ref = false;
+    const locked = try applyObjectScreenTransforms(
+        &block,
+        &outputs,
+        .{ .reproduction_screen_edges = reproduction },
+        try objectPosition(&block),
+    );
+    try expectPolarApprox(
+        .{
+            .azimuth_degrees = -45.0,
+            .elevation_degrees = -25.0,
+        },
+        try cartesianToPolar(locked),
+    );
+
+    const stereo_outputs = [_]OutputSpeaker{
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30.0,
+                .elevation_degrees = 0.0,
+            },
+            .allocentric = .{ .x = -1.0, .y = 1.0 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30.0,
+                .elevation_degrees = 0.0,
+            },
+            .allocentric = .{ .x = 1.0, .y = 1.0 },
+        },
+    };
+    block.positions[0].value = 0.0;
+    block.positions[0].screen_edge_lock = null;
+    block.positions[1].value = 0.0;
+    block.positions[1].screen_edge_lock = null;
+    block.channel_lock = .{ .enabled = true };
+    const channel_locked = try applyObjectChannelLock(
+        &block,
+        &stereo_outputs,
+        try objectPosition(&block),
+    );
+    try expectCartesianApprox(
+        polarToCartesian(.{
+            .azimuth_degrees = -30.0,
+            .elevation_degrees = 0.0,
+        }),
+        channel_locked,
+    );
+    block.channel_lock.max_distance = 0.1;
+    const outside_lock_range = try applyObjectChannelLock(
+        &block,
+        &stereo_outputs,
+        try objectPosition(&block),
+    );
+    try expectCartesianApprox(
+        .{ .x = 0.0, .y = 1.0, .z = 0.0 },
+        outside_lock_range,
+    );
+
+    const allocentric_outputs = [_]OutputSpeaker{
+        .{
+            .label = "M+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30.0,
+                .elevation_degrees = 0.0,
+            },
+            .allocentric = .{ .x = -1.0, .y = 0.9 },
+        },
+        .{
+            .label = "M-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30.0,
+                .elevation_degrees = 0.0,
+            },
+            .allocentric = .{ .x = 0.0, .y = 0.0 },
+        },
+    };
+    block.cartesian = true;
+    block.channel_lock.max_distance = null;
+    const weighted_lock = try applyObjectChannelLock(
+        &block,
+        &allocentric_outputs,
+        .{ .x = -1.0, .y = 0.0, .z = 0.0 },
+    );
+    try expectCartesianApprox(
+        allocentric_outputs[1].allocentric,
+        weighted_lock,
+    );
+}
+
+test "ADM point Objects plan rejects unsupported and aliased work" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    var block = (try blocks.next()).?;
+    const outputs = testPolarFiveWithLfeLayout();
+    const polar_panner = try PolarPointSourcePanner(f32).init(&outputs);
+
+    block.width = 1.0;
+    try std.testing.expectError(
+        error.UnsupportedAdmObjectExtent,
+        ObjectPointGainPlan(f32).init(
+            &block,
+            &outputs,
+            &polar_panner,
+            null,
+            .{},
+        ),
+    );
+    block.width = 0.0;
+    try std.testing.expectError(
+        error.InvalidAdmRendererScreenGeometry,
+        ObjectPointGainPlan(f32).init(
+            &block,
+            &outputs,
+            &polar_panner,
+            null,
+            .{
+                .reproduction_screen_edges = .{
+                    .left_azimuth_degrees = -30.0,
+                    .right_azimuth_degrees = 30.0,
+                    .bottom_elevation_degrees = -15.0,
+                    .top_elevation_degrees = 15.0,
+                },
+            },
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidAdmRendererScreenGeometry,
+        ObjectPointGainPlan(f32).init(
+            &block,
+            &outputs,
+            &polar_panner,
+            null,
+            .{
+                .reproduction_screen_edges = .{
+                    .left_azimuth_degrees = 0.0,
+                    .right_azimuth_degrees = 0.0,
+                    .bottom_elevation_degrees = 0.0,
+                    .top_elevation_degrees = 0.0,
+                },
+            },
+        ),
+    );
+    try std.testing.expectError(
+        error.AdmRendererPolarPointPannerRequired,
+        ObjectPointGainPlan(f32).init(
+            &block,
+            &outputs,
+            null,
+            null,
+            .{},
+        ),
+    );
+    block.diffuse = std.math.nan(f64);
+    try std.testing.expectError(
+        error.InvalidAdmRendererDiffuse,
+        ObjectPointGainPlan(f32).init(
+            &block,
+            &outputs,
+            &polar_panner,
+            null,
+            .{},
+        ),
+    );
+    block.diffuse = 0.0;
+    block.object_divergence.position_range = 0.5;
+    try std.testing.expectError(
+        error.InvalidAdmRendererObjectDivergence,
+        ObjectPointGainPlan(f32).init(
+            &block,
+            &outputs,
+            &polar_panner,
+            null,
+            .{},
+        ),
+    );
+    block.object_divergence.position_range = null;
+
+    const plan = try ObjectPointGainPlan(f32).init(
+        &block,
+        &outputs,
+        &polar_panner,
+        null,
+        .{},
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0.0),
+        plan.directGainSlice()[outputs.len - 1],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0.0),
+        plan.diffuseGainSlice()[outputs.len - 1],
+    );
+
+    const input = [_]f32{ 1.0, 2.0 };
+    var storage: [outputs.len][input.len]f32 = @splat(@splat(7.0));
+    var direct_outputs: [outputs.len][]f32 = undefined;
+    var diffuse_outputs: [outputs.len][]f32 = undefined;
+    for (&storage, &direct_outputs, &diffuse_outputs) |
+        *channel,
+        *direct_output,
+        *diffuse_output,
+    | {
+        direct_output.* = channel;
+        diffuse_output.* = channel;
+    }
+    try std.testing.expectError(
+        error.AdmRendererAliasedBuffers,
+        plan.mix(&input, &direct_outputs, &diffuse_outputs),
+    );
+    for (storage) |channel|
+        try std.testing.expectEqualDeep(
+            [_]f32{ 7.0, 7.0 },
+            channel,
+        );
+
+    var invalid_plan = plan;
+    invalid_plan.output_count = maximum_output_channels + 1;
+    try std.testing.expect(!invalid_plan.valid());
+    try std.testing.expectEqual(
+        maximum_output_channels,
+        invalid_plan.directGainSlice().len,
+    );
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        invalid_plan.mix(&input, &direct_outputs, &diffuse_outputs),
+    );
 }
 
 test "ADM static matrix mixer binds identifiers and applies gains" {
@@ -2868,6 +4034,26 @@ fn testPolarFiveLayout() [5]OutputSpeaker {
                 .elevation_degrees = 0,
             },
             .allocentric = .{ .x = 1, .y = -1, .z = 0 },
+        },
+    };
+}
+
+fn testPolarFiveWithLfeLayout() [6]OutputSpeaker {
+    const base = testPolarFiveLayout();
+    return .{
+        base[0],
+        base[1],
+        base[2],
+        base[3],
+        base[4],
+        .{
+            .label = "LFE1",
+            .is_lfe = true,
+            .nominal_polar = .{
+                .azimuth_degrees = 0.0,
+                .elevation_degrees = 0.0,
+            },
+            .allocentric = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
         },
     };
 }
