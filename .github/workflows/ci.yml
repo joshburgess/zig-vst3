@@ -109,7 +109,8 @@ jobs:
             find .zig-cache -type f \
               \( -name '*.o' -o -name '*.a' \) -print0
           )
-          exit 1
+          zig build -Doptimize=ReleaseFast
+          ! nm -A "$ui_binary" | grep -E '[[:space:]]fork$'
       - name: Build
         if: runner.os == 'Windows'
         run: zig build -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
