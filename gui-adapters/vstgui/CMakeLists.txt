@@ -43,6 +43,7 @@ endif()
 set(VSTGUI_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../.vst3-sdk/vst3sdk/vstgui4")
 add_subdirectory("${VSTGUI_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/vstgui")
 set_target_properties(vstgui PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
     C_VISIBILITY_PRESET hidden
     CXX_VISIBILITY_PRESET hidden
     OBJCXX_VISIBILITY_PRESET hidden

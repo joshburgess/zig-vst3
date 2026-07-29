@@ -1,10 +1,17 @@
-#include "zig_vstgui_accessibility_bridge.h"
-
-#include "vstgui/lib/platform/iplatformframe.h"
+#if defined(_WIN32)
+#ifdef WIN32
+#undef WIN32
+#endif
+#define WIN32 1
+#endif
 
 #include <windows.h>
 #include <commctrl.h>
 #include <uiautomation.h>
+
+#include "zig_vstgui_accessibility_bridge.h"
+
+#include "vstgui/lib/platform/iplatformframe.h"
 
 #include <atomic>
 #include <memory>
