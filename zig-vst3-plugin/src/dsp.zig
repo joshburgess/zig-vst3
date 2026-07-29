@@ -140,6 +140,8 @@ pub const AdmXmlDeclarationIterator = adm_xml.DeclarationIterator;
 pub const AdmXmlBlockFormat = adm_xml.BlockFormat;
 pub const AdmXmlBlockIterator = adm_xml.BlockIterator;
 pub const AdmXmlChannelLock = adm_xml.ChannelLock;
+pub const AdmXmlCartesianExclusionZone =
+    adm_xml.CartesianExclusionZone;
 pub const AdmXmlCoordinate = adm_xml.Coordinate;
 pub const AdmXmlDocument = adm_xml.Document;
 pub const AdmXmlGain = adm_xml.Gain;
@@ -150,6 +152,8 @@ pub const AdmXmlHoaNormalization = adm_xml.HoaNormalization;
 pub const AdmXmlJumpPosition = adm_xml.JumpPosition;
 pub const AdmXmlMatrixCoefficient = adm_xml.MatrixCoefficient;
 pub const AdmXmlObjectDivergence = adm_xml.ObjectDivergence;
+pub const AdmXmlExclusionZone = adm_xml.ExclusionZone;
+pub const AdmXmlPolarExclusionZone = adm_xml.PolarExclusionZone;
 pub const AdmXmlPosition = adm_xml.Position;
 pub const AdmXmlPositionBound = adm_xml.PositionBound;
 pub const AdmXmlProfile = adm_xml.Profile;
@@ -169,6 +173,8 @@ pub const AdmXmlTagTarget = adm_xml.TagTarget;
 pub const AdmXmlText = adm_xml.AdmText;
 pub const maximum_adm_matrix_coefficients =
     adm_xml.max_adm_matrix_coefficients;
+pub const maximum_adm_exclusion_zones =
+    adm_xml.max_adm_exclusion_zones;
 pub const maximum_adm_positions = adm_xml.max_adm_positions;
 pub const maximum_adm_speaker_label_bytes =
     adm_xml.max_adm_speaker_label_bytes;

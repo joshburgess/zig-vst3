@@ -754,6 +754,37 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
             }
             try validateObjectRenderingContext(context);
 
+            const exclusion = try objectExclusion(block, outputs);
+            var reduced_outputs: [maximum_output_channels]OutputSpeaker =
+                undefined;
+            var reduced_to_full: [maximum_output_channels]u8 = undefined;
+            var reduced_count: usize = 0;
+            if (block.cartesian and exclusion.effective()) {
+                for (outputs, 0..) |output, output_index| {
+                    if (output.is_lfe or exclusion.excluded[output_index])
+                        continue;
+                    reduced_outputs[reduced_count] = output;
+                    reduced_to_full[reduced_count] = @intCast(output_index);
+                    reduced_count += 1;
+                }
+            }
+            var reduced_point: CartesianPointSourcePanner(Sample) = undefined;
+            var reduced_extent: CartesianExtentPanner(Sample) = undefined;
+            if (reduced_count != 0) {
+                reduced_point = try CartesianPointSourcePanner(Sample).init(
+                    reduced_outputs[0..reduced_count],
+                );
+                switch (spatial_panner) {
+                    .cartesian_extent => {
+                        reduced_extent =
+                            try CartesianExtentPanner(Sample).init(
+                                &reduced_point,
+                            );
+                    },
+                    else => {},
+                }
+            }
+
             var position = try objectPosition(block);
             position = try applyObjectScreenTransforms(
                 block,
@@ -765,52 +796,87 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
                 block,
                 outputs,
                 position,
+                if (block.cartesian and exclusion.effective())
+                    exclusion.excluded[0..outputs.len]
+                else
+                    null,
             );
 
             const diverged = try objectDivergence(block, position);
             var combined: [maximum_output_channels]f64 = @splat(0.0);
             var branch_gains: [maximum_output_channels]Sample = undefined;
+            var reduced_gains: [maximum_output_channels]Sample = undefined;
             for (
                 diverged.positions[0..diverged.count],
                 diverged.power_weights[0..diverged.count],
             ) |branch_position, power_weight| {
                 if (power_weight == 0.0) continue;
-                switch (spatial_panner) {
-                    .point => |panners| {
-                        if (block.cartesian) {
-                            const panner = panners.cartesian orelse
-                                return error.AdmRendererCartesianPointPannerRequired;
-                            try panner.calculateGains(
+                if (block.cartesian and exclusion.effective()) {
+                    @memset(branch_gains[0..outputs.len], 0.0);
+                    switch (spatial_panner) {
+                        .point => {
+                            try reduced_point.calculateGains(
                                 branch_position,
-                                branch_gains[0..outputs.len],
+                                reduced_gains[0..reduced_count],
                             );
-                        } else {
-                            const panner = panners.polar orelse
-                                return error.AdmRendererPolarPointPannerRequired;
+                        },
+                        .cartesian_extent => {
+                            try reduced_extent.calculateGains(
+                                branch_position,
+                                block.width,
+                                block.height,
+                                block.depth,
+                                reduced_gains[0..reduced_count],
+                            );
+                        },
+                        .polar_extent => {
+                            return error.AdmRendererCartesianObjectsBlockRequired;
+                        },
+                    }
+                    for (
+                        reduced_to_full[0..reduced_count],
+                        reduced_gains[0..reduced_count],
+                    ) |full_index, gain| {
+                        branch_gains[full_index] = gain;
+                    }
+                } else {
+                    switch (spatial_panner) {
+                        .point => |panners| {
+                            if (block.cartesian) {
+                                const panner = panners.cartesian orelse
+                                    return error.AdmRendererCartesianPointPannerRequired;
+                                try panner.calculateGains(
+                                    branch_position,
+                                    branch_gains[0..outputs.len],
+                                );
+                            } else {
+                                const panner = panners.polar orelse
+                                    return error.AdmRendererPolarPointPannerRequired;
+                                try panner.calculateGains(
+                                    try cartesianToPolar(branch_position),
+                                    branch_gains[0..outputs.len],
+                                );
+                            }
+                        },
+                        .polar_extent => |panner| {
                             try panner.calculateGains(
                                 try cartesianToPolar(branch_position),
+                                block.width,
+                                block.height,
+                                block.depth,
                                 branch_gains[0..outputs.len],
                             );
-                        }
-                    },
-                    .polar_extent => |panner| {
-                        try panner.calculateGains(
-                            try cartesianToPolar(branch_position),
-                            block.width,
-                            block.height,
-                            block.depth,
-                            branch_gains[0..outputs.len],
-                        );
-                    },
-                    .cartesian_extent => |panner| {
-                        try panner.calculateGains(
-                            branch_position,
-                            block.width,
-                            block.height,
-                            block.depth,
-                            branch_gains[0..outputs.len],
-                        );
-                    },
+                        },
+                        .cartesian_extent => |panner| {
+                            try panner.calculateGains(
+                                branch_position,
+                                block.width,
+                                block.height,
+                                block.depth,
+                                branch_gains[0..outputs.len],
+                            );
+                        },
+                    }
                 }
                 for (
                     combined[0..outputs.len],
@@ -820,6 +886,12 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
                     output_power.* += power_weight * gain * gain;
                 }
             }
+            if (!block.cartesian)
+                try applyPolarExclusionDownmix(
+                    outputs,
+                    exclusion,
+                    &combined,
+                );
 
             const block_gain: f64 = @floatCast(
                 try renderGain(Sample, block.gain),
@@ -1517,6 +1589,308 @@ const DivergedObjectPositions = struct {
     positions: [3]CartesianPosition,
 };
 
+const ObjectExclusion = struct {
+    excluded: [maximum_output_channels]bool = @splat(false),
+    active_count: usize = 0,
+    excluded_count: usize = 0,
+
+    fn effective(self: ObjectExclusion) bool {
+        return self.excluded_count != 0 and
+            self.excluded_count != self.active_count;
+    }
+};
+
+fn objectExclusion(
+    block: *const adm_xml.BlockFormat,
+    outputs: []const OutputSpeaker,
+) !ObjectExclusion {
+    if (block.exclusion_zone_count > adm_xml.max_adm_exclusion_zones)
+        return error.InvalidAdmRendererExclusionZones;
+
+    var result = ObjectExclusion{};
+    for (outputs) |output| {
+        if (!output.is_lfe) result.active_count += 1;
+    }
+    for (block.exclusionZoneSlice()) |zone| {
+        try validateRendererExclusionZone(zone);
+        for (outputs, 0..) |output, output_index| {
+            if (output.is_lfe or result.excluded[output_index]) continue;
+            if (speakerInsideExclusionZone(output, zone))
+                result.excluded[output_index] = true;
+        }
+    }
+    if (block.cartesian) {
+        for (outputs, 0..) |output, output_index| {
+            if (!result.excluded[output_index]) continue;
+            const position = output.allocentric;
+            if (@abs(@abs(position.x) - 1.0) > 1.0e-6 or
+                @abs(@abs(position.y) - 1.0) <= 1.0e-6)
+            {
+                continue;
+            }
+            for (outputs, 0..) |candidate, candidate_index| {
+                if (candidate.is_lfe) continue;
+                if (@abs(candidate.allocentric.y - position.y) < 1.0e-6 and
+                    @abs(candidate.allocentric.z - position.z) < 1.0e-6)
+                {
+                    result.excluded[candidate_index] = true;
+                }
+            }
+        }
+    }
+    for (outputs, result.excluded[0..outputs.len]) |output, excluded| {
+        if (!output.is_lfe and excluded) result.excluded_count += 1;
+    }
+    if (block.cartesian and
+        result.excluded_count == result.active_count)
+    {
+        @memset(result.excluded[0..outputs.len], false);
+        result.excluded_count = 0;
+    }
+    return result;
+}
+
+fn validateRendererExclusionZone(zone: adm_xml.ExclusionZone) !void {
+    switch (zone) {
+        .cartesian => |value| {
+            const coordinates = [_]f64{
+                value.min_x,
+                value.min_y,
+                value.min_z,
+                value.max_x,
+                value.max_y,
+                value.max_z,
+            };
+            for (coordinates) |coordinate| {
+                if (!std.math.isFinite(coordinate) or
+                    coordinate < -1.0 or
+                    coordinate > 1.0)
+                {
+                    return error.InvalidAdmRendererExclusionZones;
+                }
+            }
+            if (value.min_x > value.max_x or
+                value.min_y > value.max_y or
+                value.min_z > value.max_z)
+            {
+                return error.InvalidAdmRendererExclusionZones;
+            }
+        },
+        .polar => |value| {
+            if (!std.math.isFinite(value.min_azimuth) or
+                !std.math.isFinite(value.max_azimuth) or
+                !std.math.isFinite(value.min_elevation) or
+                !std.math.isFinite(value.max_elevation) or
+                value.min_azimuth < -180.0 or
+                value.min_azimuth > 180.0 or
+                value.max_azimuth < -180.0 or
+                value.max_azimuth > 180.0 or
+                value.min_elevation < -90.0 or
+                value.min_elevation > 90.0 or
+                value.max_elevation < -90.0 or
+                value.max_elevation > 90.0 or
+                value.min_elevation > value.max_elevation)
+            {
+                return error.InvalidAdmRendererExclusionZones;
+            }
+        },
+    }
+}
+
+fn speakerInsideExclusionZone(
+    output: OutputSpeaker,
+    zone: adm_xml.ExclusionZone,
+) bool {
+    const epsilon = 1.0e-6;
+    return switch (zone) {
+        .cartesian => |value| inside: {
+            var nominal = output.nominal_polar;
+            nominal.distance = 1.0;
+            const position = polarToCartesian(nominal);
+            break :inside position.x - epsilon < value.max_x and
+                position.x + epsilon > value.min_x and
+                position.y - epsilon < value.max_y and
+                position.y + epsilon > value.min_y and
+                position.z - epsilon < value.max_z and
+                position.z + epsilon > value.min_z;
+        },
+        .polar => |value| output.nominal_polar.elevation_degrees - epsilon <
+            value.max_elevation and
+            output.nominal_polar.elevation_degrees + epsilon >
+                value.min_elevation and
+            (@abs(output.nominal_polar.elevation_degrees) >
+                90.0 - epsilon or
+                insideAngleRange(
+                    output.nominal_polar.azimuth_degrees,
+                    value.min_azimuth,
+                    value.max_azimuth,
+                    epsilon,
+                )),
+    };
+}
+
+const ExclusionPriority = struct {
+    layer: u8,
+    front_back_change: f64,
+    distance: f64,
+    front_back_distance: f64,
+};
+
+fn applyPolarExclusionDownmix(
+    outputs: []const OutputSpeaker,
+    exclusion: ObjectExclusion,
+    powers: *[maximum_output_channels]f64,
+) !void {
+    if (!exclusion.effective()) return;
+    var redistributed: [maximum_output_channels]f64 = @splat(0.0);
+    for (outputs, 0..) |source, source_index| {
+        if (source.is_lfe) continue;
+        var representatives: [maximum_output_channels]ExclusionPriority = undefined;
+        var target_groups: [maximum_output_channels]u8 = undefined;
+        var group_count: usize = 0;
+        for (outputs, 0..) |target, target_index| {
+            if (target.is_lfe) continue;
+            const priority = exclusionPriority(source, target);
+            var group_index: ?usize = null;
+            for (representatives[0..group_count], 0..) |
+                representative,
+                index,
+            | {
+                if (sameExclusionPriority(priority, representative)) {
+                    group_index = index;
+                    break;
+                }
+            }
+            const index = group_index orelse add: {
+                representatives[group_count] = priority;
+                group_count += 1;
+                break :add group_count - 1;
+            };
+            target_groups[target_index] = @intCast(index);
+        }
+        var selected_group: ?usize = null;
+        for (representatives[0..group_count], 0..) |
+            representative,
+            group_index,
+        | {
+            var has_destination = false;
+            for (outputs, 0..) |target, target_index| {
+                if (!target.is_lfe and
+                    !exclusion.excluded[target_index] and
+                    target_groups[target_index] == group_index)
+                {
+                    has_destination = true;
+                    break;
+                }
+            }
+            if (!has_destination) continue;
+            if (selected_group) |current| {
+                if (priorityLess(
+                    representative,
+                    representatives[current],
+                )) {
+                    selected_group = group_index;
+                }
+            } else {
+                selected_group = group_index;
+            }
+        }
+        const selected = selected_group orelse
+            return error.InvalidAdmRendererExclusionZones;
+        var destination_count: usize = 0;
+        for (outputs, 0..) |target, target_index| {
+            if (target.is_lfe or exclusion.excluded[target_index]) continue;
+            if (target_groups[target_index] == selected)
+                destination_count += 1;
+        }
+        if (destination_count == 0)
+            return error.InvalidAdmRendererExclusionZones;
+        const contribution =
+            powers[source_index] /
+            @as(f64, @floatFromInt(destination_count));
+        if (!std.math.isFinite(contribution) or contribution < 0.0)
+            return error.InvalidAdmRendererPannerGain;
+        for (outputs, 0..) |target, target_index| {
+            if (target.is_lfe or exclusion.excluded[target_index]) continue;
+            if (target_groups[target_index] == selected)
+                redistributed[target_index] += contribution;
+        }
+    }
+    @memcpy(
+        powers[0..outputs.len],
+        redistributed[0..outputs.len],
+    );
+}
+
+fn exclusionPriority(
+    source: OutputSpeaker,
+    target: OutputSpeaker,
+) ExclusionPriority {
+    const source_position = nominalUnitPosition(source);
+    const target_position = nominalUnitPosition(target);
+    const layer_priority = [4][4]u8{
+        .{ 0, 1, 2, 3 },
+        .{ 3, 0, 1, 2 },
+        .{ 3, 2, 0, 1 },
+        .{ 3, 2, 1, 0 },
+    };
+    return .{
+        .layer = layer_priority[
+            exclusionLayer(source.nominal_polar.elevation_degrees)
+        ][exclusionLayer(target.nominal_polar.elevation_degrees)],
+        .front_back_change = @abs(
+            exclusionSign(source_position.y) -
+                exclusionSign(target_position.y),
+        ),
+        .distance = cartesianDistance(
+            source_position,
+            target_position,
+        ),
+        .front_back_distance = @abs(source_position.y - target_position.y),
+    };
+}
+
+fn exclusionLayer(elevation_degrees: f64) u2 {
+    if (elevation_degrees < -10.0) return 0;
+    if (elevation_degrees < 10.0) return 1;
+    if (elevation_degrees < 75.0) return 2;
+    return 3;
+}
+
+fn exclusionSign(value: f64) f64 {
+    if (value > 1.0e-6) return 1.0;
+    if (value < -1.0e-6) return -1.0;
+    return 0.0;
+}
+
+fn nominalUnitPosition(output: OutputSpeaker) CartesianPosition {
+    var nominal = output.nominal_polar;
+    nominal.distance = 1.0;
+    return polarToCartesian(nominal);
+}
+
+fn priorityLess(
+    left: ExclusionPriority,
+    right: ExclusionPriority,
+) bool {
+    if (left.layer != right.layer) return left.layer < right.layer;
+    if (left.front_back_change != right.front_back_change)
+        return left.front_back_change < right.front_back_change;
+    if (left.distance != right.distance)
+        return left.distance < right.distance;
+    return left.front_back_distance < right.front_back_distance;
+}
+
+fn sameExclusionPriority(
+    left: ExclusionPriority,
+    right: ExclusionPriority,
+) bool {
+    return left.layer == right.layer and
+        @abs(left.front_back_change - right.front_back_change) < 1.0e-6 and
+        @abs(left.distance - right.distance) < 1.0e-6 and
+        @abs(left.front_back_distance - right.front_back_distance) < 1.0e-6;
+}
+
 fn objectPosition(
     block: *const adm_xml.BlockFormat,
 ) !CartesianPosition {
@@ -1700,7 +2074,12 @@ fn applyObjectChannelLock(
     block: *const adm_xml.BlockFormat,
     outputs: []const OutputSpeaker,
     position: CartesianPosition,
+    excluded: ?[]const bool,
 ) !CartesianPosition {
+    if (excluded) |mask| {
+        if (mask.len != outputs.len)
+            return error.InvalidAdmRendererExclusionZones;
+    }
     if (!block.channel_lock.enabled) {
         if (block.channel_lock.max_distance != null)
             return error.InvalidAdmRendererChannelLock;
@@ -1719,6 +2098,9 @@ fn applyObjectChannelLock(
     var best_distance = std.math.inf(f64);
     for (outputs, 0..) |output, output_index| {
         if (output.is_lfe) continue;
+        if (excluded) |mask| {
+            if (mask[output_index]) continue;
+        }
         const candidate = objectSpeakerPosition(output, block.cartesian);
         const ordinary_distance = cartesianDistance(position, candidate);
         if (block.channel_lock.max_distance) |maximum_distance| {
@@ -3717,6 +4099,7 @@ test "ADM point Objects transforms screens and locks channels" {
         &block,
         &stereo_outputs,
         try objectPosition(&block),
+        null,
     );
     try expectCartesianApprox(
         polarToCartesian(.{
@@ -3730,6 +4113,7 @@ test "ADM point Objects transforms screens and locks channels" {
         &block,
         &stereo_outputs,
         try objectPosition(&block),
+        null,
     );
     try expectCartesianApprox(
         .{ .x = 0.0, .y = 1.0, .z = 0.0 },
@@ -3760,6 +4144,7 @@ test "ADM point Objects transforms screens and locks channels" {
         &block,
         &allocentric_outputs,
         .{ .x = -1.0, .y = 0.0, .z = 0.0 },
+        null,
     );
     try expectCartesianApprox(
         allocentric_outputs[1].allocentric,
@@ -3863,6 +4248,57 @@ test "ADM point Objects plan rejects unsupported and aliased work" {
         ),
     );
     block.object_divergence.position_range = null;
+    block.exclusion_zone_count = adm_xml.max_adm_exclusion_zones + 1;
+    try std.testing.expectError(
+        error.InvalidAdmRendererExclusionZones,
+        ObjectPointGainPlan(f32).init(
+            &block,
+            &outputs,
+            &polar_panner,
+            null,
+            .{},
+        ),
+    );
+    block.exclusion_zone_count = 1;
+    block.exclusion_zones[0] = .{
+        .polar = .{
+            .min_azimuth = std.math.nan(f64),
+            .max_azimuth = 0.0,
+            .min_elevation = 0.0,
+            .max_elevation = 0.0,
+        },
+    };
+    try std.testing.expectError(
+        error.InvalidAdmRendererExclusionZones,
+        ObjectPointGainPlan(f32).init(
+            &block,
+            &outputs,
+            &polar_panner,
+            null,
+            .{},
+        ),
+    );
+    block.exclusion_zones[0] = .{
+        .cartesian = .{
+            .min_x = 0.5,
+            .min_y = -1.0,
+            .min_z = -1.0,
+            .max_x = -0.5,
+            .max_y = 1.0,
+            .max_z = 1.0,
+        },
+    };
+    try std.testing.expectError(
+        error.InvalidAdmRendererExclusionZones,
+        ObjectPointGainPlan(f32).init(
+            &block,
+            &outputs,
+            &polar_panner,
+            null,
+            .{},
+        ),
+    );
+    block.exclusion_zone_count = 0;
 
     const plan = try ObjectPointGainPlan(f32).init(
         &block,
@@ -3912,6 +4348,411 @@ test "ADM point Objects plan rejects unsupported and aliased work" {
     try std.testing.expectError(
         error.InvalidAdmRendererState,
         invalid_plan.mix(&input, &direct_outputs, &diffuse_outputs),
+    );
+}
+
+test "ADM polar Objects exclusion redistributes power by priority" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <zoneExclusion>
+        \\        <zone minAzimuth="0" maxAzimuth="0" minElevation="0" maxElevation="0"/>
+        \\      </zoneExclusion>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()) orelse
+        return error.TestExpectedAdmBlock;
+    const outputs = testPolarFiveWithLfeLayout();
+    const panner = try PolarPointSourcePanner(f64).init(&outputs);
+    const plan = try ObjectPointGainPlan(f64).init(
+        &block,
+        &outputs,
+        &panner,
+        null,
+        .{},
+    );
+    const expected = [_]f64{
+        @sqrt(0.5),
+        @sqrt(0.5),
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    };
+    for (plan.directGainSlice(), expected) |actual, wanted| {
+        try std.testing.expectApproxEqAbs(wanted, actual, 1.0e-12);
+    }
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        gainVectorPower(f64, plan.directGainSlice()),
+        1.0e-12,
+    );
+
+    var cartesian_zone_block = block;
+    cartesian_zone_block.exclusion_zones[0] = .{
+        .cartesian = .{
+            .min_x = 0.0,
+            .min_y = 1.0,
+            .min_z = 0.0,
+            .max_x = 0.0,
+            .max_y = 1.0,
+            .max_z = 0.0,
+        },
+    };
+    const cartesian_zone_plan = try ObjectPointGainPlan(f64).init(
+        &cartesian_zone_block,
+        &outputs,
+        &panner,
+        null,
+        .{},
+    );
+    for (cartesian_zone_plan.directGainSlice(), expected) |actual, wanted| {
+        try std.testing.expectApproxEqAbs(wanted, actual, 1.0e-12);
+    }
+
+    var all_excluded_block = block;
+    all_excluded_block.exclusion_zones[0] = .{
+        .polar = .{
+            .min_azimuth = -180.0,
+            .max_azimuth = 180.0,
+            .min_elevation = 0.0,
+            .max_elevation = 0.0,
+        },
+    };
+    const all_excluded_plan = try ObjectPointGainPlan(f64).init(
+        &all_excluded_block,
+        &outputs,
+        &panner,
+        null,
+        .{},
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        all_excluded_plan.directGainSlice()[2],
+        1.0e-12,
+    );
+    for (all_excluded_plan.directGainSlice(), 0..) |gain, index| {
+        if (index != 2)
+            try std.testing.expectApproxEqAbs(@as(f64, 0.0), gain, 1.0e-12);
+    }
+
+    const immersive_outputs = testFourPlusFiveLayout();
+    const immersive_panner =
+        try PolarPointSourcePanner(f64).init(&immersive_outputs);
+    const mid_layer_plan = try ObjectPointGainPlan(f64).init(
+        &all_excluded_block,
+        &immersive_outputs,
+        &immersive_panner,
+        null,
+        .{},
+    );
+    const upper_left = immersive_outputs.len - 4;
+    const upper_right = immersive_outputs.len - 3;
+    for (mid_layer_plan.directGainSlice(), 0..) |gain, index| {
+        const wanted: f64 =
+            if (index == upper_left or index == upper_right)
+                @sqrt(0.5)
+            else
+                0.0;
+        try std.testing.expectApproxEqAbs(wanted, gain, 1.0e-12);
+    }
+}
+
+test "ADM polar extent exclusion follows the post-panner downmix" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <width>40</width>
+        \\      <height>20</height>
+        \\      <zoneExclusion>
+        \\        <zone minAzimuth="0" maxAzimuth="0" minElevation="0" maxElevation="0"/>
+        \\      </zoneExclusion>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()) orelse
+        return error.TestExpectedAdmBlock;
+    const outputs = testPolarFiveWithLfeLayout();
+    const point_panner = try PolarPointSourcePanner(f32).init(&outputs);
+    var storage: [polar_extent_spreading_direction_count * outputs.len]f32 = undefined;
+    const extent_panner = try PolarExtentPanner(f32).init(
+        &point_panner,
+        &storage,
+    );
+    const plan = try ObjectPolarExtentGainPlan(f32).initPolarExtent(
+        &block,
+        &outputs,
+        &extent_panner,
+        .{},
+    );
+    try std.testing.expectEqual(@as(f32, 0.0), plan.directGainSlice()[2]);
+    try std.testing.expectEqual(@as(f32, 0.0), plan.directGainSlice()[5]);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0),
+        gainVectorPower(f32, plan.directGainSlice()),
+        0.000_002,
+    );
+}
+
+test "ADM exclusion matches independent composite gain vectors" {
+    const outputs = testFourPlusFiveLayout();
+    const polar_document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">15</position>
+        \\      <position coordinate="elevation">5</position>
+        \\      <position coordinate="distance">0.8</position>
+        \\      <width>35</width>
+        \\      <height>20</height>
+        \\      <depth>0.4</depth>
+        \\      <zoneExclusion>
+        \\        <zone minAzimuth="-5" maxAzimuth="5" minElevation="-5" maxElevation="5"/>
+        \\      </zoneExclusion>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var polar_blocks = polar_document.blocks();
+    const polar_block = (try polar_blocks.next()) orelse
+        return error.TestExpectedAdmBlock;
+    const polar_point = try PolarPointSourcePanner(f64).init(&outputs);
+    var polar_storage: [polar_extent_spreading_direction_count * outputs.len]f64 = undefined;
+    const polar_extent = try PolarExtentPanner(f64).init(
+        &polar_point,
+        &polar_storage,
+    );
+    const polar_plan =
+        try ObjectPolarExtentGainPlan(f64).initPolarExtent(
+            &polar_block,
+            &outputs,
+            &polar_extent,
+            .{},
+        );
+    const expected_polar = [_]f64{
+        0.76335073411451304,
+        0.49146398352030901,
+        0.0,
+        0.061258168878796475,
+        0.000017752940041608044,
+        0.38262461709567069,
+        0.15785851313935170,
+        0.026060650294635349,
+        0.0024861189992837216,
+    };
+    for (polar_plan.directGainSlice(), expected_polar) |actual, wanted| {
+        try std.testing.expectApproxEqAbs(wanted, actual, 1.0e-9);
+    }
+
+    const cartesian_document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X">0.3</position>
+        \\      <position coordinate="Y">0.7</position>
+        \\      <position coordinate="Z">0.2</position>
+        \\      <width>0.25</width>
+        \\      <height>0.4</height>
+        \\      <depth>0.3</depth>
+        \\      <zoneExclusion>
+        \\        <zone minAzimuth="0" maxAzimuth="0" minElevation="0" maxElevation="0"/>
+        \\      </zoneExclusion>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var cartesian_blocks = cartesian_document.blocks();
+    const cartesian_block = (try cartesian_blocks.next()) orelse
+        return error.TestExpectedAdmBlock;
+    const cartesian_point =
+        try CartesianPointSourcePanner(f64).init(&outputs);
+    const cartesian_extent =
+        try CartesianExtentPanner(f64).init(&cartesian_point);
+    const cartesian_plan =
+        try ObjectCartesianExtentGainPlan(f64).initCartesianExtent(
+            &cartesian_block,
+            &outputs,
+            &cartesian_extent,
+            .{},
+        );
+    const expected_cartesian = [_]f64{
+        0.48055502233032266,
+        0.7277271788840611,
+        0.0,
+        0.20024680207909254,
+        0.3032431950266978,
+        0.17738622563448112,
+        0.2686243438428574,
+        0.03396828562441432,
+        0.05143978008828547,
+    };
+    for (
+        cartesian_plan.directGainSlice(),
+        expected_cartesian,
+    ) |actual, wanted| {
+        try std.testing.expectApproxEqAbs(wanted, actual, 1.0e-9);
+    }
+}
+
+test "ADM Cartesian exclusion reduces point extent and lock layouts" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X">0.1</position>
+        \\      <position coordinate="Y">1</position>
+        \\      <position coordinate="Z">0</position>
+        \\      <channelLock>1</channelLock>
+        \\      <zoneExclusion>
+        \\        <zone minAzimuth="0" maxAzimuth="0" minElevation="0" maxElevation="0"/>
+        \\      </zoneExclusion>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()) orelse
+        return error.TestExpectedAdmBlock;
+    const outputs = testPolarFiveLayout();
+    const point_panner =
+        try CartesianPointSourcePanner(f64).init(&outputs);
+    const point_plan = try ObjectPointGainPlan(f64).init(
+        &block,
+        &outputs,
+        null,
+        &point_panner,
+        .{},
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        point_plan.directGainSlice()[1],
+        1.0e-12,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        point_plan.directGainSlice()[2],
+    );
+
+    var extent_block = block;
+    extent_block.channel_lock = .{};
+    extent_block.width = 0.4;
+    extent_block.height = 0.2;
+    extent_block.depth = 0.3;
+    const extent_panner =
+        try CartesianExtentPanner(f64).init(&point_panner);
+    const extent_plan =
+        try ObjectCartesianExtentGainPlan(f64).initCartesianExtent(
+            &extent_block,
+            &outputs,
+            &extent_panner,
+            .{},
+        );
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        extent_plan.directGainSlice()[2],
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        gainVectorPower(f64, extent_plan.directGainSlice()),
+        1.0e-9,
+    );
+}
+
+test "ADM Cartesian exclusion repairs side rows and preserves all-excluded layouts" {
+    const cube = testCartesianCubeLayout();
+    var outputs: [cube.len + 2]OutputSpeaker = undefined;
+    @memcpy(outputs[0..cube.len], &cube);
+    outputs[cube.len] = .{
+        .label = "M+090",
+        .nominal_polar = .{
+            .azimuth_degrees = 90.0,
+            .elevation_degrees = 0.0,
+        },
+        .allocentric = .{ .x = -1.0, .y = 0.0, .z = 0.0 },
+    };
+    outputs[cube.len + 1] = .{
+        .label = "M-090",
+        .nominal_polar = .{
+            .azimuth_degrees = -90.0,
+            .elevation_degrees = 0.0,
+        },
+        .allocentric = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
+    };
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <cartesian>1</cartesian>
+        \\      <position coordinate="X">-1</position>
+        \\      <position coordinate="Y">0</position>
+        \\      <position coordinate="Z">0</position>
+        \\      <zoneExclusion>
+        \\        <zone minAzimuth="90" maxAzimuth="90" minElevation="0" maxElevation="0"/>
+        \\      </zoneExclusion>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()) orelse
+        return error.TestExpectedAdmBlock;
+    const panner = try CartesianPointSourcePanner(f64).init(&outputs);
+    const plan = try ObjectPointGainPlan(f64).init(
+        &block,
+        &outputs,
+        null,
+        &panner,
+        .{},
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        plan.directGainSlice()[cube.len],
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        plan.directGainSlice()[cube.len + 1],
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        gainVectorPower(f64, plan.directGainSlice()),
+        1.0e-12,
+    );
+
+    var all_excluded = block;
+    all_excluded.exclusion_zones[0] = .{
+        .cartesian = .{
+            .min_x = -1.0,
+            .min_y = -1.0,
+            .min_z = -1.0,
+            .max_x = 1.0,
+            .max_y = 1.0,
+            .max_z = 1.0,
+        },
+    };
+    const identity_plan = try ObjectPointGainPlan(f64).init(
+        &all_excluded,
+        &outputs,
+        null,
+        &panner,
+        .{},
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        identity_plan.directGainSlice()[cube.len],
+        1.0e-12,
     );
 }
 
@@ -5042,6 +5883,49 @@ fn testPolarFiveWithLfeLayout() [6]OutputSpeaker {
                 .elevation_degrees = 0.0,
             },
             .allocentric = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        },
+    };
+}
+
+fn testFourPlusFiveLayout() [9]OutputSpeaker {
+    const middle = testPolarFiveLayout();
+    return .{
+        middle[0],
+        middle[1],
+        middle[2],
+        middle[3],
+        middle[4],
+        .{
+            .label = "U+030",
+            .nominal_polar = .{
+                .azimuth_degrees = 30.0,
+                .elevation_degrees = 30.0,
+            },
+            .allocentric = .{ .x = -1.0, .y = 1.0, .z = 1.0 },
+        },
+        .{
+            .label = "U-030",
+            .nominal_polar = .{
+                .azimuth_degrees = -30.0,
+                .elevation_degrees = 30.0,
+            },
+            .allocentric = .{ .x = 1.0, .y = 1.0, .z = 1.0 },
+        },
+        .{
+            .label = "U+110",
+            .nominal_polar = .{
+                .azimuth_degrees = 110.0,
+                .elevation_degrees = 30.0,
+            },
+            .allocentric = .{ .x = -1.0, .y = -1.0, .z = 1.0 },
+        },
+        .{
+            .label = "U-110",
+            .nominal_polar = .{
+                .azimuth_degrees = -110.0,
+                .elevation_degrees = 30.0,
+            },
+            .allocentric = .{ .x = 1.0, .y = -1.0, .z = 1.0 },
         },
     };
 }

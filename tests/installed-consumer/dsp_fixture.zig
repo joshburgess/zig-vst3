@@ -3678,6 +3678,9 @@ test "installed package exposes file-backed audio writers" {
         \\      <height>0.2</height>
         \\      <depth>0.1</depth>
         \\      <gain>0.5</gain>
+        \\      <zoneExclusion>
+        \\        <zone minAzimuth="0" maxAzimuth="0" minElevation="0" maxElevation="0"/>
+        \\      </zoneExclusion>
         \\    </audioBlockFormatObjects>
         \\  </audioChannelFormat>
         \\</audioFormatExtended>
@@ -3702,6 +3705,26 @@ test "installed package exposes file-backed audio writers" {
         @as(f32, 0.25),
         cartesian_plan_power,
         0.000_001,
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0.0),
+        cartesian_extent_plan.directGainSlice()[2],
+    );
+    try std.testing.expectEqual(
+        @as(usize, 32),
+        plugin.dsp.maximum_adm_exclusion_zones,
+    );
+    const installed_zone = plugin.dsp.AdmXmlExclusionZone{
+        .polar = plugin.dsp.AdmXmlPolarExclusionZone{
+            .min_azimuth = -30.0,
+            .max_azimuth = 30.0,
+            .min_elevation = -10.0,
+            .max_elevation = 10.0,
+        },
+    };
+    try std.testing.expectEqual(
+        @as(f64, 30.0),
+        installed_zone.polar.max_azimuth,
     );
     const polar_router =
         try plugin.dsp.AdmDirectSpeakerPositionRouter(f32).init(

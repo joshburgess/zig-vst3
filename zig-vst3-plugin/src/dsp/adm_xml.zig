@@ -28,6 +28,7 @@ pub const max_adm_positions: usize = 9;
 pub const max_adm_speaker_labels: usize = 16;
 pub const max_adm_speaker_label_bytes: usize = 64;
 pub const max_adm_matrix_coefficients: usize = 32;
+pub const max_adm_exclusion_zones: usize = 32;
 
 pub const Declaration = struct {
     identifier: adm.Identifier,
@@ -1315,6 +1316,14 @@ fn validateEmissionAttributes(
     allowed: []const []const u8,
     invalid_error: anyerror,
 ) !void {
+    return validateAdmAttributes(start, allowed, invalid_error);
+}
+
+fn validateAdmAttributes(
+    start: xml.StartElement,
+    allowed: []const []const u8,
+    invalid_error: anyerror,
+) !void {
     var attributes = xml.AttributeIterator.init(start.attributes);
     while (try attributes.next()) |attribute| {
         if (isXmlNamespaceDeclaration(attribute.name)) continue;
@@ -2595,6 +2604,27 @@ pub const ChannelLock = struct {
     max_distance: ?f64 = null,
 };
 
+pub const CartesianExclusionZone = struct {
+    min_x: f64,
+    min_y: f64,
+    min_z: f64,
+    max_x: f64,
+    max_y: f64,
+    max_z: f64,
+};
+
+pub const PolarExclusionZone = struct {
+    min_azimuth: f64,
+    max_azimuth: f64,
+    min_elevation: f64,
+    max_elevation: f64,
+};
+
+pub const ExclusionZone = union(enum) {
+    cartesian: CartesianExclusionZone,
+    polar: PolarExclusionZone,
+};
+
 pub const HoaNormalization = enum {
     n3d,
     sn3d,
@@ -2656,6 +2686,8 @@ pub const BlockFormat = struct {
     diffuse: f64 = 0.0,
     object_divergence: ObjectDivergence = .{},
     channel_lock: ChannelLock = .{},
+    exclusion_zones: [max_adm_exclusion_zones]ExclusionZone = undefined,
+    exclusion_zone_count: usize = 0,
     screen_ref: bool = false,
     hoa_equation: ?AdmText = null,
     hoa_order: ?u32 = null,
@@ -2674,6 +2706,12 @@ pub const BlockFormat = struct {
         self: *const BlockFormat,
     ) []const SpeakerLabel {
         return self.speaker_labels[0..self.speaker_label_count];
+    }
+
+    pub fn exclusionZoneSlice(
+        self: *const BlockFormat,
+    ) []const ExclusionZone {
+        return self.exclusion_zones[0..self.exclusion_zone_count];
     }
 
     pub fn matrixCoefficientSlice(
@@ -6773,6 +6811,7 @@ pub const BlockIterator = struct {
         var diffuse_seen = false;
         var object_divergence_seen = false;
         var channel_lock_seen = false;
+        var zone_exclusion_seen = false;
         var screen_ref_seen = false;
         var hoa_equation_seen = false;
         var hoa_order_seen = false;
@@ -6998,6 +7037,17 @@ pub const BlockIterator = struct {
                         };
                         continue;
                     }
+                    if (std.mem.eql(
+                        u8,
+                        element.localName(),
+                        "zoneExclusion",
+                    )) {
+                        if (zone_exclusion_seen)
+                            return error.DuplicateAdmBlockParameter;
+                        zone_exclusion_seen = true;
+                        try self.readZoneExclusion(element, &block);
+                        continue;
+                    }
                     if (std.mem.eql(u8, element.localName(), "screenRef")) {
                         if (screen_ref_seen)
                             return error.DuplicateAdmBlockParameter;
@@ -7082,6 +7132,7 @@ pub const BlockIterator = struct {
                             .diffuse = diffuse_seen,
                             .object_divergence = object_divergence_seen,
                             .channel_lock = channel_lock_seen,
+                            .zone_exclusion = zone_exclusion_seen,
                             .screen_ref = screen_ref_seen,
                             .hoa_equation = hoa_equation_seen,
                             .hoa_order = hoa_order_seen,
@@ -7097,6 +7148,142 @@ pub const BlockIterator = struct {
             }
         }
         return error.UnclosedAdmBlockFormat;
+    }
+
+    fn readZoneExclusion(
+        self: *BlockIterator,
+        start: xml.StartElement,
+        block: *BlockFormat,
+    ) !void {
+        try validateAdmAttributes(
+            start,
+            &.{},
+            error.InvalidAdmZoneExclusion,
+        );
+        if (start.self_closing) return;
+        while (try self.events.next()) |event| {
+            switch (event) {
+                .text => |text| {
+                    if (std.mem.trim(u8, text.bytes, " \t\r\n").len != 0)
+                        return error.InvalidAdmZoneExclusion;
+                },
+                .start => |element| {
+                    if (element.depth != start.depth + 1 or
+                        !std.mem.eql(u8, element.localName(), "zone"))
+                    {
+                        return error.InvalidAdmZoneExclusion;
+                    }
+                    if (block.exclusion_zone_count ==
+                        max_adm_exclusion_zones)
+                    {
+                        return error.TooManyAdmExclusionZones;
+                    }
+                    block.exclusion_zones[block.exclusion_zone_count] =
+                        try self.readExclusionZone(element);
+                    block.exclusion_zone_count += 1;
+                },
+                .end => |element| {
+                    if (element.depth != start.depth or
+                        !std.mem.eql(u8, element.name, start.name))
+                    {
+                        return error.InvalidAdmZoneExclusion;
+                    }
+                    return;
+                },
+            }
+        }
+        return error.UnclosedAdmZoneExclusion;
+    }
+
+    fn readExclusionZone(
+        self: *BlockIterator,
+        start: xml.StartElement,
+    ) !ExclusionZone {
+        const min_x = try start.attribute("minX");
+        const min_y = try start.attribute("minY");
+        const min_z = try start.attribute("minZ");
+        const max_x = try start.attribute("maxX");
+        const max_y = try start.attribute("maxY");
+        const max_z = try start.attribute("maxZ");
+        const min_azimuth = try start.attribute("minAzimuth");
+        const max_azimuth = try start.attribute("maxAzimuth");
+        const min_elevation = try start.attribute("minElevation");
+        const max_elevation = try start.attribute("maxElevation");
+        const has_cartesian = min_x != null or
+            min_y != null or
+            min_z != null or
+            max_x != null or
+            max_y != null or
+            max_z != null;
+        const has_polar = min_azimuth != null or
+            max_azimuth != null or
+            min_elevation != null or
+            max_elevation != null;
+        if (has_cartesian == has_polar)
+            return error.InvalidAdmExclusionZone;
+
+        const zone: ExclusionZone = if (has_cartesian) cartesian: {
+            try validateAdmAttributes(
+                start,
+                &.{ "minX", "minY", "minZ", "maxX", "maxY", "maxZ" },
+                error.InvalidAdmExclusionZoneAttribute,
+            );
+            const value = CartesianExclusionZone{
+                .min_x = try parseFiniteAdmFloat(
+                    min_x orelse return error.MissingAdmExclusionZoneAttribute,
+                ),
+                .min_y = try parseFiniteAdmFloat(
+                    min_y orelse return error.MissingAdmExclusionZoneAttribute,
+                ),
+                .min_z = try parseFiniteAdmFloat(
+                    min_z orelse return error.MissingAdmExclusionZoneAttribute,
+                ),
+                .max_x = try parseFiniteAdmFloat(
+                    max_x orelse return error.MissingAdmExclusionZoneAttribute,
+                ),
+                .max_y = try parseFiniteAdmFloat(
+                    max_y orelse return error.MissingAdmExclusionZoneAttribute,
+                ),
+                .max_z = try parseFiniteAdmFloat(
+                    max_z orelse return error.MissingAdmExclusionZoneAttribute,
+                ),
+            };
+            try validateCartesianExclusionZone(value);
+            break :cartesian .{ .cartesian = value };
+        } else polar: {
+            try validateAdmAttributes(
+                start,
+                &.{
+                    "minAzimuth",
+                    "maxAzimuth",
+                    "minElevation",
+                    "maxElevation",
+                },
+                error.InvalidAdmExclusionZoneAttribute,
+            );
+            const value = PolarExclusionZone{
+                .min_azimuth = try parseFiniteAdmFloat(
+                    min_azimuth orelse
+                        return error.MissingAdmExclusionZoneAttribute,
+                ),
+                .max_azimuth = try parseFiniteAdmFloat(
+                    max_azimuth orelse
+                        return error.MissingAdmExclusionZoneAttribute,
+                ),
+                .min_elevation = try parseFiniteAdmFloat(
+                    min_elevation orelse
+                        return error.MissingAdmExclusionZoneAttribute,
+                ),
+                .max_elevation = try parseFiniteAdmFloat(
+                    max_elevation orelse
+                        return error.MissingAdmExclusionZoneAttribute,
+                ),
+            };
+            try validatePolarExclusionZone(value);
+            break :polar .{ .polar = value };
+        };
+        try self.consumeEmptyElement(start);
+        return zone;
     }
 
     fn readMatrix(
@@ -7887,6 +8074,7 @@ const BlockParameterPresence = struct {
     diffuse: bool = false,
     object_divergence: bool = false,
     channel_lock: bool = false,
+    zone_exclusion: bool = false,
     screen_ref: bool = false,
     hoa_equation: bool = false,
     hoa_order: bool = false,
@@ -7923,6 +8111,7 @@ fn validateBlockTypeParameters(
                 present.diffuse or
                 present.object_divergence or
                 present.channel_lock or
+                present.zone_exclusion or
                 present.screen_ref or
                 hasHoaParameters(present) or
                 present.matrix)
@@ -7956,6 +8145,7 @@ fn validateBinauralBlock(
         present.diffuse or
         present.object_divergence or
         present.channel_lock or
+        present.zone_exclusion or
         present.screen_ref or
         hasHoaParameters(present) or
         present.matrix)
@@ -7974,6 +8164,7 @@ fn validateDirectSpeakersBlock(
         present.diffuse or
         present.object_divergence or
         present.channel_lock or
+        present.zone_exclusion or
         present.screen_ref or
         hasHoaParameters(present) or
         present.matrix)
@@ -8045,6 +8236,12 @@ fn validateObjectsBlock(
     }
     if (block.channel_lock.max_distance) |distance|
         try validateInclusive(distance, 0.0, 2.0 * @sqrt(3.0));
+    for (block.exclusionZoneSlice()) |zone| {
+        switch (zone) {
+            .cartesian => |value| try validateCartesianExclusionZone(value),
+            .polar => |value| try validatePolarExclusionZone(value),
+        }
+    }
 }
 
 fn validateHoaBlock(
@@ -8060,6 +8257,7 @@ fn validateHoaBlock(
         present.diffuse or
         present.object_divergence or
         present.channel_lock or
+        present.zone_exclusion or
         present.matrix)
     {
         return error.AdmBlockParameterNotAllowedForType;
@@ -8091,11 +8289,40 @@ fn validateMatrixBlock(
         present.diffuse or
         present.object_divergence or
         present.channel_lock or
+        present.zone_exclusion or
         present.screen_ref or
         hasHoaParameters(present))
     {
         return error.AdmBlockParameterNotAllowedForType;
     }
+}
+
+fn validateCartesianExclusionZone(
+    zone: CartesianExclusionZone,
+) !void {
+    try validateInclusive(zone.min_x, -1.0, 1.0);
+    try validateInclusive(zone.min_y, -1.0, 1.0);
+    try validateInclusive(zone.min_z, -1.0, 1.0);
+    try validateInclusive(zone.max_x, -1.0, 1.0);
+    try validateInclusive(zone.max_y, -1.0, 1.0);
+    try validateInclusive(zone.max_z, -1.0, 1.0);
+    if (zone.min_x > zone.max_x or
+        zone.min_y > zone.max_y or
+        zone.min_z > zone.max_z)
+    {
+        return error.InvalidAdmExclusionZoneBounds;
+    }
+}
+
+fn validatePolarExclusionZone(
+    zone: PolarExclusionZone,
+) !void {
+    try validateInclusive(zone.min_azimuth, -180.0, 180.0);
+    try validateInclusive(zone.max_azimuth, -180.0, 180.0);
+    try validateInclusive(zone.min_elevation, -90.0, 90.0);
+    try validateInclusive(zone.max_elevation, -90.0, 90.0);
+    if (zone.min_elevation > zone.max_elevation)
+        return error.InvalidAdmExclusionZoneBounds;
 }
 
 fn hasHoaParameters(present: BlockParameterPresence) bool {
@@ -12884,5 +13111,158 @@ test "ADM XML validates block sequences timing and common values" {
             \\  </audioChannelFormat>
             \\</audioFormatExtended>
         ),
+    );
+}
+
+test "ADM XML retains bounded polar and Cartesian exclusion zones" {
+    const document = try Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <zoneExclusion>
+        \\        <zone minX="-1" minY="-1" minZ="-1" maxX="1" maxY="-0.5" maxZ="1"/>
+        \\        <zone minAzimuth="175" maxAzimuth="-175" minElevation="-30" maxElevation="30"></zone>
+        \\      </zoneExclusion>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()) orelse
+        return error.TestExpectedAdmBlock;
+    try std.testing.expectEqual(@as(usize, 2), block.exclusion_zone_count);
+    const zones = block.exclusionZoneSlice();
+    try std.testing.expectEqual(@as(f64, -0.5), zones[0].cartesian.max_y);
+    try std.testing.expectEqual(@as(f64, 175.0), zones[1].polar.min_azimuth);
+    try std.testing.expectEqual(@as(f64, -175.0), zones[1].polar.max_azimuth);
+
+    const empty = try Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <zoneExclusion/>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var empty_blocks = empty.blocks();
+    const empty_block = (try empty_blocks.next()) orelse
+        return error.TestExpectedAdmBlock;
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        empty_block.exclusion_zone_count,
+    );
+}
+
+test "ADM XML rejects malformed exclusion zones" {
+    try std.testing.expectError(
+        error.InvalidAdmExclusionZone,
+        Document.init(
+            \\<audioFormatExtended>
+            \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+            \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+            \\      <position coordinate="azimuth">0</position>
+            \\      <position coordinate="elevation">0</position>
+            \\      <zoneExclusion>
+            \\        <zone minX="-1" minY="-1" minZ="-1" maxX="1" maxY="1" maxZ="1"
+            \\          minAzimuth="-30" maxAzimuth="30" minElevation="-30" maxElevation="30"/>
+            \\      </zoneExclusion>
+            \\    </audioBlockFormatObjects>
+            \\  </audioChannelFormat>
+            \\</audioFormatExtended>
+        ),
+    );
+    try std.testing.expectError(
+        error.MissingAdmExclusionZoneAttribute,
+        Document.init(
+            \\<audioFormatExtended>
+            \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+            \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+            \\      <position coordinate="azimuth">0</position>
+            \\      <position coordinate="elevation">0</position>
+            \\      <zoneExclusion>
+            \\        <zone minAzimuth="-30" maxAzimuth="30" minElevation="-30"/>
+            \\      </zoneExclusion>
+            \\    </audioBlockFormatObjects>
+            \\  </audioChannelFormat>
+            \\</audioFormatExtended>
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidAdmExclusionZoneBounds,
+        Document.init(
+            \\<audioFormatExtended>
+            \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+            \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+            \\      <position coordinate="azimuth">0</position>
+            \\      <position coordinate="elevation">0</position>
+            \\      <zoneExclusion>
+            \\        <zone minX="0.5" minY="-1" minZ="-1" maxX="-0.5" maxY="1" maxZ="1"/>
+            \\      </zoneExclusion>
+            \\    </audioBlockFormatObjects>
+            \\  </audioChannelFormat>
+            \\</audioFormatExtended>
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidAdmParameterRange,
+        Document.init(
+            \\<audioFormatExtended>
+            \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+            \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+            \\      <position coordinate="azimuth">0</position>
+            \\      <position coordinate="elevation">0</position>
+            \\      <zoneExclusion>
+            \\        <zone minAzimuth="-181" maxAzimuth="30" minElevation="-30" maxElevation="30"/>
+            \\      </zoneExclusion>
+            \\    </audioBlockFormatObjects>
+            \\  </audioChannelFormat>
+            \\</audioFormatExtended>
+        ),
+    );
+    try std.testing.expectError(
+        error.AdmBlockParameterNotAllowedForType,
+        Document.init(
+            \\<audioFormatExtended>
+            \\  <audioChannelFormat audioChannelFormatID="AC_00011001">
+            \\    <audioBlockFormatDirectSpeakers audioBlockFormatID="AB_00011001_00000001">
+            \\      <position coordinate="azimuth">0</position>
+            \\      <position coordinate="elevation">0</position>
+            \\      <zoneExclusion/>
+            \\    </audioBlockFormatDirectSpeakers>
+            \\  </audioChannelFormat>
+            \\</audioFormatExtended>
+        ),
+    );
+}
+
+test "ADM XML bounds exclusion zone storage" {
+    var storage: [8192]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&storage);
+    try writer.writeAll(
+        "<audioFormatExtended><audioChannelFormat " ++
+            "audioChannelFormatID=\"AC_00031001\">" ++
+            "<audioBlockFormatObjects " ++
+            "audioBlockFormatID=\"AB_00031001_00000001\">" ++
+            "<position coordinate=\"azimuth\">0</position>" ++
+            "<position coordinate=\"elevation\">0</position>" ++
+            "<zoneExclusion>",
+    );
+    for (0..max_adm_exclusion_zones + 1) |_|
+        try writer.writeAll(
+            "<zone minAzimuth=\"0\" maxAzimuth=\"0\" " ++
+                "minElevation=\"0\" maxElevation=\"0\"/>",
+        );
+    try writer.writeAll(
+        "</zoneExclusion></audioBlockFormatObjects>" ++
+            "</audioChannelFormat></audioFormatExtended>",
+    );
+    try std.testing.expectError(
+        error.TooManyAdmExclusionZones,
+        Document.init(writer.buffered()),
     );
 }
