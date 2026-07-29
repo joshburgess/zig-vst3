@@ -2452,6 +2452,29 @@ pub fn build(b: *std.Build) void {
         &mono_gain_lv2_bundle.step,
     );
 
+    const mono_gain_lv2_lint_step = b.step(
+        "lint-lv2-mono-gain",
+        "Run external schema and metadata lint for Mono Gain LV2",
+    );
+    const mono_gain_lv2_lint = b.addSystemCommand(
+        &.{"scripts/lint_lv2_bundle.sh"},
+    );
+    mono_gain_lv2_lint.addArg(
+        b.getInstallPath(
+            .prefix,
+            "bundle/zig_vst3_mono_gain.lv2",
+        ),
+    );
+    mono_gain_lv2_lint.addArg(
+        "https://zig-vst3.dev/plugins/mono-gain",
+    );
+    mono_gain_lv2_lint.step.dependOn(
+        &mono_gain_lv2_bundle.step,
+    );
+    mono_gain_lv2_lint_step.dependOn(
+        &mono_gain_lv2_lint.step,
+    );
+
     const mono_gain_lv2_entry_check = b.addSystemCommand(
         &.{"scripts/check_lv2_entry_symbol.sh"},
     );
@@ -2854,6 +2877,11 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_thread_sanitizer_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_build_modes.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_bundle_scripts.sh"}).step);
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_lv2lint_runner.sh"},
+        ).step,
+    );
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/check_public_gui_examples.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_installed_package.sh"}).step);
     test_step.dependOn(generate_fixtures_step);
