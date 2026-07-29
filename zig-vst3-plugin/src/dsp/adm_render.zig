@@ -5,6 +5,7 @@ const adm_direct_speaker_mapping =
     @import("adm_direct_speaker_mapping.zig");
 const adm_polar_extent = @import("adm_polar_extent.zig");
 const adm_polar_panner = @import("adm_polar_panner.zig");
+const adm_sample_time = @import("adm_sample_time.zig");
 const adm_time = @import("adm_time.zig");
 const adm_xml = @import("adm_xml.zig");
 
@@ -1409,22 +1410,12 @@ pub fn ObjectGainTimeline(
             segment: *const Segment,
             sample: u64,
         ) Sample {
-            const start = segment.start_position;
-            const end = segment.interpolation_end_position;
-            const sample_at_start_scale =
-                @as(u1024, sample) * start.denominator;
-            if (sample_at_start_scale <= start.numerator) return 0.0;
-            const numerator =
-                (sample_at_start_scale - start.numerator) *
-                end.denominator;
-            const denominator =
-                @as(u1024, end.numerator) * start.denominator -
-                @as(u1024, start.numerator) * end.denominator;
-            if (denominator == 0) return 1.0;
-            const phase =
-                wideUnsignedToF64(numerator) /
-                wideUnsignedToF64(denominator);
-            return @floatCast(std.math.clamp(phase, 0.0, 1.0));
+            return adm_sample_time.interpolationPhase(
+                Sample,
+                segment.start_position,
+                segment.interpolation_end_position,
+                sample,
+            );
         }
 
         fn mixInterpolatedSample(
@@ -3774,93 +3765,10 @@ fn renderGain(
     return gain;
 }
 
-const ExactAdmTime = struct {
-    whole_seconds: u128,
-    fractional_numerator: u128,
-    fractional_denominator: u128,
-};
-
-const ExactSamplePosition = struct {
-    numerator: u512,
-    denominator: u128,
-
-    fn compare(
-        self: ExactSamplePosition,
-        other: ExactSamplePosition,
-    ) std.math.Order {
-        return std.math.order(
-            @as(u1024, self.numerator) * other.denominator,
-            @as(u1024, other.numerator) * self.denominator,
-        );
-    }
-
-    fn ceil(self: ExactSamplePosition) !u64 {
-        if (self.denominator == 0)
-            return error.InvalidAdmRendererTime;
-        const quotient = self.numerator / self.denominator;
-        const rounded = quotient +
-            @intFromBool(self.numerator % self.denominator != 0);
-        if (rounded > std.math.maxInt(u64))
-            return error.AdmRendererTimeOverflow;
-        return @intCast(rounded);
-    }
-};
-
-fn wideUnsignedToF64(value: u1024) f64 {
-    if (value == 0) return 0.0;
-    const used_bits: u16 = @intCast(1024 - @clz(value));
-    const shift: u16 = used_bits -| 53;
-    const mantissa: u64 = @intCast(value >> @intCast(shift));
-    return std.math.ldexp(
-        @as(f64, @floatFromInt(mantissa)),
-        @as(i32, @intCast(shift)),
-    );
-}
+const ExactSamplePosition = adm_sample_time.Position;
 
 fn zeroAdmTime() adm_time.Value {
-    return .{
-        .whole_seconds = 0,
-        .fractional_numerator = 0,
-        .fractional_denominator = 1,
-        .format = .decimal,
-    };
-}
-
-fn exactAdmTime(
-    first: adm_time.Value,
-    second: ?adm_time.Value,
-) !ExactAdmTime {
-    if (first.fractional_denominator == 0 or
-        first.fractional_numerator >= first.fractional_denominator)
-    {
-        return error.InvalidAdmRendererTime;
-    }
-    const additional = second orelse zeroAdmTime();
-    if (additional.fractional_denominator == 0 or
-        additional.fractional_numerator >=
-            additional.fractional_denominator)
-    {
-        return error.InvalidAdmRendererTime;
-    }
-    const denominator =
-        @as(u128, first.fractional_denominator) *
-        additional.fractional_denominator;
-    const numerator =
-        @as(u256, first.fractional_numerator) *
-        additional.fractional_denominator +
-        @as(u256, additional.fractional_numerator) *
-            first.fractional_denominator;
-    const carry = numerator / denominator;
-    const whole = @as(u256, first.whole_seconds) +
-        additional.whole_seconds +
-        carry;
-    if (whole > std.math.maxInt(u128))
-        return error.AdmRendererTimeOverflow;
-    return .{
-        .whole_seconds = @intCast(whole),
-        .fractional_numerator = @intCast(numerator % denominator),
-        .fractional_denominator = denominator,
-    };
+    return adm_sample_time.zero();
 }
 
 fn compareAdmTimeSum(
@@ -3868,23 +3776,11 @@ fn compareAdmTimeSum(
     second: adm_time.Value,
     expected: adm_time.Value,
 ) !std.math.Order {
-    const sum = try exactAdmTime(first, second);
-    if (expected.fractional_denominator == 0 or
-        expected.fractional_numerator >= expected.fractional_denominator)
-    {
-        return error.InvalidAdmRendererTime;
-    }
-    const whole_order = std.math.order(
-        sum.whole_seconds,
-        @as(u128, expected.whole_seconds),
-    );
-    if (whole_order != .eq) return whole_order;
-    return std.math.order(
-        @as(u256, sum.fractional_numerator) *
-            expected.fractional_denominator,
-        @as(u256, expected.fractional_numerator) *
-            sum.fractional_denominator,
-    );
+    return adm_sample_time.compareSum(
+        first,
+        second,
+        expected,
+    ) catch |err| return mapSampleTimeError(err);
 }
 
 fn ceilAdmSamples(
@@ -3896,7 +3792,7 @@ fn ceilAdmSamples(
         first,
         second,
         sample_rate,
-    )).ceil();
+    )).ceil() catch |err| return mapSampleTimeError(err);
 }
 
 fn exactSamplePosition(
@@ -3904,15 +3800,25 @@ fn exactSamplePosition(
     second: ?adm_time.Value,
     sample_rate: u32,
 ) !ExactSamplePosition {
-    const time = try exactAdmTime(first, second);
-    const denominator = time.fractional_denominator;
-    const seconds_numerator =
-        @as(u512, time.whole_seconds) *
-        @as(u512, denominator) +
-        time.fractional_numerator;
-    return .{
-        .numerator = seconds_numerator * sample_rate,
-        .denominator = denominator,
+    return adm_sample_time.position(
+        first,
+        second,
+        sample_rate,
+    ) catch |err| return mapSampleTimeError(err);
+}
+
+fn mapSampleTimeError(
+    err: error{
+        InvalidAdmSampleTime,
+        AdmSampleTimeOverflow,
+    },
+) error{
+    InvalidAdmRendererTime,
+    AdmRendererTimeOverflow,
+} {
+    return switch (err) {
+        error.InvalidAdmSampleTime => error.InvalidAdmRendererTime,
+        error.AdmSampleTimeOverflow => error.AdmRendererTimeOverflow,
     };
 }
 
