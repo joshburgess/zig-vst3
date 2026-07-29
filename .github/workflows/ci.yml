@@ -91,6 +91,20 @@ jobs:
       - name: Build
         if: runner.os != 'Windows'
         run: zig build
+      - name: Check Linux UI process symbols
+        if: runner.os == 'Linux'
+        run: |
+          ui_binary=zig-out/lib/libzig_vst3_mono_gain_lv2_ui.so
+          if ! nm -A "$ui_binary" | grep -E '[[:space:]]fork$'; then
+            exit 0
+          fi
+          nm -A .vst3-sdk/vstgui-adapter-build/Release/libs/*.a |
+            grep -E '[[:space:]]fork$' || true
+          while IFS= read -r object; do
+            nm -A "$object" 2>/dev/null |
+              grep -E '[[:space:]]fork$' || true
+          done < <(rg --files .zig-cache | rg '_zcu\.o$')
+          exit 1
       - name: Build
         if: runner.os == 'Windows'
         run: zig build -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
