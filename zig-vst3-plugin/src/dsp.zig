@@ -122,6 +122,8 @@ pub const AdmObjectPolarExtentGainPlan =
     adm_render.ObjectPolarExtentGainPlan;
 pub const AdmObjectCartesianExtentGainPlan =
     adm_render.ObjectCartesianExtentGainPlan;
+pub const AdmObjectGainTimeline =
+    adm_render.ObjectGainTimeline;
 pub const AdmOutputSpeaker = adm_render.OutputSpeaker;
 pub const AdmPolarPosition = adm_render.PolarPosition;
 pub const AdmCartesianPosition = adm_render.CartesianPosition;

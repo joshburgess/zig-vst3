@@ -3,6 +3,7 @@ const adm = @import("adm.zig");
 const adm_cartesian_extent = @import("adm_cartesian_extent.zig");
 const adm_polar_extent = @import("adm_polar_extent.zig");
 const adm_polar_panner = @import("adm_polar_panner.zig");
+const adm_time = @import("adm_time.zig");
 const adm_xml = @import("adm_xml.zig");
 
 pub const maximum_input_channels = adm_xml.max_adm_matrix_coefficients;
@@ -1005,6 +1006,441 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
 
 pub const ObjectPolarExtentGainPlan = ObjectPointGainPlan;
 pub const ObjectCartesianExtentGainPlan = ObjectPointGainPlan;
+
+/// Owns a bounded sequence of precomputed Objects gain targets.
+pub fn ObjectGainTimeline(
+    comptime Sample: type,
+    comptime maximum_blocks: usize,
+) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError("ObjectGainTimeline supports f32 and f64 samples");
+    if (maximum_blocks == 0)
+        @compileError("ObjectGainTimeline requires at least one block");
+
+    return struct {
+        const Self = @This();
+        const GainPlan = ObjectPointGainPlan(Sample);
+        const PointPanners = struct {
+            polar: ?*const PolarPointSourcePanner(Sample),
+            cartesian: ?*const CartesianPointSourcePanner(Sample),
+        };
+        const SpatialPanner = union(enum) {
+            point: PointPanners,
+            polar_extent: *const PolarExtentPanner(Sample),
+            cartesian_extent: *const CartesianExtentPanner(Sample),
+        };
+        const Segment = struct {
+            first_sample: u64,
+            interpolation_end_sample: u64,
+            end_sample: u64,
+            start_position: ExactSamplePosition,
+            interpolation_end_position: ExactSamplePosition,
+            end_position: ExactSamplePosition,
+            interpolate_from_previous: bool,
+            target: GainPlan,
+        };
+
+        output_count: usize,
+        segment_count: usize,
+        segments: [maximum_blocks]Segment = undefined,
+
+        pub fn init(
+            blocks: []const adm_xml.BlockFormat,
+            outputs: []const OutputSpeaker,
+            polar_panner: ?*const PolarPointSourcePanner(Sample),
+            cartesian_panner: ?*const CartesianPointSourcePanner(Sample),
+            context: ObjectRenderingContext,
+            sample_rate: u32,
+        ) !Self {
+            return initWithPanner(
+                blocks,
+                outputs,
+                .{ .point = .{
+                    .polar = polar_panner,
+                    .cartesian = cartesian_panner,
+                } },
+                context,
+                sample_rate,
+            );
+        }
+
+        pub fn initPolarExtent(
+            blocks: []const adm_xml.BlockFormat,
+            outputs: []const OutputSpeaker,
+            panner: *const PolarExtentPanner(Sample),
+            context: ObjectRenderingContext,
+            sample_rate: u32,
+        ) !Self {
+            return initWithPanner(
+                blocks,
+                outputs,
+                .{ .polar_extent = panner },
+                context,
+                sample_rate,
+            );
+        }
+
+        pub fn initCartesianExtent(
+            blocks: []const adm_xml.BlockFormat,
+            outputs: []const OutputSpeaker,
+            panner: *const CartesianExtentPanner(Sample),
+            context: ObjectRenderingContext,
+            sample_rate: u32,
+        ) !Self {
+            return initWithPanner(
+                blocks,
+                outputs,
+                .{ .cartesian_extent = panner },
+                context,
+                sample_rate,
+            );
+        }
+
+        fn initWithPanner(
+            blocks: []const adm_xml.BlockFormat,
+            outputs: []const OutputSpeaker,
+            spatial_panner: SpatialPanner,
+            context: ObjectRenderingContext,
+            sample_rate: u32,
+        ) !Self {
+            if (sample_rate == 0)
+                return error.InvalidAdmRendererSampleRate;
+            if (blocks.len == 0)
+                return error.MissingAdmRendererObjectBlock;
+            if (blocks.len > maximum_blocks)
+                return error.AdmRendererObjectBlockCapacityExceeded;
+
+            const channel = blocks[0].channel_identifier;
+            var result = Self{
+                .output_count = outputs.len,
+                .segment_count = blocks.len,
+            };
+            for (blocks, 0..) |*block, block_index| {
+                if (!block.channel_identifier.eql(channel))
+                    return error.AdmRendererObjectChannelMismatch;
+                const duration = block.duration orelse
+                    return error.MissingAdmRendererObjectBlockDuration;
+                if (!block.rtime_explicit)
+                    return error.MissingAdmRendererObjectBlockTime;
+                if (block_index != 0) {
+                    const previous_identifier =
+                        blocks[block_index - 1].identifier.secondary orelse
+                        return error.InvalidAdmRendererObjectBlockSequence;
+                    const identifier = block.identifier.secondary orelse
+                        return error.InvalidAdmRendererObjectBlockSequence;
+                    const expected_identifier = std.math.add(
+                        u32,
+                        previous_identifier,
+                        1,
+                    ) catch
+                        return error.InvalidAdmRendererObjectBlockSequence;
+                    if (identifier != expected_identifier)
+                        return error.InvalidAdmRendererObjectBlockSequence;
+                }
+
+                const first_sample =
+                    try ceilAdmSamples(block.rtime, null, sample_rate);
+                const end_sample =
+                    try ceilAdmSamples(block.rtime, duration, sample_rate);
+                const start_position =
+                    try exactSamplePosition(
+                        block.rtime,
+                        null,
+                        sample_rate,
+                    );
+                const end_position =
+                    try exactSamplePosition(
+                        block.rtime,
+                        duration,
+                        sample_rate,
+                    );
+                if (end_position.compare(start_position) == .lt)
+                    return error.InvalidAdmRendererObjectBlockDuration;
+
+                var adjacent = false;
+                if (block_index != 0) {
+                    const previous = &blocks[block_index - 1];
+                    const previous_duration = previous.duration orelse
+                        return error.MissingAdmRendererObjectBlockDuration;
+                    const order = try compareAdmTimeSum(
+                        previous.rtime,
+                        previous_duration,
+                        block.rtime,
+                    );
+                    if (order == .gt)
+                        return error.OverlappingAdmRendererObjectBlocks;
+                    adjacent = order == .eq;
+                }
+
+                const interpolation_length = if (!adjacent or block_index == 0)
+                    null
+                else if (block.jump_position.enabled)
+                    block.jump_position.interpolation_length orelse
+                        zeroAdmTime()
+                else
+                    duration;
+                if (interpolation_length) |length| {
+                    if (length.compare(duration) == .gt)
+                        return error.InvalidAdmRendererInterpolationLength;
+                }
+                const interpolation_end_sample = if (interpolation_length) |length|
+                    try ceilAdmSamples(block.rtime, length, sample_rate)
+                else
+                    first_sample;
+                const interpolation_end_position =
+                    if (interpolation_length) |length|
+                        try exactSamplePosition(
+                            block.rtime,
+                            length,
+                            sample_rate,
+                        )
+                    else
+                        start_position;
+
+                const target = switch (spatial_panner) {
+                    .point => |panners| try GainPlan.init(
+                        block,
+                        outputs,
+                        panners.polar,
+                        panners.cartesian,
+                        context,
+                    ),
+                    .polar_extent => |panner| try GainPlan.initPolarExtent(
+                        block,
+                        outputs,
+                        panner,
+                        context,
+                    ),
+                    .cartesian_extent => |panner| try GainPlan.initCartesianExtent(
+                        block,
+                        outputs,
+                        panner,
+                        context,
+                    ),
+                };
+                result.segments[block_index] = .{
+                    .first_sample = first_sample,
+                    .interpolation_end_sample = interpolation_end_sample,
+                    .end_sample = end_sample,
+                    .start_position = start_position,
+                    .interpolation_end_position = interpolation_end_position,
+                    .end_position = end_position,
+                    .interpolate_from_previous = adjacent and
+                        interpolation_end_position.compare(start_position) ==
+                            .gt,
+                    .target = target,
+                };
+            }
+            if (!result.valid())
+                return error.InvalidAdmRendererState;
+            return result;
+        }
+
+        pub fn mix(
+            self: *const Self,
+            first_sample: u64,
+            input: []const Sample,
+            direct_outputs: []const []Sample,
+            diffuse_outputs: []const []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            try validateMixBuffers(
+                Sample,
+                input,
+                direct_outputs,
+                self.output_count,
+            );
+            try validateMixBuffers(
+                Sample,
+                input,
+                diffuse_outputs,
+                self.output_count,
+            );
+            for (direct_outputs) |direct_output| {
+                for (diffuse_outputs) |diffuse_output| {
+                    if (slicesOverlap(
+                        Sample,
+                        direct_output,
+                        diffuse_output,
+                    )) {
+                        return error.AdmRendererAliasedBuffers;
+                    }
+                }
+            }
+            const input_length: u64 = std.math.cast(
+                u64,
+                input.len,
+            ) orelse return error.AdmRendererSampleRangeOverflow;
+            const end_sample = std.math.add(
+                u64,
+                first_sample,
+                input_length,
+            ) catch return error.AdmRendererSampleRangeOverflow;
+
+            for (self.segmentSlice(), 0..) |*segment, segment_index| {
+                const overlap_start =
+                    @max(first_sample, segment.first_sample);
+                const overlap_end = @min(end_sample, segment.end_sample);
+                if (overlap_start >= overlap_end) continue;
+                const source = if (segment.interpolate_from_previous)
+                    &self.segments[segment_index - 1].target
+                else
+                    &segment.target;
+                var sample = overlap_start;
+                while (sample < overlap_end) : (sample += 1) {
+                    const input_index: usize = @intCast(
+                        sample - first_sample,
+                    );
+                    const input_sample = input[input_index];
+                    if (!std.math.isFinite(input_sample)) continue;
+                    const phase = if (segment.interpolate_from_previous and
+                        sample < segment.interpolation_end_sample)
+                        interpolationPhase(segment, sample)
+                    else
+                        1.0;
+                    for (
+                        direct_outputs,
+                        source.directGainSlice(),
+                        segment.target.directGainSlice(),
+                    ) |output, source_gain, target_gain| {
+                        mixInterpolatedSample(
+                            output,
+                            input_index,
+                            input_sample,
+                            source_gain,
+                            target_gain,
+                            phase,
+                        );
+                    }
+                    for (
+                        diffuse_outputs,
+                        source.diffuseGainSlice(),
+                        segment.target.diffuseGainSlice(),
+                    ) |output, source_gain, target_gain| {
+                        mixInterpolatedSample(
+                            output,
+                            input_index,
+                            input_sample,
+                            source_gain,
+                            target_gain,
+                            phase,
+                        );
+                    }
+                }
+            }
+        }
+
+        pub fn blockCount(self: *const Self) usize {
+            return @min(self.segment_count, maximum_blocks);
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.output_count == 0 or
+                self.output_count > maximum_output_channels or
+                self.segment_count == 0 or
+                self.segment_count > maximum_blocks)
+            {
+                return false;
+            }
+            for (self.segmentSlice(), 0..) |segment, index| {
+                if (segment.target.output_count != self.output_count or
+                    !segment.target.valid() or
+                    segment.first_sample > segment.interpolation_end_sample or
+                    segment.interpolation_end_sample > segment.end_sample or
+                    segment.interpolation_end_position.compare(
+                        segment.start_position,
+                    ) == .lt or
+                    segment.end_position.compare(
+                        segment.interpolation_end_position,
+                    ) == .lt or
+                    (segment.start_position.ceil() catch null) !=
+                        segment.first_sample or
+                    (segment.interpolation_end_position.ceil() catch null) !=
+                        segment.interpolation_end_sample or
+                    (segment.end_position.ceil() catch null) !=
+                        segment.end_sample)
+                {
+                    return false;
+                }
+                if (segment.interpolate_from_previous) {
+                    if (index == 0 or
+                        segment.interpolation_end_position.compare(
+                            segment.start_position,
+                        ) != .gt or
+                        self.segments[index - 1].end_position.compare(
+                            segment.start_position,
+                        ) != .eq)
+                    {
+                        return false;
+                    }
+                } else if (segment.interpolation_end_position.compare(
+                    segment.start_position,
+                ) != .eq) {
+                    return false;
+                }
+                if (index != 0 and
+                    self.segments[index - 1].end_position.compare(
+                        segment.start_position,
+                    ) == .gt)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        fn segmentSlice(self: *const Self) []const Segment {
+            return self.segments[0..@min(
+                self.segment_count,
+                maximum_blocks,
+            )];
+        }
+
+        fn interpolationPhase(
+            segment: *const Segment,
+            sample: u64,
+        ) Sample {
+            const start = segment.start_position;
+            const end = segment.interpolation_end_position;
+            const sample_at_start_scale =
+                @as(u1024, sample) * start.denominator;
+            if (sample_at_start_scale <= start.numerator) return 0.0;
+            const numerator =
+                (sample_at_start_scale - start.numerator) *
+                end.denominator;
+            const denominator =
+                @as(u1024, end.numerator) * start.denominator -
+                @as(u1024, start.numerator) * end.denominator;
+            if (denominator == 0) return 1.0;
+            const phase =
+                wideUnsignedToF64(numerator) /
+                wideUnsignedToF64(denominator);
+            return @floatCast(std.math.clamp(phase, 0.0, 1.0));
+        }
+
+        fn mixInterpolatedSample(
+            output: []Sample,
+            sample_index: usize,
+            input_sample: Sample,
+            source_gain: Sample,
+            target_gain: Sample,
+            phase: Sample,
+        ) void {
+            if (!std.math.isFinite(output[sample_index])) {
+                output[sample_index] = 0.0;
+                return;
+            }
+            const gain =
+                source_gain + (target_gain - source_gain) * phase;
+            const mixed =
+                output[sample_index] + input_sample * gain;
+            output[sample_index] = if (std.math.isFinite(mixed))
+                mixed
+            else
+                0.0;
+        }
+    };
+}
 
 pub fn StaticMatrixMixer(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
@@ -3040,6 +3476,148 @@ fn renderGain(
     return gain;
 }
 
+const ExactAdmTime = struct {
+    whole_seconds: u128,
+    fractional_numerator: u128,
+    fractional_denominator: u128,
+};
+
+const ExactSamplePosition = struct {
+    numerator: u512,
+    denominator: u128,
+
+    fn compare(
+        self: ExactSamplePosition,
+        other: ExactSamplePosition,
+    ) std.math.Order {
+        return std.math.order(
+            @as(u1024, self.numerator) * other.denominator,
+            @as(u1024, other.numerator) * self.denominator,
+        );
+    }
+
+    fn ceil(self: ExactSamplePosition) !u64 {
+        if (self.denominator == 0)
+            return error.InvalidAdmRendererTime;
+        const quotient = self.numerator / self.denominator;
+        const rounded = quotient +
+            @intFromBool(self.numerator % self.denominator != 0);
+        if (rounded > std.math.maxInt(u64))
+            return error.AdmRendererTimeOverflow;
+        return @intCast(rounded);
+    }
+};
+
+fn wideUnsignedToF64(value: u1024) f64 {
+    if (value == 0) return 0.0;
+    const used_bits: u16 = @intCast(1024 - @clz(value));
+    const shift: u16 = used_bits -| 53;
+    const mantissa: u64 = @intCast(value >> @intCast(shift));
+    return std.math.ldexp(
+        @as(f64, @floatFromInt(mantissa)),
+        @as(i32, @intCast(shift)),
+    );
+}
+
+fn zeroAdmTime() adm_time.Value {
+    return .{
+        .whole_seconds = 0,
+        .fractional_numerator = 0,
+        .fractional_denominator = 1,
+        .format = .decimal,
+    };
+}
+
+fn exactAdmTime(
+    first: adm_time.Value,
+    second: ?adm_time.Value,
+) !ExactAdmTime {
+    if (first.fractional_denominator == 0 or
+        first.fractional_numerator >= first.fractional_denominator)
+    {
+        return error.InvalidAdmRendererTime;
+    }
+    const additional = second orelse zeroAdmTime();
+    if (additional.fractional_denominator == 0 or
+        additional.fractional_numerator >=
+            additional.fractional_denominator)
+    {
+        return error.InvalidAdmRendererTime;
+    }
+    const denominator =
+        @as(u128, first.fractional_denominator) *
+        additional.fractional_denominator;
+    const numerator =
+        @as(u256, first.fractional_numerator) *
+        additional.fractional_denominator +
+        @as(u256, additional.fractional_numerator) *
+            first.fractional_denominator;
+    const carry = numerator / denominator;
+    const whole = @as(u256, first.whole_seconds) +
+        additional.whole_seconds +
+        carry;
+    if (whole > std.math.maxInt(u128))
+        return error.AdmRendererTimeOverflow;
+    return .{
+        .whole_seconds = @intCast(whole),
+        .fractional_numerator = @intCast(numerator % denominator),
+        .fractional_denominator = denominator,
+    };
+}
+
+fn compareAdmTimeSum(
+    first: adm_time.Value,
+    second: adm_time.Value,
+    expected: adm_time.Value,
+) !std.math.Order {
+    const sum = try exactAdmTime(first, second);
+    if (expected.fractional_denominator == 0 or
+        expected.fractional_numerator >= expected.fractional_denominator)
+    {
+        return error.InvalidAdmRendererTime;
+    }
+    const whole_order = std.math.order(
+        sum.whole_seconds,
+        @as(u128, expected.whole_seconds),
+    );
+    if (whole_order != .eq) return whole_order;
+    return std.math.order(
+        @as(u256, sum.fractional_numerator) *
+            expected.fractional_denominator,
+        @as(u256, expected.fractional_numerator) *
+            sum.fractional_denominator,
+    );
+}
+
+fn ceilAdmSamples(
+    first: adm_time.Value,
+    second: ?adm_time.Value,
+    sample_rate: u32,
+) !u64 {
+    return (try exactSamplePosition(
+        first,
+        second,
+        sample_rate,
+    )).ceil();
+}
+
+fn exactSamplePosition(
+    first: adm_time.Value,
+    second: ?adm_time.Value,
+    sample_rate: u32,
+) !ExactSamplePosition {
+    const time = try exactAdmTime(first, second);
+    const denominator = time.fractional_denominator;
+    const seconds_numerator =
+        @as(u512, time.whole_seconds) *
+        @as(u512, denominator) +
+        time.fractional_numerator;
+    return .{
+        .numerator = seconds_numerator * sample_rate,
+        .denominator = denominator,
+    };
+}
+
 fn findInputChannel(
     channels: []const adm.Identifier,
     target: adm.Identifier,
@@ -4756,6 +5334,459 @@ test "ADM Cartesian exclusion repairs side rows and preserves all-excluded layou
     );
 }
 
+test "ADM Objects gain timeline renders regular jump and shortened ramps" {
+    const outputs = testPolarFiveLayout();
+    const panner = try PolarPointSourcePanner(f64).init(&outputs);
+    var blocks = [_]adm_xml.BlockFormat{
+        try testTimedObjectBlock(1, "0.00000", "1.00000", 0.25),
+        try testTimedObjectBlock(2, "1.00000", "1.00000", 1.0),
+        try testTimedObjectBlock(3, "2.00000", "1.00000", 0.5),
+        try testTimedObjectBlock(4, "3.00000", "1.00000", 1.0),
+        try testTimedObjectBlock(5, "5.00000", "1.00000", 0.25),
+    };
+    blocks[2].jump_position.enabled = true;
+    blocks[3].jump_position = .{
+        .enabled = true,
+        .interpolation_length = try adm_time.Value.parse("0.50000"),
+    };
+    const timeline = try ObjectGainTimeline(f64, 5).init(
+        &blocks,
+        &outputs,
+        &panner,
+        null,
+        .{},
+        4,
+    );
+    try std.testing.expect(timeline.valid());
+    try std.testing.expectEqual(@as(usize, 5), timeline.blockCount());
+
+    const input: [24]f64 = @splat(1.0);
+    var direct_storage: [outputs.len][input.len]f64 =
+        @splat(@splat(0.0));
+    var diffuse_storage: [outputs.len][input.len]f64 =
+        @splat(@splat(0.0));
+    var direct: [outputs.len][]f64 = undefined;
+    var diffuse: [outputs.len][]f64 = undefined;
+    for (
+        &direct_storage,
+        &direct,
+        &diffuse_storage,
+        &diffuse,
+    ) |*direct_samples, *direct_output, *diffuse_samples, *diffuse_output| {
+        direct_output.* = direct_samples;
+        diffuse_output.* = diffuse_samples;
+    }
+    try timeline.mix(0, &input, &direct, &diffuse);
+
+    try std.testing.expectEqualDeep(
+        [_]f64{
+            0.25, 0.25,   0.25,  0.25,
+            0.25, 0.4375, 0.625, 0.8125,
+            0.5,  0.5,    0.5,   0.5,
+            0.5,  0.75,   1.0,   1.0,
+            0.0,  0.0,    0.0,   0.0,
+            0.25, 0.25,   0.25,  0.25,
+        },
+        direct_storage[2],
+    );
+    for (diffuse_storage) |channel| {
+        try std.testing.expectEqualDeep(
+            @as([input.len]f64, @splat(0.0)),
+            channel,
+        );
+    }
+}
+
+test "ADM Objects gain timeline honors zero and fractional block boundaries" {
+    const outputs = testPolarFiveLayout();
+    const panner = try PolarPointSourcePanner(f32).init(&outputs);
+    const zero_blocks = [_]adm_xml.BlockFormat{
+        try testTimedObjectBlock(1, "0.00000", "0.00000", 0.2),
+        try testTimedObjectBlock(2, "0.00000", "1.00000", 1.0),
+    };
+    const zero_timeline = try ObjectGainTimeline(f32, 2).init(
+        &zero_blocks,
+        &outputs,
+        &panner,
+        null,
+        .{},
+        4,
+    );
+    const input: [4]f32 = @splat(1.0);
+    var direct_storage: [outputs.len][input.len]f32 =
+        @splat(@splat(0.0));
+    var diffuse_storage: [outputs.len][input.len]f32 =
+        @splat(@splat(0.0));
+    var direct: [outputs.len][]f32 = undefined;
+    var diffuse: [outputs.len][]f32 = undefined;
+    for (
+        &direct_storage,
+        &direct,
+        &diffuse_storage,
+        &diffuse,
+    ) |*direct_samples, *direct_output, *diffuse_samples, *diffuse_output| {
+        direct_output.* = direct_samples;
+        diffuse_output.* = diffuse_samples;
+    }
+    try zero_timeline.mix(0, &input, &direct, &diffuse);
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.2, 0.4, 0.6, 0.8 },
+        direct_storage[2],
+    );
+
+    const fractional_blocks = [_]adm_xml.BlockFormat{
+        try testTimedObjectBlock(1, "0.12500", "0.50000", 0.75),
+    };
+    const fractional_timeline = try ObjectGainTimeline(f32, 1).init(
+        &fractional_blocks,
+        &outputs,
+        &panner,
+        null,
+        .{},
+        4,
+    );
+    direct_storage = @splat(@splat(0.0));
+    diffuse_storage = @splat(@splat(0.0));
+    try fractional_timeline.mix(0, &input, &direct, &diffuse);
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.0, 0.75, 0.75, 0.0 },
+        direct_storage[2],
+    );
+}
+
+test "ADM Objects gain timeline preserves phase beyond f64 integer precision" {
+    const outputs = testPolarFiveLayout();
+    const panner = try PolarPointSourcePanner(f64).init(&outputs);
+    const blocks = [_]adm_xml.BlockFormat{
+        try testTimedObjectBlock(
+            1,
+            "9007199254740992S1",
+            "1S1",
+            0.25,
+        ),
+        try testTimedObjectBlock(
+            2,
+            "9007199254740993S1",
+            "4S1",
+            1.0,
+        ),
+    };
+    const timeline = try ObjectGainTimeline(f64, 2).init(
+        &blocks,
+        &outputs,
+        &panner,
+        null,
+        .{},
+        1,
+    );
+    const input = [_]f64{1.0};
+    var direct_storage: [outputs.len][1]f64 = @splat(@splat(0.0));
+    var diffuse_storage: [outputs.len][1]f64 = @splat(@splat(0.0));
+    var direct: [outputs.len][]f64 = undefined;
+    var diffuse: [outputs.len][]f64 = undefined;
+    for (
+        &direct_storage,
+        &direct,
+        &diffuse_storage,
+        &diffuse,
+    ) |*direct_samples, *direct_output, *diffuse_samples, *diffuse_output| {
+        direct_output.* = direct_samples;
+        diffuse_output.* = diffuse_samples;
+    }
+    try timeline.mix(
+        9_007_199_254_740_994,
+        &input,
+        &direct,
+        &diffuse,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.4375),
+        direct_storage[2][0],
+    );
+}
+
+test "ADM Objects gain timeline composes extent diffuse and exclusion targets" {
+    const outputs = testPolarFiveLayout();
+    const point_panner = try PolarPointSourcePanner(f64).init(&outputs);
+    var gain_storage: [
+        polar_extent_spreading_direction_count *
+            outputs.len
+    ]f64 = undefined;
+    const extent_panner = try PolarExtentPanner(f64).init(
+        &point_panner,
+        &gain_storage,
+    );
+    var blocks = [_]adm_xml.BlockFormat{
+        try testTimedObjectBlock(1, "0.00000", "1.00000", 0.8),
+        try testTimedObjectBlock(2, "1.00000", "1.00000", 0.6),
+    };
+    blocks[0].width = 20.0;
+    blocks[0].height = 10.0;
+    blocks[0].diffuse = 0.25;
+    blocks[1].width = 100.0;
+    blocks[1].height = 50.0;
+    blocks[1].depth = 0.4;
+    blocks[1].diffuse = 0.75;
+    blocks[1].exclusion_zones[0] = .{
+        .polar = .{
+            .min_azimuth = -1.0,
+            .max_azimuth = 1.0,
+            .min_elevation = -1.0,
+            .max_elevation = 1.0,
+        },
+    };
+    blocks[1].exclusion_zone_count = 1;
+
+    const source = try ObjectPointGainPlan(f64).initPolarExtent(
+        &blocks[0],
+        &outputs,
+        &extent_panner,
+        .{},
+    );
+    const target = try ObjectPointGainPlan(f64).initPolarExtent(
+        &blocks[1],
+        &outputs,
+        &extent_panner,
+        .{},
+    );
+    const timeline = try ObjectGainTimeline(f64, 2).initPolarExtent(
+        &blocks,
+        &outputs,
+        &extent_panner,
+        .{},
+        4,
+    );
+
+    const input = [_]f64{ 1.0, 1.0 };
+    var direct_storage: [outputs.len][input.len]f64 =
+        @splat(@splat(0.0));
+    var diffuse_storage: [outputs.len][input.len]f64 =
+        @splat(@splat(0.0));
+    var direct: [outputs.len][]f64 = undefined;
+    var diffuse: [outputs.len][]f64 = undefined;
+    for (
+        &direct_storage,
+        &direct,
+        &diffuse_storage,
+        &diffuse,
+    ) |*direct_samples, *direct_output, *diffuse_samples, *diffuse_output| {
+        direct_output.* = direct_samples;
+        diffuse_output.* = diffuse_samples;
+    }
+    try timeline.mix(4, &input, &direct, &diffuse);
+    for (0..outputs.len) |output_index| {
+        try std.testing.expectApproxEqAbs(
+            source.directGainSlice()[output_index],
+            direct_storage[output_index][0],
+            1.0e-12,
+        );
+        try std.testing.expectApproxEqAbs(
+            source.directGainSlice()[output_index] * 0.75 +
+                target.directGainSlice()[output_index] * 0.25,
+            direct_storage[output_index][1],
+            1.0e-12,
+        );
+        try std.testing.expectApproxEqAbs(
+            source.diffuseGainSlice()[output_index],
+            diffuse_storage[output_index][0],
+            1.0e-12,
+        );
+        try std.testing.expectApproxEqAbs(
+            source.diffuseGainSlice()[output_index] * 0.75 +
+                target.diffuseGainSlice()[output_index] * 0.25,
+            diffuse_storage[output_index][1],
+            1.0e-12,
+        );
+    }
+}
+
+test "ADM Objects gain timeline accepts Cartesian extent sequences" {
+    const outputs = testCartesianCubeLayout();
+    const point_panner = try CartesianPointSourcePanner(f32).init(&outputs);
+    const extent_panner =
+        try CartesianExtentPanner(f32).init(&point_panner);
+    var blocks = [_]adm_xml.BlockFormat{
+        try testTimedObjectBlock(1, "0.00000", "1.00000", 1.0),
+        try testTimedObjectBlock(2, "1.00000", "1.00000", 0.5),
+    };
+    for (&blocks) |*block| {
+        block.cartesian = true;
+        block.positions[0].coordinate = .x;
+        block.positions[1].coordinate = .y;
+        block.positions[2].coordinate = .z;
+        block.width = 0.2;
+        block.height = 0.3;
+        block.depth = 0.4;
+    }
+    blocks[1].positions[0].value = 0.5;
+    blocks[1].positions[1].value = -0.25;
+    blocks[1].jump_position.enabled = true;
+    blocks[1].exclusion_zones[0] = .{
+        .cartesian = .{
+            .min_x = -1.0,
+            .min_y = -1.0,
+            .min_z = -1.0,
+            .max_x = -0.9,
+            .max_y = 1.0,
+            .max_z = 1.0,
+        },
+    };
+    blocks[1].exclusion_zone_count = 1;
+    const target = try ObjectPointGainPlan(f32).initCartesianExtent(
+        &blocks[1],
+        &outputs,
+        &extent_panner,
+        .{},
+    );
+    const timeline =
+        try ObjectGainTimeline(f32, 2).initCartesianExtent(
+            &blocks,
+            &outputs,
+            &extent_panner,
+            .{},
+            48_000,
+        );
+
+    const input = [_]f32{1.0};
+    var direct_storage: [outputs.len][1]f32 = @splat(@splat(0.0));
+    var diffuse_storage: [outputs.len][1]f32 = @splat(@splat(0.0));
+    var direct: [outputs.len][]f32 = undefined;
+    var diffuse: [outputs.len][]f32 = undefined;
+    for (
+        &direct_storage,
+        &direct,
+        &diffuse_storage,
+        &diffuse,
+    ) |*direct_samples, *direct_output, *diffuse_samples, *diffuse_output| {
+        direct_output.* = direct_samples;
+        diffuse_output.* = diffuse_samples;
+    }
+    try timeline.mix(48_000, &input, &direct, &diffuse);
+    for (direct_storage, target.directGainSlice()) |actual, expected| {
+        try std.testing.expectApproxEqAbs(
+            expected,
+            actual[0],
+            0.000_001,
+        );
+    }
+}
+
+test "ADM Objects gain timeline rejects malformed sequences transactionally" {
+    const outputs = testPolarFiveLayout();
+    const panner = try PolarPointSourcePanner(f32).init(&outputs);
+    var blocks = [_]adm_xml.BlockFormat{
+        try testTimedObjectBlock(1, "0.00000", "1.00000", 0.5),
+        try testTimedObjectBlock(2, "0.50000", "1.00000", 1.0),
+    };
+    try std.testing.expectError(
+        error.AdmRendererObjectBlockCapacityExceeded,
+        ObjectGainTimeline(f32, 1).init(
+            &blocks,
+            &outputs,
+            &panner,
+            null,
+            .{},
+            48_000,
+        ),
+    );
+    try std.testing.expectError(
+        error.OverlappingAdmRendererObjectBlocks,
+        ObjectGainTimeline(f32, 2).init(
+            &blocks,
+            &outputs,
+            &panner,
+            null,
+            .{},
+            48_000,
+        ),
+    );
+
+    blocks[1].rtime = try adm_time.Value.parse("1.00000");
+    blocks[1].jump_position = .{
+        .enabled = true,
+        .interpolation_length = try adm_time.Value.parse("2.00000"),
+    };
+    try std.testing.expectError(
+        error.InvalidAdmRendererInterpolationLength,
+        ObjectGainTimeline(f32, 2).init(
+            &blocks,
+            &outputs,
+            &panner,
+            null,
+            .{},
+            48_000,
+        ),
+    );
+    blocks[1].jump_position = .{};
+    blocks[1].rtime_explicit = false;
+    try std.testing.expectError(
+        error.MissingAdmRendererObjectBlockTime,
+        ObjectGainTimeline(f32, 2).init(
+            &blocks,
+            &outputs,
+            &panner,
+            null,
+            .{},
+            48_000,
+        ),
+    );
+
+    blocks[1].rtime_explicit = true;
+    var timeline = try ObjectGainTimeline(f32, 2).init(
+        &blocks,
+        &outputs,
+        &panner,
+        null,
+        .{},
+        48_000,
+    );
+    const input = [_]f32{1.0};
+    var direct_storage: [outputs.len][1]f32 = @splat(@splat(7.0));
+    var diffuse_storage: [outputs.len][1]f32 = @splat(@splat(7.0));
+    var direct: [outputs.len][]f32 = undefined;
+    var diffuse: [outputs.len][]f32 = undefined;
+    for (
+        &direct_storage,
+        &direct,
+        &diffuse_storage,
+        &diffuse,
+    ) |*direct_samples, *direct_output, *diffuse_samples, *diffuse_output| {
+        direct_output.* = direct_samples;
+        diffuse_output.* = diffuse_samples;
+    }
+    timeline.segment_count = 3;
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        timeline.mix(0, &input, &direct, &diffuse),
+    );
+    try std.testing.expectEqual(
+        @as([outputs.len][1]f32, @splat(@splat(7.0))),
+        direct_storage,
+    );
+
+    timeline = try ObjectGainTimeline(f32, 2).init(
+        &blocks,
+        &outputs,
+        &panner,
+        null,
+        .{},
+        48_000,
+    );
+    try std.testing.expectError(
+        error.AdmRendererSampleRangeOverflow,
+        timeline.mix(
+            std.math.maxInt(u64),
+            &input,
+            &direct,
+            &diffuse,
+        ),
+    );
+    try std.testing.expectError(
+        error.AdmRendererAliasedBuffers,
+        timeline.mix(0, &input, &direct, &direct),
+    );
+}
+
 test "ADM static matrix mixer binds identifiers and applies gains" {
     const document = try adm_xml.Document.init(
         \\<audioFormatExtended>
@@ -5865,6 +6896,46 @@ fn testPolarFiveLayout() [5]OutputSpeaker {
             .allocentric = .{ .x = 1, .y = -1, .z = 0 },
         },
     };
+}
+
+fn testTimedObjectBlock(
+    sequence: u32,
+    start: []const u8,
+    duration: []const u8,
+    gain: f64,
+) !adm_xml.BlockFormat {
+    var identifier_text: [32]u8 = undefined;
+    const identifier = try std.fmt.bufPrint(
+        &identifier_text,
+        "AB_00031001_{d:0>8}",
+        .{sequence},
+    );
+    var block = adm_xml.BlockFormat{
+        .identifier = try adm.Identifier.parse(identifier),
+        .channel_identifier = try adm.Identifier.parse("AC_00031001"),
+        .channel_name = null,
+        .rtime = try adm_time.Value.parse(start),
+        .rtime_explicit = true,
+        .duration = try adm_time.Value.parse(duration),
+        .gain = .{ .value = gain },
+    };
+    block.positions[0] = .{
+        .coordinate = .azimuth,
+        .bound = .exact,
+        .value = 0.0,
+    };
+    block.positions[1] = .{
+        .coordinate = .elevation,
+        .bound = .exact,
+        .value = 0.0,
+    };
+    block.positions[2] = .{
+        .coordinate = .distance,
+        .bound = .exact,
+        .value = 1.0,
+    };
+    block.position_count = 3;
+    return block;
 }
 
 fn testPolarFiveWithLfeLayout() [6]OutputSpeaker {

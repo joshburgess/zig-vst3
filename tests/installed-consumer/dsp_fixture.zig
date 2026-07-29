@@ -3617,6 +3617,55 @@ test "installed package exposes file-backed audio writers" {
         @as(f32, 0.0),
         object_plan.diffuseGainSlice()[2],
     );
+    var timed_blocks = [_]plugin.dsp.AdmXmlBlockFormat{
+        installed_block,
+        installed_block,
+    };
+    timed_blocks[1].identifier =
+        try plugin.dsp.AdmIdentifier.parse("AB_00031001_00000002");
+    timed_blocks[1].rtime =
+        try plugin.dsp.AdmTimeValue.parse("48000S48000");
+    timed_blocks[1].gain.value = 1.0;
+    const object_timeline =
+        try plugin.dsp.AdmObjectGainTimeline(f32, 2).init(
+            &timed_blocks,
+            &polar_layout,
+            &polar_panner,
+            &polar_cartesian_panner,
+            object_context,
+            48_000,
+        );
+    const timed_input = [_]f32{ 1.0, 1.0 };
+    var timed_direct_storage: [polar_layout.len][timed_input.len]f32 =
+        @splat(@splat(0.0));
+    var timed_diffuse_storage: [polar_layout.len][timed_input.len]f32 =
+        @splat(@splat(0.0));
+    var timed_direct: [polar_layout.len][]f32 = undefined;
+    var timed_diffuse: [polar_layout.len][]f32 = undefined;
+    for (
+        &timed_direct_storage,
+        &timed_direct,
+        &timed_diffuse_storage,
+        &timed_diffuse,
+    ) |*direct_samples, *direct_output, *diffuse_samples, *diffuse_output| {
+        direct_output.* = direct_samples;
+        diffuse_output.* = diffuse_samples;
+    }
+    try object_timeline.mix(
+        48_000,
+        &timed_input,
+        &timed_direct,
+        &timed_diffuse,
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0.5),
+        timed_direct_storage[2][0],
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.5 + 0.5 / 48_000.0),
+        timed_direct_storage[2][1],
+        0.000_001,
+    );
     var extent_gain_storage: [
         plugin.dsp.adm_polar_extent_spreading_direction_count *
             polar_layout.len
