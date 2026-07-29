@@ -4,8 +4,6 @@ set -eu
 script_dir="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 repository="${1:-$script_dir/..}"
 pattern='[jJ][uU][cC][eE]'
-revisions="$(mktemp "${TMPDIR:-/tmp}/zig-vst3-history-revisions.XXXXXX")"
-trap 'rm -f "$revisions"' EXIT HUP INT TERM
 
 git -C "$repository" rev-parse --git-dir >/dev/null
 
@@ -49,13 +47,25 @@ if git -C "$repository" log --all --name-only --format= |
     exit 1
 fi
 
-git -C "$repository" rev-list --all >"$revisions"
-while IFS= read -r revision; do
-    if git -C "$repository" grep -I -q -E "$pattern" "$revision" --; then
-        printf 'retired comparison reference found in revision %s\n' \
-            "$revision" >&2
-        exit 1
-    fi
-done <"$revisions"
+# Revision IDs contain no whitespace. One grep lets Git reuse object traversal.
+# shellcheck disable=SC2046
+set -- $(git -C "$repository" rev-list --all)
+if [ "$#" -gt 0 ]; then
+    set +e
+    git -C "$repository" grep -I -q -E "$pattern" "$@" --
+    result_code=$?
+    set -e
+    case "$result_code" in
+        0)
+            printf 'retired comparison reference found in reachable history\n' >&2
+            exit 1
+            ;;
+        1) ;;
+        *)
+            printf 'retired comparison reference history scan failed\n' >&2
+            exit "$result_code"
+            ;;
+    esac
+fi
 
 printf 'retired comparison reference scan passed\n'
