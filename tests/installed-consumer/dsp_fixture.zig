@@ -3617,6 +3617,34 @@ test "installed package exposes file-backed audio writers" {
         @as(f32, 0.0),
         object_plan.diffuseGainSlice()[2],
     );
+    var extent_gain_storage: [
+        plugin.dsp.adm_polar_extent_spreading_direction_count *
+            polar_layout.len
+    ]f32 = undefined;
+    const extent_panner = try plugin.dsp.AdmPolarExtentPanner(f32).init(
+        &polar_panner,
+        &extent_gain_storage,
+    );
+    var installed_extent_block = installed_block;
+    installed_extent_block.width = 20.0;
+    installed_extent_block.height = 10.0;
+    installed_extent_block.depth = 0.25;
+    const extent_plan =
+        try plugin.dsp.AdmObjectPolarExtentGainPlan(f32).initPolarExtent(
+            &installed_extent_block,
+            &polar_layout,
+            &extent_panner,
+            object_context,
+        );
+    var extent_power: f32 = 0.0;
+    for (extent_plan.directGainSlice()) |gain| {
+        extent_power += gain * gain;
+    }
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.25),
+        extent_power,
+        0.000_001,
+    );
     const polar_router =
         try plugin.dsp.AdmDirectSpeakerPositionRouter(f32).init(
             &direct_block,

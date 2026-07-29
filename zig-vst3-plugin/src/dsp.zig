@@ -105,6 +105,8 @@ pub const AdmDirectSpeakerPositionRouter =
     adm_render.DirectSpeakerPositionRouter;
 pub const AdmPolarPointSourcePanner =
     adm_render.PolarPointSourcePanner;
+pub const AdmPolarExtentPanner =
+    adm_render.PolarExtentPanner;
 pub const AdmCartesianPointSourcePanner =
     adm_render.CartesianPointSourcePanner;
 pub const AdmDirectSpeakerRoute = adm_render.DirectSpeakerRoute;
@@ -114,6 +116,8 @@ pub const AdmObjectRenderingContext =
     adm_render.ObjectRenderingContext;
 pub const AdmObjectPointGainPlan =
     adm_render.ObjectPointGainPlan;
+pub const AdmObjectPolarExtentGainPlan =
+    adm_render.ObjectPolarExtentGainPlan;
 pub const AdmOutputSpeaker = adm_render.OutputSpeaker;
 pub const AdmPolarPosition = adm_render.PolarPosition;
 pub const AdmCartesianPosition = adm_render.CartesianPosition;
@@ -123,6 +127,8 @@ pub const resolveAdmDirectSpeakerRoute =
 pub const AdmStaticMatrixMixer = adm_render.StaticMatrixMixer;
 pub const maximum_adm_renderer_input_channels =
     adm_render.maximum_input_channels;
+pub const adm_polar_extent_spreading_direction_count =
+    adm_render.polar_extent_spreading_direction_count;
 pub const maximum_adm_renderer_output_channels =
     adm_render.maximum_output_channels;
 pub const AdmXmlDeclaration = adm_xml.Declaration;

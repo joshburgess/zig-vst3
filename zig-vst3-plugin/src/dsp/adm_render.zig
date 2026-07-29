@@ -1,10 +1,13 @@
 const std = @import("std");
 const adm = @import("adm.zig");
+const adm_polar_extent = @import("adm_polar_extent.zig");
 const adm_polar_panner = @import("adm_polar_panner.zig");
 const adm_xml = @import("adm_xml.zig");
 
 pub const maximum_input_channels = adm_xml.max_adm_matrix_coefficients;
 pub const maximum_output_channels: usize = 64;
+pub const polar_extent_spreading_direction_count =
+    adm_polar_extent.spreading_direction_count;
 const position_tolerance: f64 = 1.0e-5;
 
 pub const PolarPosition = struct {
@@ -125,6 +128,68 @@ pub fn PolarPointSourcePanner(comptime Sample: type) type {
                 input_gain,
                 input,
                 outputs,
+            );
+        }
+
+        pub fn valid(self: *const Self) bool {
+            return self.output_count > 0 and
+                self.output_count <= maximum_output_channels and
+                self.core.output_count == self.output_count and
+                self.core.valid();
+        }
+    };
+}
+
+/// Precomputes the fixed polar spreading grid into caller-owned gain storage.
+pub fn PolarExtentPanner(comptime Sample: type) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError(
+            "PolarExtentPanner supports f32 and f64 samples",
+        );
+
+    return struct {
+        const Self = @This();
+
+        output_count: usize,
+        core: adm_polar_extent.Panner(Sample),
+
+        pub fn requiredGainStorage(output_count: usize) !usize {
+            return adm_polar_extent.requiredGainStorage(output_count);
+        }
+
+        pub fn init(
+            point_panner: *const PolarPointSourcePanner(Sample),
+            gain_storage: []Sample,
+        ) !Self {
+            if (!point_panner.valid())
+                return error.InvalidAdmRendererState;
+            return .{
+                .output_count = point_panner.output_count,
+                .core = try adm_polar_extent.Panner(Sample).init(
+                    &point_panner.core,
+                    gain_storage,
+                ),
+            };
+        }
+
+        pub fn calculateGains(
+            self: *const Self,
+            position: PolarPosition,
+            width_degrees: f64,
+            height_degrees: f64,
+            depth: f64,
+            gains: []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (!validPolar(position))
+                return error.InvalidAdmRendererPolarPosition;
+            try self.core.calculateGains(
+                pannerPolarPosition(position),
+                position.distance,
+                width_degrees,
+                height_degrees,
+                depth,
+                gains,
             );
         }
 
@@ -414,8 +479,7 @@ pub fn CartesianPointSourcePanner(comptime Sample: type) type {
     };
 }
 
-/// Precomputes direct and diffuse gains for one static point Objects block.
-/// Nonzero extent metadata is rejected until an extent panner is supplied.
+/// Precomputes direct and diffuse gains for one static Objects block.
 pub fn ObjectPointGainPlan(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
         @compileError(
@@ -424,6 +488,14 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
 
     return struct {
         const Self = @This();
+        const PointPanners = struct {
+            polar: ?*const PolarPointSourcePanner(Sample),
+            cartesian: ?*const CartesianPointSourcePanner(Sample),
+        };
+        const SpatialPanner = union(enum) {
+            point: PointPanners,
+            polar_extent: *const PolarExtentPanner(Sample),
+        };
 
         output_count: usize,
         direct_gains: [maximum_output_channels]Sample = undefined,
@@ -447,6 +519,56 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
             {
                 return error.UnsupportedAdmObjectExtent;
             }
+            return initWithPanner(
+                block,
+                outputs,
+                .{ .point = .{
+                    .polar = polar_panner,
+                    .cartesian = cartesian_panner,
+                } },
+                context,
+            );
+        }
+
+        pub fn initPolarExtent(
+            block: *const adm_xml.BlockFormat,
+            outputs: []const OutputSpeaker,
+            panner: *const PolarExtentPanner(Sample),
+            context: ObjectRenderingContext,
+        ) !Self {
+            if (block.identifier.typeLabel() != 0x0003 or
+                block.channel_identifier.typeLabel() != 0x0003)
+            {
+                return error.AdmRendererRequiresObjectsBlock;
+            }
+            if (block.cartesian)
+                return error.AdmRendererPolarObjectsBlockRequired;
+            if (!std.math.isFinite(block.width) or
+                !std.math.isFinite(block.height) or
+                !std.math.isFinite(block.depth) or
+                block.width < 0.0 or
+                block.width > 360.0 or
+                block.height < 0.0 or
+                block.height > 360.0 or
+                block.depth < 0.0 or
+                block.depth > 1.0)
+            {
+                return error.InvalidAdmObjectExtent;
+            }
+            return initWithPanner(
+                block,
+                outputs,
+                .{ .polar_extent = panner },
+                context,
+            );
+        }
+
+        fn initWithPanner(
+            block: *const adm_xml.BlockFormat,
+            outputs: []const OutputSpeaker,
+            spatial_panner: SpatialPanner,
+            context: ObjectRenderingContext,
+        ) !Self {
             if (!std.math.isFinite(block.diffuse) or
                 block.diffuse < 0.0 or
                 block.diffuse > 1.0)
@@ -454,20 +576,32 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
                 return error.InvalidAdmRendererDiffuse;
             }
             try validateOutputLayout(outputs);
-            if (block.cartesian) {
-                const panner = cartesian_panner orelse
-                    return error.AdmRendererCartesianPointPannerRequired;
-                if (panner.output_count != outputs.len)
-                    return error.AdmRendererOutputCountMismatch;
-                if (!panner.valid())
-                    return error.InvalidAdmRendererState;
-            } else {
-                const panner = polar_panner orelse
-                    return error.AdmRendererPolarPointPannerRequired;
-                if (panner.output_count != outputs.len)
-                    return error.AdmRendererOutputCountMismatch;
-                if (!panner.valid())
-                    return error.InvalidAdmRendererState;
+            switch (spatial_panner) {
+                .point => |panners| {
+                    if (block.cartesian) {
+                        const panner = panners.cartesian orelse
+                            return error.AdmRendererCartesianPointPannerRequired;
+                        if (panner.output_count != outputs.len)
+                            return error.AdmRendererOutputCountMismatch;
+                        if (!panner.valid())
+                            return error.InvalidAdmRendererState;
+                    } else {
+                        const panner = panners.polar orelse
+                            return error.AdmRendererPolarPointPannerRequired;
+                        if (panner.output_count != outputs.len)
+                            return error.AdmRendererOutputCountMismatch;
+                        if (!panner.valid())
+                            return error.InvalidAdmRendererState;
+                    }
+                },
+                .polar_extent => |panner| {
+                    if (block.cartesian)
+                        return error.AdmRendererPolarObjectsBlockRequired;
+                    if (panner.output_count != outputs.len)
+                        return error.AdmRendererOutputCountMismatch;
+                    if (!panner.valid())
+                        return error.InvalidAdmRendererState;
+                },
             }
             try validateObjectRenderingContext(context);
 
@@ -492,20 +626,33 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
                 diverged.power_weights[0..diverged.count],
             ) |branch_position, power_weight| {
                 if (power_weight == 0.0) continue;
-                if (block.cartesian) {
-                    const panner = cartesian_panner orelse
-                        return error.AdmRendererCartesianPointPannerRequired;
-                    try panner.calculateGains(
-                        branch_position,
-                        branch_gains[0..outputs.len],
-                    );
-                } else {
-                    const panner = polar_panner orelse
-                        return error.AdmRendererPolarPointPannerRequired;
-                    try panner.calculateGains(
-                        try cartesianToPolar(branch_position),
-                        branch_gains[0..outputs.len],
-                    );
+                switch (spatial_panner) {
+                    .point => |panners| {
+                        if (block.cartesian) {
+                            const panner = panners.cartesian orelse
+                                return error.AdmRendererCartesianPointPannerRequired;
+                            try panner.calculateGains(
+                                branch_position,
+                                branch_gains[0..outputs.len],
+                            );
+                        } else {
+                            const panner = panners.polar orelse
+                                return error.AdmRendererPolarPointPannerRequired;
+                            try panner.calculateGains(
+                                try cartesianToPolar(branch_position),
+                                branch_gains[0..outputs.len],
+                            );
+                        }
+                    },
+                    .polar_extent => |panner| {
+                        try panner.calculateGains(
+                            try cartesianToPolar(branch_position),
+                            block.width,
+                            block.height,
+                            block.depth,
+                            branch_gains[0..outputs.len],
+                        );
+                    },
                 }
                 for (
                     combined[0..outputs.len],
@@ -625,6 +772,8 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
         }
     };
 }
+
+pub const ObjectPolarExtentGainPlan = ObjectPointGainPlan;
 
 pub fn StaticMatrixMixer(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
@@ -2434,6 +2583,12 @@ fn slicesOverlap(
     return input_start < output_end and output_start < input_end;
 }
 
+fn gainVectorPower(comptime Sample: type, gains: []const Sample) Sample {
+    var power: Sample = 0.0;
+    for (gains) |gain| power += gain * gain;
+    return power;
+}
+
 test "ADM point Objects plan applies block gain and diffuse split" {
     const document = try adm_xml.Document.init(
         \\<audioFormatExtended>
@@ -2515,6 +2670,293 @@ test "ADM point Objects plan applies block gain and diffuse split" {
     try std.testing.expectEqualDeep(
         [_]f64{ 0.5, 0.0, -0.5 },
         diffuse_storage[2],
+    );
+}
+
+test "ADM polar extent panner matches independent gain vectors" {
+    const outputs = testPolarFiveLayout();
+    const point_panner = try PolarPointSourcePanner(f64).init(&outputs);
+    var gain_storage: [polar_extent_spreading_direction_count * outputs.len]f64 = undefined;
+    const panner = try PolarExtentPanner(f64).init(
+        &point_panner,
+        &gain_storage,
+    );
+    try std.testing.expect(panner.valid());
+    try std.testing.expectEqual(
+        gain_storage.len,
+        try PolarExtentPanner(f64).requiredGainStorage(outputs.len),
+    );
+
+    const Case = struct {
+        position: PolarPosition,
+        width: f64,
+        height: f64,
+        depth: f64,
+        expected: [5]f64,
+    };
+    const cases = [_]Case{
+        .{
+            .position = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+            },
+            .width = 20,
+            .height = 10,
+            .depth = 0,
+            .expected = .{
+                0.163798417816650,
+                0.163798417816651,
+                0.972800162747480,
+                0,
+                0,
+            },
+        },
+        .{
+            .position = .{
+                .azimuth_degrees = 30,
+                .elevation_degrees = 10,
+            },
+            .width = 90,
+            .height = 30,
+            .depth = 0,
+            .expected = .{
+                0.8333116602488577,
+                0.09645742508038607,
+                0.4670328989816584,
+                0.2795852523094557,
+                0,
+            },
+        },
+        .{
+            .position = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+            },
+            .width = 300,
+            .height = 30,
+            .depth = 0,
+            .expected = .{
+                0.354291484404771,
+                0.354291484404771,
+                0.191103406307312,
+                0.596839415694988,
+                0.596839415694988,
+            },
+        },
+        .{
+            .position = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+            },
+            .width = 30,
+            .height = 90,
+            .depth = 0,
+            .expected = .{
+                0.291887589699198,
+                0.291887589699198,
+                0.909698274830566,
+                0.032033722305387,
+                0.032033722305387,
+            },
+        },
+        .{
+            .position = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+                .distance = 0.5,
+            },
+            .width = 30,
+            .height = 20,
+            .depth = 0.8,
+            .expected = .{
+                0.331321656180713,
+                0.331321656180713,
+                0.677883093218296,
+                0.400578601662729,
+                0.400578601662729,
+            },
+        },
+        .{
+            .position = .{
+                .azimuth_degrees = 0,
+                .elevation_degrees = 0,
+            },
+            .width = 360,
+            .height = 360,
+            .depth = 0,
+            .expected = .{
+                0.326134605335874,
+                0.326134605335875,
+                0.215784270576593,
+                0.608567821601074,
+                0.608567821601074,
+            },
+        },
+        .{
+            .position = .{
+                .azimuth_degrees = 10,
+                .elevation_degrees = 20,
+            },
+            .width = 0,
+            .height = 0,
+            .depth = 0,
+            .expected = .{
+                0.452707246028212,
+                0,
+                0.891659211466776,
+                0,
+                0,
+            },
+        },
+    };
+    var gains: [outputs.len]f64 = undefined;
+    for (cases) |case| {
+        try panner.calculateGains(
+            case.position,
+            case.width,
+            case.height,
+            case.depth,
+            &gains,
+        );
+        try std.testing.expectApproxEqAbs(
+            @as(f64, 1.0),
+            gainVectorPower(f64, &gains),
+            0.000_000_001,
+        );
+        for (gains, case.expected) |actual, expected| {
+            try std.testing.expectApproxEqAbs(
+                expected,
+                actual,
+                0.000_000_001,
+            );
+        }
+    }
+
+    var short_storage: [1]f64 = undefined;
+    try std.testing.expectError(
+        error.AdmPolarExtentGainStorageSizeMismatch,
+        PolarExtentPanner(f64).init(
+            &point_panner,
+            &short_storage,
+        ),
+    );
+    gains = @splat(7.0);
+    try std.testing.expectError(
+        error.InvalidAdmPolarExtent,
+        panner.calculateGains(
+            .{ .azimuth_degrees = 0, .elevation_degrees = 0 },
+            std.math.nan(f64),
+            0,
+            0,
+            &gains,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as([outputs.len]f64, @splat(7.0)),
+        gains,
+    );
+    try std.testing.expectError(
+        error.AdmPolarExtentAliasedBuffers,
+        panner.calculateGains(
+            .{ .azimuth_degrees = 0, .elevation_degrees = 0 },
+            20,
+            10,
+            0,
+            gain_storage[0..outputs.len],
+        ),
+    );
+    gain_storage[0] = std.math.nan(f64);
+    try std.testing.expect(!panner.valid());
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        panner.calculateGains(
+            .{ .azimuth_degrees = 0, .elevation_degrees = 0 },
+            20,
+            10,
+            0,
+            &gains,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as([outputs.len]f64, @splat(7.0)),
+        gains,
+    );
+}
+
+test "ADM polar extent Objects plan composes divergence and diffuse gain" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00031001">
+        \\    <audioBlockFormatObjects audioBlockFormatID="AB_00031001_00000001">
+        \\      <position coordinate="azimuth">0</position>
+        \\      <position coordinate="elevation">0</position>
+        \\      <position coordinate="distance">0.5</position>
+        \\      <width>30</width>
+        \\      <height>20</height>
+        \\      <depth>0.8</depth>
+        \\      <objectDivergence azimuthRange="30">0.5</objectDivergence>
+        \\      <gain>0.5</gain>
+        \\      <diffuse>0.25</diffuse>
+        \\    </audioBlockFormatObjects>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const outputs = testPolarFiveWithLfeLayout();
+    const point_panner = try PolarPointSourcePanner(f32).init(&outputs);
+    var gain_storage: [polar_extent_spreading_direction_count * outputs.len]f32 = undefined;
+    const extent_panner = try PolarExtentPanner(f32).init(
+        &point_panner,
+        &gain_storage,
+    );
+    const plan = try ObjectPolarExtentGainPlan(f32).initPolarExtent(
+        &block,
+        &outputs,
+        &extent_panner,
+        .{},
+    );
+    try std.testing.expect(plan.valid());
+    try std.testing.expectEqual(
+        @as(f32, 0.0),
+        plan.directGainSlice()[outputs.len - 1],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0.0),
+        plan.diffuseGainSlice()[outputs.len - 1],
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.25 * 0.25),
+        gainVectorPower(f32, plan.diffuseGainSlice()),
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.25 * 0.75),
+        gainVectorPower(f32, plan.directGainSlice()),
+        0.000_001,
+    );
+
+    var invalid_block = block;
+    invalid_block.cartesian = true;
+    try std.testing.expectError(
+        error.AdmRendererPolarObjectsBlockRequired,
+        ObjectPolarExtentGainPlan(f32).initPolarExtent(
+            &invalid_block,
+            &outputs,
+            &extent_panner,
+            .{},
+        ),
+    );
+    invalid_block = block;
+    invalid_block.width = std.math.nan(f64);
+    try std.testing.expectError(
+        error.InvalidAdmObjectExtent,
+        ObjectPolarExtentGainPlan(f32).initPolarExtent(
+            &invalid_block,
+            &outputs,
+            &extent_panner,
+            .{},
+        ),
     );
 }
 
