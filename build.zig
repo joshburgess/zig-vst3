@@ -3848,8 +3848,9 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
             "wayland-client", "wayland-cursor", "wayland-egl", "wayland-server", "pthread",    "dl",
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .yes });
     } else if (target.result.os.tag == .windows) {
-        module.linkSystemLibrary("msvcprt", .{ .use_pkg_config = .no });
-        module.linkSystemLibrary("vcruntime", .{ .use_pkg_config = .no });
+        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/msvcprt.lib"));
+        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/vcruntime.lib"));
+        module.addObjectFile(b.path(".vst3-sdk/vstgui-adapter-build/Release/libs/ucrt.lib"));
         for ([_][]const u8{
             "comctl32", "d2d1", "dwrite",        "gdi32", "ole32", "oleaut32", "shell32", "shlwapi", "uiautomationcore",
             "user32",   "uuid", "windowscodecs",
