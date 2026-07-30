@@ -10,6 +10,7 @@ pub const adm_render = @import("dsp/adm_render.zig");
 pub const adm_time = @import("dsp/adm_time.zig");
 pub const adm_xml = @import("dsp/adm_xml.zig");
 pub const hrtf = @import("dsp/hrtf.zig");
+pub const hrtf_sofa = @import("dsp/hrtf_sofa.zig");
 pub const audio_block = @import("dsp/audio_block.zig");
 pub const audio_file_reader = @import("dsp/audio_file_reader.zig");
 pub const audio_metadata = @import("dsp/audio_metadata.zig");
@@ -168,8 +169,13 @@ pub const AdmBinauralStereoGainTimeline =
     adm_binaural.StereoGainTimeline;
 pub const HrtfDatabase = hrtf.Database;
 pub const HrtfRenderer = hrtf.Renderer;
+pub const HrtfMotionRenderer = hrtf.MotionRenderer;
 pub const HrtfDirection = hrtf.Direction;
+pub const HrtfPosition = hrtf.Position;
+pub const HrtfHeadPose = hrtf.HeadPose;
+pub const HrtfMotionPoint = hrtf.MotionPoint;
 pub const HrtfInterpolation = hrtf.Interpolation;
+pub const HrtfSofaLoader = hrtf_sofa.Loader;
 pub const maximum_adm_renderer_input_channels =
     adm_render.maximum_input_channels;
 pub const adm_polar_extent_spreading_direction_count =

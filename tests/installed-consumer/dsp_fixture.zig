@@ -5429,6 +5429,47 @@ test "installed package renders bounded HRTF responses" {
         output[1],
         0.000_001,
     );
+
+    const MotionRenderer = plugin.dsp.HrtfMotionRenderer(8, 1, 4);
+    var moving = MotionRenderer{};
+    const points = [_]plugin.dsp.HrtfMotionPoint{.{
+        .sample_position = 0,
+        .source_position = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
+        .head_pose = .{
+            .position = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        },
+    }};
+    try moving.prepare(
+        &database,
+        &points,
+        plugin.dsp.HrtfInterpolation.delay_aligned,
+        4,
+    );
+    try std.testing.expectEqual(
+        directions[0],
+        moving.currentDirection().?,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f32{ 1.0, 0.5 },
+        moving.processSample(1.0),
+    );
+
+    const decoded = plugin.dsp.hrtf_sofa.DecodedDataset{
+        .measurement_count = 1,
+        .response_frame_count = 1,
+        .sampling_rates = &.{48_000.0},
+        .source_positions = &.{ 0.0, 0.0, 1.0 },
+        .position_encoding = .cartesian_metres,
+        .responses_measurement_ear_frame = &.{ 1.0, 0.5 },
+    };
+    const decoded_database =
+        try plugin.dsp.hrtf_sofa.databaseFromDecoded(
+            1,
+            1,
+            std.testing.allocator,
+            decoded,
+        );
+    try std.testing.expect(decoded_database.valid());
 }
 
 test "installed package owns and decomposes runtime-shaped matrices" {
