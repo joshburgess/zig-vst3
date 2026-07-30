@@ -3458,6 +3458,54 @@ test "installed package exposes bounded MP3 framing and seeking" {
         analyzed_channel.spectrum.lines[0],
     ));
     try std.testing.expectEqual(@as(u64, 1), pcm_analysis.frames_analyzed);
+    var classifier = plugin.dsp.Mp3EncoderBlockClassifier{};
+    const classified = try classifier.classify(
+        joint_header,
+        analysis_pcm,
+    );
+    try std.testing.expectEqual(
+        plugin.dsp.Mp3GranuleChannel{},
+        classified[0][0],
+    );
+    const automatic_quantized: plugin.dsp.Mp3QuantizedEncoderFrame =
+        try plugin.dsp.Mp3EncoderQuantizer.quantize(
+            joint_header,
+            analyzed_frame,
+        );
+    try std.testing.expect(
+        automatic_quantized.granules[0][0]
+            .description.big_values <= 288,
+    );
+    var encoder_factors = plugin.dsp.Mp3EncoderScaleFactors{
+        .value_count = 22,
+    };
+    encoder_factors.values[0] = 1;
+    var scale_storage: [64]u8 = undefined;
+    const encoded_factors: plugin.dsp.Mp3EncodedScaleFactors =
+        try plugin.dsp.encodeMp3ScaleFactors(
+            joint_header,
+            .{ .scalefac_compress = 5 },
+            0,
+            0,
+            0,
+            .{},
+            encoder_factors,
+            &scale_storage,
+        );
+    try std.testing.expectEqual(
+        @as(u16, 21),
+        encoded_factors.main_data.bit_count,
+    );
+    var automatic_encoder = try plugin.dsp.Mp3PcmEncoder.init(
+        .{ .channel_mode = .stereo },
+    );
+    var automatic_storage: [2048]u8 = undefined;
+    const automatic_frame = try automatic_encoder.encode(
+        analysis_pcm,
+        &automatic_storage,
+    );
+    try std.testing.expect(automatic_frame.len > 4);
+    automatic_encoder.reset();
     pcm_analysis.reset();
 
     var polyphase_analysis = plugin.dsp.Mp3PolyphaseAnalysis{};

@@ -240,9 +240,23 @@ pub const FrameEncoder = struct {
             .scfsi = frame.scfsi,
             .main_data_bits = 0,
         };
+        if (next.header.version != .mpeg1 and
+            !std.meta.eql(frame.scfsi, @as([2]u4, @splat(0))))
+            return error.InvalidMp3EncoderScaleFactors;
+        if (next.header.version == .mpeg1) {
+            for (0..channel_count) |channel| {
+                if (frame.scfsi[channel] != 0 and
+                    (frame.granules[0][channel]
+                        .description.block_type == 2 or
+                        frame.granules[1][channel]
+                            .description.block_type == 2))
+                    return error.InvalidMp3EncoderScaleFactors;
+            }
+        }
         var main_writer = MainDataBitWriter{
             .bytes = staged[side_end..frame_bytes],
         };
+        var scale_factor_storage: [64]u8 = undefined;
         var channel_storage: [512]u8 = undefined;
         for (0..2) |granule| {
             for (0..2) |channel| {
@@ -256,9 +270,22 @@ pub const FrameEncoder = struct {
                     )) return error.InvalidMp3EncoderFrame;
                     continue;
                 }
-                if (source.description.part2_3_length != 0 or
-                    source.description.scalefac_compress != 0)
-                    return error.UnsupportedMp3EncoderScaleFactors;
+                if (source.description.part2_3_length != 0)
+                    return error.InvalidMp3EncoderFrame;
+                const encoded_factors = try encodeScaleFactors(
+                    next.header,
+                    source.description,
+                    frame.scfsi[channel],
+                    @intCast(granule),
+                    @intCast(channel),
+                    frame.granules[0][channel].scale_factors,
+                    source.scale_factors,
+                    &scale_factor_storage,
+                );
+                try appendMainDataBits(
+                    &main_writer,
+                    encoded_factors.main_data,
+                );
                 const encoded = try encodeHuffmanChannel(
                     next.header,
                     source.description,
@@ -269,12 +296,18 @@ pub const FrameEncoder = struct {
                     &main_writer,
                     encoded.main_data,
                 );
+                var encoded_description = encoded.description;
+                encoded_description.part2_3_length = std.math.add(
+                    u12,
+                    @intCast(encoded_factors.main_data.bit_count),
+                    encoded.description.part2_3_length,
+                ) catch return error.Mp3MainDataBitCountOverflow;
                 side.granules[granule].channels[channel] =
-                    encoded.description;
+                    encoded_description;
                 side.main_data_bits = std.math.add(
                     u16,
                     side.main_data_bits,
-                    encoded.main_data.bit_count,
+                    encoded_description.part2_3_length,
                 ) catch return error.Mp3MainDataBitCountOverflow;
             }
         }
@@ -354,8 +387,14 @@ pub const Granule = struct {
     channels: [2]GranuleChannel = @splat(.{}),
 };
 
+pub const EncoderScaleFactors = struct {
+    values: [39]u8 = @splat(0),
+    value_count: u6 = 0,
+};
+
 pub const QuantizedEncoderChannel = struct {
     description: GranuleChannel = .{},
+    scale_factors: EncoderScaleFactors = .{},
     spectrum: [576]i32 = @splat(0),
 };
 
@@ -637,6 +676,499 @@ pub const AnalyzedEncoderFrame = struct {
     granules: [2][2]AnalyzedEncoderChannel =
         @splat(@splat(.{})),
 };
+
+pub const EncoderBlockClassifier = struct {
+    short_active: [2]bool = @splat(false),
+    attack_ratio: f32 = 8.0,
+
+    pub fn reset(self: *EncoderBlockClassifier) void {
+        self.short_active = @splat(false);
+    }
+
+    pub fn classify(
+        self: *EncoderBlockClassifier,
+        header: Header,
+        pcm: PcmFrame,
+    ) ![2][2]GranuleChannel {
+        if (!std.math.isFinite(self.attack_ratio) or
+            self.attack_ratio <= 1.0)
+            return error.InvalidMp3EncoderAttackRatio;
+        const channel_count: u2 = @intCast(header.channels());
+        const granule_count: u2 =
+            if (header.version == .mpeg1) 2 else 1;
+        if (pcm.channel_count != channel_count or
+            pcm.sample_count != header.samplesPerFrame())
+            return error.InvalidMp3EncoderPcmFrame;
+
+        var result: [2][2]GranuleChannel = @splat(@splat(.{}));
+        var next_short = self.short_active;
+        for (0..granule_count) |granule| {
+            for (0..channel_count) |channel| {
+                const start = granule * 576;
+                const attack = try hasEncoderAttack(
+                    pcm.channels[channel][start..][0..576],
+                    self.attack_ratio,
+                );
+                const was_short = next_short[channel];
+                result[granule][channel] = if (attack)
+                    if (was_short)
+                        .{
+                            .window_switching = true,
+                            .block_type = 2,
+                        }
+                    else
+                        .{
+                            .window_switching = true,
+                            .block_type = 1,
+                        }
+                else if (was_short)
+                    .{
+                        .window_switching = true,
+                        .block_type = 3,
+                    }
+                else
+                    .{};
+                next_short[channel] = attack;
+            }
+        }
+        self.short_active = next_short;
+        return result;
+    }
+};
+
+fn hasEncoderAttack(samples: []const f32, attack_ratio: f32) !bool {
+    var previous_energy: f64 = 0.0;
+    for (0..6) |partition| {
+        var energy: f64 = 0.0;
+        for (samples[partition * 96 ..][0..96]) |sample| {
+            if (!std.math.isFinite(sample))
+                return error.InvalidMp3EncoderPcmSample;
+            energy += @as(f64, sample) * @as(f64, sample);
+        }
+        if (partition != 0 and
+            energy > @max(previous_energy, 1.0e-12) *
+                attack_ratio)
+            return true;
+        previous_energy = @max(previous_energy * 0.25, energy);
+    }
+    return false;
+}
+
+pub const EncoderQuantizer = struct {
+    pub fn quantize(
+        header: Header,
+        analyzed: AnalyzedEncoderFrame,
+    ) !QuantizedEncoderFrame {
+        const channel_count: u2 = @intCast(header.channels());
+        const granule_count: u2 =
+            if (header.version == .mpeg1) 2 else 1;
+        if (analyzed.channel_count != channel_count or
+            analyzed.granule_count != granule_count)
+            return error.InvalidMp3EncoderAnalysisFrame;
+        const main_data_offset: usize =
+            4 + @as(usize, @intFromBool(header.crc_present)) * 2 +
+            header.sideInformationBytes();
+        const available_bits =
+            (header.frameBytes() - main_data_offset) * 8;
+        const active_channels =
+            @as(usize, channel_count) * granule_count;
+        const channel_budget = available_bits / active_channels;
+
+        var result = QuantizedEncoderFrame{};
+        for (0..granule_count) |granule| {
+            for (0..channel_count) |channel| {
+                result.granules[granule][channel] =
+                    try quantizeEncoderChannel(
+                        header,
+                        analyzed.granules[granule][channel],
+                        channel_budget,
+                    );
+            }
+        }
+        return result;
+    }
+};
+
+pub const PcmEncoder = struct {
+    frames: FrameEncoder,
+    analysis: EncoderAnalysis,
+    classifier: EncoderBlockClassifier = .{},
+
+    pub fn init(config: EncoderConfig) !PcmEncoder {
+        return .{
+            .frames = try FrameEncoder.init(config),
+            .analysis = try EncoderAnalysis.init(config),
+        };
+    }
+
+    pub fn reset(self: *PcmEncoder) void {
+        self.frames.reset();
+        self.analysis.reset();
+        self.classifier.reset();
+    }
+
+    pub fn encode(
+        self: *PcmEncoder,
+        pcm: PcmFrame,
+        destination: []u8,
+    ) ![]u8 {
+        var next = self.*;
+        const header = try next.frames.config.header(false);
+        const descriptions = try next.classifier.classify(
+            header,
+            pcm,
+        );
+        const analyzed = try next.analysis.analyze(
+            descriptions,
+            pcm,
+        );
+        const quantized = try EncoderQuantizer.quantize(
+            header,
+            analyzed,
+        );
+        const encoded = try next.frames.encodeQuantizedFrame(
+            &quantized,
+            destination,
+        );
+        self.* = next;
+        return encoded;
+    }
+};
+
+fn quantizeEncoderChannel(
+    header: Header,
+    analyzed: AnalyzedEncoderChannel,
+    bit_budget: usize,
+) !QuantizedEncoderChannel {
+    try validateBlockDescription(analyzed.description);
+    for (analyzed.spectrum.lines) |line| {
+        if (!std.math.isFinite(line))
+            return error.InvalidMp3RequantizedSpectrum;
+    }
+
+    var gain: u16 = 0;
+    while (gain <= std.math.maxInt(u8)) : (gain += 1) {
+        var spectrum: [576]i32 = undefined;
+        const exponent =
+            (@as(f64, @floatFromInt(gain)) - 210.0) * 0.25;
+        const step = std.math.exp2(exponent);
+        var fits_range = true;
+        for (analyzed.spectrum.lines, 0..) |line, index| {
+            const magnitude = @abs(@as(f64, line));
+            const scaled = std.math.pow(
+                f64,
+                magnitude / step,
+                0.75,
+            );
+            if (!std.math.isFinite(scaled) or scaled > 8206.49) {
+                fits_range = false;
+                break;
+            }
+            const quantized: i32 = @intFromFloat(@round(scaled));
+            spectrum[index] = if (line < 0)
+                -quantized
+            else
+                quantized;
+        }
+        if (!fits_range)
+            continue;
+        const selected = selectEncoderHuffman(
+            header,
+            analyzed.description,
+            &spectrum,
+        ) catch |failure| switch (failure) {
+            error.Mp3HuffmanTableTooSmall => continue,
+            else => return failure,
+        };
+        if (selected.bit_count > bit_budget)
+            continue;
+        var description = selected.description;
+        description.global_gain = @intCast(gain);
+        return .{
+            .description = description,
+            .spectrum = spectrum,
+        };
+    }
+    return error.Mp3EncoderBitBudgetTooSmall;
+}
+
+const EncoderHuffmanSelection = struct {
+    description: GranuleChannel,
+    bit_count: usize,
+};
+
+fn selectEncoderHuffman(
+    header: Header,
+    source: GranuleChannel,
+    spectrum: *const [576]i32,
+) !EncoderHuffmanSelection {
+    var last_nonzero: usize = 0;
+    var last_large: usize = 0;
+    for (spectrum, 0..) |value, index| {
+        const magnitude = try quantizedMagnitude(value);
+        if (magnitude != 0) last_nonzero = index + 1;
+        if (magnitude > 1) last_large = index + 1;
+    }
+    var big_line_count = std.mem.alignForward(
+        usize,
+        last_large,
+        2,
+    );
+    var count1_end = big_line_count + std.mem.alignForward(
+        usize,
+        last_nonzero - big_line_count,
+        4,
+    );
+    if (count1_end > spectrum.len) {
+        big_line_count = std.mem.alignForward(
+            usize,
+            last_nonzero,
+            2,
+        );
+        count1_end = big_line_count;
+    }
+    var description = source;
+    description.big_values = @intCast(big_line_count / 2);
+
+    const count1_a = try encoderCount1BitCost(
+        false,
+        spectrum[big_line_count..count1_end],
+    );
+    const count1_b = try encoderCount1BitCost(
+        true,
+        spectrum[big_line_count..count1_end],
+    );
+    description.count1_table_select = count1_b < count1_a;
+    const count1_bits = @min(count1_a, count1_b);
+
+    const regions = if (description.block_type == 2)
+        try selectShortEncoderTables(
+            header,
+            description,
+            spectrum,
+            big_line_count,
+        )
+    else if (description.window_switching)
+        try selectSwitchedLongEncoderTables(
+            header,
+            spectrum,
+            big_line_count,
+        )
+    else
+        try selectLongEncoderTables(
+            header,
+            spectrum,
+            big_line_count,
+        );
+    description.table_select = regions.tables;
+    description.region0_count = regions.region0_count;
+    description.region1_count = regions.region1_count;
+    return .{
+        .description = description,
+        .bit_count = regions.bit_count + count1_bits,
+    };
+}
+
+const EncoderRegionSelection = struct {
+    tables: [3]u5 = @splat(0),
+    region0_count: u4 = 0,
+    region1_count: u4 = 0,
+    bit_count: usize,
+};
+
+fn selectShortEncoderTables(
+    header: Header,
+    description: GranuleChannel,
+    spectrum: *const [576]i32,
+    big_line_count: usize,
+) !EncoderRegionSelection {
+    const ends = try huffmanRegionEnds(header, description);
+    const first_end = @min(@as(usize, ends[0]), big_line_count);
+    const first = try selectEncoderTable(
+        spectrum[0..first_end],
+    );
+    const second = try selectEncoderTable(
+        spectrum[first_end..big_line_count],
+    );
+    const region0_count: u4 =
+        if (description.mixed_block) 7 else 8;
+    return .{
+        .tables = .{ first.table, second.table, 0 },
+        .region0_count = region0_count,
+        .region1_count = @intCast(20 - @as(u8, region0_count)),
+        .bit_count = first.bit_count + second.bit_count,
+    };
+}
+
+fn selectSwitchedLongEncoderTables(
+    header: Header,
+    spectrum: *const [576]i32,
+    big_line_count: usize,
+) !EncoderRegionSelection {
+    const bands = try scaleFactorBands(header);
+    const first_end = @min(
+        @as(usize, bands.long_starts[8]),
+        big_line_count,
+    );
+    const first = try selectEncoderTable(
+        spectrum[0..first_end],
+    );
+    const second = try selectEncoderTable(
+        spectrum[first_end..big_line_count],
+    );
+    return .{
+        .tables = .{ first.table, second.table, 0 },
+        .region0_count = 7,
+        .region1_count = 13,
+        .bit_count = first.bit_count + second.bit_count,
+    };
+}
+
+fn selectLongEncoderTables(
+    header: Header,
+    spectrum: *const [576]i32,
+    big_line_count: usize,
+) !EncoderRegionSelection {
+    const bands = try scaleFactorBands(header);
+    var best: ?EncoderRegionSelection = null;
+    for (0..16) |region0| {
+        for (0..8) |region1| {
+            const first_index = region0 + 1;
+            const second_index = first_index + region1 + 1;
+            if (second_index >= bands.long_starts.len)
+                continue;
+            const first_end = @min(
+                @as(usize, bands.long_starts[first_index]),
+                big_line_count,
+            );
+            const second_end = @min(
+                @as(usize, bands.long_starts[second_index]),
+                big_line_count,
+            );
+            const first = try selectEncoderTable(
+                spectrum[0..first_end],
+            );
+            const second = try selectEncoderTable(
+                spectrum[first_end..second_end],
+            );
+            const third = try selectEncoderTable(
+                spectrum[second_end..big_line_count],
+            );
+            const candidate = EncoderRegionSelection{
+                .tables = .{
+                    first.table,
+                    second.table,
+                    third.table,
+                },
+                .region0_count = @intCast(region0),
+                .region1_count = @intCast(region1),
+                .bit_count = first.bit_count +
+                    second.bit_count + third.bit_count,
+            };
+            if (best == null or
+                candidate.bit_count < best.?.bit_count)
+                best = candidate;
+        }
+    }
+    return best orelse error.InvalidMp3RegionCounts;
+}
+
+const EncoderTableSelection = struct {
+    table: u5,
+    bit_count: usize,
+};
+
+fn selectEncoderTable(
+    values: []const i32,
+) !EncoderTableSelection {
+    const valid_tables = [_]u5{
+        0,  1,  2,  3,  5,  6,  7,  8,  9,  10,
+        11, 12, 13, 15, 16, 17, 18, 19, 20, 21,
+        22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+    };
+    var best: ?EncoderTableSelection = null;
+    for (valid_tables) |table_index| {
+        const table = try huffman_tables.get(table_index);
+        var bit_count: usize = 0;
+        var line: usize = 0;
+        var fits = true;
+        while (line < values.len) : (line += 2) {
+            const cost = encoderPairBitCost(
+                table,
+                values[line..][0..2].*,
+            ) catch {
+                fits = false;
+                break;
+            };
+            bit_count += cost;
+        }
+        if (fits and
+            (best == null or bit_count < best.?.bit_count))
+            best = .{
+                .table = table_index,
+                .bit_count = bit_count,
+            };
+    }
+    return best orelse error.Mp3HuffmanTableTooSmall;
+}
+
+fn encoderPairBitCost(
+    table: huffman_tables.Table,
+    values: [2]i32,
+) !usize {
+    var magnitudes: [2]u32 = undefined;
+    for (values, 0..) |value, index|
+        magnitudes[index] = try quantizedMagnitude(value);
+    if (table.side == 1) {
+        if (magnitudes[0] != 0 or magnitudes[1] != 0)
+            return error.Mp3HuffmanTableTooSmall;
+        return 0;
+    }
+    const maximum: u32 = if (table.linbits == 0)
+        table.side - 1
+    else
+        15 + (@as(u32, 1) << table.linbits) - 1;
+    if (magnitudes[0] > maximum or magnitudes[1] > maximum)
+        return error.Mp3HuffmanTableTooSmall;
+    const entry = table.entries[
+        @as(usize, @min(magnitudes[0], 15)) * table.side +
+            @as(usize, @min(magnitudes[1], 15))
+    ];
+    var bit_count: usize = entry.length;
+    for (magnitudes) |magnitude| {
+        if (magnitude >= 15 and table.linbits != 0)
+            bit_count += table.linbits;
+        if (magnitude != 0)
+            bit_count += 1;
+    }
+    return bit_count;
+}
+
+fn encoderCount1BitCost(
+    table_b: bool,
+    values: []const i32,
+) !usize {
+    var bit_count: usize = 0;
+    var line: usize = 0;
+    while (line < values.len) : (line += 4) {
+        var pattern: u4 = 0;
+        var signs: usize = 0;
+        for (values[line..][0..4], 0..) |value, index| {
+            const magnitude = try quantizedMagnitude(value);
+            if (magnitude > 1)
+                return error.InvalidMp3Count1Value;
+            pattern |= @as(u4, @intCast(magnitude)) <<
+                @intCast(3 - index);
+            signs += @intFromBool(magnitude != 0);
+        }
+        bit_count += if (table_b)
+            4
+        else
+            count1_table_a[pattern].length;
+        bit_count += signs;
+    }
+    return bit_count;
+}
 
 pub const DecoderFormat = struct {
     version: Version,
@@ -1218,6 +1750,27 @@ const ScaleFactorLayout = struct {
     long_factor_count: usize,
 };
 
+fn scaleFactorValueCount(
+    header: Header,
+    description: GranuleChannel,
+) u6 {
+    const short_block = description.block_type == 2;
+    return switch (header.version) {
+        .mpeg1 => if (!short_block)
+            22
+        else if (description.mixed_block)
+            38
+        else
+            39,
+        .mpeg2, .mpeg25 => if (!short_block)
+            21
+        else if (description.mixed_block)
+            33
+        else
+            36,
+    };
+}
+
 fn scaleFactorLayout(
     header: Header,
     description: GranuleChannel,
@@ -1240,20 +1793,8 @@ fn scaleFactorLayout(
             bands.long_starts[long_factor_count] != short_boundary)
             return error.InvalidMp3ScaleFactorBands;
     }
-    const expected_factor_count: u6 = switch (header.version) {
-        .mpeg1 => if (!short_block)
-            22
-        else if (description.mixed_block)
-            38
-        else
-            39,
-        .mpeg2, .mpeg25 => if (!short_block)
-            21
-        else if (description.mixed_block)
-            33
-        else
-            36,
-    };
+    const expected_factor_count =
+        scaleFactorValueCount(header, description);
     if (factors.value_count != expected_factor_count)
         return error.InvalidMp3ScaleFactors;
     if (!short_block) {
@@ -2582,48 +3123,56 @@ fn decodeMpeg1ScaleFactorChannel(
     return result;
 }
 
-fn decodeLsfScaleFactorChannel(
-    reader: *MainDataBitReader,
-    description: GranuleChannel,
+const LsfScaleFactorPlan = struct {
+    lengths: [4]u4,
+    table: u3,
+    preflag: bool,
+    intensity_scale: bool,
+};
+
+fn lsfScaleFactorPlan(
+    encoded_compression: u9,
     intensity_stereo: bool,
-) !ScaleFactorChannel {
-    var compression: usize = description.scalefac_compress;
-    var lengths: [4]u4 = @splat(0);
-    var table: usize = 0;
-    var result = ScaleFactorChannel{};
+) !LsfScaleFactorPlan {
+    var compression: usize = encoded_compression;
+    var result = LsfScaleFactorPlan{
+        .lengths = @splat(0),
+        .table = 0,
+        .preflag = false,
+        .intensity_scale = false,
+    };
     if (intensity_stereo) {
-        result.intensity_scale =
-            description.scalefac_compress & 1 != 0;
+        result.intensity_scale = encoded_compression & 1 != 0;
         compression >>= 1;
         if (compression < 180) {
-            lengths = .{
+            result.lengths = .{
                 @intCast(compression / 36),
                 @intCast(compression % 36 / 6),
                 @intCast(compression % 6),
                 0,
             };
-            table = 3;
+            result.table = 3;
         } else if (compression < 244) {
             compression -= 180;
-            lengths = .{
+            result.lengths = .{
                 @intCast(compression >> 4),
                 @intCast((compression % 16) >> 2),
                 @intCast(compression % 4),
                 0,
             };
-            table = 4;
+            result.table = 4;
         } else {
             compression -= 244;
-            lengths = .{
+            result.lengths = .{
                 @intCast(compression / 3),
                 @intCast(compression % 3),
                 0,
                 0,
             };
-            table = 5;
+            result.table = 5;
         }
     } else if (compression < 400) {
-        lengths = .{
+        result.lengths = .{
             @intCast((compression >> 4) / 5),
             @intCast((compression >> 4) % 5),
             @intCast((compression % 16) >> 2),
@@ -2631,26 +3180,42 @@ fn decodeLsfScaleFactorChannel(
         };
     } else if (compression < 500) {
         compression -= 400;
-        lengths = .{
+        result.lengths = .{
             @intCast((compression >> 2) / 5),
             @intCast((compression >> 2) % 5),
             @intCast(compression % 4),
             0,
         };
-        table = 1;
+        result.table = 1;
     } else if (compression < 512) {
         compression -= 500;
-        lengths = .{
+        result.lengths = .{
             @intCast(compression / 3),
             @intCast(compression % 3),
             0,
             0,
         };
-        table = 2;
+        result.table = 2;
         result.preflag = true;
     } else {
         return error.InvalidMp3ScaleFactorCompression;
     }
+    return result;
+}
+
+fn decodeLsfScaleFactorChannel(
+    reader: *MainDataBitReader,
+    description: GranuleChannel,
+    intensity_stereo: bool,
+) !ScaleFactorChannel {
+    const plan = try lsfScaleFactorPlan(
+        description.scalefac_compress,
+        intensity_stereo,
+    );
+    var result = ScaleFactorChannel{
+        .preflag = plan.preflag,
+        .intensity_scale = plan.intensity_scale,
+    };
 
     const layout: usize = if (description.block_type != 2)
         0
@@ -2659,11 +3224,11 @@ fn decodeLsfScaleFactorChannel(
     else
         1;
     var index: usize = 0;
-    for (lsf_scale_factor_counts[table][layout], 0..) |
+    for (lsf_scale_factor_counts[plan.table][layout], 0..) |
         count,
         part,
     | {
-        const width = lengths[part];
+        const width = plan.lengths[part];
         const maximum: u16 =
             if (width == 0) 0 else (@as(u16, 1) << @intCast(width)) - 1;
         for (0..count) |_| {
@@ -2676,6 +3241,185 @@ fn decodeLsfScaleFactorChannel(
     }
     result.value_count = @intCast(index);
     return result;
+}
+
+pub const EncodedScaleFactors = struct {
+    main_data: MainData,
+};
+
+pub fn encodeScaleFactors(
+    header: Header,
+    description: GranuleChannel,
+    scfsi: u4,
+    granule: u2,
+    channel: u2,
+    first_granule: EncoderScaleFactors,
+    factors: EncoderScaleFactors,
+    destination: []u8,
+) !EncodedScaleFactors {
+    _ = try scaleFactorBands(header);
+    try validateBlockDescription(description);
+    const channel_count: u2 = @intCast(header.channels());
+    const granule_count: u2 =
+        if (header.version == .mpeg1) 2 else 1;
+    if (channel >= channel_count or granule >= granule_count)
+        return error.InvalidMp3EncoderScaleFactorPosition;
+    if (header.version != .mpeg1 and scfsi != 0)
+        return error.InvalidMp3EncoderScaleFactors;
+
+    const normalized = try normalizeEncoderScaleFactors(
+        header,
+        description,
+        factors,
+    );
+    var staged: [64]u8 = @splat(0);
+    var writer = MainDataBitWriter{ .bytes = &staged };
+    if (header.version == .mpeg1) {
+        if (description.scalefac_compress >=
+            mpeg1_scale_factor_lengths.len)
+            return error.InvalidMp3ScaleFactorCompression;
+        const lengths =
+            mpeg1_scale_factor_lengths[description.scalefac_compress];
+        if (description.block_type == 2) {
+            if (granule == 1 and scfsi != 0)
+                return error.InvalidMp3EncoderScaleFactors;
+            const first_count: usize =
+                if (description.mixed_block) 17 else 18;
+            for (0..first_count) |index|
+                try writeEncoderScaleFactor(
+                    &writer,
+                    normalized.values[index],
+                    lengths[0],
+                );
+            for (first_count..first_count + 18) |index|
+                try writeEncoderScaleFactor(
+                    &writer,
+                    normalized.values[index],
+                    lengths[1],
+                );
+        } else {
+            const ranges = [4][2]u5{
+                .{ 0, 6 },
+                .{ 6, 11 },
+                .{ 11, 16 },
+                .{ 16, 21 },
+            };
+            const normalized_first =
+                if (granule == 1 and scfsi != 0)
+                    try normalizeEncoderScaleFactors(
+                        header,
+                        description,
+                        first_granule,
+                    )
+                else
+                    EncoderScaleFactors{};
+            for (ranges, 0..) |range, group| {
+                const reuse = granule == 1 and
+                    scfsi & (@as(u4, 8) >> @intCast(group)) != 0;
+                const width = lengths[if (group < 2) 0 else 1];
+                for (range[0]..range[1]) |index| {
+                    if (reuse) {
+                        if (normalized.values[index] !=
+                            normalized_first.values[index])
+                            return error.InvalidMp3EncoderScaleFactorReuse;
+                    } else {
+                        try writeEncoderScaleFactor(
+                            &writer,
+                            normalized.values[index],
+                            width,
+                        );
+                    }
+                }
+            }
+        }
+    } else {
+        const intensity_stereo =
+            header.channel_mode == .joint_stereo and
+            header.mode_extension & 1 != 0 and
+            channel == 1;
+        const plan = try lsfScaleFactorPlan(
+            description.scalefac_compress,
+            intensity_stereo,
+        );
+        const layout: usize = if (description.block_type != 2)
+            0
+        else if (description.mixed_block)
+            2
+        else
+            1;
+        var index: usize = 0;
+        for (lsf_scale_factor_counts[plan.table][layout], 0..) |
+            count,
+            part,
+        | {
+            for (0..count) |_| {
+                try writeEncoderScaleFactor(
+                    &writer,
+                    normalized.values[index],
+                    plan.lengths[part],
+                );
+                index += 1;
+            }
+        }
+        if (index != normalized.value_count)
+            return error.InvalidMp3EncoderScaleFactors;
+    }
+
+    if (writer.bit_offset > std.math.maxInt(u12))
+        return error.Mp3ScaleFactorBitCountOverflow;
+    const byte_count = (writer.bit_offset + 7) / 8;
+    if (destination.len < byte_count)
+        return error.InsufficientMp3ScaleFactorStorage;
+    @memcpy(destination[0..byte_count], staged[0..byte_count]);
+    return .{
+        .main_data = .{
+            .bytes = destination[0..byte_count],
+            .bit_count = @intCast(writer.bit_offset),
+        },
+    };
+}
+
+fn normalizeEncoderScaleFactors(
+    header: Header,
+    description: GranuleChannel,
+    factors: EncoderScaleFactors,
+) !EncoderScaleFactors {
+    const expected_count =
+        scaleFactorValueCount(header, description);
+    var result = factors;
+    if (result.value_count == 0)
+        result.value_count = expected_count;
+    if (result.value_count != expected_count)
+        return error.InvalidMp3EncoderScaleFactors;
+    for (result.values[result.value_count..]) |value| {
+        if (value != 0)
+            return error.InvalidMp3EncoderScaleFactors;
+    }
+    _ = try scaleFactorLayout(
+        header,
+        description,
+        .{
+            .values = result.values,
+            .value_count = result.value_count,
+            .preflag = description.preflag,
+        },
+    );
+    return result;
+}
+
+fn writeEncoderScaleFactor(
+    writer: *MainDataBitWriter,
+    value: u8,
+    bit_count: u4,
+) !void {
+    const maximum: u16 =
+        if (bit_count == 0)
+            0
+        else
+            (@as(u16, 1) << @intCast(bit_count)) - 1;
+    if (value > maximum)
+        return error.InvalidMp3EncoderScaleFactorValue;
+    try writer.write(value, @intCast(bit_count));
 }
 
 const MainDataBitWriter = struct {
@@ -4301,18 +5045,24 @@ test "encodes nonzero quantized MP3 frames through the decoder" {
     source.granules[0][0].description = .{
         .big_values = 1,
         .global_gain = 210,
+        .scalefac_compress = 5,
         .table_select = @splat(1),
         .region0_count = 7,
         .region1_count = 5,
     };
+    source.granules[0][0].scale_factors.value_count = 22;
+    source.granules[0][0].scale_factors.values[0] = 1;
     source.granules[0][0].spectrum[0] = 1;
     source.granules[0][0].spectrum[1] = -1;
     source.granules[1][0].description = .{
         .global_gain = 210,
+        .scalefac_compress = 5,
         .region0_count = 7,
         .region1_count = 5,
         .count1_table_select = true,
     };
+    source.granules[1][0].scale_factors =
+        source.granules[0][0].scale_factors;
     source.granules[1][0].spectrum[0] = 1;
     source.granules[1][0].spectrum[2] = -1;
     source.granules[1][0].spectrum[3] = 1;
@@ -4347,6 +5097,22 @@ test "encodes nonzero quantized MP3 frames through the decoder" {
         parsed.header,
         side,
         main_data,
+    );
+    try std.testing.expectEqual(
+        @as(u8, 1),
+        factors.granules[0].channels[0].values[0],
+    );
+    try std.testing.expectEqual(
+        factors.granules[0].channels[0].values,
+        factors.granules[1].channels[0].values,
+    );
+    try std.testing.expectEqual(
+        @as(u12, 21),
+        factors.granules[0].channels[0].part2_bits,
+    );
+    try std.testing.expectEqual(
+        @as(u12, 0),
+        factors.granules[1].channels[0].part2_bits,
     );
     const first_spectrum = try decodeHuffmanChannel(
         parsed.header,
@@ -4417,8 +5183,9 @@ test "rejects oversized and malformed quantized MP3 frames" {
 
     source = .{};
     source.granules[0][0].description.scalefac_compress = 1;
+    source.granules[0][0].scale_factors.values[0] = 1;
     try std.testing.expectError(
-        error.UnsupportedMp3EncoderScaleFactors,
+        error.InvalidMp3EncoderScaleFactorValue,
         encoder.encodeQuantizedFrame(&source, &storage),
     );
 
@@ -5038,6 +5805,422 @@ test "assembles bounded Layer III main-data reservoirs transactionally" {
     try std.testing.expectError(
         error.InvalidMp3ReservoirState,
         short.assemble(second, &second_output),
+    );
+}
+
+test "encodes MPEG-1 scale factors and reuse groups" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    const long_description = GranuleChannel{
+        .scalefac_compress = 15,
+    };
+    var long_factors = EncoderScaleFactors{
+        .value_count = 22,
+    };
+    for (0..11) |index|
+        long_factors.values[index] = @intCast((index * 3) % 16);
+    for (11..21) |index|
+        long_factors.values[index] = @intCast((index * 5) % 8);
+    var storage: [64]u8 = @splat(0x5a);
+    const encoded_long = try encodeScaleFactors(
+        header,
+        long_description,
+        0,
+        0,
+        0,
+        .{},
+        long_factors,
+        &storage,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 74),
+        encoded_long.main_data.bit_count,
+    );
+    var long_reader = MainDataBitReader{
+        .bytes = encoded_long.main_data.bytes,
+        .bit_limit = encoded_long.main_data.bit_count,
+    };
+    const decoded_long = try decodeMpeg1ScaleFactorChannel(
+        &long_reader,
+        long_description,
+        0,
+        0,
+        .{},
+    );
+    try std.testing.expectEqual(
+        long_factors.values,
+        decoded_long.values,
+    );
+    try std.testing.expectEqual(
+        @as(usize, encoded_long.main_data.bit_count),
+        long_reader.bit_offset,
+    );
+
+    const reuse_description = GranuleChannel{
+        .scalefac_compress = 10,
+    };
+    var first = EncoderScaleFactors{
+        .value_count = 22,
+    };
+    @memset(first.values[0..21], 1);
+    var second = first;
+    @memset(second.values[6..11], 2);
+    @memset(second.values[16..21], 3);
+    const encoded_reuse = try encodeScaleFactors(
+        header,
+        reuse_description,
+        0b1010,
+        1,
+        0,
+        first,
+        second,
+        &storage,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 25),
+        encoded_reuse.main_data.bit_count,
+    );
+    var reuse_reader = MainDataBitReader{
+        .bytes = encoded_reuse.main_data.bytes,
+        .bit_limit = encoded_reuse.main_data.bit_count,
+    };
+    const decoded_reuse = try decodeMpeg1ScaleFactorChannel(
+        &reuse_reader,
+        reuse_description,
+        0b1010,
+        1,
+        .{
+            .values = first.values,
+            .value_count = first.value_count,
+        },
+    );
+    try std.testing.expectEqual(second.values, decoded_reuse.values);
+
+    const short_descriptions = [_]GranuleChannel{
+        .{
+            .scalefac_compress = 5,
+            .window_switching = true,
+            .block_type = 2,
+        },
+        .{
+            .scalefac_compress = 5,
+            .window_switching = true,
+            .block_type = 2,
+            .mixed_block = true,
+        },
+    };
+    for (short_descriptions, 0..) |description, case_index| {
+        var factors = EncoderScaleFactors{
+            .value_count = scaleFactorValueCount(
+                header,
+                description,
+            ),
+        };
+        @memset(factors.values[0 .. factors.value_count - 3], 1);
+        const encoded = try encodeScaleFactors(
+            header,
+            description,
+            0,
+            0,
+            0,
+            .{},
+            factors,
+            &storage,
+        );
+        try std.testing.expectEqual(
+            @as(u16, if (case_index == 0) 36 else 35),
+            encoded.main_data.bit_count,
+        );
+        var reader = MainDataBitReader{
+            .bytes = encoded.main_data.bytes,
+            .bit_limit = encoded.main_data.bit_count,
+        };
+        const decoded = try decodeMpeg1ScaleFactorChannel(
+            &reader,
+            description,
+            0,
+            0,
+            .{},
+        );
+        try std.testing.expectEqual(
+            factors.values,
+            decoded.values,
+        );
+    }
+}
+
+test "encodes every low-sampling-frequency scale-factor family" {
+    const descriptions = [_]GranuleChannel{
+        .{},
+        .{
+            .window_switching = true,
+            .block_type = 2,
+        },
+        .{
+            .window_switching = true,
+            .block_type = 2,
+            .mixed_block = true,
+        },
+    };
+    const non_intensity_compressions =
+        [_]u9{ 0, 399, 400, 499, 500, 511 };
+    const intensity_compressions =
+        [_]u9{ 0, 359, 360, 487, 488, 511 };
+    const normal_header = try Header.parse(
+        &testHeader(2, true, 8, 0, false, .mono),
+    );
+    var intensity_header = try Header.parse(
+        &testHeader(2, true, 8, 0, false, .joint_stereo),
+    );
+    intensity_header.mode_extension = 1;
+    const headers = [_]Header{ normal_header, intensity_header };
+    var storage: [64]u8 = undefined;
+    for (headers, 0..) |header, header_index| {
+        const intensity = header_index == 1;
+        const compressions = if (intensity)
+            intensity_compressions
+        else
+            non_intensity_compressions;
+        for (compressions, 0..) |compression, case_index| {
+            var description =
+                descriptions[case_index % descriptions.len];
+            description.scalefac_compress = compression;
+            const plan = try lsfScaleFactorPlan(
+                compression,
+                intensity,
+            );
+            const layout: usize = if (description.block_type != 2)
+                0
+            else if (description.mixed_block)
+                2
+            else
+                1;
+            var factors = EncoderScaleFactors{
+                .value_count = scaleFactorValueCount(
+                    header,
+                    description,
+                ),
+            };
+            var index: usize = 0;
+            for (lsf_scale_factor_counts[plan.table][layout], 0..) |
+                count,
+                part,
+            | {
+                const width = plan.lengths[part];
+                const maximum: u8 = if (width == 0)
+                    0
+                else
+                    @intCast((@as(u16, 1) << @intCast(width)) - 1);
+                for (0..count) |_| {
+                    factors.values[index] =
+                        if (maximum == 0)
+                            0
+                        else
+                            @intCast((index * 3 + 1) %
+                                (@as(usize, maximum) + 1));
+                    index += 1;
+                }
+            }
+            if (description.block_type == 2)
+                @memset(
+                    factors.values[factors.value_count - 3 .. factors.value_count],
+                    0,
+                );
+            const channel: u2 = if (intensity) 1 else 0;
+            const encoded = try encodeScaleFactors(
+                header,
+                description,
+                0,
+                0,
+                channel,
+                .{},
+                factors,
+                &storage,
+            );
+            var reader = MainDataBitReader{
+                .bytes = encoded.main_data.bytes,
+                .bit_limit = encoded.main_data.bit_count,
+            };
+            const decoded = try decodeLsfScaleFactorChannel(
+                &reader,
+                description,
+                intensity,
+            );
+            try std.testing.expectEqual(
+                factors.values,
+                decoded.values,
+            );
+            try std.testing.expectEqual(
+                plan.preflag,
+                decoded.preflag,
+            );
+            try std.testing.expectEqual(
+                plan.intensity_scale,
+                decoded.intensity_scale,
+            );
+            try std.testing.expectEqual(
+                @as(usize, encoded.main_data.bit_count),
+                reader.bit_offset,
+            );
+        }
+    }
+
+    const low_rate_header = try Header.parse(
+        &testHeader(0, true, 9, 2, false, .mono),
+    );
+    const low_rate_description = GranuleChannel{
+        .scalefac_compress = 401,
+        .window_switching = true,
+        .block_type = 2,
+        .mixed_block = true,
+    };
+    const low_rate = try encodeScaleFactors(
+        low_rate_header,
+        low_rate_description,
+        0,
+        0,
+        0,
+        .{},
+        .{},
+        &storage,
+    );
+    try std.testing.expect(low_rate.main_data.bit_count > 0);
+}
+
+test "rejects malformed scale-factor encoding transactionally" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    const description = GranuleChannel{
+        .scalefac_compress = 5,
+    };
+    var storage: [64]u8 = @splat(0x5a);
+    const original = storage;
+
+    var excessive = EncoderScaleFactors{
+        .value_count = 22,
+    };
+    excessive.values[0] = 2;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderScaleFactorValue,
+        encodeScaleFactors(
+            header,
+            description,
+            0,
+            0,
+            0,
+            .{},
+            excessive,
+            &storage,
+        ),
+    );
+    try std.testing.expectEqual(original, storage);
+
+    var wrong_count = excessive;
+    wrong_count.values[0] = 0;
+    wrong_count.value_count = 21;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderScaleFactors,
+        encodeScaleFactors(
+            header,
+            description,
+            0,
+            0,
+            0,
+            .{},
+            wrong_count,
+            &storage,
+        ),
+    );
+    try std.testing.expectEqual(original, storage);
+
+    var trailing = EncoderScaleFactors{
+        .value_count = 22,
+    };
+    trailing.values[38] = 1;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderScaleFactors,
+        encodeScaleFactors(
+            header,
+            description,
+            0,
+            0,
+            0,
+            .{},
+            trailing,
+            &storage,
+        ),
+    );
+    try std.testing.expectEqual(original, storage);
+
+    const first = EncoderScaleFactors{
+        .value_count = 22,
+    };
+    var second = first;
+    second.values[0] = 1;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderScaleFactorReuse,
+        encodeScaleFactors(
+            header,
+            description,
+            0b1000,
+            1,
+            0,
+            first,
+            second,
+            &storage,
+        ),
+    );
+    try std.testing.expectEqual(original, storage);
+
+    try std.testing.expectError(
+        error.InvalidMp3EncoderScaleFactorPosition,
+        encodeScaleFactors(
+            header,
+            description,
+            0,
+            0,
+            1,
+            .{},
+            .{},
+            &storage,
+        ),
+    );
+    const lsf_header = try Header.parse(
+        &testHeader(2, true, 8, 0, false, .mono),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3EncoderScaleFactors,
+        encodeScaleFactors(
+            lsf_header,
+            .{},
+            1,
+            0,
+            0,
+            .{},
+            .{},
+            &storage,
+        ),
+    );
+
+    var short_storage: [1]u8 = @splat(0x6b);
+    try std.testing.expectError(
+        error.InsufficientMp3ScaleFactorStorage,
+        encodeScaleFactors(
+            header,
+            description,
+            0,
+            0,
+            0,
+            .{},
+            .{},
+            &short_storage,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as([1]u8, @splat(0x6b)),
+        short_storage,
     );
 }
 
@@ -8622,5 +9805,209 @@ test "leading ID3 validation and truncated frames are bounded" {
     try std.testing.expectError(
         error.TruncatedMp3Frame,
         Frame.parse(&frame, 0),
+    );
+}
+
+test "classifies MP3 encoder block transitions transactionally" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .stereo),
+    );
+    var classifier = EncoderBlockClassifier{};
+    var pcm = PcmFrame{
+        .channel_count = 2,
+        .sample_count = 1152,
+    };
+    pcm.channels[0][192] = 1;
+    pcm.channels[0][576 + 192] = 1;
+    const first = try classifier.classify(header, pcm);
+    try std.testing.expectEqual(@as(u2, 1), first[0][0].block_type);
+    try std.testing.expectEqual(@as(u2, 2), first[1][0].block_type);
+    try std.testing.expectEqual(GranuleChannel{}, first[0][1]);
+    try std.testing.expectEqual(GranuleChannel{}, first[1][1]);
+    try std.testing.expect(classifier.short_active[0]);
+
+    const silence = PcmFrame{
+        .channel_count = 2,
+        .sample_count = 1152,
+    };
+    const second = try classifier.classify(header, silence);
+    try std.testing.expectEqual(@as(u2, 3), second[0][0].block_type);
+    try std.testing.expectEqual(GranuleChannel{}, second[1][0]);
+    try std.testing.expect(!classifier.short_active[0]);
+
+    classifier.attack_ratio = 1;
+    const before = classifier;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderAttackRatio,
+        classifier.classify(header, silence),
+    );
+    try std.testing.expectEqual(before, classifier);
+    classifier.attack_ratio = 8;
+    var malformed = silence;
+    malformed.channels[0][0] = std.math.nan(f32);
+    const before_malformed = classifier;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderPcmSample,
+        classifier.classify(header, malformed),
+    );
+    try std.testing.expectEqual(before_malformed, classifier);
+}
+
+test "quantizes analyzed MP3 spectra with automatic codebooks" {
+    const config = EncoderConfig{
+        .version = .mpeg1,
+        .bitrate_kbps = 128,
+        .sample_rate = 44_100,
+        .channel_mode = .mono,
+    };
+    const header = try config.header(false);
+    var analyzed = AnalyzedEncoderFrame{
+        .channel_count = 1,
+        .granule_count = 2,
+    };
+    for (0..2) |granule| {
+        analyzed.granules[granule][0].spectrum.lines[0] = 2.5;
+        analyzed.granules[granule][0].spectrum.lines[1] = -1.5;
+        analyzed.granules[granule][0].spectrum.lines[40] = 0.25;
+        analyzed.granules[granule][0].spectrum.lines[43] = -0.25;
+    }
+    const quantized = try EncoderQuantizer.quantize(
+        header,
+        analyzed,
+    );
+    for (0..2) |granule| {
+        const channel = quantized.granules[granule][0];
+        try std.testing.expect(channel.description.big_values > 0);
+        try std.testing.expect(
+            channel.description.table_select[0] != 0,
+        );
+        try std.testing.expect(
+            channel.spectrum[0] != 0 or
+                channel.spectrum[1] != 0,
+        );
+    }
+
+    var encoder = try FrameEncoder.init(config);
+    var storage: [maximum_encoded_frame_bytes]u8 = undefined;
+    const bytes = try encoder.encodeQuantizedFrame(
+        &quantized,
+        &storage,
+    );
+    const parsed = try Frame.parse(bytes, 0);
+    const side = try parsed.sideInformation();
+    try std.testing.expect(side.main_data_bits > 0);
+    var decoder = FrameDecoder{};
+    const pcm = try decoder.decode(parsed);
+    for (pcm.channels[0]) |sample|
+        try std.testing.expect(std.math.isFinite(sample));
+
+    var transitions = analyzed;
+    transitions.granules[0][0].description = .{
+        .window_switching = true,
+        .block_type = 1,
+    };
+    transitions.granules[1][0].description = .{
+        .window_switching = true,
+        .block_type = 2,
+    };
+    const transition_quantized = try EncoderQuantizer.quantize(
+        header,
+        transitions,
+    );
+    try std.testing.expectEqual(
+        @as(u4, 7),
+        transition_quantized.granules[0][0]
+            .description.region0_count,
+    );
+    try std.testing.expectEqual(
+        @as(u5, 0),
+        transition_quantized.granules[0][0]
+            .description.table_select[2],
+    );
+    const transition_bytes = try encoder.encodeQuantizedFrame(
+        &transition_quantized,
+        &storage,
+    );
+    const transition_parsed = try Frame.parse(
+        transition_bytes,
+        0,
+    );
+    const transition_side =
+        try transition_parsed.sideInformation();
+    try std.testing.expectEqual(
+        @as(u4, 7),
+        transition_side.granules[0].channels[0]
+            .region0_count,
+    );
+    const transition_pcm = try decoder.decode(
+        transition_parsed,
+    );
+    for (transition_pcm.channels[0]) |sample|
+        try std.testing.expect(std.math.isFinite(sample));
+
+    var malformed = analyzed;
+    malformed.granules[0][0].spectrum.lines[0] =
+        std.math.nan(f32);
+    try std.testing.expectError(
+        error.InvalidMp3RequantizedSpectrum,
+        EncoderQuantizer.quantize(header, malformed),
+    );
+    malformed = analyzed;
+    malformed.channel_count = 2;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderAnalysisFrame,
+        EncoderQuantizer.quantize(header, malformed),
+    );
+}
+
+test "encodes PCM into complete MP3 frames transactionally" {
+    const config = EncoderConfig{
+        .version = .mpeg2,
+        .bitrate_kbps = 64,
+        .sample_rate = 22_050,
+        .channel_mode = .mono,
+    };
+    var encoder = try PcmEncoder.init(config);
+    var pcm = PcmFrame{
+        .channel_count = 1,
+        .sample_count = 576,
+    };
+    for (&pcm.channels[0], 0..) |*sample, index| {
+        sample.* = 0.2 * @sin(
+            @as(f32, @floatFromInt(index)) * 0.07,
+        );
+    }
+    var storage: [maximum_encoded_frame_bytes]u8 = undefined;
+    const first = try encoder.encode(pcm, &storage);
+    const parsed = try Frame.parse(first, 0);
+    try std.testing.expectEqual(config.version, parsed.header.version);
+    try std.testing.expectEqual(
+        @as(u64, 1),
+        encoder.frames.frames_encoded,
+    );
+    try std.testing.expectEqual(
+        @as(u64, 1),
+        encoder.analysis.frames_analyzed,
+    );
+    var decoder = FrameDecoder{};
+    const decoded = try decoder.decode(parsed);
+    for (decoded.channels[0]) |sample|
+        try std.testing.expect(std.math.isFinite(sample));
+
+    const before = encoder;
+    var short_storage: [8]u8 = undefined;
+    try std.testing.expectError(
+        error.InsufficientMp3EncoderStorage,
+        encoder.encode(pcm, &short_storage),
+    );
+    try std.testing.expectEqual(before, encoder);
+    encoder.reset();
+    try std.testing.expectEqual(
+        @as(u64, 0),
+        encoder.frames.frames_encoded,
+    );
+    try std.testing.expectEqual(
+        @as(u64, 0),
+        encoder.analysis.frames_analyzed,
     );
 }
