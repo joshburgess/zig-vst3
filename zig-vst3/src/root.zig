@@ -12,6 +12,8 @@ pub const ara_playback_renderer =
     @import("ara_playback_renderer.zig");
 pub const ara_registration = @import("ara_registration.zig");
 pub const ara_source_cache = @import("ara_source_cache.zig");
+pub const ara_spectral_transform =
+    @import("ara_spectral_transform.zig");
 pub const ara_tuning_analysis =
     @import("ara_tuning_analysis.zig");
 pub const ara_music_analysis = ara_tuning_analysis;
@@ -131,6 +133,7 @@ test {
     std.testing.refAllDecls(ara_playback_renderer);
     std.testing.refAllDecls(ara_registration);
     std.testing.refAllDecls(ara_source_cache);
+    std.testing.refAllDecls(ara_spectral_transform);
     std.testing.refAllDecls(ara_tuning_analysis);
     std.testing.refAllDecls(ara_tempo_warp);
     std.testing.refAllDecls(ara_vst3);

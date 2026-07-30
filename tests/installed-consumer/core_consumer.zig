@@ -661,6 +661,26 @@ test "installed package builds and edits an ARA document graph" {
     try std.testing.expect(document.audioSource(source) == null);
 }
 
+test "installed package prepares bounded ARA spectral audio" {
+    const Spectral = vst3.ara_spectral_transform.Processor(
+        f32,
+        16,
+        4,
+        1,
+        32,
+    );
+    var processor = Spectral{};
+    var input: [32]f32 = undefined;
+    for (&input, 0..) |*sample, index|
+        sample.* = @sin(
+            std.math.tau * @as(f32, @floatFromInt(index)) / 11.0,
+        );
+    var output: [32]f32 = undefined;
+    try processor.process(&.{&input}, &.{&output}, .{});
+    for (input, output) |expected, actual|
+        try std.testing.expectApproxEqAbs(expected, actual, 0.000_01);
+}
+
 test "installed core package discovers and restores device selections" {
     const built_in = try core.plugin.DeviceDescriptor.init(
         .audio,

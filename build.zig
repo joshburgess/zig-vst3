@@ -710,6 +710,20 @@ pub fn build(b: *std.Build) void {
     const ara_source_cache_tests = b.addTest(.{
         .root_module = ara_source_cache_module,
     });
+    const ara_spectral_transform_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/ara_spectral_transform.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_spectral_transform_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const ara_spectral_transform_tests = b.addTest(.{
+        .root_module = ara_spectral_transform_module,
+    });
     const ara_tuning_analysis_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3/src/ara_tuning_analysis.zig",
@@ -769,6 +783,7 @@ pub fn build(b: *std.Build) void {
         ara_playback_renderer_tests,
         ara_content_fades_tests,
         ara_source_cache_tests,
+        ara_spectral_transform_tests,
         ara_tuning_analysis_tests,
         ara_tempo_warp_tests,
         ara_registration_tests,
@@ -931,6 +946,25 @@ pub fn build(b: *std.Build) void {
         });
         ara_test_step.dependOn(
             &ara_source_cache_cross_tests.step,
+        );
+        const ara_spectral_transform_cross_module =
+            b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3/src/ara_spectral_transform.zig",
+                ),
+                .target = ara_target,
+                .optimize = .ReleaseSafe,
+            });
+        ara_spectral_transform_cross_module.addImport(
+            "zig-vst3-plugin-core",
+            zig_vst3_plugin_core,
+        );
+        const ara_spectral_transform_cross_tests =
+            b.addTest(.{
+                .root_module = ara_spectral_transform_cross_module,
+            });
+        ara_test_step.dependOn(
+            &ara_spectral_transform_cross_tests.step,
         );
         const ara_tuning_analysis_cross_module =
             b.createModule(.{

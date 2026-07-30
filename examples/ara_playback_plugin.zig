@@ -109,6 +109,17 @@ const TempoWarp = vst3.ara_tempo_warp.Builder(
     },
 );
 
+const SpectralSource = vst3.ara_spectral_transform.PreparedSource(
+    AraController,
+    f64,
+    16,
+    4,
+    2,
+    4_096,
+    4,
+);
+const SpectralGain = vst3.ara_spectral_transform.LinearGain(f64, 16);
+
 const SourceId = @FieldType(
     AraController.PlaybackRegionRenderDescription,
     "audio_source",
@@ -118,6 +129,8 @@ const Definition = struct {
     source_cache: SourceCache = SourceCache.init(),
     content_fades: ContentFades = .{},
     tempo_warp: TempoWarp = .{},
+    spectral_source: SpectralSource = .{},
+    spectral_gain: SpectralGain = .{},
     ara_renderer: ?*AraRenderer = null,
     render_scratch: [2][256]f64 = @splat(@splat(0)),
     render_failures: u64 = 0,
@@ -241,6 +254,15 @@ const Definition = struct {
                 controller,
                 description,
             );
+        if (description.source_sample_count > 0 and
+            description.source_sample_count <= 4_096)
+            _ = try self.spectral_source.prepare(
+                description,
+                self.source_cache.provider(AraRenderer),
+                self.spectral_gain.transform(
+                    SpectralSource.SpectralEngine.Transform,
+                ),
+            );
         if (description.transformation.fade_head or
             description.transformation.fade_tail)
             _ = try self.content_fades.analyzeRegion(
@@ -258,6 +280,7 @@ const Definition = struct {
     ) !u64 {
         const generation =
             try self.source_cache.invalidate(source_id);
+        _ = try self.spectral_source.invalidate();
         self.content_fades.invalidateSource(source_id);
         self.tempo_warp.invalidateSource(source_id);
         if (self.ara_renderer) |renderer|
@@ -303,8 +326,11 @@ pub const Effect =
             ) AraExtension {
                 const plugin =
                     &processor.runtime.instance.plugin;
-                var provider =
-                    plugin.source_cache.provider(AraRenderer);
+                var provider = plugin.spectral_source
+                    .providerWithFallback(
+                    AraRenderer,
+                    plugin.source_cache.provider(AraRenderer),
+                );
                 plugin.content_fades.configureProvider(
                     AraRenderer,
                     &provider,
@@ -661,6 +687,21 @@ fn testHost(
         .modelUpdateControllerInterface = &Host.model_update,
         .playbackControllerInterface = &Host.playback,
     };
+}
+
+fn expectApproxSlices(
+    comptime Sample: type,
+    expected: []const Sample,
+    actual: []const Sample,
+    tolerance: Sample,
+) !void {
+    try std.testing.expectEqual(expected.len, actual.len);
+    for (expected, actual) |expected_sample, actual_sample|
+        try std.testing.expectApproxEqAbs(
+            expected_sample,
+            actual_sample,
+            tolerance,
+        );
 }
 
 test "ARA playback product factory includes its main factory" {
@@ -1221,27 +1262,53 @@ test "ARA playback product fills cache and renders through VST3" {
         &direct_right,
     };
     try renderer.render(0, 8_000, &direct_outputs);
-    try std.testing.expectEqualSlices(
+    try expectApproxSlices(
         f64,
         &.{ 0, -0.15625, 1, 2.53125 },
         &direct_left,
+        1.0e-12,
     );
-    try std.testing.expectEqualSlices(
+    try expectApproxSlices(
         f64,
         &.{ 0, -1.40625, 5, 9.28125 },
         &direct_right,
+        1.0e-12,
     );
     try renderer.render(0.0005, 8_000, &direct_outputs);
-    try std.testing.expectEqualSlices(
+    try expectApproxSlices(
         f64,
         &.{ 4, 4.21875, 3, -1.09375 },
         &direct_left,
+        1.0e-12,
     );
-    try std.testing.expectEqualSlices(
+    try expectApproxSlices(
         f64,
         &.{ 12, 10.96875, 7, -2.34375 },
         &direct_right,
+        1.0e-12,
     );
+
+    plugin.spectral_gain = .{ .low = 0.5, .high = 0.5 };
+    var spectral_state: [18]u8 = undefined;
+    _ = try plugin.spectral_gain.encode(&spectral_state);
+    plugin.spectral_gain = .{};
+    plugin.spectral_gain = try SpectralGain.decode(&spectral_state);
+    _ = try plugin.loadRegion(&controller, &render_description);
+    try renderer.render(0, 8_000, &direct_outputs);
+    try expectApproxSlices(
+        f64,
+        &.{ 0, -0.078125, 0.5, 1.265625 },
+        &direct_left,
+        1.0e-12,
+    );
+    try expectApproxSlices(
+        f64,
+        &.{ 0, -0.703125, 2.5, 4.640625 },
+        &direct_right,
+        1.0e-12,
+    );
+    plugin.spectral_gain = .{};
+    _ = try plugin.loadRegion(&controller, &render_description);
 
     var audio_processor_out: ?*anyopaque = null;
     try std.testing.expectEqual(
@@ -1328,7 +1395,7 @@ test "ARA playback product fills cache and renders through VST3" {
         &right,
     );
     try std.testing.expectEqual(@as(u64, 0), plugin.render_failures);
-    try std.testing.expectEqual(@as(usize, 2), audio.destroyed_readers);
+    try std.testing.expectEqual(@as(usize, 4), audio.destroyed_readers);
 
     try std.testing.expectEqual(
         types.kResultOk,
@@ -1382,15 +1449,17 @@ test "ARA playback product fills cache and renders through VST3" {
             &process_data64,
         ),
     );
-    try std.testing.expectEqualSlices(
+    try expectApproxSlices(
         f64,
         &.{ 0, -0.15625, 1, 2.53125 },
         &left64,
+        1.0e-12,
     );
-    try std.testing.expectEqualSlices(
+    try expectApproxSlices(
         f64,
         &.{ 0, -1.40625, 5, 9.28125 },
         &right64,
+        1.0e-12,
     );
 
     _ = try plugin.invalidateSource(source);
