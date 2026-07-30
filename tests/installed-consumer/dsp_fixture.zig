@@ -5604,6 +5604,49 @@ test "installed package generates ADM HOA loudspeaker matrices" {
         ),
         1.0e-14,
     );
+
+    const DualBand = plugin.dsp.AdmHoaDualBandDecoder(
+        f32,
+        2,
+        2,
+    );
+    const dual_band_config =
+        plugin.dsp.AdmHoaDualBandConfig{
+            .sample_rate = 48_000.0,
+            .crossover_hz = 1_000.0,
+        };
+    var dual_band = try DualBand.init(
+        &blocks,
+        2,
+        &.{
+            1.0, 0.0,
+            0.0, 1.0,
+        },
+        &.{
+            0.5, 0.0,
+            0.0, 0.5,
+        },
+        dual_band_config,
+    );
+    const first_band = [_]f32{ 1.0, 0.0, -1.0, 0.5 };
+    const second_band = [_]f32{ 0.0, 1.0, 0.0, -0.5 };
+    const band_inputs = [_][]const f32{
+        &first_band,
+        &second_band,
+    };
+    var first_output: [first_band.len]f32 = undefined;
+    var second_output: [first_band.len]f32 = undefined;
+    try dual_band.process(
+        &band_inputs,
+        &.{ first_output[0..], second_output[0..] },
+    );
+    for (first_output ++ second_output) |sample|
+        try std.testing.expect(std.math.isFinite(sample));
+    try dual_band.configure(.{
+        .sample_rate = 48_000.0,
+        .crossover_hz = 1_500.0,
+    }, 32);
+    try dual_band.reset();
 }
 
 test "installed package renders bounded HRTF responses" {
