@@ -8422,6 +8422,87 @@ pub const Stream = struct {
         return frame;
     }
 
+    /// Advances past at most `maximum_skip_bytes` to a compatible frame.
+    pub fn resynchronize(
+        self: *Stream,
+        maximum_skip_bytes: usize,
+    ) !usize {
+        if (self.audio_start > self.audio_end or
+            self.audio_end > self.encoded.len or
+            self.cursor < self.audio_start or
+            self.cursor > self.audio_end)
+            return error.InvalidMp3StreamState;
+        if (maximum_skip_bytes == 0)
+            return error.InvalidMp3ResynchronizationLimit;
+        if (self.cursor >= self.audio_end -| 4)
+            return error.Mp3ResynchronizationLimitReached;
+        const first_candidate = std.math.add(
+            usize,
+            self.cursor,
+            1,
+        ) catch return error.Mp3ByteCountOverflow;
+        const last_candidate = @min(
+            self.audio_end - 4,
+            std.math.add(
+                usize,
+                self.cursor,
+                maximum_skip_bytes,
+            ) catch self.audio_end - 4,
+        );
+        var candidate = first_candidate;
+        while (candidate <= last_candidate) : (candidate += 1) {
+            const header = Header.parse(
+                self.encoded[candidate..self.audio_end],
+            ) catch continue;
+            if (self.first_header) |first| {
+                if (!first.compatible(header)) continue;
+            }
+            const next_free_base = if (header.free_format)
+                self.free_frame_base_bytes orelse
+                    inferMemoryFreeFormatBase(
+                        self.encoded,
+                        candidate,
+                        self.audio_end,
+                        header,
+                    ) catch continue
+            else
+                null;
+            const frame_bytes = resolvedFrameBytes(
+                header,
+                next_free_base,
+            ) catch continue;
+            if (frame_bytes > self.audio_end - candidate)
+                continue;
+            _ = frameAtKnownLength(
+                self.encoded[0..self.audio_end],
+                candidate,
+                header,
+                frame_bytes,
+            ) catch continue;
+            if (self.first_header == null) {
+                const following = std.math.add(
+                    usize,
+                    candidate,
+                    frame_bytes,
+                ) catch continue;
+                if (following != self.audio_end) {
+                    if (following > self.audio_end -| 4)
+                        continue;
+                    const following_header = Header.parse(
+                        self.encoded[following..self.audio_end],
+                    ) catch continue;
+                    if (!header.compatible(following_header))
+                        continue;
+                }
+            }
+            const skipped = candidate - self.cursor;
+            self.cursor = candidate;
+            self.free_frame_base_bytes = next_free_base;
+            return skipped;
+        }
+        return error.Mp3ResynchronizationLimitReached;
+    }
+
     pub fn summarize(encoded: []const u8) !Summary {
         var stream = try Stream.init(encoded);
         var first_xing: ?Xing = null;
@@ -8570,6 +8651,56 @@ pub const FileReader = struct {
             .xing = parsed.xing,
             .vbri = parsed.vbri,
         };
+    }
+
+    /// Advances past at most `maximum_skip_bytes` to a compatible frame.
+    pub fn resynchronize(
+        self: *FileReader,
+        maximum_skip_bytes: u64,
+    ) !u64 {
+        if (self.audio_start > self.audio_end or
+            self.offset < self.audio_start or
+            self.offset > self.audio_end)
+            return error.InvalidMp3FileReaderState;
+        if (maximum_skip_bytes == 0)
+            return error.InvalidMp3ResynchronizationLimit;
+        if (self.offset >= self.audio_end -| 4)
+            return error.Mp3ResynchronizationLimitReached;
+        const first_candidate = std.math.add(
+            u64,
+            self.offset,
+            1,
+        ) catch return error.Mp3ByteCountOverflow;
+        const last_candidate = @min(
+            self.audio_end - 4,
+            std.math.add(
+                u64,
+                self.offset,
+                maximum_skip_bytes,
+            ) catch self.audio_end - 4,
+        );
+        var header_bytes: [4]u8 = undefined;
+        var candidate = first_candidate;
+        while (candidate <= last_candidate) : (candidate += 1) {
+            readExactAt(
+                self.io,
+                self.file,
+                candidate,
+                &header_bytes,
+            ) catch continue;
+            const header = Header.parse(&header_bytes) catch continue;
+            if (!self.first_header.compatible(header)) continue;
+            const frame_bytes = resolvedFrameBytes(
+                header,
+                self.free_frame_base_bytes,
+            ) catch continue;
+            if (frame_bytes > self.audio_end - candidate)
+                continue;
+            const skipped = candidate - self.offset;
+            self.offset = candidate;
+            return skipped;
+        }
+        return error.Mp3ResynchronizationLimitReached;
     }
 
     pub fn seek(self: *FileReader, point: SeekPoint) !void {
@@ -14529,6 +14660,94 @@ test "file reader scans summarizes indexes and seeks without whole-file storage"
         }),
     );
     try std.testing.expectEqual(retained_offset, reader.offset);
+}
+
+test "MP3 readers resynchronize across bounded junk transactionally" {
+    const header = testHeader(3, true, 9, 0, false, .stereo);
+    const junk = [_]u8{ 0x00, 0x49, 0x44, 0x33, 0x7f };
+    var encoded: [1400]u8 = undefined;
+    var cursor = try appendFrame(&encoded, 0, header);
+    const junk_offset = cursor;
+    @memcpy(encoded[cursor..][0..junk.len], &junk);
+    cursor += junk.len;
+    const recovered_offset = cursor;
+    cursor = try appendFrame(&encoded, cursor, header);
+    cursor = try appendFrame(&encoded, cursor, header);
+
+    var stream = try Stream.init(encoded[0..cursor]);
+    _ = try stream.next();
+    try std.testing.expectEqual(junk_offset, stream.cursor);
+    const retained_stream = stream;
+    try std.testing.expectError(
+        error.InvalidMp3Sync,
+        stream.next(),
+    );
+    try std.testing.expectEqual(retained_stream.cursor, stream.cursor);
+    try std.testing.expectError(
+        error.InvalidMp3ResynchronizationLimit,
+        stream.resynchronize(0),
+    );
+    try std.testing.expectError(
+        error.Mp3ResynchronizationLimitReached,
+        stream.resynchronize(junk.len - 1),
+    );
+    try std.testing.expectEqual(retained_stream.cursor, stream.cursor);
+    try std.testing.expectEqual(
+        junk.len,
+        try stream.resynchronize(junk.len),
+    );
+    try std.testing.expectEqual(recovered_offset, stream.cursor);
+    _ = try stream.next();
+    _ = try stream.next();
+    try std.testing.expect((try stream.next()) == null);
+    try std.testing.expectEqual(@as(u64, 3), stream.frame_index);
+    try std.testing.expectEqual(@as(u64, 3456), stream.sample_offset);
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "resynchronized.mp3",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    try file.writePositionalAll(std.testing.io, encoded[0..cursor], 0);
+    var reader = try FileReader.init(std.testing.io, file);
+    var frame_storage: [500]u8 = undefined;
+    _ = try reader.next(&frame_storage);
+    try std.testing.expectEqual(junk_offset, reader.offset);
+    const retained_reader = reader;
+    try std.testing.expectError(
+        error.InvalidMp3Sync,
+        reader.next(&frame_storage),
+    );
+    try std.testing.expectEqual(retained_reader.offset, reader.offset);
+    try std.testing.expectError(
+        error.Mp3ResynchronizationLimitReached,
+        reader.resynchronize(junk.len - 1),
+    );
+    try std.testing.expectEqual(retained_reader.offset, reader.offset);
+    try std.testing.expectEqual(
+        junk.len,
+        try reader.resynchronize(junk.len),
+    );
+    try std.testing.expectEqual(
+        @as(u64, @intCast(recovered_offset)),
+        reader.offset,
+    );
+    _ = try reader.next(&frame_storage);
+    _ = try reader.next(&frame_storage);
+    try std.testing.expect(
+        (try reader.next(&frame_storage)) == null,
+    );
+    try std.testing.expectEqual(@as(u64, 3), reader.frame_index);
+    try std.testing.expectEqual(@as(u64, 3456), reader.sample_offset);
+
+    reader.audio_start = reader.audio_end + 1;
+    try std.testing.expectError(
+        error.InvalidMp3FileReaderState,
+        reader.resynchronize(1),
+    );
 }
 
 test "MP3 readers reject counter rollover transactionally" {

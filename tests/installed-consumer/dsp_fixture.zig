@@ -3551,6 +3551,36 @@ test "installed package exposes bounded MP3 framing and seeking" {
         &automatic_storage,
     );
     try std.testing.expect(automatic_frame.len > 4);
+    var resync_storage: [4096]u8 = undefined;
+    @memcpy(
+        resync_storage[0..automatic_frame.len],
+        automatic_frame,
+    );
+    const resync_junk = [_]u8{ 0, 1, 2 };
+    @memcpy(
+        resync_storage[automatic_frame.len..][0..resync_junk.len],
+        &resync_junk,
+    );
+    const recovered_frame_offset =
+        automatic_frame.len + resync_junk.len;
+    @memcpy(
+        resync_storage[recovered_frame_offset..][0..automatic_frame.len],
+        automatic_frame,
+    );
+    var resync_stream = try plugin.dsp.Mp3Stream.init(
+        resync_storage[0 .. recovered_frame_offset + automatic_frame.len],
+    );
+    _ = try resync_stream.next();
+    try std.testing.expectError(
+        error.InvalidMp3Sync,
+        resync_stream.next(),
+    );
+    try std.testing.expectEqual(
+        resync_junk.len,
+        try resync_stream.resynchronize(resync_junk.len),
+    );
+    _ = try resync_stream.next();
+    try std.testing.expect((try resync_stream.next()) == null);
     try std.testing.expect(automatic_encoder.masking.valid[0]);
     try std.testing.expect(automatic_encoder.masking.valid[1]);
     automatic_encoder.reset();
