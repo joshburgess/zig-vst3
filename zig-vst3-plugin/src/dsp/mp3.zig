@@ -18,6 +18,7 @@ pub const ChannelMode = enum(u2) {
 };
 
 pub const maximum_free_format_frame_bytes: usize = 16 * 1024;
+pub const maximum_encoded_frame_bytes: usize = 1441;
 const maximum_frame_main_data_bytes: usize =
     (4 * std.math.maxInt(u12) + 7) / 8;
 
@@ -96,11 +97,239 @@ pub const Header = struct {
         };
     }
 
+    pub fn encode(self: Header) ![4]u8 {
+        const version_bits: u2 = switch (self.version) {
+            .mpeg1 => 3,
+            .mpeg2 => 2,
+            .mpeg25 => 0,
+        };
+        const rate_index = sampleRateIndex(
+            self.version,
+            self.sample_rate,
+        ) orelse return error.InvalidMp3EncoderSampleRate;
+        const bitrate_index: u4 = if (self.free_format) blk: {
+            if (self.bitrate_kbps != 0)
+                return error.InvalidMp3EncoderBitrate;
+            break :blk 0;
+        } else bitrateIndex(
+            self.version,
+            self.bitrate_kbps,
+        ) orelse return error.InvalidMp3EncoderBitrate;
+        if (self.emphasis == 2)
+            return error.InvalidMp3EncoderEmphasis;
+
+        var value: u32 = 0x7ff << 21;
+        value |= @as(u32, version_bits) << 19;
+        value |= 1 << 17;
+        value |= @as(u32, @intFromBool(!self.crc_present)) << 16;
+        value |= @as(u32, bitrate_index) << 12;
+        value |= @as(u32, rate_index) << 10;
+        value |= @as(u32, @intFromBool(self.padding)) << 9;
+        value |= @as(u32, @intFromBool(self.private)) << 8;
+        value |= @as(u32, @intFromEnum(self.channel_mode)) << 6;
+        value |= @as(u32, self.mode_extension) << 4;
+        value |= @as(u32, @intFromBool(self.copyright)) << 3;
+        value |= @as(u32, @intFromBool(self.original)) << 2;
+        value |= self.emphasis;
+        return .{
+            @intCast(value >> 24),
+            @intCast((value >> 16) & 0xff),
+            @intCast((value >> 8) & 0xff),
+            @intCast(value & 0xff),
+        };
+    }
+
     fn compatible(self: Header, other: Header) bool {
         return self.version == other.version and
             self.sample_rate == other.sample_rate and
             self.free_format == other.free_format and
             self.channels() == other.channels();
+    }
+};
+
+pub const EncoderConfig = struct {
+    version: Version = .mpeg1,
+    bitrate_kbps: u16 = 128,
+    sample_rate: u32 = 44_100,
+    channel_mode: ChannelMode = .stereo,
+    crc_present: bool = false,
+    private: bool = false,
+    mode_extension: u2 = 0,
+    copyright: bool = false,
+    original: bool = true,
+    emphasis: u2 = 0,
+
+    pub fn header(self: EncoderConfig, padding: bool) !Header {
+        const encoded_header = Header{
+            .version = self.version,
+            .crc_present = self.crc_present,
+            .free_format = false,
+            .bitrate_kbps = self.bitrate_kbps,
+            .sample_rate = self.sample_rate,
+            .padding = padding,
+            .private = self.private,
+            .channel_mode = self.channel_mode,
+            .mode_extension = self.mode_extension,
+            .copyright = self.copyright,
+            .original = self.original,
+            .emphasis = self.emphasis,
+        };
+        _ = try encoded_header.encode();
+        if (encoded_header.frameBytes() <
+            minimumFrameBytes(encoded_header) or
+            encoded_header.frameBytes() > maximum_encoded_frame_bytes)
+            return error.InvalidMp3EncoderFrameSize;
+        return encoded_header;
+    }
+};
+
+pub const FrameEncoder = struct {
+    config: EncoderConfig,
+    padding_accumulator: u32 = 0,
+    frames_encoded: u64 = 0,
+
+    pub fn init(config: EncoderConfig) !FrameEncoder {
+        _ = try config.header(false);
+        return .{ .config = config };
+    }
+
+    pub fn reset(self: *FrameEncoder) void {
+        self.padding_accumulator = 0;
+        self.frames_encoded = 0;
+    }
+
+    pub fn nextFrameBytes(self: FrameEncoder) !usize {
+        const next = try self.advance();
+        return next.header.frameBytes();
+    }
+
+    pub fn encodeSilentFrame(
+        self: *FrameEncoder,
+        destination: []u8,
+    ) ![]u8 {
+        const frame = QuantizedEncoderFrame{};
+        return self.encodeQuantizedFrame(&frame, destination);
+    }
+
+    pub fn encodeQuantizedFrame(
+        self: *FrameEncoder,
+        frame: *const QuantizedEncoderFrame,
+        destination: []u8,
+    ) ![]u8 {
+        const next = try self.advance();
+        const frame_bytes = next.header.frameBytes();
+        if (destination.len < frame_bytes)
+            return error.InsufficientMp3EncoderStorage;
+
+        var staged: [maximum_encoded_frame_bytes]u8 = @splat(0);
+        const encoded_header = try next.header.encode();
+        @memcpy(staged[0..4], &encoded_header);
+        const side_offset: usize =
+            if (next.header.crc_present) 6 else 4;
+        const side_end = side_offset +
+            next.header.sideInformationBytes();
+        const channel_count: u2 =
+            @intCast(next.header.channels());
+        const granule_count: u2 =
+            if (next.header.version == .mpeg1) 2 else 1;
+        var side = SideInformation{
+            .channel_count = channel_count,
+            .granule_count = granule_count,
+            .main_data_begin = 0,
+            .private_bits = frame.private_bits,
+            .scfsi = frame.scfsi,
+            .main_data_bits = 0,
+        };
+        var main_writer = MainDataBitWriter{
+            .bytes = staged[side_end..frame_bytes],
+        };
+        var channel_storage: [512]u8 = undefined;
+        for (0..2) |granule| {
+            for (0..2) |channel| {
+                const source = &frame.granules[granule][channel];
+                if (granule >= granule_count or
+                    channel >= channel_count)
+                {
+                    if (!std.meta.eql(
+                        source.*,
+                        QuantizedEncoderChannel{},
+                    )) return error.InvalidMp3EncoderFrame;
+                    continue;
+                }
+                if (source.description.part2_3_length != 0 or
+                    source.description.scalefac_compress != 0)
+                    return error.UnsupportedMp3EncoderScaleFactors;
+                const encoded = try encodeHuffmanChannel(
+                    next.header,
+                    source.description,
+                    &source.spectrum,
+                    &channel_storage,
+                );
+                try appendMainDataBits(
+                    &main_writer,
+                    encoded.main_data,
+                );
+                side.granules[granule].channels[channel] =
+                    encoded.description;
+                side.main_data_bits = std.math.add(
+                    u16,
+                    side.main_data_bits,
+                    encoded.main_data.bit_count,
+                ) catch return error.Mp3MainDataBitCountOverflow;
+            }
+        }
+        if (main_writer.bit_offset != side.main_data_bits)
+            return error.InvalidMp3EncoderState;
+        var side_storage: [32]u8 = undefined;
+        const encoded_side = try encodeSideInformation(
+            next.header,
+            side,
+            &side_storage,
+        );
+        @memcpy(staged[side_offset..side_end], encoded_side);
+        if (next.header.crc_present) {
+            var checksum = crc16(0xffff, staged[2..4]);
+            checksum = crc16(checksum, staged[side_offset..side_end]);
+            staged[4] = @intCast(checksum >> 8);
+            staged[5] = @intCast(checksum & 0xff);
+        }
+
+        @memcpy(destination[0..frame_bytes], staged[0..frame_bytes]);
+        self.padding_accumulator = next.padding_accumulator;
+        self.frames_encoded += 1;
+        return destination[0..frame_bytes];
+    }
+
+    const Advance = struct {
+        header: Header,
+        padding_accumulator: u32,
+    };
+
+    fn advance(self: FrameEncoder) !Advance {
+        _ = try self.config.header(false);
+        if (self.padding_accumulator >= self.config.sample_rate)
+            return error.InvalidMp3EncoderState;
+        if (self.frames_encoded == std.math.maxInt(u64))
+            return error.Mp3EncoderFrameCountOverflow;
+
+        const coefficient: u64 =
+            if (self.config.version == .mpeg1) 144_000 else 72_000;
+        const numerator = coefficient * self.config.bitrate_kbps;
+        const remainder: u32 =
+            @intCast(numerator % self.config.sample_rate);
+        const accumulated: u64 =
+            @as(u64, self.padding_accumulator) + remainder;
+        const padding = accumulated >= self.config.sample_rate;
+        const next_accumulator: u32 = @intCast(
+            if (padding)
+                accumulated - self.config.sample_rate
+            else
+                accumulated,
+        );
+        return .{
+            .header = try self.config.header(padding),
+            .padding_accumulator = next_accumulator,
+        };
     }
 };
 
@@ -125,6 +354,18 @@ pub const Granule = struct {
     channels: [2]GranuleChannel = @splat(.{}),
 };
 
+pub const QuantizedEncoderChannel = struct {
+    description: GranuleChannel = .{},
+    spectrum: [576]i32 = @splat(0),
+};
+
+pub const QuantizedEncoderFrame = struct {
+    private_bits: u5 = 0,
+    scfsi: [2]u4 = @splat(0),
+    granules: [2][2]QuantizedEncoderChannel =
+        @splat(@splat(.{})),
+};
+
 pub const SideInformation = struct {
     channel_count: u2,
     granule_count: u2,
@@ -134,6 +375,76 @@ pub const SideInformation = struct {
     granules: [2]Granule = @splat(.{}),
     main_data_bits: u16,
 };
+
+pub fn encodeSideInformation(
+    header: Header,
+    side: SideInformation,
+    destination: []u8,
+) ![]u8 {
+    _ = try header.encode();
+    const channel_count: u2 = @intCast(header.channels());
+    const granule_count: u2 =
+        if (header.version == .mpeg1) 2 else 1;
+    if (side.channel_count != channel_count or
+        side.granule_count != granule_count)
+        return error.InvalidMp3SideInformation;
+    const size: usize = header.sideInformationBytes();
+    if (destination.len < size)
+        return error.InsufficientMp3SideInformationStorage;
+
+    var staged: [32]u8 = @splat(0);
+    var bit_offset: usize = 0;
+    try writeSideInformationBits(
+        &staged,
+        &bit_offset,
+        side.main_data_begin,
+        if (header.version == .mpeg1) 9 else 8,
+    );
+    try writeSideInformationBits(
+        &staged,
+        &bit_offset,
+        side.private_bits,
+        switch (header.version) {
+            .mpeg1 => if (channel_count == 1) 5 else 3,
+            .mpeg2, .mpeg25 => if (channel_count == 1) 1 else 2,
+        },
+    );
+    if (header.version == .mpeg1) {
+        for (side.scfsi[0..channel_count]) |value|
+            try writeSideInformationBits(
+                &staged,
+                &bit_offset,
+                value,
+                4,
+            );
+    }
+    for (0..granule_count) |granule| {
+        for (0..channel_count) |channel|
+            try encodeGranuleChannelSideInformation(
+                &staged,
+                &bit_offset,
+                header.version,
+                side.granules[granule].channels[channel],
+            );
+    }
+    if (bit_offset != size * 8)
+        return error.InvalidMp3SideInformation;
+
+    var frame_storage: [38]u8 = @splat(0);
+    const encoded_header = try header.encode();
+    @memcpy(frame_storage[0..4], &encoded_header);
+    const side_offset: usize = if (header.crc_present) 6 else 4;
+    @memcpy(frame_storage[side_offset..][0..size], staged[0..size]);
+    const parsed = try parseSideInformation(
+        frame_storage[0 .. side_offset + size],
+        header,
+    );
+    if (!std.meta.eql(parsed, side))
+        return error.InvalidMp3SideInformation;
+
+    @memcpy(destination[0..size], staged[0..size]);
+    return destination[0..size];
+}
 
 pub const MainData = struct {
     bytes: []const u8,
@@ -1481,6 +1792,84 @@ pub fn huffmanRegionEnds(
     };
 }
 
+pub const EncodedHuffmanChannel = struct {
+    description: GranuleChannel,
+    main_data: MainData,
+};
+
+pub fn encodeHuffmanChannel(
+    header: Header,
+    description: GranuleChannel,
+    spectrum: *const [576]i32,
+    destination: []u8,
+) !EncodedHuffmanChannel {
+    if (description.big_values > 288)
+        return error.InvalidMp3BigValues;
+    const big_line_count =
+        @as(usize, description.big_values) * 2;
+    var last_nonzero = big_line_count;
+    for (spectrum[big_line_count..], big_line_count..) |value, line| {
+        if (value != 0) last_nonzero = line + 1;
+    }
+    const count1_line_count = std.mem.alignForward(
+        usize,
+        last_nonzero - big_line_count,
+        4,
+    );
+    if (big_line_count + count1_line_count > spectrum.len)
+        return error.InvalidMp3Count1Region;
+    for (spectrum[big_line_count + count1_line_count ..]) |value| {
+        if (value != 0) return error.InvalidMp3QuantizedSpectrum;
+    }
+
+    const region_ends = try huffmanRegionEnds(
+        header,
+        description,
+    );
+    var staged: [512]u8 = @splat(0);
+    var writer = MainDataBitWriter{ .bytes = &staged };
+    var line: usize = 0;
+    while (line < big_line_count) : (line += 2) {
+        const table_index = description.table_select[
+            if (line < region_ends[0])
+                0
+            else if (line < region_ends[1])
+                1
+            else
+                2
+        ];
+        try encodeHuffmanPair(
+            &writer,
+            try huffman_tables.get(table_index),
+            spectrum[line..][0..2].*,
+        );
+    }
+    while (line < big_line_count + count1_line_count) : (line += 4)
+        try encodeCount1Quad(
+            &writer,
+            description.count1_table_select,
+            spectrum[line..][0..4].*,
+        );
+
+    if (writer.bit_offset > std.math.maxInt(u12))
+        return error.Mp3HuffmanBitCountOverflow;
+    const byte_count = (writer.bit_offset + 7) / 8;
+    if (destination.len < byte_count)
+        return error.InsufficientMp3HuffmanStorage;
+    @memcpy(destination[0..byte_count], staged[0..byte_count]);
+
+    var encoded_description = description;
+    encoded_description.part2_3_length =
+        @intCast(writer.bit_offset);
+    return .{
+        .description = encoded_description,
+        .main_data = .{
+            .bytes = destination[0..byte_count],
+            .bit_count = @intCast(writer.bit_offset),
+        },
+    };
+}
+
 pub fn decodeHuffmanChannel(
     header: Header,
     description: GranuleChannel,
@@ -1550,6 +1939,46 @@ pub fn decodeHuffmanChannel(
     return result;
 }
 
+fn encodeHuffmanPair(
+    writer: *MainDataBitWriter,
+    table: huffman_tables.Table,
+    values: [2]i32,
+) !void {
+    var magnitudes: [2]u32 = undefined;
+    for (values, 0..) |value, index| {
+        magnitudes[index] = try quantizedMagnitude(value);
+    }
+    if (table.side == 1) {
+        if (magnitudes[0] != 0 or magnitudes[1] != 0)
+            return error.Mp3HuffmanTableTooSmall;
+        return;
+    }
+
+    const maximum_magnitude: u32 = if (table.linbits == 0)
+        table.side - 1
+    else
+        15 + (@as(u32, 1) << table.linbits) - 1;
+    for (magnitudes) |magnitude| {
+        if (magnitude > maximum_magnitude)
+            return error.Mp3HuffmanTableTooSmall;
+    }
+    const x = @min(magnitudes[0], 15);
+    const y = @min(magnitudes[1], 15);
+    const entry_index =
+        @as(usize, x) * table.side + @as(usize, y);
+    const entry = table.entries[entry_index];
+    try writer.write(entry.bits, entry.length);
+    for (magnitudes, values) |magnitude, value| {
+        if (magnitude >= 15 and table.linbits != 0)
+            try writer.write(
+                magnitude - 15,
+                @intCast(table.linbits),
+            );
+        if (magnitude != 0)
+            try writer.write(@intFromBool(value < 0), 1);
+    }
+}
+
 fn decodeHuffmanPair(
     reader: *MainDataBitReader,
     table: huffman_tables.Table,
@@ -1613,6 +2042,37 @@ const count1_table_a = [16]Count1Code{
     .{ .length = 6, .bits = 0b000011 },
     .{ .length = 6, .bits = 0b000001 },
 };
+
+fn encodeCount1Quad(
+    writer: *MainDataBitWriter,
+    table_b: bool,
+    values: [4]i32,
+) !void {
+    var pattern: u4 = 0;
+    for (values, 0..) |value, index| {
+        const magnitude = try quantizedMagnitude(value);
+        if (magnitude > 1)
+            return error.InvalidMp3Count1Value;
+        pattern |= @as(u4, @intCast(magnitude)) <<
+            @intCast(3 - index);
+    }
+    if (table_b)
+        try writer.write(pattern ^ 0xf, 4)
+    else {
+        const entry = count1_table_a[pattern];
+        try writer.write(entry.bits, entry.length);
+    }
+    for (values) |value| {
+        if (value != 0)
+            try writer.write(@intFromBool(value < 0), 1);
+    }
+}
+
+fn quantizedMagnitude(value: i32) !u32 {
+    if (value == std.math.minInt(i32))
+        return error.InvalidMp3QuantizedValue;
+    return @intCast(if (value < 0) -value else value);
+}
 
 fn decodeCount1Quad(
     reader: *MainDataBitReader,
@@ -1898,6 +2358,50 @@ fn decodeLsfScaleFactorChannel(
     }
     result.value_count = @intCast(index);
     return result;
+}
+
+const MainDataBitWriter = struct {
+    bytes: []u8,
+    bit_offset: usize = 0,
+
+    fn write(
+        self: *@This(),
+        value: anytype,
+        bit_count: u5,
+    ) !void {
+        const encoded: u32 = @intCast(value);
+        if (bit_count < 32 and encoded >=
+            (@as(u32, 1) << bit_count))
+            return error.InvalidMp3HuffmanValue;
+        if (@as(usize, bit_count) >
+            self.bytes.len * 8 -| self.bit_offset)
+            return error.Mp3HuffmanBitCountOverflow;
+        for (0..bit_count) |index| {
+            const source_shift: u5 =
+                @intCast(bit_count - 1 - index);
+            const destination_bit = self.bit_offset + index;
+            const mask: u8 =
+                @as(u8, 1) << @intCast(7 - destination_bit % 8);
+            if (encoded >> source_shift & 1 != 0)
+                self.bytes[destination_bit / 8] |= mask
+            else
+                self.bytes[destination_bit / 8] &= ~mask;
+        }
+        self.bit_offset += bit_count;
+    }
+};
+
+fn appendMainDataBits(
+    writer: *MainDataBitWriter,
+    source: MainData,
+) !void {
+    if (@as(usize, source.bit_count) > source.bytes.len * 8)
+        return error.InvalidMp3MainDataLength;
+    for (0..source.bit_count) |bit_offset| {
+        const byte = source.bytes[bit_offset / 8];
+        const shift: u3 = @intCast(7 - bit_offset % 8);
+        try writer.write((byte >> shift) & 1, 1);
+    }
 }
 
 const MainDataBitReader = struct {
@@ -2640,6 +3144,138 @@ fn crc16(initial: u16, bytes: []const u8) u16 {
     return crc;
 }
 
+fn encodeGranuleChannelSideInformation(
+    destination: []u8,
+    bit_offset: *usize,
+    version: Version,
+    channel: GranuleChannel,
+) !void {
+    try writeSideInformationBits(
+        destination,
+        bit_offset,
+        channel.part2_3_length,
+        12,
+    );
+    try writeSideInformationBits(
+        destination,
+        bit_offset,
+        channel.big_values,
+        9,
+    );
+    try writeSideInformationBits(
+        destination,
+        bit_offset,
+        channel.global_gain,
+        8,
+    );
+    try writeSideInformationBits(
+        destination,
+        bit_offset,
+        channel.scalefac_compress,
+        if (version == .mpeg1) 4 else 9,
+    );
+    try writeSideInformationBits(
+        destination,
+        bit_offset,
+        @intFromBool(channel.window_switching),
+        1,
+    );
+    if (channel.window_switching) {
+        try writeSideInformationBits(
+            destination,
+            bit_offset,
+            channel.block_type,
+            2,
+        );
+        try writeSideInformationBits(
+            destination,
+            bit_offset,
+            @intFromBool(channel.mixed_block),
+            1,
+        );
+        for (channel.table_select[0..2]) |table|
+            try writeSideInformationBits(
+                destination,
+                bit_offset,
+                table,
+                5,
+            );
+        for (channel.subblock_gain) |gain|
+            try writeSideInformationBits(
+                destination,
+                bit_offset,
+                gain,
+                3,
+            );
+    } else {
+        for (channel.table_select) |table|
+            try writeSideInformationBits(
+                destination,
+                bit_offset,
+                table,
+                5,
+            );
+        try writeSideInformationBits(
+            destination,
+            bit_offset,
+            channel.region0_count,
+            4,
+        );
+        try writeSideInformationBits(
+            destination,
+            bit_offset,
+            channel.region1_count,
+            3,
+        );
+    }
+    if (version == .mpeg1)
+        try writeSideInformationBits(
+            destination,
+            bit_offset,
+            @intFromBool(channel.preflag),
+            1,
+        );
+    try writeSideInformationBits(
+        destination,
+        bit_offset,
+        @intFromBool(channel.scalefac_scale),
+        1,
+    );
+    try writeSideInformationBits(
+        destination,
+        bit_offset,
+        @intFromBool(channel.count1_table_select),
+        1,
+    );
+}
+
+fn writeSideInformationBits(
+    destination: []u8,
+    bit_offset: *usize,
+    value: anytype,
+    bit_count: u5,
+) !void {
+    const encoded: u16 = @intCast(value);
+    if (bit_count < 16 and encoded >=
+        (@as(u16, 1) << @as(u4, @intCast(bit_count))))
+        return error.InvalidMp3SideInformation;
+    if (@as(usize, bit_count) >
+        destination.len * 8 -| bit_offset.*)
+        return error.InvalidMp3SideInformation;
+    for (0..bit_count) |index| {
+        const source_shift: u4 =
+            @intCast(bit_count - 1 - index);
+        const destination_bit = bit_offset.* + index;
+        const mask: u8 =
+            @as(u8, 1) << @intCast(7 - destination_bit % 8);
+        if (encoded >> source_shift & 1 != 0)
+            destination[destination_bit / 8] |= mask
+        else
+            destination[destination_bit / 8] &= ~mask;
+    }
+    bit_offset.* += bit_count;
+}
+
 fn parseSideInformation(
     bytes: []const u8,
     header: Header,
@@ -3002,6 +3638,15 @@ fn bitrate(version: Version, index: u4) u16 {
     return if (version == .mpeg1) mpeg1[index] else mpeg2[index];
 }
 
+fn bitrateIndex(version: Version, value: u16) ?u4 {
+    for (1..15) |index| {
+        const encoded_index: u4 = @intCast(index);
+        if (bitrate(version, encoded_index) == value)
+            return encoded_index;
+    }
+    return null;
+}
+
 fn sampleRate(version: Version, index: u2) u32 {
     const base = [_]u32{ 44_100, 48_000, 32_000, 0 };
     return switch (version) {
@@ -3009,6 +3654,15 @@ fn sampleRate(version: Version, index: u2) u32 {
         .mpeg2 => base[index] / 2,
         .mpeg25 => base[index] / 4,
     };
+}
+
+fn sampleRateIndex(version: Version, value: u32) ?u2 {
+    for (0..3) |index| {
+        const encoded_index: u2 = @intCast(index);
+        if (sampleRate(version, encoded_index) == value)
+            return encoded_index;
+    }
+    return null;
 }
 
 fn readU16(bytes: []const u8) u16 {
@@ -3196,6 +3850,355 @@ fn appendFreeFormatFrame(
     @memset(destination[offset .. offset + length], 0);
     @memcpy(destination[offset..][0..4], &header_bytes);
     return offset + length;
+}
+
+test "serializes every supported MP3 encoder header" {
+    const versions = [_]Version{ .mpeg1, .mpeg2, .mpeg25 };
+    const modes = [_]ChannelMode{
+        .stereo,
+        .joint_stereo,
+        .dual_channel,
+        .mono,
+    };
+    for (versions) |version| {
+        for (0..3) |rate_index_value| {
+            const rate_index: u2 = @intCast(rate_index_value);
+            for (1..15) |bitrate_index_value| {
+                const bitrate_index: u4 =
+                    @intCast(bitrate_index_value);
+                for (modes) |mode| {
+                    for ([_]bool{ false, true }) |crc_present| {
+                        const header = Header{
+                            .version = version,
+                            .crc_present = crc_present,
+                            .free_format = false,
+                            .bitrate_kbps = bitrate(
+                                version,
+                                bitrate_index,
+                            ),
+                            .sample_rate = sampleRate(
+                                version,
+                                rate_index,
+                            ),
+                            .padding = true,
+                            .private = true,
+                            .channel_mode = mode,
+                            .mode_extension = 3,
+                            .copyright = true,
+                            .original = true,
+                            .emphasis = 3,
+                        };
+                        try std.testing.expectEqual(
+                            header,
+                            try Header.parse(&try header.encode()),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    const free = Header{
+        .version = .mpeg1,
+        .crc_present = false,
+        .free_format = true,
+        .bitrate_kbps = 0,
+        .sample_rate = 44_100,
+        .padding = false,
+        .private = false,
+        .channel_mode = .stereo,
+        .mode_extension = 0,
+        .copyright = false,
+        .original = false,
+        .emphasis = 0,
+    };
+    try std.testing.expectEqual(
+        free,
+        try Header.parse(&try free.encode()),
+    );
+}
+
+test "encodes transactional CBR silent MP3 frames" {
+    const config = EncoderConfig{
+        .version = .mpeg1,
+        .bitrate_kbps = 128,
+        .sample_rate = 44_100,
+        .channel_mode = .mono,
+        .crc_present = true,
+        .private = true,
+        .copyright = true,
+        .original = true,
+        .emphasis = 1,
+    };
+    var encoder = try FrameEncoder.init(config);
+    var decoder = FrameDecoder{};
+    var storage: [maximum_encoded_frame_bytes]u8 = undefined;
+    var encoded_bytes: usize = 0;
+    var padded_frames: usize = 0;
+    for (0..100) |_| {
+        const expected_bytes = try encoder.nextFrameBytes();
+        const frame_bytes =
+            try encoder.encodeSilentFrame(&storage);
+        try std.testing.expectEqual(expected_bytes, frame_bytes.len);
+        const frame = try Frame.parse(frame_bytes, 0);
+        try std.testing.expectEqual(
+            @as(?bool, true),
+            try frame.crcValid(),
+        );
+        const side = try frame.sideInformation();
+        try std.testing.expectEqual(@as(u16, 0), side.main_data_bits);
+        padded_frames += @intFromBool(frame.header.padding);
+        encoded_bytes += frame_bytes.len;
+
+        const decoded = try decoder.decode(frame);
+        try std.testing.expectEqual(@as(u2, 1), decoded.channel_count);
+        try std.testing.expectEqual(@as(u16, 1152), decoded.sample_count);
+        for (decoded.channels[0]) |sample|
+            try std.testing.expectEqual(@as(f32, 0), sample);
+    }
+    try std.testing.expectEqual(@as(usize, 95), padded_frames);
+    try std.testing.expectEqual(
+        @as(usize, 41_795),
+        encoded_bytes,
+    );
+    try std.testing.expectEqual(@as(u64, 100), encoder.frames_encoded);
+
+    encoder.reset();
+    try std.testing.expectEqual(@as(u64, 0), encoder.frames_encoded);
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        encoder.padding_accumulator,
+    );
+    try std.testing.expectEqual(@as(usize, 417), try encoder.nextFrameBytes());
+}
+
+test "encodes nonzero quantized MP3 frames through the decoder" {
+    var encoder = try FrameEncoder.init(.{
+        .channel_mode = .mono,
+        .crc_present = true,
+    });
+    var source = QuantizedEncoderFrame{};
+    source.private_bits = 7;
+    source.scfsi[0] = 0xf;
+    source.granules[0][0].description = .{
+        .big_values = 1,
+        .global_gain = 210,
+        .table_select = @splat(1),
+        .region0_count = 7,
+        .region1_count = 5,
+    };
+    source.granules[0][0].spectrum[0] = 1;
+    source.granules[0][0].spectrum[1] = -1;
+    source.granules[1][0].description = .{
+        .global_gain = 210,
+        .region0_count = 7,
+        .region1_count = 5,
+        .count1_table_select = true,
+    };
+    source.granules[1][0].spectrum[0] = 1;
+    source.granules[1][0].spectrum[2] = -1;
+    source.granules[1][0].spectrum[3] = 1;
+
+    var storage: [maximum_encoded_frame_bytes]u8 = undefined;
+    const encoded = try encoder.encodeQuantizedFrame(
+        &source,
+        &storage,
+    );
+    const parsed = try Frame.parse(encoded, 0);
+    try std.testing.expectEqual(
+        @as(?bool, true),
+        try parsed.crcValid(),
+    );
+    const side = try parsed.sideInformation();
+    try std.testing.expectEqual(@as(u5, 7), side.private_bits);
+    try std.testing.expectEqual(@as(u4, 0xf), side.scfsi[0]);
+    try std.testing.expect(side.main_data_bits > 0);
+    try std.testing.expectEqual(
+        side.main_data_bits,
+        side.granules[0].channels[0].part2_3_length +
+            side.granules[1].channels[0].part2_3_length,
+    );
+
+    var reservoir = MainDataReservoir(511){};
+    var main_storage: [512]u8 = undefined;
+    const main_data = try reservoir.assemble(
+        parsed,
+        &main_storage,
+    );
+    const factors = try decodeScaleFactors(
+        parsed.header,
+        side,
+        main_data,
+    );
+    const first_spectrum = try decodeHuffmanChannel(
+        parsed.header,
+        side.granules[0].channels[0],
+        factors.granules[0].channels[0],
+        main_data,
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        source.granules[0][0].spectrum[0..2],
+        first_spectrum.lines[0..2],
+    );
+    const second_spectrum = try decodeHuffmanChannel(
+        parsed.header,
+        side.granules[1].channels[0],
+        factors.granules[1].channels[0],
+        main_data,
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        source.granules[1][0].spectrum[0..4],
+        second_spectrum.lines[0..4],
+    );
+
+    var decoder = FrameDecoder{};
+    const pcm = try decoder.decode(parsed);
+    var nonzero = false;
+    for (pcm.channels[0]) |sample| {
+        try std.testing.expect(std.math.isFinite(sample));
+        nonzero = nonzero or sample != 0;
+    }
+    try std.testing.expect(nonzero);
+}
+
+test "rejects oversized and malformed quantized MP3 frames" {
+    var encoder = try FrameEncoder.init(.{
+        .version = .mpeg2,
+        .bitrate_kbps = 8,
+        .sample_rate = 24_000,
+        .channel_mode = .stereo,
+    });
+    var source = QuantizedEncoderFrame{};
+    for (0..2) |channel| {
+        source.granules[0][channel].description = .{
+            .big_values = 288,
+            .global_gain = 210,
+            .table_select = @splat(13),
+            .region0_count = 7,
+            .region1_count = 5,
+        };
+        source.granules[0][channel].spectrum = @splat(15);
+    }
+    const before = encoder;
+    var storage: [maximum_encoded_frame_bytes]u8 = @splat(0x5a);
+    try std.testing.expectError(
+        error.Mp3HuffmanBitCountOverflow,
+        encoder.encodeQuantizedFrame(&source, &storage),
+    );
+    try std.testing.expectEqual(before, encoder);
+    try std.testing.expectEqualSlices(
+        u8,
+        &(@as(
+            [maximum_encoded_frame_bytes]u8,
+            @splat(0x5a),
+        )),
+        &storage,
+    );
+
+    source = .{};
+    source.granules[0][0].description.scalefac_compress = 1;
+    try std.testing.expectError(
+        error.UnsupportedMp3EncoderScaleFactors,
+        encoder.encodeQuantizedFrame(&source, &storage),
+    );
+
+    source = .{};
+    source.granules[1][0].spectrum[0] = 1;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderFrame,
+        encoder.encodeQuantizedFrame(&source, &storage),
+    );
+}
+
+test "encodes silence for every MP3 version and rejects hostile state" {
+    const configs = [_]EncoderConfig{
+        .{
+            .version = .mpeg1,
+            .bitrate_kbps = 320,
+            .sample_rate = 32_000,
+            .channel_mode = .stereo,
+        },
+        .{
+            .version = .mpeg2,
+            .bitrate_kbps = 8,
+            .sample_rate = 24_000,
+            .channel_mode = .mono,
+            .crc_present = true,
+        },
+        .{
+            .version = .mpeg25,
+            .bitrate_kbps = 160,
+            .sample_rate = 8_000,
+            .channel_mode = .dual_channel,
+        },
+    };
+    for (configs) |config| {
+        var encoder = try FrameEncoder.init(config);
+        var storage: [maximum_encoded_frame_bytes]u8 = undefined;
+        const encoded = try encoder.encodeSilentFrame(&storage);
+        const frame = try Frame.parse(encoded, 0);
+        try std.testing.expectEqual(config.version, frame.header.version);
+        try std.testing.expectEqual(
+            config.channel_mode,
+            frame.header.channel_mode,
+        );
+        try std.testing.expectEqual(
+            config.crc_present,
+            frame.header.crc_present,
+        );
+        var decoder = FrameDecoder{};
+        const decoded = try decoder.decode(frame);
+        try std.testing.expectEqual(
+            frame.header.samplesPerFrame(),
+            decoded.sample_count,
+        );
+    }
+
+    try std.testing.expectError(
+        error.InvalidMp3EncoderBitrate,
+        FrameEncoder.init(.{ .bitrate_kbps = 17 }),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3EncoderSampleRate,
+        FrameEncoder.init(.{ .sample_rate = 96_000 }),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3EncoderEmphasis,
+        FrameEncoder.init(.{ .emphasis = 2 }),
+    );
+
+    var encoder = try FrameEncoder.init(.{});
+    const before = encoder;
+    var short: [16]u8 = @splat(0x5a);
+    try std.testing.expectError(
+        error.InsufficientMp3EncoderStorage,
+        encoder.encodeSilentFrame(&short),
+    );
+    try std.testing.expectEqual(before, encoder);
+    try std.testing.expectEqualSlices(
+        u8,
+        &(@as([16]u8, @splat(0x5a))),
+        &short,
+    );
+
+    encoder.padding_accumulator = encoder.config.sample_rate;
+    const hostile = encoder;
+    var storage: [maximum_encoded_frame_bytes]u8 = @splat(0x33);
+    try std.testing.expectError(
+        error.InvalidMp3EncoderState,
+        encoder.encodeSilentFrame(&storage),
+    );
+    try std.testing.expectEqual(hostile, encoder);
+    try std.testing.expectEqualSlices(
+        u8,
+        &(@as(
+            [maximum_encoded_frame_bytes]u8,
+            @splat(0x33),
+        )),
+        &storage,
+    );
 }
 
 test "parses MPEG Layer III versions, CRC, padding, and frame sizes" {
@@ -3394,6 +4397,134 @@ test "parses bounded Layer III side information" {
     try std.testing.expectEqual(
         parsed,
         try file_frame.sideInformation(),
+    );
+}
+
+test "serializes Layer III side information transactionally" {
+    const mpeg1 = try Header.parse(
+        &testHeader(3, false, 9, 0, false, .mono),
+    );
+    var mpeg1_side = SideInformation{
+        .channel_count = 1,
+        .granule_count = 2,
+        .main_data_begin = 31,
+        .private_bits = 17,
+        .scfsi = .{ 0xa, 0 },
+        .main_data_bits = 30,
+    };
+    mpeg1_side.granules[0].channels[0] = .{
+        .part2_3_length = 10,
+        .big_values = 1,
+        .global_gain = 210,
+        .scalefac_compress = 3,
+        .table_select = .{ 1, 2, 3 },
+        .region0_count = 7,
+        .region1_count = 5,
+        .preflag = true,
+        .scalefac_scale = true,
+    };
+    mpeg1_side.granules[1].channels[0] = .{
+        .part2_3_length = 20,
+        .big_values = 2,
+        .global_gain = 190,
+        .scalefac_compress = 7,
+        .table_select = .{ 5, 6, 7 },
+        .region0_count = 6,
+        .region1_count = 4,
+        .count1_table_select = true,
+    };
+    var storage: [32]u8 = undefined;
+    const encoded_mpeg1 = try encodeSideInformation(
+        mpeg1,
+        mpeg1_side,
+        &storage,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 17),
+        encoded_mpeg1.len,
+    );
+    var frame_storage: [23]u8 = @splat(0);
+    const header_bytes = try mpeg1.encode();
+    @memcpy(frame_storage[0..4], &header_bytes);
+    @memcpy(frame_storage[6..23], encoded_mpeg1);
+    try std.testing.expectEqual(
+        mpeg1_side,
+        try parseSideInformation(&frame_storage, mpeg1),
+    );
+
+    const mpeg2 = try Header.parse(
+        &testHeader(2, true, 8, 0, false, .stereo),
+    );
+    var mpeg2_side = SideInformation{
+        .channel_count = 2,
+        .granule_count = 1,
+        .main_data_begin = 200,
+        .private_bits = 2,
+        .main_data_bits = 0,
+    };
+    mpeg2_side.granules[0].channels[0] = .{
+        .global_gain = 180,
+        .scalefac_compress = 300,
+        .window_switching = true,
+        .block_type = 2,
+        .mixed_block = true,
+        .table_select = .{ 13, 15, 0 },
+        .subblock_gain = .{ 1, 2, 3 },
+        .region0_count = 7,
+        .region1_count = 13,
+        .scalefac_scale = true,
+    };
+    mpeg2_side.granules[0].channels[1] = .{
+        .global_gain = 181,
+        .scalefac_compress = 301,
+        .window_switching = true,
+        .block_type = 2,
+        .table_select = .{ 16, 24, 0 },
+        .subblock_gain = .{ 3, 2, 1 },
+        .region0_count = 8,
+        .region1_count = 12,
+        .count1_table_select = true,
+    };
+    const encoded_mpeg2 = try encodeSideInformation(
+        mpeg2,
+        mpeg2_side,
+        &storage,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 17),
+        encoded_mpeg2.len,
+    );
+    var mpeg2_frame: [21]u8 = @splat(0);
+    const mpeg2_header = try mpeg2.encode();
+    @memcpy(mpeg2_frame[0..4], &mpeg2_header);
+    @memcpy(mpeg2_frame[4..21], encoded_mpeg2);
+    try std.testing.expectEqual(
+        mpeg2_side,
+        try parseSideInformation(&mpeg2_frame, mpeg2),
+    );
+
+    var malformed = mpeg1_side;
+    malformed.main_data_bits += 1;
+    var retained: [32]u8 = @splat(0x5a);
+    try std.testing.expectError(
+        error.InvalidMp3SideInformation,
+        encodeSideInformation(mpeg1, malformed, &retained),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &(@as([32]u8, @splat(0x5a))),
+        &retained,
+    );
+    try std.testing.expectError(
+        error.InsufficientMp3SideInformationStorage,
+        encodeSideInformation(mpeg1, mpeg1_side, retained[0..16]),
+    );
+
+    malformed = mpeg1_side;
+    malformed.granules[0].channels[1].global_gain = 1;
+    try std.testing.expectError(
+        error.InvalidMp3SideInformation,
+        encodeSideInformation(mpeg1, malformed, &retained),
     );
 }
 
@@ -3925,6 +5056,202 @@ test "plans long short and low-rate Huffman regions" {
     try std.testing.expectError(
         error.InvalidMp3SampleRate,
         scaleFactorBands(invalid_rate),
+    );
+}
+
+test "encodes every Layer III Huffman pair codebook" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    for (0..32) |table_value| {
+        const table_index: u5 = @intCast(table_value);
+        if (table_index == 4 or table_index == 14) continue;
+        const table = try huffman_tables.get(table_index);
+        for (table.entries, 0..) |_, entry_index| {
+            const x: i32 = @intCast(entry_index / table.side);
+            const y: i32 = @intCast(entry_index % table.side);
+            var spectrum: [576]i32 = @splat(0);
+            spectrum[0] = if (x == 0) 0 else -x;
+            spectrum[1] = y;
+            var storage: [512]u8 = undefined;
+            const encoded = try encodeHuffmanChannel(
+                header,
+                .{
+                    .big_values = 1,
+                    .table_select = @splat(table_index),
+                    .region0_count = 7,
+                    .region1_count = 5,
+                },
+                &spectrum,
+                &storage,
+            );
+            const decoded = try decodeHuffmanChannel(
+                header,
+                encoded.description,
+                .{
+                    .huffman_bit_count = encoded.description.part2_3_length,
+                },
+                encoded.main_data,
+            );
+            try std.testing.expectEqualSlices(
+                i32,
+                spectrum[0..2],
+                decoded.lines[0..2],
+            );
+        }
+    }
+
+    var escape_spectrum: [576]i32 = @splat(0);
+    escape_spectrum[0] = -(15 + 8191);
+    escape_spectrum[1] = 15 + 8191;
+    var storage: [512]u8 = undefined;
+    const encoded = try encodeHuffmanChannel(
+        header,
+        .{
+            .big_values = 1,
+            .table_select = @splat(31),
+            .region0_count = 7,
+            .region1_count = 5,
+        },
+        &escape_spectrum,
+        &storage,
+    );
+    const decoded = try decodeHuffmanChannel(
+        header,
+        encoded.description,
+        .{
+            .huffman_bit_count = encoded.description.part2_3_length,
+        },
+        encoded.main_data,
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        escape_spectrum[0..2],
+        decoded.lines[0..2],
+    );
+}
+
+test "encodes both Layer III count1 codebooks" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    for ([_]bool{ false, true }) |table_b| {
+        var spectrum: [576]i32 = @splat(0);
+        for (0..16) |pattern| {
+            for (0..4) |component| {
+                const line = pattern * 4 + component;
+                const magnitude =
+                    (pattern >> @intCast(3 - component)) & 1;
+                spectrum[line] = if (magnitude == 0)
+                    0
+                else if (line & 1 == 0)
+                    -1
+                else
+                    1;
+            }
+        }
+        var storage: [512]u8 = undefined;
+        const encoded = try encodeHuffmanChannel(
+            header,
+            .{
+                .count1_table_select = table_b,
+                .region0_count = 7,
+                .region1_count = 5,
+            },
+            &spectrum,
+            &storage,
+        );
+        const decoded = try decodeHuffmanChannel(
+            header,
+            encoded.description,
+            .{
+                .huffman_bit_count = encoded.description.part2_3_length,
+            },
+            encoded.main_data,
+        );
+        try std.testing.expectEqual(@as(u10, 64), decoded.decoded_lines);
+        try std.testing.expectEqualSlices(
+            i32,
+            spectrum[0..64],
+            decoded.lines[0..64],
+        );
+    }
+}
+
+test "rejects malformed Huffman encoder inputs transactionally" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    var spectrum: [576]i32 = @splat(0);
+    spectrum[0] = 2;
+    var destination: [8]u8 = @splat(0x5a);
+    try std.testing.expectError(
+        error.Mp3HuffmanTableTooSmall,
+        encodeHuffmanChannel(
+            header,
+            .{
+                .big_values = 1,
+                .table_select = @splat(1),
+                .region0_count = 7,
+                .region1_count = 5,
+            },
+            &spectrum,
+            &destination,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &(@as([8]u8, @splat(0x5a))),
+        &destination,
+    );
+
+    spectrum[0] = std.math.minInt(i32);
+    try std.testing.expectError(
+        error.InvalidMp3QuantizedValue,
+        encodeHuffmanChannel(
+            header,
+            .{
+                .big_values = 1,
+                .table_select = @splat(31),
+                .region0_count = 7,
+                .region1_count = 5,
+            },
+            &spectrum,
+            &destination,
+        ),
+    );
+    spectrum[0] = 0;
+    spectrum[2] = 2;
+    try std.testing.expectError(
+        error.InvalidMp3Count1Value,
+        encodeHuffmanChannel(
+            header,
+            .{
+                .big_values = 1,
+                .table_select = @splat(1),
+                .region0_count = 7,
+                .region1_count = 5,
+            },
+            &spectrum,
+            &destination,
+        ),
+    );
+
+    spectrum = @splat(0);
+    spectrum[0] = 1;
+    try std.testing.expectError(
+        error.InsufficientMp3HuffmanStorage,
+        encodeHuffmanChannel(
+            header,
+            .{
+                .big_values = 1,
+                .table_select = @splat(1),
+                .region0_count = 7,
+                .region1_count = 5,
+            },
+            &spectrum,
+            &.{},
+        ),
     );
 }
 

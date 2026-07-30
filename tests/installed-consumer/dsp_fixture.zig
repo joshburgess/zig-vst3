@@ -3173,6 +3173,69 @@ test "installed package exposes allocation-free ID3 metadata versions" {
 }
 
 test "installed package exposes bounded MP3 framing and seeking" {
+    var public_encoder = try plugin.dsp.Mp3FrameEncoder.init(
+        plugin.dsp.Mp3EncoderConfig{
+            .channel_mode = .mono,
+            .crc_present = true,
+        },
+    );
+    var generated: [2 * plugin.dsp.maximumMp3EncodedFrameBytes]u8 = undefined;
+    var generated_length: usize = 0;
+    for (0..2) |_| {
+        const frame_bytes = try public_encoder.encodeSilentFrame(
+            generated[generated_length..],
+        );
+        generated_length += frame_bytes.len;
+    }
+    const generated_summary = try plugin.dsp.Mp3Stream.summarize(
+        generated[0..generated_length],
+    );
+    try std.testing.expectEqual(
+        @as(u64, 2),
+        generated_summary.frame_count,
+    );
+    var generated_stream = try plugin.dsp.Mp3Stream.init(
+        generated[0..generated_length],
+    );
+    var generated_decoder = plugin.dsp.Mp3FrameDecoder{};
+    while (try generated_stream.next()) |frame| {
+        try std.testing.expectEqual(
+            @as(?bool, true),
+            try frame.crcValid(),
+        );
+        const pcm = try generated_decoder.decode(frame);
+        try std.testing.expectEqual(@as(u2, 1), pcm.channel_count);
+        for (pcm.channels[0]) |sample|
+            try std.testing.expectEqual(@as(f32, 0), sample);
+    }
+
+    var quantized_encoder = try plugin.dsp.Mp3FrameEncoder.init(
+        .{ .channel_mode = .mono },
+    );
+    var quantized_frame = plugin.dsp.Mp3QuantizedEncoderFrame{};
+    quantized_frame.granules[0][0].description = .{
+        .big_values = 1,
+        .global_gain = 210,
+        .table_select = @splat(1),
+        .region0_count = 7,
+        .region1_count = 5,
+    };
+    quantized_frame.granules[0][0].spectrum[0] = 1;
+    quantized_frame.granules[0][0].spectrum[1] = -1;
+    var quantized_storage: [plugin.dsp.maximumMp3EncodedFrameBytes]u8 = undefined;
+    const quantized_bytes = try quantized_encoder.encodeQuantizedFrame(
+        &quantized_frame,
+        &quantized_storage,
+    );
+    var quantized_decoder = plugin.dsp.Mp3FrameDecoder{};
+    const quantized_pcm = try quantized_decoder.decode(
+        try plugin.dsp.Mp3Frame.parse(quantized_bytes, 0),
+    );
+    var quantized_nonzero = false;
+    for (quantized_pcm.channels[0]) |sample|
+        quantized_nonzero = quantized_nonzero or sample != 0;
+    try std.testing.expect(quantized_nonzero);
+
     var encoded: [834]u8 = undefined;
     @memset(&encoded, 0);
     const header = [_]u8{ 0xff, 0xfb, 0x90, 0x00 };
@@ -3185,6 +3248,40 @@ test "installed package exposes bounded MP3 framing and seeking" {
         parsed.version,
     );
     try std.testing.expectEqual(@as(usize, 417), parsed.frameBytes());
+    var public_spectrum: [576]i32 = @splat(0);
+    public_spectrum[0] = 1;
+    public_spectrum[1] = -1;
+    var public_main_storage: [8]u8 = undefined;
+    const public_huffman: plugin.dsp.Mp3EncodedHuffmanChannel =
+        try plugin.dsp.encodeMp3HuffmanChannel(
+            parsed,
+            .{
+                .big_values = 1,
+                .table_select = @splat(1),
+                .region0_count = 7,
+                .region1_count = 5,
+            },
+            &public_spectrum,
+            &public_main_storage,
+        );
+    var public_side = plugin.dsp.Mp3SideInformation{
+        .channel_count = 2,
+        .granule_count = 2,
+        .main_data_begin = 0,
+        .private_bits = 0,
+        .main_data_bits = public_huffman.main_data.bit_count,
+    };
+    public_side.granules[0].channels[0] =
+        public_huffman.description;
+    var public_side_storage: [32]u8 = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 32),
+        (try plugin.dsp.encodeMp3SideInformation(
+            parsed,
+            public_side,
+            &public_side_storage,
+        )).len,
+    );
     try std.testing.expectEqual(
         @as(?bool, null),
         try (try plugin.dsp.Mp3Frame.parse(&encoded, 0)).crcValid(),

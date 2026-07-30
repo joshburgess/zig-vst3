@@ -273,11 +273,14 @@ pub const requiredId3Utf8TextPayloadBytes =
     id3.requiredUtf8TextPayloadBytes;
 pub const Mp3ChannelMode = mp3.ChannelMode;
 pub const Mp3DecoderFormat = mp3.DecoderFormat;
+pub const Mp3EncodedHuffmanChannel = mp3.EncodedHuffmanChannel;
+pub const Mp3EncoderConfig = mp3.EncoderConfig;
 pub const Mp3FileFrame = mp3.FileFrame;
 pub const Mp3FileReader = mp3.FileReader;
 pub const Mp3FileSummary = mp3.FileSummary;
 pub const Mp3Frame = mp3.Frame;
 pub const Mp3FrameDecoder = mp3.FrameDecoder;
+pub const Mp3FrameEncoder = mp3.FrameEncoder;
 pub const Mp3GaplessPlan = mp3.GaplessPlan;
 pub const Mp3Granule = mp3.Granule;
 pub const Mp3GranuleChannel = mp3.GranuleChannel;
@@ -291,6 +294,9 @@ pub const Mp3PcmFrame = mp3.PcmFrame;
 pub const Mp3PcmRange = mp3.PcmRange;
 pub const Mp3PolyphaseSynthesis = mp3.PolyphaseSynthesis;
 pub const Mp3QuantizedSpectrum = mp3.QuantizedSpectrum;
+pub const Mp3QuantizedEncoderChannel =
+    mp3.QuantizedEncoderChannel;
+pub const Mp3QuantizedEncoderFrame = mp3.QuantizedEncoderFrame;
 pub const Mp3RequantizedSpectrum = mp3.RequantizedSpectrum;
 pub const Mp3StereoSpectrum = mp3.StereoSpectrum;
 pub const Mp3ScaleFactorBands = mp3.ScaleFactorBands;
@@ -312,6 +318,8 @@ pub const buildMp3SeekIndex = mp3.buildSeekIndex;
 pub const buildMp3FileSeekIndex = mp3.buildFileSeekIndex;
 pub const decodeMp3HuffmanChannel = mp3.decodeHuffmanChannel;
 pub const decodeMp3ScaleFactors = mp3.decodeScaleFactors;
+pub const encodeMp3HuffmanChannel = mp3.encodeHuffmanChannel;
+pub const encodeMp3SideInformation = mp3.encodeSideInformation;
 pub const findMp3SeekPoint = mp3.findSeekPoint;
 pub const mp3HuffmanRegionEnds = mp3.huffmanRegionEnds;
 pub const mp3ScaleFactorBands = mp3.scaleFactorBands;
@@ -322,6 +330,8 @@ pub const processMp3Stereo = mp3.processStereo;
 pub const reduceMp3Aliases = mp3.reduceAliases;
 pub const maximumMp3FreeFormatFrameBytes =
     mp3.maximum_free_format_frame_bytes;
+pub const maximumMp3EncodedFrameBytes =
+    mp3.maximum_encoded_frame_bytes;
 pub const ConstAudioBlock = audio_block.ConstAudioBlock;
 pub const AiffEncoding = aiff_writer.Encoding;
 pub const AiffSpec = aiff_writer.Spec;
