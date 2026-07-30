@@ -3364,6 +3364,24 @@ test "installed package exposes bounded MP3 framing and seeking" {
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);
     try std.testing.expectEqual(@as(u64, 2304), summary.sample_count);
+    const gapless_plan: plugin.dsp.Mp3GaplessPlan =
+        try plugin.dsp.Mp3GaplessPlan.fromSummary(summary);
+    try std.testing.expectEqual(@as(u64, 2304), gapless_plan.audible_samples);
+    var stream_decoder =
+        try plugin.dsp.Mp3StreamDecoder.init(summary);
+    var decode_stream = try plugin.dsp.Mp3Stream.init(&encoded);
+    while (try decode_stream.next()) |decode_frame| {
+        const trimmed: plugin.dsp.Mp3TrimmedPcmFrame =
+            try stream_decoder.decode(decode_frame);
+        try std.testing.expectEqual(
+            plugin.dsp.Mp3PcmRange{
+                .start = 0,
+                .length = 1152,
+            },
+            trimmed.audible,
+        );
+    }
+    try stream_decoder.finish();
 
     var points: [2]plugin.dsp.Mp3SeekPoint = undefined;
     const index = try plugin.dsp.buildMp3SeekIndex(

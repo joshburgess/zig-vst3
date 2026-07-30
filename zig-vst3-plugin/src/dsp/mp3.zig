@@ -423,6 +423,153 @@ pub const FrameDecoder = struct {
     }
 };
 
+pub const PcmRange = struct {
+    start: u16,
+    length: u16,
+};
+
+pub const TrimmedPcmFrame = struct {
+    pcm: PcmFrame,
+    audible: PcmRange,
+};
+
+pub const GaplessPlan = struct {
+    encoded_samples: u64,
+    leading_samples: u32,
+    trailing_samples: u32,
+    audible_samples: u64,
+
+    pub fn fromSummary(summary: Summary) !GaplessPlan {
+        var leading: u32 = 0;
+        var trailing: u32 = 0;
+        if (summary.first_xing) |xing| {
+            if ((xing.encoder_delay == null) !=
+                (xing.encoder_padding == null))
+                return error.InvalidMp3GaplessMetadata;
+            if (xing.encoder_delay) |delay| {
+                leading = delay;
+                trailing = xing.encoder_padding orelse
+                    return error.InvalidMp3GaplessMetadata;
+            }
+        }
+        const trimmed = std.math.add(
+            u64,
+            leading,
+            trailing,
+        ) catch return error.InvalidMp3GaplessMetadata;
+        if (trimmed > summary.sample_count)
+            return error.InvalidMp3GaplessMetadata;
+        return .{
+            .encoded_samples = summary.sample_count,
+            .leading_samples = leading,
+            .trailing_samples = trailing,
+            .audible_samples = summary.sample_count - trimmed,
+        };
+    }
+
+    pub fn frameRange(
+        self: GaplessPlan,
+        sample_offset: u64,
+        sample_count: u16,
+    ) !PcmRange {
+        const trimmed = std.math.add(
+            u64,
+            self.leading_samples,
+            self.trailing_samples,
+        ) catch return error.InvalidMp3GaplessPlan;
+        if (trimmed > self.encoded_samples or
+            self.audible_samples != self.encoded_samples - trimmed or
+            sample_offset > self.encoded_samples or
+            sample_count > self.encoded_samples - sample_offset)
+            return error.InvalidMp3GaplessPlan;
+        const frame_end = sample_offset + sample_count;
+        const audible_start: u64 = self.leading_samples;
+        const audible_end =
+            self.encoded_samples - self.trailing_samples;
+        const start = @max(sample_offset, audible_start);
+        const end = @min(frame_end, audible_end);
+        if (end <= start) {
+            return .{
+                .start = if (frame_end <= audible_start)
+                    sample_count
+                else
+                    0,
+                .length = 0,
+            };
+        }
+        return .{
+            .start = @intCast(start - sample_offset),
+            .length = @intCast(end - start),
+        };
+    }
+};
+
+pub const StreamDecoder = struct {
+    decoder: FrameDecoder = .{},
+    plan: GaplessPlan,
+    sample_rate: u32,
+    channel_count: u2,
+    sample_offset: u64 = 0,
+
+    pub fn init(summary: Summary) !StreamDecoder {
+        if (summary.sample_rate == 0 or
+            summary.channels == 0 or
+            summary.channels > 2)
+            return error.InvalidMp3Summary;
+        return .{
+            .plan = try GaplessPlan.fromSummary(summary),
+            .sample_rate = summary.sample_rate,
+            .channel_count = @intCast(summary.channels),
+        };
+    }
+
+    pub fn reset(self: *StreamDecoder) void {
+        self.decoder.reset();
+        self.sample_offset = 0;
+    }
+
+    pub fn decode(
+        self: *StreamDecoder,
+        frame: anytype,
+    ) !TrimmedPcmFrame {
+        if (self.sample_rate == 0 or
+            self.channel_count == 0 or
+            self.channel_count > 2 or
+            frame.header.sample_rate != self.sample_rate or
+            frame.header.channels() != self.channel_count)
+            return error.Mp3DecoderFormatChanged;
+        var next = self.*;
+        const pcm = try next.decoder.decode(frame);
+        const audible = try next.plan.frameRange(
+            next.sample_offset,
+            pcm.sample_count,
+        );
+        next.sample_offset = std.math.add(
+            u64,
+            next.sample_offset,
+            pcm.sample_count,
+        ) catch return error.Mp3SampleCountOverflow;
+        self.* = next;
+        return .{
+            .pcm = pcm,
+            .audible = audible,
+        };
+    }
+
+    pub fn finish(self: StreamDecoder) !void {
+        if (self.sample_rate == 0 or
+            self.channel_count == 0 or
+            self.channel_count > 2)
+            return error.InvalidMp3StreamDecoderState;
+        _ = try self.plan.frameRange(
+            self.plan.encoded_samples,
+            0,
+        );
+        if (self.sample_offset != self.plan.encoded_samples)
+            return error.Mp3GaplessStreamIncomplete;
+    }
+};
+
 pub fn requantizeChannel(
     header: Header,
     description: GranuleChannel,
@@ -5511,6 +5658,149 @@ test "matches independent Layer III conformance PCM" {
         @sqrt(squared_error / sample_total) < 0.5,
     );
     try std.testing.expect(maximum_error < 2.0);
+}
+
+test "trims MP3 decoder frames with gapless metadata" {
+    const summary = Summary{
+        .audio_offset = 0,
+        .audio_bytes = 3 * 417,
+        .frame_count = 3,
+        .sample_count = 3 * 1152,
+        .sample_rate = 44_100,
+        .channels = 1,
+        .first_xing = .{
+            .kind = .variable,
+            .frame_count = 3,
+            .stream_bytes = null,
+            .toc = null,
+            .quality = null,
+            .encoder = null,
+            .encoder_delay = 100,
+            .encoder_padding = 200,
+        },
+        .first_vbri = null,
+    };
+    const plan = try GaplessPlan.fromSummary(summary);
+    try std.testing.expectEqual(@as(u64, 3456), plan.encoded_samples);
+    try std.testing.expectEqual(@as(u64, 3156), plan.audible_samples);
+
+    var encoded: [500]u8 = undefined;
+    const frame_end = try appendFrame(
+        &encoded,
+        0,
+        testHeader(3, true, 9, 0, false, .mono),
+    );
+    const frame = try Frame.parse(encoded[0..frame_end], 0);
+    var decoder = try StreamDecoder.init(summary);
+    try std.testing.expectError(
+        error.Mp3GaplessStreamIncomplete,
+        decoder.finish(),
+    );
+    const first = try decoder.decode(frame);
+    try std.testing.expectEqual(
+        PcmRange{ .start = 100, .length = 1052 },
+        first.audible,
+    );
+    const second = try decoder.decode(frame);
+    try std.testing.expectEqual(
+        PcmRange{ .start = 0, .length = 1152 },
+        second.audible,
+    );
+    const third = try decoder.decode(frame);
+    try std.testing.expectEqual(
+        PcmRange{ .start = 0, .length = 952 },
+        third.audible,
+    );
+    try decoder.finish();
+
+    const completed = decoder;
+    try std.testing.expectError(
+        error.InvalidMp3GaplessPlan,
+        decoder.decode(frame),
+    );
+    try std.testing.expectEqual(completed, decoder);
+
+    decoder.reset();
+    try std.testing.expectEqual(@as(u64, 0), decoder.sample_offset);
+    try std.testing.expectEqual(FrameDecoder{}, decoder.decoder);
+    try std.testing.expectEqual(plan, decoder.plan);
+}
+
+test "rejects invalid MP3 gapless metadata and plans" {
+    var summary = Summary{
+        .audio_offset = 0,
+        .audio_bytes = 417,
+        .frame_count = 1,
+        .sample_count = 1152,
+        .sample_rate = 44_100,
+        .channels = 1,
+        .first_xing = .{
+            .kind = .variable,
+            .frame_count = 1,
+            .stream_bytes = null,
+            .toc = null,
+            .quality = null,
+            .encoder = null,
+            .encoder_delay = 100,
+            .encoder_padding = null,
+        },
+        .first_vbri = null,
+    };
+    try std.testing.expectError(
+        error.InvalidMp3GaplessMetadata,
+        GaplessPlan.fromSummary(summary),
+    );
+    var oversized = summary.first_xing orelse
+        return error.TestXingMissing;
+    oversized.encoder_padding = 1100;
+    summary.first_xing = oversized;
+    try std.testing.expectError(
+        error.InvalidMp3GaplessMetadata,
+        GaplessPlan.fromSummary(summary),
+    );
+
+    const leading = GaplessPlan{
+        .encoded_samples = 100,
+        .leading_samples = 100,
+        .trailing_samples = 0,
+        .audible_samples = 0,
+    };
+    try std.testing.expectEqual(
+        PcmRange{ .start = 100, .length = 0 },
+        try leading.frameRange(0, 100),
+    );
+    const trailing = GaplessPlan{
+        .encoded_samples = 100,
+        .leading_samples = 0,
+        .trailing_samples = 100,
+        .audible_samples = 0,
+    };
+    try std.testing.expectEqual(
+        PcmRange{ .start = 0, .length = 0 },
+        try trailing.frameRange(0, 100),
+    );
+    var malformed = trailing;
+    malformed.audible_samples = 1;
+    try std.testing.expectError(
+        error.InvalidMp3GaplessPlan,
+        malformed.frameRange(0, 100),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3GaplessPlan,
+        (StreamDecoder{
+            .plan = malformed,
+            .sample_rate = 44_100,
+            .channel_count = 1,
+            .sample_offset = 100,
+        }).finish(),
+    );
+
+    summary.first_xing = null;
+    summary.sample_rate = 0;
+    try std.testing.expectError(
+        error.InvalidMp3Summary,
+        StreamDecoder.init(summary),
+    );
 }
 
 test "rejects inconsistent scale-factor bit ranges" {
