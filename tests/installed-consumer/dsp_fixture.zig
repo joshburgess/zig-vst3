@@ -3322,6 +3322,14 @@ test "installed package exposes bounded MP3 framing and seeking" {
     );
     try std.testing.expect(alias_reduced.lines[17] != 1);
     try std.testing.expect(alias_reduced.lines[18] != 2);
+    var hybrid = plugin.dsp.Mp3HybridSynthesis{};
+    const hybrid_samples: plugin.dsp.Mp3HybridSamples =
+        try hybrid.process(joint_header, .{}, alias_reduced);
+    try std.testing.expect(
+        std.math.isFinite(hybrid_samples.time_slots[0][0]),
+    );
+    try std.testing.expect(hybrid_samples.time_slots[0][0] != 0);
+    hybrid.reset();
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);

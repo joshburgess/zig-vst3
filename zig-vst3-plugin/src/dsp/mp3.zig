@@ -177,6 +177,66 @@ pub const StereoSpectrum = struct {
     channels: [2]RequantizedSpectrum,
 };
 
+pub const HybridSamples = struct {
+    time_slots: [18][32]f32 = @splat(@splat(0)),
+};
+
+pub const HybridSynthesis = struct {
+    overlap: [32][18]f32 = @splat(@splat(0)),
+
+    pub fn reset(self: *HybridSynthesis) void {
+        self.* = .{};
+    }
+
+    pub fn process(
+        self: *HybridSynthesis,
+        header: Header,
+        description: GranuleChannel,
+        spectrum: RequantizedSpectrum,
+    ) !HybridSamples {
+        _ = try scaleFactorBands(header);
+        try validateBlockDescription(description);
+        for (spectrum.lines) |line| {
+            if (!std.math.isFinite(line))
+                return error.InvalidMp3RequantizedSpectrum;
+        }
+        for (self.overlap) |subband| {
+            for (subband) |sample| {
+                if (!std.math.isFinite(sample))
+                    return error.InvalidMp3HybridState;
+            }
+        }
+
+        var output = HybridSamples{};
+        var next_overlap: [32][18]f32 = @splat(@splat(0));
+        const mixed_long_subbands =
+            if (description.mixed_block)
+                mixedLongSubbands(header)
+            else
+                0;
+        for (0..32) |subband| {
+            const long_mixed = subband < mixed_long_subbands;
+            const block = synthesizeHybridBlock(
+                description,
+                long_mixed,
+                spectrum.lines[subband * 18 ..][0..18],
+            );
+            for (0..18) |time| {
+                var combined =
+                    block[time] + self.overlap[subband][time];
+                if (subband & 1 != 0 and time & 1 != 0)
+                    combined = -combined;
+                output.time_slots[time][subband] =
+                    try checkedHybridSample(combined);
+                next_overlap[subband][time] =
+                    try checkedHybridSample(block[time + 18]);
+            }
+        }
+        self.overlap = next_overlap;
+        return output;
+    }
+};
+
 pub fn requantizeChannel(
     header: Header,
     description: GranuleChannel,
@@ -432,11 +492,8 @@ pub fn reduceAliases(
         32
     else if (!description.mixed_block)
         0
-    else if (header.version == .mpeg25 and
-        header.sample_rate == 8_000)
-        4
     else
-        2;
+        mixedLongSubbands(header);
     var result = spectrum;
     var subband: usize = 1;
     while (subband < subband_count) : (subband += 1) {
@@ -476,6 +533,120 @@ const alias_ca = [_]f32{
     -0.01419856857247115,
     -0.0036999746737600373,
 };
+
+fn mixedLongSubbands(header: Header) usize {
+    return if (header.version == .mpeg25 and
+        header.sample_rate == 8_000)
+        4
+    else
+        2;
+}
+
+fn buildImdctMatrix(
+    comptime input_count: usize,
+) [input_count * 2][input_count]f64 {
+    var result: [input_count * 2][input_count]f64 = undefined;
+    const count: f64 = @floatFromInt(input_count);
+    for (0..input_count * 2) |time| {
+        const time_value: f64 = @floatFromInt(time);
+        for (0..input_count) |frequency| {
+            const frequency_value: f64 = @floatFromInt(frequency);
+            result[time][frequency] = @cos(
+                std.math.pi / count *
+                    (time_value + 0.5 + count * 0.5) *
+                    (frequency_value + 0.5),
+            );
+        }
+    }
+    return result;
+}
+
+fn buildLongWindows() [4][36]f64 {
+    var result: [4][36]f64 = @splat(@splat(0));
+    for (0..36) |time| {
+        const position: f64 = @floatFromInt(time);
+        result[0][time] = @sin(
+            std.math.pi / 36.0 * (position + 0.5),
+        );
+        if (time < 18) {
+            result[1][time] = result[0][time];
+        } else if (time < 24) {
+            result[1][time] = 1;
+        } else if (time < 30) {
+            result[1][time] = @sin(
+                std.math.pi / 12.0 * (position - 17.5),
+            );
+        }
+        if (time >= 6 and time < 12) {
+            result[3][time] = @sin(
+                std.math.pi / 12.0 * (position - 5.5),
+            );
+        } else if (time >= 12 and time < 18) {
+            result[3][time] = 1;
+        } else if (time >= 18) {
+            result[3][time] = result[0][time];
+        }
+    }
+    return result;
+}
+
+fn buildShortWindow() [12]f64 {
+    var result: [12]f64 = undefined;
+    for (0..12) |time| {
+        const position: f64 = @floatFromInt(time);
+        result[time] = @sin(
+            std.math.pi / 12.0 * (position + 0.5),
+        );
+    }
+    return result;
+}
+
+const long_imdct = buildImdctMatrix(18);
+const short_imdct = buildImdctMatrix(6);
+const long_windows = buildLongWindows();
+const short_window = buildShortWindow();
+
+fn synthesizeHybridBlock(
+    description: GranuleChannel,
+    long_mixed: bool,
+    spectrum: *const [18]f32,
+) [36]f64 {
+    var result: [36]f64 = @splat(0);
+    if (description.block_type == 2 and !long_mixed) {
+        for (0..3) |window| {
+            for (0..12) |time| {
+                var transformed: f64 = 0;
+                for (0..6) |frequency| {
+                    transformed +=
+                        spectrum[frequency * 3 + window] *
+                        short_imdct[time][frequency];
+                }
+                result[6 + window * 6 + time] +=
+                    transformed * short_window[time];
+            }
+        }
+        return result;
+    }
+
+    const window_type: usize =
+        if (long_mixed) 0 else description.block_type;
+    for (0..36) |time| {
+        var transformed: f64 = 0;
+        for (spectrum, 0..) |sample, frequency|
+            transformed += sample * long_imdct[time][frequency];
+        result[time] =
+            transformed * long_windows[window_type][time];
+    }
+    return result;
+}
+
+fn checkedHybridSample(value: f64) !f32 {
+    if (!std.math.isFinite(value) or
+        value < -std.math.floatMax(f32) or
+        value > std.math.floatMax(f32))
+        return error.InvalidMp3HybridSample;
+    return @floatCast(value);
+}
 
 fn processLongStereo(
     header: Header,
@@ -4425,6 +4596,269 @@ test "reduces Layer III aliases across long and mixed boundaries" {
             header,
             .{ .block_type = 2 },
             long_spectrum,
+        ),
+    );
+}
+
+test "synthesizes long MP3 hybrid blocks with overlap and inversion" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    var spectrum = RequantizedSpectrum{};
+    spectrum.lines[0] = 1;
+    spectrum.lines[18] = 1;
+    var synthesis = HybridSynthesis{};
+    const first = try synthesis.process(header, .{}, spectrum);
+    for (0..36) |time| {
+        const position: f64 = @floatFromInt(time);
+        const transformed = @cos(
+            std.math.pi / 18.0 *
+                (position + 9.5) * 0.5,
+        ) * @sin(
+            std.math.pi / 36.0 * (position + 0.5),
+        );
+        if (time < 18) {
+            try std.testing.expectApproxEqAbs(
+                @as(f32, @floatCast(transformed)),
+                first.time_slots[time][0],
+                1e-6,
+            );
+            try std.testing.expectApproxEqAbs(
+                @as(f32, @floatCast(
+                    if (time & 1 == 0)
+                        transformed
+                    else
+                        -transformed,
+                )),
+                first.time_slots[time][1],
+                1e-6,
+            );
+        } else {
+            try std.testing.expectApproxEqAbs(
+                @as(f32, @floatCast(transformed)),
+                synthesis.overlap[0][time - 18],
+                1e-6,
+            );
+            try std.testing.expectApproxEqAbs(
+                @as(f32, @floatCast(transformed)),
+                synthesis.overlap[1][time - 18],
+                1e-6,
+            );
+        }
+    }
+
+    const second = try synthesis.process(
+        header,
+        .{},
+        .{},
+    );
+    for (0..18) |time| {
+        const position: f64 = @floatFromInt(time + 18);
+        const tail = @cos(
+            std.math.pi / 18.0 *
+                (position + 9.5) * 0.5,
+        ) * @sin(
+            std.math.pi / 36.0 * (position + 0.5),
+        );
+        try std.testing.expectApproxEqAbs(
+            @as(f32, @floatCast(tail)),
+            second.time_slots[time][0],
+            1e-6,
+        );
+        try std.testing.expectApproxEqAbs(
+            @as(f32, @floatCast(
+                if (time & 1 == 0) tail else -tail,
+            )),
+            second.time_slots[time][1],
+            1e-6,
+        );
+    }
+    try std.testing.expectEqual(
+        @as([32][18]f32, @splat(@splat(0))),
+        synthesis.overlap,
+    );
+
+    _ = try synthesis.process(header, .{}, spectrum);
+    synthesis.reset();
+    try std.testing.expectEqual(HybridSynthesis{}, synthesis);
+}
+
+test "synthesizes short transition and mixed MP3 hybrid blocks" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    const short_description = GranuleChannel{
+        .window_switching = true,
+        .block_type = 2,
+    };
+    var short_spectrum = RequantizedSpectrum{};
+    short_spectrum.lines[0] = 1;
+    short_spectrum.lines[1] = 2;
+    short_spectrum.lines[2] = 3;
+    var short_synthesis = HybridSynthesis{};
+    const short = try short_synthesis.process(
+        header,
+        short_description,
+        short_spectrum,
+    );
+    var expected_short: [36]f64 = @splat(0);
+    for (0..3) |window| {
+        const magnitude: f64 = @floatFromInt(window + 1);
+        for (0..12) |time| {
+            const position: f64 = @floatFromInt(time);
+            expected_short[6 + window * 6 + time] +=
+                magnitude *
+                @cos(
+                    std.math.pi / 6.0 *
+                        (position + 3.5) * 0.5,
+                ) *
+                @sin(std.math.pi / 12.0 * (position + 0.5));
+        }
+    }
+    for (0..18) |time| {
+        try std.testing.expectApproxEqAbs(
+            @as(f32, @floatCast(expected_short[time])),
+            short.time_slots[time][0],
+            1e-6,
+        );
+        try std.testing.expectApproxEqAbs(
+            @as(f32, @floatCast(expected_short[time + 18])),
+            short_synthesis.overlap[0][time],
+            1e-6,
+        );
+    }
+    for (0..6) |time| {
+        try std.testing.expectEqual(
+            @as(f32, 0),
+            short.time_slots[time][0],
+        );
+        try std.testing.expectEqual(
+            @as(f32, 0),
+            short_synthesis.overlap[0][time + 12],
+        );
+    }
+
+    var transition_spectrum = RequantizedSpectrum{};
+    transition_spectrum.lines[0] = 1;
+    var start_synthesis = HybridSynthesis{};
+    _ = try start_synthesis.process(
+        header,
+        .{
+            .window_switching = true,
+            .block_type = 1,
+        },
+        transition_spectrum,
+    );
+    for (12..18) |time|
+        try std.testing.expectEqual(
+            @as(f32, 0),
+            start_synthesis.overlap[0][time],
+        );
+    var stop_synthesis = HybridSynthesis{};
+    const stop = try stop_synthesis.process(
+        header,
+        .{
+            .window_switching = true,
+            .block_type = 3,
+        },
+        transition_spectrum,
+    );
+    for (0..6) |time|
+        try std.testing.expectEqual(
+            @as(f32, 0),
+            stop.time_slots[time][0],
+        );
+
+    const mixed_description = GranuleChannel{
+        .window_switching = true,
+        .block_type = 2,
+        .mixed_block = true,
+    };
+    var mixed_spectrum = RequantizedSpectrum{};
+    mixed_spectrum.lines[0] = 1;
+    mixed_spectrum.lines[18] = 1;
+    mixed_spectrum.lines[36] = 1;
+    var mixed_synthesis = HybridSynthesis{};
+    const mixed = try mixed_synthesis.process(
+        header,
+        mixed_description,
+        mixed_spectrum,
+    );
+    try std.testing.expect(mixed.time_slots[0][0] != 0);
+    try std.testing.expect(mixed.time_slots[0][1] != 0);
+    for (0..6) |time|
+        try std.testing.expectEqual(
+            @as(f32, 0),
+            mixed.time_slots[time][2],
+        );
+
+    const low_rate_header = try Header.parse(
+        &testHeader(0, true, 9, 2, false, .mono),
+    );
+    var low_rate_spectrum = RequantizedSpectrum{};
+    low_rate_spectrum.lines[3 * 18] = 1;
+    low_rate_spectrum.lines[4 * 18] = 1;
+    var low_rate_synthesis = HybridSynthesis{};
+    const low_rate = try low_rate_synthesis.process(
+        low_rate_header,
+        mixed_description,
+        low_rate_spectrum,
+    );
+    try std.testing.expect(low_rate.time_slots[0][3] != 0);
+    for (0..6) |time|
+        try std.testing.expectEqual(
+            @as(f32, 0),
+            low_rate.time_slots[time][4],
+        );
+
+    const preserved = low_rate_synthesis;
+    var malformed = RequantizedSpectrum{};
+    malformed.lines[0] = std.math.nan(f32);
+    try std.testing.expectError(
+        error.InvalidMp3RequantizedSpectrum,
+        low_rate_synthesis.process(
+            low_rate_header,
+            mixed_description,
+            malformed,
+        ),
+    );
+    try std.testing.expectEqual(preserved, low_rate_synthesis);
+
+    var overflowing = RequantizedSpectrum{};
+    for (0..18) |frequency| {
+        overflowing.lines[frequency] =
+            if (long_imdct[8][frequency] < 0)
+                -std.math.floatMax(f32)
+            else
+                std.math.floatMax(f32);
+    }
+    const before_overflow = low_rate_synthesis;
+    try std.testing.expectError(
+        error.InvalidMp3HybridSample,
+        low_rate_synthesis.process(
+            low_rate_header,
+            .{},
+            overflowing,
+        ),
+    );
+    try std.testing.expectEqual(before_overflow, low_rate_synthesis);
+
+    low_rate_synthesis.overlap[0][0] = std.math.nan(f32);
+    try std.testing.expectError(
+        error.InvalidMp3HybridState,
+        low_rate_synthesis.process(
+            low_rate_header,
+            .{},
+            .{},
+        ),
+    );
+    low_rate_synthesis.reset();
+    try std.testing.expectError(
+        error.InvalidMp3BlockType,
+        low_rate_synthesis.process(
+            low_rate_header,
+            .{ .block_type = 2 },
+            .{},
         ),
     );
 }
