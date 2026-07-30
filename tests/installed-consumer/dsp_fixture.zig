@@ -1140,6 +1140,27 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         @as(f32, -12.0),
         chebyshev_second.coefficients[2],
     );
+    const hermite =
+        try plugin.dsp.Polynomial(f32, 6).hermitePhysicists(4);
+    try std.testing.expectEqual(
+        @as(f32, 16.0),
+        hermite.coefficients[4],
+    );
+    const laguerre =
+        try plugin.dsp.Polynomial(f32, 6)
+            .generalizedLaguerre(3, 2.0);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 10.0),
+        laguerre.evaluate(0.0),
+        0.000_1,
+    );
+    const jacobi_polynomial =
+        try plugin.dsp.Polynomial(f32, 6).jacobi(2, 1.0, 0.0);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 3.0),
+        jacobi_polynomial.evaluate(1.0),
+        0.000_1,
+    );
 
     const Ladder = plugin.dsp.LadderFilter(f32);
     try std.testing.expectError(

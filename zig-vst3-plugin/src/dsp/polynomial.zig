@@ -450,6 +450,141 @@ pub fn Polynomial(comptime Sample: type, comptime capacity: usize) type {
             return current;
         }
 
+        pub fn hermitePhysicists(degree: usize) !Self {
+            if (degree >= capacity)
+                return error.PolynomialCapacityExceeded;
+            var previous = try Self.init(&.{1.0});
+            if (degree == 0) return previous;
+            var current = try Self.init(&.{ 0.0, 2.0 });
+            for (1..degree) |order| {
+                const next = try affineRecurrenceStep(
+                    previous,
+                    current,
+                    0.0,
+                    2.0,
+                    @as(Sample, @floatFromInt(2 * order)),
+                );
+                previous = current;
+                current = next;
+            }
+            return current;
+        }
+
+        pub fn hermiteProbabilists(degree: usize) !Self {
+            if (degree >= capacity)
+                return error.PolynomialCapacityExceeded;
+            var previous = try Self.init(&.{1.0});
+            if (degree == 0) return previous;
+            var current = try Self.init(&.{ 0.0, 1.0 });
+            for (1..degree) |order| {
+                const next = try affineRecurrenceStep(
+                    previous,
+                    current,
+                    0.0,
+                    1.0,
+                    @as(Sample, @floatFromInt(order)),
+                );
+                previous = current;
+                current = next;
+            }
+            return current;
+        }
+
+        pub fn laguerre(degree: usize) !Self {
+            return generalizedLaguerre(degree, 0.0);
+        }
+
+        pub fn generalizedLaguerre(
+            degree: usize,
+            alpha: Sample,
+        ) !Self {
+            if (degree >= capacity)
+                return error.PolynomialCapacityExceeded;
+            if (!std.math.isFinite(alpha) or alpha <= -1.0)
+                return error.InvalidPolynomialFamilyParameter;
+            var previous = try Self.init(&.{1.0});
+            if (degree == 0) return previous;
+            var current = try Self.init(&.{
+                1.0 + alpha,
+                -1.0,
+            });
+            if (!current.valid())
+                return error.PolynomialNonFiniteValue;
+            for (1..degree) |order| {
+                const n: Sample = @floatFromInt(order);
+                const denominator = n + 1.0;
+                const next = try affineRecurrenceStep(
+                    previous,
+                    current,
+                    (2.0 * n + 1.0 + alpha) / denominator,
+                    -1.0 / denominator,
+                    (n + alpha) / denominator,
+                );
+                previous = current;
+                current = next;
+            }
+            return current;
+        }
+
+        pub fn jacobi(
+            degree: usize,
+            alpha: Sample,
+            beta: Sample,
+        ) !Self {
+            if (degree >= capacity)
+                return error.PolynomialCapacityExceeded;
+            if (!std.math.isFinite(alpha) or
+                !std.math.isFinite(beta) or
+                alpha <= -1.0 or beta <= -1.0)
+            {
+                return error.InvalidPolynomialFamilyParameter;
+            }
+            var previous = try Self.init(&.{1.0});
+            if (degree == 0) return previous;
+            var current = try Self.init(&.{
+                (alpha - beta) / 2.0,
+                (alpha + beta + 2.0) / 2.0,
+            });
+            if (!current.valid())
+                return error.PolynomialNonFiniteValue;
+
+            for (1..degree) |order| {
+                const n: Sample = @floatFromInt(order);
+                const sum = alpha + beta;
+                const twice_n_sum = 2.0 * n + sum;
+                const denominator =
+                    2.0 *
+                    (n + 1.0) *
+                    (n + sum + 1.0) *
+                    twice_n_sum;
+                if (!std.math.isFinite(denominator) or
+                    denominator == 0.0)
+                {
+                    return error.PolynomialNonFiniteValue;
+                }
+                const common = twice_n_sum + 1.0;
+                const next = try affineRecurrenceStep(
+                    previous,
+                    current,
+                    common *
+                        (alpha * alpha - beta * beta) /
+                        denominator,
+                    common *
+                        twice_n_sum *
+                        (twice_n_sum + 2.0) /
+                        denominator,
+                    2.0 *
+                        (n + alpha) *
+                        (n + beta) *
+                        (twice_n_sum + 2.0) /
+                        denominator,
+                );
+                previous = current;
+                current = next;
+            }
+            return current;
+        }
+
         /// Finds every complex root without allocation.
         ///
         /// Trailing zero coefficients are ignored. The all-zero polynomial has
@@ -604,6 +739,54 @@ pub fn Polynomial(comptime Sample: type, comptime capacity: usize) type {
             }
             for (0..previous.count) |index| {
                 const value = result.coefficients[index] -
+                    previous.coefficients[index] * previous_factor;
+                if (!std.math.isFinite(value))
+                    return error.PolynomialNonFiniteValue;
+                result.coefficients[index] = value;
+            }
+            result.trim();
+            return result;
+        }
+
+        fn affineRecurrenceStep(
+            previous: Self,
+            current: Self,
+            constant_factor: Sample,
+            x_factor: Sample,
+            previous_factor: Sample,
+        ) !Self {
+            if (!previous.valid() or !current.valid())
+                return error.InvalidPolynomial;
+            if (!std.math.isFinite(constant_factor) or
+                !std.math.isFinite(x_factor) or
+                !std.math.isFinite(previous_factor))
+            {
+                return error.PolynomialNonFiniteValue;
+            }
+            if (current.count == capacity)
+                return error.PolynomialCapacityExceeded;
+            var result = Self{
+                .coefficients = @splat(0.0),
+                .count = current.count + 1,
+            };
+            for (0..current.count) |index| {
+                const constant =
+                    result.coefficients[index] +
+                    current.coefficients[index] * constant_factor;
+                const linear =
+                    result.coefficients[index + 1] +
+                    current.coefficients[index] * x_factor;
+                if (!std.math.isFinite(constant) or
+                    !std.math.isFinite(linear))
+                {
+                    return error.PolynomialNonFiniteValue;
+                }
+                result.coefficients[index] = constant;
+                result.coefficients[index + 1] = linear;
+            }
+            for (0..previous.count) |index| {
+                const value =
+                    result.coefficients[index] -
                     previous.coefficients[index] * previous_factor;
                 if (!std.math.isFinite(value))
                     return error.PolynomialNonFiniteValue;
@@ -914,6 +1097,106 @@ test "polynomial constructs both Chebyshev families" {
     try std.testing.expectError(
         error.PolynomialCapacityExceeded,
         P32.chebyshevSecondKind(5),
+    );
+}
+
+test "polynomial constructs both Hermite normalizations" {
+    const P = Polynomial(f64, 8);
+    const physicists = try P.hermitePhysicists(4);
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ 12.0, 0.0, -48.0, 0.0, 16.0 },
+        physicists.coefficients[0..5],
+    );
+    const probabilists = try P.hermiteProbabilists(4);
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ 3.0, 0.0, -6.0, 0.0, 1.0 },
+        probabilists.coefficients[0..5],
+    );
+    for (0..7) |degree| {
+        const physicists_value =
+            try P.hermitePhysicists(degree);
+        const probabilists_value =
+            try P.hermiteProbabilists(degree);
+        const x: f64 = 0.37;
+        try std.testing.expectApproxEqAbs(
+            physicists_value.evaluate(x),
+            std.math.pow(
+                f64,
+                2.0,
+                @as(f64, @floatFromInt(degree)) / 2.0,
+            ) *
+                probabilists_value.evaluate(x * @sqrt(2.0)),
+            0.000_000_000_01,
+        );
+    }
+    try std.testing.expectError(
+        error.PolynomialCapacityExceeded,
+        P.hermitePhysicists(8),
+    );
+}
+
+test "polynomial constructs ordinary and generalized Laguerre families" {
+    const P = Polynomial(f64, 8);
+    const ordinary = try P.laguerre(4);
+    for (
+        [_]f64{ 1.0, -4.0, 3.0, -2.0 / 3.0, 1.0 / 24.0 },
+        ordinary.coefficients[0..5],
+    ) |expected, actual| {
+        try std.testing.expectApproxEqAbs(
+            expected,
+            actual,
+            0.000_000_000_001,
+        );
+    }
+    const generalized = try P.generalizedLaguerre(3, 2.0);
+    for (
+        [_]f64{ 10.0, -10.0, 2.5, -1.0 / 6.0 },
+        generalized.coefficients[0..4],
+    ) |expected, actual| {
+        try std.testing.expectApproxEqAbs(
+            expected,
+            actual,
+            0.000_000_000_001,
+        );
+    }
+    try std.testing.expectError(
+        error.InvalidPolynomialFamilyParameter,
+        P.generalizedLaguerre(2, -1.0),
+    );
+}
+
+test "polynomial constructs general Jacobi families" {
+    const P = Polynomial(f64, 9);
+    const selected = try P.jacobi(2, 1.0, 0.0);
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ -0.5, 1.0, 2.5 },
+        selected.coefficients[0..3],
+    );
+    for (0..8) |degree| {
+        const jacobi_value = try P.jacobi(degree, 0.0, 0.0);
+        const legendre_value = try P.legendre(degree);
+        for (0..degree + 1) |index| {
+            try std.testing.expectApproxEqAbs(
+                legendre_value.coefficients[index],
+                jacobi_value.coefficients[index],
+                0.000_000_000_01,
+            );
+        }
+    }
+    try std.testing.expectError(
+        error.InvalidPolynomialFamilyParameter,
+        P.jacobi(2, std.math.nan(f64), 0.0),
+    );
+    try std.testing.expectError(
+        error.InvalidPolynomialFamilyParameter,
+        P.jacobi(2, 0.0, -1.0),
+    );
+    try std.testing.expectError(
+        error.PolynomialCapacityExceeded,
+        P.jacobi(9, 0.0, 0.0),
     );
 }
 
