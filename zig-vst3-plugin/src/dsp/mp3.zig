@@ -1,5 +1,6 @@
 const std = @import("std");
 const file_reader_io = @import("file_reader_io.zig");
+const file_writer_io = @import("file_writer_io.zig");
 const huffman_tables = @import("mp3_huffman_tables.zig");
 const synthesis_window_quantized =
     @import("mp3_synthesis_window.zig").values;
@@ -1039,6 +1040,391 @@ pub const PcmEncoder = struct {
         return encoded;
     }
 };
+
+pub const EncoderStreamSummary = struct {
+    frame_count: u64,
+    input_samples: u64,
+    encoded_samples: u64,
+    byte_count: u64,
+    encoder_delay: u16,
+    end_padding: u16,
+};
+
+pub const PcmStreamFinish = struct {
+    frames: []u8,
+    summary: EncoderStreamSummary,
+};
+
+pub const PcmStreamEncoder = struct {
+    encoder: PcmEncoder,
+    frame_count: u64 = 0,
+    input_samples: u64 = 0,
+    byte_count: u64 = 0,
+    finalized: bool = false,
+
+    pub fn init(config: EncoderConfig) !PcmStreamEncoder {
+        return .{ .encoder = try PcmEncoder.init(config) };
+    }
+
+    pub fn append(
+        self: *PcmStreamEncoder,
+        pcm: PcmFrame,
+        destination: []u8,
+    ) ![]u8 {
+        try self.validate();
+        if (self.finalized)
+            return error.Mp3EncoderStreamFinalized;
+        const next_frame_count = std.math.add(
+            u64,
+            self.frame_count,
+            1,
+        ) catch return error.Mp3EncoderFrameCountOverflow;
+        const next_input_samples = std.math.add(
+            u64,
+            self.input_samples,
+            pcm.sample_count,
+        ) catch return error.Mp3SampleCountOverflow;
+        const frame_bytes = try self.encoder.frames.nextFrameBytes();
+        const next_byte_count = std.math.add(
+            u64,
+            self.byte_count,
+            frame_bytes,
+        ) catch return error.Mp3ByteCountOverflow;
+        var next = self.*;
+        const encoded = try next.encoder.encode(
+            pcm,
+            destination,
+        );
+        if (encoded.len != frame_bytes)
+            return error.InvalidMp3EncoderState;
+        next.frame_count = next_frame_count;
+        next.input_samples = next_input_samples;
+        next.byte_count = next_byte_count;
+        self.* = next;
+        return encoded;
+    }
+
+    pub fn finish(
+        self: *PcmStreamEncoder,
+        destination: []u8,
+    ) !PcmStreamFinish {
+        try self.validate();
+        if (self.finalized)
+            return .{
+                .frames = destination[0..0],
+                .summary = try self.summary(),
+            };
+        const header = try self.encoder.frames.config.header(false);
+        const samples_per_frame: u16 = header.samplesPerFrame();
+        const flush_frames = std.math.divCeil(
+            u16,
+            encoder_analysis_delay,
+            samples_per_frame,
+        ) catch return error.Mp3SampleCountOverflow;
+        var staged: [maximum_encoded_frame_bytes * 2]u8 = undefined;
+        var staged_bytes: usize = 0;
+        var next = self.*;
+        const silence = PcmFrame{
+            .channel_count = @intCast(header.channels()),
+            .sample_count = samples_per_frame,
+        };
+        for (0..flush_frames) |_| {
+            const encoded = try next.encoder.encode(
+                silence,
+                staged[staged_bytes..],
+            );
+            staged_bytes += encoded.len;
+        }
+        if (destination.len < staged_bytes)
+            return error.InsufficientMp3EncoderStorage;
+        next.frame_count = std.math.add(
+            u64,
+            self.frame_count,
+            flush_frames,
+        ) catch return error.Mp3EncoderFrameCountOverflow;
+        next.byte_count = std.math.add(
+            u64,
+            self.byte_count,
+            staged_bytes,
+        ) catch return error.Mp3ByteCountOverflow;
+        next.finalized = true;
+        const finished_summary = try next.summary();
+        @memcpy(destination[0..staged_bytes], staged[0..staged_bytes]);
+        self.* = next;
+        return .{
+            .frames = destination[0..staged_bytes],
+            .summary = finished_summary,
+        };
+    }
+
+    pub fn summary(self: PcmStreamEncoder) !EncoderStreamSummary {
+        try self.validate();
+        const header = try self.encoder.frames.config.header(false);
+        const encoded_samples = std.math.mul(
+            u64,
+            self.frame_count,
+            header.samplesPerFrame(),
+        ) catch return error.Mp3SampleCountOverflow;
+        const retained_samples = std.math.add(
+            u64,
+            self.input_samples,
+            encoder_analysis_delay,
+        ) catch return error.Mp3SampleCountOverflow;
+        if (encoded_samples < retained_samples)
+            return error.Mp3EncoderStreamIncomplete;
+        const padding = encoded_samples - retained_samples;
+        if (padding > std.math.maxInt(u12))
+            return error.Mp3EncoderPaddingOverflow;
+        return .{
+            .frame_count = self.frame_count,
+            .input_samples = self.input_samples,
+            .encoded_samples = encoded_samples,
+            .byte_count = self.byte_count,
+            .encoder_delay = encoder_analysis_delay,
+            .end_padding = @intCast(padding),
+        };
+    }
+
+    fn validate(self: PcmStreamEncoder) !void {
+        if (self.encoder.frames.frames_encoded != self.frame_count or
+            self.encoder.analysis.frames_analyzed != self.frame_count)
+            return error.InvalidMp3EncoderStreamState;
+        const header = self.encoder.frames.config.header(false) catch
+            return error.InvalidMp3EncoderStreamState;
+        const byte_state = encoderByteState(
+            self.encoder.frames.config,
+            self.frame_count,
+        ) catch return error.InvalidMp3EncoderStreamState;
+        if (self.byte_count != byte_state.byte_count or
+            self.encoder.frames.padding_accumulator !=
+                byte_state.padding_accumulator)
+            return error.InvalidMp3EncoderStreamState;
+        const flush_frames: u64 = if (self.finalized)
+            std.math.divCeil(
+                u64,
+                encoder_analysis_delay,
+                header.samplesPerFrame(),
+            ) catch return error.InvalidMp3EncoderStreamState
+        else
+            0;
+        if (self.frame_count < flush_frames)
+            return error.InvalidMp3EncoderStreamState;
+        const expected_input = std.math.mul(
+            u64,
+            self.frame_count - flush_frames,
+            header.samplesPerFrame(),
+        ) catch return error.InvalidMp3EncoderStreamState;
+        if (self.input_samples != expected_input)
+            return error.InvalidMp3EncoderStreamState;
+        if (self.finalized) {
+            _ = self.summaryUnchecked() catch
+                return error.InvalidMp3EncoderStreamState;
+        }
+    }
+
+    fn summaryUnchecked(
+        self: PcmStreamEncoder,
+    ) !EncoderStreamSummary {
+        const header = try self.encoder.frames.config.header(false);
+        const encoded_samples = try std.math.mul(
+            u64,
+            self.frame_count,
+            header.samplesPerFrame(),
+        );
+        const retained_samples = try std.math.add(
+            u64,
+            self.input_samples,
+            encoder_analysis_delay,
+        );
+        if (encoded_samples < retained_samples)
+            return error.Mp3EncoderStreamIncomplete;
+        const padding = encoded_samples - retained_samples;
+        if (padding > std.math.maxInt(u12))
+            return error.Mp3EncoderPaddingOverflow;
+        return .{
+            .frame_count = self.frame_count,
+            .input_samples = self.input_samples,
+            .encoded_samples = encoded_samples,
+            .byte_count = self.byte_count,
+            .encoder_delay = encoder_analysis_delay,
+            .end_padding = @intCast(padding),
+        };
+    }
+};
+
+const EncoderByteState = struct {
+    byte_count: u64,
+    padding_accumulator: u32,
+};
+
+fn encoderByteState(
+    config: EncoderConfig,
+    frame_count: u64,
+) !EncoderByteState {
+    const header = try config.header(false);
+    const coefficient: u64 =
+        if (config.version == .mpeg1) 144_000 else 72_000;
+    const numerator = coefficient * config.bitrate_kbps;
+    const remainder: u32 =
+        @intCast(numerator % config.sample_rate);
+    const accumulated =
+        @as(u128, frame_count) * remainder;
+    const padding_count =
+        accumulated / config.sample_rate;
+    const base_bytes =
+        @as(u128, frame_count) * header.frameBytes();
+    const total_bytes = base_bytes + padding_count;
+    if (total_bytes > std.math.maxInt(u64))
+        return error.Mp3ByteCountOverflow;
+    return .{
+        .byte_count = @intCast(total_bytes),
+        .padding_accumulator = @intCast(
+            accumulated % config.sample_rate,
+        ),
+    };
+}
+
+pub const PcmFileEncoder = struct {
+    io: std.Io,
+    file: std.Io.File,
+    operations: file_writer_io.Operations = .{},
+    stream: PcmStreamEncoder,
+    frame_storage: []u8,
+    committed_bytes: u64 = 0,
+    failed: bool = false,
+    finalized: bool = false,
+
+    /// The caller owns the file and frame storage for the encoder lifetime.
+    pub fn init(
+        io: std.Io,
+        file: std.Io.File,
+        config: EncoderConfig,
+        frame_storage: []u8,
+    ) !PcmFileEncoder {
+        return initPcmFileEncoder(
+            io,
+            file,
+            config,
+            frame_storage,
+            .{},
+        );
+    }
+
+    pub fn initWithOperations(
+        io: std.Io,
+        file: std.Io.File,
+        config: EncoderConfig,
+        frame_storage: []u8,
+        operations: file_writer_io.Operations,
+    ) !PcmFileEncoder {
+        return initPcmFileEncoder(
+            io,
+            file,
+            config,
+            frame_storage,
+            operations,
+        );
+    }
+
+    pub fn append(
+        self: *PcmFileEncoder,
+        pcm: PcmFrame,
+    ) !void {
+        try self.validate();
+        if (self.failed or self.finalized)
+            return error.InvalidMp3FileEncoderState;
+        var next = self.stream;
+        const encoded = try next.append(
+            pcm,
+            self.frame_storage,
+        );
+        self.operations.writeAt(
+            self.io,
+            self.file,
+            self.committed_bytes,
+            encoded,
+        ) catch |failure| {
+            self.failed = true;
+            return failure;
+        };
+        self.committed_bytes = next.byte_count;
+        self.stream = next;
+    }
+
+    pub fn finalize(
+        self: *PcmFileEncoder,
+    ) !EncoderStreamSummary {
+        try self.validate();
+        if (self.finalized)
+            return self.stream.summary();
+        if (self.failed)
+            return error.InvalidMp3FileEncoderState;
+        var next = self.stream;
+        const finished = try next.finish(self.frame_storage);
+        self.operations.writeAt(
+            self.io,
+            self.file,
+            self.committed_bytes,
+            finished.frames,
+        ) catch |failure| {
+            self.failed = true;
+            return failure;
+        };
+        self.file.sync(self.io) catch |failure| {
+            self.failed = true;
+            return failure;
+        };
+        self.committed_bytes = finished.summary.byte_count;
+        self.stream = next;
+        self.finalized = true;
+        return finished.summary;
+    }
+
+    pub fn recover(self: *PcmFileEncoder) !void {
+        try self.validate();
+        if (self.finalized)
+            return error.InvalidMp3FileEncoderState;
+        try file_writer_io.Checkpoint.exact(
+            self.committed_bytes,
+        ).restore(
+            self.operations,
+            self.io,
+            self.file,
+        );
+        self.failed = false;
+    }
+
+    fn validate(self: PcmFileEncoder) !void {
+        if (self.frame_storage.len <
+            maximum_encoded_frame_bytes * 2 or
+            self.committed_bytes != self.stream.byte_count or
+            self.finalized != self.stream.finalized)
+            return error.InvalidMp3FileEncoderState;
+        try self.stream.validate();
+    }
+};
+
+fn initPcmFileEncoder(
+    io: std.Io,
+    file: std.Io.File,
+    config: EncoderConfig,
+    frame_storage: []u8,
+    operations: file_writer_io.Operations,
+) !PcmFileEncoder {
+    if (frame_storage.len < maximum_encoded_frame_bytes * 2)
+        return error.Mp3FrameBufferTooSmall;
+    const stream = try PcmStreamEncoder.init(config);
+    try operations.setLength(io, file, 0);
+    return .{
+        .io = io,
+        .file = file,
+        .operations = operations,
+        .stream = stream,
+        .frame_storage = frame_storage[0 .. maximum_encoded_frame_bytes * 2],
+    };
+}
+
+const encoder_analysis_delay: u16 = 1057;
 
 fn validatePcmEncoderStereo(header: Header) !void {
     if (header.channel_mode == .joint_stereo and
@@ -5297,6 +5683,66 @@ fn referencePolyphaseTimeSlot(
     }
     return output;
 }
+
+const Mp3FileFaults = struct {
+    delegate: file_writer_io.Operations = .{},
+    write_calls: usize = 0,
+    fail_write_call: ?usize = null,
+    partial_write_bytes: usize = 0,
+
+    fn operations(self: *Mp3FileFaults) file_writer_io.Operations {
+        return .{
+            .context = self,
+            .vtable = &vtable,
+        };
+    }
+
+    fn writeAt(
+        context: ?*anyopaque,
+        io: std.Io,
+        file: std.Io.File,
+        offset: u64,
+        bytes: []const u8,
+    ) !usize {
+        const self: *Mp3FileFaults = @ptrCast(@alignCast(
+            context orelse return error.MissingFaultContext,
+        ));
+        self.write_calls += 1;
+        if (self.fail_write_call == self.write_calls) {
+            const partial = @min(
+                self.partial_write_bytes,
+                bytes.len,
+            );
+            if (partial != 0)
+                try self.delegate.writeAt(
+                    io,
+                    file,
+                    offset,
+                    bytes[0..partial],
+                );
+            return error.InjectedMp3FileWriteFailure;
+        }
+        try self.delegate.writeAt(io, file, offset, bytes);
+        return bytes.len;
+    }
+
+    fn setLength(
+        context: ?*anyopaque,
+        io: std.Io,
+        file: std.Io.File,
+        length: u64,
+    ) !void {
+        const self: *Mp3FileFaults = @ptrCast(@alignCast(
+            context orelse return error.MissingFaultContext,
+        ));
+        try self.delegate.setLength(io, file, length);
+    }
+
+    const vtable = file_writer_io.Operations.VTable{
+        .write_at = writeAt,
+        .set_length = setLength,
+    };
+};
 
 fn testHeader(
     version_bits: u2,
@@ -10865,5 +11311,215 @@ test "encodes correlated PCM through MP3 mid-side stereo" {
             .channel_mode = .joint_stereo,
             .mode_extension = 1,
         }),
+    );
+}
+
+test "finishes bounded MP3 PCM streams with gapless counts" {
+    const configs = [_]EncoderConfig{
+        .{
+            .version = .mpeg1,
+            .bitrate_kbps = 128,
+            .sample_rate = 44_100,
+            .channel_mode = .mono,
+        },
+        .{
+            .version = .mpeg2,
+            .bitrate_kbps = 64,
+            .sample_rate = 22_050,
+            .channel_mode = .mono,
+        },
+    };
+    for (configs) |config| {
+        const samples_per_frame =
+            (try config.header(false)).samplesPerFrame();
+        var encoder = try PcmStreamEncoder.init(config);
+        var encoded: [maximum_encoded_frame_bytes * 4]u8 = undefined;
+        var encoded_bytes: usize = 0;
+        const pcm = PcmFrame{
+            .channel_count = 1,
+            .sample_count = samples_per_frame,
+        };
+        for (0..2) |_| {
+            const frame = try encoder.append(
+                pcm,
+                encoded[encoded_bytes..],
+            );
+            encoded_bytes += frame.len;
+        }
+        try std.testing.expectError(
+            error.Mp3EncoderStreamIncomplete,
+            encoder.summary(),
+        );
+        const finished = try encoder.finish(
+            encoded[encoded_bytes..],
+        );
+        encoded_bytes += finished.frames.len;
+        const flush_frames: u64 =
+            if (config.version == .mpeg1) 1 else 2;
+        try std.testing.expectEqual(
+            @as(u64, 2) + flush_frames,
+            finished.summary.frame_count,
+        );
+        try std.testing.expectEqual(
+            @as(u64, samples_per_frame) * 2,
+            finished.summary.input_samples,
+        );
+        try std.testing.expectEqual(
+            @as(u16, encoder_analysis_delay),
+            finished.summary.encoder_delay,
+        );
+        try std.testing.expectEqual(
+            @as(u16, 95),
+            finished.summary.end_padding,
+        );
+        try std.testing.expectEqual(
+            @as(u64, encoded_bytes),
+            finished.summary.byte_count,
+        );
+        var parsed = try Stream.init(encoded[0..encoded_bytes]);
+        while (try parsed.next()) |_| {}
+        try std.testing.expectEqual(
+            finished.summary.frame_count,
+            parsed.frame_index,
+        );
+        try std.testing.expectEqual(
+            finished.summary.encoded_samples,
+            parsed.sample_offset,
+        );
+        const repeated = try encoder.finish(
+            encoded[encoded_bytes..],
+        );
+        try std.testing.expectEqual(@as(usize, 0), repeated.frames.len);
+        try std.testing.expectEqual(finished.summary, repeated.summary);
+        const before_append = encoder;
+        try std.testing.expectError(
+            error.Mp3EncoderStreamFinalized,
+            encoder.append(pcm, encoded[encoded_bytes..]),
+        );
+        try std.testing.expectEqual(before_append, encoder);
+    }
+
+    var short = try PcmStreamEncoder.init(configs[1]);
+    var frame_output: [maximum_encoded_frame_bytes]u8 = undefined;
+    _ = try short.append(
+        .{
+            .channel_count = 1,
+            .sample_count = 576,
+        },
+        &frame_output,
+    );
+    var short_output: [1]u8 = .{0x5a};
+    const before_short = short;
+    try std.testing.expectError(
+        error.InsufficientMp3EncoderStorage,
+        short.finish(&short_output),
+    );
+    try std.testing.expectEqual(before_short, short);
+    try std.testing.expectEqual(@as(u8, 0x5a), short_output[0]);
+    short.byte_count += 1;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderStreamState,
+        short.finish(&short_output),
+    );
+}
+
+test "writes and recovers transactional MP3 PCM files" {
+    const config = EncoderConfig{
+        .version = .mpeg2,
+        .bitrate_kbps = 64,
+        .sample_rate = 22_050,
+        .channel_mode = .mono,
+    };
+    const pcm = PcmFrame{
+        .channel_count = 1,
+        .sample_count = 576,
+    };
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "encoded.mp3",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    var storage: [maximum_encoded_frame_bytes * 2]u8 = undefined;
+    var writer = try PcmFileEncoder.init(
+        std.testing.io,
+        file,
+        config,
+        &storage,
+    );
+    try writer.append(pcm);
+    try writer.append(pcm);
+    const summary = try writer.finalize();
+    try std.testing.expectEqual(
+        summary.byte_count,
+        try file.length(std.testing.io),
+    );
+    var frame_storage: [maximum_encoded_frame_bytes]u8 = undefined;
+    var reader = try FileReader.init(std.testing.io, file);
+    var frame_count: u64 = 0;
+    while (try reader.next(&frame_storage)) |_| frame_count += 1;
+    try std.testing.expectEqual(summary.frame_count, frame_count);
+    try std.testing.expectEqual(summary, try writer.finalize());
+
+    var failed_file = try temporary.dir.createFile(
+        std.testing.io,
+        "recovered.mp3",
+        .{ .read = true },
+    );
+    defer failed_file.close(std.testing.io);
+    var faults = Mp3FileFaults{
+        .fail_write_call = 1,
+        .partial_write_bytes = 7,
+    };
+    var failed = try PcmFileEncoder.initWithOperations(
+        std.testing.io,
+        failed_file,
+        config,
+        &storage,
+        faults.operations(),
+    );
+    try std.testing.expectError(
+        error.InjectedMp3FileWriteFailure,
+        failed.append(pcm),
+    );
+    try std.testing.expect(failed.failed);
+    try std.testing.expectEqual(@as(u64, 0), failed.committed_bytes);
+    try std.testing.expectEqual(@as(u64, 0), failed.stream.frame_count);
+    try std.testing.expectEqual(
+        @as(u64, 7),
+        try failed_file.length(std.testing.io),
+    );
+    faults.fail_write_call = null;
+    try failed.recover();
+    try std.testing.expect(!failed.failed);
+    try std.testing.expectEqual(
+        @as(u64, 0),
+        try failed_file.length(std.testing.io),
+    );
+    try failed.append(pcm);
+    const committed = failed.committed_bytes;
+    faults.fail_write_call = faults.write_calls + 1;
+    faults.partial_write_bytes = 5;
+    try std.testing.expectError(
+        error.InjectedMp3FileWriteFailure,
+        failed.finalize(),
+    );
+    try std.testing.expectEqual(committed, failed.committed_bytes);
+    try std.testing.expect(!failed.stream.finalized);
+    try std.testing.expect(
+        try failed_file.length(std.testing.io) > committed,
+    );
+    faults.fail_write_call = null;
+    try failed.recover();
+    try std.testing.expectEqual(
+        committed,
+        try failed_file.length(std.testing.io),
+    );
+    const recovered_summary = try failed.finalize();
+    try std.testing.expectEqual(
+        recovered_summary.byte_count,
+        try failed_file.length(std.testing.io),
     );
 }

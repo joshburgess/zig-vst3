@@ -3529,6 +3529,50 @@ test "installed package exposes bounded MP3 framing and seeking" {
     );
     try std.testing.expect(automatic_frame.len > 4);
     automatic_encoder.reset();
+    var stream_encoder = try plugin.dsp.Mp3PcmStreamEncoder.init(
+        .{ .channel_mode = .stereo },
+    );
+    var stream_storage: [4096]u8 = undefined;
+    const stream_frame = try stream_encoder.append(
+        analysis_pcm,
+        &stream_storage,
+    );
+    const stream_finish: plugin.dsp.Mp3PcmStreamFinish =
+        try stream_encoder.finish(
+            stream_storage[stream_frame.len..],
+        );
+    const stream_summary: plugin.dsp.Mp3EncoderStreamSummary =
+        stream_finish.summary;
+    try std.testing.expectEqual(
+        @as(u16, 1057),
+        stream_summary.encoder_delay,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 95),
+        stream_summary.end_padding,
+    );
+
+    var mp3_temporary = std.testing.tmpDir(.{});
+    defer mp3_temporary.cleanup();
+    var mp3_file = try mp3_temporary.dir.createFile(
+        std.testing.io,
+        "public-encoder.mp3",
+        .{ .read = true },
+    );
+    defer mp3_file.close(std.testing.io);
+    var file_encoder_storage: [4096]u8 = undefined;
+    var file_encoder = try plugin.dsp.Mp3PcmFileEncoder.init(
+        std.testing.io,
+        mp3_file,
+        .{ .channel_mode = .stereo },
+        &file_encoder_storage,
+    );
+    try file_encoder.append(analysis_pcm);
+    const file_encoder_summary = try file_encoder.finalize();
+    try std.testing.expectEqual(
+        file_encoder_summary.byte_count,
+        try mp3_file.length(std.testing.io),
+    );
     pcm_analysis.reset();
 
     var polyphase_analysis = plugin.dsp.Mp3PolyphaseAnalysis{};
