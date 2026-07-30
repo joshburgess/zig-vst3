@@ -3014,6 +3014,12 @@ fn setMpeg1MonoLongChannel(
     setTestBits(side, start + 34, 5, table_select_0);
 }
 
+fn readTestI16(bytes: *const [2]u8) i16 {
+    const value = @as(u16, bytes[0]) |
+        (@as(u16, bytes[1]) << 8);
+    return @bitCast(value);
+}
+
 fn appendFrame(
     destination: []u8,
     offset: usize,
@@ -5433,6 +5439,78 @@ test "rejects MP3 frame decoder discontinuities transactionally" {
         fresh.decode(frame),
     );
     try std.testing.expectEqual(malformed, fresh);
+}
+
+test "matches independent Layer III conformance PCM" {
+    const encoded_base64 = std.mem.trim(
+        u8,
+        @embedFile(
+            "test-fixtures/mp3/layer3-conformance.bit.b64",
+        ),
+        " \r\n\t",
+    );
+    const reference_base64 = std.mem.trim(
+        u8,
+        @embedFile(
+            "test-fixtures/mp3/layer3-conformance.pcm.b64",
+        ),
+        " \r\n\t",
+    );
+    var encoded: [9600]u8 = undefined;
+    var reference: [46_080]u8 = undefined;
+    try std.base64.standard.Decoder.decode(
+        &encoded,
+        encoded_base64,
+    );
+    try std.base64.standard.Decoder.decode(
+        &reference,
+        reference_base64,
+    );
+
+    var stream = try Stream.init(&encoded);
+    var decoder = FrameDecoder{};
+    var frame_count: usize = 0;
+    var sample_offset: usize = 0;
+    var squared_error: f64 = 0;
+    var maximum_error: f64 = 0;
+    while (try stream.next()) |frame| {
+        const decoded = try decoder.decode(frame);
+        try std.testing.expectEqual(
+            @as(u2, 2),
+            decoded.channel_count,
+        );
+        for (0..decoded.sample_count) |sample| {
+            for (0..decoded.channel_count) |channel| {
+                const reference_index =
+                    (sample_offset + sample) * 2 + channel;
+                const reference_sample: f64 = @floatFromInt(
+                    readTestI16(
+                        reference[reference_index * 2 ..][0..2],
+                    ),
+                );
+                const rendered =
+                    @as(f64, decoded.channels[channel][sample]) *
+                    32_768.0;
+                const difference = rendered - reference_sample;
+                squared_error += difference * difference;
+                maximum_error =
+                    @max(maximum_error, @abs(difference));
+            }
+        }
+        sample_offset += decoded.sample_count;
+        frame_count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 10), frame_count);
+    try std.testing.expectEqual(
+        reference.len / 4,
+        sample_offset,
+    );
+    const sample_total: f64 =
+        @floatFromInt(reference.len / 2);
+    try std.testing.expect(
+        @sqrt(squared_error / sample_total) < 0.5,
+    );
+    try std.testing.expect(maximum_error < 2.0);
 }
 
 test "rejects inconsistent scale-factor bit ranges" {
