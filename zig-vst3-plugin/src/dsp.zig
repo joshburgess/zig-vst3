@@ -316,6 +316,8 @@ pub const Mp3EncoderPsychoacousticConfig =
     mp3.EncoderPsychoacousticConfig;
 pub const Mp3EncoderPsychoacousticModel =
     mp3.EncoderPsychoacousticModel;
+pub const Mp3EncoderPsychoacousticTimeline =
+    mp3.EncoderPsychoacousticTimeline;
 pub const Mp3EncoderQuantizer = mp3.EncoderQuantizer;
 pub const Mp3EncoderScaleFactors = mp3.EncoderScaleFactors;
 pub const Mp3EncoderStreamSummary = mp3.EncoderStreamSummary;

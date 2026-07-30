@@ -3540,16 +3540,24 @@ test "installed package exposes bounded MP3 framing and seeking" {
         @as(u16, 21),
         encoded_factors.main_data.bit_count,
     );
-    var automatic_encoder = try plugin.dsp.Mp3PcmEncoder.init(
-        .{ .channel_mode = .stereo },
-    );
+    var automatic_encoder =
+        try plugin.dsp.Mp3PcmEncoder.initWithPsychoacoustics(
+            .{ .channel_mode = .stereo },
+            plugin.dsp.Mp3EncoderPsychoacousticConfig.production,
+        );
     var automatic_storage: [2048]u8 = undefined;
     const automatic_frame = try automatic_encoder.encode(
         analysis_pcm,
         &automatic_storage,
     );
     try std.testing.expect(automatic_frame.len > 4);
+    try std.testing.expect(automatic_encoder.masking.valid[0]);
+    try std.testing.expect(automatic_encoder.masking.valid[1]);
     automatic_encoder.reset();
+    try std.testing.expectEqual(
+        [_]bool{ false, false },
+        automatic_encoder.masking.valid,
+    );
     var reservoir_encoder =
         try plugin.dsp.Mp3PcmReservoirEncoder.init(
             .{ .channel_mode = .stereo },

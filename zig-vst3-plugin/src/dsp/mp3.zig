@@ -863,11 +863,19 @@ pub const EncoderPsychoacousticConfig = struct {
     absolute_threshold: f32 = 1.0e-9,
     masking_ratio: f32 = 0.005,
     adjacent_masking_ratio: f32 = 0.001,
+    tonal_masking_reduction: f32 = 0.0,
+    forward_masking_ratio: f32 = 0.0,
+
+    pub const production = EncoderPsychoacousticConfig{
+        .tonal_masking_reduction = 0.5,
+        .forward_masking_ratio = 0.01,
+    };
 };
 
 pub const EncoderPsychoacousticChannel = struct {
     energy: [39]f32 = @splat(0),
     threshold: [39]f32 = @splat(0),
+    tonality: [39]f32 = @splat(0),
     band_count: u6 = 0,
 };
 
@@ -878,6 +886,15 @@ pub const EncoderPsychoacousticModel = struct {
         self: EncoderPsychoacousticModel,
         header: Header,
         channel: AnalyzedEncoderChannel,
+    ) !EncoderPsychoacousticChannel {
+        return self.analyzeWithHistory(header, channel, null);
+    }
+
+    pub fn analyzeWithHistory(
+        self: EncoderPsychoacousticModel,
+        header: Header,
+        channel: AnalyzedEncoderChannel,
+        previous: ?EncoderPsychoacousticChannel,
     ) !EncoderPsychoacousticChannel {
         try validateEncoderPsychoacousticConfig(self.config);
         const ordered = try orderEncoderSpectrum(
@@ -894,22 +911,52 @@ pub const EncoderPsychoacousticModel = struct {
         };
         for (0..layout.band_count) |band| {
             var energy: f64 = 0;
-            for (ordered[layout.starts[band]..layout.starts[band + 1]]) |line| {
+            var logarithmic_energy: f64 = 0;
+            const lines =
+                ordered[layout.starts[band]..layout.starts[band + 1]];
+            for (lines) |line| {
                 if (!std.math.isFinite(line))
                     return error.InvalidMp3RequantizedSpectrum;
-                energy += @as(f64, line) * @as(f64, line);
+                const line_energy =
+                    @as(f64, line) * @as(f64, line);
+                energy += line_energy;
+                logarithmic_energy +=
+                    @log(@max(line_energy, 1.0e-30));
             }
             result.energy[band] = @floatCast(energy);
+            const arithmetic_mean =
+                energy / @as(f64, @floatFromInt(lines.len));
+            const flatness = if (arithmetic_mean <= 1.0e-30)
+                1.0
+            else
+                @min(
+                    @exp(
+                        logarithmic_energy /
+                            @as(f64, @floatFromInt(lines.len)),
+                    ) / arithmetic_mean,
+                    1.0,
+                );
+            result.tonality[band] = @floatCast(1.0 - flatness);
         }
+        if (previous) |history|
+            try validatePsychoacousticHistory(
+                history,
+                history.band_count,
+            );
         for (0..layout.band_count) |band| {
             const line_count: f64 = @floatFromInt(
                 layout.starts[band + 1] - layout.starts[band],
             );
+            const tonal_scale =
+                1.0 -
+                @as(f64, result.tonality[band]) *
+                    self.config.tonal_masking_reduction;
             var threshold =
                 @as(f64, self.config.absolute_threshold) *
                 line_count +
                 @as(f64, result.energy[band]) *
-                    self.config.masking_ratio;
+                    self.config.masking_ratio *
+                    tonal_scale;
             if (band != 0)
                 threshold +=
                     @as(f64, result.energy[band - 1]) *
@@ -918,6 +965,15 @@ pub const EncoderPsychoacousticModel = struct {
                 threshold +=
                     @as(f64, result.energy[band + 1]) *
                     self.config.adjacent_masking_ratio;
+            if (previous) |history| {
+                if (history.band_count == layout.band_count) {
+                    threshold = @max(
+                        threshold,
+                        @as(f64, history.energy[band]) *
+                            self.config.forward_masking_ratio,
+                    );
+                }
+            }
             if (!std.math.isFinite(threshold))
                 return error.InvalidMp3PsychoacousticEnergy;
             result.threshold[band] = @floatCast(threshold);
@@ -925,6 +981,93 @@ pub const EncoderPsychoacousticModel = struct {
         return result;
     }
 };
+
+pub const EncoderPsychoacousticTimeline = struct {
+    model: EncoderPsychoacousticModel = .{},
+    previous: [2]EncoderPsychoacousticChannel = @splat(.{}),
+    valid: [2]bool = @splat(false),
+
+    pub fn reset(self: *EncoderPsychoacousticTimeline) void {
+        self.previous = @splat(.{});
+        self.valid = @splat(false);
+    }
+
+    pub fn analyzeFrame(
+        self: *EncoderPsychoacousticTimeline,
+        header: Header,
+        analyzed: AnalyzedEncoderFrame,
+    ) ![2][2]EncoderPsychoacousticChannel {
+        try validateAnalyzedEncoderFrame(header, analyzed);
+        try self.validate();
+        var next = self.*;
+        var result: [2][2]EncoderPsychoacousticChannel =
+            @splat(@splat(.{}));
+        const channel_count: u2 = @intCast(header.channels());
+        const granule_count: u2 =
+            if (header.version == .mpeg1) 2 else 1;
+        for (0..granule_count) |granule| {
+            for (0..channel_count) |channel| {
+                result[granule][channel] =
+                    try next.model.analyzeWithHistory(
+                        header,
+                        analyzed.granules[granule][channel],
+                        if (next.valid[channel])
+                            next.previous[channel]
+                        else
+                            null,
+                    );
+                next.previous[channel] = result[granule][channel];
+                next.valid[channel] = true;
+            }
+        }
+        self.* = next;
+        return result;
+    }
+
+    fn validate(self: EncoderPsychoacousticTimeline) !void {
+        try validateEncoderPsychoacousticConfig(self.model.config);
+        for (0..2) |channel| {
+            if (!self.valid[channel]) {
+                if (!std.meta.eql(
+                    self.previous[channel],
+                    EncoderPsychoacousticChannel{},
+                ))
+                    return error.InvalidMp3PsychoacousticHistory;
+                continue;
+            }
+            try validatePsychoacousticHistory(
+                self.previous[channel],
+                self.previous[channel].band_count,
+            );
+        }
+    }
+};
+
+fn validatePsychoacousticHistory(
+    history: EncoderPsychoacousticChannel,
+    expected_band_count: u6,
+) !void {
+    if (history.band_count != expected_band_count or
+        expected_band_count == 0 or
+        expected_band_count > 39)
+        return error.InvalidMp3PsychoacousticHistory;
+    for (0..expected_band_count) |band| {
+        if (!std.math.isFinite(history.energy[band]) or
+            history.energy[band] < 0 or
+            !std.math.isFinite(history.threshold[band]) or
+            history.threshold[band] <= 0 or
+            !std.math.isFinite(history.tonality[band]) or
+            history.tonality[band] < 0 or
+            history.tonality[band] > 1)
+            return error.InvalidMp3PsychoacousticHistory;
+    }
+    for (expected_band_count..39) |band| {
+        if (history.energy[band] != 0 or
+            history.threshold[band] != 0 or
+            history.tonality[band] != 0)
+            return error.InvalidMp3PsychoacousticHistory;
+    }
+}
 
 fn validateEncoderPsychoacousticConfig(
     config: EncoderPsychoacousticConfig,
@@ -936,7 +1079,13 @@ fn validateEncoderPsychoacousticConfig(
         config.masking_ratio > 1 or
         !std.math.isFinite(config.adjacent_masking_ratio) or
         config.adjacent_masking_ratio < 0 or
-        config.adjacent_masking_ratio > 1)
+        config.adjacent_masking_ratio > 1 or
+        !std.math.isFinite(config.tonal_masking_reduction) or
+        config.tonal_masking_reduction < 0 or
+        config.tonal_masking_reduction > 1 or
+        !std.math.isFinite(config.forward_masking_ratio) or
+        config.forward_masking_ratio < 0 or
+        config.forward_masking_ratio > 1)
         return error.InvalidMp3EncoderPsychoacousticConfig;
 }
 
@@ -955,10 +1104,53 @@ pub const EncoderQuantizer = struct {
         header: Header,
         analyzed: AnalyzedEncoderFrame,
     ) !QuantizedEncoderFrame {
+        var timeline = EncoderPsychoacousticTimeline{
+            .model = self.psychoacoustics,
+        };
+        const psychoacoustics =
+            try timeline.analyzeFrame(header, analyzed);
+        return self.processWithMasking(
+            header,
+            analyzed,
+            psychoacoustics,
+        );
+    }
+
+    pub fn processWithMasking(
+        self: EncoderQuantizer,
+        header: Header,
+        analyzed: AnalyzedEncoderFrame,
+        psychoacoustics: [2][2]EncoderPsychoacousticChannel,
+    ) !QuantizedEncoderFrame {
+        try validateEncoderPsychoacousticConfig(
+            self.psychoacoustics.config,
+        );
         const channel_count: u2 = @intCast(header.channels());
         const granule_count: u2 =
             if (header.version == .mpeg1) 2 else 1;
         try validateAnalyzedEncoderFrame(header, analyzed);
+        for (0..2) |granule| {
+            for (0..2) |channel| {
+                if (granule >= granule_count or
+                    channel >= channel_count)
+                {
+                    if (!std.meta.eql(
+                        psychoacoustics[granule][channel],
+                        EncoderPsychoacousticChannel{},
+                    ))
+                        return error.InvalidMp3PsychoacousticBands;
+                    continue;
+                }
+                const layout = try encoderBandLayout(
+                    header,
+                    analyzed.granules[granule][channel].description,
+                );
+                try validatePsychoacousticHistory(
+                    psychoacoustics[granule][channel],
+                    layout.band_count,
+                );
+            }
+        }
         const main_data_offset: usize =
             4 + @as(usize, @intFromBool(header.crc_present)) * 2 +
             header.sideInformationBytes();
@@ -966,17 +1158,10 @@ pub const EncoderQuantizer = struct {
             (header.frameBytes() - main_data_offset) * 8;
         const active_channels =
             @as(usize, channel_count) * granule_count;
-        var psychoacoustics: [2][2]EncoderPsychoacousticChannel =
-            @splat(@splat(.{}));
         var weights: [2][2]f64 = @splat(@splat(0));
         var total_weight: f64 = 0;
         for (0..granule_count) |granule| {
             for (0..channel_count) |channel| {
-                psychoacoustics[granule][channel] =
-                    try self.psychoacoustics.analyze(
-                        header,
-                        analyzed.granules[granule][channel],
-                    );
                 var energy: f64 = 0;
                 for (psychoacoustics[granule][channel]
                     .energy[0..psychoacoustics[granule][channel].band_count]) |band_energy|
@@ -1026,13 +1211,25 @@ pub const PcmEncoder = struct {
     frames: FrameEncoder,
     analysis: EncoderAnalysis,
     classifier: EncoderBlockClassifier = .{},
+    masking: EncoderPsychoacousticTimeline = .{},
 
     pub fn init(config: EncoderConfig) !PcmEncoder {
+        return initWithPsychoacoustics(config, .{});
+    }
+
+    pub fn initWithPsychoacoustics(
+        config: EncoderConfig,
+        psychoacoustics: EncoderPsychoacousticConfig,
+    ) !PcmEncoder {
         const header = try config.header(false);
         try validatePcmEncoderStereo(header);
+        try validateEncoderPsychoacousticConfig(psychoacoustics);
         return .{
             .frames = try FrameEncoder.init(config),
             .analysis = try EncoderAnalysis.init(config),
+            .masking = .{
+                .model = .{ .config = psychoacoustics },
+            },
         };
     }
 
@@ -1040,6 +1237,7 @@ pub const PcmEncoder = struct {
         self.frames.reset();
         self.analysis.reset();
         self.classifier.reset();
+        self.masking.reset();
     }
 
     pub fn encode(
@@ -1061,9 +1259,14 @@ pub const PcmEncoder = struct {
                 pcm,
             ),
         );
-        const quantized = try EncoderQuantizer.quantize(
+        const psychoacoustics =
+            try next.masking.analyzeFrame(header, analyzed);
+        const quantized = try (EncoderQuantizer{
+            .psychoacoustics = next.masking.model,
+        }).processWithMasking(
             header,
             analyzed,
+            psychoacoustics,
         );
         const encoded = try next.frames.encodeQuantizedFrame(
             &quantized,
@@ -1079,6 +1282,7 @@ pub const VbrEncoderConfig = struct {
     minimum_bitrate_index: u4 = 1,
     maximum_bitrate_index: u4 = 14,
     maximum_noise_to_mask_ratio: f32 = 1.0,
+    psychoacoustics: EncoderPsychoacousticConfig = .{},
 
     fn validate(self: VbrEncoderConfig) !EncoderConfig {
         if (self.minimum_bitrate_index == 0 or
@@ -1092,6 +1296,9 @@ pub const VbrEncoderConfig = struct {
             ) or
             self.maximum_noise_to_mask_ratio <= 0)
             return error.InvalidMp3VbrEncoderConfig;
+        validateEncoderPsychoacousticConfig(
+            self.psychoacoustics,
+        ) catch return error.InvalidMp3VbrEncoderConfig;
         var maximum_config = self.template;
         maximum_config.bitrate_kbps = bitrate(
             self.template.version,
@@ -1119,6 +1326,7 @@ pub const VbrPcmEncoder = struct {
     frames: FrameEncoder,
     analysis: EncoderAnalysis,
     classifier: EncoderBlockClassifier = .{},
+    masking: EncoderPsychoacousticTimeline,
     bitrate_histogram: [16]u64 = @splat(0),
     padding_frames: u64 = 0,
     byte_count: u64 = 0,
@@ -1129,6 +1337,11 @@ pub const VbrPcmEncoder = struct {
             .config = config,
             .frames = try FrameEncoder.init(maximum_config),
             .analysis = try EncoderAnalysis.init(maximum_config),
+            .masking = .{
+                .model = .{
+                    .config = config.psychoacoustics,
+                },
+            },
         };
     }
 
@@ -1136,6 +1349,7 @@ pub const VbrPcmEncoder = struct {
         self.frames.reset();
         self.analysis.reset();
         self.classifier.reset();
+        self.masking.reset();
         self.bitrate_histogram = @splat(0);
         self.padding_frames = 0;
         self.byte_count = 0;
@@ -1190,6 +1404,12 @@ pub const VbrPcmEncoder = struct {
                 pcm,
             ),
         );
+        var next_masking = next.masking;
+        const psychoacoustics =
+            try next_masking.analyzeFrame(
+                analysis_header,
+                analyzed,
+            );
 
         var selected_frame: ?QuantizedEncoderFrame = null;
         var selected_header: Header = undefined;
@@ -1213,9 +1433,12 @@ pub const VbrPcmEncoder = struct {
                 error.InvalidMp3EncoderFrameSize => continue,
                 else => return failure,
             };
-            const quantized = EncoderQuantizer.quantize(
+            const quantized = (EncoderQuantizer{
+                .psychoacoustics = next.masking.model,
+            }).processWithMasking(
                 advanced.header,
                 analyzed,
+                psychoacoustics,
             ) catch |failure| switch (failure) {
                 error.Mp3EncoderBitBudgetTooSmall => continue,
                 else => return failure,
@@ -1224,6 +1447,7 @@ pub const VbrPcmEncoder = struct {
                 advanced.header,
                 analyzed,
                 quantized,
+                psychoacoustics,
             );
             selected_frame = quantized;
             selected_header = advanced.header;
@@ -1259,6 +1483,7 @@ pub const VbrPcmEncoder = struct {
             next.byte_count,
             encoded.len,
         ) catch return error.Mp3ByteCountOverflow;
+        next.masking = next_masking;
         self.* = next;
         return .{
             .frame = encoded,
@@ -1309,6 +1534,13 @@ pub const VbrPcmEncoder = struct {
         if (frame_count != self.frames.frames_encoded or
             byte_count != self.byte_count)
             return error.InvalidMp3VbrEncoderState;
+        self.masking.validate() catch
+            return error.InvalidMp3VbrEncoderState;
+        if (!std.meta.eql(
+            self.masking.model.config,
+            self.config.psychoacoustics,
+        ))
+            return error.InvalidMp3VbrEncoderState;
     }
 };
 
@@ -1316,6 +1548,7 @@ fn encoderNoiseToMaskRatio(
     header: Header,
     analyzed: AnalyzedEncoderFrame,
     quantized: QuantizedEncoderFrame,
+    psychoacoustics: [2][2]EncoderPsychoacousticChannel,
 ) !f32 {
     try validateAnalyzedEncoderFrame(header, analyzed);
     const channel_count: u2 = @intCast(header.channels());
@@ -1336,10 +1569,7 @@ fn encoderNoiseToMaskRatio(
                 source.description,
             );
             const psychoacoustic =
-                try (EncoderPsychoacousticModel{}).analyze(
-                    header,
-                    source,
-                );
+                psychoacoustics[granule][channel];
             const expected_factors = scaleFactorValueCount(
                 header,
                 encoded.description,
@@ -13036,6 +13266,89 @@ test "analyzes bounded MP3 psychoacoustic bands" {
     try std.testing.expectError(
         error.InvalidMp3EncoderPsychoacousticConfig,
         invalid_quantizer.process(headers[0], invalid_frame),
+    );
+}
+
+test "MP3 psychoacoustics distinguish tonal and noise-like bands" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    const layout = try encoderBandLayout(header, .{});
+    const line_count =
+        layout.starts[1] - layout.starts[0];
+    try std.testing.expect(line_count > 1);
+
+    var tonal = AnalyzedEncoderChannel{};
+    tonal.spectrum.lines[layout.starts[0]] =
+        @sqrt(@as(f32, @floatFromInt(line_count)));
+    var noise = AnalyzedEncoderChannel{};
+    for (
+        noise.spectrum.lines[layout.starts[0]..layout.starts[1]],
+    ) |*line|
+        line.* = 1.0;
+
+    const model = EncoderPsychoacousticModel{
+        .config = .{ .tonal_masking_reduction = 0.5 },
+    };
+    const tonal_result = try model.analyze(header, tonal);
+    const noise_result = try model.analyze(header, noise);
+    try std.testing.expectApproxEqAbs(
+        tonal_result.energy[0],
+        noise_result.energy[0],
+        0.000_001,
+    );
+    try std.testing.expect(
+        tonal_result.tonality[0] >
+            noise_result.tonality[0] + 0.9,
+    );
+    try std.testing.expect(
+        tonal_result.threshold[0] <
+            noise_result.threshold[0],
+    );
+}
+
+test "MP3 psychoacoustic timeline applies forward masking transactionally" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    var analyzed = AnalyzedEncoderFrame{
+        .channel_count = 1,
+        .granule_count = 2,
+    };
+    analyzed.granules[0][0].spectrum.lines[0] = 10.0;
+    analyzed.granules[1][0].spectrum.lines[0] = 0.001;
+    var timeline = EncoderPsychoacousticTimeline{
+        .model = .{
+            .config = .{ .forward_masking_ratio = 0.1 },
+        },
+    };
+    const result = try timeline.analyzeFrame(header, analyzed);
+    try std.testing.expect(
+        result[1][0].threshold[0] >=
+            result[0][0].energy[0] * 0.099,
+    );
+    try std.testing.expect(timeline.valid[0]);
+    try std.testing.expectEqual(
+        result[1][0],
+        timeline.previous[0],
+    );
+
+    const retained = timeline;
+    timeline.valid[1] = false;
+    timeline.previous[1].energy[0] = 1.0;
+    const invalid = timeline;
+    try std.testing.expectError(
+        error.InvalidMp3PsychoacousticHistory,
+        timeline.analyzeFrame(header, analyzed),
+    );
+    try std.testing.expectEqual(invalid, timeline);
+    timeline = retained;
+    timeline.reset();
+    try std.testing.expectEqual(
+        EncoderPsychoacousticTimeline{
+            .model = retained.model,
+        },
+        timeline,
     );
 }
 
