@@ -5366,6 +5366,50 @@ test "installed package generates ADM HOA loudspeaker matrices" {
     );
 }
 
+test "installed package renders bounded HRTF responses" {
+    const directions = [_]plugin.dsp.HrtfDirection{
+        .{ .azimuth_degrees = 0.0, .elevation_degrees = 0.0 },
+    };
+    const Database = plugin.dsp.HrtfDatabase(1, 8);
+    const database = try Database.init(
+        48_000,
+        &directions,
+        &.{
+            1.0, 0.5,
+            0.0, 0.0,
+            0.0, 0.0,
+            0.0, 0.0,
+            0.0, 0.0,
+            0.0, 0.0,
+            0.0, 0.0,
+            0.0, 0.0,
+        },
+    );
+    const Renderer = plugin.dsp.HrtfRenderer(8, 8);
+    var renderer = try Renderer.init(
+        48_000,
+        plugin.dsp.ConvolutionLatencyMode.zero,
+    );
+    try renderer.prepare(
+        &database,
+        directions[0],
+        plugin.dsp.HrtfInterpolation.nearest,
+        1,
+    );
+    try std.testing.expect(renderer.adoptPending());
+    const output = renderer.processSample(1.0);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0),
+        output[0],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.5),
+        output[1],
+        0.000_001,
+    );
+}
+
 test "installed package exposes ADM binaural stereo mixing" {
     const document = try plugin.dsp.AdmXmlDocument.init(
         \\<audioFormatExtended>

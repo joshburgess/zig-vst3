@@ -85,6 +85,8 @@ The dated 2026-07-30 variable Matrix gate supersedes the older Matrix gap statem
 
 The dated 2026-07-30 HOA generator gate supersedes the loudspeaker-matrix gap statements above. A bounded non-realtime generator evaluates the declared real N3D, SN3D, or order-three FuMa components at caller-defined full-sphere speaker directions and computes a minimum-norm SVD pseudoinverse. Basic and max-rE order weights are available. Rank, condition number, exact component binding, duplicate-direction rejection, LFE silence, and direct construction of the existing realtime matrix decoder are covered. Near-field radial filtering, screen-referenced HOA, HRTF synthesis, independent renderer comparison, and physical loudspeaker audition remain incomplete.
 
+The dated 2026-07-30 HRTF baseline gate supersedes the synthesis gap statements above. Fixed-capacity measured stereo responses, full-sphere direction validation, exact nearest selection, normalized three-neighbor inverse-distance interpolation, immutable filter publication, sample-rate preparation, partitioned or zero-latency mono-to-stereo rendering, generation ordering, reset, and non-finite containment are covered. Dataset parsing, motion scheduling and crossfades, delay-aligned or spectral interpolation, individualized responses, external dataset comparison, and headphone audition remain incomplete.
+
 ## Recommended Order
 
 The most valuable capability sequence for plugin authors is:

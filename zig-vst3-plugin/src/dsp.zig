@@ -9,6 +9,7 @@ pub const adm_hoa_matrix = @import("dsp/adm_hoa_matrix.zig");
 pub const adm_render = @import("dsp/adm_render.zig");
 pub const adm_time = @import("dsp/adm_time.zig");
 pub const adm_xml = @import("dsp/adm_xml.zig");
+pub const hrtf = @import("dsp/hrtf.zig");
 pub const audio_block = @import("dsp/audio_block.zig");
 pub const audio_file_reader = @import("dsp/audio_file_reader.zig");
 pub const audio_metadata = @import("dsp/audio_metadata.zig");
@@ -165,6 +166,10 @@ pub const maximum_supported_adm_hoa_order =
 pub const AdmBinauralStereoMixer = adm_binaural.StereoMixer;
 pub const AdmBinauralStereoGainTimeline =
     adm_binaural.StereoGainTimeline;
+pub const HrtfDatabase = hrtf.Database;
+pub const HrtfRenderer = hrtf.Renderer;
+pub const HrtfDirection = hrtf.Direction;
+pub const HrtfInterpolation = hrtf.Interpolation;
 pub const maximum_adm_renderer_input_channels =
     adm_render.maximum_input_channels;
 pub const adm_polar_extent_spreading_direction_count =
@@ -990,6 +995,7 @@ test {
     _ = adm_render;
     _ = adm_hoa_decoder;
     _ = adm_hoa_matrix;
+    _ = hrtf;
     _ = adm_diffuse;
     _ = adm_direct_speaker_mapping;
     _ = audio_block;
