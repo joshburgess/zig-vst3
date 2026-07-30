@@ -130,6 +130,113 @@ pub const SideInformation = struct {
     main_data_bits: u16,
 };
 
+pub const MainData = struct {
+    bytes: []const u8,
+    bit_count: u16,
+};
+
+pub fn MainDataReservoir(comptime capacity: usize) type {
+    if (capacity < 511)
+        @compileError("MP3 main-data reservoirs require at least 511 bytes");
+
+    return struct {
+        const Self = @This();
+
+        storage: [capacity]u8 = @splat(0),
+        length: usize = 0,
+
+        pub fn reset(self: *Self) void {
+            self.length = 0;
+        }
+
+        pub fn assemble(
+            self: *Self,
+            frame: anytype,
+            destination: []u8,
+        ) !MainData {
+            if (self.length > self.storage.len)
+                return error.InvalidMp3ReservoirState;
+            const side = try frame.sideInformation();
+            const current_offset = std.math.add(
+                usize,
+                if (frame.header.crc_present) 6 else 4,
+                frame.header.sideInformationBytes(),
+            ) catch return error.TruncatedMp3Frame;
+            if (current_offset > frame.bytes.len)
+                return error.TruncatedMp3Frame;
+            const current = frame.bytes[current_offset..];
+            if (byteRangesOverlap(
+                @intFromPtr(frame.bytes.ptr),
+                frame.bytes.len,
+                @intFromPtr(self.storage[0..].ptr),
+                self.storage.len,
+            )) return error.OverlappingMp3ReservoirStorage;
+            const history_bytes: usize = side.main_data_begin;
+            if (history_bytes > self.length)
+                return error.Mp3MainDataHistoryUnavailable;
+            const required_bytes =
+                (@as(usize, side.main_data_bits) + 7) / 8;
+            if (required_bytes > history_bytes and
+                required_bytes - history_bytes > current.len)
+                return error.TruncatedMp3MainData;
+            if (destination.len < required_bytes)
+                return error.InsufficientMp3MainDataStorage;
+            if (byteRangesOverlap(
+                @intFromPtr(destination.ptr),
+                required_bytes,
+                @intFromPtr(self.storage[0..].ptr),
+                self.storage.len,
+            ) or byteRangesOverlap(
+                @intFromPtr(destination.ptr),
+                required_bytes,
+                @intFromPtr(frame.bytes.ptr),
+                frame.bytes.len,
+            )) return error.OverlappingMp3MainDataStorage;
+
+            const history_start = self.length - history_bytes;
+            const copied_history =
+                @min(history_bytes, required_bytes);
+            @memcpy(
+                destination[0..copied_history],
+                self.storage[history_start..][0..copied_history],
+            );
+            const copied_current = required_bytes - copied_history;
+            @memcpy(
+                destination[copied_history..required_bytes],
+                current[0..copied_current],
+            );
+            self.retain(current);
+            return .{
+                .bytes = destination[0..required_bytes],
+                .bit_count = side.main_data_bits,
+            };
+        }
+
+        fn retain(self: *Self, current: []const u8) void {
+            if (current.len >= self.storage.len) {
+                @memcpy(
+                    &self.storage,
+                    current[current.len - self.storage.len ..],
+                );
+                self.length = self.storage.len;
+                return;
+            }
+            const retained_history =
+                @min(self.length, self.storage.len - current.len);
+            std.mem.copyForwards(
+                u8,
+                self.storage[0..retained_history],
+                self.storage[self.length - retained_history .. self.length],
+            );
+            @memcpy(
+                self.storage[retained_history..][0..current.len],
+                current,
+            );
+            self.length = retained_history + current.len;
+        }
+    };
+}
+
 pub const XingKind = enum {
     variable,
     constant,
@@ -1609,6 +1716,134 @@ test "rejects malformed Layer III side information" {
     try std.testing.expectEqual(@as(u2, 1), mpeg2.granule_count);
     try std.testing.expectEqual(@as(u2, 2), mpeg2.channel_count);
     try std.testing.expectEqual(@as(u16, 0), mpeg2.main_data_bits);
+}
+
+test "assembles bounded Layer III main-data reservoirs transactionally" {
+    const Reservoir = MainDataReservoir(511);
+    const header_bytes =
+        testHeader(3, true, 9, 0, false, .stereo);
+    var first_encoded: [500]u8 = undefined;
+    const first_end = try appendFrame(
+        &first_encoded,
+        0,
+        header_bytes,
+    );
+    setTestBits(first_encoded[4..36], 20, 12, 16);
+    first_encoded[first_end - 2] = 0xa1;
+    first_encoded[first_end - 1] = 0xb2;
+    const first = try Frame.parse(
+        first_encoded[0..first_end],
+        0,
+    );
+
+    var reservoir = Reservoir{};
+    var first_output: [2]u8 = @splat(0xff);
+    const first_data = try reservoir.assemble(
+        first,
+        &first_output,
+    );
+    try std.testing.expectEqual(@as(u16, 16), first_data.bit_count);
+    try std.testing.expectEqualSlices(u8, &.{ 0, 0 }, first_data.bytes);
+
+    var partial_encoded = first_encoded;
+    setTestBits(partial_encoded[4..36], 20, 12, 9);
+    const partial = try Frame.parse(
+        partial_encoded[0..first_end],
+        0,
+    );
+    var partial_reservoir = Reservoir{};
+    var partial_output: [2]u8 = @splat(0xff);
+    const partial_data = try partial_reservoir.assemble(
+        partial,
+        &partial_output,
+    );
+    try std.testing.expectEqual(@as(u16, 9), partial_data.bit_count);
+    try std.testing.expectEqual(@as(usize, 2), partial_data.bytes.len);
+
+    var second_encoded: [500]u8 = undefined;
+    const second_end = try appendFrame(
+        &second_encoded,
+        0,
+        header_bytes,
+    );
+    setTestBits(second_encoded[4..36], 0, 9, 2);
+    setTestBits(second_encoded[4..36], 20, 12, 24);
+    second_encoded[36] = 0xc3;
+    const second = try Frame.parse(
+        second_encoded[0..second_end],
+        0,
+    );
+    var second_output: [3]u8 = @splat(0);
+    const second_data = try reservoir.assemble(
+        second,
+        &second_output,
+    );
+    try std.testing.expectEqual(@as(u16, 24), second_data.bit_count);
+    try std.testing.expectEqualSlices(
+        u8,
+        &.{ 0xa1, 0xb2, 0xc3 },
+        second_data.bytes,
+    );
+
+    var missing = Reservoir{};
+    var unchanged: [3]u8 = @splat(0x7a);
+    try std.testing.expectError(
+        error.Mp3MainDataHistoryUnavailable,
+        missing.assemble(second, &unchanged),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &.{ 0x7a, 0x7a, 0x7a },
+        &unchanged,
+    );
+    try std.testing.expectEqual(@as(usize, 0), missing.length);
+
+    var short = Reservoir{};
+    _ = try short.assemble(first, &first_output);
+    const retained_length = short.length;
+    var short_output: [2]u8 = @splat(0x6b);
+    try std.testing.expectError(
+        error.InsufficientMp3MainDataStorage,
+        short.assemble(second, &short_output),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &.{ 0x6b, 0x6b },
+        &short_output,
+    );
+    try std.testing.expectEqual(retained_length, short.length);
+
+    var aliased = Reservoir{};
+    @memcpy(
+        aliased.storage[0..first.bytes.len],
+        first.bytes,
+    );
+    const aliased_frame = try Frame.parse(
+        aliased.storage[0..first.bytes.len],
+        0,
+    );
+    try std.testing.expectError(
+        error.OverlappingMp3ReservoirStorage,
+        aliased.assemble(aliased_frame, &first_output),
+    );
+    try std.testing.expectEqual(@as(usize, 0), aliased.length);
+
+    const file_second = FileFrame{
+        .byte_offset = 0,
+        .bytes = second.bytes,
+        .header = second.header,
+        .xing = second.xing,
+        .vbri = second.vbri,
+    };
+    _ = try short.assemble(file_second, &second_output);
+    short.reset();
+    try std.testing.expectEqual(@as(usize, 0), short.length);
+
+    short.length = short.storage.len + 1;
+    try std.testing.expectError(
+        error.InvalidMp3ReservoirState,
+        short.assemble(second, &second_output),
+    );
 }
 
 test "rejects malformed and unsupported MPEG headers" {

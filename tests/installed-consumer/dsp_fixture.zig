@@ -3209,6 +3209,16 @@ test "installed package exposes bounded MP3 framing and seeking" {
     try std.testing.expectEqual(@as(u2, 2), protected_side.channel_count);
     try std.testing.expectEqual(@as(u2, 2), protected_side.granule_count);
 
+    const Reservoir = plugin.dsp.Mp3MainDataReservoir(511);
+    var reservoir = Reservoir{};
+    var main_data_storage: [1]u8 = undefined;
+    const main_data: plugin.dsp.Mp3MainData = try reservoir.assemble(
+        try plugin.dsp.Mp3Frame.parse(&encoded, 0),
+        &main_data_storage,
+    );
+    try std.testing.expectEqual(@as(u16, 0), main_data.bit_count);
+    try std.testing.expectEqual(@as(usize, 0), main_data.bytes.len);
+
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);
     try std.testing.expectEqual(@as(u64, 2304), summary.sample_count);
