@@ -113,6 +113,18 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
+    const zig_vst3_pipewire = b.addModule("zig-vst3-pipewire", .{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/pipewire.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addPipeWireBackend(b, zig_vst3_pipewire, target);
+    zig_vst3_pipewire.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
     const zig_vst3_alsa_midi = b.addModule("zig-vst3-alsamidi", .{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/alsa_midi.zig",
@@ -1256,6 +1268,102 @@ pub fn build(b: *std.Build) void {
             alsa_module,
         );
         alsa_test_step.dependOn(&alsa_link_smoke.step);
+    }
+    const zig_vst3_pipewire_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/pipewire.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    addPipeWireBackend(b, zig_vst3_pipewire_test_module, target);
+    zig_vst3_pipewire_test_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const zig_vst3_pipewire_tests = b.addTest(.{
+        .root_module = zig_vst3_pipewire_test_module,
+    });
+    const pipewire_test_step = b.step(
+        "test-pipewire",
+        "Run PipeWire contract tests and compile Linux backends",
+    );
+    pipewire_test_step.dependOn(
+        &b.addRunArtifact(zig_vst3_pipewire_tests).step,
+    );
+    const pipewire_shim_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/pipewire_shim_test.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    pipewire_shim_tests.root_module.link_libc = true;
+    pipewire_shim_tests.root_module.addIncludePath(
+        b.path("zig-vst3-plugin/src/plugin"),
+    );
+    pipewire_shim_tests.root_module.addCSourceFile(.{
+        .file = b.path("tests/pipewire_shim_test.c"),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    if (target.result.os.tag == .linux)
+        pipewire_shim_tests.root_module.linkSystemLibrary("dl", .{});
+    pipewire_test_step.dependOn(
+        &b.addRunArtifact(pipewire_shim_tests).step,
+    );
+    for (alsa_targets) |pipewire_target| {
+        const pipewire_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = pipewire_target,
+            .optimize = .ReleaseSafe,
+        });
+        const pipewire_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/pipewire.zig",
+            ),
+            .target = pipewire_target,
+            .optimize = .ReleaseSafe,
+        });
+        addPipeWireBackend(b, pipewire_module, pipewire_target);
+        pipewire_module.addImport(
+            "zig-vst3-plugin-core",
+            pipewire_core,
+        );
+        const pipewire_tests = b.addTest(.{
+            .root_module = pipewire_module,
+        });
+        pipewire_test_step.dependOn(&pipewire_tests.step);
+        const pipewire_link_smoke = b.addExecutable(.{
+            .name = b.fmt(
+                "pipewire-link-smoke-{s}",
+                .{@tagName(pipewire_target.result.cpu.arch)},
+            ),
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tests/pipewire_link_smoke.zig",
+                ),
+                .target = pipewire_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        pipewire_link_smoke.root_module.addImport(
+            "zig-vst3-plugin-core",
+            pipewire_core,
+        );
+        pipewire_link_smoke.root_module.addImport(
+            "zig-vst3-pipewire",
+            pipewire_module,
+        );
+        pipewire_test_step.dependOn(&pipewire_link_smoke.step);
     }
     const zig_vst3_alsa_midi_test_module = b.createModule(.{
         .root_source_file = b.path(
@@ -3206,6 +3314,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(core_audio_test_step);
     test_step.dependOn(wasapi_test_step);
     test_step.dependOn(alsa_test_step);
+    test_step.dependOn(pipewire_test_step);
     test_step.dependOn(alsa_midi_test_step);
     test_step.dependOn(alsa_ump_test_step);
     test_step.dependOn(win_midi_test_step);
@@ -3690,6 +3799,28 @@ fn addAlsaBackend(
     });
     module.linkSystemLibrary("dl", .{});
     module.linkSystemLibrary("pthread", .{});
+}
+
+fn addPipeWireBackend(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .linux) return;
+    module.link_libc = true;
+    module.addIncludePath(b.path("zig-vst3-plugin/src/plugin"));
+    module.addCSourceFile(.{
+        .file = b.path(
+            "zig-vst3-plugin/src/plugin/pipewire_shim.c",
+        ),
+        .flags = &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    module.linkSystemLibrary("dl", .{});
 }
 
 fn addAlsaMidiBackend(

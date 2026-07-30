@@ -138,6 +138,12 @@ exe.root_module.addImport(
     dep.module("zig-vst3-alsa"),
 );
 
+// Or use the optional PipeWire audio backend:
+exe.root_module.addImport(
+    "zig-vst3-pipewire",
+    dep.module("zig-vst3-pipewire"),
+);
+
 // Add only to a Linux standalone target that uses MIDI 1 devices:
 exe.root_module.addImport(
     "zig-vst3-alsamidi",

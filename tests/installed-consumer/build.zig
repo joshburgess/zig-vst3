@@ -60,6 +60,10 @@ pub fn build(b: *std.Build) void {
         dependency.module("zig-vst3-alsa"),
     );
     core_tests.root_module.addImport(
+        "zig-vst3-pipewire",
+        dependency.module("zig-vst3-pipewire"),
+    );
+    core_tests.root_module.addImport(
         "zig-vst3-alsamidi",
         dependency.module("zig-vst3-alsamidi"),
     );

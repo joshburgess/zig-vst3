@@ -5,6 +5,7 @@ const core_audio = @import("zig-vst3-coreaudio");
 const core_midi = @import("zig-vst3-coremidi");
 const wasapi = @import("zig-vst3-wasapi");
 const alsa = @import("zig-vst3-alsa");
+const pipewire = @import("zig-vst3-pipewire");
 const alsa_midi = @import("zig-vst3-alsamidi");
 const alsa_ump = @import("zig-vst3-alsaump");
 const win_midi = @import("zig-vst3-winmidi");
@@ -109,6 +110,11 @@ test "installed core package exposes format-neutral processor and editor contrac
     try std.testing.expect(@hasDecl(alsa, "Statistics"));
     try std.testing.expect(
         @hasDecl(alsa.Backend(f32), "startSplit"),
+    );
+    try std.testing.expect(@hasDecl(pipewire, "Backend"));
+    try std.testing.expect(@hasDecl(pipewire, "Statistics"));
+    try std.testing.expect(
+        @hasDecl(pipewire.Backend(f32), "startSplit"),
     );
     try std.testing.expect(@hasDecl(alsa_midi, "Backend"));
     try std.testing.expect(@hasDecl(alsa_midi, "InputStatistics"));

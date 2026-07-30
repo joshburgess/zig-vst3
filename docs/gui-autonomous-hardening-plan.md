@@ -1528,7 +1528,7 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - ALSA RawMIDI covers directional hint discovery, monotonic input timestamps, fragmented channel messages, running status, interleaved realtime bytes, bounded System Common and SysEx containment, fixed-capacity timestamp-scheduled output with stable ordering and nonblocking admission, queue cancellation and statistics, topology polling, transactional output replacement, stop, retry, and retained input and output failures.
 - Both modules compile and fully link for Linux x86-64 and AArch64 without ALSA development headers. The installed-package consumer imports both public modules.
 - The complete deterministic gate passed 189/189 steps and 5,082/5,083 tests with one expected CoreAudio platform-branch skip. ALSA PCM passed 7/7 focused tests, ALSA RawMIDI passed 8/8, and the installed-package consumer passed 36/36. Linux-native branches also load the optional library and build real discovery snapshots when libasound is present.
-- [Open Work](open-work.md) records physical Linux audio and MIDI confirmation, native UMP transport, optional PipeWire, cross-device drift, automatic recovery, and duplicated ALSA control-thread helper cleanup separately.
+- [Open Work](open-work.md) records physical Linux audio and MIDI confirmation, native UMP transport, PipeWire runtime confirmation, cross-device drift, automatic recovery, and duplicated ALSA control-thread helper cleanup separately.
 - No physical-device, audible, hot-plug, realtime-priority, or external Linux result was inferred from cross-builds and injected tests.
 
 ## 2026-07-26 Windows MIDI And Standalone Recovery

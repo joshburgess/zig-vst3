@@ -490,6 +490,42 @@ The worker requests interleaved native-endian float or double PCM and presents p
 
 Call `pollTopology` on a control thread to compare the current directional hint fingerprint with the previous snapshot. ALSA PCM has no backend-wide device notification contract comparable to CoreAudio or WASAPI, so applications choose their polling interval. Start validates integral rates, channel capacity, callback mode, ALSA format negotiation, and every negotiated period before publishing the session. Split mode additionally requires capture and playback. Injected tests cover discovery, directional identities and defaults, polling, combined and split f64 planar callbacks, main and auxiliary bus reconstruction through the capture-rate adapter, hostile pointers and frame counts, statistics, transactional start, stop, and retry. Fully linked ReleaseSafe executables compile for Linux x86-64 and AArch64. Run `zig build test-alsa`. Physical device enumeration, audible timing, realtime-priority policy, hot-plug polling, cross-device drift, unplug, and recovery remain external tests.
 
+The optional `zig-vst3-pipewire` module connects standalone audio to a running PipeWire graph without development headers or a link-time PipeWire dependency. It loads `libpipewire-0.3.so.0` at runtime, enumerates bounded audio source and sink node snapshots, hashes node names into directional identifiers, and also exposes stable default input and output identifiers. Named selection sets the stream target. Empty selection follows the session manager default:
+
+```zig
+const pipewire = @import("zig-vst3-pipewire");
+
+var backend = pipewire.Backend(f32){};
+defer backend.deinit();
+if (!backend.available()) return error.PipeWireUnavailable;
+
+var devices: [64]plug.plugin.DeviceDescriptor = undefined;
+const count = try backend.enumerate(&devices);
+for (devices[0..count]) |descriptor| {
+    if (descriptor.kind == .audio_output and
+        descriptor.is_default)
+    {
+        try backend.selectOutput(descriptor.identifier);
+        break;
+    }
+}
+
+var device = backend.audioDevice();
+try device.start(.{
+    .sample_rate = 48_000.0,
+    .max_block_size = 1024,
+    .input_channel_count = 0,
+    .output_channel_count = 2,
+}, callback);
+defer device.stop();
+```
+
+The native stream requests planar f32 or f64 buffers at the configured integral rate and channel count. Output-only and input-only callbacks use the negotiated graph quantum directly. Combined duplex processing uses a bounded single-producer, single-consumer capture FIFO and output-driven callbacks. Capture shortages supply silence, capture excess is dropped as whole packets, and both conditions remain visible in statistics. `startSplit` publishes independent capture and render callbacks without the FIFO so `BoundedCaptureRateCallbackAdapter` can own sustained rate correction.
+
+Discovery snapshots are control-thread operations. `pollTopology` fingerprints node direction, name, and channel count. Enumeration rejects a graph change observed between its initial and final snapshots. Start resolves a named identifier against a fresh snapshot and fails transactionally if the node disappeared. Stream errors feed `failureSource`, callback rejection clears the entire output quantum, and stop drains the PipeWire loop before releasing callback state.
+
+Injected tests cover default and named discovery, stable identifiers, topology changes, target resolution, combined and split callback reconstruction, malformed configuration, failed-start rollback, retained failures, planar format descriptors, FIFO wrap and pressure, deterministic silence, and malformed native buffer layouts. A separate ABI probe matched the listener, buffer, method-table, event-table, and SPA interface layouts against the current official headers. Fully linked ReleaseSafe executables compile for Linux x86-64 and AArch64, and the installed-package consumer imports the public module. Run `zig build test-pipewire`. Physical daemon discovery, graph quantum behavior, named routing, audible duplex timing, hot-plug recovery, and session-manager policy remain external Linux checks.
+
 The optional `zig-vst3-coremidi` module implements the MIDI device contracts on macOS without adding CoreMIDI to ordinary plugin binaries. Keep its `Backend` at a stable address from `open` through `close`. `enumerate` writes MIDI input and output descriptors with `coremidi:<unique-id>` identifiers into caller storage. It rejects a refresh if CoreMIDI reports a topology change while the snapshot is being built. Select endpoints before starting input or sending output:
 
 ```zig
@@ -793,7 +829,7 @@ Injected backend tests cover title validation, lifecycle, visibility, resize, ev
 
 Injected tests cover duplicate registration, capacity, malformed retained entries, ready descriptors, timer deadlines, missed intervals, clock regression, callback removal, and exact reference releases. The focused gate also compiles ReleaseSafe Linux x86-64, Linux AArch64, and unsupported Windows paths. Run `zig build test-linux-run-loop`. Physical VSTGUI registration, X11 input delivery, timer cadence under load, close ordering, and teardown remain external Linux checks.
 
-Optional PipeWire integration, physical Linux and Windows UMP timing and recovery, physical disparate-device clock-correction confirmation, physical Linux VSTGUI confirmation, and physical restart or fallback confirmation remain open.
+Physical PipeWire routing and recovery, Linux and Windows UMP timing and recovery, disparate-device clock-correction confirmation, Linux VSTGUI confirmation, and restart or fallback confirmation remain open.
 
 A high-level or low-level processor that changes host-visible state may declare `bindHostRequests`. The framework supplies a component-owned, format-neutral `HostRequestSink`. Call `markChanged` with `HostChange`, or `markChanges` for a group, then call `dispatchPending` outside processing. `HostChange` covers component reload, audio I/O, parameter values, latency, parameter titles, MIDI CC assignments, note expression, I/O titles, prefetchable support, routing information, keyswitches, and parameter ID mapping. `markLatencyChanged` and `markIoChanged` remain convenience methods. Topology mutations mark audio I/O automatically. Pending changes coalesce into one component-to-controller message and one host `restartComponent` call. A missing peer or failed host call restores the complete set for retry without losing changes marked concurrently. Adopt prepared processing changes only at a block boundary. See [DSP Utilities](dsp.md#dynamic-latency) for the latency ordering contract and Fixed Rate Processor example.
 
