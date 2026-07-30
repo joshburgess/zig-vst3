@@ -54,6 +54,29 @@ pub const DirectSpeakerCommonPackMapping = struct {
     output_layout_name: []const u8,
 };
 
+pub const MatrixVariableKind = enum {
+    gain_linear,
+    phase_degrees,
+    delay_milliseconds,
+};
+
+pub const MatrixVariableInterpolation = enum {
+    hold,
+    linear,
+};
+
+pub const MatrixVariablePoint = struct {
+    sample: u64,
+    value: f64,
+};
+
+pub const MatrixVariableTimeline = struct {
+    name: []const u8,
+    kind: MatrixVariableKind,
+    interpolation: MatrixVariableInterpolation = .linear,
+    points: []const MatrixVariablePoint,
+};
+
 pub const ObjectRenderingContext = struct {
     reference_screen_edges: ?ScreenEdges = null,
     reproduction_screen_edges: ?ScreenEdges = null,
@@ -1776,6 +1799,647 @@ pub fn MatrixCoefficientMixer(
                 }
             }
             return true;
+        }
+    };
+}
+
+/// Resolves variable Matrix metadata against caller-defined control lanes.
+///
+/// Processing remains sequential after reset or resetAt.
+/// A nonempty antisymmetric quadrature FIR enables phase rotation and delays every
+/// term by its integer group delay. Variable delay endpoints use the same
+/// nearest-sample rule as fixed Matrix delay, then interpolate between endpoints.
+pub fn VariableMatrixCoefficientMixer(
+    comptime Sample: type,
+    comptime maximum_delay_samples: usize,
+    comptime maximum_variables: usize,
+    comptime maximum_points: usize,
+    comptime maximum_phase_taps: usize,
+) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError(
+            "VariableMatrixCoefficientMixer supports f32 and f64 samples",
+        );
+    if (maximum_variables > std.math.maxInt(u16)) {
+        @compileError(
+            "VariableMatrixCoefficientMixer variable capacity is invalid",
+        );
+    }
+    if (maximum_points > std.math.maxInt(u32))
+        @compileError(
+            "VariableMatrixCoefficientMixer point capacity is invalid",
+        );
+    if (maximum_delay_samples >
+        std.math.maxInt(usize) - maximum_phase_taps - 1)
+    {
+        @compileError(
+            "VariableMatrixCoefficientMixer history capacity is too large",
+        );
+    }
+
+    return struct {
+        const Self = @This();
+        const history_length =
+            maximum_delay_samples + maximum_phase_taps + 1;
+        const Lane = struct {
+            kind: MatrixVariableKind,
+            interpolation: MatrixVariableInterpolation,
+            first_point: u32,
+            point_count: u32,
+        };
+        const StoredPoint = struct {
+            sample: u64,
+            value: f64,
+        };
+
+        pub const delay_capacity = maximum_delay_samples;
+        pub const variable_capacity = maximum_variables;
+        pub const point_capacity = maximum_points;
+        pub const phase_tap_capacity = maximum_phase_taps;
+
+        input_count: usize,
+        term_count: usize,
+        lane_count: usize,
+        point_count: usize,
+        phase_tap_count: usize,
+        phase_latency: usize,
+        input_indices: [maximum_input_channels]u8 = undefined,
+        fixed_gains: [maximum_input_channels]Sample = undefined,
+        fixed_phases: [maximum_input_channels]f64 = undefined,
+        fixed_delays: [maximum_input_channels]f64 = undefined,
+        gain_lanes: [maximum_input_channels]?u16 = @splat(null),
+        phase_lanes: [maximum_input_channels]?u16 = @splat(null),
+        delay_lanes: [maximum_input_channels]?u16 = @splat(null),
+        lanes: [maximum_variables]Lane = undefined,
+        points: [maximum_points]StoredPoint = undefined,
+        phase_taps: [maximum_phase_taps]Sample = undefined,
+        history: [maximum_input_channels][history_length]Sample =
+            @splat(@splat(0.0)),
+        cursor: usize = 0,
+        next_sample: u64 = 0,
+
+        pub fn init(
+            block: *const adm_xml.BlockFormat,
+            input_channels: []const adm.Identifier,
+            sample_rate: f64,
+            timelines: []const MatrixVariableTimeline,
+            quadrature_fir: []const Sample,
+        ) !Self {
+            if (block.identifier.typeLabel() != 0x0002 or
+                block.channel_identifier.typeLabel() != 0x0002)
+            {
+                return error.AdmRendererRequiresMatrixBlock;
+            }
+            if (input_channels.len == 0 or
+                input_channels.len > maximum_input_channels)
+            {
+                return error.InvalidAdmRendererInputCount;
+            }
+            if (!std.math.isFinite(sample_rate) or sample_rate <= 0.0)
+                return error.InvalidAdmRendererSampleRate;
+            if (timelines.len > maximum_variables)
+                return error.AdmRendererMatrixVariableCapacityExceeded;
+            for (input_channels, 0..) |channel, index| {
+                if (channel.kind != .channel_format)
+                    return error.InvalidAdmRendererInputIdentifier;
+                for (input_channels[0..index]) |previous| {
+                    if (channel.eql(previous))
+                        return error.DuplicateAdmRendererInputIdentifier;
+                }
+            }
+
+            const coefficients = block.matrixCoefficientSlice();
+            if (coefficients.len == 0)
+                return error.MissingAdmRendererMatrixCoefficient;
+            var result = Self{
+                .input_count = input_channels.len,
+                .term_count = coefficients.len,
+                .lane_count = timelines.len,
+                .point_count = 0,
+                .phase_tap_count = 0,
+                .phase_latency = 0,
+            };
+            var timeline_used: [maximum_variables]bool = @splat(false);
+            if (comptime maximum_variables != 0 and
+                maximum_points != 0)
+            {
+                for (timelines, 0..) |timeline, lane_index| {
+                    if (timeline.name.len == 0 or timeline.points.len == 0)
+                        return error.InvalidAdmRendererMatrixVariable;
+                    for (timelines[0..lane_index]) |previous| {
+                        if (std.mem.eql(u8, timeline.name, previous.name))
+                            return error.DuplicateAdmRendererMatrixVariable;
+                    }
+                    if (timeline.points[0].sample != 0)
+                        return error.InvalidAdmRendererMatrixVariable;
+                    const next_point_count = std.math.add(
+                        usize,
+                        result.point_count,
+                        timeline.points.len,
+                    ) catch
+                        return error.AdmRendererMatrixPointCapacityExceeded;
+                    if (next_point_count > maximum_points)
+                        return error.AdmRendererMatrixPointCapacityExceeded;
+                    const first_point = result.point_count;
+                    for (timeline.points, 0..) |point, point_index| {
+                        if (!std.math.isFinite(point.value) or
+                            (point_index != 0 and
+                                point.sample <=
+                                    timeline.points[point_index - 1].sample))
+                        {
+                            return error.InvalidAdmRendererMatrixVariable;
+                        }
+                        if (point_index != 0 and
+                            timeline.interpolation == .linear and
+                            !std.math.isFinite(
+                                point.value -
+                                    timeline.points[point_index - 1].value,
+                            ))
+                        {
+                            return error.InvalidAdmRendererMatrixVariable;
+                        }
+                        result.points[first_point + point_index] = .{
+                            .sample = point.sample,
+                            .value = try controlValue(
+                                timeline.kind,
+                                point.value,
+                                sample_rate,
+                            ),
+                        };
+                    }
+                    result.lanes[lane_index] = .{
+                        .kind = timeline.kind,
+                        .interpolation = timeline.interpolation,
+                        .first_point = @intCast(first_point),
+                        .point_count = @intCast(timeline.points.len),
+                    };
+                    result.point_count = next_point_count;
+                }
+            } else if (timelines.len != 0) {
+                if (maximum_variables == 0)
+                    return error.AdmRendererMatrixVariableCapacityExceeded;
+                return error.AdmRendererMatrixPointCapacityExceeded;
+            }
+
+            var phase_required = false;
+            for (coefficients, 0..) |coefficient, term_index| {
+                const identifier = try coefficient.channelIdentifier();
+                const input_index = findInputChannel(
+                    input_channels,
+                    identifier,
+                ) orelse return error.MissingAdmRendererInputChannel;
+                for (result.input_indices[0..term_index]) |previous| {
+                    if (previous == input_index)
+                        return error.DuplicateAdmRendererMatrixCoefficient;
+                }
+                result.input_indices[term_index] = @intCast(input_index);
+
+                if (coefficient.gain_variable) |variable| {
+                    if (coefficient.gain.unit != .linear)
+                        return error.InvalidAdmRendererMatrixVariable;
+                    result.fixed_gains[term_index] = 0.0;
+                    result.gain_lanes[term_index] = try bindTimeline(
+                        timelines,
+                        variable.value(),
+                        .gain_linear,
+                        &timeline_used,
+                    );
+                } else {
+                    result.fixed_gains[term_index] =
+                        try renderGain(Sample, coefficient.gain);
+                }
+
+                result.fixed_phases[term_index] =
+                    coefficient.phase_degrees;
+                if (!std.math.isFinite(result.fixed_phases[term_index]))
+                    return error.InvalidAdmRendererMatrixPhase;
+                if (coefficient.phase_variable) |variable| {
+                    result.phase_lanes[term_index] = try bindTimeline(
+                        timelines,
+                        variable.value(),
+                        .phase_degrees,
+                        &timeline_used,
+                    );
+                    phase_required = true;
+                } else if (coefficient.phase_degrees != 0.0) {
+                    phase_required = true;
+                }
+
+                if (coefficient.delay_variable) |variable| {
+                    result.fixed_delays[term_index] = 0.0;
+                    result.delay_lanes[term_index] = try bindTimeline(
+                        timelines,
+                        variable.value(),
+                        .delay_milliseconds,
+                        &timeline_used,
+                    );
+                } else {
+                    result.fixed_delays[term_index] = @floatFromInt(
+                        try matrixDelaySamples(
+                            coefficient.delay_milliseconds,
+                            sample_rate,
+                            maximum_delay_samples,
+                        ),
+                    );
+                }
+            }
+            for (timeline_used[0..timelines.len]) |used| {
+                if (!used) return error.UnusedAdmRendererMatrixVariable;
+            }
+            if (phase_required) {
+                try result.setPhaseFilter(quadrature_fir);
+            } else if (quadrature_fir.len != 0) {
+                return error.UnusedAdmRendererMatrixPhaseFilter;
+            }
+            if (!result.valid())
+                return error.InvalidAdmRendererState;
+            return result;
+        }
+
+        pub fn reset(self: *Self) void {
+            self.resetAt(0);
+        }
+
+        pub fn resetAt(self: *Self, first_sample: u64) void {
+            self.cursor = 0;
+            self.next_sample = first_sample;
+            for (&self.history) |*term_history|
+                @memset(term_history, 0.0);
+        }
+
+        pub fn latencySamples(self: *const Self) usize {
+            return self.phase_latency;
+        }
+
+        pub fn process(
+            self: *Self,
+            first_sample: u64,
+            inputs: []const []const Sample,
+            output: []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidAdmRendererState;
+            if (first_sample != self.next_sample)
+                return error.DiscontinuousAdmRendererSampleRange;
+            if (inputs.len != self.input_count)
+                return error.AdmRendererInputCountMismatch;
+            for (inputs) |input| {
+                if (input.len != output.len)
+                    return error.AdmRendererBufferLengthMismatch;
+                if (slicesOverlap(Sample, input, output))
+                    return error.AdmRendererAliasedBuffers;
+            }
+            const sample_count = std.math.cast(
+                u64,
+                output.len,
+            ) orelse return error.AdmRendererSampleRangeOverflow;
+            const end_sample = std.math.add(
+                u64,
+                first_sample,
+                sample_count,
+            ) catch return error.AdmRendererSampleRangeOverflow;
+
+            for (output, 0..) |*output_sample, sample_offset| {
+                const absolute_sample =
+                    first_sample + @as(u64, @intCast(sample_offset));
+                var mixed: Sample = 0.0;
+                for (0..self.term_count) |term_index| {
+                    const raw_input =
+                        inputs[self.input_indices[term_index]][sample_offset];
+                    const input = if (std.math.isFinite(raw_input))
+                        raw_input
+                    else
+                        0.0;
+                    self.history[term_index][self.cursor] = input;
+
+                    const gain = if (self.gain_lanes[term_index]) |lane|
+                        self.laneSampleValue(lane, absolute_sample)
+                    else
+                        @as(f64, @floatCast(self.fixed_gains[term_index]));
+                    const phase_degrees =
+                        if (self.phase_lanes[term_index]) |lane|
+                            self.laneSampleValue(lane, absolute_sample)
+                        else
+                            self.fixed_phases[term_index];
+                    const delay = if (self.delay_lanes[term_index]) |lane|
+                        self.laneSampleValue(lane, absolute_sample)
+                    else
+                        self.fixed_delays[term_index];
+
+                    const real = self.delayedSample(
+                        term_index,
+                        delay + @as(f64, @floatFromInt(self.phase_latency)),
+                    );
+                    const rotated = if (self.phase_tap_count == 0)
+                        real
+                    else phase: {
+                        var quadrature: Sample = 0.0;
+                        for (
+                            self.phase_taps[0..self.phase_tap_count],
+                            0..,
+                        ) |tap, tap_index| {
+                            quadrature += tap * self.delayedSample(
+                                term_index,
+                                delay + @as(
+                                    f64,
+                                    @floatFromInt(tap_index),
+                                ),
+                            );
+                        }
+                        const radians =
+                            @mod(phase_degrees, 360.0) *
+                            std.math.pi / 180.0;
+                        break :phase real *
+                            @as(Sample, @floatCast(@cos(radians))) +
+                            quadrature *
+                                @as(Sample, @floatCast(@sin(radians)));
+                    };
+                    mixed += rotated * @as(Sample, @floatCast(gain));
+                    if (!std.math.isFinite(mixed)) mixed = 0.0;
+                }
+                output_sample.* = mixed;
+                self.cursor = (self.cursor + 1) % history_length;
+            }
+            self.next_sample = end_sample;
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.input_count == 0 or
+                self.input_count > maximum_input_channels or
+                self.term_count == 0 or
+                self.term_count > maximum_input_channels or
+                self.lane_count > maximum_variables or
+                self.point_count > maximum_points or
+                self.phase_tap_count > maximum_phase_taps or
+                self.cursor >= history_length or
+                (self.phase_tap_count == 0 and self.phase_latency != 0) or
+                (self.phase_tap_count != 0 and
+                    (self.phase_tap_count < 3 or
+                        self.phase_tap_count % 2 == 0 or
+                        self.phase_latency != self.phase_tap_count / 2)))
+            {
+                return false;
+            }
+            var covered_points: usize = 0;
+            for (self.lanes[0..self.lane_count]) |lane| {
+                if (lane.point_count == 0 or
+                    lane.first_point != covered_points)
+                {
+                    return false;
+                }
+                const lane_end = std.math.add(
+                    usize,
+                    lane.first_point,
+                    lane.point_count,
+                ) catch return false;
+                if (lane_end > self.point_count) return false;
+                const lane_points = self.points[lane.first_point..lane_end];
+                if (lane_points[0].sample != 0) return false;
+                for (lane_points, 0..) |point, point_index| {
+                    if (!std.math.isFinite(point.value) or
+                        (point_index != 0 and
+                            point.sample <=
+                                lane_points[point_index - 1].sample))
+                    {
+                        return false;
+                    }
+                    if (point_index != 0 and
+                        lane.interpolation == .linear and
+                        !std.math.isFinite(
+                            point.value -
+                                lane_points[point_index - 1].value,
+                        ))
+                    {
+                        return false;
+                    }
+                    if (lane.kind == .delay_milliseconds and
+                        (point.value < 0.0 or
+                            point.value >
+                                @as(
+                                    f64,
+                                    @floatFromInt(maximum_delay_samples),
+                                )))
+                    {
+                        return false;
+                    }
+                }
+                covered_points = lane_end;
+            }
+            if (covered_points != self.point_count) return false;
+            var lane_used: [maximum_variables]bool = @splat(false);
+            for (
+                self.input_indices[0..self.term_count],
+                self.fixed_gains[0..self.term_count],
+                self.fixed_phases[0..self.term_count],
+                self.fixed_delays[0..self.term_count],
+                0..,
+            ) |input_index, gain, phase_degrees, delay, term_index| {
+                if (input_index >= self.input_count or
+                    !std.math.isFinite(gain) or
+                    !std.math.isFinite(phase_degrees) or
+                    !std.math.isFinite(delay) or
+                    delay < 0.0 or
+                    delay >
+                        @as(
+                            f64,
+                            @floatFromInt(maximum_delay_samples),
+                        ))
+                {
+                    return false;
+                }
+                for (self.input_indices[0..term_index]) |previous| {
+                    if (previous == input_index) return false;
+                }
+                if (!self.validLane(
+                    self.gain_lanes[term_index],
+                    .gain_linear,
+                ) or
+                    !self.validLane(
+                        self.phase_lanes[term_index],
+                        .phase_degrees,
+                    ) or
+                    !self.validLane(
+                        self.delay_lanes[term_index],
+                        .delay_milliseconds,
+                    ))
+                {
+                    return false;
+                }
+                if (comptime maximum_variables != 0) {
+                    if (self.gain_lanes[term_index]) |lane|
+                        lane_used[lane] = true;
+                    if (self.phase_lanes[term_index]) |lane|
+                        lane_used[lane] = true;
+                    if (self.delay_lanes[term_index]) |lane|
+                        lane_used[lane] = true;
+                }
+                for (self.history[term_index]) |sample| {
+                    if (!std.math.isFinite(sample)) return false;
+                }
+            }
+            for (lane_used[0..self.lane_count]) |used| {
+                if (!used) return false;
+            }
+            if (comptime maximum_phase_taps == 0) {
+                if (self.phase_tap_count != 0 or self.phase_latency != 0)
+                    return false;
+            } else if (self.phase_tap_count != 0) {
+                const tolerance =
+                    @as(Sample, std.math.floatEps(Sample) * 32.0);
+                if (@abs(self.phase_taps[self.phase_latency]) > tolerance)
+                    return false;
+                for (0..self.phase_latency) |tap_index| {
+                    const mirror =
+                        self.phase_taps[self.phase_tap_count - 1 - tap_index];
+                    if (@abs(self.phase_taps[tap_index] + mirror) >
+                        tolerance)
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        fn setPhaseFilter(
+            self: *Self,
+            quadrature_fir: []const Sample,
+        ) !void {
+            if (comptime maximum_phase_taps == 0)
+                return error.InvalidAdmRendererMatrixPhaseFilter;
+            if (quadrature_fir.len < 3 or
+                quadrature_fir.len > maximum_phase_taps or
+                quadrature_fir.len % 2 == 0)
+            {
+                return error.InvalidAdmRendererMatrixPhaseFilter;
+            }
+            const center = quadrature_fir.len / 2;
+            const tolerance =
+                @as(Sample, std.math.floatEps(Sample) * 32.0);
+            if (!std.math.isFinite(quadrature_fir[center]) or
+                @abs(quadrature_fir[center]) > tolerance)
+            {
+                return error.InvalidAdmRendererMatrixPhaseFilter;
+            }
+            for (quadrature_fir, 0..) |tap, tap_index| {
+                if (!std.math.isFinite(tap))
+                    return error.InvalidAdmRendererMatrixPhaseFilter;
+                if (tap_index < center and
+                    @abs(tap +
+                        quadrature_fir[quadrature_fir.len - 1 - tap_index]) >
+                        tolerance)
+                {
+                    return error.InvalidAdmRendererMatrixPhaseFilter;
+                }
+            }
+            @memcpy(
+                self.phase_taps[0..quadrature_fir.len],
+                quadrature_fir,
+            );
+            self.phase_tap_count = quadrature_fir.len;
+            self.phase_latency = center;
+        }
+
+        fn laneSampleValue(
+            self: *const Self,
+            lane_index: u16,
+            sample: u64,
+        ) f64 {
+            if (comptime maximum_variables == 0) {
+                return 0.0;
+            }
+            const lane = self.lanes[lane_index];
+            const first: usize = lane.first_point;
+            const count: usize = lane.point_count;
+            const lane_points = self.points[first .. first + count];
+            if (sample >= lane_points[count - 1].sample)
+                return lane_points[count - 1].value;
+            var upper_index: usize = 1;
+            while (lane_points[upper_index].sample <= sample)
+                upper_index += 1;
+            const lower = lane_points[upper_index - 1];
+            if (lane.interpolation == .hold) return lower.value;
+            const upper = lane_points[upper_index];
+            const numerator =
+                @as(f64, @floatFromInt(sample - lower.sample));
+            const denominator =
+                @as(f64, @floatFromInt(upper.sample - lower.sample));
+            return lower.value +
+                (upper.value - lower.value) *
+                    (numerator / denominator);
+        }
+
+        fn delayedSample(
+            self: *const Self,
+            term_index: usize,
+            delay: f64,
+        ) Sample {
+            const lower_delay: usize = @intFromFloat(@floor(delay));
+            const fraction: Sample =
+                @floatCast(delay - @as(f64, @floatFromInt(lower_delay)));
+            const lower_index =
+                (self.cursor + history_length -
+                    lower_delay % history_length) %
+                history_length;
+            const lower = self.history[term_index][lower_index];
+            if (fraction == 0.0) return lower;
+            const upper_index =
+                (lower_index + history_length - 1) % history_length;
+            const upper = self.history[term_index][upper_index];
+            return lower + (upper - lower) * fraction;
+        }
+
+        fn validLane(
+            self: *const Self,
+            lane_index: ?u16,
+            kind: MatrixVariableKind,
+        ) bool {
+            if (comptime maximum_variables == 0) {
+                return lane_index == null;
+            }
+            const index = lane_index orelse return true;
+            return index < self.lane_count and
+                self.lanes[index].kind == kind;
+        }
+
+        fn controlValue(
+            kind: MatrixVariableKind,
+            value: f64,
+            sample_rate: f64,
+        ) !f64 {
+            return switch (kind) {
+                .gain_linear => gain: {
+                    const sample_value: Sample = @floatCast(value);
+                    if (!std.math.isFinite(sample_value))
+                        return error.InvalidAdmRendererMatrixVariable;
+                    break :gain value;
+                },
+                .phase_degrees => value,
+                .delay_milliseconds => @floatFromInt(
+                    try matrixDelaySamples(
+                        value,
+                        sample_rate,
+                        maximum_delay_samples,
+                    ),
+                ),
+            };
+        }
+
+        fn bindTimeline(
+            timelines: []const MatrixVariableTimeline,
+            name: []const u8,
+            kind: MatrixVariableKind,
+            used: *[maximum_variables]bool,
+        ) !u16 {
+            if (comptime maximum_variables == 0)
+                return error.MissingAdmRendererMatrixVariable;
+            for (timelines, 0..) |timeline, index| {
+                if (!std.mem.eql(u8, timeline.name, name)) continue;
+                if (timeline.kind != kind)
+                    return error.AdmRendererMatrixVariableKindMismatch;
+                used[index] = true;
+                return @intCast(index);
+            }
+            return error.MissingAdmRendererMatrixVariable;
         }
     };
 }
@@ -6252,6 +6916,337 @@ test "ADM Matrix coefficient mixer validates policy and state transactionally" {
     try std.testing.expectEqual(@as(f64, 7.0), output[0]);
     mixer.reset();
     try std.testing.expect(mixer.valid());
+}
+
+test "ADM variable Matrix mixer interpolates gain and delay across partitions" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+        \\      <matrix>
+        \\        <coefficient gainVar="gain" delayVar="delay">AC_00010001</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const channels = [_]adm.Identifier{
+        try adm.Identifier.parse("AC_00010001"),
+    };
+    const gain_points = [_]MatrixVariablePoint{
+        .{ .sample = 0, .value = 0.0 },
+        .{ .sample = 4, .value = 1.0 },
+    };
+    const delay_points = [_]MatrixVariablePoint{
+        .{ .sample = 0, .value = 0.0 },
+        .{ .sample = 4, .value = 2.0 },
+    };
+    const timelines = [_]MatrixVariableTimeline{
+        .{
+            .name = "gain",
+            .kind = .gain_linear,
+            .points = &gain_points,
+        },
+        .{
+            .name = "delay",
+            .kind = .delay_milliseconds,
+            .points = &delay_points,
+        },
+    };
+    const Mixer =
+        VariableMatrixCoefficientMixer(f64, 2, 2, 4, 0);
+    var complete = try Mixer.init(
+        &block,
+        &channels,
+        1000.0,
+        &timelines,
+        &.{},
+    );
+    const input = [_]f64{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 };
+    const inputs = [_][]const f64{&input};
+    var complete_output: [input.len]f64 = undefined;
+    try complete.process(0, &inputs, &complete_output);
+    try std.testing.expectEqualDeep(
+        [_]f64{ 0.0, 0.375, 1.0, 1.875, 3.0, 4.0 },
+        complete_output,
+    );
+
+    var partitioned = try Mixer.init(
+        &block,
+        &channels,
+        1000.0,
+        &timelines,
+        &.{},
+    );
+    var partitioned_output: [input.len]f64 = undefined;
+    const first_inputs = [_][]const f64{input[0..2]};
+    try partitioned.process(
+        0,
+        &first_inputs,
+        partitioned_output[0..2],
+    );
+    const second_inputs = [_][]const f64{input[2..5]};
+    try partitioned.process(
+        2,
+        &second_inputs,
+        partitioned_output[2..5],
+    );
+    const final_inputs = [_][]const f64{input[5..]};
+    try partitioned.process(
+        5,
+        &final_inputs,
+        partitioned_output[5..],
+    );
+    try std.testing.expectEqualDeep(
+        complete_output,
+        partitioned_output,
+    );
+    partitioned.reset();
+    try partitioned.process(0, &inputs, &partitioned_output);
+    try std.testing.expectEqualDeep(
+        complete_output,
+        partitioned_output,
+    );
+}
+
+test "ADM variable Matrix mixer rotates phase with explicit FIR latency" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+        \\      <matrix>
+        \\        <coefficient phaseVar="phase">AC_00010001</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const channels = [_]adm.Identifier{
+        try adm.Identifier.parse("AC_00010001"),
+    };
+    const phase_points = [_]MatrixVariablePoint{
+        .{ .sample = 0, .value = 0.0 },
+        .{ .sample = 4, .value = 180.0 },
+    };
+    const timelines = [_]MatrixVariableTimeline{.{
+        .name = "phase",
+        .kind = .phase_degrees,
+        .points = &phase_points,
+    }};
+    const quadrature_fir = [_]f32{ 0.5, 0.0, -0.5 };
+    const Mixer =
+        VariableMatrixCoefficientMixer(f32, 0, 1, 2, 3);
+    var mixer = try Mixer.init(
+        &block,
+        &channels,
+        48_000.0,
+        &timelines,
+        &quadrature_fir,
+    );
+    try std.testing.expectEqual(@as(usize, 1), mixer.latencySamples());
+    const input = [_]f32{ 1.0, 0.0, -1.0, 0.0, 1.0, 0.0 };
+    const inputs = [_][]const f32{&input};
+    var output: [input.len]f32 = undefined;
+    try mixer.process(0, &inputs, &output);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, @sqrt(0.5)),
+        output[1],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, -1.0),
+        output[2],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, @sqrt(0.5)),
+        output[3],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.0),
+        output[4],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, -1.0),
+        output[5],
+        0.000_001,
+    );
+
+    var fixed_block = block;
+    fixed_block.matrix_coefficients[0].phase_variable = null;
+    fixed_block.matrix_coefficients[0].phase_degrees = 90.0;
+    const FixedMixer =
+        VariableMatrixCoefficientMixer(f32, 0, 0, 0, 3);
+    var fixed = try FixedMixer.init(
+        &fixed_block,
+        &channels,
+        48_000.0,
+        &.{},
+        &quadrature_fir,
+    );
+    try fixed.process(0, &inputs, &output);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, -1.0),
+        output[2],
+        0.000_001,
+    );
+}
+
+test "ADM variable Matrix mixer preserves control phase beyond f64 precision" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+        \\      <matrix>
+        \\        <coefficient gainVar="gain">AC_00010001</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const channels = [_]adm.Identifier{
+        try adm.Identifier.parse("AC_00010001"),
+    };
+    const large_sample = @as(u64, 1) << 54;
+    const points = [_]MatrixVariablePoint{
+        .{ .sample = 0, .value = 0.0 },
+        .{ .sample = large_sample, .value = 0.0 },
+        .{ .sample = large_sample + 4, .value = 1.0 },
+    };
+    const timelines = [_]MatrixVariableTimeline{.{
+        .name = "gain",
+        .kind = .gain_linear,
+        .points = &points,
+    }};
+    const Mixer =
+        VariableMatrixCoefficientMixer(f64, 0, 1, 3, 0);
+    var mixer = try Mixer.init(
+        &block,
+        &channels,
+        48_000.0,
+        &timelines,
+        &.{},
+    );
+    mixer.resetAt(large_sample + 2);
+    const input = [_]f64{ 2.0, 2.0 };
+    const inputs = [_][]const f64{&input};
+    var output: [input.len]f64 = undefined;
+    try mixer.process(large_sample + 2, &inputs, &output);
+    try std.testing.expectEqualDeep(
+        [_]f64{ 1.0, 1.5 },
+        output,
+    );
+}
+
+test "ADM variable Matrix mixer validates policy and state transactionally" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+        \\      <matrix>
+        \\        <coefficient gainVar="gain" phase="90">AC_00010001</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const channels = [_]adm.Identifier{
+        try adm.Identifier.parse("AC_00010001"),
+    };
+    const points = [_]MatrixVariablePoint{
+        .{ .sample = 0, .value = 1.0 },
+    };
+    const timelines = [_]MatrixVariableTimeline{.{
+        .name = "gain",
+        .kind = .gain_linear,
+        .points = &points,
+    }};
+    const Mixer =
+        VariableMatrixCoefficientMixer(f64, 2, 1, 1, 3);
+    const quadrature_fir = [_]f64{ 0.5, 0.0, -0.5 };
+    var mixer = try Mixer.init(
+        &block,
+        &channels,
+        1000.0,
+        &timelines,
+        &quadrature_fir,
+    );
+    try std.testing.expect(mixer.valid());
+
+    const input = [_]f64{1.0};
+    const inputs = [_][]const f64{&input};
+    var output = [_]f64{7.0};
+    try std.testing.expectError(
+        error.DiscontinuousAdmRendererSampleRange,
+        mixer.process(1, &inputs, &output),
+    );
+    try std.testing.expectEqual(@as(f64, 7.0), output[0]);
+    var aliased = [_]f64{1.0};
+    const aliased_inputs = [_][]const f64{&aliased};
+    try std.testing.expectError(
+        error.AdmRendererAliasedBuffers,
+        mixer.process(0, &aliased_inputs, &aliased),
+    );
+    try std.testing.expectEqual(@as(u64, 0), mixer.next_sample);
+
+    mixer.resetAt(std.math.maxInt(u64));
+    try std.testing.expectError(
+        error.AdmRendererSampleRangeOverflow,
+        mixer.process(std.math.maxInt(u64), &inputs, &output),
+    );
+    try std.testing.expectEqual(@as(f64, 7.0), output[0]);
+    try std.testing.expectEqual(
+        std.math.maxInt(u64),
+        mixer.next_sample,
+    );
+    mixer.reset();
+
+    const wrong_kind = [_]MatrixVariableTimeline{.{
+        .name = "gain",
+        .kind = .phase_degrees,
+        .points = &points,
+    }};
+    try std.testing.expectError(
+        error.AdmRendererMatrixVariableKindMismatch,
+        Mixer.init(
+            &block,
+            &channels,
+            1000.0,
+            &wrong_kind,
+            &quadrature_fir,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidAdmRendererMatrixPhaseFilter,
+        Mixer.init(
+            &block,
+            &channels,
+            1000.0,
+            &timelines,
+            &.{ 0.5, 0.0, 0.5 },
+        ),
+    );
+
+    mixer.history[0][0] = std.math.nan(f64);
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        mixer.process(0, &inputs, &output),
+    );
+    try std.testing.expectEqual(@as(f64, 7.0), output[0]);
+    mixer.reset();
+    try std.testing.expect(mixer.valid());
+    mixer.gain_lanes[0] = null;
+    try std.testing.expect(!mixer.valid());
 }
 
 test "ADM direct speaker router mixes an exact label match" {

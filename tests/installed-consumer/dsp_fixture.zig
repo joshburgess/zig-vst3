@@ -5204,6 +5204,69 @@ test "installed package exposes ADM Matrix coefficient delays" {
     );
 }
 
+test "installed package exposes variable ADM Matrix coefficient rendering" {
+    const document = try plugin.dsp.AdmXmlDocument.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+        \\      <matrix>
+        \\        <coefficient gainVar="mix" phaseVar="angle">AC_00010001</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const channels = [_]plugin.dsp.AdmIdentifier{
+        try plugin.dsp.AdmIdentifier.parse("AC_00010001"),
+    };
+    const gain_points = [_]plugin.dsp.AdmMatrixVariablePoint{
+        .{ .sample = 0, .value = 0.5 },
+    };
+    const phase_points = [_]plugin.dsp.AdmMatrixVariablePoint{
+        .{ .sample = 0, .value = 0.0 },
+        .{ .sample = 2, .value = 90.0 },
+    };
+    const timelines = [_]plugin.dsp.AdmMatrixVariableTimeline{
+        .{
+            .name = "mix",
+            .kind = .gain_linear,
+            .interpolation = .hold,
+            .points = &gain_points,
+        },
+        .{
+            .name = "angle",
+            .kind = .phase_degrees,
+            .points = &phase_points,
+        },
+    };
+    const Mixer = plugin.dsp.AdmVariableMatrixCoefficientMixer(
+        f32,
+        0,
+        2,
+        3,
+        3,
+    );
+    var mixer = try Mixer.init(
+        &block,
+        &channels,
+        48_000.0,
+        &timelines,
+        &.{ 0.5, 0.0, -0.5 },
+    );
+    try std.testing.expectEqual(@as(usize, 1), mixer.latencySamples());
+    const input = [_]f32{ 1.0, 0.0, -1.0, 0.0 };
+    const inputs = [_][]const f32{&input};
+    var output: [input.len]f32 = undefined;
+    try mixer.process(0, &inputs, &output);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, -0.5),
+        output[2],
+        0.000_001,
+    );
+}
+
 test "installed package exposes bounded ADM HOA matrix decoding" {
     const document = try plugin.dsp.AdmXmlDocument.init(
         \\<audioFormatExtended>

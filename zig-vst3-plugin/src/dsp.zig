@@ -142,6 +142,14 @@ pub const resolveAdmDirectSpeakerRoute =
 pub const AdmStaticMatrixMixer = adm_render.StaticMatrixMixer;
 pub const AdmMatrixCoefficientMixer =
     adm_render.MatrixCoefficientMixer;
+pub const AdmVariableMatrixCoefficientMixer =
+    adm_render.VariableMatrixCoefficientMixer;
+pub const AdmMatrixVariableKind = adm_render.MatrixVariableKind;
+pub const AdmMatrixVariableInterpolation =
+    adm_render.MatrixVariableInterpolation;
+pub const AdmMatrixVariablePoint = adm_render.MatrixVariablePoint;
+pub const AdmMatrixVariableTimeline =
+    adm_render.MatrixVariableTimeline;
 pub const AdmHoaMatrixDecoder = adm_hoa_decoder.MatrixDecoder;
 pub const maximum_supported_adm_hoa_order =
     adm_hoa_decoder.maximum_supported_order;
