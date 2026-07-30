@@ -3246,7 +3246,7 @@ test "installed package exposes bounded MP3 framing and seeking" {
             installed_side.granules[0].channels[0],
             scale_channel,
             main_data,
-    );
+        );
     try std.testing.expectEqual(@as(u10, 0), spectrum.decoded_lines);
 
     const pair_spectrum = try plugin.dsp.decodeMp3HuffmanChannel(
@@ -3272,6 +3272,22 @@ test "installed package exposes bounded MP3 framing and seeking" {
     try std.testing.expectEqual(
         @as(u12, 5),
         pair_spectrum.huffman_bits_consumed,
+    );
+    const requantized: plugin.dsp.Mp3RequantizedSpectrum =
+        try plugin.dsp.requantizeMp3Channel(
+            parsed,
+            plugin.dsp.Mp3GranuleChannel{
+                .global_gain = 210,
+            },
+            plugin.dsp.Mp3ScaleFactorChannel{
+                .value_count = 22,
+            },
+            pair_spectrum,
+        );
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 1, -1 },
+        requantized.lines[0..2],
     );
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);

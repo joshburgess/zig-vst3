@@ -169,6 +169,163 @@ pub const QuantizedSpectrum = struct {
     huffman_bits_consumed: u12 = 0,
 };
 
+pub const RequantizedSpectrum = struct {
+    lines: [576]f32 = @splat(0),
+    decoded_lines: u10 = 0,
+};
+
+pub fn requantizeChannel(
+    header: Header,
+    description: GranuleChannel,
+    factors: ScaleFactorChannel,
+    quantized: QuantizedSpectrum,
+) !RequantizedSpectrum {
+    if (quantized.decoded_lines > quantized.lines.len)
+        return error.InvalidMp3QuantizedSpectrum;
+    for (quantized.lines[quantized.decoded_lines..]) |line| {
+        if (line != 0) return error.InvalidMp3QuantizedSpectrum;
+    }
+    const bands = try scaleFactorBands(header);
+    const short_block = description.block_type == 2;
+    if (description.window_switching ==
+        (description.block_type == 0) or
+        description.mixed_block and !short_block)
+        return error.InvalidMp3BlockType;
+    if (header.version == .mpeg1 and
+        factors.preflag != description.preflag)
+        return error.InvalidMp3ScaleFactors;
+
+    const short_boundary: usize = 3 * bands.short_starts[3];
+    var long_factor_count: usize = 0;
+    if (description.mixed_block) {
+        while (long_factor_count < bands.long_starts.len and
+            bands.long_starts[long_factor_count] < short_boundary)
+            long_factor_count += 1;
+        if (long_factor_count >= bands.long_starts.len or
+            bands.long_starts[long_factor_count] != short_boundary)
+            return error.InvalidMp3ScaleFactorBands;
+    }
+    const expected_factor_count: u6 = switch (header.version) {
+        .mpeg1 => if (!short_block)
+            22
+        else if (description.mixed_block)
+            38
+        else
+            39,
+        .mpeg2, .mpeg25 => if (!short_block)
+            21
+        else if (description.mixed_block)
+            33
+        else
+            36,
+    };
+    if (factors.value_count != expected_factor_count)
+        return error.InvalidMp3ScaleFactors;
+    if (!short_block) {
+        if (factors.values[21] != 0)
+            return error.InvalidMp3ScaleFactors;
+    } else {
+        const terminal_start =
+            if (description.mixed_block)
+                long_factor_count + 27
+            else
+                36;
+        for (factors.values[terminal_start..][0..3]) |factor| {
+            if (factor != 0) return error.InvalidMp3ScaleFactors;
+        }
+    }
+
+    var result = RequantizedSpectrum{
+        .decoded_lines = quantized.decoded_lines,
+    };
+    const global_exponent =
+        (@as(f64, description.global_gain) - 210.0) * 0.25;
+    const scale_multiplier: f64 =
+        if (description.scalefac_scale) 1.0 else 0.5;
+    const pretab = [_]u2{
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 2, 2, 3, 3, 3, 2, 0,
+    };
+
+    if (!short_block or description.mixed_block) {
+        const band_count =
+            if (short_block) long_factor_count else 22;
+        for (0..band_count) |band| {
+            const scale_factor: f64 =
+                @floatFromInt(factors.values[band]);
+            const preemphasis: f64 = if (factors.preflag)
+                @floatFromInt(pretab[band])
+            else
+                0.0;
+            const exponent = global_exponent -
+                scale_multiplier * (scale_factor + preemphasis);
+            for (bands.long_starts[band]..bands.long_starts[band + 1]) |line| result.lines[line] = try requantizeLine(
+                quantized.lines[line],
+                exponent,
+            );
+        }
+    }
+
+    if (short_block) {
+        const first_short_band: usize =
+            if (description.mixed_block) 3 else 0;
+        var source: usize =
+            if (description.mixed_block) short_boundary else 0;
+        for (first_short_band..13) |band| {
+            const width: usize =
+                bands.short_starts[band + 1] -
+                bands.short_starts[band];
+            for (0..3) |window| {
+                const factor_index = if (description.mixed_block)
+                    long_factor_count + (band - 3) * 3 + window
+                else
+                    band * 3 + window;
+                const scale_factor: f64 = if (factor_index <
+                    factors.value_count)
+                    @floatFromInt(factors.values[factor_index])
+                else
+                    0.0;
+                const exponent = global_exponent -
+                    2.0 * @as(f64, @floatFromInt(
+                        description.subblock_gain[window],
+                    )) -
+                    scale_multiplier * scale_factor;
+                for (0..width) |offset| {
+                    const destination =
+                        3 * (@as(usize, bands.short_starts[band]) +
+                            offset) +
+                        window;
+                    result.lines[destination] = try requantizeLine(
+                        quantized.lines[source],
+                        exponent,
+                    );
+                    source += 1;
+                }
+            }
+        }
+        if (source != quantized.lines.len)
+            return error.InvalidMp3ScaleFactorBands;
+    }
+    return result;
+}
+
+fn requantizeLine(value: i32, exponent: f64) !f32 {
+    const magnitude: i64 =
+        if (value < 0) -@as(i64, value) else value;
+    if (magnitude > 8206)
+        return error.InvalidMp3QuantizedValue;
+    if (magnitude == 0) return 0.0;
+    const scaled = std.math.pow(
+        f64,
+        @floatFromInt(magnitude),
+        4.0 / 3.0,
+    ) * std.math.exp2(exponent);
+    if (!std.math.isFinite(scaled))
+        return error.InvalidMp3RequantizedValue;
+    const signed = if (value < 0) -scaled else scaled;
+    return @floatCast(signed);
+}
+
 pub fn MainDataReservoir(comptime capacity: usize) type {
     if (capacity < 511)
         @compileError("MP3 main-data reservoirs require at least 511 bytes");
@@ -3178,6 +3335,225 @@ test "validates Layer III pair codebook prefixes" {
             );
         }
     }
+}
+
+test "requantizes long Layer III spectra with scale factors" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    const bands = try scaleFactorBands(header);
+    const preemphasized_line = bands.long_starts[11];
+    var quantized = QuantizedSpectrum{
+        .decoded_lines = @intCast(preemphasized_line + 1),
+    };
+    quantized.lines[0] = 1;
+    quantized.lines[1] = -8;
+    quantized.lines[4] = 1;
+    quantized.lines[preemphasized_line] = 1;
+    var factors = ScaleFactorChannel{
+        .value_count = 22,
+        .preflag = true,
+    };
+    factors.values[1] = 1;
+    const decoded = try requantizeChannel(
+        header,
+        .{
+            .global_gain = 210,
+            .preflag = true,
+        },
+        factors,
+        quantized,
+    );
+    try std.testing.expectEqual(@as(f32, 1), decoded.lines[0]);
+    try std.testing.expectEqual(@as(f32, -16), decoded.lines[1]);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, @floatCast(@sqrt(0.5))),
+        decoded.lines[4],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, @floatCast(@sqrt(0.5))),
+        decoded.lines[preemphasized_line],
+        1e-6,
+    );
+    for ([_]u2{ 1, 3 }) |block_type| {
+        const switched = try requantizeChannel(
+            header,
+            .{
+                .global_gain = 210,
+                .window_switching = true,
+                .block_type = block_type,
+                .preflag = true,
+            },
+            factors,
+            quantized,
+        );
+        try std.testing.expectEqual(@as(f32, 1), switched.lines[0]);
+    }
+    factors.values[21] = 1;
+    try std.testing.expectError(
+        error.InvalidMp3ScaleFactors,
+        requantizeChannel(
+            header,
+            .{
+                .global_gain = 210,
+                .preflag = true,
+            },
+            factors,
+            quantized,
+        ),
+    );
+}
+
+test "requantizes and reorders short Layer III spectra" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    var quantized = QuantizedSpectrum{
+        .decoded_lines = 9,
+    };
+    quantized.lines[0] = 1;
+    quantized.lines[1] = -1;
+    quantized.lines[4] = 1;
+    quantized.lines[8] = 1;
+    const decoded = try requantizeChannel(
+        header,
+        .{
+            .global_gain = 210,
+            .window_switching = true,
+            .block_type = 2,
+            .subblock_gain = .{ 0, 1, 2 },
+        },
+        .{ .value_count = 39 },
+        quantized,
+    );
+    try std.testing.expectEqual(@as(f32, 1), decoded.lines[0]);
+    try std.testing.expectEqual(@as(f32, 0.25), decoded.lines[1]);
+    try std.testing.expectEqual(@as(f32, 0.0625), decoded.lines[2]);
+    try std.testing.expectEqual(@as(f32, -1), decoded.lines[3]);
+
+    var invalid = quantized;
+    invalid.lines[0] = 8207;
+    try std.testing.expectError(
+        error.InvalidMp3QuantizedValue,
+        requantizeChannel(
+            header,
+            .{
+                .global_gain = 210,
+                .window_switching = true,
+                .block_type = 2,
+            },
+            .{ .value_count = 39 },
+            invalid,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3ScaleFactors,
+        requantizeChannel(
+            header,
+            .{},
+            .{ .value_count = 20 },
+            quantized,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3ScaleFactors,
+        requantizeChannel(
+            header,
+            .{},
+            .{ .value_count = 40 },
+            quantized,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3BlockType,
+        requantizeChannel(
+            header,
+            .{ .block_type = 2 },
+            .{ .value_count = 39 },
+            quantized,
+        ),
+    );
+    var terminal_factor = ScaleFactorChannel{
+        .value_count = 39,
+    };
+    terminal_factor.values[36] = 1;
+    try std.testing.expectError(
+        error.InvalidMp3ScaleFactors,
+        requantizeChannel(
+            header,
+            .{
+                .window_switching = true,
+                .block_type = 2,
+            },
+            terminal_factor,
+            quantized,
+        ),
+    );
+}
+
+test "requantizes mixed blocks at version-specific boundaries" {
+    const headers = [_]Header{
+        try Header.parse(
+            &testHeader(3, true, 9, 0, false, .mono),
+        ),
+        try Header.parse(
+            &testHeader(0, true, 9, 2, false, .mono),
+        ),
+    };
+    for (headers) |header| {
+        const bands = try scaleFactorBands(header);
+        const boundary: usize = 3 * bands.short_starts[3];
+        const width: usize =
+            bands.short_starts[4] - bands.short_starts[3];
+        var quantized = QuantizedSpectrum{
+            .decoded_lines = @intCast(boundary + width + 1),
+        };
+        quantized.lines[boundary - 1] = -1;
+        quantized.lines[boundary + width] = 1;
+        const decoded = try requantizeChannel(
+            header,
+            .{
+                .global_gain = 210,
+                .window_switching = true,
+                .block_type = 2,
+                .mixed_block = true,
+            },
+            .{
+                .value_count = if (header.version == .mpeg1) 38 else 33,
+            },
+            quantized,
+        );
+        try std.testing.expectEqual(
+            @as(f32, -1),
+            decoded.lines[boundary - 1],
+        );
+        try std.testing.expectEqual(
+            @as(f32, 1),
+            decoded.lines[boundary + 1],
+        );
+    }
+
+    try std.testing.expectError(
+        error.InvalidMp3QuantizedSpectrum,
+        requantizeChannel(
+            headers[0],
+            .{},
+            .{ .value_count = 22 },
+            .{ .decoded_lines = 577 },
+        ),
+    );
+    var hidden_line = QuantizedSpectrum{};
+    hidden_line.lines[0] = 1;
+    try std.testing.expectError(
+        error.InvalidMp3QuantizedSpectrum,
+        requantizeChannel(
+            headers[0],
+            .{},
+            .{ .value_count = 22 },
+            hidden_line,
+        ),
+    );
 }
 
 test "rejects inconsistent scale-factor bit ranges" {
