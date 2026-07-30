@@ -3000,6 +3000,70 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         @as(usize, 20),
         installed_pcm_range.sample_count,
     );
+
+    var installed_chained =
+        plugin.dsp.VorbisChainedPcmStreamDecoder(
+            f32,
+            1,
+            64,
+            64,
+        ).init();
+    try installed_chained.beginLogicalStream(installed_identification);
+    _ = try installed_chained.decode(
+        .{
+            .bytes = &.{0},
+            .granule_position = std.math.maxInt(u64),
+            .beginning = true,
+            .end = false,
+        },
+        installed_identification,
+        installed_setup,
+        &installed_empty_outputs,
+        .{
+            .packet = .{
+                .spectra = &installed_spectra,
+                .floor_curves = &installed_floors,
+                .coupling = &installed_coupling,
+                .time = &installed_time,
+                .classifications = &installed_classifications,
+            },
+            .windowed = &installed_stream_windowed,
+        },
+    );
+    const installed_chain_end = try installed_chained.decode(
+        .{
+            .bytes = &.{0},
+            .granule_position = 32,
+            .beginning = false,
+            .end = true,
+        },
+        installed_identification,
+        installed_setup,
+        &installed_stream_outputs,
+        .{
+            .packet = .{
+                .spectra = &installed_spectra,
+                .floor_curves = &installed_floors,
+                .coupling = &installed_coupling,
+                .time = &installed_time,
+                .classifications = &installed_classifications,
+            },
+            .windowed = &installed_stream_windowed,
+        },
+    );
+    try std.testing.expectEqual(
+        @as(u64, 0),
+        installed_chain_end.global_pcm_start,
+    );
+    try std.testing.expectEqual(
+        @as(u64, 32),
+        installed_chain_end.global_pcm_end,
+    );
+    try installed_chained.beginLogicalStream(installed_identification);
+    try std.testing.expectEqual(
+        @as(u64, 32),
+        installed_chained.completed_pcm,
+    );
 }
 
 test "installed package exposes validated IR editor snapshots" {

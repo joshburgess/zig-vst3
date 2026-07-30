@@ -789,6 +789,10 @@ pub const VorbisPcmPacketSequence = ogg.VorbisPcmPacketSequence;
 pub const VorbisPcmPacketSequenceConfig =
     ogg.VorbisPcmPacketSequenceConfig;
 pub const VorbisPcmSeekCursor = ogg.VorbisPcmSeekCursor;
+pub const VorbisChainedPcmStreamDecoder =
+    ogg.VorbisChainedPcmStreamDecoder;
+pub const VorbisChainedPcmStreamResult =
+    ogg.VorbisChainedPcmStreamResult;
 pub const VorbisPcmStreamDecoder = ogg.VorbisPcmStreamDecoder;
 pub const VorbisPcmStreamResult = ogg.VorbisPcmStreamResult;
 pub const VorbisPcmStreamScratch = ogg.VorbisPcmStreamScratch;

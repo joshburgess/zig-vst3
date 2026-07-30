@@ -8652,6 +8652,13 @@ pub const VorbisPcmStreamResult = struct {
     pcm_end: ?i64,
 };
 
+pub const VorbisChainedPcmStreamResult = struct {
+    stream: VorbisPcmStreamResult,
+    logical_stream_index: u64,
+    global_pcm_start: u64,
+    global_pcm_end: u64,
+};
+
 pub const VorbisPcmSeekCursor = struct {
     target_pcm: i64,
     reached: bool = false,
@@ -8855,6 +8862,138 @@ pub fn VorbisPcmStreamDecoder(
                 .pcm_start = granule_range.pcm_start,
                 .pcm_end = granule_range.pcm_end,
             };
+        }
+    };
+}
+
+pub fn VorbisChainedPcmStreamDecoder(
+    comptime Float: type,
+    comptime channel_count: usize,
+    comptime small_block_size: usize,
+    comptime large_block_size: usize,
+) type {
+    const StreamDecoder = VorbisPcmStreamDecoder(
+        Float,
+        channel_count,
+        small_block_size,
+        large_block_size,
+    );
+
+    return struct {
+        const Self = @This();
+
+        stream: StreamDecoder,
+        sample_rate: ?u32 = null,
+        logical_stream_index: u64 = 0,
+        completed_pcm: u64 = 0,
+        current_stream_pcm: u64 = 0,
+        started: bool = false,
+
+        pub fn init() Self {
+            return .{ .stream = .init() };
+        }
+
+        pub fn reset(self: *Self) void {
+            self.stream.reset();
+            self.sample_rate = null;
+            self.logical_stream_index = 0;
+            self.completed_pcm = 0;
+            self.current_stream_pcm = 0;
+            self.started = false;
+        }
+
+        pub fn beginLogicalStream(
+            self: *Self,
+            identification: VorbisIdentification,
+        ) !void {
+            try validateIdentification(identification);
+            if (self.started and !self.stream.ended)
+                return error.VorbisPreviousLogicalStreamNotEnded;
+            if (self.sample_rate) |sample_rate| {
+                if (identification.sample_rate != sample_rate)
+                    return error.VorbisChainedSampleRateChanged;
+            }
+
+            var next_completed = self.completed_pcm;
+            var next_index = self.logical_stream_index;
+            if (self.started) {
+                next_completed = std.math.add(
+                    u64,
+                    next_completed,
+                    self.current_stream_pcm,
+                ) catch return error.VorbisChainedPcmPositionOverflow;
+                next_index = std.math.add(
+                    u64,
+                    next_index,
+                    1,
+                ) catch return error.VorbisLogicalStreamIndexOverflow;
+            }
+
+            self.stream.reset();
+            self.sample_rate = identification.sample_rate;
+            self.logical_stream_index = next_index;
+            self.completed_pcm = next_completed;
+            self.current_stream_pcm = 0;
+            self.started = true;
+        }
+
+        pub fn decode(
+            self: *Self,
+            packet: Packet,
+            identification: VorbisIdentification,
+            setup: VorbisSetup,
+            outputs: []const []Float,
+            scratch: VorbisPcmStreamScratch(Float),
+        ) !VorbisChainedPcmStreamResult {
+            if (!self.started)
+                return error.VorbisLogicalStreamNotStarted;
+            try validateIdentification(identification);
+            const sample_rate = self.sample_rate orelse
+                return error.VorbisLogicalStreamNotStarted;
+            if (identification.sample_rate != sample_rate)
+                return error.VorbisChainedSampleRateChanged;
+
+            const global_start = std.math.add(
+                u64,
+                self.completed_pcm,
+                self.current_stream_pcm,
+            ) catch return error.VorbisChainedPcmPositionOverflow;
+            _ = std.math.add(
+                u64,
+                global_start,
+                large_block_size / 2,
+            ) catch return error.VorbisChainedPcmPositionOverflow;
+
+            const decoded = try self.stream.decode(
+                packet,
+                identification,
+                setup,
+                outputs,
+                scratch,
+            );
+            const global_end = global_start +
+                @as(u64, @intCast(decoded.sample_count));
+            self.current_stream_pcm +=
+                @as(u64, @intCast(decoded.sample_count));
+            return .{
+                .stream = decoded,
+                .logical_stream_index = self.logical_stream_index,
+                .global_pcm_start = global_start,
+                .global_pcm_end = global_end,
+            };
+        }
+
+        fn validateIdentification(
+            identification: VorbisIdentification,
+        ) !void {
+            if (@as(usize, identification.channel_count) != channel_count or
+                @as(usize, identification.small_block_size) !=
+                    small_block_size or
+                @as(usize, identification.large_block_size) !=
+                    large_block_size)
+                return error.VorbisChainedStreamGeometryChanged;
+            if (identification.sample_rate == 0)
+                return error.InvalidVorbisSampleRate;
         }
     };
 }
@@ -23041,6 +23180,231 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
     );
     stream.reset();
     try std.testing.expectEqual(@as(u64, 0), stream.audio_packet_count);
+
+    var chained =
+        VorbisChainedPcmStreamDecoder(f64, 2, 64, 64).init();
+    try std.testing.expectError(
+        error.VorbisLogicalStreamNotStarted,
+        chained.decode(
+            .{
+                .bytes = packet,
+                .granule_position = unknown_granule,
+                .beginning = false,
+                .end = false,
+            },
+            identification,
+            setup,
+            &first_empty_outputs,
+            .{
+                .packet = .{
+                    .spectra = &spectra,
+                    .floor_curves = &floor_curves,
+                    .coupling = &coupling,
+                    .time = &time,
+                    .classifications = &classifications,
+                },
+                .windowed = &stream_windowed,
+            },
+        ),
+    );
+    try chained.beginLogicalStream(identification);
+    const chained_prime = try chained.decode(
+        .{
+            .bytes = packet,
+            .granule_position = unknown_granule,
+            .beginning = true,
+            .end = false,
+        },
+        identification,
+        setup,
+        &first_empty_outputs,
+        .{
+            .packet = .{
+                .spectra = &spectra,
+                .floor_curves = &floor_curves,
+                .coupling = &coupling,
+                .time = &time,
+                .classifications = &classifications,
+            },
+            .windowed = &stream_windowed,
+        },
+    );
+    try std.testing.expectEqual(@as(u64, 0), chained_prime.global_pcm_start);
+    try std.testing.expectEqual(@as(u64, 0), chained_prime.global_pcm_end);
+    try std.testing.expectError(
+        error.VorbisPreviousLogicalStreamNotEnded,
+        chained.beginLogicalStream(identification),
+    );
+    try std.testing.expectError(
+        error.InvalidVorbisAudioPacketType,
+        chained.decode(
+            .{
+                .bytes = &.{1},
+                .granule_position = 32,
+                .beginning = false,
+                .end = false,
+            },
+            identification,
+            setup,
+            &stream_outputs,
+            .{
+                .packet = .{
+                    .spectra = &spectra,
+                    .floor_curves = &floor_curves,
+                    .coupling = &coupling,
+                    .time = &time,
+                    .classifications = &classifications,
+                },
+                .windowed = &stream_windowed,
+            },
+        ),
+    );
+    try std.testing.expectEqual(@as(u64, 0), chained.current_stream_pcm);
+    const chained_middle = try chained.decode(
+        .{
+            .bytes = packet,
+            .granule_position = 32,
+            .beginning = false,
+            .end = false,
+        },
+        identification,
+        setup,
+        &stream_outputs,
+        .{
+            .packet = .{
+                .spectra = &spectra,
+                .floor_curves = &floor_curves,
+                .coupling = &coupling,
+                .time = &time,
+                .classifications = &classifications,
+            },
+            .windowed = &stream_windowed,
+        },
+    );
+    try std.testing.expectEqual(@as(u64, 0), chained_middle.global_pcm_start);
+    try std.testing.expectEqual(@as(u64, 32), chained_middle.global_pcm_end);
+    const chained_end = try chained.decode(
+        .{
+            .bytes = packet,
+            .granule_position = 60,
+            .beginning = false,
+            .end = true,
+        },
+        identification,
+        setup,
+        &stream_outputs,
+        .{
+            .packet = .{
+                .spectra = &spectra,
+                .floor_curves = &floor_curves,
+                .coupling = &coupling,
+                .time = &time,
+                .classifications = &classifications,
+            },
+            .windowed = &stream_windowed,
+        },
+    );
+    try std.testing.expectEqual(@as(u64, 32), chained_end.global_pcm_start);
+    try std.testing.expectEqual(@as(u64, 60), chained_end.global_pcm_end);
+
+    var changed_rate = identification;
+    changed_rate.sample_rate += 1;
+    try std.testing.expectError(
+        error.VorbisChainedSampleRateChanged,
+        chained.beginLogicalStream(changed_rate),
+    );
+    try chained.beginLogicalStream(identification);
+    try std.testing.expectEqual(@as(u64, 1), chained.logical_stream_index);
+    try std.testing.expectEqual(@as(u64, 60), chained.completed_pcm);
+    const second_chain_prime = try chained.decode(
+        .{
+            .bytes = packet,
+            .granule_position = unknown_granule,
+            .beginning = true,
+            .end = false,
+        },
+        identification,
+        setup,
+        &first_empty_outputs,
+        .{
+            .packet = .{
+                .spectra = &spectra,
+                .floor_curves = &floor_curves,
+                .coupling = &coupling,
+                .time = &time,
+                .classifications = &classifications,
+            },
+            .windowed = &stream_windowed,
+        },
+    );
+    try std.testing.expectEqual(
+        @as(u64, 60),
+        second_chain_prime.global_pcm_start,
+    );
+    const second_chain_end = try chained.decode(
+        .{
+            .bytes = packet,
+            .granule_position = 32,
+            .beginning = false,
+            .end = true,
+        },
+        identification,
+        setup,
+        &stream_outputs,
+        .{
+            .packet = .{
+                .spectra = &spectra,
+                .floor_curves = &floor_curves,
+                .coupling = &coupling,
+                .time = &time,
+                .classifications = &classifications,
+            },
+            .windowed = &stream_windowed,
+        },
+    );
+    try std.testing.expectEqual(@as(u64, 60), second_chain_end.global_pcm_start);
+    try std.testing.expectEqual(@as(u64, 92), second_chain_end.global_pcm_end);
+
+    var changed_geometry = identification;
+    changed_geometry.channel_count = 1;
+    try std.testing.expectError(
+        error.VorbisChainedStreamGeometryChanged,
+        chained.beginLogicalStream(changed_geometry),
+    );
+    chained.current_stream_pcm = std.math.maxInt(u64) - 31;
+    @memset(&stream_left, 99);
+    try std.testing.expectError(
+        error.VorbisChainedPcmPositionOverflow,
+        chained.decode(
+            .{
+                .bytes = packet,
+                .granule_position = 64,
+                .beginning = false,
+                .end = true,
+            },
+            identification,
+            setup,
+            &stream_outputs,
+            .{
+                .packet = .{
+                    .spectra = &spectra,
+                    .floor_curves = &floor_curves,
+                    .coupling = &coupling,
+                    .time = &time,
+                    .classifications = &classifications,
+                },
+                .windowed = &stream_windowed,
+            },
+        ),
+    );
+    try std.testing.expectEqual(@as(f64, 99), stream_left[0]);
+    try std.testing.expectEqual(
+        std.math.maxInt(u64) - 31,
+        chained.current_stream_pcm,
+    );
+    chained.reset();
+    try std.testing.expect(!chained.started);
+    try std.testing.expectEqual(@as(?u32, null), chained.sample_rate);
 }
 
 test "Vorbis inverse MDCT matches its defining transform" {
