@@ -3877,12 +3877,90 @@ fn encoderByteState(
     };
 }
 
+/// Replaces the file with one complete ID3v2 prefix.
+pub fn writeId3v2FilePrefix(
+    io: std.Io,
+    file: std.Io.File,
+    encoded_tag: []const u8,
+) !u64 {
+    return writeId3v2FilePrefixWithOperations(
+        io,
+        file,
+        encoded_tag,
+        .{},
+    );
+}
+
+fn writeId3v2FilePrefixWithOperations(
+    io: std.Io,
+    file: std.Io.File,
+    encoded_tag: []const u8,
+    operations: file_writer_io.Operations,
+) !u64 {
+    const tag_bytes = try leadingTagBytes(encoded_tag);
+    if (tag_bytes == 0 or tag_bytes != encoded_tag.len)
+        return error.InvalidMp3Id3v2Prefix;
+    const file_bytes: u64 = tag_bytes;
+    try operations.setLength(io, file, 0);
+    try operations.writeAt(io, file, 0, encoded_tag);
+    return file_bytes;
+}
+
+/// Replaces any prior tail and appends one complete ID3v1 record.
+pub fn appendId3v1FileTail(
+    io: std.Io,
+    file: std.Io.File,
+    audio_offset: u64,
+    audio_bytes: u64,
+    encoded_tag: []const u8,
+) !u64 {
+    return appendId3v1FileTailWithOperations(
+        io,
+        file,
+        audio_offset,
+        audio_bytes,
+        encoded_tag,
+        .{},
+    );
+}
+
+fn appendId3v1FileTailWithOperations(
+    io: std.Io,
+    file: std.Io.File,
+    audio_offset: u64,
+    audio_bytes: u64,
+    encoded_tag: []const u8,
+    operations: file_writer_io.Operations,
+) !u64 {
+    if (encoded_tag.len != 128 or
+        !std.mem.eql(u8, encoded_tag[0..3], "TAG"))
+        return error.InvalidMp3Id3v1Tail;
+    const audio_end = try fileEncoderOffset(
+        audio_offset,
+        audio_bytes,
+    );
+    const file_end = try fileEncoderOffset(
+        audio_end,
+        encoded_tag.len,
+    );
+    try operations.setLength(io, file, audio_end);
+    try operations.writeAt(
+        io,
+        file,
+        audio_end,
+        encoded_tag,
+    );
+    file.sync(io) catch |failure| return failure;
+    return file_end;
+}
+
 pub const PcmFileEncoder = struct {
     io: std.Io,
     file: std.Io.File,
     operations: file_writer_io.Operations = .{},
     stream: PcmStreamEncoder,
     frame_storage: []u8,
+    audio_offset: u64 = 0,
     committed_bytes: u64 = 0,
     failed: bool = false,
     finalized: bool = false,
@@ -3899,6 +3977,25 @@ pub const PcmFileEncoder = struct {
             file,
             config,
             frame_storage,
+            0,
+            .{},
+        );
+    }
+
+    /// Preserves the file prefix and starts MP3 audio at `audio_offset`.
+    pub fn initAt(
+        io: std.Io,
+        file: std.Io.File,
+        config: EncoderConfig,
+        frame_storage: []u8,
+        audio_offset: u64,
+    ) !PcmFileEncoder {
+        return initPcmFileEncoder(
+            io,
+            file,
+            config,
+            frame_storage,
+            audio_offset,
             .{},
         );
     }
@@ -3915,6 +4012,7 @@ pub const PcmFileEncoder = struct {
             file,
             config,
             frame_storage,
+            0,
             operations,
         );
     }
@@ -3934,7 +4032,10 @@ pub const PcmFileEncoder = struct {
         self.operations.writeAt(
             self.io,
             self.file,
-            self.committed_bytes,
+            try fileEncoderOffset(
+                self.audio_offset,
+                self.committed_bytes,
+            ),
             encoded,
         ) catch |failure| {
             self.failed = true;
@@ -3958,7 +4059,7 @@ pub const PcmFileEncoder = struct {
         self.operations.writeAt(
             self.io,
             self.file,
-            0,
+            self.audio_offset,
             encoded,
         ) catch |failure| {
             self.failed = true;
@@ -3987,7 +4088,10 @@ pub const PcmFileEncoder = struct {
         self.operations.writeAt(
             self.io,
             self.file,
-            self.committed_bytes,
+            try fileEncoderOffset(
+                self.audio_offset,
+                self.committed_bytes,
+            ),
             finished.frames,
         ) catch |failure| {
             self.failed = true;
@@ -3997,7 +4101,7 @@ pub const PcmFileEncoder = struct {
             self.operations.writeAt(
                 self.io,
                 self.file,
-                0,
+                self.audio_offset,
                 metadata,
             ) catch |failure| {
                 self.failed = true;
@@ -4019,7 +4123,10 @@ pub const PcmFileEncoder = struct {
         if (self.finalized)
             return error.InvalidMp3FileEncoderState;
         try file_writer_io.Checkpoint.exact(
-            self.committed_bytes,
+            try fileEncoderOffset(
+                self.audio_offset,
+                self.committed_bytes,
+            ),
         ).restore(
             self.operations,
             self.io,
@@ -4039,7 +4146,7 @@ pub const PcmFileEncoder = struct {
             try self.operations.writeAt(
                 self.io,
                 self.file,
-                0,
+                self.audio_offset,
                 placeholder,
             );
         }
@@ -4068,6 +4175,7 @@ pub const VbrPcmFileEncoder = struct {
     operations: file_writer_io.Operations = .{},
     stream: VbrPcmStreamEncoder,
     frame_storage: []u8,
+    audio_offset: u64 = 0,
     committed_bytes: u64 = 0,
     metadata_quality: ?u32 = null,
     failed: bool = false,
@@ -4086,6 +4194,27 @@ pub const VbrPcmFileEncoder = struct {
             config,
             frame_storage,
             frame_offsets,
+            0,
+            .{},
+        );
+    }
+
+    /// Preserves the file prefix and starts MP3 audio at `audio_offset`.
+    pub fn initAt(
+        io: std.Io,
+        file: std.Io.File,
+        config: VbrEncoderConfig,
+        frame_storage: []u8,
+        frame_offsets: []u64,
+        audio_offset: u64,
+    ) !VbrPcmFileEncoder {
+        return initVbrPcmFileEncoder(
+            io,
+            file,
+            config,
+            frame_storage,
+            frame_offsets,
+            audio_offset,
             .{},
         );
     }
@@ -4104,6 +4233,7 @@ pub const VbrPcmFileEncoder = struct {
             config,
             frame_storage,
             frame_offsets,
+            0,
             operations,
         );
     }
@@ -4128,7 +4258,10 @@ pub const VbrPcmFileEncoder = struct {
         self.operations.writeAt(
             self.io,
             self.file,
-            self.committed_bytes,
+            try fileEncoderOffset(
+                self.audio_offset,
+                self.committed_bytes,
+            ),
             encoded.frame,
         ) catch |failure| {
             self.stream.frame_offsets[frame_index] = old_offset;
@@ -4157,7 +4290,7 @@ pub const VbrPcmFileEncoder = struct {
         self.operations.writeAt(
             self.io,
             self.file,
-            0,
+            self.audio_offset,
             encoded,
         ) catch |failure| {
             self.stream.frame_offsets[0] = old_offset;
@@ -4222,7 +4355,10 @@ pub const VbrPcmFileEncoder = struct {
         self.operations.writeAt(
             self.io,
             self.file,
-            self.committed_bytes,
+            try fileEncoderOffset(
+                self.audio_offset,
+                self.committed_bytes,
+            ),
             finished.frames,
         ) catch |failure| {
             restoreVbrOffsets(
@@ -4237,7 +4373,7 @@ pub const VbrPcmFileEncoder = struct {
             self.operations.writeAt(
                 self.io,
                 self.file,
-                0,
+                self.audio_offset,
                 metadata,
             ) catch |failure| {
                 restoreVbrOffsets(
@@ -4275,7 +4411,10 @@ pub const VbrPcmFileEncoder = struct {
         if (self.finalized)
             return error.InvalidMp3VbrFileEncoderState;
         try file_writer_io.Checkpoint.exact(
-            self.committed_bytes,
+            try fileEncoderOffset(
+                self.audio_offset,
+                self.committed_bytes,
+            ),
         ).restore(
             self.operations,
             self.io,
@@ -4305,7 +4444,7 @@ pub const VbrPcmFileEncoder = struct {
             try self.operations.writeAt(
                 self.io,
                 self.file,
-                0,
+                self.audio_offset,
                 placeholder,
             );
         }
@@ -4342,6 +4481,7 @@ pub const VbrPcmReservoirFileEncoder = struct {
     operations: file_writer_io.Operations = .{},
     stream: VbrPcmReservoirStreamEncoder,
     frame_storage: []u8,
+    audio_offset: u64 = 0,
     committed_bytes: u64 = 0,
     metadata_quality: ?u32 = null,
     failed: bool = false,
@@ -4360,6 +4500,27 @@ pub const VbrPcmReservoirFileEncoder = struct {
             config,
             frame_storage,
             frame_offsets,
+            0,
+            .{},
+        );
+    }
+
+    /// Preserves the file prefix and starts MP3 audio at `audio_offset`.
+    pub fn initAt(
+        io: std.Io,
+        file: std.Io.File,
+        config: VbrEncoderConfig,
+        frame_storage: []u8,
+        frame_offsets: []u64,
+        audio_offset: u64,
+    ) !VbrPcmReservoirFileEncoder {
+        return initVbrPcmReservoirFileEncoder(
+            io,
+            file,
+            config,
+            frame_storage,
+            frame_offsets,
+            audio_offset,
             .{},
         );
     }
@@ -4378,6 +4539,7 @@ pub const VbrPcmReservoirFileEncoder = struct {
             config,
             frame_storage,
             frame_offsets,
+            0,
             operations,
         );
     }
@@ -4404,7 +4566,10 @@ pub const VbrPcmReservoirFileEncoder = struct {
             self.operations.writeAt(
                 self.io,
                 self.file,
-                self.committed_bytes,
+                try fileEncoderOffset(
+                    self.audio_offset,
+                    self.committed_bytes,
+                ),
                 frame,
             ) catch |failure| {
                 self.stream.encoder.frame_offsets[frame_index] =
@@ -4436,7 +4601,7 @@ pub const VbrPcmReservoirFileEncoder = struct {
         self.operations.writeAt(
             self.io,
             self.file,
-            0,
+            self.audio_offset,
             encoded,
         ) catch |failure| {
             self.stream.encoder.frame_offsets[0] = old_offset;
@@ -4505,7 +4670,10 @@ pub const VbrPcmReservoirFileEncoder = struct {
         self.operations.writeAt(
             self.io,
             self.file,
-            self.committed_bytes,
+            try fileEncoderOffset(
+                self.audio_offset,
+                self.committed_bytes,
+            ),
             finished.frames,
         ) catch |failure| {
             restoreVbrOffsets(
@@ -4520,7 +4688,7 @@ pub const VbrPcmReservoirFileEncoder = struct {
             self.operations.writeAt(
                 self.io,
                 self.file,
-                0,
+                self.audio_offset,
                 metadata,
             ) catch |failure| {
                 restoreVbrOffsets(
@@ -4559,7 +4727,10 @@ pub const VbrPcmReservoirFileEncoder = struct {
         if (self.finalized)
             return error.InvalidMp3VbrReservoirFileEncoderState;
         try file_writer_io.Checkpoint.exact(
-            self.committed_bytes,
+            try fileEncoderOffset(
+                self.audio_offset,
+                self.committed_bytes,
+            ),
         ).restore(
             self.operations,
             self.io,
@@ -4589,7 +4760,7 @@ pub const VbrPcmReservoirFileEncoder = struct {
             try self.operations.writeAt(
                 self.io,
                 self.file,
-                0,
+                self.audio_offset,
                 placeholder,
             );
         }
@@ -4620,6 +4791,7 @@ pub const PcmReservoirFileEncoder = struct {
     operations: file_writer_io.Operations = .{},
     stream: PcmReservoirStreamEncoder,
     frame_storage: []u8,
+    audio_offset: u64 = 0,
     committed_bytes: u64 = 0,
     failed: bool = false,
     finalized: bool = false,
@@ -4636,6 +4808,25 @@ pub const PcmReservoirFileEncoder = struct {
             file,
             config,
             frame_storage,
+            0,
+            .{},
+        );
+    }
+
+    /// Preserves the file prefix and starts MP3 audio at `audio_offset`.
+    pub fn initAt(
+        io: std.Io,
+        file: std.Io.File,
+        config: EncoderConfig,
+        frame_storage: []u8,
+        audio_offset: u64,
+    ) !PcmReservoirFileEncoder {
+        return initPcmReservoirFileEncoder(
+            io,
+            file,
+            config,
+            frame_storage,
+            audio_offset,
             .{},
         );
     }
@@ -4652,6 +4843,7 @@ pub const PcmReservoirFileEncoder = struct {
             file,
             config,
             frame_storage,
+            0,
             operations,
         );
     }
@@ -4672,7 +4864,10 @@ pub const PcmReservoirFileEncoder = struct {
             self.operations.writeAt(
                 self.io,
                 self.file,
-                self.committed_bytes,
+                try fileEncoderOffset(
+                    self.audio_offset,
+                    self.committed_bytes,
+                ),
                 frame,
             ) catch |failure| {
                 self.failed = true;
@@ -4699,7 +4894,7 @@ pub const PcmReservoirFileEncoder = struct {
         self.operations.writeAt(
             self.io,
             self.file,
-            0,
+            self.audio_offset,
             encoded,
         ) catch |failure| {
             self.failed = true;
@@ -4733,7 +4928,10 @@ pub const PcmReservoirFileEncoder = struct {
         self.operations.writeAt(
             self.io,
             self.file,
-            self.committed_bytes,
+            try fileEncoderOffset(
+                self.audio_offset,
+                self.committed_bytes,
+            ),
             finished.frames,
         ) catch |failure| {
             self.failed = true;
@@ -4743,7 +4941,7 @@ pub const PcmReservoirFileEncoder = struct {
             self.operations.writeAt(
                 self.io,
                 self.file,
-                0,
+                self.audio_offset,
                 metadata,
             ) catch |failure| {
                 self.failed = true;
@@ -4770,7 +4968,10 @@ pub const PcmReservoirFileEncoder = struct {
         if (self.finalized)
             return error.InvalidMp3ReservoirFileEncoderState;
         try file_writer_io.Checkpoint.exact(
-            self.committed_bytes,
+            try fileEncoderOffset(
+                self.audio_offset,
+                self.committed_bytes,
+            ),
         ).restore(
             self.operations,
             self.io,
@@ -4790,7 +4991,7 @@ pub const PcmReservoirFileEncoder = struct {
             try self.operations.writeAt(
                 self.io,
                 self.file,
-                0,
+                self.audio_offset,
                 placeholder,
             );
         }
@@ -4837,18 +5038,20 @@ fn initPcmFileEncoder(
     file: std.Io.File,
     config: EncoderConfig,
     frame_storage: []u8,
+    audio_offset: u64,
     operations: file_writer_io.Operations,
 ) !PcmFileEncoder {
     if (frame_storage.len < maximum_encoded_frame_bytes * 2)
         return error.Mp3FrameBufferTooSmall;
     const stream = try PcmStreamEncoder.init(config);
-    try operations.setLength(io, file, 0);
+    try operations.setLength(io, file, audio_offset);
     return .{
         .io = io,
         .file = file,
         .operations = operations,
         .stream = stream,
         .frame_storage = frame_storage[0 .. maximum_encoded_frame_bytes * 2],
+        .audio_offset = audio_offset,
     };
 }
 
@@ -4858,6 +5061,7 @@ fn initVbrPcmFileEncoder(
     config: VbrEncoderConfig,
     frame_storage: []u8,
     frame_offsets: []u64,
+    audio_offset: u64,
     operations: file_writer_io.Operations,
 ) !VbrPcmFileEncoder {
     if (frame_storage.len <
@@ -4878,7 +5082,7 @@ fn initVbrPcmFileEncoder(
         config,
         frame_offsets,
     );
-    try operations.setLength(io, file, 0);
+    try operations.setLength(io, file, audio_offset);
     @memset(frame_offsets, 0);
     return .{
         .io = io,
@@ -4886,6 +5090,7 @@ fn initVbrPcmFileEncoder(
         .operations = operations,
         .stream = stream,
         .frame_storage = frame_storage[0 .. maximum_encoded_frame_bytes * 2],
+        .audio_offset = audio_offset,
     };
 }
 
@@ -4903,19 +5108,21 @@ fn initPcmReservoirFileEncoder(
     file: std.Io.File,
     config: EncoderConfig,
     frame_storage: []u8,
+    audio_offset: u64,
     operations: file_writer_io.Operations,
 ) !PcmReservoirFileEncoder {
     if (frame_storage.len < maximum_encoded_frame_bytes * 3)
         return error.Mp3FrameBufferTooSmall;
     const stream =
         try PcmReservoirStreamEncoder.init(config);
-    try operations.setLength(io, file, 0);
+    try operations.setLength(io, file, audio_offset);
     return .{
         .io = io,
         .file = file,
         .operations = operations,
         .stream = stream,
         .frame_storage = frame_storage[0 .. maximum_encoded_frame_bytes * 3],
+        .audio_offset = audio_offset,
     };
 }
 
@@ -4925,6 +5132,7 @@ fn initVbrPcmReservoirFileEncoder(
     config: VbrEncoderConfig,
     frame_storage: []u8,
     frame_offsets: []u64,
+    audio_offset: u64,
     operations: file_writer_io.Operations,
 ) !VbrPcmReservoirFileEncoder {
     if (frame_storage.len < maximum_encoded_frame_bytes * 3)
@@ -4944,7 +5152,7 @@ fn initVbrPcmReservoirFileEncoder(
         config,
         frame_offsets,
     );
-    try operations.setLength(io, file, 0);
+    try operations.setLength(io, file, audio_offset);
     @memset(frame_offsets, 0);
     return .{
         .io = io,
@@ -4952,7 +5160,19 @@ fn initVbrPcmReservoirFileEncoder(
         .operations = operations,
         .stream = stream,
         .frame_storage = frame_storage[0 .. maximum_encoded_frame_bytes * 3],
+        .audio_offset = audio_offset,
     };
+}
+
+fn fileEncoderOffset(
+    audio_offset: u64,
+    stream_offset: u64,
+) !u64 {
+    return std.math.add(
+        u64,
+        audio_offset,
+        stream_offset,
+    ) catch error.Mp3FileOffsetOverflow;
 }
 
 const encoder_analysis_delay: u16 = 1057;
@@ -17337,5 +17557,275 @@ test "writes and recovers transactional MP3 PCM files" {
     try std.testing.expectEqual(
         @as(?u32, @intCast(metadata_summary.byte_count)),
         recovered_metadata.first_xing.?.stream_bytes,
+    );
+}
+
+test "composes ID3 prefixes and tails with offset MP3 files" {
+    const prefix = [_]u8{
+        'I', 'D', '3', 4, 0, 0, 0, 0, 0, 0,
+    };
+    var tail: [128]u8 = @splat(0);
+    @memcpy(tail[0..3], "TAG");
+    @memcpy(tail[3..8], "title");
+    const config = EncoderConfig{
+        .version = .mpeg1,
+        .bitrate_kbps = 128,
+        .sample_rate = 44_100,
+        .channel_mode = .mono,
+    };
+    const pcm = PcmFrame{
+        .channel_count = 1,
+        .sample_count = 1152,
+    };
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "id3-composed.mp3",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    try file.writePositionalAll(std.testing.io, "keep", 0);
+    try std.testing.expectError(
+        error.InvalidMp3Id3v2Prefix,
+        writeId3v2FilePrefix(
+            std.testing.io,
+            file,
+            "not a tag",
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 4),
+        try file.length(std.testing.io),
+    );
+
+    const audio_offset = try writeId3v2FilePrefix(
+        std.testing.io,
+        file,
+        &prefix,
+    );
+    var storage: [maximum_encoded_frame_bytes * 2]u8 =
+        undefined;
+    var writer = try PcmFileEncoder.initAt(
+        std.testing.io,
+        file,
+        config,
+        &storage,
+        audio_offset,
+    );
+    try writer.startGaplessMetadata();
+    try writer.append(pcm);
+    const summary = try writer.finalize();
+    const audio_end = try fileEncoderOffset(
+        audio_offset,
+        summary.byte_count,
+    );
+    try std.testing.expectEqual(
+        audio_end,
+        try file.length(std.testing.io),
+    );
+    var frame_storage: [maximum_encoded_frame_bytes]u8 =
+        undefined;
+    const parsed = try FileReader.summarize(
+        std.testing.io,
+        file,
+        &frame_storage,
+    );
+    try std.testing.expectEqual(summary.frame_count, parsed.frame_count);
+    try std.testing.expectEqual(audio_offset, parsed.audio_offset);
+
+    const file_end = try appendId3v1FileTail(
+        std.testing.io,
+        file,
+        audio_offset,
+        summary.byte_count,
+        &tail,
+    );
+    try std.testing.expectEqual(
+        file_end,
+        try file.length(std.testing.io),
+    );
+    const with_tail = try FileReader.summarize(
+        std.testing.io,
+        file,
+        &frame_storage,
+    );
+    try std.testing.expectEqual(summary.frame_count, with_tail.frame_count);
+    try std.testing.expectEqual(
+        audio_end,
+        with_tail.audio_offset + with_tail.audio_bytes,
+    );
+    try std.testing.expectEqual(
+        file_end,
+        try appendId3v1FileTail(
+            std.testing.io,
+            file,
+            audio_offset,
+            summary.byte_count,
+            &tail,
+        ),
+    );
+
+    var prefix_bytes: [10]u8 = undefined;
+    try file_reader_io.readExactAt(
+        std.testing.io,
+        file,
+        0,
+        &prefix_bytes,
+        error.TestTruncatedId3Prefix,
+    );
+    try std.testing.expectEqualSlices(u8, &prefix, &prefix_bytes);
+    var tail_bytes: [128]u8 = undefined;
+    try file_reader_io.readExactAt(
+        std.testing.io,
+        file,
+        audio_end,
+        &tail_bytes,
+        error.TestTruncatedId3Tail,
+    );
+    try std.testing.expectEqualSlices(u8, &tail, &tail_bytes);
+
+    var variants_file = try temporary.dir.createFile(
+        std.testing.io,
+        "id3-offset-variants.mp3",
+        .{ .read = true },
+    );
+    defer variants_file.close(std.testing.io);
+    _ = try writeId3v2FilePrefix(
+        std.testing.io,
+        variants_file,
+        &prefix,
+    );
+    var variant_storage: [maximum_encoded_frame_bytes * 3]u8 = undefined;
+    var variant_offsets: [4]u64 = undefined;
+    const vbr_config = VbrEncoderConfig{
+        .template = .{
+            .version = .mpeg1,
+            .sample_rate = 44_100,
+            .channel_mode = .mono,
+        },
+    };
+    const vbr_writer = try VbrPcmFileEncoder.initAt(
+        std.testing.io,
+        variants_file,
+        vbr_config,
+        &variant_storage,
+        &variant_offsets,
+        audio_offset,
+    );
+    try std.testing.expectEqual(
+        audio_offset,
+        vbr_writer.audio_offset,
+    );
+    const reservoir_writer =
+        try PcmReservoirFileEncoder.initAt(
+            std.testing.io,
+            variants_file,
+            config,
+            &variant_storage,
+            audio_offset,
+        );
+    try std.testing.expectEqual(
+        audio_offset,
+        reservoir_writer.audio_offset,
+    );
+    const vbr_reservoir_writer =
+        try VbrPcmReservoirFileEncoder.initAt(
+            std.testing.io,
+            variants_file,
+            vbr_config,
+            &variant_storage,
+            &variant_offsets,
+            audio_offset,
+        );
+    try std.testing.expectEqual(
+        audio_offset,
+        vbr_reservoir_writer.audio_offset,
+    );
+    try std.testing.expectEqual(
+        audio_offset,
+        try variants_file.length(std.testing.io),
+    );
+
+    try std.testing.expectError(
+        error.Mp3FileOffsetOverflow,
+        appendId3v1FileTail(
+            std.testing.io,
+            file,
+            std.math.maxInt(u64),
+            1,
+            &tail,
+        ),
+    );
+    try std.testing.expectEqual(
+        file_end,
+        try file.length(std.testing.io),
+    );
+
+    var failed_prefix = try temporary.dir.createFile(
+        std.testing.io,
+        "id3-prefix-retry.mp3",
+        .{ .read = true },
+    );
+    defer failed_prefix.close(std.testing.io);
+    var prefix_faults = Mp3FileFaults{
+        .fail_write_call = 1,
+        .partial_write_bytes = 4,
+    };
+    try std.testing.expectError(
+        error.InjectedMp3FileWriteFailure,
+        writeId3v2FilePrefixWithOperations(
+            std.testing.io,
+            failed_prefix,
+            &prefix,
+            prefix_faults.operations(),
+        ),
+    );
+    prefix_faults.fail_write_call = null;
+    try std.testing.expectEqual(
+        audio_offset,
+        try writeId3v2FilePrefixWithOperations(
+            std.testing.io,
+            failed_prefix,
+            &prefix,
+            prefix_faults.operations(),
+        ),
+    );
+    try std.testing.expectEqual(
+        audio_offset,
+        try failed_prefix.length(std.testing.io),
+    );
+
+    var tail_faults = Mp3FileFaults{
+        .fail_write_call = 1,
+        .partial_write_bytes = 7,
+    };
+    try std.testing.expectError(
+        error.InjectedMp3FileWriteFailure,
+        appendId3v1FileTailWithOperations(
+            std.testing.io,
+            file,
+            audio_offset,
+            summary.byte_count,
+            &tail,
+            tail_faults.operations(),
+        ),
+    );
+    try std.testing.expectEqual(
+        audio_end + 7,
+        try file.length(std.testing.io),
+    );
+    tail_faults.fail_write_call = null;
+    try std.testing.expectEqual(
+        file_end,
+        try appendId3v1FileTailWithOperations(
+            std.testing.io,
+            file,
+            audio_offset,
+            summary.byte_count,
+            &tail,
+            tail_faults.operations(),
+        ),
     );
 }

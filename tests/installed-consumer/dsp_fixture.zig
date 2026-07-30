@@ -3684,6 +3684,58 @@ test "installed package exposes bounded MP3 framing and seeking" {
         @as(?u12, @intCast(file_encoder_summary.encoder_delay)),
         metadata_summary.first_xing.?.encoder_delay,
     );
+    var tagged_file = try mp3_temporary.dir.createFile(
+        std.testing.io,
+        "public-tagged-encoder.mp3",
+        .{ .read = true },
+    );
+    defer tagged_file.close(std.testing.io);
+    const id3v2_prefix = [_]u8{
+        'I', 'D', '3', 4, 0, 0, 0, 0, 0, 0,
+    };
+    const tagged_audio_offset =
+        try plugin.dsp.writeMp3Id3v2FilePrefix(
+            std.testing.io,
+            tagged_file,
+            &id3v2_prefix,
+        );
+    var tagged_encoder = try plugin.dsp.Mp3PcmFileEncoder.initAt(
+        std.testing.io,
+        tagged_file,
+        .{ .channel_mode = .stereo },
+        &file_encoder_storage,
+        tagged_audio_offset,
+    );
+    try tagged_encoder.append(analysis_pcm);
+    const tagged_summary = try tagged_encoder.finalize();
+    var id3v1_tail: [128]u8 = @splat(0);
+    @memcpy(id3v1_tail[0..3], "TAG");
+    const tagged_file_bytes =
+        try plugin.dsp.appendMp3Id3v1FileTail(
+            std.testing.io,
+            tagged_file,
+            tagged_audio_offset,
+            tagged_summary.byte_count,
+            &id3v1_tail,
+        );
+    try std.testing.expectEqual(
+        tagged_file_bytes,
+        try tagged_file.length(std.testing.io),
+    );
+    const tagged_file_summary =
+        try plugin.dsp.Mp3FileReader.summarize(
+            std.testing.io,
+            tagged_file,
+            &metadata_frame_storage,
+        );
+    try std.testing.expectEqual(
+        tagged_audio_offset,
+        tagged_file_summary.audio_offset,
+    );
+    try std.testing.expectEqual(
+        tagged_summary.frame_count,
+        tagged_file_summary.frame_count,
+    );
     var reservoir_file = try mp3_temporary.dir.createFile(
         std.testing.io,
         "public-reservoir-encoder.mp3",
