@@ -3245,6 +3245,38 @@ pub fn build(b: *std.Build) void {
     );
     test_vorbis_interop.addFileArg(vorbis_interop_ogg);
 
+    const mp3_interop_fixture = b.addExecutable(.{
+        .name = "mp3-interop-fixture",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tools/mp3_interop_fixture.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    mp3_interop_fixture.root_module.addImport(
+        "zig-vst3-plugin",
+        zig_vst3_plugin,
+    );
+    const run_mp3_interop_fixture =
+        b.addRunArtifact(mp3_interop_fixture);
+    const mp3_interop_file =
+        run_mp3_interop_fixture.addOutputFileArg(
+            "mp3-interop.mp3",
+        );
+    const generate_mp3_interop_step = b.step(
+        "generate-mp3-interop-fixture",
+        "Generate a deterministic MP3 interoperability fixture",
+    );
+    generate_mp3_interop_step.dependOn(
+        &run_mp3_interop_fixture.step,
+    );
+    const test_mp3_interop = b.addSystemCommand(
+        &.{"scripts/test_mp3_encoder_interop.sh"},
+    );
+    test_mp3_interop.addFileArg(mp3_interop_file);
+
     const dsp_reference_renderer = b.addExecutable(.{
         .name = "dsp-reference-renderer",
         .root_module = b.createModule(.{
@@ -3354,6 +3386,12 @@ pub fn build(b: *std.Build) void {
         ).step,
     );
     test_step.dependOn(&test_vorbis_interop.step);
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_mp3_encoder_interop_runner.sh"},
+        ).step,
+    );
+    test_step.dependOn(&test_mp3_interop.step);
     test_step.dependOn(dsp_fixture_builds_step);
     test_step.dependOn(lv2_test_step);
 

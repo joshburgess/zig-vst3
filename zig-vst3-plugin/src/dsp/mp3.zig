@@ -699,6 +699,8 @@ pub const PcmFrame = struct {
 pub const AnalyzedEncoderChannel = struct {
     description: GranuleChannel = .{},
     spectrum: RequantizedSpectrum = .{},
+    intensity_positions: [39]u8 = @splat(0),
+    intensity_enabled: [39]bool = @splat(false),
 };
 
 pub const AnalyzedEncoderFrame = struct {
@@ -718,36 +720,194 @@ pub fn prepareEncoderStereo(
         if (header.version == .mpeg1) 2 else 1;
     if (channel_count != 2 or
         header.channel_mode != .joint_stereo or
-        header.mode_extension & 2 == 0)
+        header.mode_extension == 0)
         return analyzed;
 
     var result = analyzed;
     const scale: f32 = 1.0 / @sqrt(2.0);
+    const intensity = header.mode_extension & 1 != 0;
+    const mid_side = header.mode_extension & 2 != 0;
     for (0..granule_count) |granule| {
         const left = analyzed.granules[granule][0];
         const right = analyzed.granules[granule][1];
         if (!std.meta.eql(left.description, right.description))
             return error.InvalidMp3EncoderStereoBlocks;
-        for (
-            left.spectrum.lines,
-            right.spectrum.lines,
-            0..,
-        ) |left_line, right_line, line| {
+        for (left.spectrum.lines, right.spectrum.lines) |
+            left_line,
+            right_line,
+        | {
             if (!std.math.isFinite(left_line) or
                 !std.math.isFinite(right_line))
                 return error.InvalidMp3RequantizedSpectrum;
-            const middle = (left_line + right_line) * scale;
-            const side = (left_line - right_line) * scale;
-            if (!std.math.isFinite(middle) or
-                !std.math.isFinite(side))
-                return error.InvalidMp3EncoderStereoSpectrum;
-            result.granules[granule][0].spectrum.lines[line] =
-                middle;
-            result.granules[granule][1].spectrum.lines[line] =
-                side;
         }
+        var ordered = [2][576]f32{
+            try orderEncoderSpectrum(
+                header,
+                left.description,
+                left.spectrum,
+            ),
+            try orderEncoderSpectrum(
+                header,
+                right.description,
+                right.spectrum,
+            ),
+        };
+        const layout = try encoderBandLayout(
+            header,
+            right.description,
+        );
+        const intensity_start =
+            encoderIntensityStartBand(right.description, layout);
+        var intensity_description = right.description;
+        intensity_description.scalefac_compress =
+            if (header.version == .mpeg1) 13 else 358;
+        const intensity_widths = try encoderScaleFactorWidths(
+            header,
+            intensity_description,
+            true,
+        );
+        for (0..layout.band_count) |band| {
+            const start: usize = layout.starts[band];
+            const end: usize = layout.starts[band + 1];
+            if (intensity and band >= intensity_start) {
+                const position = try selectEncoderIntensityPosition(
+                    header,
+                    intensity_widths[band],
+                    ordered[0][start..end],
+                    ordered[1][start..end],
+                );
+                if (position) |selected| {
+                    const gains = encoderIntensityGains(
+                        header,
+                        selected,
+                    );
+                    for (
+                        ordered[0][start..end],
+                        ordered[1][start..end],
+                    ) |*left_line, *right_line| {
+                        const denominator =
+                            gains[0] * gains[0] +
+                            gains[1] * gains[1];
+                        const combined =
+                            (gains[0] * left_line.* +
+                                gains[1] * right_line.*) /
+                            denominator;
+                        if (!std.math.isFinite(combined))
+                            return error.InvalidMp3EncoderStereoSpectrum;
+                        left_line.* = combined;
+                        right_line.* = 0;
+                    }
+                    result.granules[granule][1]
+                        .intensity_positions[band] = selected;
+                    result.granules[granule][1]
+                        .intensity_enabled[band] = true;
+                    continue;
+                }
+                @memset(ordered[0][start..end], 0);
+                @memset(ordered[1][start..end], 0);
+                continue;
+            }
+            if (mid_side) {
+                for (
+                    ordered[0][start..end],
+                    ordered[1][start..end],
+                ) |*left_line, *right_line| {
+                    const middle =
+                        (left_line.* + right_line.*) * scale;
+                    const side =
+                        (left_line.* - right_line.*) * scale;
+                    if (!std.math.isFinite(middle) or
+                        !std.math.isFinite(side))
+                        return error.InvalidMp3EncoderStereoSpectrum;
+                    left_line.* = middle;
+                    right_line.* = side;
+                }
+            }
+        }
+        result.granules[granule][0].spectrum =
+            try restoreEncoderSpectrumOrder(
+                header,
+                left.description,
+                ordered[0],
+            );
+        result.granules[granule][1].spectrum =
+            try restoreEncoderSpectrumOrder(
+                header,
+                right.description,
+                ordered[1],
+            );
     }
     return result;
+}
+
+fn encoderIntensityStartBand(
+    description: GranuleChannel,
+    layout: EncoderBandLayout,
+) usize {
+    if (description.block_type != 2) return 14;
+    if (!description.mixed_block) return 24;
+    return layout.band_count - 15;
+}
+
+fn selectEncoderIntensityPosition(
+    header: Header,
+    width: u4,
+    left: []const f32,
+    right: []const f32,
+) !?u8 {
+    if (left.len != right.len)
+        return error.InvalidMp3ScaleFactorBands;
+    if (width == 0 and header.version != .mpeg1)
+        return null;
+    const maximum: u8 = if (width == 0)
+        0
+    else
+        @intCast((@as(u16, 1) << width) - 1);
+    const last_position: u8 = switch (header.version) {
+        .mpeg1 => @min(maximum, 6),
+        .mpeg2, .mpeg25 => @min(maximum - 1, 6),
+    };
+    var best_position: u8 = 0;
+    var best_error = std.math.inf(f64);
+    var position: u8 = 0;
+    while (position <= last_position) : (position += 1) {
+        const gains = encoderIntensityGains(header, position);
+        const denominator =
+            @as(f64, gains[0]) * gains[0] +
+            @as(f64, gains[1]) * gains[1];
+        var error_energy: f64 = 0;
+        for (left, right) |left_line, right_line| {
+            if (!std.math.isFinite(left_line) or
+                !std.math.isFinite(right_line))
+                return error.InvalidMp3RequantizedSpectrum;
+            const combined =
+                (@as(f64, gains[0]) * left_line +
+                    @as(f64, gains[1]) * right_line) /
+                denominator;
+            const left_error = combined * gains[0] - left_line;
+            const right_error = combined * gains[1] - right_line;
+            error_energy +=
+                left_error * left_error +
+                right_error * right_error;
+        }
+        if (!std.math.isFinite(error_energy))
+            return error.InvalidMp3EncoderStereoSpectrum;
+        if (error_energy < best_error) {
+            best_error = error_energy;
+            best_position = position;
+        }
+    }
+    return best_position;
+}
+
+fn encoderIntensityGains(
+    header: Header,
+    position: u8,
+) [2]f32 {
+    return switch (header.version) {
+        .mpeg1 => mpeg1IntensityGains(position),
+        .mpeg2, .mpeg25 => lsfIntensityGains(position, false),
+    };
 }
 
 fn validateAnalyzedEncoderFrame(
@@ -3751,9 +3911,9 @@ fn initPcmReservoirFileEncoder(
 const encoder_analysis_delay: u16 = 1057;
 
 fn validatePcmEncoderStereo(header: Header) !void {
-    if (header.channel_mode == .joint_stereo and
-        header.mode_extension & 1 != 0)
-        return error.UnsupportedMp3EncoderIntensityStereo;
+    if (header.channel_mode != .joint_stereo and
+        header.mode_extension != 0)
+        return error.InvalidMp3EncoderStereoMode;
 }
 
 fn quantizeEncoderChannel(
@@ -3803,7 +3963,7 @@ fn quantizeEncoderChannel(
         channel == 1;
     quantization_description.scalefac_compress =
         if (intensity_stereo)
-            0
+            if (header.version == .mpeg1) 13 else 358
         else if (header.version == .mpeg1)
             15
         else
@@ -3817,6 +3977,30 @@ fn quantizeEncoderChannel(
         header,
         quantization_description,
     );
+    for (
+        analyzed.intensity_enabled,
+        analyzed.intensity_positions,
+        0..,
+    ) |enabled, position, band| {
+        if (enabled) {
+            if (!intensity_stereo or band >= layout.band_count or
+                band >= factor_count and
+                    header.version != .mpeg1 or
+                factor_widths[band] != 0 and
+                    position >=
+                        (@as(u16, 1) << factor_widths[band]) or
+                header.version == .mpeg1 and position > 6 or
+                header.version != .mpeg1 and
+                    position ==
+                        (@as(u16, 1) << factor_widths[band]) - 1 or
+                containsNonzero(
+                    ordered[layout.starts[band]..layout.starts[band + 1]],
+                ))
+                return error.InvalidMp3EncoderIntensityStereo;
+        } else if (position != 0) {
+            return error.InvalidMp3EncoderIntensityStereo;
+        }
+    }
 
     var gain: u16 = 0;
     while (gain <= std.math.maxInt(u8)) : (gain += 1) {
@@ -3836,8 +4020,22 @@ fn quantizeEncoderChannel(
             else
                 0;
             var selected_factor: ?u8 = null;
-            var factor: u8 = 0;
-            while (factor <= maximum_factor) : (factor += 1) {
+            const first_factor: u8 =
+                if (analyzed.intensity_enabled[band])
+                    analyzed.intensity_positions[band]
+                else
+                    0;
+            const last_factor: u8 =
+                if (analyzed.intensity_enabled[band])
+                    first_factor
+                else
+                    maximum_factor;
+            if (first_factor > maximum_factor) {
+                fits_range = false;
+                break;
+            }
+            var factor = first_factor;
+            while (factor <= last_factor) : (factor += 1) {
                 const exponent = global_exponent -
                     0.5 * @as(f64, @floatFromInt(factor));
                 const attempt = quantizeEncoderBand(
@@ -3961,6 +4159,47 @@ fn orderEncoderSpectrum(
         }
     }
     if (destination != result.len)
+        return error.InvalidMp3ScaleFactorBands;
+    return result;
+}
+
+fn restoreEncoderSpectrumOrder(
+    header: Header,
+    description: GranuleChannel,
+    ordered: [576]f32,
+) !RequantizedSpectrum {
+    if (description.block_type != 2)
+        return .{ .lines = ordered };
+    const bands = try scaleFactorBands(header);
+    const short_boundary: usize = if (description.mixed_block)
+        3 * bands.short_starts[3]
+    else
+        0;
+    var result = RequantizedSpectrum{};
+    if (short_boundary != 0)
+        @memcpy(
+            result.lines[0..short_boundary],
+            ordered[0..short_boundary],
+        );
+    var source = short_boundary;
+    const first_band: usize =
+        if (description.mixed_block) 3 else 0;
+    for (first_band..13) |band| {
+        const width: usize =
+            bands.short_starts[band + 1] -
+            bands.short_starts[band];
+        for (0..3) |window| {
+            for (0..width) |offset| {
+                const destination =
+                    3 * (@as(usize, bands.short_starts[band]) +
+                        offset) +
+                    window;
+                result.lines[destination] = ordered[source];
+                source += 1;
+            }
+        }
+    }
+    if (source != ordered.len)
         return error.InvalidMp3ScaleFactorBands;
     return result;
 }
@@ -13195,6 +13434,184 @@ test "prepares MP3 mid-side encoder spectra transactionally" {
     );
 }
 
+test "prepares MP3 intensity stereo above the joint-stereo cutoff" {
+    var header = try Header.parse(
+        &testHeader(3, true, 11, 0, false, .joint_stereo),
+    );
+    header.mode_extension = 3;
+    const bands = try scaleFactorBands(header);
+    const intensity_line = bands.long_starts[14];
+    const gains = mpeg1IntensityGains(2);
+    var analyzed = AnalyzedEncoderFrame{
+        .channel_count = 2,
+        .granule_count = 2,
+    };
+    for (0..2) |granule| {
+        analyzed.granules[granule][0].spectrum.lines[0] = 3;
+        analyzed.granules[granule][1].spectrum.lines[0] = 1;
+        analyzed.granules[granule][0]
+            .spectrum.lines[intensity_line] = 2 * gains[0];
+        analyzed.granules[granule][1]
+            .spectrum.lines[intensity_line] = 2 * gains[1];
+    }
+
+    const prepared = try prepareEncoderStereo(header, analyzed);
+    try std.testing.expect(
+        prepared.granules[0][1].intensity_enabled[14],
+    );
+    try std.testing.expectEqual(
+        @as(u8, 2),
+        prepared.granules[0][1].intensity_positions[14],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0),
+        prepared.granules[0][1].spectrum.lines[intensity_line],
+    );
+
+    var factors: [2]ScaleFactorChannel =
+        @splat(.{ .value_count = 22 });
+    for (0..22) |band|
+        factors[1].values[band] =
+            prepared.granules[0][1].intensity_positions[band];
+    const restored = try processStereo(
+        header,
+        @splat(.{}),
+        factors,
+        .{
+            prepared.granules[0][0].spectrum,
+            prepared.granules[0][1].spectrum,
+        },
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 3),
+        restored.channels[0].lines[0],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1),
+        restored.channels[1].lines[0],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        2 * gains[0],
+        restored.channels[0].lines[intensity_line],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        2 * gains[1],
+        restored.channels[1].lines[intensity_line],
+        1e-6,
+    );
+
+    var malformed = prepared;
+    malformed.granules[0][1].intensity_positions[14] = 7;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderIntensityStereo,
+        EncoderQuantizer.quantize(header, malformed),
+    );
+    malformed = prepared;
+    malformed.granules[0][0].intensity_enabled[14] = true;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderIntensityStereo,
+        EncoderQuantizer.quantize(header, malformed),
+    );
+}
+
+test "prepares short and low-rate MP3 intensity stereo layouts" {
+    const header_bytes = [_][4]u8{
+        testHeader(3, true, 11, 0, false, .joint_stereo),
+        testHeader(2, true, 8, 0, false, .joint_stereo),
+        testHeader(0, true, 8, 0, false, .joint_stereo),
+    };
+    const descriptions = [_]GranuleChannel{
+        .{
+            .window_switching = true,
+            .block_type = 2,
+        },
+        .{
+            .window_switching = true,
+            .block_type = 2,
+            .mixed_block = true,
+        },
+    };
+    for (header_bytes) |bytes| {
+        var header = try Header.parse(&bytes);
+        header.mode_extension = 1;
+        const granule_count: u2 =
+            if (header.version == .mpeg1) 2 else 1;
+        const bands = try scaleFactorBands(header);
+        const line: usize = 3 * bands.short_starts[8];
+        const gains = encoderIntensityGains(header, 2);
+        for (descriptions) |description| {
+            const layout = try encoderBandLayout(
+                header,
+                description,
+            );
+            const factor_index =
+                encoderIntensityStartBand(description, layout);
+            var analyzed = AnalyzedEncoderFrame{
+                .channel_count = 2,
+                .granule_count = granule_count,
+            };
+            for (0..granule_count) |granule| {
+                analyzed.granules[granule][0].description =
+                    description;
+                analyzed.granules[granule][1].description =
+                    description;
+                analyzed.granules[granule][0]
+                    .spectrum.lines[line] = 2 * gains[0];
+                analyzed.granules[granule][1]
+                    .spectrum.lines[line] = 2 * gains[1];
+            }
+            const prepared =
+                try prepareEncoderStereo(header, analyzed);
+            try std.testing.expect(
+                prepared.granules[0][1]
+                    .intensity_enabled[factor_index],
+            );
+            try std.testing.expectEqual(
+                @as(u8, 2),
+                prepared.granules[0][1]
+                    .intensity_positions[factor_index],
+            );
+            try std.testing.expectEqual(
+                @as(f32, 0),
+                prepared.granules[0][1].spectrum.lines[line],
+            );
+
+            const factor_count =
+                scaleFactorValueCount(header, description);
+            var factors: [2]ScaleFactorChannel =
+                @splat(.{});
+            factors[0].value_count = factor_count;
+            factors[1].value_count = factor_count;
+            for (0..factor_count) |band|
+                factors[1].values[band] =
+                    prepared.granules[0][1]
+                        .intensity_positions[band];
+            const restored = try processStereo(
+                header,
+                @splat(description),
+                factors,
+                .{
+                    prepared.granules[0][0].spectrum,
+                    prepared.granules[0][1].spectrum,
+                },
+            );
+            try std.testing.expectApproxEqAbs(
+                2 * gains[0],
+                restored.channels[0].lines[line],
+                1e-6,
+            );
+            try std.testing.expectApproxEqAbs(
+                2 * gains[1],
+                restored.channels[1].lines[line],
+                1e-6,
+            );
+        }
+    }
+}
+
 test "analyzes bounded MP3 psychoacoustic bands" {
     const headers = [_]Header{
         try Header.parse(
@@ -13975,13 +14392,100 @@ test "encodes correlated PCM through MP3 mid-side stereo" {
     }
     try std.testing.expect(nonzero);
 
-    try std.testing.expectError(
-        error.UnsupportedMp3EncoderIntensityStereo,
-        PcmEncoder.init(.{
+    var intensity_encoder = try PcmEncoder.init(.{
+        .bitrate_kbps = 192,
+        .channel_mode = .joint_stereo,
+        .mode_extension = 1,
+    });
+    const intensity_bytes =
+        try intensity_encoder.encode(pcm, &storage);
+    const intensity_frame =
+        try Frame.parse(intensity_bytes, 0);
+    try std.testing.expectEqual(
+        @as(u2, 1),
+        intensity_frame.header.mode_extension,
+    );
+    var intensity_decoder = FrameDecoder{};
+    const intensity_decoded =
+        try intensity_decoder.decode(intensity_frame);
+    var intensity_nonzero = false;
+    for (
+        intensity_decoded.channels[0],
+        intensity_decoded.channels[1],
+    ) |left, right| {
+        try std.testing.expect(std.math.isFinite(left));
+        try std.testing.expect(std.math.isFinite(right));
+        intensity_nonzero =
+            intensity_nonzero or left != 0 or right != 0;
+    }
+    try std.testing.expect(intensity_nonzero);
+}
+
+test "encodes MP3 intensity stereo through VBR selection" {
+    var encoder = try VbrPcmEncoder.init(.{
+        .template = .{
             .channel_mode = .joint_stereo,
             .mode_extension = 1,
-        }),
+        },
+        .minimum_bitrate_index = 11,
+        .maximum_bitrate_index = 11,
+    });
+    var pcm = PcmFrame{
+        .channel_count = 2,
+        .sample_count = 1152,
+    };
+    for (0..1152) |index| {
+        const position: f32 = @floatFromInt(index);
+        pcm.channels[0][index] =
+            0.18 * @sin(position * 0.05);
+        pcm.channels[1][index] =
+            0.12 * @sin(position * 0.05 + 0.3);
+    }
+    var storage: [maximum_encoded_frame_bytes]u8 = undefined;
+    const selected = try encoder.encode(pcm, &storage);
+    try std.testing.expectEqual(@as(u4, 11), selected.bitrate_index);
+    try std.testing.expectEqual(
+        @as(u2, 1),
+        selected.header.mode_extension,
     );
+    try std.testing.expect(
+        std.math.isFinite(
+            selected.maximum_noise_to_mask_ratio,
+        ),
+    );
+}
+
+test "encodes low-rate MP3 intensity stereo through the decoder" {
+    var encoder = try PcmEncoder.init(.{
+        .version = .mpeg2,
+        .bitrate_kbps = 64,
+        .sample_rate = 22_050,
+        .channel_mode = .joint_stereo,
+        .mode_extension = 1,
+    });
+    var pcm = PcmFrame{
+        .channel_count = 2,
+        .sample_count = 576,
+    };
+    for (0..576) |index| {
+        const position: f32 = @floatFromInt(index);
+        pcm.channels[0][index] =
+            0.16 * @sin(position * 0.07);
+        pcm.channels[1][index] =
+            0.1 * @sin(position * 0.07 + 0.5);
+    }
+    var storage: [maximum_encoded_frame_bytes]u8 = undefined;
+    const bytes = try encoder.encode(pcm, &storage);
+    const frame = try Frame.parse(bytes, 0);
+    var decoder = FrameDecoder{};
+    const decoded = try decoder.decode(frame);
+    var nonzero = false;
+    for (decoded.channels[0], decoded.channels[1]) |left, right| {
+        try std.testing.expect(std.math.isFinite(left));
+        try std.testing.expect(std.math.isFinite(right));
+        nonzero = nonzero or left != 0 or right != 0;
+    }
+    try std.testing.expect(nonzero);
 }
 
 test "reuses MP3 main-data capacity across pending PCM frames" {
