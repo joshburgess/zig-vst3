@@ -3330,6 +3330,16 @@ test "installed package exposes bounded MP3 framing and seeking" {
     );
     try std.testing.expect(hybrid_samples.time_slots[0][0] != 0);
     hybrid.reset();
+    var polyphase = plugin.dsp.Mp3PolyphaseSynthesis{};
+    const pcm: plugin.dsp.Mp3PcmGranule =
+        try polyphase.process(hybrid_samples);
+    var pcm_nonzero = false;
+    for (pcm.samples) |sample| {
+        try std.testing.expect(std.math.isFinite(sample));
+        pcm_nonzero = pcm_nonzero or sample != 0;
+    }
+    try std.testing.expect(pcm_nonzero);
+    polyphase.reset();
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);

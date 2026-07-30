@@ -1,6 +1,8 @@
 const std = @import("std");
 const file_reader_io = @import("file_reader_io.zig");
 const huffman_tables = @import("mp3_huffman_tables.zig");
+const synthesis_window_quantized =
+    @import("mp3_synthesis_window.zig").values;
 
 pub const Version = enum {
     mpeg1,
@@ -181,6 +183,10 @@ pub const HybridSamples = struct {
     time_slots: [18][32]f32 = @splat(@splat(0)),
 };
 
+pub const PcmGranule = struct {
+    samples: [576]f32 = @splat(0),
+};
+
 pub const HybridSynthesis = struct {
     overlap: [32][18]f32 = @splat(@splat(0)),
 
@@ -233,6 +239,72 @@ pub const HybridSynthesis = struct {
             }
         }
         self.overlap = next_overlap;
+        return output;
+    }
+};
+
+pub const PolyphaseSynthesis = struct {
+    history: [1024]f64 = @splat(0),
+    head_block: u8 = 0,
+
+    pub fn reset(self: *PolyphaseSynthesis) void {
+        self.* = .{};
+    }
+
+    pub fn process(
+        self: *PolyphaseSynthesis,
+        hybrid: HybridSamples,
+    ) !PcmGranule {
+        if (self.head_block >= 16)
+            return error.InvalidMp3PolyphaseState;
+        for (self.history) |value| {
+            if (!std.math.isFinite(value))
+                return error.InvalidMp3PolyphaseState;
+        }
+        for (hybrid.time_slots) |time_slot| {
+            for (time_slot) |sample| {
+                if (!std.math.isFinite(sample))
+                    return error.InvalidMp3HybridSamples;
+            }
+        }
+
+        var next = self.*;
+        var output = PcmGranule{};
+        for (hybrid.time_slots, 0..) |time_slot, time| {
+            next.head_block =
+                (next.head_block + 15) & 15;
+            const head =
+                @as(usize, next.head_block) * 64;
+            for (synthesis_matrix, 0..) |row, index| {
+                var value: f64 = 0;
+                for (row, time_slot) |coefficient, sample|
+                    value += coefficient * sample;
+                if (!std.math.isFinite(value))
+                    return error.InvalidMp3PolyphaseSample;
+                next.history[head + index] = value;
+            }
+
+            for (0..32) |sample| {
+                var value: f64 = 0;
+                for (0..16) |phase| {
+                    const window_index = sample + 32 * phase;
+                    const group = window_index / 64;
+                    const offset = window_index % 64;
+                    const logical_index = group * 128 +
+                        if (offset < 32)
+                            offset
+                        else
+                            offset + 64;
+                    const history_index =
+                        (head + logical_index) % 1024;
+                    value += next.history[history_index] *
+                        synthesis_window[window_index];
+                }
+                output.samples[time * 32 + sample] =
+                    try checkedPolyphaseSample(value);
+            }
+        }
+        self.* = next;
         return output;
     }
 };
@@ -601,10 +673,36 @@ fn buildShortWindow() [12]f64 {
     return result;
 }
 
+fn buildSynthesisMatrix() [64][32]f64 {
+    @setEvalBranchQuota(4_096);
+    var result: [64][32]f64 = undefined;
+    for (0..64) |row| {
+        const row_value: f64 = @floatFromInt(16 + row);
+        for (0..32) |band| {
+            const band_value: f64 = @floatFromInt(2 * band + 1);
+            result[row][band] = @cos(
+                row_value * band_value * std.math.pi / 64.0,
+            );
+        }
+    }
+    return result;
+}
+
+fn buildSynthesisWindow() [512]f64 {
+    var result: [512]f64 = undefined;
+    for (synthesis_window_quantized, 0..) |value, index| {
+        result[index] =
+            @as(f64, @floatFromInt(value)) / 65_536.0;
+    }
+    return result;
+}
+
 const long_imdct = buildImdctMatrix(18);
 const short_imdct = buildImdctMatrix(6);
 const long_windows = buildLongWindows();
 const short_window = buildShortWindow();
+const synthesis_matrix = buildSynthesisMatrix();
+const synthesis_window = buildSynthesisWindow();
 
 fn synthesizeHybridBlock(
     description: GranuleChannel,
@@ -645,6 +743,14 @@ fn checkedHybridSample(value: f64) !f32 {
         value < -std.math.floatMax(f32) or
         value > std.math.floatMax(f32))
         return error.InvalidMp3HybridSample;
+    return @floatCast(value);
+}
+
+fn checkedPolyphaseSample(value: f64) !f32 {
+    if (!std.math.isFinite(value) or
+        value < -std.math.floatMax(f32) or
+        value > std.math.floatMax(f32))
+        return error.InvalidMp3PolyphaseSample;
     return @floatCast(value);
 }
 
@@ -2694,6 +2800,46 @@ fn byteRangesOverlap(
         second_length,
     ) catch std.math.maxInt(usize);
     return first_start < second_end and second_start < first_end;
+}
+
+fn referencePolyphaseTimeSlot(
+    history: *[1024]f64,
+    time_slot: *const [32]f32,
+) [32]f64 {
+    var index: usize = history.len;
+    while (index > 64) {
+        index -= 1;
+        history[index] = history[index - 64];
+    }
+    for (0..64) |row| {
+        const row_value: f64 = @floatFromInt(16 + row);
+        var value: f64 = 0;
+        for (time_slot, 0..) |sample, band| {
+            const band_value: f64 = @floatFromInt(2 * band + 1);
+            value += sample * @cos(
+                row_value * band_value * std.math.pi / 64.0,
+            );
+        }
+        history[row] = value;
+    }
+
+    var output: [32]f64 = @splat(0);
+    for (0..32) |sample| {
+        for (0..16) |phase| {
+            const window_index = sample + 32 * phase;
+            const group = window_index / 64;
+            const offset = window_index % 64;
+            const history_index = group * 128 +
+                if (offset < 32) offset else offset + 64;
+            const window_value =
+                @as(f64, @floatFromInt(
+                    synthesis_window_quantized[window_index],
+                )) / 65_536.0;
+            output[sample] +=
+                history[history_index] * window_value;
+        }
+    }
+    return output;
 }
 
 fn testHeader(
@@ -4861,6 +5007,130 @@ test "synthesizes short transition and mixed MP3 hybrid blocks" {
             .{},
         ),
     );
+}
+
+test "preserves the quantized MP3 synthesis window" {
+    try std.testing.expectEqual(
+        @as(usize, 512),
+        synthesis_window_quantized.len,
+    );
+    try std.testing.expectEqual(
+        @as(i32, 0),
+        synthesis_window_quantized[0],
+    );
+    try std.testing.expectEqual(
+        @as(i32, 213),
+        synthesis_window_quantized[64],
+    );
+    try std.testing.expectEqual(
+        @as(i32, 2037),
+        synthesis_window_quantized[128],
+    );
+    try std.testing.expectEqual(
+        @as(i32, 75_038),
+        synthesis_window_quantized[256],
+    );
+    try std.testing.expectEqual(
+        @as(i32, 1),
+        synthesis_window_quantized[511],
+    );
+}
+
+test "synthesizes MP3 polyphase PCM against a shift register" {
+    var hybrid = HybridSamples{};
+    for (&hybrid.time_slots, 0..) |*time_slot, time| {
+        for (time_slot, 0..) |*sample, band| {
+            const pattern: i16 =
+                @intCast((time * 17 + band * 13) % 29);
+            sample.* =
+                @as(f32, @floatFromInt(pattern - 14)) / 17.0;
+        }
+    }
+
+    var synthesis = PolyphaseSynthesis{};
+    var reference_history: [1024]f64 = @splat(0);
+    const first = try synthesis.process(hybrid);
+    for (&hybrid.time_slots, 0..) |*time_slot, time| {
+        const reference = referencePolyphaseTimeSlot(
+            &reference_history,
+            time_slot,
+        );
+        for (reference, 0..) |expected, sample| {
+            try std.testing.expectApproxEqAbs(
+                @as(f32, @floatCast(expected)),
+                first.samples[time * 32 + sample],
+                1e-5,
+            );
+        }
+    }
+
+    const second = try synthesis.process(.{});
+    const silence = [_]f32{0} ** 32;
+    for (0..18) |time| {
+        const reference = referencePolyphaseTimeSlot(
+            &reference_history,
+            &silence,
+        );
+        for (reference, 0..) |expected, sample| {
+            try std.testing.expectApproxEqAbs(
+                @as(f32, @floatCast(expected)),
+                second.samples[time * 32 + sample],
+                1e-5,
+            );
+        }
+    }
+
+    synthesis.reset();
+    try std.testing.expectEqual(
+        PolyphaseSynthesis{},
+        synthesis,
+    );
+    const zero = try synthesis.process(.{});
+    try std.testing.expectEqual(PcmGranule{}, zero);
+}
+
+test "rejects invalid MP3 polyphase input and state transactionally" {
+    var synthesis = PolyphaseSynthesis{};
+    var malformed = HybridSamples{};
+    malformed.time_slots[0][0] = std.math.nan(f32);
+    const initial = synthesis;
+    try std.testing.expectError(
+        error.InvalidMp3HybridSamples,
+        synthesis.process(malformed),
+    );
+    try std.testing.expectEqual(initial, synthesis);
+
+    synthesis.head_block = 16;
+    const bad_head = synthesis;
+    try std.testing.expectError(
+        error.InvalidMp3PolyphaseState,
+        synthesis.process(.{}),
+    );
+    try std.testing.expectEqual(bad_head, synthesis);
+
+    synthesis = .{};
+    synthesis.history[17] = std.math.inf(f64);
+    const bad_history = synthesis;
+    try std.testing.expectError(
+        error.InvalidMp3PolyphaseState,
+        synthesis.process(.{}),
+    );
+    try std.testing.expectEqual(bad_history, synthesis);
+
+    synthesis = .{};
+    var overflowing = HybridSamples{};
+    for (&overflowing.time_slots[0], 0..) |*sample, band| {
+        sample.* = if (synthesis_matrix[0][band] < 0)
+            -std.math.floatMax(f32)
+        else
+            std.math.floatMax(f32);
+    }
+    const before_overflow = synthesis;
+    try std.testing.expectError(
+        error.InvalidMp3PolyphaseSample,
+        synthesis.process(overflowing),
+    );
+    try std.testing.expectEqual(before_overflow, synthesis);
 }
 
 test "rejects inconsistent scale-factor bit ranges" {
