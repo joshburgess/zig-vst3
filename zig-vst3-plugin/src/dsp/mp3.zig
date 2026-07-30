@@ -157,6 +157,11 @@ pub const ScaleFactors = struct {
     bit_count: u16,
 };
 
+pub const ScaleFactorBands = struct {
+    long_starts: []const u16,
+    short_starts: []const u16,
+};
+
 pub fn MainDataReservoir(comptime capacity: usize) type {
     if (capacity < 511)
         @compileError("MP3 main-data reservoirs require at least 511 bytes");
@@ -331,6 +336,133 @@ pub fn decodeScaleFactors(
         return error.InvalidMp3MainDataLength;
     return result;
 }
+
+pub fn scaleFactorBands(header: Header) !ScaleFactorBands {
+    return switch (header.version) {
+        .mpeg1 => switch (header.sample_rate) {
+            48_000 => .{
+                .long_starts = &bands_48000_long,
+                .short_starts = &bands_48000_short,
+            },
+            44_100 => .{
+                .long_starts = &bands_44100_long,
+                .short_starts = &bands_44100_short,
+            },
+            32_000 => .{
+                .long_starts = &bands_32000_long,
+                .short_starts = &bands_32000_short,
+            },
+            else => error.InvalidMp3SampleRate,
+        },
+        .mpeg2 => switch (header.sample_rate) {
+            24_000 => .{
+                .long_starts = &bands_24000_long,
+                .short_starts = &bands_24000_short,
+            },
+            22_050 => .{
+                .long_starts = &bands_22050_long,
+                .short_starts = &bands_22050_short,
+            },
+            16_000 => .{
+                .long_starts = &bands_16000_long,
+                .short_starts = &bands_16000_short,
+            },
+            else => error.InvalidMp3SampleRate,
+        },
+        .mpeg25 => switch (header.sample_rate) {
+            12_000, 11_025 => .{
+                .long_starts = &bands_16000_long,
+                .short_starts = &bands_16000_short,
+            },
+            8_000 => .{
+                .long_starts = &bands_8000_long,
+                .short_starts = &bands_8000_short,
+            },
+            else => error.InvalidMp3SampleRate,
+        },
+    };
+}
+
+pub fn huffmanRegionEnds(
+    header: Header,
+    channel: GranuleChannel,
+) ![2]u16 {
+    const bands = try scaleFactorBands(header);
+    if (channel.block_type == 2) {
+        if (!channel.window_switching)
+            return error.InvalidMp3BlockType;
+        return .{
+            3 * bands.short_starts[3],
+            576,
+        };
+    }
+    const first_index =
+        @as(usize, channel.region0_count) + 1;
+    const second_index =
+        first_index + @as(usize, channel.region1_count) + 1;
+    if (first_index >= bands.long_starts.len or
+        second_index >= bands.long_starts.len)
+        return error.InvalidMp3RegionCounts;
+    return .{
+        bands.long_starts[first_index],
+        bands.long_starts[second_index],
+    };
+}
+
+fn buildBandStarts(comptime widths: anytype) [widths.len + 1]u16 {
+    var starts: [widths.len + 1]u16 = @splat(0);
+    for (widths, 0..) |width, index|
+        starts[index + 1] = starts[index] + width;
+    return starts;
+}
+
+const bands_48000_long = buildBandStarts([_]u16{
+    4,  4,  4,  4,  4,  4,  6,  6,  6,  8,  10,
+    12, 16, 18, 22, 28, 34, 40, 46, 54, 54, 192,
+});
+const bands_44100_long = buildBandStarts([_]u16{
+    4,  4,  4,  4,  4,  4,  6,  6,  8,  8,  10,
+    12, 16, 20, 24, 28, 34, 42, 50, 54, 76, 158,
+});
+const bands_32000_long = buildBandStarts([_]u16{
+    4,  4,  4,  4,  4,  4,  6,  6,  8,  10,  12,
+    16, 20, 24, 30, 38, 46, 56, 68, 84, 102, 26,
+});
+const bands_24000_long = buildBandStarts([_]u16{
+    6,  6,  6,  6,  6,  6,  8,  10, 12, 14, 16,
+    18, 22, 26, 32, 38, 46, 54, 62, 70, 76, 36,
+});
+const bands_22050_long = buildBandStarts([_]u16{
+    6,  6,  6,  6,  6,  6,  8,  10, 12, 14, 16,
+    20, 24, 28, 32, 38, 46, 52, 60, 68, 58, 54,
+});
+const bands_16000_long = bands_22050_long;
+const bands_8000_long = buildBandStarts([_]u16{
+    12, 12, 12, 12, 12, 12, 16, 20, 24, 28, 32,
+    40, 48, 56, 64, 76, 90, 2,  2,  2,  2,  2,
+});
+
+const bands_48000_short = buildBandStarts([_]u16{
+    4, 4, 4, 4, 6, 6, 10, 12, 14, 16, 20, 26, 66,
+});
+const bands_44100_short = buildBandStarts([_]u16{
+    4, 4, 4, 4, 6, 8, 10, 12, 14, 18, 22, 30, 56,
+});
+const bands_32000_short = buildBandStarts([_]u16{
+    4, 4, 4, 4, 6, 8, 12, 16, 20, 26, 34, 42, 12,
+});
+const bands_24000_short = buildBandStarts([_]u16{
+    4, 4, 4, 6, 8, 10, 12, 14, 18, 24, 32, 44, 12,
+});
+const bands_22050_short = buildBandStarts([_]u16{
+    4, 4, 4, 6, 6, 8, 10, 14, 18, 26, 32, 42, 18,
+});
+const bands_16000_short = buildBandStarts([_]u16{
+    4, 4, 4, 6, 8, 10, 12, 14, 18, 24, 30, 40, 18,
+});
+const bands_8000_short = buildBandStarts([_]u16{
+    8, 8, 8, 12, 16, 20, 24, 28, 36, 2, 2, 2, 26,
+});
 
 const mpeg1_scale_factor_lengths = [16][2]u3{
     .{ 0, 0 }, .{ 0, 1 }, .{ 0, 2 }, .{ 0, 3 },
@@ -2388,6 +2520,102 @@ test "covers low-sampling-frequency compression families and layouts" {
     );
     try std.testing.expectEqual(@as(u6, 33), mixed.value_count);
     try std.testing.expectEqual(@as(usize, 24), mixed_reader.bit_offset);
+}
+
+test "maps every Layer III sample rate to bounded spectral bands" {
+    const versions = [_]u2{ 3, 2, 0 };
+    for (versions) |version_bits| {
+        for (0..3) |rate_index| {
+            const header = try Header.parse(&testHeader(
+                version_bits,
+                true,
+                8,
+                @intCast(rate_index),
+                false,
+                .stereo,
+            ));
+            const bands = try scaleFactorBands(header);
+            try std.testing.expectEqual(
+                @as(usize, 23),
+                bands.long_starts.len,
+            );
+            try std.testing.expectEqual(
+                @as(usize, 14),
+                bands.short_starts.len,
+            );
+            try std.testing.expectEqual(
+                @as(u16, 0),
+                bands.long_starts[0],
+            );
+            try std.testing.expectEqual(
+                @as(u16, 576),
+                bands.long_starts[22],
+            );
+            try std.testing.expectEqual(
+                @as(u16, 192),
+                bands.short_starts[13],
+            );
+            for (bands.long_starts[0..22], bands.long_starts[1..23]) |
+                first,
+                second,
+            | try std.testing.expect(first < second);
+            for (
+                bands.short_starts[0..13],
+                bands.short_starts[1..14],
+            ) |first, second| try std.testing.expect(first < second);
+        }
+    }
+}
+
+test "plans long short and low-rate Huffman regions" {
+    const mpeg1 = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .stereo),
+    );
+    try std.testing.expectEqual(
+        [2]u16{ 36, 110 },
+        try huffmanRegionEnds(mpeg1, .{
+            .region0_count = 7,
+            .region1_count = 5,
+        }),
+    );
+    try std.testing.expectEqual(
+        [2]u16{ 36, 576 },
+        try huffmanRegionEnds(mpeg1, .{
+            .window_switching = true,
+            .block_type = 2,
+        }),
+    );
+
+    const mpeg25 = try Header.parse(
+        &testHeader(0, true, 8, 2, false, .stereo),
+    );
+    try std.testing.expectEqual(@as(u32, 8_000), mpeg25.sample_rate);
+    try std.testing.expectEqual(
+        [2]u16{ 72, 576 },
+        try huffmanRegionEnds(mpeg25, .{
+            .window_switching = true,
+            .block_type = 2,
+            .mixed_block = true,
+        }),
+    );
+
+    try std.testing.expectError(
+        error.InvalidMp3BlockType,
+        huffmanRegionEnds(mpeg1, .{ .block_type = 2 }),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3RegionCounts,
+        huffmanRegionEnds(mpeg1, .{
+            .region0_count = 15,
+            .region1_count = 15,
+        }),
+    );
+    var invalid_rate = mpeg1;
+    invalid_rate.sample_rate = 12_345;
+    try std.testing.expectError(
+        error.InvalidMp3SampleRate,
+        scaleFactorBands(invalid_rate),
+    );
 }
 
 test "rejects inconsistent scale-factor bit ranges" {
