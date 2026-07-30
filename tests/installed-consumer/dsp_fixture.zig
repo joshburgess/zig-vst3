@@ -5306,6 +5306,66 @@ test "installed package exposes bounded ADM HOA matrix decoding" {
     );
 }
 
+test "installed package generates ADM HOA loudspeaker matrices" {
+    const document = try plugin.dsp.AdmXmlDocument.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00041001">
+        \\    <audioBlockFormatHoa audioBlockFormatID="AB_00041001_00000001">
+        \\      <order>0</order><degree>0</degree>
+        \\      <normalization>SN3D</normalization>
+        \\    </audioBlockFormatHoa>
+        \\  </audioChannelFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00041002">
+        \\    <audioBlockFormatHoa audioBlockFormatID="AB_00041002_00000001">
+        \\      <order>1</order><degree>0</degree>
+        \\      <normalization>SN3D</normalization>
+        \\    </audioBlockFormatHoa>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var iterator = document.blocks();
+    const blocks = [_]plugin.dsp.AdmXmlBlockFormat{
+        (try iterator.next()).?,
+        (try iterator.next()).?,
+    };
+    const loudspeakers = [_]plugin.dsp.AdmHoaLoudspeaker{
+        .{ .azimuth_degrees = 0.0, .elevation_degrees = 45.0 },
+        .{ .azimuth_degrees = 180.0, .elevation_degrees = -45.0 },
+    };
+    const Matrix = plugin.dsp.AdmHoaLoudspeakerMatrix(f32, 2, 2);
+    const generated = try Matrix.init(
+        &blocks,
+        &loudspeakers,
+        plugin.dsp.AdmHoaMatrixGenerationOptions{
+            .order_weighting = plugin.dsp.AdmHoaOrderWeighting.basic,
+        },
+    );
+    const decoder = try generated.decoder(&blocks);
+    var output: [2]f32 = undefined;
+    try decoder.processSample(&.{ 1.0, 0.0 }, &output);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.5),
+        output[0],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.5),
+        output[1],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        try plugin.dsp.evaluateAdmHoaBasis(
+            .sn3d,
+            1,
+            1,
+            0.0,
+            0.0,
+        ),
+        1.0e-14,
+    );
+}
+
 test "installed package exposes ADM binaural stereo mixing" {
     const document = try plugin.dsp.AdmXmlDocument.init(
         \\<audioFormatExtended>

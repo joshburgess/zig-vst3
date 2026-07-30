@@ -5,6 +5,7 @@ pub const adm_diffuse = @import("dsp/adm_diffuse.zig");
 pub const adm_direct_speaker_mapping =
     @import("dsp/adm_direct_speaker_mapping.zig");
 pub const adm_hoa_decoder = @import("dsp/adm_hoa_decoder.zig");
+pub const adm_hoa_matrix = @import("dsp/adm_hoa_matrix.zig");
 pub const adm_render = @import("dsp/adm_render.zig");
 pub const adm_time = @import("dsp/adm_time.zig");
 pub const adm_xml = @import("dsp/adm_xml.zig");
@@ -151,6 +152,14 @@ pub const AdmMatrixVariablePoint = adm_render.MatrixVariablePoint;
 pub const AdmMatrixVariableTimeline =
     adm_render.MatrixVariableTimeline;
 pub const AdmHoaMatrixDecoder = adm_hoa_decoder.MatrixDecoder;
+pub const AdmHoaLoudspeakerMatrix =
+    adm_hoa_matrix.LoudspeakerMatrix;
+pub const AdmHoaLoudspeaker = adm_hoa_matrix.Loudspeaker;
+pub const AdmHoaOrderWeighting = adm_hoa_matrix.OrderWeighting;
+pub const AdmHoaMatrixGenerationOptions =
+    adm_hoa_matrix.GenerationOptions;
+pub const evaluateAdmHoaBasis =
+    adm_hoa_matrix.realSphericalHarmonic;
 pub const maximum_supported_adm_hoa_order =
     adm_hoa_decoder.maximum_supported_order;
 pub const AdmBinauralStereoMixer = adm_binaural.StereoMixer;
@@ -980,6 +989,7 @@ test {
     _ = adm_binaural;
     _ = adm_render;
     _ = adm_hoa_decoder;
+    _ = adm_hoa_matrix;
     _ = adm_diffuse;
     _ = adm_direct_speaker_mapping;
     _ = audio_block;

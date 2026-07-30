@@ -83,6 +83,8 @@ Complementary-object topology, programme inclusion, source-type consistency, der
 
 The dated 2026-07-30 variable Matrix gate supersedes the older Matrix gap statements above. A separate opt-in mixer binds named metadata variables to bounded absolute-sample control lanes for linear gain, phase degrees, and delay milliseconds. Lanes use held or linear interpolation and preserve exact sample offsets beyond floating-point integer precision. Delay endpoints retain the standards-conformant nearest-sample rule, with fractional interpolation between endpoints. Phase rotation uses a caller-designed antisymmetric quadrature FIR, aligns every Matrix term to its group delay, and reports that latency. The constant-gain and integer-delay mixer remains unchanged for the renderer-standard path. HOA loudspeaker-matrix generation, HRTF synthesis, external renderer comparison, and audition remain incomplete.
 
+The dated 2026-07-30 HOA generator gate supersedes the loudspeaker-matrix gap statements above. A bounded non-realtime generator evaluates the declared real N3D, SN3D, or order-three FuMa components at caller-defined full-sphere speaker directions and computes a minimum-norm SVD pseudoinverse. Basic and max-rE order weights are available. Rank, condition number, exact component binding, duplicate-direction rejection, LFE silence, and direct construction of the existing realtime matrix decoder are covered. Near-field radial filtering, screen-referenced HOA, HRTF synthesis, independent renderer comparison, and physical loudspeaker audition remain incomplete.
+
 ## Recommended Order
 
 The most valuable capability sequence for plugin authors is:
