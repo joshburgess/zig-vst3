@@ -99,6 +99,37 @@ pub const Header = struct {
     }
 };
 
+pub const GranuleChannel = struct {
+    part2_3_length: u12 = 0,
+    big_values: u9 = 0,
+    global_gain: u8 = 0,
+    scalefac_compress: u9 = 0,
+    window_switching: bool = false,
+    block_type: u2 = 0,
+    mixed_block: bool = false,
+    table_select: [3]u5 = @splat(0),
+    subblock_gain: [3]u3 = @splat(0),
+    region0_count: u4 = 0,
+    region1_count: u4 = 0,
+    preflag: bool = false,
+    scalefac_scale: bool = false,
+    count1_table_select: bool = false,
+};
+
+pub const Granule = struct {
+    channels: [2]GranuleChannel = @splat(.{}),
+};
+
+pub const SideInformation = struct {
+    channel_count: u2,
+    granule_count: u2,
+    main_data_begin: u9,
+    private_bits: u5,
+    scfsi: [2]u4 = @splat(0),
+    granules: [2]Granule = @splat(.{}),
+    main_data_bits: u16,
+};
+
 pub const XingKind = enum {
     variable,
     constant,
@@ -192,6 +223,11 @@ pub const Frame = struct {
     pub fn crcValid(self: Frame) !?bool {
         return frameCrcValid(self.bytes, self.header);
     }
+
+    /// Parse the complete fixed side-information region.
+    pub fn sideInformation(self: Frame) !SideInformation {
+        return parseSideInformation(self.bytes, self.header);
+    }
 };
 
 pub const Summary = struct {
@@ -226,6 +262,11 @@ pub const FileFrame = struct {
     /// Return null when the frame does not carry a CRC.
     pub fn crcValid(self: FileFrame) !?bool {
         return frameCrcValid(self.bytes, self.header);
+    }
+
+    /// Parse the complete fixed side-information region.
+    pub fn sideInformation(self: FileFrame) !SideInformation {
+        return parseSideInformation(self.bytes, self.header);
     }
 };
 
@@ -807,6 +848,139 @@ fn crc16(initial: u16, bytes: []const u8) u16 {
     return crc;
 }
 
+fn parseSideInformation(
+    bytes: []const u8,
+    header: Header,
+) !SideInformation {
+    const offset: usize = if (header.crc_present) 6 else 4;
+    const size: usize = header.sideInformationBytes();
+    if (bytes.len < offset or size > bytes.len - offset)
+        return error.TruncatedMp3SideInformation;
+    var reader = BitReader{
+        .bytes = bytes[offset..][0..size],
+    };
+    const channel_count: u2 = @intCast(header.channels());
+    const granule_count: u2 =
+        if (header.version == .mpeg1) 2 else 1;
+    var result = SideInformation{
+        .channel_count = channel_count,
+        .granule_count = granule_count,
+        .main_data_begin = @intCast(try reader.read(
+            if (header.version == .mpeg1) 9 else 8,
+        )),
+        .private_bits = @intCast(try reader.read(
+            switch (header.version) {
+                .mpeg1 => if (channel_count == 1) 5 else 3,
+                .mpeg2, .mpeg25 => if (channel_count == 1) 1 else 2,
+            },
+        )),
+        .main_data_bits = 0,
+    };
+    if (header.version == .mpeg1) {
+        for (0..channel_count) |channel|
+            result.scfsi[channel] =
+                @intCast(try reader.read(4));
+    }
+    for (0..granule_count) |granule| {
+        for (0..channel_count) |channel| {
+            const parsed = try parseGranuleChannel(
+                &reader,
+                header.version,
+            );
+            result.main_data_bits = std.math.add(
+                u16,
+                result.main_data_bits,
+                parsed.part2_3_length,
+            ) catch return error.Mp3MainDataBitCountOverflow;
+            result.granules[granule].channels[channel] = parsed;
+        }
+    }
+    if (reader.remainingBits() != 0)
+        return error.InvalidMp3SideInformation;
+    return result;
+}
+
+fn parseGranuleChannel(
+    reader: *BitReader,
+    version: Version,
+) !GranuleChannel {
+    var result = GranuleChannel{
+        .part2_3_length = @intCast(try reader.read(12)),
+        .big_values = @intCast(try reader.read(9)),
+        .global_gain = @intCast(try reader.read(8)),
+        .scalefac_compress = @intCast(try reader.read(
+            if (version == .mpeg1) 4 else 9,
+        )),
+        .window_switching = try reader.read(1) != 0,
+    };
+    if (result.big_values > 288)
+        return error.InvalidMp3BigValues;
+    if (result.window_switching) {
+        result.block_type = @intCast(try reader.read(2));
+        if (result.block_type == 0)
+            return error.InvalidMp3BlockType;
+        result.mixed_block = try reader.read(1) != 0;
+        result.table_select[0] =
+            @intCast(try reader.read(5));
+        result.table_select[1] =
+            @intCast(try reader.read(5));
+        for (&result.subblock_gain) |*gain|
+            gain.* = @intCast(try reader.read(3));
+        result.region0_count =
+            if (result.block_type == 2 and !result.mixed_block)
+                8
+            else
+                7;
+        result.region1_count =
+            @intCast(20 - @as(u8, result.region0_count));
+    } else {
+        for (&result.table_select) |*table|
+            table.* = @intCast(try reader.read(5));
+        result.region0_count =
+            @intCast(try reader.read(4));
+        result.region1_count =
+            @intCast(try reader.read(3));
+        if (@as(u8, result.region0_count) +
+            result.region1_count > 20)
+            return error.InvalidMp3RegionCounts;
+    }
+    if (version == .mpeg1)
+        result.preflag = try reader.read(1) != 0;
+    result.scalefac_scale = try reader.read(1) != 0;
+    result.count1_table_select = try reader.read(1) != 0;
+    const table_count: usize =
+        if (result.window_switching) 2 else 3;
+    for (result.table_select[0..table_count]) |table| {
+        if (table == 4 or table == 14)
+            return error.InvalidMp3HuffmanTable;
+    }
+    return result;
+}
+
+const BitReader = struct {
+    bytes: []const u8,
+    bit_offset: usize = 0,
+
+    fn read(self: *@This(), bit_count: u5) !u16 {
+        if (bit_count > 16 or
+            bit_count > self.remainingBits())
+            return error.TruncatedMp3SideInformation;
+        var value: u16 = 0;
+        for (0..bit_count) |_| {
+            const byte = self.bytes[self.bit_offset / 8];
+            const shift: u3 =
+                @intCast(7 - self.bit_offset % 8);
+            value = (value << 1) | ((byte >> shift) & 1);
+            self.bit_offset += 1;
+        }
+        return value;
+    }
+
+    fn remainingBits(self: @This()) usize {
+        return self.bytes.len * 8 - self.bit_offset;
+    }
+};
+
 pub fn requiredFileSeekPoints(
     io: std.Io,
     file: std.Io.File,
@@ -1121,6 +1295,25 @@ fn testHeader(
     };
 }
 
+fn setTestBits(
+    destination: []u8,
+    bit_offset: usize,
+    bit_count: u5,
+    value: u16,
+) void {
+    for (0..bit_count) |index| {
+        const destination_bit = bit_offset + index;
+        const mask: u8 =
+            @as(u8, 1) << @intCast(7 - destination_bit % 8);
+        const source_shift: u4 =
+            @intCast(bit_count - 1 - index);
+        if (value >> source_shift & 1 != 0)
+            destination[destination_bit / 8] |= mask
+        else
+            destination[destination_bit / 8] &= ~mask;
+    }
+}
+
 fn appendFrame(
     destination: []u8,
     offset: usize,
@@ -1287,6 +1480,135 @@ test "validates protected Layer III header and side information" {
         @as(?bool, true),
         try (try Frame.parse(encoded[0..mpeg25_end], 0)).crcValid(),
     );
+}
+
+test "parses bounded Layer III side information" {
+    const header_bytes =
+        testHeader(3, true, 9, 0, false, .stereo);
+    var encoded: [500]u8 = undefined;
+    const frame_end = try appendFrame(&encoded, 0, header_bytes);
+    const side = encoded[4..36];
+    setTestBits(side, 0, 9, 17);
+    setTestBits(side, 9, 3, 5);
+    setTestBits(side, 12, 4, 0xa);
+    setTestBits(side, 16, 4, 0x3);
+    setTestBits(side, 20, 12, 321);
+    setTestBits(side, 32, 9, 144);
+    setTestBits(side, 41, 8, 200);
+    setTestBits(side, 49, 4, 9);
+    setTestBits(side, 53, 1, 1);
+    setTestBits(side, 54, 2, 2);
+    setTestBits(side, 57, 5, 7);
+    setTestBits(side, 62, 5, 8);
+    setTestBits(side, 67, 3, 1);
+    setTestBits(side, 70, 3, 2);
+    setTestBits(side, 73, 3, 3);
+    setTestBits(side, 76, 1, 1);
+    setTestBits(side, 78, 1, 1);
+
+    const frame = try Frame.parse(encoded[0..frame_end], 0);
+    const parsed = try frame.sideInformation();
+    try std.testing.expectEqual(@as(u2, 2), parsed.channel_count);
+    try std.testing.expectEqual(@as(u2, 2), parsed.granule_count);
+    try std.testing.expectEqual(@as(u9, 17), parsed.main_data_begin);
+    try std.testing.expectEqual(@as(u5, 5), parsed.private_bits);
+    try std.testing.expectEqual(@as(u4, 0xa), parsed.scfsi[0]);
+    try std.testing.expectEqual(@as(u4, 0x3), parsed.scfsi[1]);
+    try std.testing.expectEqual(@as(u16, 321), parsed.main_data_bits);
+    const channel = parsed.granules[0].channels[0];
+    try std.testing.expectEqual(@as(u12, 321), channel.part2_3_length);
+    try std.testing.expectEqual(@as(u9, 144), channel.big_values);
+    try std.testing.expectEqual(@as(u8, 200), channel.global_gain);
+    try std.testing.expectEqual(@as(u9, 9), channel.scalefac_compress);
+    try std.testing.expect(channel.window_switching);
+    try std.testing.expectEqual(@as(u2, 2), channel.block_type);
+    try std.testing.expect(!channel.mixed_block);
+    try std.testing.expectEqual([3]u5{ 7, 8, 0 }, channel.table_select);
+    try std.testing.expectEqual([3]u3{ 1, 2, 3 }, channel.subblock_gain);
+    try std.testing.expectEqual(@as(u4, 8), channel.region0_count);
+    try std.testing.expectEqual(@as(u4, 12), channel.region1_count);
+    try std.testing.expect(channel.preflag);
+    try std.testing.expect(!channel.scalefac_scale);
+    try std.testing.expect(channel.count1_table_select);
+
+    const file_frame = FileFrame{
+        .byte_offset = 0,
+        .bytes = frame.bytes,
+        .header = frame.header,
+        .xing = frame.xing,
+        .vbri = frame.vbri,
+    };
+    try std.testing.expectEqual(
+        parsed,
+        try file_frame.sideInformation(),
+    );
+}
+
+test "rejects malformed Layer III side information" {
+    const header_bytes =
+        testHeader(3, true, 9, 0, false, .stereo);
+    var encoded: [500]u8 = undefined;
+    const frame_end = try appendFrame(&encoded, 0, header_bytes);
+    const side = encoded[4..36];
+    setTestBits(side, 32, 9, 289);
+    var frame = try Frame.parse(encoded[0..frame_end], 0);
+    try std.testing.expectError(
+        error.InvalidMp3BigValues,
+        frame.sideInformation(),
+    );
+
+    @memset(side, 0);
+    setTestBits(side, 53, 1, 1);
+    frame = try Frame.parse(encoded[0..frame_end], 0);
+    try std.testing.expectError(
+        error.InvalidMp3BlockType,
+        frame.sideInformation(),
+    );
+
+    @memset(side, 0);
+    setTestBits(side, 54, 5, 14);
+    frame = try Frame.parse(encoded[0..frame_end], 0);
+    try std.testing.expectError(
+        error.InvalidMp3HuffmanTable,
+        frame.sideInformation(),
+    );
+
+    @memset(side, 0);
+    setTestBits(side, 69, 4, 15);
+    setTestBits(side, 73, 3, 7);
+    frame = try Frame.parse(encoded[0..frame_end], 0);
+    try std.testing.expectError(
+        error.InvalidMp3RegionCounts,
+        frame.sideInformation(),
+    );
+
+    const parsed_header = try Header.parse(&header_bytes);
+    const truncated = Frame{
+        .offset = 0,
+        .bytes = encoded[0..35],
+        .header = parsed_header,
+        .xing = null,
+        .vbri = null,
+    };
+    try std.testing.expectError(
+        error.TruncatedMp3SideInformation,
+        truncated.sideInformation(),
+    );
+
+    const mpeg2_header =
+        testHeader(2, true, 8, 0, false, .stereo);
+    const mpeg2_end = try appendFrame(
+        &encoded,
+        0,
+        mpeg2_header,
+    );
+    const mpeg2 = try (try Frame.parse(
+        encoded[0..mpeg2_end],
+        0,
+    )).sideInformation();
+    try std.testing.expectEqual(@as(u2, 1), mpeg2.granule_count);
+    try std.testing.expectEqual(@as(u2, 2), mpeg2.channel_count);
+    try std.testing.expectEqual(@as(u16, 0), mpeg2.main_data_bits);
 }
 
 test "rejects malformed and unsupported MPEG headers" {

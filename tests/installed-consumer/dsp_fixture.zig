@@ -3201,6 +3201,13 @@ test "installed package exposes bounded MP3 framing and seeking" {
         @as(?bool, true),
         try (try plugin.dsp.Mp3Frame.parse(&protected, 0)).crcValid(),
     );
+    const protected_side: plugin.dsp.Mp3SideInformation =
+        try (try plugin.dsp.Mp3Frame.parse(
+            &protected,
+            0,
+        )).sideInformation();
+    try std.testing.expectEqual(@as(u2, 2), protected_side.channel_count);
+    try std.testing.expectEqual(@as(u2, 2), protected_side.granule_count);
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);
