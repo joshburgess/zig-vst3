@@ -76,6 +76,11 @@ typedef struct {
 } LV2_URID_Map;
 
 typedef struct {
+	void* handle;
+	const char* (*unmap)(void*, LV2_URID);
+} LV2_URID_Unmap;
+
+typedef struct {
 	uint32_t size;
 	uint32_t type;
 } LV2_Atom;
@@ -424,6 +429,10 @@ int main(void)
 		sizeof(LV2_Atom_URID),
 		_Alignof(LV2_Atom_URID),
 		offsetof(LV2_Atom_URID, body),
+		sizeof(LV2_URID_Unmap),
+		_Alignof(LV2_URID_Unmap),
+		offsetof(LV2_URID_Unmap, handle),
+		offsetof(LV2_URID_Unmap, unmap),
 	};
 	const size_t count = sizeof(expected) / sizeof(expected[0]);
 	for (size_t index = 0; index < count; ++index) {

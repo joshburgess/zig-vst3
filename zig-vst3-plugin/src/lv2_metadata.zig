@@ -74,6 +74,9 @@ pub fn Generator(
     const requires_state_make_path =
         @hasDecl(Adapter, "state_make_path_required") and
         Adapter.state_make_path_required;
+    const requires_urid_unmap =
+        @hasDecl(Adapter, "urid_unmap_required") and
+        Adapter.urid_unmap_required;
     const has_patch =
         @hasDecl(Adapter, "patch_enabled") and Adapter.patch_enabled;
     const has_readable_patch =
@@ -186,6 +189,8 @@ pub fn Generator(
             try writer.writeAll(
                 " ;\n    lv2:requiredFeature urid:map",
             );
+            if (requires_urid_unmap)
+                try writer.writeAll(" , urid:unmap");
             if (has_portable_state_paths)
                 try writer.writeAll(" , state:mapPath , state:freePath");
             if (requires_state_make_path)
@@ -1175,6 +1180,7 @@ test "LV2 metadata generator writes ports workers and presets" {
         pub const programs_enabled = true;
         pub const portable_state_paths_enabled = true;
         pub const state_make_path_required = true;
+        pub const urid_unmap_required = true;
         pub const patch_enabled = true;
         pub const patch_readable = true;
         pub const patch_writable = true;
@@ -1236,6 +1242,13 @@ test "LV2 metadata generator writes ports workers and presets" {
     );
     try std.testing.expect(
         std.mem.indexOf(u8, plugin, "pgm:Interface") != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "lv2:requiredFeature urid:map , urid:unmap",
+        ) != null,
     );
     try std.testing.expect(
         std.mem.indexOf(

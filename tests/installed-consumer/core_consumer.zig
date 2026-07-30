@@ -782,6 +782,7 @@ test "installed core package runs an LV2 audio control descriptor" {
         pub const vendor = "zig-vst3";
         pub const audio_input_layout: core.plugin.AudioBusLayout = .mono;
         pub const audio_output_layout: core.plugin.AudioBusLayout = .mono;
+        pub const lv2_urid_unmap_required = true;
         pub const Params = struct {
             gain: core.parameters.FloatParam = .{
                 .id = 0,
@@ -803,6 +804,15 @@ test "installed core package runs an LV2 audio control descriptor" {
                 }},
             }},
         };
+
+        urid_unmap: ?*const core.lv2.UridUnmap = null,
+
+        pub fn bindLv2UridUnmap(
+            self: *@This(),
+            unmap: *const core.lv2.UridUnmap,
+        ) void {
+            self.urid_unmap = unmap;
+        }
 
         pub fn processWithParameterView(
             _: *@This(),
@@ -840,8 +850,30 @@ test "installed core package runs an LV2 audio control descriptor" {
         .URI = core.lv2.urid_map_uri,
         .data = &urid_map,
     };
+    const UnmapHost = struct {
+        fn unmap(
+            _: ?*anyopaque,
+            urid: core.lv2.Urid,
+        ) callconv(.c) ?[*:0]const u8 {
+            return if (urid == 7)
+                "https://example.test/installed-known"
+            else
+                null;
+        }
+    };
+    var urid_unmap = core.lv2.UridUnmap{
+        .handle = null,
+        .unmap = UnmapHost.unmap,
+    };
+    var unmap_feature = core.lv2.Feature{
+        .URI = core.lv2.urid_unmap_uri,
+        .data = &urid_unmap,
+    };
     const features =
-        [_:null]?*const core.lv2.Feature{&map_feature};
+        [_:null]?*const core.lv2.Feature{
+            &map_feature,
+            &unmap_feature,
+        };
     const descriptor = Adapter.descriptorAt(0) orelse
         return error.MissingLv2Descriptor;
     const handle = descriptor.instantiate(
@@ -851,6 +883,19 @@ test "installed core package runs an LV2 audio control descriptor" {
         features[0..].ptr,
     ) orelse return error.Lv2InstantiateFailed;
     defer descriptor.cleanup(handle);
+    const adapter_instance = Adapter.instanceFromHandle(handle) orelse
+        return error.MissingLv2Instance;
+    const bound_unmap =
+        adapter_instance.runtime.instance.plugin.urid_unmap orelse
+        return error.MissingLv2UridUnmap;
+    const known_uri = bound_unmap.unmap(
+        bound_unmap.handle,
+        7,
+    ) orelse return error.MissingLv2KnownUri;
+    try std.testing.expectEqualStrings(
+        "https://example.test/installed-known",
+        std.mem.span(known_uri),
+    );
 
     const input = [_]f32{ 0.25, -0.5 };
     var output = [_]f32{0.0} ** input.len;
@@ -937,6 +982,13 @@ test "installed core package runs an LV2 audio control descriptor" {
             u8,
             metadata_writer.buffered(),
             "lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            metadata_writer.buffered(),
+            "lv2:requiredFeature urid:map , urid:unmap",
         ) != null,
     );
     try std.testing.expect(

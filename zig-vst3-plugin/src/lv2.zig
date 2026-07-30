@@ -12,6 +12,8 @@ pub const hard_rt_capable_uri =
     "http://lv2plug.in/ns/lv2core#hardRTCapable";
 pub const urid_map_uri =
     "http://lv2plug.in/ns/ext/urid#map";
+pub const urid_unmap_uri =
+    "http://lv2plug.in/ns/ext/urid#unmap";
 pub const options_options_uri =
     "http://lv2plug.in/ns/ext/options#options";
 pub const options_interface_uri =
@@ -115,6 +117,14 @@ pub const UridMap = extern struct {
         handle: ?*anyopaque,
         URI: [*:0]const u8,
     ) callconv(.c) Urid,
+};
+
+pub const UridUnmap = extern struct {
+    handle: ?*anyopaque,
+    unmap: *const fn (
+        handle: ?*anyopaque,
+        urid: Urid,
+    ) callconv(.c) ?[*:0]const u8,
 };
 
 pub const Atom = extern struct {
@@ -624,6 +634,18 @@ pub fn CoreAdapterWithParameters(
         @compileError(
             "LV2 freewheeling requires allow_dynamic_process_mode",
         );
+    const requires_lv2_urid_unmap =
+        @hasDecl(Plugin, "lv2_urid_unmap_required") and
+        Plugin.lv2_urid_unmap_required;
+    const declares_lv2_urid_unmap_binding = @hasDecl(
+        Plugin,
+        "bindLv2UridUnmap",
+    );
+    if (requires_lv2_urid_unmap !=
+        declares_lv2_urid_unmap_binding)
+        @compileError(
+            "LV2 URID unmap support requires lv2_urid_unmap_required and bindLv2UridUnmap",
+        );
     const declares_component_state_size = @hasDecl(
         Plugin,
         "component_state_maximum_encoded_size",
@@ -867,6 +889,8 @@ pub fn CoreAdapterWithParameters(
             has_lv2_component_state_paths;
         pub const state_make_path_required =
             requires_lv2_state_make_path;
+        pub const urid_unmap_required =
+            requires_lv2_urid_unmap;
         pub const patch_enabled = has_patch_properties;
         pub const patch_readable = has_readable_patch_properties;
         pub const patch_writable = has_writable_patch_properties;
@@ -1040,6 +1064,18 @@ pub fn CoreAdapterWithParameters(
                 },
                 .sample_rate = sample_rate,
             };
+            if (comptime requires_lv2_urid_unmap) {
+                const unmap = featureStruct(
+                    UridUnmap,
+                    features,
+                    urid_unmap_uri,
+                ) orelse {
+                    self.runtime.deinit();
+                    allocator.destroy(self);
+                    return null;
+                };
+                self.runtime.instance.plugin.bindLv2UridUnmap(unmap);
+            }
             if (comptime has_worker) {
                 if (featureData(features, worker_schedule_uri)) |data| {
                     self.worker_schedule =
@@ -3836,6 +3872,8 @@ const TestTimeBuilder = struct {
 test "LV2 core ABI has C pointer layout" {
     const pointer_size = @sizeOf(?*anyopaque);
     try std.testing.expectEqual(pointer_size * 2, @sizeOf(Feature));
+    try std.testing.expectEqual(pointer_size * 2, @sizeOf(UridMap));
+    try std.testing.expectEqual(pointer_size * 2, @sizeOf(UridUnmap));
     try std.testing.expectEqual(pointer_size * 8, @sizeOf(Descriptor));
     try std.testing.expectEqual(@as(usize, 8), @sizeOf(Atom));
     try std.testing.expectEqual(@as(usize, 16), @sizeOf(AtomEvent));
@@ -3855,6 +3893,150 @@ test "LV2 core ABI has C pointer layout" {
     try std.testing.expectEqual(
         pointer_size * 2,
         @sizeOf(ProgramsInterface),
+    );
+}
+
+test "LV2 URID unmap opt-in binds stable host reverse mappings" {
+    const Probe = struct {
+        pub const name = "LV2 URID Unmap Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout = .none;
+        pub const audio_output_layout: plugin_api.AudioBusLayout = .none;
+        pub const Params = struct {};
+        pub const lv2_urid_unmap_required = true;
+
+        urid_unmap: ?*const UridUnmap = null,
+
+        pub fn bindLv2UridUnmap(
+            self: *@This(),
+            unmap: *const UridUnmap,
+        ) void {
+            self.urid_unmap = unmap;
+        }
+
+        pub fn process(
+            _: *@This(),
+            _: *process_api.ProcessContext(f32),
+        ) void {}
+    };
+    const Adapter = CoreAdapter(
+        Probe,
+        "https://example.test/lv2-urid-unmap",
+        16,
+    );
+    const Host = struct {
+        fn unmap(
+            _: ?*anyopaque,
+            urid: Urid,
+        ) callconv(.c) ?[*:0]const u8 {
+            return switch (urid) {
+                23 => "https://example.test/known-type",
+                else => null,
+            };
+        }
+    };
+    var unmap = UridUnmap{
+        .handle = null,
+        .unmap = Host.unmap,
+    };
+    var feature = Feature{
+        .URI = urid_unmap_uri,
+        .data = &unmap,
+    };
+    const features = [_:null]?*const Feature{&feature};
+    const descriptor = Adapter.descriptorAt(0) orelse
+        return error.MissingDescriptor;
+    const handle = descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-urid-unmap.lv2",
+        features[0..].ptr,
+    ) orelse return error.InstantiateFailed;
+    defer descriptor.cleanup(handle);
+
+    const instance = Adapter.instanceFromHandle(handle) orelse
+        return error.MissingInstance;
+    const bound =
+        instance.runtime.instance.plugin.urid_unmap orelse
+        return error.MissingUridUnmap;
+    const known = bound.unmap(bound.handle, 23) orelse
+        return error.MissingKnownUri;
+    try std.testing.expectEqualStrings(
+        "https://example.test/known-type",
+        std.mem.span(known),
+    );
+    try std.testing.expectEqual(
+        @as(?[*:0]const u8, null),
+        bound.unmap(bound.handle, 24),
+    );
+}
+
+test "LV2 URID unmap opt-in rejects missing and malformed features" {
+    const Probe = struct {
+        pub const name = "LV2 URID Unmap Validation Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout = .none;
+        pub const audio_output_layout: plugin_api.AudioBusLayout = .none;
+        pub const Params = struct {};
+        pub const lv2_urid_unmap_required = true;
+
+        pub fn bindLv2UridUnmap(
+            _: *@This(),
+            _: *const UridUnmap,
+        ) void {}
+
+        pub fn process(
+            _: *@This(),
+            _: *process_api.ProcessContext(f32),
+        ) void {}
+    };
+    const Adapter = CoreAdapter(
+        Probe,
+        "https://example.test/lv2-urid-unmap-validation",
+        16,
+    );
+    const descriptor = Adapter.descriptorAt(0) orelse
+        return error.MissingDescriptor;
+    try std.testing.expectEqual(
+        @as(Handle, null),
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-urid-unmap-validation.lv2",
+            null,
+        ),
+    );
+
+    var null_feature = Feature{
+        .URI = urid_unmap_uri,
+        .data = null,
+    };
+    const null_features = [_:null]?*const Feature{&null_feature};
+    try std.testing.expectEqual(
+        @as(Handle, null),
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-urid-unmap-validation.lv2",
+            null_features[0..].ptr,
+        ),
+    );
+
+    var storage: [@sizeOf(UridUnmap) + 1]u8 align(@alignOf(UridUnmap)) = undefined;
+    var misaligned_feature = Feature{
+        .URI = urid_unmap_uri,
+        .data = @ptrCast(&storage[1]),
+    };
+    const misaligned_features =
+        [_:null]?*const Feature{&misaligned_feature};
+    try std.testing.expectEqual(
+        @as(Handle, null),
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-urid-unmap-validation.lv2",
+            misaligned_features[0..].ptr,
+        ),
     );
 }
 

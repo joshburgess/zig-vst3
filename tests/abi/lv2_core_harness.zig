@@ -140,6 +140,10 @@ export fn zig_lv2_layout_value(index: u32) usize {
         131 => @sizeOf(lv2.AtomUrid),
         132 => @alignOf(lv2.AtomUrid),
         133 => @offsetOf(lv2.AtomUrid, "body"),
+        134 => @sizeOf(lv2.UridUnmap),
+        135 => @alignOf(lv2.UridUnmap),
+        136 => @offsetOf(lv2.UridUnmap, "handle"),
+        137 => @offsetOf(lv2.UridUnmap, "unmap"),
         else => std.math.maxInt(usize),
     };
 }
