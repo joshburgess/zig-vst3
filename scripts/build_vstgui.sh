@@ -43,6 +43,20 @@ if [ "$mode" = test ]; then
 
   env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
       ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+      zig c++ -target x86_64-linux-gnu -std=c++17 \
+      -I"$root/gui-adapters/vstgui" \
+      -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_atspi.cpp" \
+      -o /tmp/zig_vstgui_accessibility_atspi_linux.o
+
+  env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
+      ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+      zig c++ -target aarch64-linux-gnu -std=c++17 \
+      -I"$root/gui-adapters/vstgui" \
+      -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_atspi.cpp" \
+      -o /tmp/zig_vstgui_accessibility_atspi_aarch64_linux.o
+
+  env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
+      ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
       zig c++ -target x86_64-windows-gnu -std=c++17 -Wno-nullability-completeness \
       -DVSTGUI_ENABLE_XML_PARSER=0 \
       -DVSTGUI_ENABLE_DEPRECATED_METHODS=1 \

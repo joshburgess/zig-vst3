@@ -349,7 +349,9 @@ Each macOS bundle keeps its VSTGUI and bridge implementation symbols private. Ac
 
 On Windows, the adapter provides a UI Automation fragment tree through `WM_GETOBJECT`. It maps the same semantic properties, exposes screen-space bounds and focus, and raises property, focus, and structure events. Sliders expose RangeValue, toggles expose Toggle, actionable buttons expose Invoke, and editable or choice values expose Value. The Windows provider cross-compiles with Zig's Windows SDK headers during the native adapter test, but Narrator behavior has not been tested in a native Windows host.
 
-X11 and Wayland retain the toolkit-neutral semantics, keyboard focus order, and visible focus rendering. No AT-SPI bridge is implemented yet. VoiceOver navigation, Narrator navigation, and AT-SPI host verification remain release checks for their respective platform environments.
+For Linux, `AtspiNodeAdapter` maps every toolkit-neutral role to the corresponding AT-SPI role, encodes the standard state bitset, selects Accessible, Component, Action, Value, and EditableText interfaces from node capabilities, preserves a stable action order, dispatches focus and value changes through the shared action path, and classifies semantic change events. The mapping is tested natively and cross-compiles for Linux x86-64 and AArch64 without AT-SPI development headers. X11 and Wayland retain the same keyboard focus order and visible focus rendering. Live accessibility-bus registration, object publication, event delivery, and native AT-SPI verification remain open.
+
+VoiceOver navigation, Narrator navigation, and AT-SPI host verification remain release checks for their respective platform environments.
 
 ## Piano Keyboard
 
@@ -593,7 +595,7 @@ Experimental extensions:
 - `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The gallery, IR loader, and sample player exercise the same dependency behavior. The sample-player host walkthrough remains the promotion blocker.
 - Direct parameter-backed graph ranges and `Graph.secondary_range_selection`. The visual gallery and sample player exercise them, but a second production consumer is still required.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
-- Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
+- Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, Linux has a tested AT-SPI semantic and action mapping, and native screen-reader workflows plus Linux accessibility-bus transport remain unverified.
 - `AudioFileImporter`, controller-owned import status and command callbacks, decoded-audio transport, controller-sourced graph snapshots, and importer-aware action dependencies. The gallery now decodes a bounded fixture and exercises idle, progress, ready, failure, retry, reset, waveform, and action-dependency behavior through the same contract used by the IR loader and sample player. The sample-player host walkthrough remains the promotion blocker.
 - Additional modulation component types and GPU-backed custom views. Neither has a public declaration or a production consumer. A GPU path also requires profiling evidence that the toolkit-managed renderer is the limiting factor.
 

@@ -50,10 +50,13 @@ test "$(wc -l < "$test_cmake_log" | tr -d ' ')" = 3
 grep -q -- '-DZIG_VSTGUI_RUN_VISUAL_TESTS=OFF' "$test_cmake_log"
 grep -q -- '--target zig_vstgui_adapter --parallel' "$test_cmake_log"
 grep -q -- 'zig_vstgui_adapter_tests_run zig_vstgui_accessibility_tests_run zig_vstgui_visual_tests_run' "$test_cmake_log"
-test "$(wc -l < "$test_zig_log" | tr -d ' ')" = 2
+test "$(wc -l < "$test_zig_log" | tr -d ' ')" = 4
 grep -q -- '-target x86_64-windows-gnu' "$test_zig_log"
 grep -q -- 'zig_vstgui_accessibility_windows.cpp' "$test_zig_log"
 grep -q -- 'zig_vstgui_editor.cpp' "$test_zig_log"
+grep -q -- '-target x86_64-linux-gnu' "$test_zig_log"
+grep -q -- '-target aarch64-linux-gnu' "$test_zig_log"
+grep -q -- 'zig_vstgui_accessibility_atspi.cpp' "$test_zig_log"
 
 set +e
 PATH="$fake_bin:$PATH" "$root/scripts/build_vstgui.sh" invalid > /dev/null 2> "$temporary/invalid.stderr"

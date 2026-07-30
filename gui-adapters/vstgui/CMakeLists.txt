@@ -78,6 +78,7 @@ endif()
 set(ZIG_VSTGUI_ADAPTER_SOURCES
     zig_vstgui_adapter.cpp
     zig_vstgui_accessibility.cpp
+    zig_vstgui_accessibility_atspi.cpp
     zig_vstgui_accessibility_bridge.cpp
     zig_vstgui_action_button.cpp
     zig_vstgui_text_progress.cpp
@@ -197,6 +198,16 @@ add_custom_target(zig_vstgui_adapter_tests_run
     DEPENDS zig_vstgui_adapter_tests
 )
 
+add_executable(
+    zig_vstgui_accessibility_atspi_tests
+    zig_vstgui_accessibility_atspi_tests.cpp
+)
+target_compile_features(zig_vstgui_accessibility_atspi_tests PRIVATE cxx_std_17)
+target_link_libraries(
+    zig_vstgui_accessibility_atspi_tests
+    PRIVATE zig_vstgui_adapter
+)
+
 if(APPLE)
     add_executable(zig_vstgui_accessibility_macos_tests zig_vstgui_accessibility_macos_tests.mm)
     target_compile_features(zig_vstgui_accessibility_macos_tests PRIVATE cxx_std_17)
@@ -209,10 +220,16 @@ if(APPLE)
     target_link_libraries(zig_vstgui_accessibility_macos_tests PRIVATE zig_vstgui_adapter "-framework AppKit")
     add_custom_target(zig_vstgui_accessibility_tests_run
         COMMAND $<TARGET_FILE:zig_vstgui_accessibility_macos_tests>
-        DEPENDS zig_vstgui_accessibility_macos_tests
+        COMMAND $<TARGET_FILE:zig_vstgui_accessibility_atspi_tests>
+        DEPENDS
+            zig_vstgui_accessibility_macos_tests
+            zig_vstgui_accessibility_atspi_tests
     )
 else()
-    add_custom_target(zig_vstgui_accessibility_tests_run)
+    add_custom_target(zig_vstgui_accessibility_tests_run
+        COMMAND $<TARGET_FILE:zig_vstgui_accessibility_atspi_tests>
+        DEPENDS zig_vstgui_accessibility_atspi_tests
+    )
 endif()
 
 add_executable(zig_vstgui_visual_tests zig_vstgui_visual_tests.cpp)
