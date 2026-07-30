@@ -3246,8 +3246,33 @@ test "installed package exposes bounded MP3 framing and seeking" {
             installed_side.granules[0].channels[0],
             scale_channel,
             main_data,
-        );
+    );
     try std.testing.expectEqual(@as(u10, 0), spectrum.decoded_lines);
+
+    const pair_spectrum = try plugin.dsp.decodeMp3HuffmanChannel(
+        parsed,
+        plugin.dsp.Mp3GranuleChannel{
+            .part2_3_length = 5,
+            .big_values = 1,
+            .table_select = .{ 1, 0, 0 },
+        },
+        plugin.dsp.Mp3ScaleFactorChannel{
+            .huffman_bit_count = 5,
+        },
+        plugin.dsp.Mp3MainData{
+            .bytes = &.{0x08},
+            .bit_count = 5,
+        },
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &.{ 1, -1 },
+        pair_spectrum.lines[0..2],
+    );
+    try std.testing.expectEqual(
+        @as(u12, 5),
+        pair_spectrum.huffman_bits_consumed,
+    );
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);

@@ -1,5 +1,6 @@
 const std = @import("std");
 const file_reader_io = @import("file_reader_io.zig");
+const huffman_tables = @import("mp3_huffman_tables.zig");
 
 pub const Version = enum {
     mpeg1,
@@ -450,7 +451,7 @@ pub fn decodeHuffmanChannel(
         @as(usize, description.big_values) * 2;
     var line: usize = 0;
     while (line < big_line_count) : (line += 2) {
-        const table = description.table_select[
+        const table_index = description.table_select[
             if (line < region_ends[0])
                 0
             else if (line < region_ends[1])
@@ -458,10 +459,12 @@ pub fn decodeHuffmanChannel(
             else
                 2
         ];
-        if (table == 4 or table == 14)
-            return error.InvalidMp3HuffmanTable;
-        if (table != 0)
-            return error.UnsupportedMp3HuffmanPairTable;
+        const pair = try decodeHuffmanPair(
+            &reader,
+            try huffman_tables.get(table_index),
+        );
+        result.lines[line] = pair[0];
+        result.lines[line + 1] = pair[1];
     }
 
     while (line + 4 <= result.lines.len and
@@ -479,6 +482,46 @@ pub fn decodeHuffmanChannel(
     result.decoded_lines = @intCast(line);
     result.huffman_bits_consumed =
         @intCast(reader.bit_offset - start);
+    return result;
+}
+
+fn decodeHuffmanPair(
+    reader: *MainDataBitReader,
+    table: huffman_tables.Table,
+) ![2]i32 {
+    if (table.side == 1) return .{ 0, 0 };
+
+    var code: u19 = 0;
+    var matched: ?usize = null;
+    for (1..20) |length| {
+        code = (code << 1) |
+            @as(u19, @intCast(try reader.read(1)));
+        for (table.entries, 0..) |entry, index| {
+            if (entry.length == length and entry.bits == code) {
+                matched = index;
+                break;
+            }
+        }
+        if (matched != null) break;
+    }
+    const index = matched orelse
+        return error.InvalidMp3HuffmanCode;
+    const side: usize = table.side;
+    var magnitudes = [2]u16{
+        @intCast(index / side),
+        @intCast(index % side),
+    };
+    var result: [2]i32 = @splat(0);
+    for (&magnitudes, 0..) |*magnitude, component| {
+        if (magnitude.* == 15 and table.linbits != 0)
+            magnitude.* += try reader.read(
+                @intCast(table.linbits),
+            );
+        if (magnitude.* == 0) continue;
+        const signed: i32 = magnitude.*;
+        result[component] =
+            if (try reader.read(1) == 0) signed else -signed;
+    }
     return result;
 }
 
@@ -1983,13 +2026,13 @@ fn setTestBits(
     destination: []u8,
     bit_offset: usize,
     bit_count: u5,
-    value: u16,
+    value: u32,
 ) void {
     for (0..bit_count) |index| {
         const destination_bit = bit_offset + index;
         const mask: u8 =
             @as(u8, 1) << @intCast(7 - destination_bit % 8);
-        const source_shift: u4 =
+        const source_shift: u5 =
             @intCast(bit_count - 1 - index);
         if (value >> source_shift & 1 != 0)
             destination[destination_bit / 8] |= mask
@@ -2851,12 +2894,12 @@ test "decodes zero pair codebooks before the count1 partition" {
     );
 
     try std.testing.expectError(
-        error.UnsupportedMp3HuffmanPairTable,
+        error.InvalidMp3HuffmanTable,
         decodeHuffmanChannel(
             header,
             .{
                 .big_values = 1,
-                .table_select = .{ 1, 0, 0 },
+                .table_select = .{ 4, 0, 0 },
             },
             .{},
             .{ .bytes = &.{}, .bit_count = 0 },
@@ -2883,6 +2926,258 @@ test "decodes zero pair codebooks before the count1 partition" {
             .{ .bytes = &encoded, .bit_count = 2 },
         ),
     );
+}
+
+test "decodes every Layer III pair codebook and escape width" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    for (0..32) |table_number| {
+        if (table_number == 4 or table_number == 14) continue;
+        const table = try huffman_tables.get(
+            @intCast(table_number),
+        );
+        const entry = table.entries[table.entries.len - 1];
+        var encoded: [8]u8 = @splat(0);
+        var bit_offset: usize = 0;
+        setTestBits(
+            &encoded,
+            bit_offset,
+            @intCast(entry.length),
+            entry.bits,
+        );
+        bit_offset += entry.length;
+
+        const base_magnitude: u16 = table.side - 1;
+        var expected: [2]i32 = @splat(0);
+        for (0..2) |component| {
+            var magnitude = base_magnitude;
+            if (base_magnitude == 15 and table.linbits != 0) {
+                const extension: u16 =
+                    if (component == 0) 1 else 0;
+                setTestBits(
+                    &encoded,
+                    bit_offset,
+                    @intCast(table.linbits),
+                    extension,
+                );
+                bit_offset += table.linbits;
+                magnitude += extension;
+            }
+            if (magnitude == 0) continue;
+            const negative = component == 0;
+            setTestBits(
+                &encoded,
+                bit_offset,
+                1,
+                @intFromBool(negative),
+            );
+            bit_offset += 1;
+            expected[component] =
+                if (negative)
+                    -@as(i32, magnitude)
+                else
+                    magnitude;
+        }
+
+        const decoded = try decodeHuffmanChannel(
+            header,
+            .{
+                .part2_3_length = @intCast(bit_offset),
+                .big_values = 1,
+                .table_select = .{
+                    @intCast(table_number),
+                    0,
+                    0,
+                },
+            },
+            .{
+                .huffman_bit_offset = 0,
+                .huffman_bit_count = @intCast(bit_offset),
+            },
+            .{
+                .bytes = &encoded,
+                .bit_count = @intCast(bit_offset),
+            },
+        );
+        try std.testing.expectEqual(
+            @as(u10, 2),
+            decoded.decoded_lines,
+        );
+        try std.testing.expectEqual(
+            @as(u12, @intCast(bit_offset)),
+            decoded.huffman_bits_consumed,
+        );
+        try std.testing.expectEqualSlices(
+            i32,
+            &expected,
+            decoded.lines[0..2],
+        );
+    }
+}
+
+test "enforces Layer III pair budgets and region transitions" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+
+    var signs_truncated: [1]u8 = @splat(0);
+    setTestBits(&signs_truncated, 0, 3, 0b000);
+    try std.testing.expectError(
+        error.InvalidMp3Part23Length,
+        decodeHuffmanChannel(
+            header,
+            .{
+                .part2_3_length = 4,
+                .big_values = 1,
+                .table_select = .{ 1, 0, 0 },
+            },
+            .{
+                .huffman_bit_count = 4,
+            },
+            .{
+                .bytes = &signs_truncated,
+                .bit_count = 4,
+            },
+        ),
+    );
+
+    const escape_table = try huffman_tables.get(31);
+    const escape_entry =
+        escape_table.entries[escape_table.entries.len - 1];
+    var escape_truncated: [3]u8 = @splat(0);
+    setTestBits(
+        &escape_truncated,
+        0,
+        escape_entry.length,
+        escape_entry.bits,
+    );
+    try std.testing.expectError(
+        error.InvalidMp3Part23Length,
+        decodeHuffmanChannel(
+            header,
+            .{
+                .part2_3_length = escape_entry.length,
+                .big_values = 1,
+                .table_select = .{ 31, 0, 0 },
+            },
+            .{
+                .huffman_bit_count = escape_entry.length,
+            },
+            .{
+                .bytes = &escape_truncated,
+                .bit_count = escape_entry.length,
+            },
+        ),
+    );
+
+    var region_bits: [1]u8 = @splat(0);
+    setTestBits(&region_bits, 0, 1, 0b1);
+    const regions = try decodeHuffmanChannel(
+        header,
+        .{
+            .part2_3_length = 1,
+            .big_values = 5,
+            .table_select = .{ 0, 0, 1 },
+        },
+        .{
+            .huffman_bit_count = 1,
+        },
+        .{
+            .bytes = &region_bits,
+            .bit_count = 1,
+        },
+    );
+    try std.testing.expectEqual(
+        @as(u10, 10),
+        regions.decoded_lines,
+    );
+    try std.testing.expectEqual(
+        @as(u12, 1),
+        regions.huffman_bits_consumed,
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &@as([10]i32, @splat(0)),
+        regions.lines[0..10],
+    );
+}
+
+test "validates Layer III pair codebook prefixes" {
+    for (0..32) |table_number| {
+        if (table_number == 4 or table_number == 14) {
+            try std.testing.expectError(
+                error.InvalidMp3HuffmanTable,
+                huffman_tables.get(@intCast(table_number)),
+            );
+            continue;
+        }
+        const table = try huffman_tables.get(
+            @intCast(table_number),
+        );
+        try std.testing.expectEqual(
+            @as(usize, table.side) * table.side,
+            table.entries.len,
+        );
+        for (table.entries, 0..) |entry, first_index| {
+            if (table_number == 0) {
+                try std.testing.expectEqual(
+                    @as(u5, 0),
+                    entry.length,
+                );
+                continue;
+            }
+            try std.testing.expect(entry.length > 0);
+            try std.testing.expect(
+                entry.bits < @as(u32, 1) << @intCast(entry.length),
+            );
+            for (table.entries, 0..) |other, second_index| {
+                if (first_index == second_index or
+                    entry.length > other.length)
+                    continue;
+                try std.testing.expect(
+                    other.bits >>
+                        @intCast(other.length - entry.length) !=
+                        entry.bits,
+                );
+            }
+
+            var encoded: [8]u8 = @splat(0);
+            var bit_offset: usize = 0;
+            setTestBits(
+                &encoded,
+                bit_offset,
+                @intCast(entry.length),
+                entry.bits,
+            );
+            bit_offset += entry.length;
+            const side: usize = table.side;
+            const magnitudes = [2]u16{
+                @intCast(first_index / side),
+                @intCast(first_index % side),
+            };
+            for (magnitudes) |magnitude| {
+                if (magnitude == 15 and table.linbits != 0)
+                    bit_offset += table.linbits;
+                if (magnitude != 0) bit_offset += 1;
+            }
+            var reader = MainDataBitReader{
+                .bytes = &encoded,
+                .bit_limit = bit_offset,
+            };
+            try std.testing.expectEqual(
+                [2]i32{
+                    magnitudes[0],
+                    magnitudes[1],
+                },
+                try decodeHuffmanPair(&reader, table),
+            );
+            try std.testing.expectEqual(
+                bit_offset,
+                reader.bit_offset,
+            );
+        }
+    }
 }
 
 test "rejects inconsistent scale-factor bit ranges" {
