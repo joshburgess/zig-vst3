@@ -3473,6 +3473,14 @@ test "installed package exposes bounded MP3 framing and seeking" {
         @as(u6, 22),
         psychoacoustic.band_count,
     );
+    const joint_analyzed: plugin.dsp.Mp3AnalyzedEncoderFrame =
+        try plugin.dsp.prepareMp3EncoderStereo(
+            joint_header,
+            analyzed_frame,
+        );
+    try std.testing.expect(std.math.isFinite(
+        joint_analyzed.granules[0][0].spectrum.lines[0],
+    ));
     var classifier = plugin.dsp.Mp3EncoderBlockClassifier{};
     const classified = try classifier.classify(
         joint_header,
@@ -3485,7 +3493,7 @@ test "installed package exposes bounded MP3 framing and seeking" {
     const automatic_quantized: plugin.dsp.Mp3QuantizedEncoderFrame =
         try plugin.dsp.Mp3EncoderQuantizer.quantize(
             joint_header,
-            analyzed_frame,
+            joint_analyzed,
         );
     try std.testing.expect(
         automatic_quantized.granules[0][0]

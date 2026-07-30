@@ -677,6 +677,71 @@ pub const AnalyzedEncoderFrame = struct {
         @splat(@splat(.{})),
 };
 
+pub fn prepareEncoderStereo(
+    header: Header,
+    analyzed: AnalyzedEncoderFrame,
+) !AnalyzedEncoderFrame {
+    try validateAnalyzedEncoderFrame(header, analyzed);
+    const channel_count: u2 = @intCast(header.channels());
+    const granule_count: u2 =
+        if (header.version == .mpeg1) 2 else 1;
+    if (channel_count != 2 or
+        header.channel_mode != .joint_stereo or
+        header.mode_extension & 2 == 0)
+        return analyzed;
+
+    var result = analyzed;
+    const scale: f32 = 1.0 / @sqrt(2.0);
+    for (0..granule_count) |granule| {
+        const left = analyzed.granules[granule][0];
+        const right = analyzed.granules[granule][1];
+        if (!std.meta.eql(left.description, right.description))
+            return error.InvalidMp3EncoderStereoBlocks;
+        for (
+            left.spectrum.lines,
+            right.spectrum.lines,
+            0..,
+        ) |left_line, right_line, line| {
+            if (!std.math.isFinite(left_line) or
+                !std.math.isFinite(right_line))
+                return error.InvalidMp3RequantizedSpectrum;
+            const middle = (left_line + right_line) * scale;
+            const side = (left_line - right_line) * scale;
+            if (!std.math.isFinite(middle) or
+                !std.math.isFinite(side))
+                return error.InvalidMp3EncoderStereoSpectrum;
+            result.granules[granule][0].spectrum.lines[line] =
+                middle;
+            result.granules[granule][1].spectrum.lines[line] =
+                side;
+        }
+    }
+    return result;
+}
+
+fn validateAnalyzedEncoderFrame(
+    header: Header,
+    analyzed: AnalyzedEncoderFrame,
+) !void {
+    const channel_count: u2 = @intCast(header.channels());
+    const granule_count: u2 =
+        if (header.version == .mpeg1) 2 else 1;
+    if (analyzed.channel_count != channel_count or
+        analyzed.granule_count != granule_count)
+        return error.InvalidMp3EncoderAnalysisFrame;
+    for (0..2) |granule| {
+        for (0..2) |channel| {
+            if ((granule >= granule_count or
+                channel >= channel_count) and
+                !std.meta.eql(
+                    analyzed.granules[granule][channel],
+                    AnalyzedEncoderChannel{},
+                ))
+                return error.InvalidMp3EncoderAnalysisFrame;
+        }
+    }
+}
+
 pub const EncoderBlockClassifier = struct {
     short_active: [2]bool = @splat(false),
     attack_ratio: f32 = 8.0,
@@ -703,14 +768,23 @@ pub const EncoderBlockClassifier = struct {
         var result: [2][2]GranuleChannel = @splat(@splat(.{}));
         var next_short = self.short_active;
         for (0..granule_count) |granule| {
+            var attacks: [2]bool = @splat(false);
             for (0..channel_count) |channel| {
                 const start = granule * 576;
-                const attack = try hasEncoderAttack(
+                attacks[channel] = try hasEncoderAttack(
                     pcm.channels[channel][start..][0..576],
                     self.attack_ratio,
                 );
+            }
+            if (header.channel_mode == .joint_stereo) {
+                const attack = attacks[0] or attacks[1];
+                attacks = @splat(attack);
+                const active = next_short[0] or next_short[1];
+                next_short = @splat(active);
+            }
+            for (0..channel_count) |channel| {
                 const was_short = next_short[channel];
-                result[granule][channel] = if (attack)
+                result[granule][channel] = if (attacks[channel])
                     if (was_short)
                         .{
                             .window_switching = true,
@@ -728,7 +802,7 @@ pub const EncoderBlockClassifier = struct {
                     }
                 else
                     .{};
-                next_short[channel] = attack;
+                next_short[channel] = attacks[channel];
             }
         }
         self.short_active = next_short;
@@ -853,9 +927,7 @@ pub const EncoderQuantizer = struct {
         const channel_count: u2 = @intCast(header.channels());
         const granule_count: u2 =
             if (header.version == .mpeg1) 2 else 1;
-        if (analyzed.channel_count != channel_count or
-            analyzed.granule_count != granule_count)
-            return error.InvalidMp3EncoderAnalysisFrame;
+        try validateAnalyzedEncoderFrame(header, analyzed);
         const main_data_offset: usize =
             4 + @as(usize, @intFromBool(header.crc_present)) * 2 +
             header.sideInformationBytes();
@@ -863,21 +935,50 @@ pub const EncoderQuantizer = struct {
             (header.frameBytes() - main_data_offset) * 8;
         const active_channels =
             @as(usize, channel_count) * granule_count;
-        const channel_budget = available_bits / active_channels;
+        var psychoacoustics: [2][2]EncoderPsychoacousticChannel =
+            @splat(@splat(.{}));
+        var weights: [2][2]f64 = @splat(@splat(0));
+        var total_weight: f64 = 0;
+        for (0..granule_count) |granule| {
+            for (0..channel_count) |channel| {
+                psychoacoustics[granule][channel] =
+                    try self.psychoacoustics.analyze(
+                        header,
+                        analyzed.granules[granule][channel],
+                    );
+                var energy: f64 = 0;
+                for (psychoacoustics[granule][channel]
+                    .energy[0..psychoacoustics[granule][channel].band_count]) |band_energy|
+                    energy += band_energy;
+                weights[granule][channel] = @sqrt(energy);
+                total_weight += weights[granule][channel];
+            }
+        }
+        if (!std.math.isFinite(total_weight))
+            return error.InvalidMp3PsychoacousticEnergy;
+        const minimum_budget =
+            available_bits / (active_channels * 4);
+        const flexible_bits =
+            available_bits - minimum_budget * active_channels;
 
         var result = QuantizedEncoderFrame{};
         for (0..granule_count) |granule| {
             for (0..channel_count) |channel| {
-                const psychoacoustic = try self.psychoacoustics.analyze(
-                    header,
-                    analyzed.granules[granule][channel],
-                );
+                const weighted_budget: usize =
+                    if (total_weight == 0)
+                        flexible_bits / active_channels
+                    else
+                        @intFromFloat(@floor(
+                            @as(f64, @floatFromInt(flexible_bits)) *
+                                weights[granule][channel] /
+                                total_weight,
+                        ));
                 result.granules[granule][channel] =
                     try quantizeEncoderChannel(
                         header,
                         analyzed.granules[granule][channel],
-                        psychoacoustic,
-                        channel_budget,
+                        psychoacoustics[granule][channel],
+                        minimum_budget + weighted_budget,
                         @intCast(granule),
                         @intCast(channel),
                     );
@@ -893,6 +994,8 @@ pub const PcmEncoder = struct {
     classifier: EncoderBlockClassifier = .{},
 
     pub fn init(config: EncoderConfig) !PcmEncoder {
+        const header = try config.header(false);
+        try validatePcmEncoderStereo(header);
         return .{
             .frames = try FrameEncoder.init(config),
             .analysis = try EncoderAnalysis.init(config),
@@ -912,13 +1015,17 @@ pub const PcmEncoder = struct {
     ) ![]u8 {
         var next = self.*;
         const header = try next.frames.config.header(false);
+        try validatePcmEncoderStereo(header);
         const descriptions = try next.classifier.classify(
             header,
             pcm,
         );
-        const analyzed = try next.analysis.analyze(
-            descriptions,
-            pcm,
+        const analyzed = try prepareEncoderStereo(
+            header,
+            try next.analysis.analyze(
+                descriptions,
+                pcm,
+            ),
         );
         const quantized = try EncoderQuantizer.quantize(
             header,
@@ -932,6 +1039,12 @@ pub const PcmEncoder = struct {
         return encoded;
     }
 };
+
+fn validatePcmEncoderStereo(header: Header) !void {
+    if (header.channel_mode == .joint_stereo and
+        header.mode_extension & 1 != 0)
+        return error.UnsupportedMp3EncoderIntensityStereo;
+}
 
 fn quantizeEncoderChannel(
     header: Header,
@@ -10217,6 +10330,96 @@ test "classifies MP3 encoder block transitions transactionally" {
         classifier.classify(header, malformed),
     );
     try std.testing.expectEqual(before_malformed, classifier);
+
+    var joint_header = header;
+    joint_header.channel_mode = .joint_stereo;
+    var joint_classifier = EncoderBlockClassifier{};
+    const joint = try joint_classifier.classify(
+        joint_header,
+        pcm,
+    );
+    try std.testing.expectEqual(
+        joint[0][0],
+        joint[0][1],
+    );
+    try std.testing.expectEqual(
+        joint[1][0],
+        joint[1][1],
+    );
+    try std.testing.expectEqual(
+        joint_classifier.short_active[0],
+        joint_classifier.short_active[1],
+    );
+}
+
+test "prepares MP3 mid-side encoder spectra transactionally" {
+    var header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .joint_stereo),
+    );
+    header.mode_extension = 2;
+    var analyzed = AnalyzedEncoderFrame{
+        .channel_count = 2,
+        .granule_count = 2,
+    };
+    for (0..2) |granule| {
+        analyzed.granules[granule][0].spectrum.lines[0] = 3;
+        analyzed.granules[granule][1].spectrum.lines[0] = 1;
+    }
+    const prepared = try prepareEncoderStereo(
+        header,
+        analyzed,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 2 * @sqrt(2.0)),
+        prepared.granules[0][0].spectrum.lines[0],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, @sqrt(2.0)),
+        prepared.granules[0][1].spectrum.lines[0],
+        1e-6,
+    );
+    const restored = try processStereo(
+        header,
+        @splat(.{}),
+        @splat(.{ .value_count = 22 }),
+        .{
+            prepared.granules[0][0].spectrum,
+            prepared.granules[0][1].spectrum,
+        },
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 3),
+        restored.channels[0].lines[0],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1),
+        restored.channels[1].lines[0],
+        1e-6,
+    );
+
+    var mismatched = analyzed;
+    mismatched.granules[0][1].description = .{
+        .window_switching = true,
+        .block_type = 1,
+    };
+    try std.testing.expectError(
+        error.InvalidMp3EncoderStereoBlocks,
+        prepareEncoderStereo(header, mismatched),
+    );
+    var malformed = analyzed;
+    malformed.granules[0][0].spectrum.lines[0] =
+        std.math.nan(f32);
+    try std.testing.expectError(
+        error.InvalidMp3RequantizedSpectrum,
+        prepareEncoderStereo(header, malformed),
+    );
+    header.mode_extension = 0;
+    try std.testing.expectEqual(
+        analyzed,
+        try prepareEncoderStereo(header, analyzed),
+    );
 }
 
 test "analyzes bounded MP3 psychoacoustic bands" {
@@ -10610,5 +10813,57 @@ test "encodes PCM into complete MP3 frames transactionally" {
     try std.testing.expectEqual(
         @as(u64, 0),
         encoder.analysis.frames_analyzed,
+    );
+}
+
+test "encodes correlated PCM through MP3 mid-side stereo" {
+    const config = EncoderConfig{
+        .version = .mpeg1,
+        .bitrate_kbps = 128,
+        .sample_rate = 44_100,
+        .channel_mode = .joint_stereo,
+        .mode_extension = 2,
+    };
+    var encoder = try PcmEncoder.init(config);
+    var pcm = PcmFrame{
+        .channel_count = 2,
+        .sample_count = 1152,
+    };
+    for (0..1152) |index| {
+        const sample = 0.2 * @sin(
+            @as(f32, @floatFromInt(index)) * 0.05,
+        );
+        pcm.channels[0][index] = sample;
+        pcm.channels[1][index] = sample;
+    }
+    var storage: [maximum_encoded_frame_bytes]u8 = undefined;
+    const bytes = try encoder.encode(pcm, &storage);
+    const parsed = try Frame.parse(bytes, 0);
+    try std.testing.expectEqual(
+        ChannelMode.joint_stereo,
+        parsed.header.channel_mode,
+    );
+    try std.testing.expectEqual(
+        @as(u2, 2),
+        parsed.header.mode_extension,
+    );
+    var decoder = FrameDecoder{};
+    const decoded = try decoder.decode(parsed);
+    var nonzero = false;
+    for (
+        decoded.channels[0],
+        decoded.channels[1],
+    ) |left, right| {
+        try std.testing.expectApproxEqAbs(left, right, 1e-6);
+        nonzero = nonzero or left != 0;
+    }
+    try std.testing.expect(nonzero);
+
+    try std.testing.expectError(
+        error.UnsupportedMp3EncoderIntensityStereo,
+        PcmEncoder.init(.{
+            .channel_mode = .joint_stereo,
+            .mode_extension = 1,
+        }),
     );
 }
