@@ -171,7 +171,10 @@ pub const QuantizedSpectrum = struct {
 
 pub const RequantizedSpectrum = struct {
     lines: [576]f32 = @splat(0),
-    decoded_lines: u10 = 0,
+};
+
+pub const StereoSpectrum = struct {
+    channels: [2]RequantizedSpectrum,
 };
 
 pub fn requantizeChannel(
@@ -185,59 +188,17 @@ pub fn requantizeChannel(
     for (quantized.lines[quantized.decoded_lines..]) |line| {
         if (line != 0) return error.InvalidMp3QuantizedSpectrum;
     }
-    const bands = try scaleFactorBands(header);
-    const short_block = description.block_type == 2;
-    if (description.window_switching ==
-        (description.block_type == 0) or
-        description.mixed_block and !short_block)
-        return error.InvalidMp3BlockType;
-    if (header.version == .mpeg1 and
-        factors.preflag != description.preflag)
-        return error.InvalidMp3ScaleFactors;
+    const layout = try scaleFactorLayout(
+        header,
+        description,
+        factors,
+    );
+    const bands = layout.bands;
+    const short_block = layout.short_block;
+    const short_boundary = layout.short_boundary;
+    const long_factor_count = layout.long_factor_count;
 
-    const short_boundary: usize = 3 * bands.short_starts[3];
-    var long_factor_count: usize = 0;
-    if (description.mixed_block) {
-        while (long_factor_count < bands.long_starts.len and
-            bands.long_starts[long_factor_count] < short_boundary)
-            long_factor_count += 1;
-        if (long_factor_count >= bands.long_starts.len or
-            bands.long_starts[long_factor_count] != short_boundary)
-            return error.InvalidMp3ScaleFactorBands;
-    }
-    const expected_factor_count: u6 = switch (header.version) {
-        .mpeg1 => if (!short_block)
-            22
-        else if (description.mixed_block)
-            38
-        else
-            39,
-        .mpeg2, .mpeg25 => if (!short_block)
-            21
-        else if (description.mixed_block)
-            33
-        else
-            36,
-    };
-    if (factors.value_count != expected_factor_count)
-        return error.InvalidMp3ScaleFactors;
-    if (!short_block) {
-        if (factors.values[21] != 0)
-            return error.InvalidMp3ScaleFactors;
-    } else {
-        const terminal_start =
-            if (description.mixed_block)
-                long_factor_count + 27
-            else
-                36;
-        for (factors.values[terminal_start..][0..3]) |factor| {
-            if (factor != 0) return error.InvalidMp3ScaleFactors;
-        }
-    }
-
-    var result = RequantizedSpectrum{
-        .decoded_lines = quantized.decoded_lines,
-    };
+    var result = RequantizedSpectrum{};
     const global_exponent =
         (@as(f64, description.global_gain) - 210.0) * 0.25;
     const scale_multiplier: f64 =
@@ -324,6 +285,350 @@ fn requantizeLine(value: i32, exponent: f64) !f32 {
         return error.InvalidMp3RequantizedValue;
     const signed = if (value < 0) -scaled else scaled;
     return @floatCast(signed);
+}
+
+const ScaleFactorLayout = struct {
+    bands: ScaleFactorBands,
+    short_block: bool,
+    short_boundary: usize,
+    long_factor_count: usize,
+};
+
+fn scaleFactorLayout(
+    header: Header,
+    description: GranuleChannel,
+    factors: ScaleFactorChannel,
+) !ScaleFactorLayout {
+    const bands = try scaleFactorBands(header);
+    const short_block = description.block_type == 2;
+    if (description.window_switching ==
+        (description.block_type == 0) or
+        description.mixed_block and !short_block)
+        return error.InvalidMp3BlockType;
+    if (header.version == .mpeg1 and
+        factors.preflag != description.preflag)
+        return error.InvalidMp3ScaleFactors;
+
+    const short_boundary: usize = 3 * bands.short_starts[3];
+    var long_factor_count: usize = 0;
+    if (description.mixed_block) {
+        while (long_factor_count < bands.long_starts.len and
+            bands.long_starts[long_factor_count] < short_boundary)
+            long_factor_count += 1;
+        if (long_factor_count >= bands.long_starts.len or
+            bands.long_starts[long_factor_count] != short_boundary)
+            return error.InvalidMp3ScaleFactorBands;
+    }
+    const expected_factor_count: u6 = switch (header.version) {
+        .mpeg1 => if (!short_block)
+            22
+        else if (description.mixed_block)
+            38
+        else
+            39,
+        .mpeg2, .mpeg25 => if (!short_block)
+            21
+        else if (description.mixed_block)
+            33
+        else
+            36,
+    };
+    if (factors.value_count != expected_factor_count)
+        return error.InvalidMp3ScaleFactors;
+    if (!short_block) {
+        if (factors.values[21] != 0)
+            return error.InvalidMp3ScaleFactors;
+    } else {
+        const terminal_start =
+            if (description.mixed_block)
+                long_factor_count + 27
+            else
+                36;
+        for (factors.values[terminal_start..][0..3]) |factor| {
+            if (factor != 0) return error.InvalidMp3ScaleFactors;
+        }
+    }
+    return .{
+        .bands = bands,
+        .short_block = short_block,
+        .short_boundary = short_boundary,
+        .long_factor_count = long_factor_count,
+    };
+}
+
+pub fn processStereo(
+    header: Header,
+    descriptions: [2]GranuleChannel,
+    factors: [2]ScaleFactorChannel,
+    spectra: [2]RequantizedSpectrum,
+) !StereoSpectrum {
+    if (header.channels() != 2)
+        return error.InvalidMp3StereoChannels;
+    const layouts = [2]ScaleFactorLayout{
+        try scaleFactorLayout(header, descriptions[0], factors[0]),
+        try scaleFactorLayout(header, descriptions[1], factors[1]),
+    };
+    for (spectra) |spectrum| {
+        for (spectrum.lines) |line| {
+            if (!std.math.isFinite(line))
+                return error.InvalidMp3RequantizedSpectrum;
+        }
+    }
+
+    var result = StereoSpectrum{ .channels = spectra };
+    if (header.channel_mode != .joint_stereo or
+        header.mode_extension == 0)
+        return result;
+    if (descriptions[0].window_switching !=
+        descriptions[1].window_switching or
+        descriptions[0].block_type != descriptions[1].block_type or
+        descriptions[0].mixed_block != descriptions[1].mixed_block)
+        return error.InvalidMp3StereoBlocks;
+
+    const intensity = header.mode_extension & 1 != 0;
+    const mid_side = header.mode_extension & 2 != 0;
+    if (intensity) {
+        if (layouts[1].short_block) {
+            try processShortStereo(
+                header,
+                descriptions[1],
+                factors[1],
+                layouts[1],
+                mid_side,
+                &result.channels,
+            );
+        } else {
+            try processLongStereo(
+                header,
+                factors[1],
+                layouts[1],
+                mid_side,
+                &result.channels,
+            );
+        }
+    } else if (mid_side) {
+        applyMidSideRange(&result.channels, 0, 576);
+    }
+    return result;
+}
+
+fn processLongStereo(
+    header: Header,
+    factors: ScaleFactorChannel,
+    layout: ScaleFactorLayout,
+    mid_side: bool,
+    channels: *[2]RequantizedSpectrum,
+) !void {
+    var last_nonzero: ?usize = null;
+    for (0..22) |band| {
+        const start: usize = layout.bands.long_starts[band];
+        const end: usize = layout.bands.long_starts[band + 1];
+        if (containsNonzero(channels[1].lines[start..end]))
+            last_nonzero = band;
+    }
+    for (0..22) |band| {
+        const start: usize = layout.bands.long_starts[band];
+        const end: usize = layout.bands.long_starts[band + 1];
+        if ((last_nonzero == null or band > last_nonzero.?) and
+            try intensityPositionValid(header, factors, band))
+        {
+            try applyIntensityRange(
+                header,
+                factors,
+                band,
+                channels,
+                start,
+                end,
+            );
+        } else if (mid_side) {
+            applyMidSideRange(channels, start, end);
+        }
+    }
+}
+
+fn processShortStereo(
+    header: Header,
+    description: GranuleChannel,
+    factors: ScaleFactorChannel,
+    layout: ScaleFactorLayout,
+    mid_side: bool,
+    channels: *[2]RequantizedSpectrum,
+) !void {
+    const first_band: usize =
+        if (description.mixed_block) 3 else 0;
+    if (description.mixed_block and mid_side)
+        applyMidSideRange(channels, 0, layout.short_boundary);
+
+    var last_nonzero: [3]?usize = @splat(null);
+    for (first_band..13) |band| {
+        const width: usize =
+            layout.bands.short_starts[band + 1] -
+            layout.bands.short_starts[band];
+        for (0..3) |window| {
+            var nonzero = false;
+            for (0..width) |offset| {
+                const line =
+                    3 * (@as(usize, layout.bands.short_starts[band]) +
+                        offset) +
+                    window;
+                nonzero = nonzero or channels[1].lines[line] != 0;
+            }
+            if (nonzero) last_nonzero[window] = band;
+        }
+    }
+
+    for (first_band..13) |band| {
+        const width: usize =
+            layout.bands.short_starts[band + 1] -
+            layout.bands.short_starts[band];
+        for (0..3) |window| {
+            const factor_index = if (description.mixed_block)
+                layout.long_factor_count + (band - 3) * 3 + window
+            else
+                band * 3 + window;
+            const use_intensity =
+                (last_nonzero[window] == null or
+                    band > last_nonzero[window].?) and
+                try intensityPositionValid(
+                    header,
+                    factors,
+                    factor_index,
+                );
+            for (0..width) |offset| {
+                const line =
+                    3 * (@as(usize, layout.bands.short_starts[band]) +
+                        offset) +
+                    window;
+                if (use_intensity) {
+                    try applyIntensityLine(
+                        header,
+                        factors,
+                        factor_index,
+                        channels,
+                        line,
+                    );
+                } else if (mid_side) {
+                    applyMidSideLine(channels, line);
+                }
+            }
+        }
+    }
+}
+
+fn intensityPositionValid(
+    header: Header,
+    factors: ScaleFactorChannel,
+    index: usize,
+) !bool {
+    const position = factors.values[index];
+    return switch (header.version) {
+        .mpeg1 => if (position > 7)
+            error.InvalidMp3IntensityPosition
+        else
+            position != 7,
+        .mpeg2, .mpeg25 => if (position > 15)
+            error.InvalidMp3IntensityPosition
+        else
+            !factors.intensity_max[index],
+    };
+}
+
+fn applyIntensityRange(
+    header: Header,
+    factors: ScaleFactorChannel,
+    factor_index: usize,
+    channels: *[2]RequantizedSpectrum,
+    start: usize,
+    end: usize,
+) !void {
+    for (start..end) |line|
+        try applyIntensityLine(
+            header,
+            factors,
+            factor_index,
+            channels,
+            line,
+        );
+}
+
+fn applyIntensityLine(
+    header: Header,
+    factors: ScaleFactorChannel,
+    factor_index: usize,
+    channels: *[2]RequantizedSpectrum,
+    line: usize,
+) !void {
+    const position = factors.values[factor_index];
+    const gains = switch (header.version) {
+        .mpeg1 => mpeg1IntensityGains(position),
+        .mpeg2, .mpeg25 => lsfIntensityGains(
+            position,
+            factors.intensity_scale,
+        ),
+    };
+    const combined = channels[0].lines[line];
+    channels[0].lines[line] = combined * gains[0];
+    channels[1].lines[line] = combined * gains[1];
+}
+
+fn mpeg1IntensityGains(position: u8) [2]f32 {
+    if (position == 0) return .{ 1, 0 };
+    if (position == 6) return .{ 0, 1 };
+    const ratio = @tan(
+        @as(f32, @floatFromInt(position)) *
+            std.math.pi /
+            12.0,
+    );
+    const left = 1.0 / (1.0 + ratio);
+    return .{ left, 1.0 - left };
+}
+
+fn lsfIntensityGains(
+    position: u8,
+    intensity_scale: bool,
+) [2]f32 {
+    if (position == 0) return .{ 1, 1 };
+    const divisor: f32 = if (intensity_scale) 4 else 8;
+    if (position & 1 != 0)
+        return .{
+            std.math.exp2(
+                -@as(f32, @floatFromInt(position + 1)) / divisor,
+            ),
+            1,
+        };
+    return .{
+        1,
+        std.math.exp2(
+            -@as(f32, @floatFromInt(position)) / divisor,
+        ),
+    };
+}
+
+fn containsNonzero(lines: []const f32) bool {
+    for (lines) |line| {
+        if (line != 0) return true;
+    }
+    return false;
+}
+
+fn applyMidSideRange(
+    channels: *[2]RequantizedSpectrum,
+    start: usize,
+    end: usize,
+) void {
+    for (start..end) |line|
+        applyMidSideLine(channels, line);
+}
+
+fn applyMidSideLine(
+    channels: *[2]RequantizedSpectrum,
+    line: usize,
+) void {
+    const middle = channels[0].lines[line];
+    const side = channels[1].lines[line];
+    const scale: f32 = 0.7071067811865476;
+    channels[0].lines[line] = (middle + side) * scale;
+    channels[1].lines[line] = (middle - side) * scale;
 }
 
 pub fn MainDataReservoir(comptime capacity: usize) type {
@@ -3553,6 +3858,335 @@ test "requantizes mixed blocks at version-specific boundaries" {
             .{ .value_count = 22 },
             hidden_line,
         ),
+    );
+}
+
+test "reconstructs Layer III mid-side stereo transactionally" {
+    var header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .stereo),
+    );
+    const descriptions: [2]GranuleChannel = @splat(.{});
+    const factors: [2]ScaleFactorChannel =
+        @splat(.{ .value_count = 22 });
+    var spectra: [2]RequantizedSpectrum = @splat(.{});
+    spectra[0].lines[0] = 2;
+    spectra[1].lines[0] = 1;
+    const independent = try processStereo(
+        header,
+        descriptions,
+        factors,
+        spectra,
+    );
+    try std.testing.expectEqual(
+        spectra,
+        independent.channels,
+    );
+    header.channel_mode = .joint_stereo;
+    header.mode_extension = 2;
+    const decoded = try processStereo(
+        header,
+        descriptions,
+        factors,
+        spectra,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 3.0 / @sqrt(2.0)),
+        decoded.channels[0].lines[0],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0 / @sqrt(2.0)),
+        decoded.channels[1].lines[0],
+        1e-6,
+    );
+
+    var mismatched = descriptions;
+    mismatched[1].window_switching = true;
+    mismatched[1].block_type = 1;
+    try std.testing.expectError(
+        error.InvalidMp3StereoBlocks,
+        processStereo(header, mismatched, factors, spectra),
+    );
+    var malformed = spectra;
+    malformed[0].lines[0] = std.math.nan(f32);
+    try std.testing.expectError(
+        error.InvalidMp3RequantizedSpectrum,
+        processStereo(header, descriptions, factors, malformed),
+    );
+    header.channel_mode = .mono;
+    try std.testing.expectError(
+        error.InvalidMp3StereoChannels,
+        processStereo(header, descriptions, factors, spectra),
+    );
+}
+
+test "reconstructs MPEG-1 intensity and fallback stereo bands" {
+    var header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .stereo),
+    );
+    header.channel_mode = .joint_stereo;
+    header.mode_extension = 3;
+    const descriptions: [2]GranuleChannel = @splat(.{});
+    var factors: [2]ScaleFactorChannel =
+        @splat(.{ .value_count = 22 });
+    factors[1].values[1] = 0;
+    factors[1].values[2] = 3;
+    factors[1].values[3] = 6;
+    factors[1].values[4] = 7;
+    const bands = try scaleFactorBands(header);
+    var spectra: [2]RequantizedSpectrum = @splat(.{});
+    spectra[1].lines[0] = 1;
+    for (1..5) |band|
+        spectra[0].lines[bands.long_starts[band]] = 1;
+
+    const decoded = try processStereo(
+        header,
+        descriptions,
+        factors,
+        spectra,
+    );
+    const position_zero = bands.long_starts[1];
+    try std.testing.expectEqual(
+        @as(f32, 1),
+        decoded.channels[0].lines[position_zero],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0),
+        decoded.channels[1].lines[position_zero],
+    );
+    const centered = bands.long_starts[2];
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.5),
+        decoded.channels[0].lines[centered],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.5),
+        decoded.channels[1].lines[centered],
+        1e-6,
+    );
+    const right = bands.long_starts[3];
+    try std.testing.expectEqual(
+        @as(f32, 0),
+        decoded.channels[0].lines[right],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 1),
+        decoded.channels[1].lines[right],
+    );
+    const fallback = bands.long_starts[4];
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0 / @sqrt(2.0)),
+        decoded.channels[0].lines[fallback],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0 / @sqrt(2.0)),
+        decoded.channels[1].lines[fallback],
+        1e-6,
+    );
+}
+
+test "reconstructs LSF and per-window short intensity stereo" {
+    var lsf_header = try Header.parse(
+        &testHeader(2, true, 9, 0, false, .stereo),
+    );
+    lsf_header.channel_mode = .joint_stereo;
+    lsf_header.mode_extension = 1;
+    const long_descriptions: [2]GranuleChannel = @splat(.{});
+    var long_factors: [2]ScaleFactorChannel =
+        @splat(.{ .value_count = 21 });
+    long_factors[1].values[1] = 1;
+    long_factors[1].values[2] = 2;
+    const lsf_bands = try scaleFactorBands(lsf_header);
+    var long_spectra: [2]RequantizedSpectrum = @splat(.{});
+    long_spectra[0].lines[lsf_bands.long_starts[0]] = 1;
+    long_spectra[0].lines[lsf_bands.long_starts[1]] = 1;
+    long_spectra[0].lines[lsf_bands.long_starts[2]] = 1;
+    const lsf = try processStereo(
+        lsf_header,
+        long_descriptions,
+        long_factors,
+        long_spectra,
+    );
+    try std.testing.expectEqual(
+        @as(f32, 1),
+        lsf.channels[1].lines[lsf_bands.long_starts[0]],
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, @exp2(-0.25)),
+        lsf.channels[0].lines[lsf_bands.long_starts[1]],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, @exp2(-0.25)),
+        lsf.channels[1].lines[lsf_bands.long_starts[2]],
+        1e-6,
+    );
+    var fine_scale = long_factors;
+    fine_scale[1].intensity_scale = true;
+    const fine = try processStereo(
+        lsf_header,
+        long_descriptions,
+        fine_scale,
+        long_spectra,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, @exp2(-0.5)),
+        fine.channels[0].lines[lsf_bands.long_starts[1]],
+        1e-6,
+    );
+    var fallback_factors = long_factors;
+    fallback_factors[1].intensity_max[3] = true;
+    var fallback_spectra = long_spectra;
+    fallback_spectra[0].lines[lsf_bands.long_starts[3]] = 2;
+    fallback_spectra[1].lines[lsf_bands.long_starts[3]] = 1;
+    lsf_header.mode_extension = 3;
+    const fallback = try processStereo(
+        lsf_header,
+        long_descriptions,
+        fallback_factors,
+        fallback_spectra,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 3.0 / @sqrt(2.0)),
+        fallback.channels[0].lines[lsf_bands.long_starts[3]],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0 / @sqrt(2.0)),
+        fallback.channels[1].lines[lsf_bands.long_starts[3]],
+        1e-6,
+    );
+    lsf_header.mode_extension = 1;
+    var invalid_position = long_factors;
+    invalid_position[1].values[3] = 16;
+    var invalid_spectra = long_spectra;
+    invalid_spectra[0].lines[lsf_bands.long_starts[3]] = 1;
+    try std.testing.expectError(
+        error.InvalidMp3IntensityPosition,
+        processStereo(
+            lsf_header,
+            long_descriptions,
+            invalid_position,
+            invalid_spectra,
+        ),
+    );
+
+    var short_header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .stereo),
+    );
+    short_header.channel_mode = .joint_stereo;
+    short_header.mode_extension = 3;
+    const short_descriptions: [2]GranuleChannel = @splat(.{
+        .window_switching = true,
+        .block_type = 2,
+    });
+    const short_factors: [2]ScaleFactorChannel =
+        @splat(.{ .value_count = 39 });
+    const short_bands = try scaleFactorBands(short_header);
+    var short_spectra: [2]RequantizedSpectrum = @splat(.{});
+    short_spectra[0].lines[0] = 1;
+    short_spectra[1].lines[0] = 1;
+    short_spectra[0].lines[1] = 1;
+    const next_band_window_zero =
+        3 * @as(usize, short_bands.short_starts[1]);
+    short_spectra[0].lines[next_band_window_zero] = 1;
+    const short = try processStereo(
+        short_header,
+        short_descriptions,
+        short_factors,
+        short_spectra,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, @sqrt(2.0)),
+        short.channels[0].lines[0],
+        1e-6,
+    );
+    try std.testing.expectEqual(
+        @as(f32, 1),
+        short.channels[0].lines[1],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0),
+        short.channels[1].lines[1],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 1),
+        short.channels[0].lines[next_band_window_zero],
+    );
+
+    const mixed_descriptions: [2]GranuleChannel = @splat(.{
+        .window_switching = true,
+        .block_type = 2,
+        .mixed_block = true,
+    });
+    const mixed_factors: [2]ScaleFactorChannel =
+        @splat(.{ .value_count = 38 });
+    const mixed_boundary: usize = 3 * short_bands.short_starts[3];
+    var mixed_spectra: [2]RequantizedSpectrum = @splat(.{});
+    mixed_spectra[0].lines[0] = 1;
+    mixed_spectra[0].lines[mixed_boundary] = 1;
+    const mixed = try processStereo(
+        short_header,
+        mixed_descriptions,
+        mixed_factors,
+        mixed_spectra,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0 / @sqrt(2.0)),
+        mixed.channels[0].lines[0],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0 / @sqrt(2.0)),
+        mixed.channels[1].lines[0],
+        1e-6,
+    );
+    try std.testing.expectEqual(
+        @as(f32, 1),
+        mixed.channels[0].lines[mixed_boundary],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0),
+        mixed.channels[1].lines[mixed_boundary],
+    );
+
+    var low_rate_header = try Header.parse(
+        &testHeader(0, true, 9, 2, false, .stereo),
+    );
+    low_rate_header.channel_mode = .joint_stereo;
+    low_rate_header.mode_extension = 1;
+    const low_rate_bands = try scaleFactorBands(low_rate_header);
+    const low_rate_boundary: usize =
+        3 * low_rate_bands.short_starts[3];
+    const low_rate_factors: [2]ScaleFactorChannel =
+        @splat(.{ .value_count = 33 });
+    var low_rate_spectra: [2]RequantizedSpectrum = @splat(.{});
+    low_rate_spectra[0].lines[low_rate_boundary - 1] = 1;
+    low_rate_spectra[0].lines[low_rate_boundary] = 1;
+    const low_rate = try processStereo(
+        low_rate_header,
+        mixed_descriptions,
+        low_rate_factors,
+        low_rate_spectra,
+    );
+    try std.testing.expectEqual(@as(usize, 72), low_rate_boundary);
+    try std.testing.expectEqual(
+        @as(f32, 1),
+        low_rate.channels[0].lines[low_rate_boundary - 1],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 0),
+        low_rate.channels[1].lines[low_rate_boundary - 1],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 1),
+        low_rate.channels[0].lines[low_rate_boundary],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 1),
+        low_rate.channels[1].lines[low_rate_boundary],
     );
 }
 

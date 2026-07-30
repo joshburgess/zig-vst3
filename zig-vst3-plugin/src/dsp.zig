@@ -283,6 +283,7 @@ pub const Mp3MainData = mp3.MainData;
 pub const Mp3MainDataReservoir = mp3.MainDataReservoir;
 pub const Mp3QuantizedSpectrum = mp3.QuantizedSpectrum;
 pub const Mp3RequantizedSpectrum = mp3.RequantizedSpectrum;
+pub const Mp3StereoSpectrum = mp3.StereoSpectrum;
 pub const Mp3ScaleFactorBands = mp3.ScaleFactorBands;
 pub const Mp3ScaleFactorChannel = mp3.ScaleFactorChannel;
 pub const Mp3ScaleFactorGranule = mp3.ScaleFactorGranule;
@@ -306,6 +307,7 @@ pub const mp3ScaleFactorBands = mp3.scaleFactorBands;
 pub const requiredMp3FileSeekPoints = mp3.requiredFileSeekPoints;
 pub const requiredMp3SeekPoints = mp3.requiredSeekPoints;
 pub const requantizeMp3Channel = mp3.requantizeChannel;
+pub const processMp3Stereo = mp3.processStereo;
 pub const maximumMp3FreeFormatFrameBytes =
     mp3.maximum_free_format_frame_bytes;
 pub const ConstAudioBlock = audio_block.ConstAudioBlock;

@@ -3289,6 +3289,29 @@ test "installed package exposes bounded MP3 framing and seeking" {
         &.{ 1, -1 },
         requantized.lines[0..2],
     );
+    const joint_header =
+        try plugin.dsp.Mp3Header.parse(&.{ 0xff, 0xfb, 0x90, 0x60 });
+    var stereo_input: [2]plugin.dsp.Mp3RequantizedSpectrum =
+        @splat(.{});
+    stereo_input[0].lines[0] = 2;
+    stereo_input[1].lines[0] = 1;
+    const stereo: plugin.dsp.Mp3StereoSpectrum =
+        try plugin.dsp.processMp3Stereo(
+            joint_header,
+            @splat(.{}),
+            @splat(.{ .value_count = 22 }),
+            stereo_input,
+        );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 3.0 / @sqrt(2.0)),
+        stereo.channels[0].lines[0],
+        1e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0 / @sqrt(2.0)),
+        stereo.channels[1].lines[0],
+        1e-6,
+    );
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);
