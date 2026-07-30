@@ -1077,9 +1077,18 @@ pub fn CoreAdapterWithParameters(
                 self.runtime.instance.plugin.bindLv2UridUnmap(unmap);
             }
             if (comptime has_worker) {
-                if (featureData(features, worker_schedule_uri)) |data| {
-                    self.worker_schedule =
-                        @ptrCast(@alignCast(data));
+                if (featureWithUri(
+                    features,
+                    worker_schedule_uri,
+                )) |feature| {
+                    self.worker_schedule = featureValue(
+                        WorkerSchedule,
+                        feature,
+                    ) orelse {
+                        self.runtime.deinit();
+                        allocator.destroy(self);
+                        return null;
+                    };
                 }
                 self.worker_schedule_sink = .{
                     .context = self,
@@ -1090,8 +1099,15 @@ pub fn CoreAdapterWithParameters(
                     &self.worker_schedule_sink,
                 );
             }
-            if (featureData(features, urid_map_uri)) |data| {
-                const map: *const UridMap = @ptrCast(@alignCast(data));
+            if (featureWithUri(features, urid_map_uri)) |map_feature| {
+                const map = featureValue(
+                    UridMap,
+                    map_feature,
+                ) orelse {
+                    self.runtime.deinit();
+                    allocator.destroy(self);
+                    return null;
+                };
                 self.state_key = map.map(
                     map.handle,
                     plugin_uri ++ "#parameterState",
@@ -1269,7 +1285,18 @@ pub fn CoreAdapterWithParameters(
                     allocator.destroy(self);
                     return null;
                 }
-                if (featureData(features, options_options_uri)) |options| {
+                if (featureWithUri(
+                    features,
+                    options_options_uri,
+                )) |options_feature| {
+                    const options = featureValue(
+                        OptionsOption,
+                        options_feature,
+                    ) orelse {
+                        self.runtime.deinit();
+                        allocator.destroy(self);
+                        return null;
+                    };
                     self.readInstantiationOptions(options) catch {
                         self.runtime.deinit();
                         allocator.destroy(self);
@@ -1883,10 +1910,10 @@ pub fn CoreAdapterWithParameters(
 
         fn readInstantiationOptions(
             self: *Self,
-            data: *anyopaque,
+            data: *const OptionsOption,
         ) !void {
             const options: [*]const OptionsOption =
-                @ptrCast(@alignCast(data));
+                @ptrCast(data);
             var minimum: ?usize = null;
             var maximum: ?usize = null;
             var nominal: ?usize = null;
@@ -3338,6 +3365,15 @@ fn featureData(
     features: ?[*:null]const ?*const Feature,
     wanted_uri: []const u8,
 ) ?*anyopaque {
+    const feature = featureWithUri(features, wanted_uri) orelse
+        return null;
+    return feature.data;
+}
+
+fn featureWithUri(
+    features: ?[*:null]const ?*const Feature,
+    wanted_uri: []const u8,
+) ?*const Feature {
     const list = features orelse return null;
     for (0..256) |index| {
         const feature = list[index] orelse return null;
@@ -3345,9 +3381,18 @@ fn featureData(
             u8,
             std.mem.span(feature.URI),
             wanted_uri,
-        )) return feature.data;
+        )) return feature;
     }
     return null;
+}
+
+fn featureValue(
+    comptime T: type,
+    feature: *const Feature,
+) ?*const T {
+    const raw = feature.data orelse return null;
+    if (@intFromPtr(raw) % @alignOf(T) != 0) return null;
+    return @ptrCast(@alignCast(raw));
 }
 
 fn statePathFeatures(
@@ -3382,9 +3427,9 @@ fn featureStruct(
     features: ?[*:null]const ?*const Feature,
     wanted_uri: []const u8,
 ) ?*const T {
-    const raw = featureData(features, wanted_uri) orelse return null;
-    if (@intFromPtr(raw) % @alignOf(T) != 0) return null;
-    return @ptrCast(@alignCast(raw));
+    const feature = featureWithUri(features, wanted_uri) orelse
+        return null;
+    return featureValue(T, feature);
 }
 
 fn layoutChannelCounts(
@@ -4315,6 +4360,33 @@ test "LV2 instantiation options constrain block length" {
         &map_feature,
         &options_feature,
     };
+    var misaligned_map_storage: [@sizeOf(UridMap) + 1]u8 align(@alignOf(UridMap)) = undefined;
+    map_feature.data = @ptrCast(&misaligned_map_storage[1]);
+    try std.testing.expectEqual(
+        @as(Handle, null),
+        Adapter.descriptor.instantiate(
+            &Adapter.descriptor,
+            48_000.0,
+            "/tmp/lv2-options-probe.lv2",
+            features[0..].ptr,
+        ),
+    );
+    map_feature.data = &urid_map;
+
+    var misaligned_options_storage: [@sizeOf(OptionsOption) + 1]u8 align(@alignOf(OptionsOption)) = undefined;
+    options_feature.data =
+        @ptrCast(&misaligned_options_storage[1]);
+    try std.testing.expectEqual(
+        @as(Handle, null),
+        Adapter.descriptor.instantiate(
+            &Adapter.descriptor,
+            48_000.0,
+            "/tmp/lv2-options-probe.lv2",
+            features[0..].ptr,
+        ),
+    );
+    options_feature.data = @constCast(&options);
+
     const handle = Adapter.descriptor.instantiate(
         &Adapter.descriptor,
         48_000.0,
@@ -5332,6 +5404,20 @@ test "LV2 worker supports immediate offline and bounded responses" {
         .data = &schedule,
     };
     const features = [_:null]?*const Feature{&schedule_feature};
+    var misaligned_schedule_storage: [@sizeOf(WorkerSchedule) + 1]u8 align(@alignOf(WorkerSchedule)) = undefined;
+    schedule_feature.data =
+        @ptrCast(&misaligned_schedule_storage[1]);
+    try std.testing.expectEqual(
+        @as(Handle, null),
+        Adapter.descriptor.instantiate(
+            &Adapter.descriptor,
+            48_000.0,
+            "/tmp/lv2-worker.lv2",
+            features[0..].ptr,
+        ),
+    );
+    schedule_feature.data = &schedule;
+
     const handle = Adapter.descriptor.instantiate(
         &Adapter.descriptor,
         48_000.0,
