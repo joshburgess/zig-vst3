@@ -516,6 +516,7 @@ fn featureData(
 ) ?*const T {
     const feature = findFeature(features, wanted_uri) orelse return null;
     const data = feature.data orelse return null;
+    if (@intFromPtr(data) % @alignOf(T) != 0) return null;
     return @ptrCast(@alignCast(data));
 }
 
@@ -535,6 +536,15 @@ test "LV2 UI feature lookup is bounded and validates resize dimensions" {
     const list = [_:null]?*const Feature{&parent};
     try std.testing.expect(findFeature(&list, parent_uri) == &parent);
     try std.testing.expect(findFeature(&list, resize_uri) == null);
+    var storage: [@sizeOf(Resize) + 1]u8 align(@alignOf(Resize)) = undefined;
+    const resize = Feature{
+        .URI = resize_uri,
+        .data = @ptrCast(&storage[1]),
+    };
+    const malformed = [_:null]?*const Feature{&resize};
+    try std.testing.expect(
+        featureData(Resize, &malformed, resize_uri) == null,
+    );
     try std.testing.expect(sizeFromHost(640, 480) != null);
     try std.testing.expect(sizeFromHost(0, 480) == null);
     try std.testing.expect(sizeFromHost(640, -1) == null);
