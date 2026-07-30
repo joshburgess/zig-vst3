@@ -2228,8 +2228,8 @@ pub fn CoreAdapterWithParameters(
         ) !InputReadResult {
             const port = event_input_port orelse return .{};
             const raw = self.ports[port] orelse return .{};
-            const sequence: *const AtomSequence =
-                @ptrCast(@alignCast(raw));
+            const sequence: *align(1) const AtomSequence =
+                @ptrCast(raw);
             if (sequence.atom.type != self.sequence_type or
                 sequence.atom.size < @sizeOf(AtomSequenceBody) or
                 (sequence.body.unit != 0 and
@@ -3102,7 +3102,7 @@ pub fn CoreAdapterWithParameters(
         ) !void {
             const port = event_output_port orelse return;
             const raw = self.ports[port] orelse return;
-            const sequence: *AtomSequence = @ptrCast(@alignCast(raw));
+            const sequence: *align(1) AtomSequence = @ptrCast(raw);
             const capacity: usize = sequence.atom.size;
             if (capacity < @sizeOf(AtomSequenceBody))
                 return error.EventStorageFull;
@@ -3200,6 +3200,8 @@ pub fn CoreAdapterWithParameters(
                 const raw = self.ports[
                     audio_input_port_start + index
                 ] orelse return error.UnconnectedPort;
+                if (@intFromPtr(raw) % @alignOf(f32) != 0)
+                    return error.InvalidContext;
                 const samples: [*]const f32 =
                     @ptrCast(@alignCast(raw));
                 main[index] = samples[0..sample_count];
@@ -3210,6 +3212,8 @@ pub fn CoreAdapterWithParameters(
                         main_input_channel_count +
                         index
                 ] orelse return error.UnconnectedPort;
+                if (@intFromPtr(raw) % @alignOf(f32) != 0)
+                    return error.InvalidContext;
                 const samples: [*]const f32 =
                     @ptrCast(@alignCast(raw));
                 auxiliary[index] = samples[0..sample_count];
@@ -3226,6 +3230,8 @@ pub fn CoreAdapterWithParameters(
                 const raw = self.ports[
                     audio_output_port_start + index
                 ] orelse return error.UnconnectedPort;
+                if (@intFromPtr(raw) % @alignOf(f32) != 0)
+                    return error.InvalidContext;
                 const samples: [*]f32 = @ptrCast(@alignCast(raw));
                 main[index] = samples[0..sample_count];
             }
@@ -3235,6 +3241,8 @@ pub fn CoreAdapterWithParameters(
                         main_output_channel_count +
                         index
                 ] orelse return error.UnconnectedPort;
+                if (@intFromPtr(raw) % @alignOf(f32) != 0)
+                    return error.InvalidContext;
                 const samples: [*]f32 = @ptrCast(@alignCast(raw));
                 auxiliary[index] = samples[0..sample_count];
             }
@@ -3296,6 +3304,8 @@ pub fn CoreAdapterWithParameters(
                 return .realtime;
             const raw = self.ports[port] orelse
                 return error.UnconnectedPort;
+            if (@intFromPtr(raw) % @alignOf(f32) != 0)
+                return error.InvalidControl;
             const value: *const f32 = @ptrCast(@alignCast(raw));
             if (!std.math.isFinite(value.*))
                 return error.InvalidControl;
@@ -3310,7 +3320,7 @@ pub fn CoreAdapterWithParameters(
                 const raw = self.ports[
                     audio_output_port_start + index
                 ] orelse continue;
-                const samples: [*]f32 = @ptrCast(@alignCast(raw));
+                const samples: [*]align(1) f32 = @ptrCast(raw);
                 @memset(samples[0..sample_count], 0.0);
             }
         }
@@ -3318,7 +3328,7 @@ pub fn CoreAdapterWithParameters(
         fn clearConnectedEventOutput(self: *const Self) void {
             const port = event_output_port orelse return;
             const raw = self.ports[port] orelse return;
-            const sequence: *AtomSequence = @ptrCast(@alignCast(raw));
+            const sequence: *align(1) AtomSequence = @ptrCast(raw);
             const capacity: usize = sequence.atom.size;
             sequence.atom = .{
                 .size = if (capacity >= @sizeOf(AtomSequenceBody))
@@ -3337,7 +3347,7 @@ pub fn CoreAdapterWithParameters(
 
         fn writeLatency(self: *const Self) void {
             const raw = self.ports[latency_output_port] orelse return;
-            const latency: *f32 = @ptrCast(@alignCast(raw));
+            const latency: *align(1) f32 = @ptrCast(raw);
             latency.* = @floatFromInt(self.runtime.latencySamples());
         }
     };
@@ -5833,6 +5843,45 @@ test "LV2 Atom MIDI sequences reach input and output event buses" {
         &([_]f32{0.0} ** 64),
         &audio_output,
     );
+
+    input_bytes[
+        @sizeOf(AtomSequenceBody) + 96 + @sizeOf(AtomEvent) + 4
+    ] = 0xf7;
+    var misaligned_input_storage: [@sizeOf(SequenceBuffer) + 1]u8 align(@alignOf(SequenceBuffer)) =
+        @splat(0);
+    @memcpy(
+        misaligned_input_storage[1..],
+        std.mem.asBytes(&input),
+    );
+    var misaligned_output_storage: [@sizeOf(SequenceBuffer) + 1]u8 align(@alignOf(SequenceBuffer)) =
+        @splat(0);
+    const misaligned_output: *align(1) SequenceBuffer =
+        @ptrCast(&misaligned_output_storage[1]);
+    misaligned_output.sequence.atom.size =
+        @sizeOf(AtomSequenceBody) + misaligned_output.storage.len;
+    descriptor.connect_port(
+        handle,
+        @intCast(Adapter.event_input_port.?),
+        @ptrCast(&misaligned_input_storage[1]),
+    );
+    descriptor.connect_port(
+        handle,
+        @intCast(Adapter.event_output_port.?),
+        @ptrCast(misaligned_output),
+    );
+    descriptor.run(handle, 64);
+    try std.testing.expectEqual(
+        RunStatus.succeeded,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqual(
+        @as(Urid, 29),
+        misaligned_output.sequence.atom.type,
+    );
+    try std.testing.expectEqual(
+        @as(u32, @sizeOf(AtomSequenceBody) + 96),
+        misaligned_output.sequence.atom.size,
+    );
 }
 
 test "LV2 time Position reaches transport and advances between runs" {
@@ -6177,6 +6226,44 @@ test "LV2 freewheeling control switches process mode at block boundaries" {
         @as(usize, 3),
         instance.runtime.instance.plugin.observed_count,
     );
+
+    freewheeling = 0.0;
+    var misaligned_latency_storage: [@sizeOf(f32) + 1]u8 align(@alignOf(f32)) = @splat(0xff);
+    const misaligned_latency: *align(1) f32 =
+        @ptrCast(&misaligned_latency_storage[1]);
+    descriptor.connect_port(
+        handle,
+        Adapter.latency_output_port,
+        @ptrCast(misaligned_latency),
+    );
+    output = @splat(1.0);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqual(
+        RunStatus.succeeded,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqual(@as(f32, 0.0), misaligned_latency.*);
+
+    var misaligned_mode_storage: [@sizeOf(f32) + 1]u8 align(@alignOf(f32)) = @splat(0);
+    const misaligned_mode: *align(1) f32 =
+        @ptrCast(&misaligned_mode_storage[1]);
+    misaligned_mode.* = 1.0;
+    descriptor.connect_port(
+        handle,
+        Adapter.freewheeling_input_port.?,
+        @ptrCast(misaligned_mode),
+    );
+    output = @splat(1.0);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqual(
+        RunStatus.invalid_control,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 0.0, 0.0 },
+        &output,
+    );
 }
 
 test "LV2 run failures clear connected outputs and remain bounded" {
@@ -6272,6 +6359,81 @@ test "LV2 run failures clear connected outputs and remain bounded" {
         f32,
         &[_]f32{ 0.0, 0.0, 0.0 },
         &output,
+    );
+
+    var misaligned_input_storage: [2 * @sizeOf(f32) + 1]u8 align(@alignOf(f32)) = @splat(0);
+    const misaligned_input: [*]align(1) f32 =
+        @ptrCast(&misaligned_input_storage[1]);
+    misaligned_input[0] = 0.25;
+    misaligned_input[1] = -0.25;
+    descriptor.connect_port(
+        handle,
+        Adapter.audio_input_port_start,
+        @ptrCast(misaligned_input),
+    );
+    var valid_gain: f32 = 1.0;
+    descriptor.connect_port(
+        handle,
+        Adapter.control_input_port_start,
+        &valid_gain,
+    );
+    output = @splat(1.0);
+    descriptor.run(handle, 2);
+    try std.testing.expectEqual(
+        RunStatus.invalid_context,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 0.0, 0.0 },
+        output[0..2],
+    );
+
+    var misaligned_output_storage: [2 * @sizeOf(f32) + 1]u8 align(@alignOf(f32)) = @splat(0xff);
+    const misaligned_output: [*]align(1) f32 =
+        @ptrCast(&misaligned_output_storage[1]);
+    descriptor.connect_port(
+        handle,
+        Adapter.audio_input_port_start,
+        @constCast(&input),
+    );
+    descriptor.connect_port(
+        handle,
+        Adapter.audio_output_port_start,
+        @ptrCast(misaligned_output),
+    );
+    descriptor.run(handle, 2);
+    try std.testing.expectEqual(
+        RunStatus.invalid_context,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqual(@as(f32, 0.0), misaligned_output[0]);
+    try std.testing.expectEqual(@as(f32, 0.0), misaligned_output[1]);
+
+    var misaligned_control_storage: [@sizeOf(f32) + 1]u8 align(@alignOf(f32)) = @splat(0);
+    const misaligned_control: *align(1) f32 =
+        @ptrCast(&misaligned_control_storage[1]);
+    misaligned_control.* = 1.0;
+    descriptor.connect_port(
+        handle,
+        Adapter.audio_output_port_start,
+        &output,
+    );
+    descriptor.connect_port(
+        handle,
+        Adapter.control_input_port_start,
+        @ptrCast(misaligned_control),
+    );
+    output = @splat(1.0);
+    descriptor.run(handle, 2);
+    try std.testing.expectEqual(
+        RunStatus.invalid_control,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 0.0, 0.0 },
+        output[0..2],
     );
 }
 
