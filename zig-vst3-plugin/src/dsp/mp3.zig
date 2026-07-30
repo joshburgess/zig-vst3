@@ -187,6 +187,11 @@ pub const Frame = struct {
             frame_bytes,
         );
     }
+
+    /// Return null when the frame does not carry a CRC.
+    pub fn crcValid(self: Frame) !?bool {
+        return frameCrcValid(self.bytes, self.header);
+    }
 };
 
 pub const Summary = struct {
@@ -217,6 +222,11 @@ pub const FileFrame = struct {
     header: Header,
     xing: ?Xing,
     vbri: ?Vbri,
+
+    /// Return null when the frame does not carry a CRC.
+    pub fn crcValid(self: FileFrame) !?bool {
+        return frameCrcValid(self.bytes, self.header);
+    }
 };
 
 pub const FileSummary = struct {
@@ -767,6 +777,36 @@ fn frameAtKnownLength(
     };
 }
 
+fn frameCrcValid(bytes: []const u8, header: Header) !?bool {
+    if (!header.crc_present) return null;
+    const protected_end = std.math.add(
+        usize,
+        6,
+        header.sideInformationBytes(),
+    ) catch return error.TruncatedMp3Frame;
+    if (bytes.len < protected_end)
+        return error.TruncatedMp3Frame;
+    const expected = readU16(bytes[4..6]);
+    var crc = crc16(0xffff, bytes[2..4]);
+    crc = crc16(crc, bytes[6..protected_end]);
+    return crc == expected;
+}
+
+fn crc16(initial: u16, bytes: []const u8) u16 {
+    var crc = initial;
+    for (bytes) |byte| {
+        var mask: u8 = 0x80;
+        while (mask != 0) : (mask >>= 1) {
+            const input_bit: u16 =
+                if (byte & mask == 0) 0 else 1;
+            const feedback = (crc >> 15) ^ input_bit;
+            crc <<= 1;
+            if (feedback != 0) crc ^= 0x8005;
+        }
+    }
+    return crc;
+}
+
 pub fn requiredFileSeekPoints(
     io: std.Io,
     file: std.Io.File,
@@ -1156,6 +1196,97 @@ test "parses MPEG Layer III versions, CRC, padding, and frame sizes" {
     try std.testing.expectEqual(@as(u32, 8_000), mpeg25.sample_rate);
     try std.testing.expectEqual(@as(u16, 8), mpeg25.bitrate_kbps);
     try std.testing.expectEqual(@as(usize, 72), mpeg25.frameBytes());
+}
+
+test "validates protected Layer III header and side information" {
+    const protected_header =
+        testHeader(3, false, 9, 0, false, .stereo);
+    var encoded: [500]u8 = undefined;
+    const frame_end = try appendFrame(
+        &encoded,
+        0,
+        protected_header,
+    );
+    for (encoded[6..38], 0..) |*byte, index|
+        byte.* = @intCast(index);
+    encoded[4] = 0x65;
+    encoded[5] = 0xe8;
+
+    var frame = try Frame.parse(encoded[0..frame_end], 0);
+    try std.testing.expectEqual(@as(?bool, true), try frame.crcValid());
+    const file_frame = FileFrame{
+        .byte_offset = 0,
+        .bytes = frame.bytes,
+        .header = frame.header,
+        .xing = frame.xing,
+        .vbri = frame.vbri,
+    };
+    try std.testing.expectEqual(
+        @as(?bool, true),
+        try file_frame.crcValid(),
+    );
+
+    encoded[20] ^= 1;
+    frame = try Frame.parse(encoded[0..frame_end], 0);
+    try std.testing.expectEqual(@as(?bool, false), try frame.crcValid());
+    encoded[20] ^= 1;
+    encoded[38] ^= 1;
+    frame = try Frame.parse(encoded[0..frame_end], 0);
+    try std.testing.expectEqual(@as(?bool, true), try frame.crcValid());
+
+    const unprotected_header =
+        testHeader(3, true, 9, 0, false, .stereo);
+    const unprotected_end = try appendFrame(
+        &encoded,
+        0,
+        unprotected_header,
+    );
+    frame = try Frame.parse(encoded[0..unprotected_end], 0);
+    try std.testing.expectEqual(@as(?bool, null), try frame.crcValid());
+
+    const truncated = Frame{
+        .offset = 0,
+        .bytes = encoded[0..6],
+        .header = try Header.parse(&protected_header),
+        .xing = null,
+        .vbri = null,
+    };
+    try std.testing.expectError(
+        error.TruncatedMp3Frame,
+        truncated.crcValid(),
+    );
+
+    const mpeg2_mono_header =
+        testHeader(2, false, 8, 0, false, .mono);
+    const mpeg2_end = try appendFrame(
+        &encoded,
+        0,
+        mpeg2_mono_header,
+    );
+    for (encoded[6..15], 0..) |*byte, index|
+        byte.* = @intCast(0xa0 + index);
+    encoded[4] = 0x2f;
+    encoded[5] = 0x43;
+    try std.testing.expectEqual(
+        @as(?bool, true),
+        try (try Frame.parse(encoded[0..mpeg2_end], 0)).crcValid(),
+    );
+
+    const mpeg25_stereo_header =
+        testHeader(0, false, 8, 0, false, .joint_stereo);
+    const mpeg25_end = try appendFrame(
+        &encoded,
+        0,
+        mpeg25_stereo_header,
+    );
+    for (encoded[6..23], 0..) |*byte, index|
+        byte.* = @intCast(0x40 + index);
+    encoded[4] = 0x37;
+    encoded[5] = 0x89;
+    try std.testing.expectEqual(
+        @as(?bool, true),
+        try (try Frame.parse(encoded[0..mpeg25_end], 0)).crcValid(),
+    );
 }
 
 test "rejects malformed and unsupported MPEG headers" {

@@ -3185,6 +3185,22 @@ test "installed package exposes bounded MP3 framing and seeking" {
         parsed.version,
     );
     try std.testing.expectEqual(@as(usize, 417), parsed.frameBytes());
+    try std.testing.expectEqual(
+        @as(?bool, null),
+        try (try plugin.dsp.Mp3Frame.parse(&encoded, 0)).crcValid(),
+    );
+
+    var protected: [417]u8 = @splat(0);
+    const protected_header = [_]u8{ 0xff, 0xfa, 0x90, 0x00 };
+    @memcpy(protected[0..4], &protected_header);
+    for (protected[6..38], 0..) |*byte, index|
+        byte.* = @intCast(index);
+    protected[4] = 0x65;
+    protected[5] = 0xe8;
+    try std.testing.expectEqual(
+        @as(?bool, true),
+        try (try plugin.dsp.Mp3Frame.parse(&protected, 0)).crcValid(),
+    );
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);
