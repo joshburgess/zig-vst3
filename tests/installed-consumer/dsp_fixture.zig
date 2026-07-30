@@ -3766,6 +3766,45 @@ test "installed package exposes bounded MP3 framing and seeking" {
         public_xing,
         &automatic_storage,
     );
+    const public_vbri_offsets = [_]u64{
+        0,
+        vbr_frame.frame.len,
+    };
+    var public_vbri_toc_storage: [4]u8 = undefined;
+    try std.testing.expectEqual(
+        public_vbri_toc_storage.len,
+        try plugin.dsp.requiredMp3VbriTocBytes(2, 1, 2),
+    );
+    const public_vbri_toc = try plugin.dsp.buildMp3VbriToc(
+        &public_vbri_offsets,
+        2,
+        @intCast(vbr_frame.frame.len * 2),
+        1,
+        1,
+        2,
+        &public_vbri_toc_storage,
+    );
+    const public_vbri: plugin.dsp.Mp3VbriEncoderMetadata = .{
+        .quality = 17,
+        .stream_bytes = @intCast(vbr_frame.frame.len * 2),
+        .frame_count = 2,
+        .toc_scale = 1,
+        .entry_bytes = 2,
+        .frames_per_entry = 1,
+        .toc = public_vbri_toc,
+    };
+    const public_vbri_frame = try plugin.dsp.encodeMp3VbriFrame(
+        vbr_frame.header,
+        public_vbri,
+        &automatic_storage,
+    );
+    try std.testing.expectEqual(
+        @as(u32, 2),
+        (try plugin.dsp.Mp3Frame.parse(
+            public_vbri_frame,
+            0,
+        )).vbri.?.frame_count,
+    );
 
     var vbr_stream_offsets: [4]u64 = undefined;
     var vbr_stream =

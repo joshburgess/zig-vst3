@@ -3499,6 +3499,17 @@ pub const XingEncoderMetadata = struct {
     encoder_padding: u12,
 };
 
+pub const VbriEncoderMetadata = struct {
+    delay: u16 = 0,
+    quality: u16,
+    stream_bytes: u32,
+    frame_count: u32,
+    toc_scale: u16,
+    entry_bytes: u16,
+    frames_per_entry: u16,
+    toc: []const u8,
+};
+
 pub fn encodeXingFrame(
     header: Header,
     metadata: XingEncoderMetadata,
@@ -3509,6 +3520,221 @@ pub fn encodeXingFrame(
         metadata,
         destination,
     );
+}
+
+pub fn encodeVbriFrame(
+    header: Header,
+    metadata: VbriEncoderMetadata,
+    destination: []u8,
+) ![]u8 {
+    if (header.crc_present)
+        return error.UnsupportedProtectedVbriFrame;
+    if (metadata.entry_bytes < 1 or
+        metadata.entry_bytes > 4)
+        return error.InvalidVbriEntrySize;
+    if (metadata.toc_scale == 0)
+        return error.InvalidVbriTocScale;
+    if (metadata.frames_per_entry == 0)
+        return error.InvalidVbriFramesPerEntry;
+    if (metadata.toc.len % metadata.entry_bytes != 0)
+        return error.InvalidVbriTocSize;
+    const entry_count = metadata.toc.len /
+        metadata.entry_bytes;
+    if (entry_count > std.math.maxInt(u16))
+        return error.VbriEntryCountOverflow;
+    const metadata_offset: usize = 36;
+    const metadata_bytes = std.math.add(
+        usize,
+        26,
+        metadata.toc.len,
+    ) catch return error.VbriSizeOverflow;
+    const encoded_header = try header.encode();
+    const frame_bytes = header.frameBytes();
+    if (frame_bytes < metadata_offset + metadata_bytes)
+        return error.Mp3EncoderMetadataFrameTooSmall;
+    if (destination.len < frame_bytes)
+        return error.InsufficientMp3EncoderStorage;
+
+    var staged: [maximum_encoded_frame_bytes]u8 = @splat(0);
+    @memcpy(staged[0..4], &encoded_header);
+    @memcpy(
+        staged[metadata_offset..][0..4],
+        "VBRI",
+    );
+    std.mem.writeInt(
+        u16,
+        staged[metadata_offset + 4 ..][0..2],
+        1,
+        .big,
+    );
+    std.mem.writeInt(
+        u16,
+        staged[metadata_offset + 6 ..][0..2],
+        metadata.delay,
+        .big,
+    );
+    std.mem.writeInt(
+        u16,
+        staged[metadata_offset + 8 ..][0..2],
+        metadata.quality,
+        .big,
+    );
+    std.mem.writeInt(
+        u32,
+        staged[metadata_offset + 10 ..][0..4],
+        metadata.stream_bytes,
+        .big,
+    );
+    std.mem.writeInt(
+        u32,
+        staged[metadata_offset + 14 ..][0..4],
+        metadata.frame_count,
+        .big,
+    );
+    std.mem.writeInt(
+        u16,
+        staged[metadata_offset + 18 ..][0..2],
+        @intCast(entry_count),
+        .big,
+    );
+    std.mem.writeInt(
+        u16,
+        staged[metadata_offset + 20 ..][0..2],
+        metadata.toc_scale,
+        .big,
+    );
+    std.mem.writeInt(
+        u16,
+        staged[metadata_offset + 22 ..][0..2],
+        metadata.entry_bytes,
+        .big,
+    );
+    std.mem.writeInt(
+        u16,
+        staged[metadata_offset + 24 ..][0..2],
+        metadata.frames_per_entry,
+        .big,
+    );
+    @memcpy(
+        staged[metadata_offset + 26 ..][0..metadata.toc.len],
+        metadata.toc,
+    );
+    @memcpy(destination[0..frame_bytes], staged[0..frame_bytes]);
+    return destination[0..frame_bytes];
+}
+
+pub fn requiredVbriTocBytes(
+    frame_count: u32,
+    frames_per_entry: u16,
+    entry_bytes: u16,
+) !usize {
+    if (frames_per_entry == 0)
+        return error.InvalidVbriFramesPerEntry;
+    if (entry_bytes < 1 or entry_bytes > 4)
+        return error.InvalidVbriEntrySize;
+    const entries = std.math.divCeil(
+        u32,
+        frame_count,
+        frames_per_entry,
+    ) catch return error.VbriSizeOverflow;
+    if (entries > std.math.maxInt(u16))
+        return error.VbriEntryCountOverflow;
+    return std.math.mul(
+        usize,
+        @intCast(entries),
+        @intCast(entry_bytes),
+    ) catch error.VbriSizeOverflow;
+}
+
+pub fn buildVbriToc(
+    frame_offsets: []const u64,
+    frame_count: u32,
+    stream_bytes: u32,
+    frames_per_entry: u16,
+    toc_scale: u16,
+    entry_bytes: u16,
+    destination: []u8,
+) ![]u8 {
+    if (toc_scale == 0)
+        return error.InvalidVbriTocScale;
+    const required = try requiredVbriTocBytes(
+        frame_count,
+        frames_per_entry,
+        entry_bytes,
+    );
+    const frame_count_usize: usize = frame_count;
+    const frames_per_entry_usize: usize =
+        frames_per_entry;
+    const entry_bytes_usize: usize = entry_bytes;
+    if (frame_offsets.len < frame_count_usize)
+        return error.Mp3VbrFrameIndexStorageTooSmall;
+    const offset_bytes = std.math.mul(
+        usize,
+        frame_count_usize,
+        @sizeOf(u64),
+    ) catch return error.OverlappingMp3VbrStorage;
+    if (byteRangesOverlap(
+        @intFromPtr(frame_offsets.ptr),
+        offset_bytes,
+        @intFromPtr(destination.ptr),
+        destination.len,
+    )) return error.OverlappingMp3VbrStorage;
+    if (destination.len < required)
+        return error.InsufficientVbriTocStorage;
+    if (frame_count == 0) return destination[0..0];
+    if (frame_offsets[0] != 0)
+        return error.InvalidMp3VbrFrameOffsets;
+    for (
+        frame_offsets[0..frame_count_usize],
+        0..,
+    ) |offset, index| {
+        if (offset >= stream_bytes or
+            (index != 0 and
+                offset <= frame_offsets[index - 1]))
+            return error.InvalidMp3VbrFrameOffsets;
+    }
+
+    const maximum_value: u64 =
+        (@as(u64, 1) << @intCast(entry_bytes * 8)) - 1;
+    const entry_count = required / entry_bytes_usize;
+    for (0..entry_count) |entry| {
+        const first = entry * frames_per_entry_usize;
+        const following = @min(
+            first + frames_per_entry_usize,
+            frame_count_usize,
+        );
+        const end: u64 = if (following == frame_count_usize)
+            stream_bytes
+        else
+            frame_offsets[following];
+        const segment_bytes = end - frame_offsets[first];
+        if (segment_bytes % toc_scale != 0)
+            return error.InexactVbriTocScale;
+        if (segment_bytes / toc_scale > maximum_value)
+            return error.VbriTocEntryOverflow;
+    }
+
+    for (0..entry_count) |entry| {
+        const first = entry * frames_per_entry_usize;
+        const following = @min(
+            first + frames_per_entry_usize,
+            frame_count_usize,
+        );
+        const end: u64 = if (following == frame_count_usize)
+            stream_bytes
+        else
+            frame_offsets[following];
+        var value = (end - frame_offsets[first]) /
+            toc_scale;
+        const output = destination[entry * entry_bytes_usize ..][0..entry_bytes_usize];
+        var index = output.len;
+        while (index != 0) {
+            index -= 1;
+            output[index] = @intCast(value & 0xff);
+            value >>= 8;
+        }
+    }
+    return destination[0..required];
 }
 
 fn encodeInfoFrameFields(
@@ -8865,6 +9091,13 @@ fn parseVbri(frame: []const u8) !?Vbri {
     const entry_bytes = readU16(frame[offset + 22 .. offset + 24]);
     if (entry_bytes < 1 or entry_bytes > 4)
         return error.InvalidVbriEntrySize;
+    const toc_scale = readU16(frame[offset + 20 .. offset + 22]);
+    if (toc_scale == 0)
+        return error.InvalidVbriTocScale;
+    const frames_per_entry =
+        readU16(frame[offset + 24 .. offset + 26]);
+    if (frames_per_entry == 0)
+        return error.InvalidVbriFramesPerEntry;
     const toc_bytes = std.math.mul(
         usize,
         entry_count,
@@ -8879,9 +9112,9 @@ fn parseVbri(frame: []const u8) !?Vbri {
         .stream_bytes = readU32(frame[offset + 10 .. offset + 14]),
         .frame_count = readU32(frame[offset + 14 .. offset + 18]),
         .toc_entries = entry_count,
-        .toc_scale = readU16(frame[offset + 20 .. offset + 22]),
+        .toc_scale = toc_scale,
         .entry_bytes = entry_bytes,
-        .frames_per_entry = readU16(frame[offset + 24 .. offset + 26]),
+        .frames_per_entry = frames_per_entry,
         .toc = frame[offset + 26 ..][0..toc_bytes],
     };
 }
@@ -13710,10 +13943,230 @@ test "parses bounded VBRI header and table" {
         Frame.parse(storage[0..end], 0),
     );
     storage[offset + 18 ..][0..2].* = .{ 0, 2 };
+    storage[offset + 20 ..][0..2].* = .{ 0, 0 };
+    try std.testing.expectError(
+        error.InvalidVbriTocScale,
+        Frame.parse(storage[0..end], 0),
+    );
+    storage[offset + 20 ..][0..2].* = .{ 0, 1 };
+    storage[offset + 24 ..][0..2].* = .{ 0, 0 };
+    try std.testing.expectError(
+        error.InvalidVbriFramesPerEntry,
+        Frame.parse(storage[0..end], 0),
+    );
+    storage[offset + 24 ..][0..2].* = .{ 0, 4 };
     storage[offset + 5] = 2;
     try std.testing.expectError(
         error.UnsupportedVbriVersion,
         Frame.parse(storage[0..end], 0),
+    );
+}
+
+test "encodes bounded VBRI metadata frames transactionally" {
+    const header = try (EncoderConfig{
+        .bitrate_kbps = 320,
+        .channel_mode = .stereo,
+    }).header(false);
+    const toc = [_]u8{
+        0x01, 0x02, 0x03, 0x04,
+        0x05, 0x06, 0x07, 0x08,
+    };
+    var storage: [maximum_encoded_frame_bytes + 4]u8 =
+        @splat(0xa5);
+    for (1..5) |entry_bytes| {
+        const toc_bytes = toc[0 .. entry_bytes * 2];
+        const encoded = try encodeVbriFrame(
+            header,
+            .{
+                .delay = 17,
+                .quality = 83,
+                .stream_bytes = 123_456,
+                .frame_count = 321,
+                .toc_scale = 2,
+                .entry_bytes = @intCast(entry_bytes),
+                .frames_per_entry = 7,
+                .toc = toc_bytes,
+            },
+            &storage,
+        );
+        try std.testing.expectEqual(
+            header.frameBytes(),
+            encoded.len,
+        );
+        try std.testing.expectEqualSlices(
+            u8,
+            &@as([4]u8, @splat(0xa5)),
+            storage[encoded.len..][0..4],
+        );
+        const frame = try Frame.parse(encoded, 0);
+        const vbri = frame.vbri orelse
+            return error.TestMp3VbriMissing;
+        try std.testing.expectEqual(@as(u16, 1), vbri.version);
+        try std.testing.expectEqual(@as(u16, 17), vbri.delay);
+        try std.testing.expectEqual(@as(u16, 83), vbri.quality);
+        try std.testing.expectEqual(
+            @as(u32, 123_456),
+            vbri.stream_bytes,
+        );
+        try std.testing.expectEqual(
+            @as(u32, 321),
+            vbri.frame_count,
+        );
+        try std.testing.expectEqual(
+            @as(u16, 2),
+            vbri.toc_entries,
+        );
+        try std.testing.expectEqual(
+            @as(u16, @intCast(entry_bytes)),
+            vbri.entry_bytes,
+        );
+        try std.testing.expectEqual(
+            @as(u16, 7),
+            vbri.frames_per_entry,
+        );
+        try std.testing.expectEqualSlices(
+            u8,
+            toc_bytes,
+            vbri.toc,
+        );
+    }
+
+    var unchanged: [64]u8 = @splat(0x5a);
+    const before = unchanged;
+    const base = VbriEncoderMetadata{
+        .quality = 1,
+        .stream_bytes = 2,
+        .frame_count = 3,
+        .toc_scale = 1,
+        .entry_bytes = 1,
+        .frames_per_entry = 1,
+        .toc = toc[0..2],
+    };
+    try std.testing.expectError(
+        error.InsufficientMp3EncoderStorage,
+        encodeVbriFrame(header, base, &unchanged),
+    );
+    try std.testing.expectEqual(before, unchanged);
+    var invalid = base;
+    invalid.entry_bytes = 0;
+    try std.testing.expectError(
+        error.InvalidVbriEntrySize,
+        encodeVbriFrame(header, invalid, &storage),
+    );
+    invalid = base;
+    invalid.toc_scale = 0;
+    try std.testing.expectError(
+        error.InvalidVbriTocScale,
+        encodeVbriFrame(header, invalid, &storage),
+    );
+    invalid = base;
+    invalid.frames_per_entry = 0;
+    try std.testing.expectError(
+        error.InvalidVbriFramesPerEntry,
+        encodeVbriFrame(header, invalid, &storage),
+    );
+    invalid = base;
+    invalid.entry_bytes = 3;
+    try std.testing.expectError(
+        error.InvalidVbriTocSize,
+        encodeVbriFrame(header, invalid, &storage),
+    );
+    var protected = header;
+    protected.crc_present = true;
+    try std.testing.expectError(
+        error.UnsupportedProtectedVbriFrame,
+        encodeVbriFrame(protected, base, &storage),
+    );
+
+    var offsets = [_]u64{ 0, 100, 230, 400 };
+    try std.testing.expectEqual(
+        @as(usize, 4),
+        try requiredVbriTocBytes(4, 2, 2),
+    );
+    var built_storage: [8]u8 = @splat(0xa5);
+    const built = try buildVbriToc(
+        &offsets,
+        4,
+        600,
+        2,
+        10,
+        2,
+        &built_storage,
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &.{ 0, 23, 0, 37 },
+        built,
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &@as([4]u8, @splat(0xa5)),
+        built_storage[4..],
+    );
+    var short_toc: [3]u8 = @splat(0x5a);
+    const short_before = short_toc;
+    try std.testing.expectError(
+        error.InsufficientVbriTocStorage,
+        buildVbriToc(
+            &offsets,
+            4,
+            600,
+            2,
+            10,
+            2,
+            &short_toc,
+        ),
+    );
+    try std.testing.expectEqual(short_before, short_toc);
+    try std.testing.expectError(
+        error.InexactVbriTocScale,
+        buildVbriToc(
+            &offsets,
+            4,
+            600,
+            2,
+            9,
+            2,
+            &built_storage,
+        ),
+    );
+    try std.testing.expectError(
+        error.VbriTocEntryOverflow,
+        buildVbriToc(
+            &offsets,
+            4,
+            600,
+            2,
+            1,
+            1,
+            &built_storage,
+        ),
+    );
+    offsets[2] = 100;
+    try std.testing.expectError(
+        error.InvalidMp3VbrFrameOffsets,
+        buildVbriToc(
+            &offsets,
+            4,
+            600,
+            2,
+            1,
+            2,
+            &built_storage,
+        ),
+    );
+    offsets[2] = 230;
+    try std.testing.expectError(
+        error.OverlappingMp3VbrStorage,
+        buildVbriToc(
+            &offsets,
+            4,
+            600,
+            2,
+            1,
+            2,
+            std.mem.sliceAsBytes(offsets[0..]),
+        ),
     );
 }
 
