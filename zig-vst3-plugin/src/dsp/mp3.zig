@@ -162,6 +162,12 @@ pub const ScaleFactorBands = struct {
     short_starts: []const u16,
 };
 
+pub const QuantizedSpectrum = struct {
+    lines: [576]i32 = @splat(0),
+    decoded_lines: u10 = 0,
+    huffman_bits_consumed: u12 = 0,
+};
+
 pub fn MainDataReservoir(comptime capacity: usize) type {
     if (capacity < 511)
         @compileError("MP3 main-data reservoirs require at least 511 bytes");
@@ -407,6 +413,141 @@ pub fn huffmanRegionEnds(
         bands.long_starts[first_index],
         bands.long_starts[second_index],
     };
+}
+
+pub fn decodeHuffmanChannel(
+    header: Header,
+    description: GranuleChannel,
+    factors: ScaleFactorChannel,
+    main_data: MainData,
+) !QuantizedSpectrum {
+    if (@as(u16, factors.part2_bits) +
+        factors.huffman_bit_count != description.part2_3_length)
+        return error.InvalidMp3Part23Length;
+    const segment_end = std.math.add(
+        usize,
+        factors.huffman_bit_offset,
+        factors.huffman_bit_count,
+    ) catch return error.InvalidMp3HuffmanRange;
+    if (segment_end > main_data.bit_count or
+        @as(usize, main_data.bit_count) > main_data.bytes.len * 8)
+        return error.InvalidMp3HuffmanRange;
+    if (description.big_values > 288)
+        return error.InvalidMp3BigValues;
+
+    const region_ends = try huffmanRegionEnds(
+        header,
+        description,
+    );
+    var reader = MainDataBitReader{
+        .bytes = main_data.bytes,
+        .bit_offset = factors.huffman_bit_offset,
+        .bit_limit = segment_end,
+    };
+    const start = reader.bit_offset;
+    var result = QuantizedSpectrum{};
+    const big_line_count =
+        @as(usize, description.big_values) * 2;
+    var line: usize = 0;
+    while (line < big_line_count) : (line += 2) {
+        const table = description.table_select[
+            if (line < region_ends[0])
+                0
+            else if (line < region_ends[1])
+                1
+            else
+                2
+        ];
+        if (table == 4 or table == 14)
+            return error.InvalidMp3HuffmanTable;
+        if (table != 0)
+            return error.UnsupportedMp3HuffmanPairTable;
+    }
+
+    while (line + 4 <= result.lines.len and
+        reader.bit_offset < reader.bit_limit)
+    {
+        var trial = reader;
+        const quad = decodeCount1Quad(
+            &trial,
+            description.count1_table_select,
+        ) catch break;
+        @memcpy(result.lines[line..][0..4], &quad);
+        reader = trial;
+        line += 4;
+    }
+    result.decoded_lines = @intCast(line);
+    result.huffman_bits_consumed =
+        @intCast(reader.bit_offset - start);
+    return result;
+}
+
+const Count1Code = struct {
+    length: u3,
+    bits: u6,
+};
+
+const count1_table_a = [16]Count1Code{
+    .{ .length = 1, .bits = 0b1 },
+    .{ .length = 4, .bits = 0b0101 },
+    .{ .length = 4, .bits = 0b0100 },
+    .{ .length = 5, .bits = 0b00101 },
+    .{ .length = 4, .bits = 0b0110 },
+    .{ .length = 6, .bits = 0b000101 },
+    .{ .length = 5, .bits = 0b00100 },
+    .{ .length = 6, .bits = 0b000100 },
+    .{ .length = 4, .bits = 0b0111 },
+    .{ .length = 5, .bits = 0b00011 },
+    .{ .length = 5, .bits = 0b00110 },
+    .{ .length = 6, .bits = 0b000000 },
+    .{ .length = 5, .bits = 0b00111 },
+    .{ .length = 6, .bits = 0b000010 },
+    .{ .length = 6, .bits = 0b000011 },
+    .{ .length = 6, .bits = 0b000001 },
+};
+
+fn decodeCount1Quad(
+    reader: *MainDataBitReader,
+    table_b: bool,
+) ![4]i32 {
+    var magnitudes: [4]u1 = undefined;
+    if (table_b) {
+        const encoded = try reader.read(4);
+        for (&magnitudes, 0..) |*value, index|
+            value.* = @intCast(
+                ((encoded >> @intCast(3 - index)) & 1) ^ 1,
+            );
+    } else {
+        var code: u6 = 0;
+        var matched: ?u4 = null;
+        for (1..7) |length| {
+            code = (code << 1) |
+                @as(u6, @intCast(try reader.read(1)));
+            for (count1_table_a, 0..) |entry, pattern| {
+                if (entry.length == length and
+                    entry.bits == code)
+                {
+                    matched = @intCast(pattern);
+                    break;
+                }
+            }
+            if (matched != null) break;
+        }
+        const pattern = matched orelse
+            return error.InvalidMp3Count1Code;
+        for (&magnitudes, 0..) |*value, index|
+            value.* = @intCast(
+                pattern >> @intCast(3 - index) & 1,
+            );
+    }
+
+    var result: [4]i32 = @splat(0);
+    for (magnitudes, 0..) |magnitude, index| {
+        if (magnitude == 0) continue;
+        result[index] =
+            if (try reader.read(1) == 0) 1 else -1;
+    }
+    return result;
 }
 
 fn buildBandStarts(comptime widths: anytype) [widths.len + 1]u16 {
@@ -2615,6 +2756,132 @@ test "plans long short and low-rate Huffman regions" {
     try std.testing.expectError(
         error.InvalidMp3SampleRate,
         scaleFactorBands(invalid_rate),
+    );
+}
+
+test "decodes bounded Layer III count1 Huffman tables" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    var table_a_bits: [1]u8 = @splat(0);
+    setTestBits(&table_a_bits, 0, 4, 0b0111);
+    setTestBits(&table_a_bits, 4, 1, 1);
+    const table_a = try decodeHuffmanChannel(
+        header,
+        .{ .part2_3_length = 5 },
+        .{
+            .huffman_bit_offset = 0,
+            .huffman_bit_count = 5,
+        },
+        .{ .bytes = &table_a_bits, .bit_count = 5 },
+    );
+    try std.testing.expectEqual(@as(u10, 4), table_a.decoded_lines);
+    try std.testing.expectEqual(@as(u12, 5), table_a.huffman_bits_consumed);
+    try std.testing.expectEqualSlices(
+        i32,
+        &.{ -1, 0, 0, 0 },
+        table_a.lines[0..4],
+    );
+
+    var table_b_bits: [1]u8 = @splat(0);
+    setTestBits(&table_b_bits, 0, 4, 0b0101);
+    setTestBits(&table_b_bits, 4, 2, 0b01);
+    const table_b = try decodeHuffmanChannel(
+        header,
+        .{
+            .part2_3_length = 6,
+            .count1_table_select = true,
+        },
+        .{
+            .huffman_bit_offset = 0,
+            .huffman_bit_count = 6,
+        },
+        .{ .bytes = &table_b_bits, .bit_count = 6 },
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &.{ 1, 0, -1, 0 },
+        table_b.lines[0..4],
+    );
+
+    var incomplete_bits: [1]u8 = @splat(0);
+    const incomplete = try decodeHuffmanChannel(
+        header,
+        .{
+            .part2_3_length = 5,
+            .count1_table_select = true,
+        },
+        .{
+            .huffman_bit_offset = 0,
+            .huffman_bit_count = 5,
+        },
+        .{ .bytes = &incomplete_bits, .bit_count = 5 },
+    );
+    try std.testing.expectEqual(@as(u10, 0), incomplete.decoded_lines);
+    try std.testing.expectEqual(
+        @as(u12, 0),
+        incomplete.huffman_bits_consumed,
+    );
+}
+
+test "decodes zero pair codebooks before the count1 partition" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    var encoded: [1]u8 = @splat(0);
+    setTestBits(&encoded, 0, 3, 0b111);
+    const decoded = try decodeHuffmanChannel(
+        header,
+        .{
+            .part2_3_length = 3,
+            .big_values = 2,
+        },
+        .{
+            .huffman_bit_offset = 0,
+            .huffman_bit_count = 3,
+        },
+        .{ .bytes = &encoded, .bit_count = 3 },
+    );
+    try std.testing.expectEqual(@as(u10, 16), decoded.decoded_lines);
+    try std.testing.expectEqual(@as(u12, 3), decoded.huffman_bits_consumed);
+    try std.testing.expectEqualSlices(
+        i32,
+        &@as([16]i32, @splat(0)),
+        decoded.lines[0..16],
+    );
+
+    try std.testing.expectError(
+        error.UnsupportedMp3HuffmanPairTable,
+        decodeHuffmanChannel(
+            header,
+            .{
+                .big_values = 1,
+                .table_select = .{ 1, 0, 0 },
+            },
+            .{},
+            .{ .bytes = &.{}, .bit_count = 0 },
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3Part23Length,
+        decodeHuffmanChannel(
+            header,
+            .{ .part2_3_length = 2 },
+            .{ .huffman_bit_count = 1 },
+            .{ .bytes = &encoded, .bit_count = 1 },
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3HuffmanRange,
+        decodeHuffmanChannel(
+            header,
+            .{ .part2_3_length = 2 },
+            .{
+                .huffman_bit_offset = 1,
+                .huffman_bit_count = 2,
+            },
+            .{ .bytes = &encoded, .bit_count = 2 },
+        ),
     );
 }
 

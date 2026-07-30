@@ -3212,8 +3212,10 @@ test "installed package exposes bounded MP3 framing and seeking" {
     const Reservoir = plugin.dsp.Mp3MainDataReservoir(511);
     var reservoir = Reservoir{};
     var main_data_storage: [1]u8 = undefined;
+    const installed_frame = try plugin.dsp.Mp3Frame.parse(&encoded, 0);
+    const installed_side = try installed_frame.sideInformation();
     const main_data: plugin.dsp.Mp3MainData = try reservoir.assemble(
-        try plugin.dsp.Mp3Frame.parse(&encoded, 0),
+        installed_frame,
         &main_data_storage,
     );
     try std.testing.expectEqual(@as(u16, 0), main_data.bit_count);
@@ -3221,10 +3223,7 @@ test "installed package exposes bounded MP3 framing and seeking" {
     const scale_factors: plugin.dsp.Mp3ScaleFactors =
         try plugin.dsp.decodeMp3ScaleFactors(
             parsed,
-            try (try plugin.dsp.Mp3Frame.parse(
-                &encoded,
-                0,
-            )).sideInformation(),
+            installed_side,
             main_data,
         );
     try std.testing.expectEqual(
@@ -3241,6 +3240,14 @@ test "installed package exposes bounded MP3 framing and seeking" {
         [2]u16{ 4, 8 },
         try plugin.dsp.mp3HuffmanRegionEnds(parsed, .{}),
     );
+    const spectrum: plugin.dsp.Mp3QuantizedSpectrum =
+        try plugin.dsp.decodeMp3HuffmanChannel(
+            parsed,
+            installed_side.granules[0].channels[0],
+            scale_channel,
+            main_data,
+        );
+    try std.testing.expectEqual(@as(u10, 0), spectrum.decoded_lines);
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);
