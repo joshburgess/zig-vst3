@@ -3458,6 +3458,21 @@ test "installed package exposes bounded MP3 framing and seeking" {
         analyzed_channel.spectrum.lines[0],
     ));
     try std.testing.expectEqual(@as(u64, 1), pcm_analysis.frames_analyzed);
+    const psychoacoustic_config =
+        plugin.dsp.Mp3EncoderPsychoacousticConfig{};
+    const psychoacoustic_model =
+        plugin.dsp.Mp3EncoderPsychoacousticModel{
+            .config = psychoacoustic_config,
+        };
+    const psychoacoustic: plugin.dsp.Mp3EncoderPsychoacousticChannel =
+        try psychoacoustic_model.analyze(
+            joint_header,
+            analyzed_channel,
+        );
+    try std.testing.expectEqual(
+        @as(u6, 22),
+        psychoacoustic.band_count,
+    );
     var classifier = plugin.dsp.Mp3EncoderBlockClassifier{};
     const classified = try classifier.classify(
         joint_header,

@@ -754,8 +754,99 @@ fn hasEncoderAttack(samples: []const f32, attack_ratio: f32) !bool {
     return false;
 }
 
+pub const EncoderPsychoacousticConfig = struct {
+    absolute_threshold: f32 = 1.0e-9,
+    masking_ratio: f32 = 0.005,
+    adjacent_masking_ratio: f32 = 0.001,
+};
+
+pub const EncoderPsychoacousticChannel = struct {
+    energy: [39]f32 = @splat(0),
+    threshold: [39]f32 = @splat(0),
+    band_count: u6 = 0,
+};
+
+pub const EncoderPsychoacousticModel = struct {
+    config: EncoderPsychoacousticConfig = .{},
+
+    pub fn analyze(
+        self: EncoderPsychoacousticModel,
+        header: Header,
+        channel: AnalyzedEncoderChannel,
+    ) !EncoderPsychoacousticChannel {
+        try validateEncoderPsychoacousticConfig(self.config);
+        const ordered = try orderEncoderSpectrum(
+            header,
+            channel.description,
+            channel.spectrum,
+        );
+        const layout = try encoderBandLayout(
+            header,
+            channel.description,
+        );
+        var result = EncoderPsychoacousticChannel{
+            .band_count = layout.band_count,
+        };
+        for (0..layout.band_count) |band| {
+            var energy: f64 = 0;
+            for (ordered[layout.starts[band]..layout.starts[band + 1]]) |line| {
+                if (!std.math.isFinite(line))
+                    return error.InvalidMp3RequantizedSpectrum;
+                energy += @as(f64, line) * @as(f64, line);
+            }
+            result.energy[band] = @floatCast(energy);
+        }
+        for (0..layout.band_count) |band| {
+            const line_count: f64 = @floatFromInt(
+                layout.starts[band + 1] - layout.starts[band],
+            );
+            var threshold =
+                @as(f64, self.config.absolute_threshold) *
+                line_count +
+                @as(f64, result.energy[band]) *
+                    self.config.masking_ratio;
+            if (band != 0)
+                threshold +=
+                    @as(f64, result.energy[band - 1]) *
+                    self.config.adjacent_masking_ratio;
+            if (band + 1 < layout.band_count)
+                threshold +=
+                    @as(f64, result.energy[band + 1]) *
+                    self.config.adjacent_masking_ratio;
+            if (!std.math.isFinite(threshold))
+                return error.InvalidMp3PsychoacousticEnergy;
+            result.threshold[band] = @floatCast(threshold);
+        }
+        return result;
+    }
+};
+
+fn validateEncoderPsychoacousticConfig(
+    config: EncoderPsychoacousticConfig,
+) !void {
+    if (!std.math.isFinite(config.absolute_threshold) or
+        config.absolute_threshold <= 0 or
+        !std.math.isFinite(config.masking_ratio) or
+        config.masking_ratio < 0 or
+        config.masking_ratio > 1 or
+        !std.math.isFinite(config.adjacent_masking_ratio) or
+        config.adjacent_masking_ratio < 0 or
+        config.adjacent_masking_ratio > 1)
+        return error.InvalidMp3EncoderPsychoacousticConfig;
+}
+
 pub const EncoderQuantizer = struct {
+    psychoacoustics: EncoderPsychoacousticModel = .{},
+
     pub fn quantize(
+        header: Header,
+        analyzed: AnalyzedEncoderFrame,
+    ) !QuantizedEncoderFrame {
+        return (EncoderQuantizer{}).process(header, analyzed);
+    }
+
+    pub fn process(
+        self: EncoderQuantizer,
         header: Header,
         analyzed: AnalyzedEncoderFrame,
     ) !QuantizedEncoderFrame {
@@ -777,11 +868,18 @@ pub const EncoderQuantizer = struct {
         var result = QuantizedEncoderFrame{};
         for (0..granule_count) |granule| {
             for (0..channel_count) |channel| {
+                const psychoacoustic = try self.psychoacoustics.analyze(
+                    header,
+                    analyzed.granules[granule][channel],
+                );
                 result.granules[granule][channel] =
                     try quantizeEncoderChannel(
                         header,
                         analyzed.granules[granule][channel],
+                        psychoacoustic,
                         channel_budget,
+                        @intCast(granule),
+                        @intCast(channel),
                     );
             }
         }
@@ -838,7 +936,10 @@ pub const PcmEncoder = struct {
 fn quantizeEncoderChannel(
     header: Header,
     analyzed: AnalyzedEncoderChannel,
+    psychoacoustic: EncoderPsychoacousticChannel,
     bit_budget: usize,
+    granule: u2,
+    channel: u2,
 ) !QuantizedEncoderChannel {
     try validateBlockDescription(analyzed.description);
     for (analyzed.spectrum.lines) |line| {
@@ -850,51 +951,157 @@ fn quantizeEncoderChannel(
         analyzed.description,
         analyzed.spectrum,
     );
+    const layout = try encoderBandLayout(
+        header,
+        analyzed.description,
+    );
+    if (psychoacoustic.band_count != layout.band_count)
+        return error.InvalidMp3PsychoacousticBands;
+    for (0..layout.band_count) |band| {
+        if (!std.math.isFinite(psychoacoustic.energy[band]) or
+            psychoacoustic.energy[band] < 0 or
+            !std.math.isFinite(psychoacoustic.threshold[band]) or
+            psychoacoustic.threshold[band] <= 0)
+            return error.InvalidMp3PsychoacousticEnergy;
+    }
+    for (psychoacoustic.energy[layout.band_count..]) |energy| {
+        if (energy != 0)
+            return error.InvalidMp3PsychoacousticBands;
+    }
+    for (psychoacoustic.threshold[layout.band_count..]) |threshold| {
+        if (threshold != 0)
+            return error.InvalidMp3PsychoacousticBands;
+    }
+
+    var quantization_description = analyzed.description;
+    const intensity_stereo =
+        header.channel_mode == .joint_stereo and
+        header.mode_extension & 1 != 0 and
+        channel == 1;
+    quantization_description.scalefac_compress =
+        if (intensity_stereo)
+            0
+        else if (header.version == .mpeg1)
+            15
+        else
+            399;
+    const factor_widths = try encoderScaleFactorWidths(
+        header,
+        quantization_description,
+        intensity_stereo,
+    );
+    const factor_count = scaleFactorValueCount(
+        header,
+        quantization_description,
+    );
 
     var gain: u16 = 0;
     while (gain <= std.math.maxInt(u8)) : (gain += 1) {
         var spectrum: [576]i32 = undefined;
-        const exponent =
+        var factors = EncoderScaleFactors{
+            .value_count = factor_count,
+        };
+        const global_exponent =
             (@as(f64, @floatFromInt(gain)) - 210.0) * 0.25;
-        const step = std.math.exp2(exponent);
         var fits_range = true;
-        for (ordered, 0..) |line, index| {
-            const magnitude = @abs(@as(f64, line));
-            const scaled = std.math.pow(
-                f64,
-                magnitude / step,
-                0.75,
-            );
-            if (!std.math.isFinite(scaled) or scaled > 8206.49) {
+        for (0..layout.band_count) |band| {
+            const maximum_factor: u8 = if (band < factor_count and
+                factor_widths[band] != 0)
+                @intCast(
+                    (@as(u16, 1) << factor_widths[band]) - 1,
+                )
+            else
+                0;
+            var selected_factor: ?u8 = null;
+            var factor: u8 = 0;
+            while (factor <= maximum_factor) : (factor += 1) {
+                const exponent = global_exponent -
+                    0.5 * @as(f64, @floatFromInt(factor));
+                const attempt = quantizeEncoderBand(
+                    ordered[layout.starts[band]..layout.starts[band + 1]],
+                    spectrum[layout.starts[band]..layout.starts[band + 1]],
+                    exponent,
+                ) catch continue;
+                selected_factor = factor;
+                if (attempt <= psychoacoustic.threshold[band])
+                    break;
+                if (factor == maximum_factor)
+                    break;
+            }
+            if (selected_factor) |selected|
+                factors.values[band] = selected
+            else {
                 fits_range = false;
                 break;
             }
-            const quantized: i32 = @intFromFloat(@round(scaled));
-            spectrum[index] = if (line < 0)
-                -quantized
-            else
-                quantized;
         }
         if (!fits_range)
             continue;
+        var scale_factor_storage: [64]u8 = undefined;
+        const encoded_factors = try encodeScaleFactors(
+            header,
+            quantization_description,
+            0,
+            granule,
+            channel,
+            .{},
+            factors,
+            &scale_factor_storage,
+        );
         const selected = selectEncoderHuffman(
             header,
-            analyzed.description,
+            quantization_description,
             &spectrum,
         ) catch |failure| switch (failure) {
             error.Mp3HuffmanTableTooSmall => continue,
             else => return failure,
         };
-        if (selected.bit_count > bit_budget)
+        if (selected.bit_count +
+            encoded_factors.main_data.bit_count > bit_budget)
             continue;
         var description = selected.description;
         description.global_gain = @intCast(gain);
         return .{
             .description = description,
+            .scale_factors = factors,
             .spectrum = spectrum,
         };
     }
     return error.Mp3EncoderBitBudgetTooSmall;
+}
+
+fn quantizeEncoderBand(
+    source: []const f32,
+    destination: []i32,
+    exponent: f64,
+) !f32 {
+    if (source.len != destination.len)
+        return error.InvalidMp3ScaleFactorBands;
+    const step = std.math.exp2(exponent);
+    var error_energy: f64 = 0;
+    for (source, destination) |line, *quantized| {
+        const magnitude = @abs(@as(f64, line));
+        const scaled = std.math.pow(
+            f64,
+            magnitude / step,
+            0.75,
+        );
+        if (!std.math.isFinite(scaled) or scaled > 8206.49)
+            return error.Mp3QuantizedBandOutOfRange;
+        const value: i32 = @intFromFloat(@round(scaled));
+        quantized.* = if (line < 0) -value else value;
+        const reconstructed = std.math.pow(
+            f64,
+            @floatFromInt(value),
+            4.0 / 3.0,
+        ) * step;
+        const difference =
+            reconstructed - @abs(@as(f64, line));
+        error_energy += difference * difference;
+    }
+    if (!std.math.isFinite(error_energy))
+        return error.InvalidMp3QuantizationNoise;
+    return @floatCast(error_energy);
 }
 
 fn orderEncoderSpectrum(
@@ -932,6 +1139,119 @@ fn orderEncoderSpectrum(
     }
     if (destination != result.len)
         return error.InvalidMp3ScaleFactorBands;
+    return result;
+}
+
+const EncoderBandLayout = struct {
+    starts: [40]u16 = @splat(0),
+    band_count: u6,
+};
+
+fn encoderBandLayout(
+    header: Header,
+    description: GranuleChannel,
+) !EncoderBandLayout {
+    const bands = try scaleFactorBands(header);
+    try validateBlockDescription(description);
+    var result = EncoderBandLayout{ .band_count = 0 };
+    if (description.block_type != 2) {
+        for (bands.long_starts, 0..) |start, index|
+            result.starts[index] = start;
+        result.band_count = 22;
+        return result;
+    }
+
+    var index: usize = 0;
+    var offset: u16 = 0;
+    if (description.mixed_block) {
+        const boundary: u16 = 3 * bands.short_starts[3];
+        var long_band: usize = 0;
+        while (bands.long_starts[long_band] < boundary) : (long_band += 1) {
+            result.starts[index] = bands.long_starts[long_band];
+            index += 1;
+        }
+        if (bands.long_starts[long_band] != boundary)
+            return error.InvalidMp3ScaleFactorBands;
+        offset = boundary;
+    }
+    const first_short_band: usize =
+        if (description.mixed_block) 3 else 0;
+    for (first_short_band..13) |band| {
+        const width =
+            bands.short_starts[band + 1] -
+            bands.short_starts[band];
+        for (0..3) |_| {
+            result.starts[index] = offset;
+            offset += width;
+            index += 1;
+        }
+    }
+    result.starts[index] = offset;
+    if (offset != 576 or index > std.math.maxInt(u6))
+        return error.InvalidMp3ScaleFactorBands;
+    result.band_count = @intCast(index);
+    return result;
+}
+
+fn encoderScaleFactorWidths(
+    header: Header,
+    description: GranuleChannel,
+    intensity_stereo: bool,
+) ![39]u4 {
+    var result: [39]u4 = @splat(0);
+    if (header.version == .mpeg1) {
+        if (description.scalefac_compress >=
+            mpeg1_scale_factor_lengths.len)
+            return error.InvalidMp3ScaleFactorCompression;
+        const lengths =
+            mpeg1_scale_factor_lengths[description.scalefac_compress];
+        if (description.block_type == 2) {
+            const first_count: usize =
+                if (description.mixed_block) 17 else 18;
+            @memset(result[0..first_count], lengths[0]);
+            @memset(
+                result[first_count .. first_count + 18],
+                lengths[1],
+            );
+        } else {
+            @memset(result[0..11], lengths[0]);
+            @memset(result[11..21], lengths[1]);
+        }
+    } else {
+        const plan = try lsfScaleFactorPlan(
+            description.scalefac_compress,
+            intensity_stereo,
+        );
+        const factor_layout: usize =
+            if (description.block_type != 2)
+                0
+            else if (description.mixed_block)
+                2
+            else
+                1;
+        var index: usize = 0;
+        for (
+            lsf_scale_factor_counts[plan.table][factor_layout],
+            0..,
+        ) |count, part| {
+            @memset(
+                result[index .. index + count],
+                plan.lengths[part],
+            );
+            index += count;
+        }
+    }
+    if (description.block_type == 2) {
+        const bands = try encoderBandLayout(header, description);
+        @memset(
+            result[bands.band_count - 3 .. bands.band_count],
+            0,
+        );
+        @memset(
+            result[scaleFactorValueCount(header, description)..],
+            0,
+        );
+    } else result[21] = 0;
     return result;
 }
 
@@ -9899,6 +10219,80 @@ test "classifies MP3 encoder block transitions transactionally" {
     try std.testing.expectEqual(before_malformed, classifier);
 }
 
+test "analyzes bounded MP3 psychoacoustic bands" {
+    const headers = [_]Header{
+        try Header.parse(
+            &testHeader(3, true, 9, 0, false, .mono),
+        ),
+        try Header.parse(
+            &testHeader(0, true, 9, 2, false, .mono),
+        ),
+    };
+    const descriptions = [_]GranuleChannel{
+        .{},
+        .{
+            .window_switching = true,
+            .block_type = 2,
+        },
+        .{
+            .window_switching = true,
+            .block_type = 2,
+            .mixed_block = true,
+        },
+    };
+    const model = EncoderPsychoacousticModel{};
+    for (headers) |header| {
+        for (descriptions) |description| {
+            var channel = AnalyzedEncoderChannel{
+                .description = description,
+            };
+            channel.spectrum.lines[0] = 2;
+            channel.spectrum.lines[1] = -1;
+            channel.spectrum.lines[40] = 0.25;
+            const analyzed = try model.analyze(header, channel);
+            const layout = try encoderBandLayout(
+                header,
+                description,
+            );
+            try std.testing.expectEqual(
+                layout.band_count,
+                analyzed.band_count,
+            );
+            try std.testing.expect(analyzed.energy[0] > 0);
+            for (analyzed.threshold[0..analyzed.band_count]) |value|
+                try std.testing.expect(
+                    std.math.isFinite(value) and value > 0,
+                );
+            for (analyzed.energy[analyzed.band_count..]) |value|
+                try std.testing.expectEqual(@as(f32, 0), value);
+        }
+    }
+
+    var invalid_model = model;
+    invalid_model.config.masking_ratio = std.math.nan(f32);
+    try std.testing.expectError(
+        error.InvalidMp3EncoderPsychoacousticConfig,
+        invalid_model.analyze(headers[0], .{}),
+    );
+    var malformed = AnalyzedEncoderChannel{};
+    malformed.spectrum.lines[0] = std.math.inf(f32);
+    try std.testing.expectError(
+        error.InvalidMp3RequantizedSpectrum,
+        model.analyze(headers[0], malformed),
+    );
+    const invalid_quantizer = EncoderQuantizer{
+        .psychoacoustics = invalid_model,
+    };
+    const invalid_frame = AnalyzedEncoderFrame{
+        .channel_count = 1,
+        .granule_count = 2,
+    };
+    try std.testing.expectError(
+        error.InvalidMp3EncoderPsychoacousticConfig,
+        invalid_quantizer.process(headers[0], invalid_frame),
+    );
+}
+
 test "quantizes analyzed MP3 spectra with automatic codebooks" {
     const config = EncoderConfig{
         .version = .mpeg1,
@@ -9912,10 +10306,17 @@ test "quantizes analyzed MP3 spectra with automatic codebooks" {
         .granule_count = 2,
     };
     for (0..2) |granule| {
+        for (0..240) |line| {
+            analyzed.granules[granule][0].spectrum.lines[line] =
+                0.2 * @sin(
+                    @as(f32, @floatFromInt(line)) * 0.37,
+                );
+        }
         analyzed.granules[granule][0].spectrum.lines[0] = 2.5;
         analyzed.granules[granule][0].spectrum.lines[1] = -1.5;
         analyzed.granules[granule][0].spectrum.lines[40] = 0.25;
         analyzed.granules[granule][0].spectrum.lines[43] = -0.25;
+        analyzed.granules[granule][0].spectrum.lines[350] = 0.001;
     }
     const quantized = try EncoderQuantizer.quantize(
         header,
@@ -9931,6 +10332,10 @@ test "quantizes analyzed MP3 spectra with automatic codebooks" {
             channel.spectrum[0] != 0 or
                 channel.spectrum[1] != 0,
         );
+        var nonzero_factor = false;
+        for (channel.scale_factors.values) |factor|
+            nonzero_factor = nonzero_factor or factor != 0;
+        try std.testing.expect(nonzero_factor);
     }
 
     var encoder = try FrameEncoder.init(config);
@@ -9942,6 +10347,33 @@ test "quantizes analyzed MP3 spectra with automatic codebooks" {
     const parsed = try Frame.parse(bytes, 0);
     const side = try parsed.sideInformation();
     try std.testing.expect(side.main_data_bits > 0);
+    var reservoir = MainDataReservoir(511){};
+    var main_storage: [512]u8 = undefined;
+    const main_data = try reservoir.assemble(
+        parsed,
+        &main_storage,
+    );
+    const decoded_factors = try decodeScaleFactors(
+        parsed.header,
+        side,
+        main_data,
+    );
+    for (0..2) |granule| {
+        try std.testing.expectEqual(
+            quantized.granules[granule][0].scale_factors.values,
+            decoded_factors.granules[granule].channels[0].values,
+        );
+        const reconstructed = try requantizeChannel(
+            header,
+            quantized.granules[granule][0].description,
+            decoded_factors.granules[granule].channels[0],
+            .{
+                .lines = quantized.granules[granule][0].spectrum,
+                .decoded_lines = 576,
+            },
+        );
+        try std.testing.expect(reconstructed.lines[350] != 0);
+    }
     var decoder = FrameDecoder{};
     const pcm = try decoder.decode(parsed);
     for (pcm.channels[0]) |sample|
@@ -9977,7 +10409,12 @@ test "quantizes analyzed MP3 spectra with automatic codebooks" {
     const short_reconstructed = try requantizeChannel(
         header,
         transition_quantized.granules[1][0].description,
-        .{ .value_count = 39 },
+        .{
+            .values = transition_quantized.granules[1][0]
+                .scale_factors.values,
+            .value_count = transition_quantized.granules[1][0]
+                .scale_factors.value_count,
+        },
         short_quantized,
     );
     try std.testing.expect(short_reconstructed.lines[40] != 0);
@@ -10079,6 +10516,49 @@ test "orders pure and mixed short spectra for MP3 encoding" {
             ],
         );
     }
+}
+
+test "keeps low-rate mixed terminal scale factors zero" {
+    const header = try Header.parse(
+        &testHeader(0, true, 9, 2, false, .mono),
+    );
+    var analyzed = AnalyzedEncoderFrame{
+        .channel_count = 1,
+        .granule_count = 1,
+    };
+    analyzed.granules[0][0].description = .{
+        .window_switching = true,
+        .block_type = 2,
+        .mixed_block = true,
+    };
+    analyzed.granules[0][0].spectrum.lines[0] = 1;
+    analyzed.granules[0][0].spectrum.lines[575] = 0.1;
+    const quantized = try EncoderQuantizer.quantize(
+        header,
+        analyzed,
+    );
+    const channel = quantized.granules[0][0];
+    try std.testing.expectEqual(
+        @as(u6, 33),
+        channel.scale_factors.value_count,
+    );
+    const layout = try encoderBandLayout(
+        header,
+        channel.description,
+    );
+    for (channel.scale_factors.values[layout.band_count - 3 ..]) |factor|
+        try std.testing.expectEqual(@as(u8, 0), factor);
+    var storage: [64]u8 = undefined;
+    _ = try encodeScaleFactors(
+        header,
+        channel.description,
+        0,
+        0,
+        0,
+        .{},
+        channel.scale_factors,
+        &storage,
+    );
 }
 
 test "encodes PCM into complete MP3 frames transactionally" {
