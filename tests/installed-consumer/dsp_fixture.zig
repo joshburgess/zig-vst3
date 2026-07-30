@@ -3419,6 +3419,64 @@ test "installed package exposes bounded MP3 framing and seeking" {
     );
     try std.testing.expect(alias_reduced.lines[17] != 1);
     try std.testing.expect(alias_reduced.lines[18] != 2);
+    const alias_prepared =
+        try plugin.dsp.prepareMp3AliasesForEncoding(
+            joint_header,
+            .{},
+            alias_reduced,
+        );
+    try std.testing.expectApproxEqAbs(
+        alias_input.lines[17],
+        alias_prepared.lines[17],
+        2e-6,
+    );
+    try std.testing.expectApproxEqAbs(
+        alias_input.lines[18],
+        alias_prepared.lines[18],
+        2e-6,
+    );
+
+    var pcm_analysis = try plugin.dsp.Mp3EncoderAnalysis.init(
+        .{ .channel_mode = .stereo },
+    );
+    var analysis_pcm = plugin.dsp.Mp3PcmFrame{
+        .channel_count = 2,
+        .sample_count = 1152,
+    };
+    analysis_pcm.channels[0][0] = 1;
+    analysis_pcm.channels[1][1] = -1;
+    const analyzed_frame: plugin.dsp.Mp3AnalyzedEncoderFrame =
+        try pcm_analysis.analyze(
+            @splat(@splat(.{})),
+            analysis_pcm,
+        );
+    const analyzed_channel: plugin.dsp.Mp3AnalyzedEncoderChannel =
+        analyzed_frame.granules[0][0];
+    try std.testing.expectEqual(@as(u2, 2), analyzed_frame.channel_count);
+    try std.testing.expectEqual(@as(u2, 2), analyzed_frame.granule_count);
+    try std.testing.expect(std.math.isFinite(
+        analyzed_channel.spectrum.lines[0],
+    ));
+    try std.testing.expectEqual(@as(u64, 1), pcm_analysis.frames_analyzed);
+    pcm_analysis.reset();
+
+    var polyphase_analysis = plugin.dsp.Mp3PolyphaseAnalysis{};
+    var analysis_granule = plugin.dsp.Mp3PcmGranule{};
+    analysis_granule.samples[0] = 1;
+    const analyzed_subbands =
+        try polyphase_analysis.process(analysis_granule);
+    var hybrid_analysis = plugin.dsp.Mp3HybridAnalysis{};
+    const analyzed_spectrum = try hybrid_analysis.process(
+        joint_header,
+        .{},
+        analyzed_subbands,
+    );
+    try std.testing.expect(std.math.isFinite(
+        analyzed_spectrum.lines[0],
+    ));
+    polyphase_analysis.reset();
+    hybrid_analysis.reset();
+
     var hybrid = plugin.dsp.Mp3HybridSynthesis{};
     const hybrid_samples: plugin.dsp.Mp3HybridSamples =
         try hybrid.process(joint_header, .{}, alias_reduced);

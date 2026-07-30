@@ -272,8 +272,12 @@ pub const requiredId3V23TextPayloadBytes =
 pub const requiredId3Utf8TextPayloadBytes =
     id3.requiredUtf8TextPayloadBytes;
 pub const Mp3ChannelMode = mp3.ChannelMode;
+pub const Mp3AnalyzedEncoderChannel =
+    mp3.AnalyzedEncoderChannel;
+pub const Mp3AnalyzedEncoderFrame = mp3.AnalyzedEncoderFrame;
 pub const Mp3DecoderFormat = mp3.DecoderFormat;
 pub const Mp3EncodedHuffmanChannel = mp3.EncodedHuffmanChannel;
+pub const Mp3EncoderAnalysis = mp3.EncoderAnalysis;
 pub const Mp3EncoderConfig = mp3.EncoderConfig;
 pub const Mp3FileFrame = mp3.FileFrame;
 pub const Mp3FileReader = mp3.FileReader;
@@ -285,6 +289,7 @@ pub const Mp3GaplessPlan = mp3.GaplessPlan;
 pub const Mp3Granule = mp3.Granule;
 pub const Mp3GranuleChannel = mp3.GranuleChannel;
 pub const Mp3Header = mp3.Header;
+pub const Mp3HybridAnalysis = mp3.HybridAnalysis;
 pub const Mp3HybridSamples = mp3.HybridSamples;
 pub const Mp3HybridSynthesis = mp3.HybridSynthesis;
 pub const Mp3MainData = mp3.MainData;
@@ -292,6 +297,7 @@ pub const Mp3MainDataReservoir = mp3.MainDataReservoir;
 pub const Mp3PcmGranule = mp3.PcmGranule;
 pub const Mp3PcmFrame = mp3.PcmFrame;
 pub const Mp3PcmRange = mp3.PcmRange;
+pub const Mp3PolyphaseAnalysis = mp3.PolyphaseAnalysis;
 pub const Mp3PolyphaseSynthesis = mp3.PolyphaseSynthesis;
 pub const Mp3QuantizedSpectrum = mp3.QuantizedSpectrum;
 pub const Mp3QuantizedEncoderChannel =
@@ -327,6 +333,8 @@ pub const requiredMp3FileSeekPoints = mp3.requiredFileSeekPoints;
 pub const requiredMp3SeekPoints = mp3.requiredSeekPoints;
 pub const requantizeMp3Channel = mp3.requantizeChannel;
 pub const processMp3Stereo = mp3.processStereo;
+pub const prepareMp3AliasesForEncoding =
+    mp3.prepareAliasesForEncoding;
 pub const reduceMp3Aliases = mp3.reduceAliases;
 pub const maximumMp3FreeFormatFrameBytes =
     mp3.maximum_free_format_frame_bytes;

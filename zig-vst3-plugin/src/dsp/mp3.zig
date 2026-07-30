@@ -500,16 +500,240 @@ pub const PcmGranule = struct {
     samples: [576]f32 = @splat(0),
 };
 
+pub const PolyphaseAnalysis = struct {
+    history: [512]f64 = @splat(0),
+
+    pub fn reset(self: *PolyphaseAnalysis) void {
+        self.* = .{};
+    }
+
+    pub fn process(
+        self: *PolyphaseAnalysis,
+        pcm: PcmGranule,
+    ) !HybridSamples {
+        for (self.history) |sample| {
+            if (!std.math.isFinite(sample))
+                return error.InvalidMp3PolyphaseAnalysisState;
+        }
+        for (pcm.samples) |sample| {
+            if (!std.math.isFinite(sample))
+                return error.InvalidMp3PcmSamples;
+        }
+
+        var next = self.*;
+        var output = HybridSamples{};
+        for (0..18) |time| {
+            var index = next.history.len;
+            while (index > 32) {
+                index -= 1;
+                next.history[index] = next.history[index - 32];
+            }
+            for (0..32) |sample| {
+                next.history[sample] =
+                    pcm.samples[time * 32 + 31 - sample];
+            }
+
+            var polyphase: [64]f64 = @splat(0);
+            for (0..64) |phase| {
+                for (0..8) |block| {
+                    const window_index = phase + block * 64;
+                    polyphase[phase] +=
+                        next.history[window_index] *
+                        analysis_window[window_index];
+                }
+            }
+            for (analysis_matrix, 0..) |row, band| {
+                var value: f64 = 0;
+                for (row, polyphase) |coefficient, sample|
+                    value += coefficient * sample;
+                output.time_slots[time][band] =
+                    try checkedHybridSample(value);
+            }
+        }
+        self.* = next;
+        return output;
+    }
+};
+
+pub const HybridAnalysis = struct {
+    history: [32][18]f32 = @splat(@splat(0)),
+
+    pub fn reset(self: *HybridAnalysis) void {
+        self.* = .{};
+    }
+
+    pub fn process(
+        self: *HybridAnalysis,
+        header: Header,
+        description: GranuleChannel,
+        hybrid: HybridSamples,
+    ) !RequantizedSpectrum {
+        _ = try scaleFactorBands(header);
+        try validateBlockDescription(description);
+        for (self.history) |subband| {
+            for (subband) |sample| {
+                if (!std.math.isFinite(sample))
+                    return error.InvalidMp3HybridAnalysisState;
+            }
+        }
+        for (hybrid.time_slots) |time_slot| {
+            for (time_slot) |sample| {
+                if (!std.math.isFinite(sample))
+                    return error.InvalidMp3HybridSamples;
+            }
+        }
+
+        var next = self.*;
+        var reduced = RequantizedSpectrum{};
+        const mixed_long_subbands =
+            if (description.mixed_block)
+                mixedLongSubbands(header)
+            else
+                0;
+        for (0..32) |subband| {
+            var block: [36]f32 = undefined;
+            @memcpy(block[0..18], &self.history[subband]);
+            for (0..18) |time| {
+                var sample = hybrid.time_slots[time][subband];
+                if (subband & 1 != 0 and time & 1 != 0)
+                    sample = -sample;
+                block[18 + time] = sample;
+                next.history[subband][time] = sample;
+            }
+            const spectrum = analyzeHybridBlock(
+                description,
+                subband < mixed_long_subbands,
+                &block,
+            );
+            for (spectrum, 0..) |line, frequency| {
+                reduced.lines[subband * 18 + frequency] =
+                    try checkedHybridSample(line);
+            }
+        }
+        const output = try prepareAliasesForEncoding(
+            header,
+            description,
+            reduced,
+        );
+        self.* = next;
+        return output;
+    }
+};
+
 pub const PcmFrame = struct {
     channels: [2][1152]f32 = @splat(@splat(0)),
     channel_count: u2,
     sample_count: u16,
 };
 
+pub const AnalyzedEncoderChannel = struct {
+    description: GranuleChannel = .{},
+    spectrum: RequantizedSpectrum = .{},
+};
+
+pub const AnalyzedEncoderFrame = struct {
+    channel_count: u2,
+    granule_count: u2,
+    granules: [2][2]AnalyzedEncoderChannel =
+        @splat(@splat(.{})),
+};
+
 pub const DecoderFormat = struct {
     version: Version,
     sample_rate: u32,
     channel_count: u2,
+};
+
+fn formatFromHeader(header: Header) DecoderFormat {
+    return .{
+        .version = header.version,
+        .sample_rate = header.sample_rate,
+        .channel_count = @intCast(header.channels()),
+    };
+}
+
+pub const EncoderAnalysis = struct {
+    config: EncoderConfig,
+    polyphase: [2]PolyphaseAnalysis = @splat(.{}),
+    hybrid: [2]HybridAnalysis = @splat(.{}),
+    format: DecoderFormat,
+    frames_analyzed: u64 = 0,
+
+    pub fn init(config: EncoderConfig) !EncoderAnalysis {
+        const header = try config.header(false);
+        return .{
+            .config = config,
+            .format = formatFromHeader(header),
+        };
+    }
+
+    pub fn reset(self: *EncoderAnalysis) void {
+        self.polyphase = @splat(.{});
+        self.hybrid = @splat(.{});
+        self.frames_analyzed = 0;
+    }
+
+    pub fn analyze(
+        self: *EncoderAnalysis,
+        descriptions: [2][2]GranuleChannel,
+        pcm: PcmFrame,
+    ) !AnalyzedEncoderFrame {
+        const header = try self.config.header(false);
+        const format = formatFromHeader(header);
+        if (!std.meta.eql(format, self.format))
+            return error.Mp3EncoderAnalysisFormatChanged;
+        if (pcm.channel_count != format.channel_count or
+            pcm.sample_count != header.samplesPerFrame())
+            return error.InvalidMp3EncoderPcmFrame;
+
+        const granule_count: u2 =
+            if (header.version == .mpeg1) 2 else 1;
+        for (0..2) |granule| {
+            for (0..2) |channel| {
+                if (granule >= granule_count or
+                    channel >= format.channel_count)
+                {
+                    if (!std.meta.eql(
+                        descriptions[granule][channel],
+                        GranuleChannel{},
+                    )) return error.InvalidMp3EncoderAnalysisFrame;
+                }
+            }
+        }
+
+        var next = self.*;
+        var output = AnalyzedEncoderFrame{
+            .channel_count = format.channel_count,
+            .granule_count = granule_count,
+        };
+        for (0..granule_count) |granule| {
+            for (0..format.channel_count) |channel| {
+                var samples = PcmGranule{};
+                const start = granule * samples.samples.len;
+                @memcpy(
+                    &samples.samples,
+                    pcm.channels[channel][start..][0..samples.samples.len],
+                );
+                const hybrid_samples =
+                    try next.polyphase[channel].process(samples);
+                output.granules[granule][channel] = .{
+                    .description = descriptions[granule][channel],
+                    .spectrum = try next.hybrid[channel].process(
+                        header,
+                        descriptions[granule][channel],
+                        hybrid_samples,
+                    ),
+                };
+            }
+        }
+        next.frames_analyzed = std.math.add(
+            u64,
+            next.frames_analyzed,
+            1,
+        ) catch return error.Mp3EncoderFrameCountOverflow;
+        self.* = next;
+        return output;
+    }
 };
 
 pub const HybridSynthesis = struct {
@@ -651,11 +875,7 @@ pub const FrameDecoder = struct {
         if (try frame.crcValid()) |valid| {
             if (!valid) return error.InvalidMp3FrameCrc;
         }
-        const format = DecoderFormat{
-            .version = frame.header.version,
-            .sample_rate = frame.header.sample_rate,
-            .channel_count = @intCast(frame.header.channels()),
-        };
+        const format = formatFromHeader(frame.header);
         if (self.format) |active| {
             if (!std.meta.eql(active, format))
                 return error.Mp3DecoderFormatChanged;
@@ -1156,6 +1376,42 @@ pub fn reduceAliases(
     return result;
 }
 
+pub fn prepareAliasesForEncoding(
+    header: Header,
+    description: GranuleChannel,
+    spectrum: RequantizedSpectrum,
+) !RequantizedSpectrum {
+    _ = try scaleFactorBands(header);
+    try validateBlockDescription(description);
+    for (spectrum.lines) |line| {
+        if (!std.math.isFinite(line))
+            return error.InvalidMp3RequantizedSpectrum;
+    }
+
+    const subband_count: usize = if (description.block_type != 2)
+        32
+    else if (!description.mixed_block)
+        0
+    else
+        mixedLongSubbands(header);
+    var result = spectrum;
+    var subband: usize = 1;
+    while (subband < subband_count) : (subband += 1) {
+        const boundary = 18 * subband;
+        for (alias_cs, alias_ca, 0..) |cs, ca, index| {
+            const upper = boundary - 1 - index;
+            const lower = boundary + index;
+            const upper_value = spectrum.lines[upper];
+            const lower_value = spectrum.lines[lower];
+            result.lines[upper] =
+                upper_value * cs + lower_value * ca;
+            result.lines[lower] =
+                lower_value * cs - upper_value * ca;
+        }
+    }
+    return result;
+}
+
 const alias_cs = [_]f32{
     0.8574929257125442,
     0.8817419973177052,
@@ -1260,6 +1516,22 @@ fn buildSynthesisMatrix() [64][32]f64 {
     return result;
 }
 
+fn buildAnalysisMatrix() [32][64]f64 {
+    @setEvalBranchQuota(4_096);
+    var result: [32][64]f64 = undefined;
+    for (0..32) |band| {
+        const band_value: f64 = @floatFromInt(2 * band + 1);
+        for (0..64) |phase| {
+            const phase_value: f64 =
+                @floatFromInt(@as(i8, @intCast(phase)) - 16);
+            result[band][phase] = @cos(
+                band_value * phase_value * std.math.pi / 64.0,
+            );
+        }
+    }
+    return result;
+}
+
 fn buildSynthesisWindow() [512]f64 {
     var result: [512]f64 = undefined;
     for (synthesis_window_quantized, 0..) |value, index| {
@@ -1269,12 +1541,21 @@ fn buildSynthesisWindow() [512]f64 {
     return result;
 }
 
+fn buildAnalysisWindow() [512]f64 {
+    var result: [512]f64 = undefined;
+    for (synthesis_window, 0..) |value, index|
+        result[index] = value / 32.0;
+    return result;
+}
+
 const long_imdct = buildImdctMatrix(18);
 const short_imdct = buildImdctMatrix(6);
 const long_windows = buildLongWindows();
 const short_window = buildShortWindow();
 const synthesis_matrix = buildSynthesisMatrix();
 const synthesis_window = buildSynthesisWindow();
+const analysis_matrix = buildAnalysisMatrix();
+const analysis_window = buildAnalysisWindow();
 
 fn synthesizeHybridBlock(
     description: GranuleChannel,
@@ -1306,6 +1587,43 @@ fn synthesizeHybridBlock(
             transformed += sample * long_imdct[time][frequency];
         result[time] =
             transformed * long_windows[window_type][time];
+    }
+    return result;
+}
+
+fn analyzeHybridBlock(
+    description: GranuleChannel,
+    long_mixed: bool,
+    samples: *const [36]f32,
+) [18]f64 {
+    var result: [18]f64 = @splat(0);
+    if (description.block_type == 2 and !long_mixed) {
+        for (0..3) |window| {
+            for (0..6) |frequency| {
+                var transformed: f64 = 0;
+                for (0..12) |time| {
+                    transformed +=
+                        samples[6 + window * 6 + time] *
+                        short_window[time] *
+                        short_imdct[time][frequency];
+                }
+                result[frequency * 3 + window] =
+                    transformed / 3.0;
+            }
+        }
+        return result;
+    }
+
+    const window_type: usize =
+        if (long_mixed) 0 else description.block_type;
+    for (0..18) |frequency| {
+        var transformed: f64 = 0;
+        for (samples, 0..) |sample, time| {
+            transformed += sample *
+                long_windows[window_type][time] *
+                long_imdct[time][frequency];
+        }
+        result[frequency] = transformed / 9.0;
     }
     return result;
 }
@@ -6339,6 +6657,36 @@ test "reduces Layer III aliases across long and mixed boundaries" {
     try std.testing.expect(mixed_start.lines[31 * 18 - 1] !=
         long_spectrum.lines[31 * 18 - 1]);
 
+    const prepared = try prepareAliasesForEncoding(
+        header,
+        .{},
+        reduced,
+    );
+    for (long_spectrum.lines, prepared.lines) |expected, actual| {
+        try std.testing.expectApproxEqAbs(expected, actual, 5e-6);
+    }
+    const mixed_prepared = try prepareAliasesForEncoding(
+        header,
+        .{
+            .window_switching = true,
+            .block_type = 2,
+            .mixed_block = true,
+        },
+        mixed,
+    );
+    for (mixed_spectrum.lines, mixed_prepared.lines) |expected, actual| {
+        try std.testing.expectApproxEqAbs(expected, actual, 5e-6);
+    }
+    const short_prepared = try prepareAliasesForEncoding(
+        header,
+        .{
+            .window_switching = true,
+            .block_type = 2,
+        },
+        long_spectrum,
+    );
+    try std.testing.expectEqual(long_spectrum, short_prepared);
+
     var malformed = long_spectrum;
     malformed.lines[0] = std.math.nan(f32);
     try std.testing.expectError(
@@ -6352,6 +6700,10 @@ test "reduces Layer III aliases across long and mixed boundaries" {
             .{ .block_type = 2 },
             long_spectrum,
         ),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3RequantizedSpectrum,
+        prepareAliasesForEncoding(header, .{}, malformed),
     );
 }
 
@@ -6618,6 +6970,181 @@ test "synthesizes short transition and mixed MP3 hybrid blocks" {
     );
 }
 
+test "round trips MP3 hybrid analysis across window transitions" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    const descriptions = [_]GranuleChannel{
+        .{},
+        .{},
+        .{
+            .window_switching = true,
+            .block_type = 1,
+        },
+        .{
+            .window_switching = true,
+            .block_type = 2,
+        },
+        .{
+            .window_switching = true,
+            .block_type = 2,
+        },
+        .{
+            .window_switching = true,
+            .block_type = 3,
+        },
+        .{},
+        .{},
+    };
+    var analysis = HybridAnalysis{};
+    var synthesis = HybridSynthesis{};
+    var maximum_error: f32 = 0;
+    for (descriptions, 0..) |description, granule| {
+        var input = HybridSamples{};
+        for (&input.time_slots, 0..) |*time_slot, time| {
+            for (time_slot, 0..) |*sample, band| {
+                const phase: f32 = @floatFromInt(
+                    (granule * 18 + time) * 7 + band * 11,
+                );
+                sample.* = 0.4 * @sin(phase * 0.037) +
+                    0.15 * @cos(phase * 0.091);
+            }
+        }
+        const encoded = try analysis.process(
+            header,
+            description,
+            input,
+        );
+        const output = try synthesis.process(
+            header,
+            description,
+            try reduceAliases(header, description, encoded),
+        );
+        if (granule == 0) continue;
+        for (output.time_slots, 0..) |time_slot, time| {
+            for (time_slot, 0..) |sample, band| {
+                const phase: f32 = @floatFromInt(
+                    ((granule - 1) * 18 + time) * 7 +
+                        band * 11,
+                );
+                const expected =
+                    0.4 * @sin(phase * 0.037) +
+                    0.15 * @cos(phase * 0.091);
+                maximum_error = @max(
+                    maximum_error,
+                    @abs(sample - expected),
+                );
+            }
+        }
+    }
+    try std.testing.expect(maximum_error < 0.00001);
+
+    analysis.reset();
+    try std.testing.expectEqual(HybridAnalysis{}, analysis);
+}
+
+test "round trips mixed MP3 hybrid analysis at both boundaries" {
+    const headers = [_]Header{
+        try Header.parse(
+            &testHeader(3, true, 9, 0, false, .mono),
+        ),
+        try Header.parse(
+            &testHeader(0, true, 9, 2, false, .mono),
+        ),
+    };
+    const description = GranuleChannel{
+        .window_switching = true,
+        .block_type = 2,
+        .mixed_block = true,
+    };
+    for (headers) |header| {
+        var analysis = HybridAnalysis{};
+        var synthesis = HybridSynthesis{};
+        var maximum_error: f32 = 0;
+        for (0..4) |granule| {
+            var input = HybridSamples{};
+            for (&input.time_slots, 0..) |*time_slot, time| {
+                for (time_slot, 0..) |*sample, band| {
+                    const phase: f32 = @floatFromInt(
+                        (granule * 18 + time) * 5 + band * 13,
+                    );
+                    sample.* = 0.45 * @sin(phase * 0.041);
+                }
+            }
+            const encoded = try analysis.process(
+                header,
+                description,
+                input,
+            );
+            const output = try synthesis.process(
+                header,
+                description,
+                try reduceAliases(header, description, encoded),
+            );
+            if (granule == 0) continue;
+            for (output.time_slots, 0..) |time_slot, time| {
+                for (time_slot, 0..) |sample, band| {
+                    const phase: f32 = @floatFromInt(
+                        ((granule - 1) * 18 + time) * 5 +
+                            band * 13,
+                    );
+                    maximum_error = @max(
+                        maximum_error,
+                        @abs(sample -
+                            0.45 * @sin(phase * 0.041)),
+                    );
+                }
+            }
+        }
+        try std.testing.expect(maximum_error < 0.00001);
+    }
+}
+
+test "rejects invalid MP3 hybrid analysis transactionally" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    var analysis = HybridAnalysis{};
+    var malformed = HybridSamples{};
+    malformed.time_slots[0][0] = std.math.nan(f32);
+    const initial = analysis;
+    try std.testing.expectError(
+        error.InvalidMp3HybridSamples,
+        analysis.process(header, .{}, malformed),
+    );
+    try std.testing.expectEqual(initial, analysis);
+
+    analysis.history[0][0] = std.math.inf(f32);
+    const bad_history = analysis;
+    try std.testing.expectError(
+        error.InvalidMp3HybridAnalysisState,
+        analysis.process(header, .{}, .{}),
+    );
+    try std.testing.expectEqual(bad_history, analysis);
+
+    analysis = .{};
+    var overflowing = HybridSamples{};
+    overflowing.time_slots = @splat(
+        @splat(std.math.floatMax(f32)),
+    );
+    const before_overflow = analysis;
+    try std.testing.expectError(
+        error.InvalidMp3HybridSample,
+        analysis.process(header, .{}, overflowing),
+    );
+    try std.testing.expectEqual(before_overflow, analysis);
+
+    try std.testing.expectError(
+        error.InvalidMp3BlockType,
+        analysis.process(
+            header,
+            .{ .block_type = 2 },
+            .{},
+        ),
+    );
+    try std.testing.expectEqual(before_overflow, analysis);
+}
+
 test "preserves the quantized MP3 synthesis window" {
     try std.testing.expectEqual(
         @as(usize, 512),
@@ -6740,6 +7267,274 @@ test "rejects invalid MP3 polyphase input and state transactionally" {
         synthesis.process(overflowing),
     );
     try std.testing.expectEqual(before_overflow, synthesis);
+}
+
+test "round trips the MP3 polyphase analysis and synthesis banks" {
+    var analysis = PolyphaseAnalysis{};
+    var synthesis = PolyphaseSynthesis{};
+    var maximum_error: f32 = 0;
+    for (0..8) |granule| {
+        var pcm = PcmGranule{};
+        for (&pcm.samples, 0..) |*sample, index| {
+            const absolute: f32 =
+                @floatFromInt(granule * 576 + index);
+            sample.* = 0.6 * @sin(absolute * 0.071) +
+                0.2 * @cos(absolute * 0.193);
+        }
+        const output = try synthesis.process(
+            try analysis.process(pcm),
+        );
+        for (output.samples, 0..) |sample, index| {
+            const absolute = granule * 576 + index;
+            if (absolute < 481) continue;
+            const source: f32 =
+                @floatFromInt(absolute - 481);
+            const expected = 0.6 * @sin(source * 0.071) +
+                0.2 * @cos(source * 0.193);
+            maximum_error = @max(
+                maximum_error,
+                @abs(sample - expected),
+            );
+        }
+    }
+    try std.testing.expect(maximum_error < 0.00007);
+
+    analysis.reset();
+    synthesis.reset();
+    var impulse = PcmGranule{};
+    impulse.samples[0] = 1;
+    var peak: f32 = 0;
+    var peak_index: usize = 0;
+    for (0..2) |granule| {
+        const output = try synthesis.process(
+            try analysis.process(
+                if (granule == 0) impulse else .{},
+            ),
+        );
+        for (output.samples, 0..) |sample, index| {
+            if (@abs(sample) > @abs(peak)) {
+                peak = sample;
+                peak_index = granule * 576 + index;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 481), peak_index);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1),
+        peak,
+        0.00001,
+    );
+}
+
+test "rejects invalid MP3 polyphase analysis transactionally" {
+    var analysis = PolyphaseAnalysis{};
+    var malformed = PcmGranule{};
+    malformed.samples[0] = std.math.nan(f32);
+    const initial = analysis;
+    try std.testing.expectError(
+        error.InvalidMp3PcmSamples,
+        analysis.process(malformed),
+    );
+    try std.testing.expectEqual(initial, analysis);
+
+    analysis.history[0] = std.math.inf(f64);
+    const bad_history = analysis;
+    try std.testing.expectError(
+        error.InvalidMp3PolyphaseAnalysisState,
+        analysis.process(.{}),
+    );
+    try std.testing.expectEqual(bad_history, analysis);
+
+    analysis = .{};
+    var overflowing = PcmGranule{};
+    overflowing.samples = @splat(std.math.floatMax(f32));
+    const before_overflow = analysis;
+    try std.testing.expectError(
+        error.InvalidMp3HybridSample,
+        analysis.process(overflowing),
+    );
+    try std.testing.expectEqual(before_overflow, analysis);
+
+    analysis.reset();
+    try std.testing.expectEqual(PolyphaseAnalysis{}, analysis);
+}
+
+test "analyzes complete MP3 PCM frames for decoder reconstruction" {
+    const config = EncoderConfig{
+        .version = .mpeg1,
+        .bitrate_kbps = 128,
+        .sample_rate = 44_100,
+        .channel_mode = .stereo,
+    };
+    const header = try config.header(false);
+    var analysis = try EncoderAnalysis.init(config);
+    var hybrid_synthesis: [2]HybridSynthesis = @splat(.{});
+    var polyphase_synthesis: [2]PolyphaseSynthesis = @splat(.{});
+    const descriptions: [2][2]GranuleChannel =
+        @splat(@splat(.{}));
+    var maximum_error: f32 = 0;
+
+    for (0..5) |frame_index| {
+        var pcm = PcmFrame{
+            .channel_count = 2,
+            .sample_count = 1152,
+        };
+        for (0..2) |channel| {
+            for (&pcm.channels[channel], 0..) |*sample, index| {
+                const absolute: f32 =
+                    @floatFromInt(frame_index * 1152 + index);
+                const channel_phase: f32 =
+                    @floatFromInt(channel);
+                sample.* =
+                    0.5 * @sin(absolute * 0.029 +
+                        channel_phase * 0.4) +
+                    0.1 * @cos(absolute * 0.083 -
+                        channel_phase * 0.2);
+            }
+        }
+        const analyzed = try analysis.analyze(
+            descriptions,
+            pcm,
+        );
+        try std.testing.expectEqual(
+            @as(u2, 2),
+            analyzed.channel_count,
+        );
+        try std.testing.expectEqual(
+            @as(u2, 2),
+            analyzed.granule_count,
+        );
+        for (0..2) |granule| {
+            for (0..2) |channel| {
+                const analyzed_channel =
+                    analyzed.granules[granule][channel];
+                const hybrid = try hybrid_synthesis[channel].process(
+                    header,
+                    analyzed_channel.description,
+                    try reduceAliases(
+                        header,
+                        analyzed_channel.description,
+                        analyzed_channel.spectrum,
+                    ),
+                );
+                const reconstructed =
+                    try polyphase_synthesis[channel].process(hybrid);
+                for (reconstructed.samples, 0..) |sample, index| {
+                    const absolute =
+                        frame_index * 1152 +
+                        granule * 576 +
+                        index;
+                    if (absolute < 1057) continue;
+                    const source: f32 =
+                        @floatFromInt(absolute - 1057);
+                    const channel_phase: f32 =
+                        @floatFromInt(channel);
+                    const expected =
+                        0.5 * @sin(source * 0.029 +
+                            channel_phase * 0.4) +
+                        0.1 * @cos(source * 0.083 -
+                            channel_phase * 0.2);
+                    maximum_error = @max(
+                        maximum_error,
+                        @abs(sample - expected),
+                    );
+                }
+            }
+        }
+    }
+    try std.testing.expect(maximum_error < 0.00008);
+    try std.testing.expectEqual(
+        @as(u64, 5),
+        analysis.frames_analyzed,
+    );
+}
+
+test "validates MP3 encoder analysis state transactionally" {
+    const config = EncoderConfig{
+        .version = .mpeg2,
+        .bitrate_kbps = 64,
+        .sample_rate = 22_050,
+        .channel_mode = .mono,
+    };
+    var analysis = try EncoderAnalysis.init(config);
+    const descriptions: [2][2]GranuleChannel =
+        @splat(@splat(.{}));
+    const pcm = PcmFrame{
+        .channel_count = 1,
+        .sample_count = 576,
+    };
+    const first = try analysis.analyze(descriptions, pcm);
+    try std.testing.expectEqual(@as(u2, 1), first.channel_count);
+    try std.testing.expectEqual(@as(u2, 1), first.granule_count);
+    try std.testing.expectEqual(
+        AnalyzedEncoderChannel{},
+        first.granules[0][1],
+    );
+    try std.testing.expectEqual(
+        AnalyzedEncoderChannel{},
+        first.granules[1][0],
+    );
+
+    var wrong_count = pcm;
+    wrong_count.sample_count = 575;
+    const before_count = analysis;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderPcmFrame,
+        analysis.analyze(descriptions, wrong_count),
+    );
+    try std.testing.expectEqual(before_count, analysis);
+
+    var malformed = pcm;
+    malformed.channels[0][0] = std.math.nan(f32);
+    const before_malformed = analysis;
+    try std.testing.expectError(
+        error.InvalidMp3PcmSamples,
+        analysis.analyze(descriptions, malformed),
+    );
+    try std.testing.expectEqual(before_malformed, analysis);
+
+    var hidden_description = descriptions;
+    hidden_description[1][0].global_gain = 1;
+    const before_hidden = analysis;
+    try std.testing.expectError(
+        error.InvalidMp3EncoderAnalysisFrame,
+        analysis.analyze(hidden_description, pcm),
+    );
+    try std.testing.expectEqual(before_hidden, analysis);
+
+    analysis.config.sample_rate = 24_000;
+    const before_format = analysis;
+    try std.testing.expectError(
+        error.Mp3EncoderAnalysisFormatChanged,
+        analysis.analyze(descriptions, pcm),
+    );
+    try std.testing.expectEqual(before_format, analysis);
+    analysis.config = config;
+
+    analysis.frames_analyzed = std.math.maxInt(u64);
+    const before_overflow = analysis;
+    try std.testing.expectError(
+        error.Mp3EncoderFrameCountOverflow,
+        analysis.analyze(descriptions, pcm),
+    );
+    try std.testing.expectEqual(before_overflow, analysis);
+
+    analysis.frames_analyzed = 3;
+    analysis.reset();
+    try std.testing.expectEqual(@as(u64, 0), analysis.frames_analyzed);
+    try std.testing.expectEqual(config, analysis.config);
+    try std.testing.expectEqual(
+        formatFromHeader(try config.header(false)),
+        analysis.format,
+    );
+    try std.testing.expectEqual(
+        @as([2]PolyphaseAnalysis, @splat(.{})),
+        analysis.polyphase,
+    );
+    try std.testing.expectEqual(
+        @as([2]HybridAnalysis, @splat(.{})),
+        analysis.hybrid,
+    );
 }
 
 test "composes silent MP3 frames through the complete decoder" {
