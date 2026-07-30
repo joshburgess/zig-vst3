@@ -960,6 +960,20 @@ test "installed core package runs an LV2 audio control descriptor" {
             "pgm:UIInterface",
         ) != null,
     );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            metadata_writer.buffered(),
+            "pg:mainInput <https://example.test/installed-lv2-gain#main_input_group>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            metadata_writer.buffered(),
+            "a pg:OutputGroup , pg:MonoGroup",
+        ) != null,
+    );
 }
 
 test "installed core package compiles typed LV2 Patch declarations" {

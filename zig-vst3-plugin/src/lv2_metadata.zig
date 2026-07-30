@@ -45,6 +45,18 @@ pub const Metadata = struct {
     ui: ?UiMetadata = null,
 };
 
+const AudioDirection = enum {
+    input,
+    output,
+};
+
+const AudioPortLocation = struct {
+    direction: AudioDirection,
+    bus_index: usize,
+    channel_index: usize,
+    layout: plugin_api.AudioBusLayout,
+};
+
 pub fn Generator(
     comptime Plugin: type,
     comptime Adapter: type,
@@ -68,7 +80,7 @@ pub fn Generator(
         @hasDecl(Adapter, "patch_readable") and Adapter.patch_readable;
     const has_writable_patch =
         @hasDecl(Adapter, "patch_writable") and Adapter.patch_writable;
-    _ = plugin_api.PluginSpec(Plugin);
+    const Spec = plugin_api.PluginSpec(Plugin);
 
     return struct {
         pub fn writeManifest(
@@ -129,6 +141,7 @@ pub fn Generator(
                     "@prefix opts: <http://lv2plug.in/ns/ext/options#> .\n" ++
                     "@prefix patch: <http://lv2plug.in/ns/ext/patch#> .\n" ++
                     "@prefix pgm:  <http://kxstudio.sf.net/ns/lv2ext/programs#> .\n" ++
+                    "@prefix pg:   <http://lv2plug.in/ns/ext/port-groups#> .\n" ++
                     "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" ++
                     "@prefix state: <http://lv2plug.in/ns/ext/state#> .\n" ++
                     "@prefix time: <http://lv2plug.in/ns/ext/time#> .\n" ++
@@ -197,8 +210,19 @@ pub fn Generator(
                     "                         bufsz:maxBlockLength ,\n" ++
                     "                         bufsz:nominalBlockLength ;\n",
             );
+            if (Spec.audio_input_layout.hasBus()) {
+                try writer.writeAll("    pg:mainInput <");
+                try writeGroupUri(writer, .input, 0);
+                try writer.writeAll("> ;\n");
+            }
+            if (Spec.audio_output_layout.hasBus()) {
+                try writer.writeAll("    pg:mainOutput <");
+                try writeGroupUri(writer, .output, 0);
+                try writer.writeAll("> ;\n");
+            }
             try writePorts(writer);
             try writer.writeAll(" .\n");
+            try writePortGroups(writer);
             if (metadata.ui) |ui| {
                 try writer.writeAll("\n<");
                 try writer.writeAll(ui.uri);
@@ -284,6 +308,8 @@ pub fn Generator(
         fn writePorts(writer: *std.Io.Writer) !void {
             var first = true;
             for (0..Adapter.input_channels) |offset| {
+                const location = audioPortLocation(.input, offset) orelse
+                    return error.InvalidLv2AudioBusMetadata;
                 try beginPort(writer, &first);
                 try writer.writeAll(
                     "        a lv2:InputPort , lv2:AudioPort ;\n",
@@ -295,8 +321,11 @@ pub fn Generator(
                     offset,
                     Adapter.input_channels,
                 );
+                try writeAudioPortGroup(writer, location);
             }
             for (0..Adapter.output_channels) |offset| {
+                const location = audioPortLocation(.output, offset) orelse
+                    return error.InvalidLv2AudioBusMetadata;
                 try beginPort(writer, &first);
                 try writer.writeAll(
                     "        a lv2:OutputPort , lv2:AudioPort ;\n",
@@ -308,6 +337,7 @@ pub fn Generator(
                     offset,
                     Adapter.output_channels,
                 );
+                try writeAudioPortGroup(writer, location);
             }
             if (Adapter.event_input_port) |index| {
                 try beginPort(writer, &first);
@@ -513,6 +543,193 @@ pub fn Generator(
             }
         }
 
+        fn writeAudioPortGroup(
+            writer: *std.Io.Writer,
+            location: AudioPortLocation,
+        ) !void {
+            try writer.writeAll(" ;\n        pg:group <");
+            try writeGroupUri(
+                writer,
+                location.direction,
+                location.bus_index,
+            );
+            try writer.writeByte('>');
+            if (channelDesignation(
+                location.layout,
+                location.channel_index,
+            )) |designation| {
+                try writer.writeAll(
+                    " ;\n        lv2:designation pg:",
+                );
+                try writer.writeAll(designation);
+            } else if (ambisonicOrder(location.layout) != null and
+                location.channel_index < 16)
+            {
+                try writer.print(
+                    " ;\n        lv2:designation pg:ACN{d}",
+                    .{location.channel_index},
+                );
+            }
+            try writer.writeByte('\n');
+        }
+
+        fn writePortGroups(writer: *std.Io.Writer) !void {
+            if (Spec.audio_input_layout.hasBus())
+                try writePortGroup(
+                    writer,
+                    .input,
+                    0,
+                    Spec.audio_input_layout,
+                );
+            for (
+                Spec.audio_auxiliary_input_layouts,
+                0..,
+            ) |layout, index| {
+                try writePortGroup(writer, .input, index + 1, layout);
+            }
+            if (Spec.audio_output_layout.hasBus())
+                try writePortGroup(
+                    writer,
+                    .output,
+                    0,
+                    Spec.audio_output_layout,
+                );
+            for (
+                Spec.audio_auxiliary_output_layouts,
+                0..,
+            ) |layout, index| {
+                try writePortGroup(writer, .output, index + 1, layout);
+            }
+        }
+
+        fn writePortGroup(
+            writer: *std.Io.Writer,
+            direction: AudioDirection,
+            bus_index: usize,
+            layout: plugin_api.AudioBusLayout,
+        ) !void {
+            try writer.writeAll("\n<");
+            try writeGroupUri(writer, direction, bus_index);
+            try writer.writeAll(">\n    a pg:");
+            try writer.writeAll(switch (direction) {
+                .input => "InputGroup",
+                .output => "OutputGroup",
+            });
+            try writer.writeAll(" , pg:");
+            try writer.writeAll(groupClass(layout));
+            try writer.writeAll(" ;\n    lv2:symbol ");
+            try writeGroupSymbol(writer, direction, bus_index);
+            try writer.writeAll(" ;\n    rdfs:label ");
+            try writeGroupLabel(writer, direction, bus_index);
+            if (direction == .input and bus_index != 0 and
+                Spec.audio_input_layout.hasBus())
+            {
+                try writer.writeAll(" ;\n    pg:sideChainOf <");
+                try writeGroupUri(writer, .input, 0);
+                try writer.writeByte('>');
+            }
+            if (direction == .output and bus_index == 0 and
+                Spec.audio_input_layout.hasBus())
+            {
+                try writer.writeAll(" ;\n    pg:source <");
+                try writeGroupUri(writer, .input, 0);
+                try writer.writeByte('>');
+            }
+            try writer.writeAll(" .\n");
+        }
+
+        fn writeGroupUri(
+            writer: *std.Io.Writer,
+            direction: AudioDirection,
+            bus_index: usize,
+        ) !void {
+            try writer.writeAll(plugin_uri);
+            try writer.writeByte('#');
+            try writeGroupSymbolBody(writer, direction, bus_index);
+        }
+
+        fn writeGroupSymbol(
+            writer: *std.Io.Writer,
+            direction: AudioDirection,
+            bus_index: usize,
+        ) !void {
+            try writer.writeByte('"');
+            try writeGroupSymbolBody(writer, direction, bus_index);
+            try writer.writeByte('"');
+        }
+
+        fn writeGroupSymbolBody(
+            writer: *std.Io.Writer,
+            direction: AudioDirection,
+            bus_index: usize,
+        ) !void {
+            if (bus_index == 0) {
+                try writer.writeAll("main_");
+            } else {
+                try writer.print("aux_{d}_", .{bus_index});
+            }
+            try writer.writeAll(switch (direction) {
+                .input => "input_group",
+                .output => "output_group",
+            });
+        }
+
+        fn writeGroupLabel(
+            writer: *std.Io.Writer,
+            direction: AudioDirection,
+            bus_index: usize,
+        ) !void {
+            try writer.writeByte('"');
+            if (bus_index == 0) {
+                try writer.writeAll("Main ");
+            } else {
+                try writer.print("Auxiliary {d} ", .{bus_index});
+            }
+            try writer.writeAll(switch (direction) {
+                .input => "Input",
+                .output => "Output",
+            });
+            try writer.writeByte('"');
+        }
+
+        fn audioPortLocation(
+            direction: AudioDirection,
+            flattened_index: usize,
+        ) ?AudioPortLocation {
+            const main_layout = switch (direction) {
+                .input => Spec.audio_input_layout,
+                .output => Spec.audio_output_layout,
+            };
+            var remaining = flattened_index;
+            if (main_layout.hasBus()) {
+                const channels = main_layout.channelCount();
+                if (remaining < channels)
+                    return .{
+                        .direction = direction,
+                        .bus_index = 0,
+                        .channel_index = remaining,
+                        .layout = main_layout,
+                    };
+                remaining -= channels;
+            }
+            const auxiliary_layouts = switch (direction) {
+                .input => Spec.audio_auxiliary_input_layouts,
+                .output => Spec.audio_auxiliary_output_layouts,
+            };
+            for (auxiliary_layouts, 0..) |layout, index| {
+                const channels = layout.channelCount();
+                if (remaining < channels)
+                    return .{
+                        .direction = direction,
+                        .bus_index = index + 1,
+                        .channel_index = remaining,
+                        .layout = layout,
+                    };
+                remaining -= channels;
+            }
+            return null;
+        }
+
         fn parameterIndex(symbol: []const u8) ?usize {
             inline for (fields, 0..) |field, index| {
                 if (std.mem.eql(u8, field.name, symbol)) return index;
@@ -522,6 +739,9 @@ pub fn Generator(
 
         fn reservedPortSymbol(symbol: []const u8) bool {
             if (std.mem.eql(u8, symbol, "latency"))
+                return true;
+            if (Adapter.freewheeling_input_port != null and
+                std.mem.eql(u8, symbol, "freewheeling"))
                 return true;
             if (Adapter.event_input_port != null and
                 std.mem.eql(
@@ -553,6 +773,26 @@ pub fn Generator(
                     Adapter.output_channels,
                 )) return true;
             }
+            if (Spec.audio_input_layout.hasBus() and
+                groupSymbolEquals(symbol, .input, 0))
+                return true;
+            for (
+                Spec.audio_auxiliary_input_layouts,
+                0..,
+            ) |_, index| {
+                if (groupSymbolEquals(symbol, .input, index + 1))
+                    return true;
+            }
+            if (Spec.audio_output_layout.hasBus() and
+                groupSymbolEquals(symbol, .output, 0))
+                return true;
+            for (
+                Spec.audio_auxiliary_output_layouts,
+                0..,
+            ) |_, index| {
+                if (groupSymbolEquals(symbol, .output, index + 1))
+                    return true;
+            }
             return false;
         }
 
@@ -565,6 +805,165 @@ pub fn Generator(
             try writer.writeAll(slug);
         }
     };
+}
+
+fn groupClass(layout: plugin_api.AudioBusLayout) []const u8 {
+    return switch (layout) {
+        .mono => "MonoGroup",
+        .stereo => "StereoGroup",
+        .surround_3_0 => "ThreePointZeroGroup",
+        .surround_4_0_cine => "FourPointZeroGroup",
+        .surround_5_0 => "FivePointZeroGroup",
+        .surround_5_1 => "FivePointOneGroup",
+        .surround_6_1_cine => "SixPointOneGroup",
+        .surround_7_1 => "SevenPointOneGroup",
+        .surround_7_1_sdds => "SevenPointOneWideGroup",
+        .ambisonic_first_order => "AmbisonicBH1P1Group",
+        .ambisonic_second_order => "AmbisonicBH2P2Group",
+        .ambisonic_third_order => "AmbisonicBH3P3Group",
+        .ambisonic_fourth_order,
+        .ambisonic_fifth_order,
+        .ambisonic_sixth_order,
+        .ambisonic_seventh_order,
+        => "AmbisonicGroup",
+        .none,
+        .quadraphonic,
+        .surround_7_0,
+        .surround_5_1_2,
+        .surround_7_1_4,
+        .stereo_wide,
+        .stereo_surround,
+        .stereo_center,
+        .stereo_side,
+        .surround_3_0_music,
+        .surround_3_1,
+        .surround_3_1_music,
+        .surround_4_1,
+        .surround_4_1_cine,
+        .surround_6_0,
+        .surround_6_0_cine,
+        .surround_6_1,
+        .surround_7_0_sdds,
+        .surround_5_0_2,
+        .surround_5_0_4,
+        .surround_5_1_4,
+        .surround_7_0_2,
+        .surround_7_1_2,
+        .surround_7_0_4,
+        => "DiscreteGroup",
+    };
+}
+
+fn ambisonicOrder(layout: plugin_api.AudioBusLayout) ?u8 {
+    return switch (layout) {
+        .ambisonic_first_order => 1,
+        .ambisonic_second_order => 2,
+        .ambisonic_third_order => 3,
+        .ambisonic_fourth_order => 4,
+        .ambisonic_fifth_order => 5,
+        .ambisonic_sixth_order => 6,
+        .ambisonic_seventh_order => 7,
+        else => null,
+    };
+}
+
+fn channelDesignation(
+    layout: plugin_api.AudioBusLayout,
+    channel_index: usize,
+) ?[]const u8 {
+    return switch (layout) {
+        .mono => designationAt(&.{"center"}, channel_index),
+        .stereo => designationAt(
+            &.{ "left", "right" },
+            channel_index,
+        ),
+        .stereo_surround => designationAt(
+            &.{ "rearLeft", "rearRight" },
+            channel_index,
+        ),
+        .stereo_center => designationAt(
+            &.{ "centerLeft", "centerRight" },
+            channel_index,
+        ),
+        .stereo_side => designationAt(
+            &.{ "sideLeft", "sideRight" },
+            channel_index,
+        ),
+        .surround_3_0 => designationAt(
+            &.{ "left", "right", "center" },
+            channel_index,
+        ),
+        .quadraphonic => designationAt(
+            &.{ "left", "right", "rearLeft", "rearRight" },
+            channel_index,
+        ),
+        .surround_4_0_cine => designationAt(
+            &.{ "left", "right", "center", "rearCenter" },
+            channel_index,
+        ),
+        .surround_5_0 => designationAt(
+            &.{ "left", "right", "center", "rearLeft", "rearRight" },
+            channel_index,
+        ),
+        .surround_5_1 => designationAt(
+            &.{
+                "left",
+                "right",
+                "center",
+                "lowFrequencyEffects",
+                "rearLeft",
+                "rearRight",
+            },
+            channel_index,
+        ),
+        .surround_6_1_cine => designationAt(
+            &.{
+                "left",
+                "right",
+                "center",
+                "lowFrequencyEffects",
+                "rearLeft",
+                "rearRight",
+                "rearCenter",
+            },
+            channel_index,
+        ),
+        .surround_7_1 => designationAt(
+            &.{
+                "left",
+                "right",
+                "center",
+                "lowFrequencyEffects",
+                "rearLeft",
+                "rearRight",
+                "sideLeft",
+                "sideRight",
+            },
+            channel_index,
+        ),
+        .surround_7_1_sdds => designationAt(
+            &.{
+                "left",
+                "right",
+                "center",
+                "lowFrequencyEffects",
+                "rearLeft",
+                "rearRight",
+                "centerLeft",
+                "centerRight",
+            },
+            channel_index,
+        ),
+        else => null,
+    };
+}
+
+fn designationAt(
+    designations: []const []const u8,
+    index: usize,
+) ?[]const u8 {
+    if (index >= designations.len) return null;
+    return designations[index];
 }
 
 fn beginPort(writer: *std.Io.Writer, first: *bool) !void {
@@ -637,6 +1036,32 @@ fn audioSymbolEquals(
     const channel = std.fmt.parseInt(usize, suffix, 10) catch
         return false;
     return channel == index + 1;
+}
+
+fn groupSymbolEquals(
+    symbol: []const u8,
+    direction: AudioDirection,
+    bus_index: usize,
+) bool {
+    const suffix = switch (direction) {
+        .input => "_input_group",
+        .output => "_output_group",
+    };
+    if (bus_index == 0) {
+        const prefix = "main";
+        return symbol.len == prefix.len + suffix.len and
+            std.mem.startsWith(u8, symbol, prefix) and
+            std.mem.endsWith(u8, symbol, suffix);
+    }
+    const prefix = "aux_";
+    if (!std.mem.startsWith(u8, symbol, prefix) or
+        !std.mem.endsWith(u8, symbol, suffix) or
+        symbol.len <= prefix.len + suffix.len)
+        return false;
+    const number = symbol[prefix.len .. symbol.len - suffix.len];
+    const parsed = std.fmt.parseInt(usize, number, 10) catch
+        return false;
+    return parsed == bus_index;
 }
 
 fn validUri(value: []const u8) bool {
@@ -848,6 +1273,34 @@ test "LV2 metadata generator writes ports workers and presets" {
         std.mem.indexOf(u8, plugin, "lv2:symbol \"output_2\"") != null,
     );
     try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "pg:mainInput <https://example.test/metadata#main_input_group>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "pg:mainOutput <https://example.test/metadata#main_output_group>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "a pg:OutputGroup , pg:StereoGroup",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "lv2:designation pg:right",
+        ) != null,
+    );
+    try std.testing.expect(
         std.mem.indexOf(u8, plugin, "doap:name \"Metadata \\\"Probe\\\"\"") !=
             null,
     );
@@ -924,6 +1377,103 @@ test "LV2 metadata generator writes ports workers and presets" {
     const preset_text = writer.buffered();
     try std.testing.expect(
         std.mem.indexOf(u8, preset_text, "pset:value 1") != null,
+    );
+}
+
+test "LV2 metadata groups main sidechain and auxiliary audio buses" {
+    const Probe = struct {
+        pub const name = "Bus Metadata Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout =
+            .stereo;
+        pub const audio_output_layout: plugin_api.AudioBusLayout =
+            .stereo;
+        pub const audio_auxiliary_input_layouts =
+            &[_]plugin_api.AudioBusLayout{.mono};
+        pub const audio_auxiliary_output_layouts =
+            &[_]plugin_api.AudioBusLayout{.mono};
+        pub const Params = struct {};
+
+        pub fn process(
+            _: *@This(),
+            _: *process_api.ProcessContext(f32),
+        ) void {}
+    };
+    const Adapter = struct {
+        pub const input_channels = 3;
+        pub const output_channels = 3;
+        pub const audio_output_port_start = 3;
+        pub const event_input_port: ?usize = null;
+        pub const event_output_port: ?usize = null;
+        pub const control_input_port_start = 6;
+        pub const freewheeling_input_port: ?usize = null;
+        pub const latency_output_port = 6;
+        pub const worker_enabled = false;
+        pub const programs_enabled = false;
+        pub const portable_state_paths_enabled = false;
+        pub const state_make_path_required = false;
+        pub const patch_enabled = false;
+        pub const patch_readable = false;
+        pub const patch_writable = false;
+    };
+    const Generated = Generator(
+        Probe,
+        Adapter,
+        "https://example.test/bus-metadata",
+        .{},
+    );
+
+    var bytes: [8192]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try Generated.writePlugin(&writer, .{});
+    const plugin = writer.buffered();
+
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "pg:group <https://example.test/bus-metadata#aux_1_input_group>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "pg:sideChainOf <https://example.test/bus-metadata#main_input_group>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "pg:source <https://example.test/bus-metadata#main_input_group>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "a pg:OutputGroup , pg:MonoGroup",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "lv2:symbol \"aux_1_output_group\"",
+        ) != null,
+    );
+    try std.testing.expectEqualStrings(
+        "AmbisonicBH3P3Group",
+        groupClass(.ambisonic_third_order),
+    );
+    try std.testing.expectEqualStrings(
+        "AmbisonicGroup",
+        groupClass(.ambisonic_seventh_order),
+    );
+    try std.testing.expectEqual(
+        @as(?[]const u8, null),
+        channelDesignation(.surround_7_1_4, 8),
     );
 }
 
@@ -1065,6 +1615,38 @@ test "LV2 metadata generator rejects malformed presets" {
     try std.testing.expectError(
         error.DuplicateLv2PortSymbol,
         CollisionGenerated.writePlugin(&writer, .{}),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+
+    const GroupCollisionProbe = struct {
+        pub const name = "Group Collision Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout = .mono;
+        pub const audio_output_layout: plugin_api.AudioBusLayout = .mono;
+        pub const Params = struct {
+            main_input_group: parameters.FloatParam = .{
+                .id = 0,
+                .name = "Group Collision",
+                .min = 0.0,
+                .max = 1.0,
+                .default = 0.5,
+            },
+        };
+        pub fn process(
+            _: *@This(),
+            _: *process_api.ProcessContext(f32),
+        ) void {}
+    };
+    const GroupCollisionGenerated = Generator(
+        GroupCollisionProbe,
+        Adapter,
+        "https://example.test/group-collision",
+        .{},
+    );
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.DuplicateLv2PortSymbol,
+        GroupCollisionGenerated.writePlugin(&writer, .{}),
     );
     try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
 }
