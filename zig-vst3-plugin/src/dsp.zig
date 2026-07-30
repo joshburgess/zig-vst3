@@ -378,6 +378,20 @@ pub const Mp3VbrPcmEncoder = mp3.VbrPcmEncoder;
 pub const Mp3VbrPcmFileEncoder = mp3.VbrPcmFileEncoder;
 pub const Mp3VbrPcmFileSummary = mp3.VbrPcmFileSummary;
 pub const Mp3VbrPcmFrame = mp3.VbrPcmFrame;
+pub const Mp3VbrPcmReservoirAppend =
+    mp3.VbrPcmReservoirAppend;
+pub const Mp3VbrPcmReservoirEncoder =
+    mp3.VbrPcmReservoirEncoder;
+pub const Mp3VbrPcmReservoirFileEncoder =
+    mp3.VbrPcmReservoirFileEncoder;
+pub const Mp3VbrPcmReservoirFileSummary =
+    mp3.VbrPcmReservoirFileSummary;
+pub const Mp3VbrPcmReservoirSelection =
+    mp3.VbrPcmReservoirSelection;
+pub const Mp3VbrPcmReservoirStreamEncoder =
+    mp3.VbrPcmReservoirStreamEncoder;
+pub const Mp3VbrPcmReservoirStreamFinish =
+    mp3.VbrPcmReservoirStreamFinish;
 pub const Mp3VbrPcmStreamEncoder = mp3.VbrPcmStreamEncoder;
 pub const Mp3VbrPcmStreamFinish = mp3.VbrPcmStreamFinish;
 pub const Mp3Version = mp3.Version;

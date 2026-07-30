@@ -3656,7 +3656,7 @@ test "installed package exposes bounded MP3 framing and seeking" {
         .{ .read = true },
     );
     defer mp3_file.close(std.testing.io);
-    var file_encoder_storage: [4096]u8 = undefined;
+    var file_encoder_storage: [8192]u8 = undefined;
     var file_encoder = try plugin.dsp.Mp3PcmFileEncoder.init(
         std.testing.io,
         mp3_file,
@@ -3729,6 +3729,31 @@ test "installed package exposes bounded MP3 framing and seeking" {
         @as(u4, 9),
         vbr_frame.bitrate_index,
     );
+    var vbr_reservoir =
+        try plugin.dsp.Mp3VbrPcmReservoirEncoder.init(
+            vbr_config,
+        );
+    const vbr_reservoir_prime: plugin.dsp.Mp3VbrPcmReservoirAppend =
+        try vbr_reservoir.appendAtBitrateIndex(
+            analysis_pcm,
+            automatic_storage[0..0],
+            9,
+        );
+    try std.testing.expect(vbr_reservoir_prime.frame == null);
+    const vbr_reservoir_emitted: plugin.dsp.Mp3VbrPcmReservoirAppend =
+        try vbr_reservoir.appendAtBitrateIndex(
+            analysis_pcm,
+            &automatic_storage,
+            9,
+        );
+    try std.testing.expect(vbr_reservoir_emitted.frame != null);
+    try std.testing.expectEqual(
+        @as(u4, 9),
+        vbr_reservoir_emitted.selection.bitrate_index,
+    );
+    const vbr_reservoir_final =
+        try vbr_reservoir.finish(&automatic_storage);
+    try std.testing.expect(vbr_reservoir_final != null);
     const public_xing: plugin.dsp.Mp3XingEncoderMetadata = .{
         .kind = .variable,
         .frame_count = 1,
@@ -3757,6 +3782,30 @@ test "installed package exposes bounded MP3 framing and seeking" {
         vbr_stream_finish.summary.encoder_delay,
     );
 
+    var vbr_reservoir_stream_offsets: [4]u64 = undefined;
+    var vbr_reservoir_stream =
+        try plugin.dsp.Mp3VbrPcmReservoirStreamEncoder.init(
+            vbr_config,
+            &vbr_reservoir_stream_offsets,
+        );
+    _ = try vbr_reservoir_stream.startXingMetadata(
+        &stream_storage,
+    );
+    const vbr_reservoir_stream_prime: plugin.dsp.Mp3VbrPcmReservoirAppend =
+        try vbr_reservoir_stream.append(
+            analysis_pcm,
+            &stream_storage,
+        );
+    try std.testing.expect(
+        vbr_reservoir_stream_prime.frame == null,
+    );
+    const vbr_reservoir_stream_finish: plugin.dsp.Mp3VbrPcmReservoirStreamFinish =
+        try vbr_reservoir_stream.finish(&stream_storage);
+    try std.testing.expectEqual(
+        @as(u64, 3),
+        vbr_reservoir_stream_finish.summary.frame_count,
+    );
+
     var vbr_file = try mp3_temporary.dir.createFile(
         std.testing.io,
         "public-vbr-encoder.mp3",
@@ -3779,6 +3828,30 @@ test "installed package exposes bounded MP3 framing and seeking" {
     try std.testing.expectEqual(
         vbr_file_summary.stream.byte_count,
         try vbr_file.length(std.testing.io),
+    );
+
+    var vbr_reservoir_file = try mp3_temporary.dir.createFile(
+        std.testing.io,
+        "public-vbr-reservoir-encoder.mp3",
+        .{ .read = true },
+    );
+    defer vbr_reservoir_file.close(std.testing.io);
+    var vbr_reservoir_file_offsets: [4]u64 = undefined;
+    var vbr_reservoir_file_encoder =
+        try plugin.dsp.Mp3VbrPcmReservoirFileEncoder.init(
+            std.testing.io,
+            vbr_reservoir_file,
+            vbr_config,
+            &file_encoder_storage,
+            &vbr_reservoir_file_offsets,
+        );
+    try vbr_reservoir_file_encoder.startXingMetadata(17);
+    _ = try vbr_reservoir_file_encoder.append(analysis_pcm);
+    const vbr_reservoir_file_summary: plugin.dsp.Mp3VbrPcmReservoirFileSummary =
+        try vbr_reservoir_file_encoder.finalize();
+    try std.testing.expectEqual(
+        vbr_reservoir_file_summary.stream.byte_count,
+        try vbr_reservoir_file.length(std.testing.io),
     );
     pcm_analysis.reset();
 
