@@ -3218,6 +3218,22 @@ test "installed package exposes bounded MP3 framing and seeking" {
     );
     try std.testing.expectEqual(@as(u16, 0), main_data.bit_count);
     try std.testing.expectEqual(@as(usize, 0), main_data.bytes.len);
+    const scale_factors: plugin.dsp.Mp3ScaleFactors =
+        try plugin.dsp.decodeMp3ScaleFactors(
+            parsed,
+            try (try plugin.dsp.Mp3Frame.parse(
+                &encoded,
+                0,
+            )).sideInformation(),
+            main_data,
+        );
+    try std.testing.expectEqual(
+        @as(u2, 2),
+        scale_factors.granule_count,
+    );
+    const scale_channel: plugin.dsp.Mp3ScaleFactorChannel =
+        scale_factors.granules[0].channels[0];
+    try std.testing.expectEqual(@as(u12, 0), scale_channel.part2_bits);
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);
