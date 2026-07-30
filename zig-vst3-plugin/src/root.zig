@@ -160,6 +160,16 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(plugin, "UmpInputQueue"));
     try std.testing.expect(@hasDecl(plugin, "UmpBlockScheduler"));
     try std.testing.expect(@hasDecl(dsp, "Matrix"));
+    try std.testing.expect(@hasDecl(dsp, "DynamicMatrix"));
+    try std.testing.expect(
+        @hasDecl(dsp, "DynamicLuDecomposition"),
+    );
+    try std.testing.expect(
+        @hasDecl(dsp, "DynamicQrDecomposition"),
+    );
+    try std.testing.expect(
+        @hasDecl(dsp, "DynamicSvdDecomposition"),
+    );
     try std.testing.expect(@hasDecl(dsp, "Polynomial"));
     try std.testing.expect(@hasDecl(dsp, "LadderFilter"));
     try std.testing.expect(@hasDecl(dsp, "Phase"));

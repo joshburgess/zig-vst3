@@ -5431,7 +5431,7 @@ test "installed package renders bounded HRTF responses" {
     );
 }
 
-test "installed package owns runtime-shaped matrices" {
+test "installed package owns and decomposes runtime-shaped matrices" {
     const Matrix = plugin.dsp.DynamicMatrix(f64);
     var first = try Matrix.fromSlice(
         std.testing.allocator,
@@ -5456,6 +5456,46 @@ test "installed package owns runtime-shaped matrices" {
         [_]f64{ -2.0, -2.0 },
         product.values[0..2].*,
     );
+
+    var square = try Matrix.fromSlice(
+        std.testing.allocator,
+        2,
+        2,
+        &.{ 3.0, 1.0, 1.0, 2.0 },
+    );
+    defer square.deinit();
+    var lu: plugin.dsp.DynamicLuDecomposition(f64) =
+        try square.decomposeLu(std.testing.allocator);
+    defer lu.deinit();
+    const solved = try lu.solve(
+        std.testing.allocator,
+        &.{ 7.0, 5.0 },
+    );
+    defer std.testing.allocator.free(solved);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.8),
+        solved[0],
+        0.000_000_000_001,
+    );
+
+    var qr: plugin.dsp.DynamicQrDecomposition(f64) =
+        try second.decomposeQr(std.testing.allocator);
+    defer qr.deinit();
+    const fitted = try qr.solveLeastSquares(
+        std.testing.allocator,
+        &.{ 1.0, 0.0, -1.0 },
+    );
+    defer std.testing.allocator.free(fitted);
+    try std.testing.expectEqual(@as(usize, 1), fitted.len);
+
+    var svd: plugin.dsp.DynamicSvdDecomposition(f64) =
+        try first.decomposeSvd(std.testing.allocator, .{});
+    defer svd.deinit();
+    var pseudoinverse = try svd.pseudoinverse(
+        std.testing.allocator,
+    );
+    defer pseudoinverse.deinit();
+    try std.testing.expect(pseudoinverse.valid());
 }
 
 test "installed package exposes ADM binaural stereo mixing" {
