@@ -341,6 +341,7 @@ pub const buildMp3FileSeekIndex = mp3.buildFileSeekIndex;
 pub const decodeMp3HuffmanChannel = mp3.decodeHuffmanChannel;
 pub const decodeMp3ScaleFactors = mp3.decodeScaleFactors;
 pub const encodeMp3HuffmanChannel = mp3.encodeHuffmanChannel;
+pub const encodeMp3InfoFrame = mp3.encodeInfoFrame;
 pub const encodeMp3ScaleFactors = mp3.encodeScaleFactors;
 pub const encodeMp3SideInformation = mp3.encodeSideInformation;
 pub const findMp3SeekPoint = mp3.findSeekPoint;

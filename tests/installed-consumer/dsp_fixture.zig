@@ -3567,11 +3567,26 @@ test "installed package exposes bounded MP3 framing and seeking" {
         .{ .channel_mode = .stereo },
         &file_encoder_storage,
     );
+    try file_encoder.startGaplessMetadata();
     try file_encoder.append(analysis_pcm);
     const file_encoder_summary = try file_encoder.finalize();
     try std.testing.expectEqual(
         file_encoder_summary.byte_count,
         try mp3_file.length(std.testing.io),
+    );
+    var metadata_frame_storage: [2048]u8 = undefined;
+    const metadata_summary = try plugin.dsp.Mp3FileReader.summarize(
+        std.testing.io,
+        mp3_file,
+        &metadata_frame_storage,
+    );
+    try std.testing.expectEqual(
+        @as(?u32, @intCast(file_encoder_summary.frame_count)),
+        metadata_summary.first_xing.?.frame_count,
+    );
+    try std.testing.expectEqual(
+        @as(?u12, @intCast(file_encoder_summary.encoder_delay)),
+        metadata_summary.first_xing.?.encoder_delay,
     );
     pcm_analysis.reset();
 
