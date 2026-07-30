@@ -3361,15 +3361,6 @@ fn validPluginUri(comptime uri: []const u8) bool {
     return true;
 }
 
-fn featureData(
-    features: ?[*:null]const ?*const Feature,
-    wanted_uri: []const u8,
-) ?*anyopaque {
-    const feature = featureWithUri(features, wanted_uri) orelse
-        return null;
-    return feature.data;
-}
-
 fn featureWithUri(
     features: ?[*:null]const ?*const Feature,
     wanted_uri: []const u8,

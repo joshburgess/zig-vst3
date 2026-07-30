@@ -170,6 +170,10 @@ pub fn Adapter(
 
         pub fn instanceFromHandle(handle: Handle) ?*Instance {
             const raw = handle orelse return null;
+            return instanceFromRaw(raw);
+        }
+
+        fn instanceFromRaw(raw: *anyopaque) ?*Instance {
             if (@intFromPtr(raw) % @alignOf(Instance) != 0) return null;
             return @ptrCast(@alignCast(raw));
         }
@@ -332,7 +336,8 @@ pub fn Adapter(
         }
 
         fn beginEdit(raw: *anyopaque, id: u32) gui.Error!void {
-            const instance: *Instance = @ptrCast(@alignCast(raw));
+            const instance = instanceFromRaw(raw) orelse
+                return error.Rejected;
             const index = parameter_set.indexOfId(id) orelse
                 return error.InvalidParameter;
             if (instance.touch) |touch| {
@@ -351,7 +356,8 @@ pub fn Adapter(
             id: u32,
             normalized: f64,
         ) gui.Error!void {
-            const instance: *Instance = @ptrCast(@alignCast(raw));
+            const instance = instanceFromRaw(raw) orelse
+                return error.Rejected;
             const index = parameter_set.indexOfId(id) orelse
                 return error.InvalidParameter;
             if (!std.math.isFinite(normalized) or
@@ -379,7 +385,7 @@ pub fn Adapter(
         }
 
         fn endEdit(raw: *anyopaque, id: u32) void {
-            const instance: *Instance = @ptrCast(@alignCast(raw));
+            const instance = instanceFromRaw(raw) orelse return;
             const index = parameter_set.indexOfId(id) orelse return;
             const touch = instance.touch orelse return;
             const port = CoreAdapter.controlPort(index) orelse return;
@@ -387,7 +393,7 @@ pub fn Adapter(
         }
 
         fn value(raw: *anyopaque, id: u32) ?f64 {
-            const instance: *Instance = @ptrCast(@alignCast(raw));
+            const instance = instanceFromRaw(raw) orelse return null;
             const index = parameter_set.indexOfId(id) orelse return null;
             return instance.values[index];
         }
@@ -442,7 +448,8 @@ pub fn Adapter(
         }
 
         fn requestResize(raw: *anyopaque, requested: gui.Size) gui.Error!gui.Size {
-            const instance: *Instance = @ptrCast(@alignCast(raw));
+            const instance = instanceFromRaw(raw) orelse
+                return error.Rejected;
             const resize = instance.resize orelse return error.Rejected;
             if (requested.width > std.math.maxInt(c_int) or
                 requested.height > std.math.maxInt(c_int))
@@ -841,6 +848,26 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
     );
     const misaligned: Handle = @ptrFromInt(@intFromPtr(handle) + 1);
     programs.select_program(misaligned, 17, 0);
+    const misaligned_raw = misaligned orelse
+        return error.MissingMisalignedHandle;
+    const context_api = instance.editor.context.vtable;
+    try std.testing.expectError(
+        error.Rejected,
+        context_api.begin_edit(misaligned_raw, 7),
+    );
+    try std.testing.expectError(
+        error.Rejected,
+        context_api.perform_edit(misaligned_raw, 7, 0.5),
+    );
+    context_api.end_edit(misaligned_raw, 7);
+    try std.testing.expect(context_api.value(misaligned_raw, 7) == null);
+    try std.testing.expectError(
+        error.Rejected,
+        context_api.request_resize(
+            misaligned_raw,
+            .{ .width = 640, .height = 480 },
+        ),
+    );
 
     try instance.editor.requestResize(.{ .width = 640, .height = 480 });
     try std.testing.expectEqual(@as(usize, 1), host.resized);
