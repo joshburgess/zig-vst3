@@ -2031,6 +2031,46 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         parsed_resource_list.value.entries[1].can_subscribe,
     );
 
+    const modes = [_]plugin.process.MidiCiPropertyMode{.{
+        .mode_id = "multi_channel",
+        .title = "Multi Channel",
+    }};
+    property_json.clearRetainingCapacity();
+    try (plugin.process.MidiCiPropertyModeList{
+        .entries = &modes,
+    }).writeJson(&property_json.writer);
+    const parsed_modes = try plugin.process.MidiCiPropertyModeList.parseJson(
+        std.testing.allocator,
+        property_json.written(),
+    );
+    defer parsed_modes.deinit();
+    try std.testing.expectEqualStrings(
+        "multi_channel",
+        parsed_modes.value.entries[0].mode_id,
+    );
+
+    const controller_index = [_]u7{74};
+    const controllers = [_]plugin.process.MidiCiPropertyController{.{
+        .title = "Brightness",
+        .controller_type = .cc,
+        .controller_index = &controller_index,
+        .type_hint = .continuous,
+    }};
+    property_json.clearRetainingCapacity();
+    try (plugin.process.MidiCiPropertyChannelControllerList{
+        .entries = &controllers,
+    }).writeJson(&property_json.writer);
+    const parsed_controllers =
+        try plugin.process.MidiCiPropertyChannelControllerList.parseJson(
+            std.testing.allocator,
+            property_json.written(),
+        );
+    defer parsed_controllers.deinit();
+    try std.testing.expectEqual(
+        plugin.process.MidiCiPropertyControllerType.cc,
+        parsed_controllers.value.entries[0].controller_type,
+    );
+
     var encoded_property: [9]u8 = undefined;
     var decoded_property: [8]u8 = undefined;
     const encoded_property_bytes =

@@ -6,6 +6,7 @@ pub const maximum_links = 64;
 pub const maximum_channels = 256;
 pub const maximum_resources = 256;
 pub const maximum_media_types = 16;
+pub const maximum_columns = 64;
 pub const maximum_programs = 2_048;
 pub const maximum_program_categories = 64;
 pub const maximum_program_tags = 64;
@@ -356,6 +357,17 @@ pub const SetSupport = enum {
     partial,
 };
 
+pub const Column = struct {
+    property: []const u8,
+    title: ?[]const u8 = null,
+
+    pub fn valid(self: Column) bool {
+        if (self.property.len == 0 or self.property.len > 64) return false;
+        if (self.title) |title| return title.len != 0;
+        return true;
+    }
+};
+
 pub const Resource = struct {
     resource: []const u8,
     can_get: bool = true,
@@ -365,14 +377,26 @@ pub const Resource = struct {
     can_paginate: bool = false,
     media_types: []const []const u8 = &.{"application/json"},
     encodings: []const property_json.Encoding = &.{.ascii},
+    schema: ?std.json.Value = null,
+    columns: []const Column = &.{},
 
     pub fn valid(self: Resource) bool {
         if (!validResource(self.resource) or
             self.media_types.len == 0 or
             self.media_types.len > maximum_media_types or
             self.encodings.len == 0 or
-            self.encodings.len > std.meta.tags(property_json.Encoding).len)
+            self.encodings.len > std.meta.tags(property_json.Encoding).len or
+            self.columns.len > maximum_columns)
             return false;
+        if (self.schema) |schema| {
+            switch (schema) {
+                .object => {},
+                else => return false,
+            }
+        }
+        for (self.columns) |column| {
+            if (!column.valid()) return false;
+        }
         for (self.media_types) |media_type| {
             if (media_type.len == 0 or media_type.len > 75) return false;
         }
@@ -445,6 +469,24 @@ pub const ResourceList = struct {
                 }
                 try writer.writeByte(']');
             }
+            if (entry.schema) |schema| {
+                try writer.writeAll(",\"schema\":");
+                try writer.print("{f}", .{std.json.fmt(schema, .{})});
+            }
+            if (entry.columns.len != 0) {
+                try writer.writeAll(",\"columns\":[");
+                for (entry.columns, 0..) |column, column_index| {
+                    if (column_index != 0) try writer.writeByte(',');
+                    try writer.writeAll("{\"property\":");
+                    try writeString(writer, column.property);
+                    if (column.title) |title| {
+                        try writer.writeAll(",\"title\":");
+                        try writeString(writer, title);
+                    }
+                    try writer.writeByte('}');
+                }
+                try writer.writeByte(']');
+            }
             try writer.writeByte('}');
         }
         try writer.writeByte(']');
@@ -484,6 +526,8 @@ pub const ResourceList = struct {
                 .can_paginate = wire.canPaginate,
                 .media_types = wire.mediaTypes,
                 .encodings = encodings,
+                .schema = wire.schema,
+                .columns = wire.columns,
             };
         }
         const value = ResourceList{ .entries = entries };
@@ -559,6 +603,8 @@ const ResourceWire = struct {
     canPaginate: bool = false,
     mediaTypes: []const []const u8 = &.{"application/json"},
     encodings: []const []const u8 = &.{"ASCII"},
+    schema: ?std.json.Value = null,
+    columns: []const Column = &.{},
 };
 
 fn validatePropertyData(source: []const u8) !void {
@@ -843,4 +889,32 @@ test "ResourceList rejects itself duplicates and unsupported encodings" {
             return error.TestExpectedError;
         } else |_| {}
     }
+}
+
+test "ResourceList retains schema and presentation columns" {
+    const source =
+        "[{\"resource\":\"ModeList\",\"schema\":{\"type\":\"array\",\"$ref\":\"https://schema.midi.org/example.json\"},\"columns\":[{\"property\":\"title\",\"title\":\"Mode\"},{\"property\":\"priority\"}]}]";
+    const parsed = try ResourceList.parseJson(std.testing.allocator, source);
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value.entries[0].schema != null);
+    try std.testing.expectEqual(@as(usize, 2), parsed.value.entries[0].columns.len);
+    try std.testing.expectEqualStrings(
+        "title",
+        parsed.value.entries[0].columns[0].property,
+    );
+    try std.testing.expect(parsed.value.entries[0].columns[1].title == null);
+
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    try parsed.value.writeJson(&output.writer);
+    const reparsed = try ResourceList.parseJson(
+        std.testing.allocator,
+        output.written(),
+    );
+    defer reparsed.deinit();
+    try std.testing.expect(reparsed.value.entries[0].schema != null);
+    try std.testing.expectEqualStrings(
+        "Mode",
+        reparsed.value.entries[0].columns[0].title.?,
+    );
 }

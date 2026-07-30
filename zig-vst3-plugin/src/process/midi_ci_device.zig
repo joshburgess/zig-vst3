@@ -27,8 +27,8 @@ pub const Options = struct {
     product_instance_id: midi_ci.ProductInstanceId = .{},
     process_features: process.Features = .{},
     simultaneous_property_requests: u7 = 8,
-    property_exchange_major: u7 = 1,
-    property_exchange_minor: u7 = 0,
+    property_exchange_major: u7 = property.current_property_exchange_major,
+    property_exchange_minor: u7 = property.current_property_exchange_minor,
 };
 
 pub const ProfileState = struct {

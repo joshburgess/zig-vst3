@@ -16,6 +16,10 @@ pub const midi_ci_property_cache = @import("process/midi_ci_property_cache.zig")
 pub const midi_ci_property_host = @import("process/midi_ci_property_host.zig");
 pub const midi_ci_property_json = @import("process/midi_ci_property_json.zig");
 pub const midi_ci_property_resources = @import("process/midi_ci_property_resources.zig");
+pub const midi_ci_property_controller_resources =
+    @import("process/midi_ci_property_controller_resources.zig");
+pub const midi_ci_property_standard_resources =
+    @import("process/midi_ci_property_standard_resources.zig");
 pub const midi_ci_property_session = @import("process/midi_ci_property_session.zig");
 pub const midi_file = @import("process/midi_file.zig");
 pub const midi_flex = @import("process/midi_flex.zig");
@@ -74,6 +78,8 @@ pub const midi = struct {
             pub const host = midi_ci_property_host;
             pub const json = midi_ci_property_json;
             pub const resources = midi_ci_property_resources;
+            pub const controller_resources = midi_ci_property_controller_resources;
+            pub const standard_resources = midi_ci_property_standard_resources;
             pub const session = midi_ci_property_session;
         };
     };
@@ -289,6 +295,10 @@ pub const MidiCiProfileHostSpecificDataRequest =
     midi_ci_profile_host.SpecificDataRequest;
 pub const MidiCiProfileHost = midi_ci_profile_host.Host;
 pub const MidiCiPropertyCapabilities = midi_ci_property.Capabilities;
+pub const midi_ci_current_property_exchange_major =
+    midi_ci_property.current_property_exchange_major;
+pub const midi_ci_current_property_exchange_minor =
+    midi_ci_property.current_property_exchange_minor;
 pub const MidiCiPropertyCapabilitiesKind = midi_ci_property.Kind;
 pub const MidiCiPropertyCapabilitiesMessage = midi_ci_property.Message;
 pub const MidiCiPropertyCapabilitiesAgreement = midi_ci_property.Agreement;
@@ -346,9 +356,59 @@ pub const MidiCiPropertyProgramList = midi_ci_property_resources.ProgramList;
 pub const midi_ci_property_program_list_resource =
     midi_ci_property_resources.program_list_resource;
 pub const MidiCiPropertySetSupport = midi_ci_property_resources.SetSupport;
+pub const MidiCiPropertyColumn = midi_ci_property_resources.Column;
 pub const MidiCiPropertyResource = midi_ci_property_resources.Resource;
 pub const MidiCiPropertyResourceList = midi_ci_property_resources.ResourceList;
 pub const parseMidiCiPropertyJsonSchema = midi_ci_property_resources.parseJsonSchema;
+pub const MidiCiPropertyMode = midi_ci_property_standard_resources.Mode;
+pub const MidiCiPropertyModeList = midi_ci_property_standard_resources.ModeList;
+pub const MidiCiPropertyCurrentMode = midi_ci_property_standard_resources.CurrentMode;
+pub const MidiCiPropertyChannelMode = midi_ci_property_standard_resources.ChannelMode;
+pub const MidiCiPropertyBasicChannel = midi_ci_property_standard_resources.BasicChannel;
+pub const MidiCiPropertyLocalOn = midi_ci_property_standard_resources.LocalOn;
+pub const MidiCiPropertyExternalSync = midi_ci_property_standard_resources.ExternalSync;
+pub const MidiCiPropertyState = midi_ci_property_standard_resources.State;
+pub const MidiCiPropertyStateList = midi_ci_property_standard_resources.StateList;
+pub const midi_ci_property_mode_list_resource =
+    midi_ci_property_standard_resources.mode_list_resource;
+pub const midi_ci_property_current_mode_resource =
+    midi_ci_property_standard_resources.current_mode_resource;
+pub const midi_ci_property_channel_mode_resource =
+    midi_ci_property_standard_resources.channel_mode_resource;
+pub const midi_ci_property_basic_channel_rx_resource =
+    midi_ci_property_standard_resources.basic_channel_rx_resource;
+pub const midi_ci_property_basic_channel_tx_resource =
+    midi_ci_property_standard_resources.basic_channel_tx_resource;
+pub const midi_ci_property_local_on_resource =
+    midi_ci_property_standard_resources.local_on_resource;
+pub const midi_ci_property_external_sync_resource =
+    midi_ci_property_standard_resources.external_sync_resource;
+pub const midi_ci_property_state_list_resource =
+    midi_ci_property_standard_resources.state_list_resource;
+pub const midi_ci_property_state_resource =
+    midi_ci_property_standard_resources.state_resource;
+pub const MidiCiPropertyControllerType =
+    midi_ci_property_controller_resources.ControllerType;
+pub const MidiCiPropertyControllerDirection =
+    midi_ci_property_controller_resources.Direction;
+pub const MidiCiPropertyControllerTypeHint =
+    midi_ci_property_controller_resources.TypeHint;
+pub const MidiCiPropertyController =
+    midi_ci_property_controller_resources.Controller;
+pub const MidiCiPropertyAllControllerList =
+    midi_ci_property_controller_resources.AllControllerList;
+pub const MidiCiPropertyChannelControllerList =
+    midi_ci_property_controller_resources.ChannelControllerList;
+pub const MidiCiPropertyControllerMapEntry =
+    midi_ci_property_controller_resources.ControllerMapEntry;
+pub const MidiCiPropertyControllerMapList =
+    midi_ci_property_controller_resources.ControllerMapList;
+pub const midi_ci_property_all_controller_list_resource =
+    midi_ci_property_controller_resources.all_controller_list_resource;
+pub const midi_ci_property_channel_controller_list_resource =
+    midi_ci_property_controller_resources.channel_controller_list_resource;
+pub const midi_ci_property_controller_map_list_resource =
+    midi_ci_property_controller_resources.controller_map_list_resource;
 pub const MidiFile = midi_file.File;
 pub const MidiFileFormat = midi_file.Format;
 pub const MidiFileDivision = midi_file.Division;

@@ -1,6 +1,9 @@
 const std = @import("std");
 const midi_ci = @import("midi_ci.zig");
 
+pub const current_property_exchange_major: u7 = 1;
+pub const current_property_exchange_minor: u7 = 2;
+
 pub const Capabilities = struct {
     version: u5 = 2,
     source: midi_ci.Muid,

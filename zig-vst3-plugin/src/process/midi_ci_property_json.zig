@@ -250,6 +250,8 @@ pub const ReplyHeader = struct {
     total_count: ?u32 = null,
     media_type: ?[]const u8 = null,
     subscribe_id: ?[]const u8 = null,
+    state_revision: ?[]const u8 = null,
+    timestamp: ?u64 = null,
 
     pub fn valid(self: ReplyHeader) bool {
         if (self.message) |value| {
@@ -260,6 +262,9 @@ pub const ReplyHeader = struct {
         }
         if (self.subscribe_id) |value| {
             if (!validSubscribeId(value)) return false;
+        }
+        if (self.state_revision) |value| {
+            if (!validAsciiText(value, 512)) return false;
         }
         return true;
     }
@@ -287,6 +292,12 @@ pub const ReplyHeader = struct {
             try writer.writeAll(",\"subscribeId\":");
             try writeString(writer, value);
         }
+        if (self.state_revision) |value| {
+            try writer.writeAll(",\"stateRev\":");
+            try writeString(writer, value);
+        }
+        if (self.timestamp) |value|
+            try writer.print(",\"timestamp\":{d}", .{value});
         try writer.writeByte('}');
     }
 
@@ -311,6 +322,8 @@ pub const ReplyHeader = struct {
             .total_count = try optionalUnsigned(object, "totalCount", u32),
             .media_type = try optionalString(object, "mediaType"),
             .subscribe_id = try optionalString(object, "subscribeId"),
+            .state_revision = try optionalString(object, "stateRev"),
+            .timestamp = try optionalUnsigned(object, "timestamp", u64),
         };
         if (!value.valid()) return error.InvalidMidiCiPropertyReplyHeader;
         return transferParsed(ReplyHeader, parsed, value);
@@ -648,6 +661,8 @@ test "Property Exchange reply headers cover status and metadata" {
         .cache_time = 30,
         .total_count = 128,
         .subscribe_id = "sub_1",
+        .state_revision = "revision_7",
+        .timestamp = 1_700_000_000,
     };
     var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer output.deinit();
@@ -661,6 +676,14 @@ test "Property Exchange reply headers cover status and metadata" {
     try std.testing.expectEqual(expected.cache_time, parsed.value.cache_time);
     try std.testing.expectEqual(expected.total_count, parsed.value.total_count);
     try std.testing.expectEqualStrings("Ready", parsed.value.message.?);
+    try std.testing.expectEqualStrings(
+        "revision_7",
+        parsed.value.state_revision.?,
+    );
+    try std.testing.expectEqual(
+        @as(?u64, 1_700_000_000),
+        parsed.value.timestamp,
+    );
 }
 
 test "Property Exchange subscription headers enforce lifecycle shapes" {
