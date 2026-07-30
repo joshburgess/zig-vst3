@@ -3529,6 +3529,26 @@ test "installed package exposes bounded MP3 framing and seeking" {
     );
     try std.testing.expect(automatic_frame.len > 4);
     automatic_encoder.reset();
+    var reservoir_encoder =
+        try plugin.dsp.Mp3PcmReservoirEncoder.init(
+            .{ .channel_mode = .stereo },
+        );
+    const reservoir_prime: plugin.dsp.Mp3PcmReservoirAppend =
+        try reservoir_encoder.append(
+            analysis_pcm,
+            automatic_storage[0..0],
+        );
+    try std.testing.expect(reservoir_prime.frame == null);
+    const reservoir_emitted: plugin.dsp.Mp3PcmReservoirAppend =
+        try reservoir_encoder.append(
+            analysis_pcm,
+            &automatic_storage,
+        );
+    try std.testing.expect(reservoir_emitted.frame != null);
+    try std.testing.expect(reservoir_emitted.borrowed_bytes > 0);
+    try std.testing.expect(
+        (try reservoir_encoder.finish(&automatic_storage)) != null,
+    );
     var stream_encoder = try plugin.dsp.Mp3PcmStreamEncoder.init(
         .{ .channel_mode = .stereo },
     );
@@ -3550,6 +3570,36 @@ test "installed package exposes bounded MP3 framing and seeking" {
     try std.testing.expectEqual(
         @as(u16, 95),
         stream_summary.end_padding,
+    );
+    var reservoir_stream =
+        try plugin.dsp.Mp3PcmReservoirStreamEncoder.init(
+            .{ .channel_mode = .stereo },
+        );
+    const reservoir_stream_prime =
+        try reservoir_stream.append(
+            analysis_pcm,
+            stream_storage[0..0],
+        );
+    try std.testing.expect(
+        reservoir_stream_prime.frame == null,
+    );
+    const reservoir_stream_frame =
+        try reservoir_stream.append(
+            analysis_pcm,
+            &stream_storage,
+        );
+    const reservoir_stream_frame_bytes =
+        reservoir_stream_frame.frame.?.len;
+    const reservoir_stream_finish: plugin.dsp.Mp3PcmReservoirStreamFinish =
+        try reservoir_stream.finish(
+            stream_storage[reservoir_stream_frame_bytes..],
+        );
+    try std.testing.expect(
+        reservoir_stream_finish.borrowed_bytes > 0,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 95),
+        reservoir_stream_finish.summary.end_padding,
     );
 
     var mp3_temporary = std.testing.tmpDir(.{});
@@ -3587,6 +3637,34 @@ test "installed package exposes bounded MP3 framing and seeking" {
     try std.testing.expectEqual(
         @as(?u12, @intCast(file_encoder_summary.encoder_delay)),
         metadata_summary.first_xing.?.encoder_delay,
+    );
+    var reservoir_file = try mp3_temporary.dir.createFile(
+        std.testing.io,
+        "public-reservoir-encoder.mp3",
+        .{ .read = true },
+    );
+    defer reservoir_file.close(std.testing.io);
+    var reservoir_file_storage: [4600]u8 = undefined;
+    var reservoir_file_encoder =
+        try plugin.dsp.Mp3PcmReservoirFileEncoder.init(
+            std.testing.io,
+            reservoir_file,
+            .{ .channel_mode = .stereo },
+            &reservoir_file_storage,
+        );
+    try reservoir_file_encoder.startGaplessMetadata();
+    _ = try reservoir_file_encoder.append(analysis_pcm);
+    try std.testing.expect(
+        try reservoir_file_encoder.append(analysis_pcm) > 0,
+    );
+    const reservoir_file_summary: plugin.dsp.Mp3PcmReservoirFileSummary =
+        try reservoir_file_encoder.finalize();
+    try std.testing.expect(
+        reservoir_file_summary.borrowed_bytes > 0,
+    );
+    try std.testing.expectEqual(
+        reservoir_file_summary.stream.byte_count,
+        try reservoir_file.length(std.testing.io),
     );
     pcm_analysis.reset();
 

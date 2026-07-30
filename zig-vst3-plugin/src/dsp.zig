@@ -311,6 +311,16 @@ pub const Mp3PcmFrame = mp3.PcmFrame;
 pub const Mp3PcmEncoder = mp3.PcmEncoder;
 pub const Mp3PcmFileEncoder = mp3.PcmFileEncoder;
 pub const Mp3PcmRange = mp3.PcmRange;
+pub const Mp3PcmReservoirAppend = mp3.PcmReservoirAppend;
+pub const Mp3PcmReservoirEncoder = mp3.PcmReservoirEncoder;
+pub const Mp3PcmReservoirFileEncoder =
+    mp3.PcmReservoirFileEncoder;
+pub const Mp3PcmReservoirFileSummary =
+    mp3.PcmReservoirFileSummary;
+pub const Mp3PcmReservoirStreamEncoder =
+    mp3.PcmReservoirStreamEncoder;
+pub const Mp3PcmReservoirStreamFinish =
+    mp3.PcmReservoirStreamFinish;
 pub const Mp3PcmStreamEncoder = mp3.PcmStreamEncoder;
 pub const Mp3PcmStreamFinish = mp3.PcmStreamFinish;
 pub const Mp3PolyphaseAnalysis = mp3.PolyphaseAnalysis;
