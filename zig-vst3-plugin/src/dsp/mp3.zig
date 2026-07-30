@@ -845,6 +845,11 @@ fn quantizeEncoderChannel(
         if (!std.math.isFinite(line))
             return error.InvalidMp3RequantizedSpectrum;
     }
+    const ordered = try orderEncoderSpectrum(
+        header,
+        analyzed.description,
+        analyzed.spectrum,
+    );
 
     var gain: u16 = 0;
     while (gain <= std.math.maxInt(u8)) : (gain += 1) {
@@ -853,7 +858,7 @@ fn quantizeEncoderChannel(
             (@as(f64, @floatFromInt(gain)) - 210.0) * 0.25;
         const step = std.math.exp2(exponent);
         var fits_range = true;
-        for (analyzed.spectrum.lines, 0..) |line, index| {
+        for (ordered, 0..) |line, index| {
             const magnitude = @abs(@as(f64, line));
             const scaled = std.math.pow(
                 f64,
@@ -892,6 +897,44 @@ fn quantizeEncoderChannel(
     return error.Mp3EncoderBitBudgetTooSmall;
 }
 
+fn orderEncoderSpectrum(
+    header: Header,
+    description: GranuleChannel,
+    spectrum: RequantizedSpectrum,
+) ![576]f32 {
+    if (description.block_type != 2)
+        return spectrum.lines;
+    const bands = try scaleFactorBands(header);
+    const short_boundary: usize = if (description.mixed_block)
+        3 * bands.short_starts[3]
+    else
+        0;
+    var result: [576]f32 = undefined;
+    if (short_boundary != 0)
+        @memcpy(result[0..short_boundary], spectrum.lines[0..short_boundary]);
+    var destination = short_boundary;
+    const first_band: usize =
+        if (description.mixed_block) 3 else 0;
+    for (first_band..13) |band| {
+        const width: usize =
+            bands.short_starts[band + 1] -
+            bands.short_starts[band];
+        for (0..3) |window| {
+            for (0..width) |offset| {
+                const source =
+                    3 * (@as(usize, bands.short_starts[band]) +
+                        offset) +
+                    window;
+                result[destination] = spectrum.lines[source];
+                destination += 1;
+            }
+        }
+    }
+    if (destination != result.len)
+        return error.InvalidMp3ScaleFactorBands;
+    return result;
+}
+
 const EncoderHuffmanSelection = struct {
     description: GranuleChannel,
     bit_count: usize,
@@ -916,7 +959,10 @@ fn selectEncoderHuffman(
     );
     var count1_end = big_line_count + std.mem.alignForward(
         usize,
-        last_nonzero - big_line_count,
+        if (last_nonzero > big_line_count)
+            last_nonzero - big_line_count
+        else
+            0,
         4,
     );
     if (count1_end > spectrum.len) {
@@ -9924,6 +9970,18 @@ test "quantizes analyzed MP3 spectra with automatic codebooks" {
         transition_quantized.granules[0][0]
             .description.table_select[2],
     );
+    const short_quantized = QuantizedSpectrum{
+        .lines = transition_quantized.granules[1][0].spectrum,
+        .decoded_lines = 576,
+    };
+    const short_reconstructed = try requantizeChannel(
+        header,
+        transition_quantized.granules[1][0].description,
+        .{ .value_count = 39 },
+        short_quantized,
+    );
+    try std.testing.expect(short_reconstructed.lines[40] != 0);
+    try std.testing.expect(short_reconstructed.lines[43] != 0);
     const transition_bytes = try encoder.encodeQuantizedFrame(
         &transition_quantized,
         &storage,
@@ -9958,6 +10016,69 @@ test "quantizes analyzed MP3 spectra with automatic codebooks" {
         error.InvalidMp3EncoderAnalysisFrame,
         EncoderQuantizer.quantize(header, malformed),
     );
+}
+
+test "orders pure and mixed short spectra for MP3 encoding" {
+    const headers = [_]Header{
+        try Header.parse(
+            &testHeader(3, true, 9, 0, false, .mono),
+        ),
+        try Header.parse(
+            &testHeader(0, true, 9, 2, false, .mono),
+        ),
+    };
+    var spectrum = RequantizedSpectrum{};
+    for (&spectrum.lines, 0..) |*line, index|
+        line.* = @floatFromInt(index);
+    for (headers) |header| {
+        const bands = try scaleFactorBands(header);
+        const pure = try orderEncoderSpectrum(
+            header,
+            .{
+                .window_switching = true,
+                .block_type = 2,
+            },
+            spectrum,
+        );
+        const first_width: usize =
+            bands.short_starts[1] - bands.short_starts[0];
+        try std.testing.expectEqual(@as(f32, 0), pure[0]);
+        try std.testing.expectEqual(
+            @as(f32, 1),
+            pure[first_width],
+        );
+        try std.testing.expectEqual(
+            @as(f32, 2),
+            pure[first_width * 2],
+        );
+
+        const mixed = try orderEncoderSpectrum(
+            header,
+            .{
+                .window_switching = true,
+                .block_type = 2,
+                .mixed_block = true,
+            },
+            spectrum,
+        );
+        const boundary: usize = 3 * bands.short_starts[3];
+        try std.testing.expectEqual(
+            @as(f32, @floatFromInt(boundary - 1)),
+            mixed[boundary - 1],
+        );
+        try std.testing.expectEqual(
+            @as(f32, @floatFromInt(boundary)),
+            mixed[boundary],
+        );
+        try std.testing.expectEqual(
+            @as(f32, @floatFromInt(boundary + 1)),
+            mixed[
+                boundary +
+                    bands.short_starts[4] -
+                    bands.short_starts[3]
+            ],
+        );
+    }
 }
 
 test "encodes PCM into complete MP3 frames transactionally" {
