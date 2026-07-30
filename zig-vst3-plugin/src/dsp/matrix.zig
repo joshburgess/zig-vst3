@@ -266,6 +266,274 @@ pub fn Matrix(
     };
 }
 
+/// Owns a finite row-major matrix whose dimensions are selected at runtime.
+///
+/// Construction and arithmetic allocate through the caller's allocator.
+/// Realtime code should prepare these values before entering the audio thread.
+pub fn DynamicMatrix(comptime Sample: type) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError("DynamicMatrix supports f32 and f64 elements");
+
+    return struct {
+        const Self = @This();
+
+        allocator: std.mem.Allocator,
+        rows: usize,
+        columns: usize,
+        values: []Sample,
+
+        pub fn init(
+            allocator: std.mem.Allocator,
+            rows: usize,
+            columns: usize,
+        ) !Self {
+            const element_count = try checkedElementCount(rows, columns);
+            const values = try allocator.alloc(Sample, element_count);
+            @memset(values, 0.0);
+            return .{
+                .allocator = allocator,
+                .rows = rows,
+                .columns = columns,
+                .values = values,
+            };
+        }
+
+        pub fn fromSlice(
+            allocator: std.mem.Allocator,
+            rows: usize,
+            columns: usize,
+            source: []const Sample,
+        ) !Self {
+            const element_count = try checkedElementCount(rows, columns);
+            if (source.len != element_count)
+                return error.DynamicMatrixShapeMismatch;
+            for (source) |value| {
+                if (!std.math.isFinite(value))
+                    return error.MatrixNonFiniteValue;
+            }
+            const result = try init(allocator, rows, columns);
+            @memcpy(result.values, source);
+            return result;
+        }
+
+        pub fn identity(
+            allocator: std.mem.Allocator,
+            dimensions: usize,
+        ) !Self {
+            var result = try init(allocator, dimensions, dimensions);
+            for (0..dimensions) |index|
+                result.values[index * dimensions + index] = 1.0;
+            return result;
+        }
+
+        pub fn deinit(self: *Self) void {
+            if (self.values.len != 0)
+                self.allocator.free(self.values);
+            self.rows = 0;
+            self.columns = 0;
+            self.values = &.{};
+        }
+
+        pub fn clone(
+            self: *const Self,
+            allocator: std.mem.Allocator,
+        ) !Self {
+            if (!self.valid()) return error.InvalidDynamicMatrix;
+            return fromSlice(
+                allocator,
+                self.rows,
+                self.columns,
+                self.values,
+            );
+        }
+
+        pub fn at(
+            self: *const Self,
+            row_index: usize,
+            column: usize,
+        ) !Sample {
+            if (!self.valid()) return error.InvalidDynamicMatrix;
+            if (row_index >= self.rows or column >= self.columns)
+                return error.DynamicMatrixIndexOutOfRange;
+            return self.values[row_index * self.columns + column];
+        }
+
+        pub fn set(
+            self: *Self,
+            row_index: usize,
+            column: usize,
+            value: Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidDynamicMatrix;
+            if (row_index >= self.rows or column >= self.columns)
+                return error.DynamicMatrixIndexOutOfRange;
+            if (!std.math.isFinite(value))
+                return error.MatrixNonFiniteValue;
+            self.values[row_index * self.columns + column] = value;
+        }
+
+        pub fn row(
+            self: *const Self,
+            row_index: usize,
+        ) ![]const Sample {
+            if (!self.valid()) return error.InvalidDynamicMatrix;
+            if (row_index >= self.rows)
+                return error.DynamicMatrixIndexOutOfRange;
+            const start = row_index * self.columns;
+            return self.values[start .. start + self.columns];
+        }
+
+        pub fn add(
+            self: *const Self,
+            other: *const Self,
+            allocator: std.mem.Allocator,
+        ) !Self {
+            try validateSameShape(self, other);
+            var result = try init(allocator, self.rows, self.columns);
+            errdefer result.deinit();
+            for (self.values, other.values, result.values) |
+                first,
+                second,
+                *destination,
+            | {
+                const value = first + second;
+                if (!std.math.isFinite(value))
+                    return error.MatrixNonFiniteValue;
+                destination.* = value;
+            }
+            return result;
+        }
+
+        pub fn subtract(
+            self: *const Self,
+            other: *const Self,
+            allocator: std.mem.Allocator,
+        ) !Self {
+            try validateSameShape(self, other);
+            var result = try init(allocator, self.rows, self.columns);
+            errdefer result.deinit();
+            for (self.values, other.values, result.values) |
+                first,
+                second,
+                *destination,
+            | {
+                const value = first - second;
+                if (!std.math.isFinite(value))
+                    return error.MatrixNonFiniteValue;
+                destination.* = value;
+            }
+            return result;
+        }
+
+        pub fn scaled(
+            self: *const Self,
+            factor: Sample,
+            allocator: std.mem.Allocator,
+        ) !Self {
+            if (!self.valid()) return error.InvalidDynamicMatrix;
+            if (!std.math.isFinite(factor))
+                return error.MatrixNonFiniteValue;
+            var result = try init(allocator, self.rows, self.columns);
+            errdefer result.deinit();
+            for (self.values, result.values) |source, *destination| {
+                const value = source * factor;
+                if (!std.math.isFinite(value))
+                    return error.MatrixNonFiniteValue;
+                destination.* = value;
+            }
+            return result;
+        }
+
+        pub fn transpose(
+            self: *const Self,
+            allocator: std.mem.Allocator,
+        ) !Self {
+            if (!self.valid()) return error.InvalidDynamicMatrix;
+            var result = try init(allocator, self.columns, self.rows);
+            for (0..self.rows) |row_index| {
+                for (0..self.columns) |column_index| {
+                    result.values[
+                        column_index * self.rows + row_index
+                    ] = self.values[
+                        row_index * self.columns + column_index
+                    ];
+                }
+            }
+            return result;
+        }
+
+        pub fn multiply(
+            self: *const Self,
+            other: *const Self,
+            allocator: std.mem.Allocator,
+        ) !Self {
+            if (!self.valid() or !other.valid())
+                return error.InvalidDynamicMatrix;
+            if (self.columns != other.rows)
+                return error.DynamicMatrixShapeMismatch;
+            var result = try init(allocator, self.rows, other.columns);
+            errdefer result.deinit();
+            for (0..self.rows) |row_index| {
+                for (0..other.columns) |column_index| {
+                    var value: Sample = 0.0;
+                    for (0..self.columns) |inner| {
+                        value +=
+                            self.values[
+                                row_index * self.columns + inner
+                            ] *
+                            other.values[
+                                inner * other.columns + column_index
+                            ];
+                        if (!std.math.isFinite(value))
+                            return error.MatrixNonFiniteValue;
+                    }
+                    result.values[
+                        row_index * other.columns + column_index
+                    ] = value;
+                }
+            }
+            return result;
+        }
+
+        pub fn valid(self: *const Self) bool {
+            const element_count =
+                checkedElementCount(self.rows, self.columns) catch
+                    return false;
+            if (self.values.len != element_count) return false;
+            for (self.values) |value| {
+                if (!std.math.isFinite(value)) return false;
+            }
+            return true;
+        }
+
+        fn validateSameShape(
+            first: *const Self,
+            second: *const Self,
+        ) !void {
+            if (!first.valid() or !second.valid())
+                return error.InvalidDynamicMatrix;
+            if (first.rows != second.rows or
+                first.columns != second.columns)
+            {
+                return error.DynamicMatrixShapeMismatch;
+            }
+        }
+
+        fn checkedElementCount(
+            rows: usize,
+            columns: usize,
+        ) !usize {
+            if (rows == 0 or columns == 0)
+                return error.InvalidDynamicMatrixDimensions;
+            return std.math.mul(
+                usize,
+                rows,
+                columns,
+            ) catch error.DynamicMatrixDimensionsOverflow;
+        }
+    };
+}
+
 pub fn SvdDecomposition(
     comptime Sample: type,
     comptime rows: usize,
@@ -1668,4 +1936,113 @@ test "wide SVD handles rank loss and hostile state" {
         Matrix(f32, 4, 2).zero().values,
         (try zero.pseudoinverse()).values,
     );
+}
+
+test "dynamic matrices own runtime-shaped arithmetic" {
+    const D = DynamicMatrix(f64);
+    var first = try D.fromSlice(
+        std.testing.allocator,
+        2,
+        3,
+        &.{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 },
+    );
+    defer first.deinit();
+    var second = try D.fromSlice(
+        std.testing.allocator,
+        3,
+        2,
+        &.{ 7.0, 8.0, 9.0, 10.0, 11.0, 12.0 },
+    );
+    defer second.deinit();
+    var product = try first.multiply(&second, std.testing.allocator);
+    defer product.deinit();
+    try std.testing.expectEqualDeep(
+        [_]f64{ 58.0, 64.0, 139.0, 154.0 },
+        product.values[0..4].*,
+    );
+
+    var transposed = try first.transpose(std.testing.allocator);
+    defer transposed.deinit();
+    try std.testing.expectEqualDeep(
+        [_]f64{ 1.0, 4.0, 2.0, 5.0, 3.0, 6.0 },
+        transposed.values[0..6].*,
+    );
+    var scaled = try first.scaled(-0.5, std.testing.allocator);
+    defer scaled.deinit();
+    try std.testing.expectEqual(
+        @as(f64, -3.0),
+        try scaled.at(1, 2),
+    );
+}
+
+test "dynamic matrix identity clone and checked mutation" {
+    const D = DynamicMatrix(f32);
+    var identity = try D.identity(std.testing.allocator, 3);
+    defer identity.deinit();
+    try identity.set(0, 2, 0.25);
+    try std.testing.expectEqualDeep(
+        [_]f32{ 1.0, 0.0, 0.25 },
+        (try identity.row(0))[0..3].*,
+    );
+    var copy = try identity.clone(std.testing.allocator);
+    defer copy.deinit();
+    try std.testing.expectEqualDeep(identity.values, copy.values);
+    try std.testing.expectError(
+        error.DynamicMatrixIndexOutOfRange,
+        identity.set(3, 0, 1.0),
+    );
+    try std.testing.expectError(
+        error.MatrixNonFiniteValue,
+        identity.set(0, 0, std.math.nan(f32)),
+    );
+    try std.testing.expectEqual(@as(f32, 1.0), try identity.at(0, 0));
+}
+
+test "dynamic matrices reject shapes overflow and hostile state" {
+    const D = DynamicMatrix(f64);
+    try std.testing.expectError(
+        error.InvalidDynamicMatrixDimensions,
+        D.init(std.testing.allocator, 0, 1),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixDimensionsOverflow,
+        D.init(std.testing.allocator, std.math.maxInt(usize), 2),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixShapeMismatch,
+        D.fromSlice(std.testing.allocator, 2, 2, &.{1.0}),
+    );
+    try std.testing.expectError(
+        error.MatrixNonFiniteValue,
+        D.fromSlice(
+            std.testing.allocator,
+            1,
+            1,
+            &.{std.math.inf(f64)},
+        ),
+    );
+
+    var first = try D.init(std.testing.allocator, 2, 2);
+    defer first.deinit();
+    var second = try D.init(std.testing.allocator, 3, 1);
+    defer second.deinit();
+    try std.testing.expectError(
+        error.DynamicMatrixShapeMismatch,
+        first.add(&second, std.testing.allocator),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixShapeMismatch,
+        first.multiply(&second, std.testing.allocator),
+    );
+    first.values[0] = std.math.nan(f64);
+    try std.testing.expect(!first.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicMatrix,
+        first.clone(std.testing.allocator),
+    );
+
+    var released = try D.init(std.testing.allocator, 1, 1);
+    released.deinit();
+    released.deinit();
+    try std.testing.expect(!released.valid());
 }

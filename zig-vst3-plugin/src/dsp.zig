@@ -829,6 +829,7 @@ pub const LinkwitzRileySplit = linkwitz_riley.Split;
 pub const LogRampedValue = log_ramp.LogRampedValue;
 pub const LookupTable = lookup_table.LookupTable;
 pub const Matrix = matrix.Matrix;
+pub const DynamicMatrix = matrix.DynamicMatrix;
 pub const Vector = matrix.Vector;
 pub const LuDecomposition = matrix.LuDecomposition;
 pub const QrDecomposition = matrix.QrDecomposition;

@@ -5410,6 +5410,33 @@ test "installed package renders bounded HRTF responses" {
     );
 }
 
+test "installed package owns runtime-shaped matrices" {
+    const Matrix = plugin.dsp.DynamicMatrix(f64);
+    var first = try Matrix.fromSlice(
+        std.testing.allocator,
+        2,
+        3,
+        &.{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 },
+    );
+    defer first.deinit();
+    var second = try Matrix.fromSlice(
+        std.testing.allocator,
+        3,
+        1,
+        &.{ 1.0, 0.0, -1.0 },
+    );
+    defer second.deinit();
+    var product = try first.multiply(
+        &second,
+        std.testing.allocator,
+    );
+    defer product.deinit();
+    try std.testing.expectEqualDeep(
+        [_]f64{ -2.0, -2.0 },
+        product.values[0..2].*,
+    );
+}
+
 test "installed package exposes ADM binaural stereo mixing" {
     const document = try plugin.dsp.AdmXmlDocument.init(
         \\<audioFormatExtended>
