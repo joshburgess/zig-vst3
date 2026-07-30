@@ -3340,6 +3340,26 @@ test "installed package exposes bounded MP3 framing and seeking" {
     }
     try std.testing.expect(pcm_nonzero);
     polyphase.reset();
+    var frame_decoder = plugin.dsp.Mp3FrameDecoder{};
+    const decoded_frame: plugin.dsp.Mp3PcmFrame =
+        try frame_decoder.decode(installed_frame);
+    try std.testing.expectEqual(
+        @as(u2, 2),
+        decoded_frame.channel_count,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 1152),
+        decoded_frame.sample_count,
+    );
+    try std.testing.expectEqual(
+        @as(?plugin.dsp.Mp3DecoderFormat, .{
+            .version = .mpeg1,
+            .sample_rate = 44_100,
+            .channel_count = 2,
+        }),
+        frame_decoder.format,
+    );
+    frame_decoder.reset();
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);

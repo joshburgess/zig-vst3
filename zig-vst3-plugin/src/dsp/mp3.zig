@@ -18,6 +18,8 @@ pub const ChannelMode = enum(u2) {
 };
 
 pub const maximum_free_format_frame_bytes: usize = 16 * 1024;
+const maximum_frame_main_data_bytes: usize =
+    (4 * std.math.maxInt(u12) + 7) / 8;
 
 pub const Header = struct {
     version: Version,
@@ -187,6 +189,18 @@ pub const PcmGranule = struct {
     samples: [576]f32 = @splat(0),
 };
 
+pub const PcmFrame = struct {
+    channels: [2][1152]f32 = @splat(@splat(0)),
+    channel_count: u2,
+    sample_count: u16,
+};
+
+pub const DecoderFormat = struct {
+    version: Version,
+    sample_rate: u32,
+    channel_count: u2,
+};
+
 pub const HybridSynthesis = struct {
     overlap: [32][18]f32 = @splat(@splat(0)),
 
@@ -304,6 +318,106 @@ pub const PolyphaseSynthesis = struct {
                     try checkedPolyphaseSample(value);
             }
         }
+        self.* = next;
+        return output;
+    }
+};
+
+pub const FrameDecoder = struct {
+    reservoir: MainDataReservoir(511) = .{},
+    hybrid: [2]HybridSynthesis = @splat(.{}),
+    polyphase: [2]PolyphaseSynthesis = @splat(.{}),
+    format: ?DecoderFormat = null,
+
+    pub fn reset(self: *FrameDecoder) void {
+        self.* = .{};
+    }
+
+    pub fn decode(
+        self: *FrameDecoder,
+        frame: anytype,
+    ) !PcmFrame {
+        if (try frame.crcValid()) |valid| {
+            if (!valid) return error.InvalidMp3FrameCrc;
+        }
+        const format = DecoderFormat{
+            .version = frame.header.version,
+            .sample_rate = frame.header.sample_rate,
+            .channel_count = @intCast(frame.header.channels()),
+        };
+        if (self.format) |active| {
+            if (!std.meta.eql(active, format))
+                return error.Mp3DecoderFormatChanged;
+        }
+
+        var next = self.*;
+        var main_storage: [maximum_frame_main_data_bytes]u8 = undefined;
+        const main_data = try next.reservoir.assemble(
+            frame,
+            &main_storage,
+        );
+        const side = try frame.sideInformation();
+        const factors = try decodeScaleFactors(
+            frame.header,
+            side,
+            main_data,
+        );
+        var output = PcmFrame{
+            .channel_count = format.channel_count,
+            .sample_count = frame.header.samplesPerFrame(),
+        };
+        for (0..side.granule_count) |granule| {
+            var spectra: [2]RequantizedSpectrum = @splat(.{});
+            for (0..side.channel_count) |channel| {
+                const description =
+                    side.granules[granule].channels[channel];
+                const scale_factors =
+                    factors.granules[granule].channels[channel];
+                const quantized = try decodeHuffmanChannel(
+                    frame.header,
+                    description,
+                    scale_factors,
+                    main_data,
+                );
+                spectra[channel] = try requantizeChannel(
+                    frame.header,
+                    description,
+                    scale_factors,
+                    quantized,
+                );
+            }
+            if (side.channel_count == 2) {
+                spectra = (try processStereo(
+                    frame.header,
+                    side.granules[granule].channels,
+                    factors.granules[granule].channels,
+                    spectra,
+                )).channels;
+            }
+            for (0..side.channel_count) |channel| {
+                const description =
+                    side.granules[granule].channels[channel];
+                const reduced = try reduceAliases(
+                    frame.header,
+                    description,
+                    spectra[channel],
+                );
+                const hybrid = try next.hybrid[channel].process(
+                    frame.header,
+                    description,
+                    reduced,
+                );
+                const pcm = try next.polyphase[channel].process(
+                    hybrid,
+                );
+                const start = granule * pcm.samples.len;
+                @memcpy(
+                    output.channels[channel][start..][0..pcm.samples.len],
+                    &pcm.samples,
+                );
+            }
+        }
+        next.format = format;
         self.* = next;
         return output;
     }
@@ -2885,6 +2999,21 @@ fn setTestBits(
     }
 }
 
+fn setMpeg1MonoLongChannel(
+    side: []u8,
+    granule: usize,
+    part2_3_length: u12,
+    big_values: u9,
+    global_gain: u8,
+    table_select_0: u5,
+) void {
+    const start = 18 + granule * 59;
+    setTestBits(side, start, 12, part2_3_length);
+    setTestBits(side, start + 12, 9, big_values);
+    setTestBits(side, start + 21, 8, global_gain);
+    setTestBits(side, start + 34, 5, table_select_0);
+}
+
 fn appendFrame(
     destination: []u8,
     offset: usize,
@@ -5131,6 +5260,179 @@ test "rejects invalid MP3 polyphase input and state transactionally" {
         synthesis.process(overflowing),
     );
     try std.testing.expectEqual(before_overflow, synthesis);
+}
+
+test "composes silent MP3 frames through the complete decoder" {
+    const header_bytes =
+        testHeader(3, true, 9, 0, false, .mono);
+    var encoded: [500]u8 = undefined;
+    const frame_end = try appendFrame(
+        &encoded,
+        0,
+        header_bytes,
+    );
+    const frame = try Frame.parse(encoded[0..frame_end], 0);
+
+    var decoder = FrameDecoder{};
+    const decoded = try decoder.decode(frame);
+    try std.testing.expectEqual(@as(u2, 1), decoded.channel_count);
+    try std.testing.expectEqual(@as(u16, 1152), decoded.sample_count);
+    for (decoded.channels[0]) |sample|
+        try std.testing.expectEqual(@as(f32, 0), sample);
+    for (decoded.channels[1]) |sample|
+        try std.testing.expectEqual(@as(f32, 0), sample);
+    try std.testing.expectEqual(
+        @as(?DecoderFormat, .{
+            .version = .mpeg1,
+            .sample_rate = 44_100,
+            .channel_count = 1,
+        }),
+        decoder.format,
+    );
+
+    const file_frame = FileFrame{
+        .byte_offset = 0,
+        .bytes = frame.bytes,
+        .header = frame.header,
+        .xing = frame.xing,
+        .vbri = frame.vbri,
+    };
+    var file_decoder = FrameDecoder{};
+    try std.testing.expectEqual(
+        decoded,
+        try file_decoder.decode(file_frame),
+    );
+
+    decoder.reset();
+    try std.testing.expectEqual(FrameDecoder{}, decoder);
+}
+
+test "decodes MP3 main data across frame reservoir boundaries" {
+    const header_bytes =
+        testHeader(3, true, 9, 0, false, .mono);
+    var first_bytes: [500]u8 = undefined;
+    const first_end = try appendFrame(
+        &first_bytes,
+        0,
+        header_bytes,
+    );
+    first_bytes[first_end - 1] = 0x08;
+    const first = try Frame.parse(
+        first_bytes[0..first_end],
+        0,
+    );
+
+    var second_bytes: [500]u8 = undefined;
+    const second_end = try appendFrame(
+        &second_bytes,
+        0,
+        header_bytes,
+    );
+    const second_side = second_bytes[4..21];
+    setTestBits(second_side, 0, 9, 1);
+    setMpeg1MonoLongChannel(
+        second_side,
+        0,
+        5,
+        1,
+        210,
+        1,
+    );
+    setMpeg1MonoLongChannel(
+        second_side,
+        1,
+        0,
+        0,
+        210,
+        0,
+    );
+    const second = try Frame.parse(
+        second_bytes[0..second_end],
+        0,
+    );
+
+    var decoder = FrameDecoder{};
+    const silent = try decoder.decode(first);
+    try std.testing.expectEqual(PcmFrame{
+        .channel_count = 1,
+        .sample_count = 1152,
+    }, silent);
+    const decoded = try decoder.decode(second);
+    var nonzero = false;
+    for (decoded.channels[0]) |sample| {
+        try std.testing.expect(std.math.isFinite(sample));
+        nonzero = nonzero or sample != 0;
+    }
+    try std.testing.expect(nonzero);
+}
+
+test "rejects MP3 frame decoder discontinuities transactionally" {
+    const header_bytes =
+        testHeader(3, true, 9, 0, false, .mono);
+    var encoded: [500]u8 = undefined;
+    const frame_end = try appendFrame(
+        &encoded,
+        0,
+        header_bytes,
+    );
+    const frame = try Frame.parse(encoded[0..frame_end], 0);
+    var decoder = FrameDecoder{};
+    _ = try decoder.decode(frame);
+
+    var changed_bytes: [300]u8 = undefined;
+    const changed_end = try appendFrame(
+        &changed_bytes,
+        0,
+        testHeader(2, true, 8, 0, false, .mono),
+    );
+    const changed = try Frame.parse(
+        changed_bytes[0..changed_end],
+        0,
+    );
+    const before_change = decoder;
+    try std.testing.expectError(
+        error.Mp3DecoderFormatChanged,
+        decoder.decode(changed),
+    );
+    try std.testing.expectEqual(before_change, decoder);
+
+    var missing_bytes = encoded;
+    setTestBits(missing_bytes[4..21], 0, 9, 1);
+    const missing = try Frame.parse(
+        missing_bytes[0..frame_end],
+        0,
+    );
+    var fresh = FrameDecoder{};
+    const fresh_before = fresh;
+    try std.testing.expectError(
+        error.Mp3MainDataHistoryUnavailable,
+        fresh.decode(missing),
+    );
+    try std.testing.expectEqual(fresh_before, fresh);
+
+    var protected_bytes: [500]u8 = undefined;
+    const protected_end = try appendFrame(
+        &protected_bytes,
+        0,
+        testHeader(3, false, 9, 0, false, .mono),
+    );
+    const protected = try Frame.parse(
+        protected_bytes[0..protected_end],
+        0,
+    );
+    try std.testing.expectError(
+        error.InvalidMp3FrameCrc,
+        fresh.decode(protected),
+    );
+    try std.testing.expectEqual(fresh_before, fresh);
+
+    fresh.reservoir.length = 512;
+    const malformed = fresh;
+    try std.testing.expectError(
+        error.InvalidMp3ReservoirState,
+        fresh.decode(frame),
+    );
+    try std.testing.expectEqual(malformed, fresh);
 }
 
 test "rejects inconsistent scale-factor bit ranges" {
