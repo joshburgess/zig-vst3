@@ -204,6 +204,14 @@ pub const FrameEncoder = struct {
         return next.header.frameBytes();
     }
 
+    pub fn nextFrameBytesAtBitrate(
+        self: FrameEncoder,
+        bitrate_kbps: u16,
+    ) !usize {
+        const next = try self.advanceAtBitrate(bitrate_kbps);
+        return next.header.frameBytes();
+    }
+
     pub fn encodeSilentFrame(
         self: *FrameEncoder,
         destination: []u8,
@@ -217,7 +225,20 @@ pub const FrameEncoder = struct {
         frame: *const QuantizedEncoderFrame,
         destination: []u8,
     ) ![]u8 {
-        const next = try self.advance();
+        return self.encodeQuantizedFrameAtBitrate(
+            self.config.bitrate_kbps,
+            frame,
+            destination,
+        );
+    }
+
+    pub fn encodeQuantizedFrameAtBitrate(
+        self: *FrameEncoder,
+        bitrate_kbps: u16,
+        frame: *const QuantizedEncoderFrame,
+        destination: []u8,
+    ) ![]u8 {
+        const next = try self.advanceAtBitrate(bitrate_kbps);
         const frame_bytes = next.header.frameBytes();
         if (destination.len < frame_bytes)
             return error.InsufficientMp3EncoderStorage;
@@ -340,7 +361,16 @@ pub const FrameEncoder = struct {
     };
 
     fn advance(self: FrameEncoder) !Advance {
-        _ = try self.config.header(false);
+        return self.advanceAtBitrate(self.config.bitrate_kbps);
+    }
+
+    fn advanceAtBitrate(
+        self: FrameEncoder,
+        bitrate_kbps: u16,
+    ) !Advance {
+        var frame_config = self.config;
+        frame_config.bitrate_kbps = bitrate_kbps;
+        _ = try frame_config.header(false);
         if (self.padding_accumulator >= self.config.sample_rate)
             return error.InvalidMp3EncoderState;
         if (self.frames_encoded == std.math.maxInt(u64))
@@ -348,7 +378,7 @@ pub const FrameEncoder = struct {
 
         const coefficient: u64 =
             if (self.config.version == .mpeg1) 144_000 else 72_000;
-        const numerator = coefficient * self.config.bitrate_kbps;
+        const numerator = coefficient * bitrate_kbps;
         const remainder: u32 =
             @intCast(numerator % self.config.sample_rate);
         const accumulated: u64 =
@@ -361,7 +391,7 @@ pub const FrameEncoder = struct {
                 accumulated,
         );
         return .{
-            .header = try self.config.header(padding),
+            .header = try frame_config.header(padding),
             .padding_accumulator = next_accumulator,
         };
     }
@@ -979,7 +1009,10 @@ pub const EncoderQuantizer = struct {
                         header,
                         analyzed.granules[granule][channel],
                         psychoacoustics[granule][channel],
-                        minimum_budget + weighted_budget,
+                        @min(
+                            minimum_budget + weighted_budget,
+                            std.math.maxInt(u12),
+                        ),
                         @intCast(granule),
                         @intCast(channel),
                     );
@@ -1038,6 +1071,695 @@ pub const PcmEncoder = struct {
         );
         self.* = next;
         return encoded;
+    }
+};
+
+pub const VbrEncoderConfig = struct {
+    template: EncoderConfig = .{},
+    minimum_bitrate_index: u4 = 1,
+    maximum_bitrate_index: u4 = 14,
+    maximum_noise_to_mask_ratio: f32 = 1.0,
+
+    fn validate(self: VbrEncoderConfig) !EncoderConfig {
+        if (self.minimum_bitrate_index == 0 or
+            self.maximum_bitrate_index == 0 or
+            self.minimum_bitrate_index == 15 or
+            self.maximum_bitrate_index == 15 or
+            self.minimum_bitrate_index >
+                self.maximum_bitrate_index or
+            !std.math.isFinite(
+                self.maximum_noise_to_mask_ratio,
+            ) or
+            self.maximum_noise_to_mask_ratio <= 0)
+            return error.InvalidMp3VbrEncoderConfig;
+        var maximum_config = self.template;
+        maximum_config.bitrate_kbps = bitrate(
+            self.template.version,
+            self.maximum_bitrate_index,
+        );
+        const maximum_header =
+            maximum_config.header(false) catch
+                return error.InvalidMp3VbrEncoderConfig;
+        validatePcmEncoderStereo(maximum_header) catch
+            return error.InvalidMp3VbrEncoderConfig;
+        return maximum_config;
+    }
+};
+
+pub const VbrPcmFrame = struct {
+    frame: []u8,
+    header: Header,
+    bitrate_index: u4,
+    maximum_noise_to_mask_ratio: f32,
+    quality_met: bool,
+};
+
+pub const VbrPcmEncoder = struct {
+    config: VbrEncoderConfig,
+    frames: FrameEncoder,
+    analysis: EncoderAnalysis,
+    classifier: EncoderBlockClassifier = .{},
+    bitrate_histogram: [16]u64 = @splat(0),
+    padding_frames: u64 = 0,
+    byte_count: u64 = 0,
+
+    pub fn init(config: VbrEncoderConfig) !VbrPcmEncoder {
+        const maximum_config = try config.validate();
+        return .{
+            .config = config,
+            .frames = try FrameEncoder.init(maximum_config),
+            .analysis = try EncoderAnalysis.init(maximum_config),
+        };
+    }
+
+    pub fn reset(self: *VbrPcmEncoder) void {
+        self.frames.reset();
+        self.analysis.reset();
+        self.classifier.reset();
+        self.bitrate_histogram = @splat(0);
+        self.padding_frames = 0;
+        self.byte_count = 0;
+    }
+
+    pub fn encode(
+        self: *VbrPcmEncoder,
+        pcm: PcmFrame,
+        destination: []u8,
+    ) !VbrPcmFrame {
+        return self.encodeSelection(pcm, destination, null);
+    }
+
+    pub fn encodeAtBitrateIndex(
+        self: *VbrPcmEncoder,
+        pcm: PcmFrame,
+        destination: []u8,
+        bitrate_index: u4,
+    ) !VbrPcmFrame {
+        if (bitrate_index < self.config.minimum_bitrate_index or
+            bitrate_index > self.config.maximum_bitrate_index)
+            return error.Mp3VbrBitrateOutsidePolicy;
+        return self.encodeSelection(
+            pcm,
+            destination,
+            bitrate_index,
+        );
+    }
+
+    fn encodeSelection(
+        self: *VbrPcmEncoder,
+        pcm: PcmFrame,
+        destination: []u8,
+        forced_bitrate_index: ?u4,
+    ) !VbrPcmFrame {
+        try self.validate();
+        if (self.byte_count >
+            std.math.maxInt(u64) -
+                maximum_encoded_frame_bytes)
+            return error.Mp3ByteCountOverflow;
+        var next = self.*;
+        const analysis_header =
+            try next.frames.config.header(false);
+        const descriptions = try next.classifier.classify(
+            analysis_header,
+            pcm,
+        );
+        const analyzed = try prepareEncoderStereo(
+            analysis_header,
+            try next.analysis.analyze(
+                descriptions,
+                pcm,
+            ),
+        );
+
+        var selected_frame: ?QuantizedEncoderFrame = null;
+        var selected_header: Header = undefined;
+        var selected_index: u4 = 0;
+        var selected_ratio: f32 = 0;
+        var selected_quality = false;
+        const first_index = forced_bitrate_index orelse
+            self.config.minimum_bitrate_index;
+        const last_index = forced_bitrate_index orelse
+            self.config.maximum_bitrate_index;
+        var index: u5 = first_index;
+        while (index <= last_index) : (index += 1) {
+            const bitrate_index: u4 = @intCast(index);
+            const bitrate_kbps = bitrate(
+                self.config.template.version,
+                bitrate_index,
+            );
+            const advanced = next.frames.advanceAtBitrate(
+                bitrate_kbps,
+            ) catch |failure| switch (failure) {
+                error.InvalidMp3EncoderFrameSize => continue,
+                else => return failure,
+            };
+            const quantized = EncoderQuantizer.quantize(
+                advanced.header,
+                analyzed,
+            ) catch |failure| switch (failure) {
+                error.Mp3EncoderBitBudgetTooSmall => continue,
+                else => return failure,
+            };
+            const ratio = try encoderNoiseToMaskRatio(
+                advanced.header,
+                analyzed,
+                quantized,
+            );
+            selected_frame = quantized;
+            selected_header = advanced.header;
+            selected_index = bitrate_index;
+            selected_ratio = ratio;
+            selected_quality =
+                ratio <= self.config.maximum_noise_to_mask_ratio;
+            if (selected_quality or
+                forced_bitrate_index != null)
+                break;
+        }
+        const quantized = selected_frame orelse
+            return error.Mp3EncoderBitBudgetTooSmall;
+        const encoded = try next.frames
+            .encodeQuantizedFrameAtBitrate(
+            selected_header.bitrate_kbps,
+            &quantized,
+            destination,
+        );
+        next.bitrate_histogram[selected_index] = std.math.add(
+            u64,
+            next.bitrate_histogram[selected_index],
+            1,
+        ) catch return error.Mp3EncoderFrameCountOverflow;
+        if (selected_header.padding)
+            next.padding_frames = std.math.add(
+                u64,
+                next.padding_frames,
+                1,
+            ) catch return error.Mp3EncoderFrameCountOverflow;
+        next.byte_count = std.math.add(
+            u64,
+            next.byte_count,
+            encoded.len,
+        ) catch return error.Mp3ByteCountOverflow;
+        self.* = next;
+        return .{
+            .frame = encoded,
+            .header = selected_header,
+            .bitrate_index = selected_index,
+            .maximum_noise_to_mask_ratio = selected_ratio,
+            .quality_met = selected_quality,
+        };
+    }
+
+    fn validate(self: VbrPcmEncoder) !void {
+        const maximum_config = self.config.validate() catch
+            return error.InvalidMp3VbrEncoderState;
+        if (!std.meta.eql(self.frames.config, maximum_config) or
+            !std.meta.eql(self.analysis.config, maximum_config) or
+            self.frames.frames_encoded !=
+                self.analysis.frames_analyzed or
+            self.frames.padding_accumulator >=
+                maximum_config.sample_rate or
+            self.padding_frames > self.frames.frames_encoded or
+            self.bitrate_histogram[0] != 0 or
+            self.bitrate_histogram[15] != 0)
+            return error.InvalidMp3VbrEncoderState;
+
+        var frame_count: u64 = 0;
+        var byte_count: u128 = self.padding_frames;
+        for (1..15) |index| {
+            const count = self.bitrate_histogram[index];
+            frame_count = std.math.add(
+                u64,
+                frame_count,
+                count,
+            ) catch return error.InvalidMp3VbrEncoderState;
+            if (count == 0) continue;
+            if (index < self.config.minimum_bitrate_index or
+                index > self.config.maximum_bitrate_index)
+                return error.InvalidMp3VbrEncoderState;
+            var frame_config = self.config.template;
+            frame_config.bitrate_kbps = bitrate(
+                self.config.template.version,
+                @intCast(index),
+            );
+            const header = frame_config.header(false) catch
+                return error.InvalidMp3VbrEncoderState;
+            byte_count += @as(u128, count) *
+                header.frameBytes();
+        }
+        if (frame_count != self.frames.frames_encoded or
+            byte_count != self.byte_count)
+            return error.InvalidMp3VbrEncoderState;
+    }
+};
+
+fn encoderNoiseToMaskRatio(
+    header: Header,
+    analyzed: AnalyzedEncoderFrame,
+    quantized: QuantizedEncoderFrame,
+) !f32 {
+    try validateAnalyzedEncoderFrame(header, analyzed);
+    const channel_count: u2 = @intCast(header.channels());
+    const granule_count: u2 =
+        if (header.version == .mpeg1) 2 else 1;
+    var maximum_ratio: f64 = 0;
+    for (0..granule_count) |granule| {
+        for (0..channel_count) |channel| {
+            const source = analyzed.granules[granule][channel];
+            const encoded = quantized.granules[granule][channel];
+            const ordered = try orderEncoderSpectrum(
+                header,
+                source.description,
+                source.spectrum,
+            );
+            const layout = try encoderBandLayout(
+                header,
+                source.description,
+            );
+            const psychoacoustic =
+                try (EncoderPsychoacousticModel{}).analyze(
+                    header,
+                    source,
+                );
+            const expected_factors = scaleFactorValueCount(
+                header,
+                encoded.description,
+            );
+            if (encoded.scale_factors.value_count !=
+                expected_factors)
+                return error.InvalidMp3VbrQuantizationEvidence;
+            for (0..layout.band_count) |band| {
+                const factor = if (band < expected_factors)
+                    encoded.scale_factors.values[band]
+                else
+                    0;
+                const exponent =
+                    (@as(f64, @floatFromInt(
+                        encoded.description.global_gain,
+                    )) - 210.0) * 0.25 -
+                    0.5 * @as(f64, @floatFromInt(factor));
+                const step = std.math.exp2(exponent);
+                var noise: f64 = 0;
+                for (
+                    ordered[layout.starts[band]..layout.starts[band + 1]],
+                    encoded.spectrum[layout.starts[band]..layout.starts[band + 1]],
+                ) |line, value| {
+                    const magnitude: u32 = @intCast(
+                        if (value < 0) -value else value,
+                    );
+                    const reconstructed = std.math.pow(
+                        f64,
+                        @floatFromInt(magnitude),
+                        4.0 / 3.0,
+                    ) * step;
+                    const difference = reconstructed -
+                        @abs(@as(f64, line));
+                    noise += difference * difference;
+                }
+                const threshold =
+                    psychoacoustic.threshold[band];
+                const ratio = noise / threshold;
+                if (!std.math.isFinite(ratio))
+                    return error.InvalidMp3VbrQuantizationEvidence;
+                maximum_ratio = @max(maximum_ratio, ratio);
+            }
+        }
+    }
+    if (maximum_ratio > std.math.floatMax(f32))
+        return error.InvalidMp3VbrQuantizationEvidence;
+    return @floatCast(maximum_ratio);
+}
+
+pub const VbrPcmStreamFinish = struct {
+    frames: []u8,
+    summary: EncoderStreamSummary,
+    quality_misses: u64,
+    maximum_noise_to_mask_ratio: f32,
+};
+
+pub const VbrPcmStreamEncoder = struct {
+    encoder: VbrPcmEncoder,
+    frame_offsets: []u64,
+    input_samples: u64 = 0,
+    quality_misses: u64 = 0,
+    maximum_noise_to_mask_ratio: f32 = 0,
+    metadata_started: bool = false,
+    finalized: bool = false,
+
+    pub fn init(
+        config: VbrEncoderConfig,
+        frame_offsets: []u64,
+    ) !VbrPcmStreamEncoder {
+        return .{
+            .encoder = try VbrPcmEncoder.init(config),
+            .frame_offsets = frame_offsets,
+        };
+    }
+
+    pub fn append(
+        self: *VbrPcmStreamEncoder,
+        pcm: PcmFrame,
+        destination: []u8,
+    ) !VbrPcmFrame {
+        try self.validate();
+        if (self.finalized)
+            return error.Mp3VbrEncoderFinalized;
+        try self.validateDestination(destination);
+        const frame_index = self.encoder.frames.frames_encoded;
+        if (frame_index >= self.frame_offsets.len)
+            return error.Mp3VbrFrameIndexStorageTooSmall;
+        const next_input_samples = std.math.add(
+            u64,
+            self.input_samples,
+            pcm.sample_count,
+        ) catch return error.Mp3SampleCountOverflow;
+
+        var next = self.*;
+        const result = try next.encoder.encode(
+            pcm,
+            destination,
+        );
+        const frame_offset = self.encoder.byte_count;
+        const next_quality_misses = std.math.add(
+            u64,
+            self.quality_misses,
+            @intFromBool(!result.quality_met),
+        ) catch return error.Mp3EncoderFrameCountOverflow;
+        self.frame_offsets[frame_index] = frame_offset;
+        next.input_samples = next_input_samples;
+        next.quality_misses = next_quality_misses;
+        next.maximum_noise_to_mask_ratio = @max(
+            self.maximum_noise_to_mask_ratio,
+            result.maximum_noise_to_mask_ratio,
+        );
+        self.* = next;
+        return result;
+    }
+
+    pub fn startXingMetadata(
+        self: *VbrPcmStreamEncoder,
+        destination: []u8,
+    ) ![]u8 {
+        try self.validate();
+        if (self.finalized)
+            return error.Mp3VbrEncoderFinalized;
+        if (self.metadata_started or
+            self.encoder.frames.frames_encoded != 0 or
+            self.input_samples != 0)
+            return error.Mp3EncoderMetadataAlreadyStarted;
+        try self.validateDestination(destination);
+        if (self.frame_offsets.len == 0)
+            return error.Mp3VbrFrameIndexStorageTooSmall;
+        const bitrate_index =
+            self.encoder.config.maximum_bitrate_index;
+        const bitrate_kbps = bitrate(
+            self.encoder.config.template.version,
+            bitrate_index,
+        );
+        const header = (try self.encoder.frames
+            .advanceAtBitrate(bitrate_kbps)).header;
+        var metadata_storage: [maximum_encoded_frame_bytes]u8 =
+            undefined;
+        const placeholder = try encodeXingFrameFields(
+            header,
+            .{
+                .kind = .variable,
+                .frame_count = 0,
+                .stream_bytes = 0,
+                .toc = @splat(0),
+                .quality = 0,
+                .encoder_delay = 0,
+                .encoder_padding = 0,
+            },
+            &metadata_storage,
+        );
+
+        var next = self.*;
+        const encoded = try next.encoder.encodeAtBitrateIndex(
+            .{
+                .channel_count = @intCast(header.channels()),
+                .sample_count = header.samplesPerFrame(),
+            },
+            destination,
+            bitrate_index,
+        );
+        if (!std.meta.eql(encoded.header, header) or
+            encoded.frame.len != placeholder.len)
+            return error.InvalidMp3VbrEncoderState;
+        self.frame_offsets[0] = 0;
+        @memcpy(destination[0..placeholder.len], placeholder);
+        next.metadata_started = true;
+        self.* = next;
+        return destination[0..placeholder.len];
+    }
+
+    pub fn finish(
+        self: *VbrPcmStreamEncoder,
+        destination: []u8,
+    ) !VbrPcmStreamFinish {
+        try self.validate();
+        if (self.finalized)
+            return .{
+                .frames = destination[0..0],
+                .summary = try self.summary(),
+                .quality_misses = self.quality_misses,
+                .maximum_noise_to_mask_ratio = self.maximum_noise_to_mask_ratio,
+            };
+        try self.validateDestination(destination);
+        const header = try self.encoder.frames.config
+            .header(false);
+        const flush_frames = std.math.divCeil(
+            u16,
+            encoder_analysis_delay,
+            header.samplesPerFrame(),
+        ) catch return error.Mp3SampleCountOverflow;
+        const first_frame = self.encoder.frames.frames_encoded;
+        if (first_frame + flush_frames >
+            self.frame_offsets.len)
+            return error.Mp3VbrFrameIndexStorageTooSmall;
+
+        var staged: [maximum_encoded_frame_bytes * 2]u8 =
+            undefined;
+        var staged_bytes: usize = 0;
+        var offsets: [2]u64 = undefined;
+        var next = self.*;
+        var next_quality_misses = self.quality_misses;
+        var next_maximum_ratio =
+            self.maximum_noise_to_mask_ratio;
+        const silence = PcmFrame{
+            .channel_count = @intCast(header.channels()),
+            .sample_count = header.samplesPerFrame(),
+        };
+        for (0..flush_frames) |flush_index| {
+            offsets[flush_index] = next.encoder.byte_count;
+            const encoded = try next.encoder.encode(
+                silence,
+                staged[staged_bytes..],
+            );
+            staged_bytes += encoded.frame.len;
+            next_quality_misses = std.math.add(
+                u64,
+                next_quality_misses,
+                @intFromBool(!encoded.quality_met),
+            ) catch return error.Mp3EncoderFrameCountOverflow;
+            next_maximum_ratio = @max(
+                next_maximum_ratio,
+                encoded.maximum_noise_to_mask_ratio,
+            );
+        }
+        if (destination.len < staged_bytes)
+            return error.InsufficientMp3EncoderStorage;
+        next.quality_misses = next_quality_misses;
+        next.maximum_noise_to_mask_ratio =
+            next_maximum_ratio;
+        next.finalized = true;
+        const finished_summary = try next.summaryValidated();
+        for (0..flush_frames) |flush_index|
+            self.frame_offsets[first_frame + flush_index] =
+                offsets[flush_index];
+        @memcpy(
+            destination[0..staged_bytes],
+            staged[0..staged_bytes],
+        );
+        self.* = next;
+        return .{
+            .frames = destination[0..staged_bytes],
+            .summary = finished_summary,
+            .quality_misses = next_quality_misses,
+            .maximum_noise_to_mask_ratio = next_maximum_ratio,
+        };
+    }
+
+    pub fn summary(
+        self: VbrPcmStreamEncoder,
+    ) !EncoderStreamSummary {
+        try self.validate();
+        return self.summaryValidated();
+    }
+
+    fn summaryValidated(
+        self: VbrPcmStreamEncoder,
+    ) !EncoderStreamSummary {
+        if (!self.finalized)
+            return error.Mp3EncoderStreamIncomplete;
+        const header = try self.encoder.frames.config
+            .header(false);
+        const frame_count = self.encoder.frames.frames_encoded;
+        const encoded_samples = std.math.mul(
+            u64,
+            frame_count,
+            header.samplesPerFrame(),
+        ) catch return error.Mp3SampleCountOverflow;
+        const metadata_delay = if (self.metadata_started)
+            header.samplesPerFrame()
+        else
+            0;
+        const total_delay = std.math.add(
+            u16,
+            encoder_analysis_delay,
+            metadata_delay,
+        ) catch return error.Mp3SampleCountOverflow;
+        const retained_samples = std.math.add(
+            u64,
+            self.input_samples,
+            total_delay,
+        ) catch return error.Mp3SampleCountOverflow;
+        if (encoded_samples < retained_samples)
+            return error.Mp3EncoderStreamIncomplete;
+        const padding = encoded_samples - retained_samples;
+        if (padding > std.math.maxInt(u12))
+            return error.Mp3EncoderPaddingOverflow;
+        return .{
+            .frame_count = frame_count,
+            .input_samples = self.input_samples,
+            .encoded_samples = encoded_samples,
+            .byte_count = self.encoder.byte_count,
+            .encoder_delay = total_delay,
+            .end_padding = @intCast(padding),
+        };
+    }
+
+    pub fn xingMetadataFrame(
+        self: VbrPcmStreamEncoder,
+        quality: ?u32,
+        destination: []u8,
+    ) ![]u8 {
+        try self.validate();
+        if (!self.metadata_started)
+            return error.Mp3EncoderMetadataNotStarted;
+        try self.validateDestination(destination);
+        const stream_summary = try self.summary();
+        if (stream_summary.frame_count >
+            std.math.maxInt(u32))
+            return error.Mp3EncoderMetadataFrameCountOverflow;
+        if (stream_summary.byte_count >
+            std.math.maxInt(u32))
+            return error.Mp3EncoderMetadataByteCountOverflow;
+        var toc: [100]u8 = undefined;
+        for (&toc, 0..) |*entry, percent| {
+            const frame_index = @min(
+                @as(u64, @intCast(
+                    (@as(u128, percent) *
+                        stream_summary.frame_count) / 100,
+                )),
+                stream_summary.frame_count - 1,
+            );
+            const offset = self.frame_offsets[frame_index];
+            const scaled = (@as(u128, offset) * 256) /
+                stream_summary.byte_count;
+            entry.* = @intCast(@min(scaled, 255));
+        }
+        var metadata_config = self.encoder.config.template;
+        metadata_config.bitrate_kbps = bitrate(
+            metadata_config.version,
+            self.encoder.config.maximum_bitrate_index,
+        );
+        return encodeXingFrameFields(
+            try metadata_config.header(false),
+            .{
+                .kind = .variable,
+                .frame_count = @intCast(stream_summary.frame_count),
+                .stream_bytes = @intCast(stream_summary.byte_count),
+                .toc = toc,
+                .quality = quality,
+                .encoder_delay = @intCast(stream_summary.encoder_delay),
+                .encoder_padding = @intCast(stream_summary.end_padding),
+            },
+            destination,
+        );
+    }
+
+    fn validate(
+        self: VbrPcmStreamEncoder,
+    ) !void {
+        self.encoder.validate() catch
+            return error.InvalidMp3VbrStreamState;
+        const frame_count = self.encoder.frames.frames_encoded;
+        if (frame_count > self.frame_offsets.len or
+            self.quality_misses > frame_count or
+            !std.math.isFinite(
+                self.maximum_noise_to_mask_ratio,
+            ) or
+            self.maximum_noise_to_mask_ratio < 0)
+            return error.InvalidMp3VbrStreamState;
+        if (frame_count == 0) {
+            if (self.encoder.byte_count != 0 or
+                self.metadata_started or self.finalized or
+                self.input_samples != 0 or
+                self.quality_misses != 0 or
+                self.maximum_noise_to_mask_ratio != 0)
+                return error.InvalidMp3VbrStreamState;
+            return;
+        }
+        if (self.frame_offsets[0] != 0)
+            return error.InvalidMp3VbrStreamState;
+        for (1..frame_count) |index| {
+            if (self.frame_offsets[index] <=
+                self.frame_offsets[index - 1])
+                return error.InvalidMp3VbrStreamState;
+        }
+        if (self.frame_offsets[frame_count - 1] >=
+            self.encoder.byte_count)
+            return error.InvalidMp3VbrStreamState;
+
+        const header = self.encoder.frames.config
+            .header(false) catch
+            return error.InvalidMp3VbrStreamState;
+        const flush_frames: u64 = if (self.finalized)
+            std.math.divCeil(
+                u64,
+                encoder_analysis_delay,
+                header.samplesPerFrame(),
+            ) catch return error.InvalidMp3VbrStreamState
+        else
+            0;
+        const metadata_frames: u64 =
+            @intFromBool(self.metadata_started);
+        if (frame_count < flush_frames + metadata_frames)
+            return error.InvalidMp3VbrStreamState;
+        const expected_input = std.math.mul(
+            u64,
+            frame_count - flush_frames - metadata_frames,
+            header.samplesPerFrame(),
+        ) catch return error.InvalidMp3VbrStreamState;
+        if (self.input_samples != expected_input)
+            return error.InvalidMp3VbrStreamState;
+    }
+
+    fn validateDestination(
+        self: VbrPcmStreamEncoder,
+        destination: []u8,
+    ) !void {
+        const offset_bytes = std.math.mul(
+            usize,
+            self.frame_offsets.len,
+            @sizeOf(u64),
+        ) catch std.math.maxInt(usize);
+        if (byteRangesOverlap(
+            @intFromPtr(self.frame_offsets.ptr),
+            offset_bytes,
+            @intFromPtr(destination.ptr),
+            destination.len,
+        )) return error.OverlappingMp3VbrStorage;
     }
 };
 
@@ -1886,6 +2608,28 @@ pub fn encodeInfoFrame(
     );
 }
 
+pub const XingEncoderMetadata = struct {
+    kind: XingKind,
+    frame_count: u32,
+    stream_bytes: u32,
+    toc: ?[100]u8 = null,
+    quality: ?u32 = null,
+    encoder_delay: u12,
+    encoder_padding: u12,
+};
+
+pub fn encodeXingFrame(
+    header: Header,
+    metadata: XingEncoderMetadata,
+    destination: []u8,
+) ![]u8 {
+    return encodeXingFrameFields(
+        header,
+        metadata,
+        destination,
+    );
+}
+
 fn encodeInfoFrameFields(
     header: Header,
     frame_count: u32,
@@ -1894,11 +2638,32 @@ fn encodeInfoFrameFields(
     encoder_padding: u12,
     destination: []u8,
 ) ![]u8 {
+    return encodeXingFrameFields(
+        header,
+        .{
+            .kind = .constant,
+            .frame_count = frame_count,
+            .stream_bytes = stream_bytes,
+            .encoder_delay = encoder_delay,
+            .encoder_padding = encoder_padding,
+        },
+        destination,
+    );
+}
+
+fn encodeXingFrameFields(
+    header: Header,
+    metadata: XingEncoderMetadata,
+    destination: []u8,
+) ![]u8 {
     const frame_bytes = header.frameBytes();
     const side_offset: usize = if (header.crc_present) 6 else 4;
     const metadata_offset =
         side_offset + header.sideInformationBytes();
-    const metadata_bytes: usize = 40;
+    const optional_bytes: usize =
+        @as(usize, @intFromBool(metadata.toc != null)) * 100 +
+        @as(usize, @intFromBool(metadata.quality != null)) * 4;
+    const metadata_bytes = 40 + optional_bytes;
     if (frame_bytes < metadata_offset + metadata_bytes)
         return error.Mp3EncoderMetadataFrameTooSmall;
     if (destination.len < frame_bytes)
@@ -1909,36 +2674,54 @@ fn encodeInfoFrameFields(
     @memcpy(staged[0..4], &encoded_header);
     @memcpy(
         staged[metadata_offset..][0..4],
-        "Info",
+        if (metadata.kind == .variable) "Xing" else "Info",
     );
+    const flags: u32 = 3 |
+        (@as(u32, @intFromBool(metadata.toc != null)) << 2) |
+        (@as(u32, @intFromBool(metadata.quality != null)) << 3);
     std.mem.writeInt(
         u32,
         staged[metadata_offset + 4 ..][0..4],
-        3,
+        flags,
         .big,
     );
     std.mem.writeInt(
         u32,
         staged[metadata_offset + 8 ..][0..4],
-        frame_count,
+        metadata.frame_count,
         .big,
     );
     std.mem.writeInt(
         u32,
         staged[metadata_offset + 12 ..][0..4],
-        stream_bytes,
+        metadata.stream_bytes,
         .big,
     );
+    var cursor = metadata_offset + 16;
+    if (metadata.toc) |toc| {
+        @memcpy(staged[cursor..][0..100], &toc);
+        cursor += 100;
+    }
+    if (metadata.quality) |quality| {
+        std.mem.writeInt(
+            u32,
+            staged[cursor..][0..4],
+            quality,
+            .big,
+        );
+        cursor += 4;
+    }
     @memcpy(
-        staged[metadata_offset + 16 ..][0..9],
+        staged[cursor..][0..9],
         "LAME3.100",
     );
     const gapless =
-        (@as(u24, encoder_delay) << 12) | encoder_padding;
-    staged[metadata_offset + 37] = @intCast(gapless >> 16);
-    staged[metadata_offset + 38] =
+        (@as(u24, metadata.encoder_delay) << 12) |
+        metadata.encoder_padding;
+    staged[cursor + 21] = @intCast(gapless >> 16);
+    staged[cursor + 22] =
         @intCast((gapless >> 8) & 0xff);
-    staged[metadata_offset + 39] =
+    staged[cursor + 23] =
         @intCast(gapless & 0xff);
     if (header.crc_present) {
         const side_end =
@@ -2163,6 +2946,274 @@ pub const PcmFileEncoder = struct {
             self.finalized != self.stream.finalized)
             return error.InvalidMp3FileEncoderState;
         try self.stream.validate();
+    }
+};
+
+pub const VbrPcmFileSummary = struct {
+    stream: EncoderStreamSummary,
+    quality_misses: u64,
+    maximum_noise_to_mask_ratio: f32,
+};
+
+pub const VbrPcmFileEncoder = struct {
+    io: std.Io,
+    file: std.Io.File,
+    operations: file_writer_io.Operations = .{},
+    stream: VbrPcmStreamEncoder,
+    frame_storage: []u8,
+    committed_bytes: u64 = 0,
+    metadata_quality: ?u32 = null,
+    failed: bool = false,
+    finalized: bool = false,
+
+    pub fn init(
+        io: std.Io,
+        file: std.Io.File,
+        config: VbrEncoderConfig,
+        frame_storage: []u8,
+        frame_offsets: []u64,
+    ) !VbrPcmFileEncoder {
+        return initVbrPcmFileEncoder(
+            io,
+            file,
+            config,
+            frame_storage,
+            frame_offsets,
+            .{},
+        );
+    }
+
+    pub fn initWithOperations(
+        io: std.Io,
+        file: std.Io.File,
+        config: VbrEncoderConfig,
+        frame_storage: []u8,
+        frame_offsets: []u64,
+        operations: file_writer_io.Operations,
+    ) !VbrPcmFileEncoder {
+        return initVbrPcmFileEncoder(
+            io,
+            file,
+            config,
+            frame_storage,
+            frame_offsets,
+            operations,
+        );
+    }
+
+    pub fn append(
+        self: *VbrPcmFileEncoder,
+        pcm: PcmFrame,
+    ) !VbrPcmFrame {
+        try self.validate();
+        if (self.failed or self.finalized)
+            return error.InvalidMp3VbrFileEncoderState;
+        const frame_index =
+            self.stream.encoder.frames.frames_encoded;
+        if (frame_index >= self.stream.frame_offsets.len)
+            return error.Mp3VbrFrameIndexStorageTooSmall;
+        const old_offset = self.stream.frame_offsets[frame_index];
+        var next = self.stream;
+        const encoded = try next.append(
+            pcm,
+            self.frame_storage,
+        );
+        self.operations.writeAt(
+            self.io,
+            self.file,
+            self.committed_bytes,
+            encoded.frame,
+        ) catch |failure| {
+            self.stream.frame_offsets[frame_index] = old_offset;
+            self.failed = true;
+            return failure;
+        };
+        self.committed_bytes = next.encoder.byte_count;
+        self.stream = next;
+        return encoded;
+    }
+
+    pub fn startXingMetadata(
+        self: *VbrPcmFileEncoder,
+        quality: ?u32,
+    ) !void {
+        try self.validate();
+        if (self.failed or self.finalized)
+            return error.InvalidMp3VbrFileEncoderState;
+        if (self.stream.frame_offsets.len == 0)
+            return error.Mp3VbrFrameIndexStorageTooSmall;
+        const old_offset = self.stream.frame_offsets[0];
+        var next = self.stream;
+        const encoded = try next.startXingMetadata(
+            self.frame_storage,
+        );
+        self.operations.writeAt(
+            self.io,
+            self.file,
+            0,
+            encoded,
+        ) catch |failure| {
+            self.stream.frame_offsets[0] = old_offset;
+            self.failed = true;
+            return failure;
+        };
+        self.committed_bytes = next.encoder.byte_count;
+        self.metadata_quality = quality;
+        self.stream = next;
+    }
+
+    pub fn finalize(
+        self: *VbrPcmFileEncoder,
+    ) !VbrPcmFileSummary {
+        try self.validate();
+        if (self.finalized) {
+            const summary = try self.stream.summary();
+            return .{
+                .stream = summary,
+                .quality_misses = self.stream.quality_misses,
+                .maximum_noise_to_mask_ratio = self.stream.maximum_noise_to_mask_ratio,
+            };
+        }
+        if (self.failed)
+            return error.InvalidMp3VbrFileEncoderState;
+        const first_flush_index =
+            self.stream.encoder.frames.frames_encoded;
+        const header = try self.stream.encoder.frames.config
+            .header(false);
+        const flush_frames = std.math.divCeil(
+            u16,
+            encoder_analysis_delay,
+            header.samplesPerFrame(),
+        ) catch return error.Mp3SampleCountOverflow;
+        if (first_flush_index + flush_frames >
+            self.stream.frame_offsets.len)
+            return error.Mp3VbrFrameIndexStorageTooSmall;
+        var old_offsets: [2]u64 = undefined;
+        for (0..flush_frames) |index|
+            old_offsets[index] = self.stream.frame_offsets[
+                first_flush_index + index
+            ];
+
+        var next = self.stream;
+        const finished = try next.finish(self.frame_storage);
+        var metadata_storage: [maximum_encoded_frame_bytes]u8 =
+            undefined;
+        const metadata = if (next.metadata_started)
+            next.xingMetadataFrame(
+                self.metadata_quality,
+                &metadata_storage,
+            ) catch |failure| {
+                restoreVbrOffsets(
+                    self.stream.frame_offsets,
+                    first_flush_index,
+                    old_offsets[0..flush_frames],
+                );
+                return failure;
+            }
+        else
+            metadata_storage[0..0];
+        self.operations.writeAt(
+            self.io,
+            self.file,
+            self.committed_bytes,
+            finished.frames,
+        ) catch |failure| {
+            restoreVbrOffsets(
+                self.stream.frame_offsets,
+                first_flush_index,
+                old_offsets[0..flush_frames],
+            );
+            self.failed = true;
+            return failure;
+        };
+        if (metadata.len != 0) {
+            self.operations.writeAt(
+                self.io,
+                self.file,
+                0,
+                metadata,
+            ) catch |failure| {
+                restoreVbrOffsets(
+                    self.stream.frame_offsets,
+                    first_flush_index,
+                    old_offsets[0..flush_frames],
+                );
+                self.failed = true;
+                return failure;
+            };
+        }
+        self.file.sync(self.io) catch |failure| {
+            restoreVbrOffsets(
+                self.stream.frame_offsets,
+                first_flush_index,
+                old_offsets[0..flush_frames],
+            );
+            self.failed = true;
+            return failure;
+        };
+        self.committed_bytes = finished.summary.byte_count;
+        self.stream = next;
+        self.finalized = true;
+        return .{
+            .stream = finished.summary,
+            .quality_misses = finished.quality_misses,
+            .maximum_noise_to_mask_ratio = finished.maximum_noise_to_mask_ratio,
+        };
+    }
+
+    pub fn recover(
+        self: *VbrPcmFileEncoder,
+    ) !void {
+        try self.validate();
+        if (self.finalized)
+            return error.InvalidMp3VbrFileEncoderState;
+        try file_writer_io.Checkpoint.exact(
+            self.committed_bytes,
+        ).restore(
+            self.operations,
+            self.io,
+            self.file,
+        );
+        if (self.stream.metadata_started) {
+            var metadata_config =
+                self.stream.encoder.config.template;
+            metadata_config.bitrate_kbps = bitrate(
+                metadata_config.version,
+                self.stream.encoder.config
+                    .maximum_bitrate_index,
+            );
+            const placeholder = try encodeXingFrameFields(
+                try metadata_config.header(false),
+                .{
+                    .kind = .variable,
+                    .frame_count = 0,
+                    .stream_bytes = 0,
+                    .toc = @splat(0),
+                    .quality = 0,
+                    .encoder_delay = 0,
+                    .encoder_padding = 0,
+                },
+                self.frame_storage,
+            );
+            try self.operations.writeAt(
+                self.io,
+                self.file,
+                0,
+                placeholder,
+            );
+        }
+        self.failed = false;
+    }
+
+    fn validate(self: VbrPcmFileEncoder) !void {
+        if (self.frame_storage.len <
+            maximum_encoded_frame_bytes * 2 or
+            self.committed_bytes !=
+                self.stream.encoder.byte_count or
+            self.finalized != self.stream.finalized)
+            return error.InvalidMp3VbrFileEncoderState;
+        self.stream.validate() catch
+            return error.InvalidMp3VbrFileEncoderState;
     }
 };
 
@@ -2398,6 +3449,52 @@ fn initPcmFileEncoder(
         .stream = stream,
         .frame_storage = frame_storage[0 .. maximum_encoded_frame_bytes * 2],
     };
+}
+
+fn initVbrPcmFileEncoder(
+    io: std.Io,
+    file: std.Io.File,
+    config: VbrEncoderConfig,
+    frame_storage: []u8,
+    frame_offsets: []u64,
+    operations: file_writer_io.Operations,
+) !VbrPcmFileEncoder {
+    if (frame_storage.len <
+        maximum_encoded_frame_bytes * 2)
+        return error.Mp3FrameBufferTooSmall;
+    const offset_bytes = std.math.mul(
+        usize,
+        frame_offsets.len,
+        @sizeOf(u64),
+    ) catch return error.OverlappingMp3VbrStorage;
+    if (byteRangesOverlap(
+        @intFromPtr(frame_storage.ptr),
+        frame_storage.len,
+        @intFromPtr(frame_offsets.ptr),
+        offset_bytes,
+    )) return error.OverlappingMp3VbrStorage;
+    const stream = try VbrPcmStreamEncoder.init(
+        config,
+        frame_offsets,
+    );
+    try operations.setLength(io, file, 0);
+    @memset(frame_offsets, 0);
+    return .{
+        .io = io,
+        .file = file,
+        .operations = operations,
+        .stream = stream,
+        .frame_storage = frame_storage[0 .. maximum_encoded_frame_bytes * 2],
+    };
+}
+
+fn restoreVbrOffsets(
+    frame_offsets: []u64,
+    first: u64,
+    values: []const u64,
+) void {
+    for (values, 0..) |value, index|
+        frame_offsets[first + index] = value;
 }
 
 fn initPcmReservoirFileEncoder(
@@ -12262,6 +13359,266 @@ test "encodes PCM into complete MP3 frames transactionally" {
     );
 }
 
+test "selects bounded MP3 VBR frames transactionally" {
+    const config = VbrEncoderConfig{
+        .template = .{
+            .version = .mpeg1,
+            .sample_rate = 44_100,
+            .channel_mode = .mono,
+            .crc_present = true,
+        },
+        .minimum_bitrate_index = 1,
+        .maximum_bitrate_index = 14,
+        .maximum_noise_to_mask_ratio = 0.25,
+    };
+    var encoder = try VbrPcmEncoder.init(config);
+    const silence = PcmFrame{
+        .channel_count = 1,
+        .sample_count = 1152,
+    };
+    var storage: [maximum_encoded_frame_bytes]u8 = undefined;
+    const quiet = try encoder.encode(silence, &storage);
+    try std.testing.expectEqual(@as(u4, 1), quiet.bitrate_index);
+    try std.testing.expect(quiet.quality_met);
+    try std.testing.expectEqual(
+        bitrate(.mpeg1, quiet.bitrate_index),
+        quiet.header.bitrate_kbps,
+    );
+    try std.testing.expectEqual(
+        quiet.header.frameBytes(),
+        quiet.frame.len,
+    );
+    try std.testing.expectEqual(
+        @as(?bool, true),
+        try (try Frame.parse(quiet.frame, 0)).crcValid(),
+    );
+
+    var complex = silence;
+    for (&complex.channels[0], 0..) |*sample, index| {
+        const position: f32 = @floatFromInt(index);
+        sample.* =
+            0.18 * @sin(position * 0.031) +
+            0.16 * @sin(position * 0.173) +
+            0.12 * @sin(position * 0.419);
+        if (index % 37 == 0)
+            sample.* += if (index % 74 == 0) 0.3 else -0.3;
+    }
+    const detailed = try encoder.encode(complex, &storage);
+    try std.testing.expect(
+        detailed.bitrate_index > quiet.bitrate_index,
+    );
+    try std.testing.expect(
+        std.math.isFinite(
+            detailed.maximum_noise_to_mask_ratio,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 2),
+        encoder.frames.frames_encoded,
+    );
+    try std.testing.expectEqual(
+        @as(u64, 2),
+        encoder.analysis.frames_analyzed,
+    );
+    var histogram_frames: u64 = 0;
+    for (encoder.bitrate_histogram) |count|
+        histogram_frames += count;
+    try std.testing.expectEqual(@as(u64, 2), histogram_frames);
+
+    const before = encoder;
+    var short_storage: [8]u8 = undefined;
+    try std.testing.expectError(
+        error.InsufficientMp3EncoderStorage,
+        encoder.encode(complex, &short_storage),
+    );
+    try std.testing.expectEqual(before, encoder);
+    try std.testing.expectError(
+        error.Mp3VbrBitrateOutsidePolicy,
+        encoder.encodeAtBitrateIndex(
+            complex,
+            &storage,
+            0,
+        ),
+    );
+    try std.testing.expectEqual(before, encoder);
+
+    var hostile = encoder;
+    hostile.bitrate_histogram[0] = 1;
+    try std.testing.expectError(
+        error.InvalidMp3VbrEncoderState,
+        hostile.encode(complex, &storage),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3VbrEncoderConfig,
+        VbrPcmEncoder.init(.{
+            .minimum_bitrate_index = 14,
+            .maximum_bitrate_index = 1,
+        }),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3VbrEncoderConfig,
+        VbrPcmEncoder.init(.{
+            .maximum_noise_to_mask_ratio = std.math.nan(f32),
+        }),
+    );
+
+    var low_rate = try VbrPcmEncoder.init(.{
+        .template = .{
+            .version = .mpeg2,
+            .sample_rate = 22_050,
+            .channel_mode = .mono,
+        },
+        .minimum_bitrate_index = 8,
+        .maximum_bitrate_index = 8,
+    });
+    const low_rate_frame = try low_rate.encode(
+        .{
+            .channel_count = 1,
+            .sample_count = 576,
+        },
+        &storage,
+    );
+    try std.testing.expectEqual(
+        Version.mpeg2,
+        low_rate_frame.header.version,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 64),
+        low_rate_frame.header.bitrate_kbps,
+    );
+}
+
+test "finishes MP3 VBR streams with Xing metadata" {
+    const config = VbrEncoderConfig{
+        .template = .{
+            .version = .mpeg1,
+            .sample_rate = 44_100,
+            .channel_mode = .mono,
+            .crc_present = true,
+        },
+        .maximum_noise_to_mask_ratio = 0.25,
+    };
+    var offsets: [8]u64 = undefined;
+    var encoder = try VbrPcmStreamEncoder.init(
+        config,
+        &offsets,
+    );
+    var encoded: [maximum_encoded_frame_bytes * 5]u8 = undefined;
+    var cursor: usize = 0;
+    const placeholder = try encoder.startXingMetadata(
+        encoded[cursor..],
+    );
+    cursor += placeholder.len;
+    const provisional = try Frame.parse(
+        encoded[0..cursor],
+        0,
+    );
+    try std.testing.expectEqual(
+        XingKind.variable,
+        provisional.xing.?.kind,
+    );
+    try std.testing.expectEqual(
+        @as(?u32, 0),
+        provisional.xing.?.frame_count,
+    );
+    try std.testing.expect(
+        provisional.xing.?.toc != null,
+    );
+
+    const silence = PcmFrame{
+        .channel_count = 1,
+        .sample_count = 1152,
+    };
+    const quiet = try encoder.append(
+        silence,
+        encoded[cursor..],
+    );
+    cursor += quiet.frame.len;
+    var detailed_pcm = silence;
+    for (&detailed_pcm.channels[0], 0..) |*sample, index| {
+        const position: f32 = @floatFromInt(index);
+        sample.* =
+            0.2 * @sin(position * 0.039) +
+            0.17 * @sin(position * 0.211);
+        if (index % 41 == 0)
+            sample.* += 0.25;
+    }
+    const detailed = try encoder.append(
+        detailed_pcm,
+        encoded[cursor..],
+    );
+    cursor += detailed.frame.len;
+    try std.testing.expect(
+        detailed.bitrate_index > quiet.bitrate_index,
+    );
+
+    const before_finish = encoder;
+    const offsets_before_finish = offsets;
+    var short_storage: [8]u8 = undefined;
+    try std.testing.expectError(
+        error.InsufficientMp3EncoderStorage,
+        encoder.finish(&short_storage),
+    );
+    try std.testing.expectEqual(before_finish, encoder);
+    try std.testing.expectEqual(
+        offsets_before_finish,
+        offsets,
+    );
+
+    const finished = try encoder.finish(encoded[cursor..]);
+    cursor += finished.frames.len;
+    try std.testing.expectEqual(@as(u64, 4), finished.summary.frame_count);
+    try std.testing.expectEqual(@as(u64, 2304), finished.summary.input_samples);
+    try std.testing.expectEqual(@as(u16, 2209), finished.summary.encoder_delay);
+    try std.testing.expectEqual(@as(u16, 95), finished.summary.end_padding);
+    try std.testing.expectEqual(
+        @as(u64, cursor),
+        finished.summary.byte_count,
+    );
+
+    var final_metadata: [maximum_encoded_frame_bytes]u8 =
+        undefined;
+    const replacement = try encoder.xingMetadataFrame(
+        37,
+        &final_metadata,
+    );
+    try std.testing.expectEqual(placeholder.len, replacement.len);
+    @memcpy(encoded[0..replacement.len], replacement);
+    const summary = try Stream.summarize(encoded[0..cursor]);
+    const xing = summary.first_xing.?;
+    try std.testing.expectEqual(XingKind.variable, xing.kind);
+    try std.testing.expectEqual(
+        @as(?u32, 4),
+        xing.frame_count,
+    );
+    try std.testing.expectEqual(
+        @as(?u32, @intCast(cursor)),
+        xing.stream_bytes,
+    );
+    try std.testing.expectEqual(@as(?u32, 37), xing.quality);
+    try std.testing.expectEqual(
+        @as(?u12, 2209),
+        xing.encoder_delay,
+    );
+    try std.testing.expectEqual(
+        @as(?u12, 95),
+        xing.encoder_padding,
+    );
+    const toc = xing.toc.?;
+    try std.testing.expectEqual(@as(u8, 0), toc[0]);
+    for (1..toc.len) |index|
+        try std.testing.expect(toc[index] >= toc[index - 1]);
+
+    const repeated = try encoder.finish(encoded[cursor..]);
+    try std.testing.expectEqual(@as(usize, 0), repeated.frames.len);
+    const hostile = encoder;
+    offsets[1] = 0;
+    try std.testing.expectError(
+        error.InvalidMp3VbrStreamState,
+        hostile.summary(),
+    );
+}
+
 test "encodes correlated PCM through MP3 mid-side stereo" {
     const config = EncoderConfig{
         .version = .mpeg1,
@@ -12604,6 +13961,153 @@ test "finishes MP3 reservoir streams transactionally" {
             repeated.summary,
         );
     }
+}
+
+test "writes and recovers MP3 VBR files" {
+    const config = VbrEncoderConfig{
+        .template = .{
+            .version = .mpeg1,
+            .sample_rate = 44_100,
+            .channel_mode = .mono,
+            .crc_present = true,
+        },
+        .maximum_noise_to_mask_ratio = 0.25,
+    };
+    const silence = PcmFrame{
+        .channel_count = 1,
+        .sample_count = 1152,
+    };
+    var signal = silence;
+    for (&signal.channels[0], 0..) |*sample, index| {
+        const position: f32 = @floatFromInt(index);
+        sample.* =
+            0.19 * @sin(position * 0.047) +
+            0.13 * @sin(position * 0.233);
+        if (index % 43 == 0)
+            sample.* -= 0.28;
+    }
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "vbr.mp3",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    var storage: [maximum_encoded_frame_bytes * 2]u8 =
+        undefined;
+    var offsets: [8]u64 = @splat(0xdead);
+    var writer = try VbrPcmFileEncoder.init(
+        std.testing.io,
+        file,
+        config,
+        &storage,
+        &offsets,
+    );
+    try writer.startXingMetadata(61);
+    const quiet = try writer.append(silence);
+    const detailed = try writer.append(signal);
+    try std.testing.expect(
+        detailed.bitrate_index > quiet.bitrate_index,
+    );
+    const summary = try writer.finalize();
+    try std.testing.expectEqual(
+        summary.stream.byte_count,
+        try file.length(std.testing.io),
+    );
+    var frame_storage: [maximum_encoded_frame_bytes]u8 =
+        undefined;
+    const parsed = try FileReader.summarize(
+        std.testing.io,
+        file,
+        &frame_storage,
+    );
+    try std.testing.expectEqual(
+        XingKind.variable,
+        parsed.first_xing.?.kind,
+    );
+    try std.testing.expectEqual(
+        @as(?u32, @intCast(summary.stream.frame_count)),
+        parsed.first_xing.?.frame_count,
+    );
+    try std.testing.expectEqual(
+        @as(?u32, 61),
+        parsed.first_xing.?.quality,
+    );
+    try std.testing.expect(
+        parsed.first_xing.?.toc != null,
+    );
+    try std.testing.expectEqual(
+        summary,
+        try writer.finalize(),
+    );
+
+    var recovered_file = try temporary.dir.createFile(
+        std.testing.io,
+        "vbr-recovered.mp3",
+        .{ .read = true },
+    );
+    defer recovered_file.close(std.testing.io);
+    var recovered_offsets: [8]u64 = @splat(0xbeef);
+    var faults = Mp3FileFaults{};
+    var recovered = try VbrPcmFileEncoder.initWithOperations(
+        std.testing.io,
+        recovered_file,
+        config,
+        &storage,
+        &recovered_offsets,
+        faults.operations(),
+    );
+    try recovered.startXingMetadata(29);
+    _ = try recovered.append(silence);
+    _ = try recovered.append(signal);
+    const committed = recovered.committed_bytes;
+    const flush_index =
+        recovered.stream.encoder.frames.frames_encoded;
+    const retained_offset = recovered_offsets[flush_index];
+    faults.fail_write_call = faults.write_calls + 2;
+    faults.partial_write_bytes = 8;
+    try std.testing.expectError(
+        error.InjectedMp3FileWriteFailure,
+        recovered.finalize(),
+    );
+    try std.testing.expect(recovered.failed);
+    try std.testing.expectEqual(
+        retained_offset,
+        recovered_offsets[flush_index],
+    );
+    faults.fail_write_call = null;
+    try recovered.recover();
+    try std.testing.expectEqual(
+        committed,
+        try recovered_file.length(std.testing.io),
+    );
+    const provisional = try FileReader.summarize(
+        std.testing.io,
+        recovered_file,
+        &frame_storage,
+    );
+    try std.testing.expectEqual(
+        @as(?u32, 0),
+        provisional.first_xing.?.frame_count,
+    );
+    const recovered_summary = try recovered.finalize();
+    const final = try FileReader.summarize(
+        std.testing.io,
+        recovered_file,
+        &frame_storage,
+    );
+    try std.testing.expectEqual(
+        @as(?u32, @intCast(
+            recovered_summary.stream.frame_count,
+        )),
+        final.first_xing.?.frame_count,
+    );
+    try std.testing.expectEqual(
+        recovered_summary.stream.byte_count,
+        try recovered_file.length(std.testing.io),
+    );
 }
 
 test "writes and recovers MP3 reservoir files" {

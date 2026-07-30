@@ -3666,6 +3666,74 @@ test "installed package exposes bounded MP3 framing and seeking" {
         reservoir_file_summary.stream.byte_count,
         try reservoir_file.length(std.testing.io),
     );
+    const vbr_config = plugin.dsp.Mp3VbrEncoderConfig{
+        .template = .{ .channel_mode = .stereo },
+        .minimum_bitrate_index = 9,
+        .maximum_bitrate_index = 9,
+    };
+    var vbr_encoder = try plugin.dsp.Mp3VbrPcmEncoder.init(
+        vbr_config,
+    );
+    const vbr_frame: plugin.dsp.Mp3VbrPcmFrame =
+        try vbr_encoder.encode(
+            analysis_pcm,
+            &automatic_storage,
+        );
+    try std.testing.expectEqual(
+        @as(u4, 9),
+        vbr_frame.bitrate_index,
+    );
+    const public_xing: plugin.dsp.Mp3XingEncoderMetadata = .{
+        .kind = .variable,
+        .frame_count = 1,
+        .stream_bytes = @intCast(vbr_frame.frame.len),
+        .encoder_delay = 0,
+        .encoder_padding = 0,
+    };
+    _ = try plugin.dsp.encodeMp3XingFrame(
+        vbr_frame.header,
+        public_xing,
+        &automatic_storage,
+    );
+
+    var vbr_stream_offsets: [4]u64 = undefined;
+    var vbr_stream =
+        try plugin.dsp.Mp3VbrPcmStreamEncoder.init(
+            vbr_config,
+            &vbr_stream_offsets,
+        );
+    _ = try vbr_stream.startXingMetadata(&stream_storage);
+    _ = try vbr_stream.append(analysis_pcm, &stream_storage);
+    const vbr_stream_finish: plugin.dsp.Mp3VbrPcmStreamFinish =
+        try vbr_stream.finish(&stream_storage);
+    try std.testing.expectEqual(
+        @as(u16, 2209),
+        vbr_stream_finish.summary.encoder_delay,
+    );
+
+    var vbr_file = try mp3_temporary.dir.createFile(
+        std.testing.io,
+        "public-vbr-encoder.mp3",
+        .{ .read = true },
+    );
+    defer vbr_file.close(std.testing.io);
+    var vbr_file_offsets: [4]u64 = undefined;
+    var vbr_file_encoder =
+        try plugin.dsp.Mp3VbrPcmFileEncoder.init(
+            std.testing.io,
+            vbr_file,
+            vbr_config,
+            &file_encoder_storage,
+            &vbr_file_offsets,
+        );
+    try vbr_file_encoder.startXingMetadata(42);
+    _ = try vbr_file_encoder.append(analysis_pcm);
+    const vbr_file_summary: plugin.dsp.Mp3VbrPcmFileSummary =
+        try vbr_file_encoder.finalize();
+    try std.testing.expectEqual(
+        vbr_file_summary.stream.byte_count,
+        try vbr_file.length(std.testing.io),
+    );
     pcm_analysis.reset();
 
     var polyphase_analysis = plugin.dsp.Mp3PolyphaseAnalysis{};
