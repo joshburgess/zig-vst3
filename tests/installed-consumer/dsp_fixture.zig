@@ -3312,6 +3312,16 @@ test "installed package exposes bounded MP3 framing and seeking" {
         stereo.channels[1].lines[0],
         1e-6,
     );
+    var alias_input = stereo.channels[0];
+    alias_input.lines[17] = 1;
+    alias_input.lines[18] = 2;
+    const alias_reduced = try plugin.dsp.reduceMp3Aliases(
+        joint_header,
+        .{},
+        alias_input,
+    );
+    try std.testing.expect(alias_reduced.lines[17] != 1);
+    try std.testing.expect(alias_reduced.lines[18] != 2);
 
     const summary = try plugin.dsp.Mp3Stream.summarize(&encoded);
     try std.testing.expectEqual(@as(u64, 2), summary.frame_count);

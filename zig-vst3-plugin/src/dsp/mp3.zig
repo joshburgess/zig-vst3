@@ -301,10 +301,7 @@ fn scaleFactorLayout(
 ) !ScaleFactorLayout {
     const bands = try scaleFactorBands(header);
     const short_block = description.block_type == 2;
-    if (description.window_switching ==
-        (description.block_type == 0) or
-        description.mixed_block and !short_block)
-        return error.InvalidMp3BlockType;
+    try validateBlockDescription(description);
     if (header.version == .mpeg1 and
         factors.preflag != description.preflag)
         return error.InvalidMp3ScaleFactors;
@@ -354,6 +351,13 @@ fn scaleFactorLayout(
         .short_boundary = short_boundary,
         .long_factor_count = long_factor_count,
     };
+}
+
+fn validateBlockDescription(description: GranuleChannel) !void {
+    if (description.window_switching ==
+        (description.block_type == 0) or
+        description.mixed_block and !description.window_switching)
+        return error.InvalidMp3BlockType;
 }
 
 pub fn processStereo(
@@ -411,6 +415,67 @@ pub fn processStereo(
     }
     return result;
 }
+
+pub fn reduceAliases(
+    header: Header,
+    description: GranuleChannel,
+    spectrum: RequantizedSpectrum,
+) !RequantizedSpectrum {
+    _ = try scaleFactorBands(header);
+    try validateBlockDescription(description);
+    for (spectrum.lines) |line| {
+        if (!std.math.isFinite(line))
+            return error.InvalidMp3RequantizedSpectrum;
+    }
+
+    const subband_count: usize = if (description.block_type != 2)
+        32
+    else if (!description.mixed_block)
+        0
+    else if (header.version == .mpeg25 and
+        header.sample_rate == 8_000)
+        4
+    else
+        2;
+    var result = spectrum;
+    var subband: usize = 1;
+    while (subband < subband_count) : (subband += 1) {
+        const boundary = 18 * subband;
+        for (alias_cs, alias_ca, 0..) |cs, ca, index| {
+            const upper = boundary - 1 - index;
+            const lower = boundary + index;
+            const upper_value = spectrum.lines[upper];
+            const lower_value = spectrum.lines[lower];
+            result.lines[upper] =
+                upper_value * cs - lower_value * ca;
+            result.lines[lower] =
+                lower_value * cs + upper_value * ca;
+        }
+    }
+    return result;
+}
+
+const alias_cs = [_]f32{
+    0.8574929257125442,
+    0.8817419973177052,
+    0.9496286491027328,
+    0.9833145924917902,
+    0.9955178160675858,
+    0.9991605581781475,
+    0.9998991952434471,
+    0.9999931550702803,
+};
+
+const alias_ca = [_]f32{
+    -0.5144957554275265,
+    -0.47173196856497235,
+    -0.31337745420390184,
+    -0.18191319961098118,
+    -0.09457419252642066,
+    -0.04096558288530405,
+    -0.01419856857247115,
+    -0.0036999746737600373,
+};
 
 fn processLongStereo(
     header: Header,
@@ -3694,6 +3759,19 @@ test "requantizes long Layer III spectra with scale factors" {
             quantized,
         );
         try std.testing.expectEqual(@as(f32, 1), switched.lines[0]);
+        const mixed = try requantizeChannel(
+            header,
+            .{
+                .global_gain = 210,
+                .window_switching = true,
+                .block_type = block_type,
+                .mixed_block = true,
+                .preflag = true,
+            },
+            factors,
+            quantized,
+        );
+        try std.testing.expectEqual(@as(f32, 1), mixed.lines[0]);
     }
     factors.values[21] = 1;
     try std.testing.expectError(
@@ -4187,6 +4265,167 @@ test "reconstructs LSF and per-window short intensity stereo" {
     try std.testing.expectEqual(
         @as(f32, 1),
         low_rate.channels[1].lines[low_rate_boundary],
+    );
+}
+
+test "reduces Layer III aliases across long and mixed boundaries" {
+    const header = try Header.parse(
+        &testHeader(3, true, 9, 0, false, .mono),
+    );
+    var long_spectrum = RequantizedSpectrum{};
+    for (1..32) |subband| {
+        const boundary = 18 * subband;
+        long_spectrum.lines[boundary - 1] =
+            @floatFromInt(subband);
+        long_spectrum.lines[boundary] =
+            @floatFromInt(subband + 1);
+    }
+    for (0..8) |index| {
+        long_spectrum.lines[17 - index] =
+            @floatFromInt(index + 1);
+        long_spectrum.lines[18 + index] =
+            @floatFromInt(index + 2);
+    }
+    const reduced = try reduceAliases(
+        header,
+        .{},
+        long_spectrum,
+    );
+    for (1..32) |subband| {
+        const boundary = 18 * subband;
+        const upper: f32 = @floatFromInt(subband);
+        const lower: f32 = @floatFromInt(subband + 1);
+        try std.testing.expectApproxEqAbs(
+            upper * alias_cs[0] - lower * alias_ca[0],
+            reduced.lines[boundary - 1],
+            1e-6,
+        );
+        try std.testing.expectApproxEqAbs(
+            lower * alias_cs[0] + upper * alias_ca[0],
+            reduced.lines[boundary],
+            1e-6,
+        );
+    }
+    const alias_c = [_]f32{
+        -0.6,
+        -0.535,
+        -0.33,
+        -0.185,
+        -0.095,
+        -0.041,
+        -0.0142,
+        -0.0037,
+    };
+    for (alias_c, alias_cs, alias_ca, 0..) |c, cs, ca, index| {
+        const wide_c: f64 = c;
+        const expected_cs: f32 =
+            @floatCast(1.0 / @sqrt(1.0 + wide_c * wide_c));
+        try std.testing.expectApproxEqAbs(expected_cs, cs, 1e-7);
+        try std.testing.expectApproxEqAbs(
+            @as(f32, @floatCast(wide_c * expected_cs)),
+            ca,
+            1e-7,
+        );
+        const upper: f32 = @floatFromInt(index + 1);
+        const lower: f32 = @floatFromInt(index + 2);
+        try std.testing.expectApproxEqAbs(
+            upper * cs - lower * ca,
+            reduced.lines[17 - index],
+            1e-6,
+        );
+        try std.testing.expectApproxEqAbs(
+            lower * cs + upper * ca,
+            reduced.lines[18 + index],
+            1e-6,
+        );
+    }
+
+    const pure_short = try reduceAliases(
+        header,
+        .{
+            .window_switching = true,
+            .block_type = 2,
+        },
+        long_spectrum,
+    );
+    try std.testing.expectEqual(long_spectrum, pure_short);
+
+    var mixed_spectrum = RequantizedSpectrum{};
+    mixed_spectrum.lines[17] = 1;
+    mixed_spectrum.lines[18] = 2;
+    mixed_spectrum.lines[35] = 3;
+    mixed_spectrum.lines[36] = 4;
+    const mixed = try reduceAliases(
+        header,
+        .{
+            .window_switching = true,
+            .block_type = 2,
+            .mixed_block = true,
+        },
+        mixed_spectrum,
+    );
+    try std.testing.expect(mixed.lines[17] != 1);
+    try std.testing.expect(mixed.lines[18] != 2);
+    try std.testing.expectEqual(@as(f32, 3), mixed.lines[35]);
+    try std.testing.expectEqual(@as(f32, 4), mixed.lines[36]);
+
+    const low_rate_header = try Header.parse(
+        &testHeader(0, true, 9, 2, false, .mono),
+    );
+    var low_rate_spectrum = RequantizedSpectrum{};
+    for (1..5) |subband| {
+        const boundary = 18 * subband;
+        low_rate_spectrum.lines[boundary - 1] = 1;
+        low_rate_spectrum.lines[boundary] = 2;
+    }
+    const low_rate = try reduceAliases(
+        low_rate_header,
+        .{
+            .window_switching = true,
+            .block_type = 2,
+            .mixed_block = true,
+        },
+        low_rate_spectrum,
+    );
+    for (1..4) |subband| {
+        const boundary = 18 * subband;
+        try std.testing.expect(low_rate.lines[boundary - 1] != 1);
+        try std.testing.expect(low_rate.lines[boundary] != 2);
+    }
+    try std.testing.expectEqual(
+        @as(f32, 1),
+        low_rate.lines[4 * 18 - 1],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 2),
+        low_rate.lines[4 * 18],
+    );
+
+    const mixed_start = try reduceAliases(
+        header,
+        .{
+            .window_switching = true,
+            .block_type = 1,
+            .mixed_block = true,
+        },
+        long_spectrum,
+    );
+    try std.testing.expect(mixed_start.lines[31 * 18 - 1] !=
+        long_spectrum.lines[31 * 18 - 1]);
+
+    var malformed = long_spectrum;
+    malformed.lines[0] = std.math.nan(f32);
+    try std.testing.expectError(
+        error.InvalidMp3RequantizedSpectrum,
+        reduceAliases(header, .{}, malformed),
+    );
+    try std.testing.expectError(
+        error.InvalidMp3BlockType,
+        reduceAliases(
+            header,
+            .{ .block_type = 2 },
+            long_spectrum,
+        ),
     );
 }
 

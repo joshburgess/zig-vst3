@@ -308,6 +308,7 @@ pub const requiredMp3FileSeekPoints = mp3.requiredFileSeekPoints;
 pub const requiredMp3SeekPoints = mp3.requiredSeekPoints;
 pub const requantizeMp3Channel = mp3.requantizeChannel;
 pub const processMp3Stereo = mp3.processStereo;
+pub const reduceMp3Aliases = mp3.reduceAliases;
 pub const maximumMp3FreeFormatFrameBytes =
     mp3.maximum_free_format_frame_bytes;
 pub const ConstAudioBlock = audio_block.ConstAudioBlock;
