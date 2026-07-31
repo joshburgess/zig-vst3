@@ -12961,29 +12961,39 @@ fn vorbisFloat32PackExact(value: f64) !u32 {
 }
 
 fn assignVorbisCodewords(entries: []VorbisCodebookEntry) void {
-    var next_code = [_]u32{0} ** 33;
+    var markers = [_]u32{0} ** 33;
     for (entries) |*entry| {
         if (entry.length == 0) continue;
         const length: usize = entry.length;
-        entry.codeword = next_code[length];
+        const assigned_codeword = markers[length];
 
-        var level = length + 1;
+        var level = length;
         while (level != 0) {
-            level -= 1;
-            if (next_code[level] & 1 != 0) {
-                std.debug.assert(level != 0);
-                next_code[level] = next_code[level - 1] << 1;
+            if (markers[level] & 1 != 0) {
+                if (level == 1)
+                    markers[1] += 1
+                else
+                    markers[level] = markers[level - 1] << 1;
                 break;
             }
-            next_code[level] += 1;
+            markers[level] += 1;
+            level -= 1;
         }
 
-        const next_branch = next_code[length];
-        for (length + 1..next_code.len) |deeper| {
-            const shift: u5 = @intCast(deeper - length);
-            if (next_code[deeper] != entry.codeword << shift) break;
-            next_code[deeper] = next_branch << shift;
+        var branch = assigned_codeword;
+        for (length + 1..markers.len) |deeper| {
+            if (markers[deeper] >> 1 != branch) break;
+            branch = markers[deeper];
+            markers[deeper] = markers[deeper - 1] << 1;
         }
+
+        var reversed: u32 = 0;
+        var source = assigned_codeword;
+        for (0..length) |_| {
+            reversed = (reversed << 1) | (source & 1);
+            source >>= 1;
+        }
+        entry.codeword = reversed;
     }
 }
 
@@ -15439,7 +15449,7 @@ test "Vorbis setup validates codebook encodings and codec configuration" {
             if (encoding == .sparse)
                 &.{1}
             else if (deep)
-                &.{0b11011000}
+                &.{0b11100100}
             else
                 &.{0b00000010},
             0,
@@ -15464,7 +15474,7 @@ test "Vorbis setup validates codebook encodings and codec configuration" {
             if (encoding == .sparse)
                 &.{1}
             else if (deep)
-                &.{0b11011000}
+                &.{0b11100100}
             else
                 &.{0b00000010},
             0,
@@ -15890,7 +15900,7 @@ test "Vorbis codewords follow entry order across mixed lengths" {
 
     try std.testing.expectEqual(@as(u32, 0b00), entries[0].codeword);
     try std.testing.expectEqual(@as(u32, 0b1), entries[1].codeword);
-    try std.testing.expectEqual(@as(u32, 0b01), entries[2].codeword);
+    try std.testing.expectEqual(@as(u32, 0b10), entries[2].codeword);
 }
 
 test "Vorbis packet writer round trips headers and canonical codewords" {
