@@ -37,6 +37,21 @@ done
 printf '\001\000\002\000' >"$output"
 EOF
 chmod +x "$fake_bin/oggdec"
+cat >"$fake_bin/oggenc" <<'EOF'
+#!/bin/sh
+output=
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "-o" ]; then
+        shift
+        output=$1
+    fi
+    shift
+done
+[ -n "$output" ]
+printf '\001\000\002\000' >"$output"
+EOF
+printf '%s\n' '#!/bin/sh' 'printf "Linux\n"' >"$fake_bin/uname"
+chmod +x "$fake_bin/oggenc" "$fake_bin/uname"
 # shellcheck disable=SC2016
 printf '%s\n' \
     '#!/bin/sh' \
@@ -57,7 +72,7 @@ chmod +x "$fake_bin/reference-probe"
 
 PATH="$fake_bin:$PATH" \
     TMPDIR="$root" \
-    VORBIS_INTEROP_ONLY_FFMPEG=1 \
+    VORBIS_INTEROP_ONLY_FFMPEG=0 \
     scripts/test_vorbis_interop.sh \
     "$fixture" \
     "$fake_bin/decode-probe" \
@@ -115,7 +130,13 @@ grep -q 'Vorbis Xiph low-quality decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis Xiph 5.1 decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
-[ "$(cat "$reference_probe_count")" -eq 11 ] || {
+grep -q 'Vorbis Xiph stereo encoder decode and seek test passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis Xiph-encoded FFmpeg decode passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis Xiph-encoded Xiph decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
+[ "$(cat "$reference_probe_count")" -eq 12 ] || {
     printf 'Vorbis runner skipped a decoded-PCM reference probe\n' >&2
     exit 1
 }

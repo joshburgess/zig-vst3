@@ -354,6 +354,42 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                     'Vorbis Xiph 5.1 decoded-PCM reference passed'
             fi
             tested=1
+
+            if [ "${VORBIS_INTEROP_ONLY_FFMPEG-0}" != "1" ] &&
+                command -v oggenc >/dev/null 2>&1; then
+                xiph_source="$temporary/xiph-encoder-source.wav"
+                xiph_fixture="$temporary/xiph-encoded.ogg"
+                ffmpeg -v error -y \
+                    -f lavfi \
+                    -i 'aevalsrc=0.21*sin(2*PI*375*t)|0.16*sin(2*PI*825*t):s=48000' \
+                    -t 0.35 \
+                    -c:a pcm_s16le \
+                    "$xiph_source"
+                oggenc -Q -q 3 -o "$xiph_fixture" "$xiph_source"
+                "$decode_probe" "$xiph_fixture"
+                printf 'Vorbis Xiph stereo encoder decode and seek test passed\n'
+                if [ -n "$reference_probe" ]; then
+                    # FFmpeg trims 128 leading frames here; Xiph is the exact PCM oracle.
+                    xiph_ffmpeg_pcm="$temporary/ffmpeg-xiph-encoded.f32le"
+                    ffmpeg -v error -y \
+                        -i "$xiph_fixture" \
+                        -map 0:a:0 \
+                        -f f32le \
+                        -acodec pcm_f32le \
+                        "$xiph_ffmpeg_pcm"
+                    [ "$(wc -c <"$xiph_ffmpeg_pcm")" -gt 0 ] ||
+                        fail "FFmpeg produced empty Xiph-encoded Vorbis PCM"
+                    printf 'Vorbis Xiph-encoded FFmpeg decode passed\n'
+                    if command -v oggdec >/dev/null 2>&1; then
+                        compare_xiph_reference_pcm \
+                            "$xiph_fixture" \
+                            "$temporary/xiph-encoded-reference.s16le" \
+                            'Vorbis Xiph-encoded Xiph decoded-PCM reference passed'
+                    fi
+                fi
+            else
+                printf 'Vorbis Xiph encoder unavailable; test skipped\n'
+            fi
         else
             printf 'Vorbis FFmpeg encoder unavailable; test skipped\n'
         fi
