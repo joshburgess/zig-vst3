@@ -109,13 +109,14 @@ const TempoWarp = vst3.ara_tempo_warp.Builder(
     },
 );
 
+const spectral_frame_capacity = 1_024;
 const SpectralSource = vst3.ara_spectral_transform.PreparedSource(
     AraController,
     f64,
     16,
     4,
     2,
-    4_096,
+    spectral_frame_capacity,
     4,
 );
 const SpectralGain = vst3.ara_spectral_transform.LinearGain(f64, 16);
@@ -255,7 +256,7 @@ const Definition = struct {
                 description,
             );
         if (description.source_sample_count > 0 and
-            description.source_sample_count <= 4_096)
+            description.source_sample_count <= spectral_frame_capacity)
             _ = try self.spectral_source.prepare(
                 description,
                 self.source_cache.provider(AraRenderer),
@@ -1109,6 +1110,10 @@ test "ARA playback product factory includes its main factory" {
         main_factory.vtable.getFactory(main_factory) ==
             ara_factory_pointer,
     );
+}
+
+test "ARA playback product bounds inline spectral storage" {
+    try std.testing.expect(@sizeOf(SpectralSource) <= 160 * 1024);
 }
 
 test "ARA playback product fills cache and renders through VST3" {
