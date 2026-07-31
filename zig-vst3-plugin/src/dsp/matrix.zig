@@ -3963,6 +3963,110 @@ test "dynamic SVD handles rank loss convergence and hostile state" {
     );
 }
 
+fn exerciseDynamicMatrixAllocations(
+    allocator: std.mem.Allocator,
+) !void {
+    const D = DynamicMatrix(f64);
+    var source = try D.fromSlice(
+        allocator,
+        3,
+        3,
+        &.{
+            4.0, 1.0, 0.0,
+            1.0, 3.0, 1.0,
+            0.0, 1.0, 2.0,
+        },
+    );
+    defer source.deinit();
+    var copy = try source.clone(allocator);
+    defer copy.deinit();
+    var identity = try D.identity(allocator, 3);
+    defer identity.deinit();
+    var sum = try source.add(&identity, allocator);
+    defer sum.deinit();
+    var difference = try source.subtract(&identity, allocator);
+    defer difference.deinit();
+    var scaled = try source.scaled(0.5, allocator);
+    defer scaled.deinit();
+    var transposed = try source.transpose(allocator);
+    defer transposed.deinit();
+    var product = try source.multiply(&identity, allocator);
+    defer product.deinit();
+    const vector_product = try source.multiplyVector(
+        &.{ 1.0, 2.0, 3.0 },
+        allocator,
+    );
+    defer allocator.free(vector_product);
+
+    var lu = try source.decomposeLu(allocator);
+    defer lu.deinit();
+    const lu_solution = try lu.solve(
+        allocator,
+        &.{ 1.0, 2.0, 3.0 },
+    );
+    defer allocator.free(lu_solution);
+    var right_hand_side = try D.fromSlice(
+        allocator,
+        3,
+        2,
+        &.{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 },
+    );
+    defer right_hand_side.deinit();
+    var matrix_solution = try lu.solveMatrix(
+        allocator,
+        &right_hand_side,
+    );
+    defer matrix_solution.deinit();
+    var inverse = try lu.inverse(allocator);
+    defer inverse.deinit();
+
+    var qr = try source.decomposeQr(allocator);
+    defer qr.deinit();
+    const qr_solution = try qr.solveLeastSquares(
+        allocator,
+        &.{ 1.0, 2.0, 3.0 },
+    );
+    defer allocator.free(qr_solution);
+    var upper = try qr.upper(allocator);
+    defer upper.deinit();
+    var orthogonal = try qr.orthogonal(allocator);
+    defer orthogonal.deinit();
+
+    var svd = try source.decomposeSvd(allocator, .{});
+    defer svd.deinit();
+    const svd_solution = try svd.solveLeastSquares(
+        allocator,
+        &.{ 1.0, 2.0, 3.0 },
+    );
+    defer allocator.free(svd_solution);
+    var pseudoinverse = try svd.pseudoinverse(allocator);
+    defer pseudoinverse.deinit();
+    var reconstructed = try svd.reconstruct(allocator);
+    defer reconstructed.deinit();
+
+    var wide_source = try D.fromSlice(
+        allocator,
+        2,
+        3,
+        &.{ 1.0, 0.0, 1.0, 0.0, 1.0, 1.0 },
+    );
+    defer wide_source.deinit();
+    var wide_svd = try wide_source.decomposeSvd(allocator, .{});
+    defer wide_svd.deinit();
+    var wide_reconstructed = try wide_svd.reconstruct(allocator);
+    defer wide_reconstructed.deinit();
+    var wide_pseudoinverse = try wide_svd.pseudoinverse(allocator);
+    defer wide_pseudoinverse.deinit();
+}
+
+test "dynamic matrix allocation failures release every owner" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        exerciseDynamicMatrixAllocations,
+        .{},
+    );
+}
+
 test "dynamic decomposition allocation failures leave no ownership" {
     const D = DynamicMatrix(f64);
     var source = try D.fromSlice(
