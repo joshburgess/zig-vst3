@@ -22,6 +22,12 @@ pub fn main(init: std.process.Init) !void {
         .free_format
     else if (std.mem.eql(u8, args[4], "--require-junk-resync"))
         .junk_resync
+    else if (std.mem.eql(
+        u8,
+        args[4],
+        "--require-trailing-junk-rejection",
+    ))
+        .trailing_junk_rejection
     else
         return error.InvalidArguments;
     const require_multiple_seek_points =
@@ -47,7 +53,15 @@ pub fn main(init: std.process.Init) !void {
             if (!hasId3v2Version(encoded, 4))
                 return error.MissingExpectedMp3Tags;
         },
-        .protected, .free_format, .junk_resync => {},
+        .protected,
+        .free_format,
+        .junk_resync,
+        .trailing_junk_rejection,
+        => {},
+    }
+    if (requirement == .trailing_junk_rejection) {
+        try verifyTrailingJunkRejection(init.io, args[1], encoded);
+        return;
     }
     const summary = try plug.dsp.Mp3Stream.summarize(encoded);
     if (requirement == .junk_resync) {
@@ -201,6 +215,7 @@ const Requirement = enum {
     protected,
     free_format,
     junk_resync,
+    trailing_junk_rejection,
 };
 
 fn hasId3v2Version(encoded: []const u8, version: u8) bool {
@@ -338,6 +353,63 @@ fn verifyJunkResynchronization(
     try evidence.validate(summary, decoder);
     if (!std.meta.eql(expected, evidence))
         return error.Mp3ResynchronizedPcmDiffered;
+}
+
+fn verifyTrailingJunkRejection(
+    io: std.Io,
+    path: []const u8,
+    encoded: []const u8,
+) !void {
+    const junk = [_]u8{ 0x00, 0x49, 0x44, 0x33, 0x7f };
+    if (!std.mem.endsWith(u8, encoded, &junk))
+        return error.MissingExpectedMp3TrailingJunk;
+
+    var stream = try plug.dsp.Mp3Stream.init(encoded);
+    var memory_frames: u64 = 0;
+    while (true) {
+        const retained = stream;
+        const frame = stream.next() catch |err| {
+            if (err != error.InvalidMp3Sync) return err;
+            if (!std.meta.eql(retained, stream))
+                return error.Mp3TrailingJunkChangedMemoryState;
+            break;
+        };
+        if (frame == null) return error.Mp3TrailingJunkWasAccepted;
+        memory_frames = std.math.add(u64, memory_frames, 1) catch
+            return error.Mp3DecodedCountOverflow;
+    }
+    if (memory_frames == 0) return error.Mp3StreamHasNoFrames;
+
+    const file = try std.Io.Dir.cwd().openFile(io, path, .{});
+    defer file.close(io);
+    var reader = try plug.dsp.Mp3FileReader.init(io, file);
+    var frame_storage: [plug.dsp.maximumMp3EncodedFrameBytes]u8 = undefined;
+    var file_frames: u64 = 0;
+    while (true) {
+        @memset(&frame_storage, 0xa5);
+        const retained_offset = reader.offset;
+        const retained_frame_index = reader.frame_index;
+        const retained_sample_offset = reader.sample_offset;
+        const frame = reader.next(&frame_storage) catch |err| {
+            if (err != error.InvalidMp3Sync) return err;
+            if (reader.offset != retained_offset or
+                reader.frame_index != retained_frame_index or
+                reader.sample_offset != retained_sample_offset)
+            {
+                return error.Mp3TrailingJunkChangedFileState;
+            }
+            for (frame_storage) |byte| {
+                if (byte != 0xa5)
+                    return error.Mp3TrailingJunkChangedFrameStorage;
+            }
+            break;
+        };
+        if (frame == null) return error.Mp3TrailingJunkWasAccepted;
+        file_frames = std.math.add(u64, file_frames, 1) catch
+            return error.Mp3DecodedCountOverflow;
+    }
+    if (file_frames != memory_frames)
+        return error.Mp3MemoryAndFileFrameCountsDiffer;
 }
 
 fn decodeFile(

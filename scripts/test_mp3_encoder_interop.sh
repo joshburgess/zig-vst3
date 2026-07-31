@@ -149,6 +149,13 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 --require-junk-resync
             printf 'MP3 FFmpeg bounded junk resynchronization probe passed\n'
 
+            external_trailing_junk="$temporary/ffmpeg-mpeg1-trailing-junk.mp3"
+            cp "$external_mpeg1" "$external_trailing_junk"
+            printf '\000\111\104\063\177' >>"$external_trailing_junk"
+            "$decode_probe" "$external_trailing_junk" 44100 2 \
+                --require-trailing-junk-rejection
+            printf 'MP3 FFmpeg trailing-junk rejection probe passed\n'
+
             if [ -n "$reference_probe" ]; then
                 compare_reference_pcm \
                     "$external_mpeg1" \

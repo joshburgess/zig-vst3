@@ -67,6 +67,8 @@ grep -q 'MP3 FFmpeg MPEG-1 stereo decoder probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg bounded junk resynchronization probe passed' \
     "$root/passed.txt"
+grep -q 'MP3 FFmpeg trailing-junk rejection probe passed' \
+    "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-1 decoded-PCM reference probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 Shine MPEG-1 stereo decoder probe passed' \
@@ -97,7 +99,7 @@ grep -q 'MP3 FFmpeg truncation rejection passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg format-change rejection passed' \
     "$root/passed.txt"
-[ "$(cat "$probe_count")" -eq 10 ] || {
+[ "$(cat "$probe_count")" -eq 11 ] || {
     printf 'MP3 runner skipped a decoder probe\n' >&2
     exit 1
 }
