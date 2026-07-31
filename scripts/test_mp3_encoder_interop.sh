@@ -158,6 +158,32 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 printf 'MP3 Shine encoder unavailable; test skipped\n'
             fi
 
+            if command -v lame >/dev/null 2>&1; then
+                protected_wav="$temporary/lame-protected-source.wav"
+                protected_mp3="$temporary/lame-protected.mp3"
+                ffmpeg -v error -y \
+                    -f lavfi \
+                    -i 'aevalsrc=0.19*sin(2*PI*390*t)|0.14*sin(2*PI*810*t):s=44100' \
+                    -t 0.35 \
+                    -c:a pcm_s16le \
+                    "$protected_wav"
+                lame --silent --cbr -p -b 128 \
+                    "$protected_wav" \
+                    "$protected_mp3"
+                "$decode_probe" "$protected_mp3" 44100 2 \
+                    --require-protected
+                printf 'MP3 LAME protected-frame decoder probe passed\n'
+                if [ -n "$reference_probe" ]; then
+                    compare_reference_pcm \
+                        "$protected_mp3" \
+                        2 \
+                        "$temporary/lame-protected-reference.f32le" \
+                        'MP3 LAME protected decoded-PCM reference probe passed'
+                fi
+            else
+                printf 'MP3 LAME executable unavailable; protected test skipped\n'
+            fi
+
             external_tagged_long="$temporary/ffmpeg-mpeg1-tagged-long.mp3"
             ffmpeg -v error -y \
                 -f lavfi \

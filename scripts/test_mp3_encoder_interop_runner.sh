@@ -26,6 +26,12 @@ for output do :; done
 printf '\001\002\003\004' >"$output"
 EOF
 chmod +x "$fake_bin/ffprobe" "$fake_bin/ffmpeg"
+cat >"$fake_bin/lame" <<'EOF'
+#!/bin/sh
+for output do :; done
+printf '\001\002\003\004' >"$output"
+EOF
+chmod +x "$fake_bin/lame"
 cat >"$fake_bin/decode-probe" <<'EOF'
 #!/bin/sh
 case "$1" in
@@ -65,6 +71,10 @@ grep -q 'MP3 Shine MPEG-1 stereo decoder probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 Shine MPEG-1 decoded-PCM reference probe passed' \
     "$root/passed.txt"
+grep -q 'MP3 LAME protected-frame decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 LAME protected decoded-PCM reference probe passed' \
+    "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-2 decoded-PCM reference probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-2.5 decoded-PCM reference probe passed' \
@@ -81,11 +91,11 @@ grep -q 'MP3 FFmpeg truncation rejection passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg format-change rejection passed' \
     "$root/passed.txt"
-[ "$(cat "$probe_count")" -eq 7 ] || {
+[ "$(cat "$probe_count")" -eq 8 ] || {
     printf 'MP3 runner skipped a decoder probe\n' >&2
     exit 1
 }
-[ "$(cat "$reference_probe_count")" -eq 4 ] || {
+[ "$(cat "$reference_probe_count")" -eq 5 ] || {
     printf 'MP3 runner skipped the decoded-PCM reference probe\n' >&2
     exit 1
 }
