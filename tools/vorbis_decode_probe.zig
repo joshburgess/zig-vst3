@@ -461,6 +461,7 @@ const ReferenceComparison = struct {
     bytes: ?[]const u8,
     report: bool,
     offset: usize = 0,
+    project_values: u64 = 0,
     sample_values: u64 = 0,
     reference_energy: f64 = 0,
     error_energy: f64 = 0,
@@ -478,14 +479,13 @@ const ReferenceComparison = struct {
         const bytes = self.bytes orelse return;
         for (0..sample_count) |sample_index| {
             for (outputs) |output| {
+                self.project_values = std.math.add(
+                    u64,
+                    self.project_values,
+                    1,
+                ) catch return error.VorbisPcmReferenceSizeOverflow;
                 if (self.offset + @sizeOf(f32) > bytes.len) {
-                    if (self.report) {
-                        std.debug.print(
-                            "Vorbis PCM reference sample-count mismatch project_at_least={d} reference={d}\n",
-                            .{ self.sample_values + 1, bytes.len / @sizeOf(f32) },
-                        );
-                    }
-                    return error.VorbisPcmReferenceSampleCountMismatch;
+                    continue;
                 }
                 const reference_sample: f32 = @bitCast(std.mem.readInt(
                     u32,
@@ -520,11 +520,14 @@ const ReferenceComparison = struct {
 
     fn finish(self: ReferenceComparison) !void {
         const bytes = self.bytes orelse return;
-        if (self.offset != bytes.len) {
+        if (bytes.len % @sizeOf(f32) != 0)
+            return error.VorbisPcmReferenceSampleCountMismatch;
+        const reference_values = bytes.len / @sizeOf(f32);
+        if (self.project_values != reference_values) {
             if (self.report) {
                 std.debug.print(
                     "Vorbis PCM reference sample-count mismatch project={d} reference={d}\n",
-                    .{ self.sample_values, bytes.len / @sizeOf(f32) },
+                    .{ self.project_values, reference_values },
                 );
             }
             return error.VorbisPcmReferenceSampleCountMismatch;
@@ -583,9 +586,10 @@ test "Vorbis PCM reference comparison rejects size and finite-value mismatches" 
     var two_samples = [_]f32{ 0.5, 0.5 };
     const oversized_outputs = [_][]f32{&two_samples};
     var oversized = ReferenceComparison.init(&reference, false);
+    try oversized.update(oversized_outputs, two_samples.len);
     try std.testing.expectError(
         error.VorbisPcmReferenceSampleCountMismatch,
-        oversized.update(oversized_outputs, two_samples.len),
+        oversized.finish(),
     );
 
     var nonfinite_sample = [_]f32{std.math.nan(f32)};
