@@ -16,6 +16,12 @@ printf 'sample_rate=44100\nchannels=2\n'
 EOF
 cat >"$fake_bin/ffmpeg" <<'EOF'
 #!/bin/sh
+case " $* " in
+    *' -encoders '*)
+        printf ' A....D libshine             libshine MP3 encoder\n'
+        exit 0
+        ;;
+esac
 for output do :; done
 printf '\001\002\003\004' >"$output"
 EOF
@@ -55,6 +61,10 @@ grep -q 'MP3 FFmpeg MPEG-1 stereo decoder probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-1 decoded-PCM reference probe passed' \
     "$root/passed.txt"
+grep -q 'MP3 Shine MPEG-1 stereo decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 Shine MPEG-1 decoded-PCM reference probe passed' \
+    "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-2 decoded-PCM reference probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-2.5 decoded-PCM reference probe passed' \
@@ -71,11 +81,11 @@ grep -q 'MP3 FFmpeg truncation rejection passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg format-change rejection passed' \
     "$root/passed.txt"
-[ "$(cat "$probe_count")" -eq 6 ] || {
+[ "$(cat "$probe_count")" -eq 7 ] || {
     printf 'MP3 runner skipped a decoder probe\n' >&2
     exit 1
 }
-[ "$(cat "$reference_probe_count")" -eq 3 ] || {
+[ "$(cat "$reference_probe_count")" -eq 4 ] || {
     printf 'MP3 runner skipped the decoded-PCM reference probe\n' >&2
     exit 1
 }

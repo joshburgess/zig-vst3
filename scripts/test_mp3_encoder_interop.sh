@@ -134,6 +134,30 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                     'MP3 FFmpeg MPEG-1 decoded-PCM reference probe passed'
             fi
 
+            if ffmpeg -hide_banner -encoders 2>/dev/null |
+                grep -q '[[:space:]]libshine[[:space:]]'; then
+                external_shine="$temporary/shine-mpeg1-stereo.mp3"
+                ffmpeg -v error -y \
+                    -f lavfi \
+                    -i 'aevalsrc=0.22*sin(2*PI*510*t)|0.17*sin(2*PI*730*t):s=44100' \
+                    -t 0.35 \
+                    -c:a libshine \
+                    -b:a 128k \
+                    -id3v2_version 0 \
+                    "$external_shine"
+                "$decode_probe" "$external_shine" 44100 2
+                printf 'MP3 Shine MPEG-1 stereo decoder probe passed\n'
+                if [ -n "$reference_probe" ]; then
+                    compare_reference_pcm \
+                        "$external_shine" \
+                        2 \
+                        "$temporary/shine-mpeg1-reference.f32le" \
+                        'MP3 Shine MPEG-1 decoded-PCM reference probe passed'
+                fi
+            else
+                printf 'MP3 Shine encoder unavailable; test skipped\n'
+            fi
+
             external_tagged_long="$temporary/ffmpeg-mpeg1-tagged-long.mp3"
             ffmpeg -v error -y \
                 -f lavfi \
