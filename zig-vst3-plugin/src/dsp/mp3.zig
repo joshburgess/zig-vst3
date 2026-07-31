@@ -9462,9 +9462,10 @@ fn parseXing(frame: []const u8, header: Header) !?Xing {
         const delay_offset = cursor + 21;
         const delay_fields =
             readU24(frame[delay_offset .. delay_offset + 3]);
-        if (std.mem.startsWith(u8, &encoder, "LAME") or
-            std.mem.startsWith(u8, &encoder, "Lavf") or
-            std.mem.startsWith(u8, &encoder, "Lavc"))
+        if (delay_fields != 0 and
+            (std.mem.startsWith(u8, &encoder, "LAME") or
+                std.mem.startsWith(u8, &encoder, "Lavf") or
+                std.mem.startsWith(u8, &encoder, "Lavc")))
         {
             xing.encoder_delay = @intCast(delay_fields >> 12);
             xing.encoder_padding = @intCast(delay_fields & 0xfff);
@@ -14282,6 +14283,18 @@ test "parses bounded Xing fields and LAME delay metadata" {
     try std.testing.expectEqual(@as(?u32, 7), xing.quality);
     try std.testing.expectEqual(@as(?u12, 0x240), xing.encoder_delay);
     try std.testing.expectEqual(@as(?u12, 0x321), xing.encoder_padding);
+
+    @memcpy(storage[offset + 120 ..][0..9], "Lavc60.31");
+    storage[offset + 141 ..][0..3].* = .{ 0, 0, 0 };
+    const unspecified = try Frame.parse(storage[0..end], 0);
+    try std.testing.expectEqual(
+        @as(?u12, null),
+        unspecified.xing.?.encoder_delay,
+    );
+    try std.testing.expectEqual(
+        @as(?u12, null),
+        unspecified.xing.?.encoder_padding,
+    );
 
     storage[offset + 7] = 0x10;
     try std.testing.expectError(
