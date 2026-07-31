@@ -113,7 +113,9 @@ grep -q 'Vorbis Xiph 16 kHz decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis Xiph low-quality decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
-[ "$(cat "$reference_probe_count")" -eq 10 ] || {
+grep -q 'Vorbis Xiph 5.1 decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
+[ "$(cat "$reference_probe_count")" -eq 11 ] || {
     printf 'Vorbis runner skipped a decoded-PCM reference probe\n' >&2
     exit 1
 }

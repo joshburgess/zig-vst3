@@ -336,6 +336,13 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 "$external_surround_fixture"
             "$decode_probe" "$external_surround_fixture"
             printf 'Vorbis FFmpeg 5.1 encoder decode and seek test passed\n'
+            if [ -n "$reference_probe" ] &&
+                command -v oggdec >/dev/null 2>&1; then
+                compare_xiph_reference_pcm \
+                    "$external_surround_fixture" \
+                    "$temporary/xiph-5.1-reference.s16le" \
+                    'Vorbis Xiph 5.1 decoded-PCM reference passed'
+            fi
             tested=1
         else
             printf 'Vorbis FFmpeg encoder unavailable; test skipped\n'
