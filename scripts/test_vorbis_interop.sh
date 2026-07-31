@@ -207,6 +207,17 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$decode_probe" "$external_16k_fixture"
             printf 'Vorbis FFmpeg 16 kHz mono geometry test passed\n'
 
+            external_low_quality_fixture="$temporary/ffmpeg-encoded-low-quality.ogg"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.20*sin(2*PI*440*t)|0.15*sin(2*PI*660*t):s=44100' \
+                -t 0.35 \
+                -c:a libvorbis \
+                -q:a -1 \
+                "$external_low_quality_fixture"
+            "$decode_probe" "$external_low_quality_fixture"
+            printf 'Vorbis FFmpeg low-quality 512/4096 geometry test passed\n'
+
             external_surround_fixture="$temporary/ffmpeg-encoded-5.1.ogg"
             ffmpeg -v error -y \
                 -f lavfi \

@@ -162,6 +162,40 @@ pub fn main(init: std.process.Init) !void {
             ),
             else => return error.UnsupportedVorbisChannelCount,
         }
+    } else if (identification.small_block_size == 512 and
+        identification.large_block_size == 4_096)
+    {
+        switch (identification.channel_count) {
+            1 => try decodeStreams(
+                1,
+                512,
+                4_096,
+                allocator,
+                init.io,
+                file,
+                &packets,
+                seek_index,
+                page_storage,
+                file_packet_storage,
+                first_identification_packet,
+                require_midpoint_seek,
+            ),
+            2 => try decodeStreams(
+                2,
+                512,
+                4_096,
+                allocator,
+                init.io,
+                file,
+                &packets,
+                seek_index,
+                page_storage,
+                file_packet_storage,
+                first_identification_packet,
+                require_midpoint_seek,
+            ),
+            else => return error.UnsupportedVorbisChannelCount,
+        }
     } else if (identification.small_block_size == 256 and
         identification.large_block_size == 2_048)
     {

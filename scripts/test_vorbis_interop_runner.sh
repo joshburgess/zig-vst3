@@ -48,6 +48,8 @@ grep -q 'Vorbis FFmpeg 8 kHz stereo geometry test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg 16 kHz mono geometry test passed' \
     "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg low-quality 512/4096 geometry test passed' \
+    "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg 5.1 encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis project decoder and seek probe passed' \
@@ -117,6 +119,9 @@ expect_probe_failure \
     'Vorbis runner accepted a 16 kHz decode failure'
 expect_probe_failure \
     9 \
+    'Vorbis runner accepted a low-quality geometry decode failure'
+expect_probe_failure \
+    10 \
     'Vorbis runner accepted a 5.1 decode failure'
 rm -f "$probe_count"
 
