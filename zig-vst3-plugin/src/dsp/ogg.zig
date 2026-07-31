@@ -7934,7 +7934,7 @@ pub fn VorbisInverseMdct(
                 rotation,
                 index,
             | {
-                var sample = 4.0 *
+                var sample = @as(Float, @floatFromInt(block_size)) *
                     (value.real * rotation.real -
                         value.imaginary * rotation.imaginary);
                 if (window) |values| sample *= values[index];
@@ -8058,7 +8058,7 @@ pub fn VorbisForwardMdct(
             }
             try self.transform.inverse(&self.work);
 
-            const scale: Float = @floatFromInt(block_size / 2);
+            const scale: Float = 4.0;
             for (
                 self.work[0..coefficient_count],
                 self.coefficient_rotations,
@@ -23715,7 +23715,7 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
                 (@as(f64, @floatFromInt(coefficient_index)) + 0.5);
             sum += @cos(angle);
         }
-        const expected = window_value * sum / 16.0;
+        const expected = window_value * sum;
         try std.testing.expectApproxEqAbs(expected, actual, 1e-12);
     }
 
@@ -24196,8 +24196,7 @@ test "Vorbis inverse MDCT matches its defining transform" {
                 (@as(f64, @floatFromInt(coefficient_index)) + 0.5);
             sum += coefficient * @cos(angle);
         }
-        sample.* = 2.0 /
-            @as(f64, @floatFromInt(coefficient_count)) * sum;
+        sample.* = sum;
     }
 
     var plan = VorbisInverseMdct(f64, block_size).init();
@@ -24207,7 +24206,7 @@ test "Vorbis inverse MDCT matches its defining transform" {
         try std.testing.expectApproxEqAbs(
             expected_sample,
             actual_sample,
-            1e-12,
+            3e-11,
         );
     }
 
@@ -24215,13 +24214,11 @@ test "Vorbis inverse MDCT matches its defining transform" {
     coefficients[0] = 1;
     try plan.process(&coefficients, &actual);
     for (actual, 0..) |actual_sample, sample_index| {
-        const expected_sample =
-            2.0 / @as(f64, @floatFromInt(coefficient_count)) *
-            @cos(std.math.pi /
-                @as(f64, @floatFromInt(coefficient_count)) *
-                (@as(f64, @floatFromInt(sample_index)) + 0.5 +
-                    @as(f64, @floatFromInt(coefficient_count)) / 2.0) *
-                0.5);
+        const expected_sample = @cos(std.math.pi /
+            @as(f64, @floatFromInt(coefficient_count)) *
+            (@as(f64, @floatFromInt(sample_index)) + 0.5 +
+                @as(f64, @floatFromInt(coefficient_count)) / 2.0) *
+            0.5);
         try std.testing.expectApproxEqAbs(
             expected_sample,
             actual_sample,
@@ -24245,8 +24242,7 @@ test "Vorbis inverse MDCT matches its defining transform" {
                     (@as(f64, @floatFromInt(coefficient_index)) + 0.5);
                 sum += coefficient * @cos(angle);
             }
-            sample.* = 2.0 /
-                @as(f64, @floatFromInt(coefficient_count)) * sum;
+            sample.* = sum;
         }
         try plan.process(&coefficients, &actual);
         for (actual, expected) |actual_sample, expected_sample| {
@@ -24268,7 +24264,7 @@ test "Vorbis inverse MDCT matches its defining transform" {
         try std.testing.expectApproxEqAbs(
             expected_sample,
             actual_sample,
-            1e-12,
+            3e-11,
         );
     }
 
@@ -24290,7 +24286,7 @@ test "Vorbis inverse MDCT matches its defining transform" {
         try std.testing.expectApproxEqAbs(
             expected_sample * window_value,
             actual_sample,
-            1e-12,
+            3e-11,
         );
     }
 
@@ -24319,7 +24315,7 @@ test "Vorbis inverse MDCT matches its defining transform" {
         try std.testing.expectApproxEqAbs(
             @as(f32, @floatCast(expected_sample)),
             actual_sample,
-            1e-4,
+            2e-3,
         );
     }
 
@@ -24348,7 +24344,8 @@ test "Vorbis forward MDCT matches its defining transform" {
                 (@as(f64, @floatFromInt(coefficient_index)) + 0.5);
             sum += sample * @cos(angle);
         }
-        coefficient.* = 0.5 * sum;
+        coefficient.* = 4.0 /
+            @as(f64, @floatFromInt(block_size)) * sum;
     }
 
     var plan = VorbisForwardMdct(f64, block_size).init();
@@ -24377,7 +24374,8 @@ test "Vorbis forward MDCT matches its defining transform" {
                     (@as(f64, @floatFromInt(coefficient_index)) + 0.5);
                 sum += sample * @cos(angle);
             }
-            coefficient.* = 0.5 * sum;
+            coefficient.* = 4.0 /
+                @as(f64, @floatFromInt(block_size)) * sum;
         }
         try plan.process(&input, &actual);
         for (actual, expected) |actual_value, expected_value| {
@@ -24398,7 +24396,7 @@ test "Vorbis forward MDCT matches its defining transform" {
     try plan.process(&synthesized, &actual);
     for (actual, source_coefficients) |actual_value, expected_value| {
         try std.testing.expectApproxEqAbs(
-            expected_value,
+            2.0 * expected_value,
             actual_value,
             2e-11,
         );
@@ -24444,7 +24442,8 @@ test "Vorbis forward MDCT matches its defining transform" {
                 (@as(f64, @floatFromInt(coefficient_index)) + 0.5);
             sum += sample * gain * @cos(angle);
         }
-        coefficient.* = 0.5 * sum;
+        coefficient.* = 4.0 /
+            @as(f64, @floatFromInt(block_size)) * sum;
     }
     try plan.processWindowed(&input, window, &actual);
     for (actual, windowed_expected) |actual_value, expected_value| {
