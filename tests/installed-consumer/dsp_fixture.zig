@@ -781,6 +781,13 @@ test "installed package exposes DSP blocks contexts and math primitives" {
     });
     const product = try matrix.multiply(2, M.identity());
     try std.testing.expectEqualDeep(matrix.values, product.values);
+    try std.testing.expectEqualDeep(
+        [2][2]f32{
+            .{ 0.0, 1.0 },
+            .{ 2.0, 3.0 },
+        },
+        (try matrix.subtract(M.identity())).values,
+    );
     const solution = try matrix.solve(.{ 5.0, 11.0 });
     try std.testing.expectApproxEqAbs(
         @as(f32, 1.0),

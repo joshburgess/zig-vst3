@@ -157,6 +157,20 @@ pub fn Matrix(
             return result;
         }
 
+        pub fn subtract(self: Self, other: Self) !Self {
+            var result = Self.zero();
+            for (0..rows) |row| {
+                for (0..columns) |column| {
+                    const value = self.values[row][column] -
+                        other.values[row][column];
+                    if (!std.math.isFinite(value))
+                        return error.MatrixNonFiniteValue;
+                    result.values[row][column] = value;
+                }
+            }
+            return result;
+        }
+
         pub fn scaled(self: Self, factor: Sample) !Self {
             if (!std.math.isFinite(factor)) return error.MatrixNonFiniteValue;
             var result = Self.zero();
@@ -2725,7 +2739,7 @@ test "matrix identity preserves rectangular multiplication" {
     try std.testing.expectEqualDeep(left.values, product.values);
 }
 
-test "matrix transpose add and scale preserve fixed dimensions" {
+test "matrix transpose arithmetic preserves fixed dimensions" {
     const M = Matrix(f32, 2, 2);
     const value = try M.init(.{
         .{ 1.0, 2.0 },
@@ -2740,6 +2754,13 @@ test "matrix transpose add and scale preserve fixed dimensions" {
         },
         scaled.values,
     );
+    try std.testing.expectEqualDeep(
+        [2][2]f32{
+            .{ 0.0, -1.0 },
+            .{ 1.0, 0.0 },
+        },
+        (try value.subtract(value.transpose())).values,
+    );
 }
 
 test "matrix operations reject non-finite values" {
@@ -2751,6 +2772,15 @@ test "matrix operations reject non-finite values" {
     try std.testing.expectError(
         error.MatrixNonFiniteValue,
         value.scaled(std.math.inf(f32)),
+    );
+    const maximum = try Matrix(f32, 1, 1).init(
+        .{.{std.math.floatMax(f32)}},
+    );
+    try std.testing.expectError(
+        error.MatrixNonFiniteValue,
+        maximum.subtract(try Matrix(f32, 1, 1).init(
+            .{.{-std.math.floatMax(f32)}},
+        )),
     );
 }
 
