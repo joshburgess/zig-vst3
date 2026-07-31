@@ -3851,8 +3851,12 @@ fn featureWithUri(
     wanted_uri: []const u8,
 ) ?*const Feature {
     const list = features orelse return null;
+    if (@intFromPtr(list) % @alignOf(?*const Feature) != 0)
+        return null;
     for (0..256) |index| {
         const feature = list[index] orelse return null;
+        if (@intFromPtr(feature) % @alignOf(Feature) != 0)
+            continue;
         const uri = feature.URI orelse continue;
         if (std.mem.eql(
             u8,
@@ -3925,6 +3929,36 @@ fn featureStruct(
     const feature = featureWithUri(features, wanted_uri) orelse
         return null;
     return featureValue(T, feature);
+}
+
+test "LV2 feature lookup validates host pointer alignment" {
+    const wanted = Feature{
+        .URI = urid_map_uri,
+        .data = null,
+    };
+    var records = [_:null]?*const Feature{
+        null,
+        &wanted,
+    };
+    const misaligned_address: usize = 1;
+    @memcpy(
+        std.mem.asBytes(&records[0]),
+        std.mem.asBytes(&misaligned_address),
+    );
+    try std.testing.expect(
+        featureWithUri(records[0..].ptr, urid_map_uri) == &wanted,
+    );
+
+    var storage: [@sizeOf(?*const Feature) * 2 + 1]u8 align(@alignOf(?*const Feature)) = @splat(0);
+    var misaligned_list: ?[*:null]const ?*const Feature = null;
+    const list_address = @intFromPtr(&storage[1]);
+    @memcpy(
+        std.mem.asBytes(&misaligned_list),
+        std.mem.asBytes(&list_address),
+    );
+    try std.testing.expect(
+        featureWithUri(misaligned_list, urid_map_uri) == null,
+    );
 }
 
 fn layoutChannelCounts(

@@ -697,8 +697,12 @@ fn findFeature(
     wanted_uri: []const u8,
 ) ?*const Feature {
     const list = features orelse return null;
+    if (@intFromPtr(list) % @alignOf(?*const Feature) != 0)
+        return null;
     for (0..256) |index| {
         const feature = list[index] orelse return null;
+        if (@intFromPtr(feature) % @alignOf(Feature) != 0)
+            continue;
         const uri = feature.URI orelse continue;
         if (std.mem.eql(u8, std.mem.span(uri), wanted_uri))
             return feature;
@@ -806,6 +810,28 @@ test "LV2 UI feature lookup is bounded and validates resize dimensions" {
     const list = [_:null]?*const Feature{&parent};
     try std.testing.expect(findFeature(&list, parent_uri) == &parent);
     try std.testing.expect(findFeature(&list, resize_uri) == null);
+    var records = [_:null]?*const Feature{
+        null,
+        &parent,
+    };
+    const misaligned_address: usize = 1;
+    @memcpy(
+        std.mem.asBytes(&records[0]),
+        std.mem.asBytes(&misaligned_address),
+    );
+    try std.testing.expect(
+        findFeature(records[0..].ptr, parent_uri) == &parent,
+    );
+    var list_storage: [@sizeOf(?*const Feature) * 2 + 1]u8 align(@alignOf(?*const Feature)) = @splat(0);
+    var misaligned_list: ?[*:null]const ?*const Feature = null;
+    const list_address = @intFromPtr(&list_storage[1]);
+    @memcpy(
+        std.mem.asBytes(&misaligned_list),
+        std.mem.asBytes(&list_address),
+    );
+    try std.testing.expect(
+        findFeature(misaligned_list, parent_uri) == null,
+    );
     var storage: [@sizeOf(Resize) + 1]u8 align(@alignOf(Resize)) = undefined;
     const resize = Feature{
         .URI = resize_uri,

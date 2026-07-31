@@ -158,7 +158,8 @@ pub fn main(init: std.process.Init) !void {
         .URI = null,
         .data = null,
     };
-    const features = [_:null]?*const ui.Feature{
+    var features = [_:null]?*const ui.Feature{
+        null,
         &null_uri_feature,
         &parent_feature,
         &touch_feature,
@@ -166,6 +167,11 @@ pub fn main(init: std.process.Init) !void {
         &map_feature,
         &options_feature,
     };
+    const misaligned_feature_address: usize = 1;
+    @memcpy(
+        std.mem.asBytes(&features[0]),
+        std.mem.asBytes(&misaligned_feature_address),
+    );
     var widget: ui.Widget = null;
     const null_map_features = [_:null]?*const ui.Feature{
         &parent_feature,

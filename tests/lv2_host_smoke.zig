@@ -278,11 +278,17 @@ pub fn main(init: std.process.Init) !void {
         .URI = null,
         .data = null,
     };
-    const features = [_:null]?*const core.lv2.Feature{
+    var features = [_:null]?*const core.lv2.Feature{
+        null,
         &null_uri_feature,
         &map_feature,
         &options_feature,
     };
+    const misaligned_feature_address: usize = 1;
+    @memcpy(
+        std.mem.asBytes(&features[0]),
+        std.mem.asBytes(&misaligned_feature_address),
+    );
     if (descriptor.instantiate(
         descriptor,
         48_000.0,
