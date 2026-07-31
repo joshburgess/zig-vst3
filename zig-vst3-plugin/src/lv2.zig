@@ -505,39 +505,53 @@ pub const StateInterface = extern struct {
     ) callconv(.c) StateStatus,
 };
 
+pub const StateMapPathFunction = *const fn (
+    handle: StateHandle,
+    path: [*:0]const u8,
+) callconv(.c) ?[*:0]u8;
+
+pub const StateFreePathFunction = *const fn (
+    handle: StateHandle,
+    path: [*:0]u8,
+) callconv(.c) void;
+
 pub const StateMapPath = extern struct {
     handle: StateHandle,
-    abstract_path: *const fn (
-        handle: StateHandle,
-        absolute_path: [*:0]const u8,
-    ) callconv(.c) ?[*:0]u8,
-    absolute_path: *const fn (
-        handle: StateHandle,
-        abstract_path: [*:0]const u8,
-    ) callconv(.c) ?[*:0]u8,
+    abstract_path: ?StateMapPathFunction,
+    absolute_path: ?StateMapPathFunction,
 };
 
 pub const StateMakePath = extern struct {
     handle: StateHandle,
-    path: *const fn (
-        handle: StateHandle,
-        path: [*:0]const u8,
-    ) callconv(.c) ?[*:0]u8,
+    path: ?StateMapPathFunction,
 };
 
 pub const StateFreePath = extern struct {
     handle: StateHandle,
-    free_path: *const fn (
-        handle: StateHandle,
-        path: [*:0]u8,
-    ) callconv(.c) void,
+    free_path: ?StateFreePathFunction,
+};
+
+pub const StateMapPathSink = struct {
+    handle: StateHandle,
+    abstract_path: StateMapPathFunction,
+    absolute_path: StateMapPathFunction,
+};
+
+pub const StateMakePathSink = struct {
+    handle: StateHandle,
+    path: StateMapPathFunction,
+};
+
+pub const StateFreePathSink = struct {
+    handle: StateHandle,
+    free_path: StateFreePathFunction,
 };
 
 /// Host-owned path returned by an LV2 State feature. Call `deinit` once
 /// before the enclosing state callback returns.
 pub const OwnedStatePath = struct {
     pointer: [*:0]u8,
-    free_path: *const StateFreePath,
+    free_path: StateFreePathSink,
 
     pub fn bytes(self: OwnedStatePath) []const u8 {
         return std.mem.span(self.pointer);
@@ -554,9 +568,9 @@ pub const OwnedStatePath = struct {
 
 /// Valid only during the State save or restore callback that supplied it.
 pub const StatePathFeatures = struct {
-    map_path: *const StateMapPath,
-    make_path: ?*const StateMakePath,
-    free_path: *const StateFreePath,
+    map_path: StateMapPathSink,
+    make_path: ?StateMakePathSink,
+    free_path: StateFreePathSink,
 
     pub fn mapAbsolute(
         self: StatePathFeatures,
@@ -3859,22 +3873,40 @@ fn statePathFeatures(
     features: ?[*:null]const ?*const Feature,
     require_make_path: bool,
 ) ?StatePathFeatures {
-    const map_path = featureStruct(
+    const raw_map_path = featureStruct(
         StateMapPath,
         features,
         state_map_path_uri,
     ) orelse return null;
-    const free_path = featureStruct(
+    const raw_free_path = featureStruct(
         StateFreePath,
         features,
         state_free_path_uri,
     ) orelse return null;
-    const make_path = featureStruct(
-        StateMakePath,
+    const map_path = StateMapPathSink{
+        .handle = raw_map_path.handle,
+        .abstract_path = raw_map_path.abstract_path orelse return null,
+        .absolute_path = raw_map_path.absolute_path orelse return null,
+    };
+    const free_path = StateFreePathSink{
+        .handle = raw_free_path.handle,
+        .free_path = raw_free_path.free_path orelse return null,
+    };
+    const make_path = if (featureWithUri(
         features,
         state_make_path_uri,
-    );
-    if (require_make_path and make_path == null) return null;
+    )) |feature| blk: {
+        const raw_make_path = featureValue(
+            StateMakePath,
+            feature,
+        ) orelse return null;
+        break :blk StateMakePathSink{
+            .handle = raw_make_path.handle,
+            .path = raw_make_path.path orelse return null,
+        };
+    } else null;
+    if (require_make_path and make_path == null)
+        return null;
     return .{
         .map_path = map_path,
         .make_path = make_path,
@@ -5374,24 +5406,40 @@ test "LV2 state path features own mapped resolved and generated paths" {
     };
 
     var host = Host{};
-    const map_path = StateMapPath{
+    var map_path = StateMapPath{
         .handle = &host,
         .abstract_path = Host.abstractPath,
         .absolute_path = Host.absolutePath,
     };
-    const make_path = StateMakePath{
+    var make_path = StateMakePath{
         .handle = &host,
         .path = Host.makePath,
     };
-    const free_path = StateFreePath{
+    var free_path = StateFreePath{
         .handle = &host,
         .free_path = Host.freePath,
     };
-    const paths = StatePathFeatures{
-        .map_path = &map_path,
-        .make_path = &make_path,
-        .free_path = &free_path,
+    const map_feature = Feature{
+        .URI = state_map_path_uri,
+        .data = &map_path,
     };
+    const make_feature = Feature{
+        .URI = state_make_path_uri,
+        .data = &make_path,
+    };
+    const free_feature = Feature{
+        .URI = state_free_path_uri,
+        .data = &free_path,
+    };
+    const features = [_:null]?*const Feature{
+        &map_feature,
+        &make_feature,
+        &free_feature,
+    };
+    const paths = statePathFeatures(
+        features[0..].ptr,
+        true,
+    ) orelse return error.MissingStatePathFeatures;
 
     var mapped = try paths.mapAbsolute("/samples/source.wav");
     try std.testing.expectEqualStrings(
@@ -5413,11 +5461,14 @@ test "LV2 state path features own mapped resolved and generated paths" {
     generated.deinit();
     try std.testing.expectEqual(@as(usize, 3), host.free_count);
 
-    const without_make = StatePathFeatures{
-        .map_path = &map_path,
-        .make_path = null,
-        .free_path = &free_path,
+    const features_without_make = [_:null]?*const Feature{
+        &map_feature,
+        &free_feature,
     };
+    const without_make = statePathFeatures(
+        features_without_make[0..].ptr,
+        false,
+    ) orelse return error.MissingStatePathFeatures;
     try std.testing.expectError(
         error.StateMakePathUnavailable,
         without_make.makePath("generated/cache.bin"),
@@ -5428,6 +5479,26 @@ test "LV2 state path features own mapped resolved and generated paths" {
         paths.mapAbsolute("/samples/source.wav"),
     );
     try std.testing.expectEqual(@as(usize, 4), host.free_count);
+
+    map_path.abstract_path = null;
+    try std.testing.expect(
+        statePathFeatures(features[0..].ptr, true) == null,
+    );
+    map_path.abstract_path = Host.abstractPath;
+    map_path.absolute_path = null;
+    try std.testing.expect(
+        statePathFeatures(features[0..].ptr, true) == null,
+    );
+    map_path.absolute_path = Host.absolutePath;
+    make_path.path = null;
+    try std.testing.expect(
+        statePathFeatures(features[0..].ptr, true) == null,
+    );
+    make_path.path = Host.makePath;
+    free_path.free_path = null;
+    try std.testing.expect(
+        statePathFeatures(features[0..].ptr, true) == null,
+    );
 }
 
 test "LV2 state interface saves restores validates and resets parameters" {

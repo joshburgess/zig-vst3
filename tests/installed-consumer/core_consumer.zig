@@ -260,6 +260,9 @@ test "installed core package exposes format-neutral processor and editor contrac
     try std.testing.expect(@hasDecl(core.lv2, "StateMapPath"));
     try std.testing.expect(@hasDecl(core.lv2, "StateMakePath"));
     try std.testing.expect(@hasDecl(core.lv2, "StateFreePath"));
+    try std.testing.expect(@hasDecl(core.lv2, "StateMapPathSink"));
+    try std.testing.expect(@hasDecl(core.lv2, "StateMakePathSink"));
+    try std.testing.expect(@hasDecl(core.lv2, "StateFreePathSink"));
     try std.testing.expect(@hasDecl(core.lv2, "PatchProperty"));
     try std.testing.expect(@hasDecl(core.lv2, "PatchValue"));
     try std.testing.expect(@hasDecl(core.lv2, "PatchValueKind"));

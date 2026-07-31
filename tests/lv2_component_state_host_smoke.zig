@@ -1667,6 +1667,44 @@ pub fn main(init: std.process.Init) !void {
         0,
         misaligned_features[0..].ptr,
     ) != .no_feature) return error.MisalignedPathFeatureAccepted;
+
+    state_map_path.abstract_path = null;
+    if (state.save(
+        handle,
+        StateHost.store,
+        &state_host,
+        0,
+        state_features[0..].ptr,
+    ) != .no_feature) return error.NullAbstractPathCallbackAccepted;
+    state_map_path.abstract_path = StateHost.abstractPath;
+    state_map_path.absolute_path = null;
+    if (state.save(
+        handle,
+        StateHost.store,
+        &state_host,
+        0,
+        state_features[0..].ptr,
+    ) != .no_feature) return error.NullAbsolutePathCallbackAccepted;
+    state_map_path.absolute_path = StateHost.absolutePath;
+    state_make_path.path = null;
+    if (state.save(
+        handle,
+        StateHost.store,
+        &state_host,
+        0,
+        state_features[0..].ptr,
+    ) != .no_feature) return error.NullMakePathCallbackAccepted;
+    state_make_path.path = StateHost.makePath;
+    state_free_path.free_path = null;
+    if (state.save(
+        handle,
+        StateHost.store,
+        &state_host,
+        0,
+        state_features[0..].ptr,
+    ) != .no_feature) return error.NullFreePathCallbackAccepted;
+    state_free_path.free_path = StateHost.freePath;
+
     state_host.fail_path_mapping = true;
     if (state.save(
         handle,
