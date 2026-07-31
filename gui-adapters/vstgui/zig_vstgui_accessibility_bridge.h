@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace ZigVstgui {
@@ -16,6 +17,13 @@ struct AccessibilityEntry {
     const VSTGUI::CView* view {nullptr};
 };
 
+class AccessibilityClipboard {
+public:
+    virtual ~AccessibilityClipboard() = default;
+    virtual bool writeText(const std::string& text) = 0;
+    virtual bool readText(std::string& text, std::size_t maximum_bytes) = 0;
+};
+
 class NativeAccessibilityBridge {
 public:
     NativeAccessibilityBridge();
@@ -23,7 +31,11 @@ public:
     NativeAccessibilityBridge(const NativeAccessibilityBridge&) = delete;
     NativeAccessibilityBridge& operator=(const NativeAccessibilityBridge&) = delete;
 
-    bool open(VSTGUI::CFrame* frame, const std::vector<AccessibilityEntry>& entries);
+    bool open(
+        VSTGUI::CFrame* frame,
+        const std::vector<AccessibilityEntry>& entries,
+        std::shared_ptr<AccessibilityClipboard> clipboard = {}
+    );
     void close();
     void dispatch();
     void layoutChanged();

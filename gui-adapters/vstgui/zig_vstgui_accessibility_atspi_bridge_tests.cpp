@@ -63,6 +63,14 @@ struct Evidence {
     std::atomic<bool> text_set {false};
     std::atomic<bool> text_inserted {false};
     std::atomic<bool> text_deleted {false};
+    std::atomic<bool> text_pasted {false};
+    std::atomic<unsigned int> text_ab_updates {0};
+    std::atomic<unsigned int> clipboard_writes {0};
+    std::atomic<unsigned int> clipboard_reads {0};
+    std::atomic<bool> clipboard_methods_succeeded {false};
+    std::atomic<bool> reject_clipboard_writes {false};
+    std::atomic<bool> reject_clipboard_reads {false};
+    std::atomic<unsigned int> clipboard_read_mode {0};
     std::atomic<bool> cache_items {false};
     std::atomic<bool> cache_root_added {false};
     std::atomic<bool> cache_child_added {false};
@@ -76,6 +84,42 @@ struct Evidence {
     std::atomic<bool> focus_event {false};
     std::atomic<bool> bounds_event {false};
     std::atomic<unsigned int> event_count {0};
+};
+
+class TestClipboard final : public ZigVstgui::AccessibilityClipboard {
+public:
+    explicit TestClipboard(Evidence& value_evidence) : evidence(value_evidence) {}
+
+    bool writeText(const std::string& value) override {
+        if (evidence.reject_clipboard_writes.load(std::memory_order_acquire))
+            return false;
+        std::lock_guard<std::mutex> lock(mutex);
+        text = value;
+        evidence.clipboard_writes.fetch_add(1, std::memory_order_acq_rel);
+        return true;
+    }
+
+    bool readText(std::string& value, std::size_t maximum_bytes) override {
+        if (evidence.reject_clipboard_reads.load(std::memory_order_acquire))
+            return false;
+        std::lock_guard<std::mutex> lock(mutex);
+        switch (evidence.clipboard_read_mode.load(std::memory_order_acquire)) {
+            case 1: value.assign(maximum_bytes + 1, 'x'); break;
+            case 2: value.assign("x\0y", 3); break;
+            case 3: value.assign("\xc3", 1); break;
+            default:
+                if (text.size() > maximum_bytes) return false;
+                value = text;
+                break;
+        }
+        evidence.clipboard_reads.fetch_add(1, std::memory_order_acq_rel);
+        return true;
+    }
+
+private:
+    Evidence& evidence;
+    std::mutex mutex;
+    std::string text;
 };
 
 void cacheEventReceived(
@@ -320,6 +364,58 @@ void inspectApplication(
     } else if (error) {
         g_error_free(error);
     }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.EditableText",
+        "CopyText",
+        g_variant_new("(ii)", 1, 2),
+        nullptr,
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    bool clipboard_methods_succeeded = callSucceeded(result, error);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.EditableText",
+        "CutText",
+        g_variant_new("(ii)", 1, 2),
+        G_VARIANT_TYPE("(b)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    clipboard_methods_succeeded &= booleanResult(result, error, true);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.EditableText",
+        "PasteText",
+        g_variant_new("(i)", 1),
+        G_VARIANT_TYPE("(b)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    clipboard_methods_succeeded &= booleanResult(result, error, true);
+    evidence.clipboard_methods_succeeded.store(
+        clipboard_methods_succeeded,
+        std::memory_order_release
+    );
 
     error = nullptr;
     result = g_dbus_connection_call_sync(
@@ -610,6 +706,69 @@ void inspectApplication(
         child_bus.c_str(),
         path.c_str(),
         "org.a11y.atspi.EditableText",
+        "CopyText",
+        g_variant_new("(ii)", 2, 1),
+        nullptr,
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    hostile_rejected &= callRejected(result, error);
+
+    evidence.reject_clipboard_writes.store(true, std::memory_order_release);
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.EditableText",
+        "CopyText",
+        g_variant_new("(ii)", 1, 2),
+        nullptr,
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    hostile_rejected &= callRejected(result, error);
+    evidence.reject_clipboard_writes.store(false, std::memory_order_release);
+
+    const auto pasteReturns = [&](gint32 position, bool expected) {
+        GError* paste_error = nullptr;
+        GVariant* paste_result = g_dbus_connection_call_sync(
+            connection,
+            child_bus.c_str(),
+            path.c_str(),
+            "org.a11y.atspi.EditableText",
+            "PasteText",
+            g_variant_new("(i)", position),
+            G_VARIANT_TYPE("(b)"),
+            G_DBUS_CALL_FLAGS_NONE,
+            timeout_ms,
+            nullptr,
+            &paste_error
+        );
+        return booleanResult(paste_result, paste_error, expected);
+    };
+
+    evidence.reject_clipboard_reads.store(true, std::memory_order_release);
+    hostile_rejected &= pasteReturns(1, false);
+    evidence.reject_clipboard_reads.store(false, std::memory_order_release);
+
+    hostile_rejected &= pasteReturns(4, false);
+    for (unsigned int mode = 1; mode <= 3; ++mode) {
+        evidence.clipboard_read_mode.store(mode, std::memory_order_release);
+        hostile_rejected &= pasteReturns(1, false);
+    }
+    evidence.clipboard_read_mode.store(0, std::memory_order_release);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.EditableText",
         "InsertText",
         g_variant_new("(isi)", 4, "x", 1),
         G_VARIANT_TYPE("(b)"),
@@ -887,8 +1046,13 @@ bool perform(
         request.text && std::strcmp(request.text, "AéxB") == 0)
         evidence->text_inserted.store(true, std::memory_order_release);
     if (request.action == ZigVstgui::AccessibilityAction::set_value &&
-        request.text && std::strcmp(request.text, "AB") == 0)
+        request.text && std::strcmp(request.text, "AB") == 0) {
         evidence->text_deleted.store(true, std::memory_order_release);
+        evidence->text_ab_updates.fetch_add(1, std::memory_order_acq_rel);
+    }
+    if (request.action == ZigVstgui::AccessibilityAction::set_value &&
+        request.text && std::strcmp(request.text, "AééB") == 0)
+        evidence->text_pasted.store(true, std::memory_order_release);
     return true;
 }
 
@@ -920,9 +1084,11 @@ int runTest() {
     frame->addView(view);
     view->setWantsFocus(true);
     ZigVstgui::NativeAccessibilityBridge bridge;
+    auto clipboard = std::make_shared<TestClipboard>(service.evidence);
     const bool missing_bus_safe = !bridge.open(
         frame.get(),
-        {{&node, view}}
+        {{&node, view}},
+        clipboard
     ) && !bridge.active() && bridge.elementCount() == 0;
     Service bus_without_registry;
     if (!bus_without_registry.start(g_test_dbus_get_bus_address(bus), false)) {
@@ -933,7 +1099,8 @@ int runTest() {
     }
     const bool missing_registry_safe = !bridge.open(
         frame.get(),
-        {{&node, view}}
+        {{&node, view}},
+        clipboard
     ) && !bridge.active() && bridge.elementCount() == 0;
     bridge.close();
     bus_without_registry.stop();
@@ -945,7 +1112,8 @@ int runTest() {
     }
     const bool opened = bridge.open(
         frame.get(),
-        {{&node, view}}
+        {{&node, view}},
+        clipboard
     );
     const bool active = bridge.active();
     const std::size_t element_count = bridge.elementCount();
@@ -979,6 +1147,11 @@ int runTest() {
         service.evidence.text_set.load(std::memory_order_acquire) &&
         service.evidence.text_inserted.load(std::memory_order_acquire) &&
         service.evidence.text_deleted.load(std::memory_order_acquire) &&
+        service.evidence.text_pasted.load(std::memory_order_acquire) &&
+        service.evidence.text_ab_updates.load(std::memory_order_acquire) == 2 &&
+        service.evidence.clipboard_writes.load(std::memory_order_acquire) == 2 &&
+        service.evidence.clipboard_reads.load(std::memory_order_acquire) == 4 &&
+        service.evidence.clipboard_methods_succeeded.load(std::memory_order_acquire) &&
         service.evidence.cache_items.load(std::memory_order_acquire) &&
         service.evidence.cache_root_added.load(std::memory_order_acquire) &&
         service.evidence.cache_child_added.load(std::memory_order_acquire) &&
@@ -1012,7 +1185,9 @@ int runTest() {
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
             "interfaces=%d bounds=%d action-count=%d action=%d "
             "value-read=%d value-set=%d editable=%d text-set=%d insert=%d "
-            "delete=%d cache=%d cache-root-add=%d cache-child-add=%d "
+            "delete=%d paste=%d ab-updates=%u clipboard-writes=%u clipboard-reads=%u "
+            "clipboard-methods=%d "
+            "cache=%d cache-root-add=%d cache-child-add=%d "
             "cache-add-count=%u cache-root-remove=%d cache-child-remove=%d "
             "cache-remove-count=%u hostile-inputs=%d action-calls=%u "
             "property-event=%d focus-event=%d "
@@ -1038,6 +1213,11 @@ int runTest() {
             service.evidence.text_set.load(std::memory_order_acquire),
             service.evidence.text_inserted.load(std::memory_order_acquire),
             service.evidence.text_deleted.load(std::memory_order_acquire),
+            service.evidence.text_pasted.load(std::memory_order_acquire),
+            service.evidence.text_ab_updates.load(std::memory_order_acquire),
+            service.evidence.clipboard_writes.load(std::memory_order_acquire),
+            service.evidence.clipboard_reads.load(std::memory_order_acquire),
+            service.evidence.clipboard_methods_succeeded.load(std::memory_order_acquire),
             service.evidence.cache_items.load(std::memory_order_acquire),
             service.evidence.cache_root_added.load(std::memory_order_acquire),
             service.evidence.cache_child_added.load(std::memory_order_acquire),

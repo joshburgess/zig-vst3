@@ -240,7 +240,11 @@ public:
 NativeAccessibilityBridge::NativeAccessibilityBridge() = default;
 NativeAccessibilityBridge::~NativeAccessibilityBridge() { close(); }
 
-bool NativeAccessibilityBridge::open(VSTGUI::CFrame* frame, const std::vector<AccessibilityEntry>& entries) {
+bool NativeAccessibilityBridge::open(
+    VSTGUI::CFrame* frame,
+    const std::vector<AccessibilityEntry>& entries,
+    std::shared_ptr<AccessibilityClipboard>
+) {
     close();
     if (!frame || !frame->getPlatformFrame()) return false;
     auto* native_view = (__bridge NSView*)frame->getPlatformFrame()->getPlatformRepresentation();

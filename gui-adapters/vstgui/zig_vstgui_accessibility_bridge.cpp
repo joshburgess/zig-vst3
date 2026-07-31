@@ -7,6 +7,7 @@
 
 #include "zig_vstgui_accessibility_atspi.h"
 
+#include "vstgui/lib/cclipboard.h"
 #include "vstgui/lib/platform/iplatformframe.h"
 
 #include <gio/gio.h>
@@ -42,6 +43,7 @@ constexpr const char* registry_path = "/org/a11y/atspi/registry";
 constexpr const char* socket_interface = "org.a11y.atspi.Socket";
 constexpr int bus_call_timeout_ms = 1000;
 constexpr unsigned int maximum_dispatches_per_tick = 32;
+constexpr std::size_t maximum_clipboard_text_bytes = 1024 * 1024;
 
 constexpr const char* introspection_xml = R"xml(
 <node>
@@ -214,6 +216,20 @@ void diagnostic(const char* stage, const GError* error = nullptr) {
     );
 }
 
+class SystemAccessibilityClipboard final : public AccessibilityClipboard {
+public:
+    bool writeText(const std::string& text) override {
+        return VSTGUI::CClipboard::setString(text.c_str());
+    }
+
+    bool readText(std::string& text, std::size_t maximum_bytes) override {
+        auto value = VSTGUI::CClipboard::getString();
+        if (!value) return false;
+        text = (*value).getString();
+        return text.size() <= maximum_bytes;
+    }
+};
+
 }
 
 class NativeAccessibilityBridge::Impl {
@@ -238,10 +254,13 @@ public:
 
     bool initialize(
         VSTGUI::CFrame* source_frame,
-        const std::vector<AccessibilityEntry>& source_entries
+        const std::vector<AccessibilityEntry>& source_entries,
+        std::shared_ptr<AccessibilityClipboard> source_clipboard
     ) {
         if (!source_frame) return false;
         frame = source_frame;
+        clipboard = source_clipboard ? std::move(source_clipboard) :
+            std::make_shared<SystemAccessibilityClipboard>();
         for (const auto& entry : source_entries) {
             if (entry.node && entry.view) entries.push_back(entry);
         }
@@ -321,6 +340,7 @@ public:
         }
         entries.clear();
         frame = nullptr;
+        clipboard.reset();
         bus_name.clear();
         registry_bus.clear();
         registry_root.clear();
@@ -1103,6 +1123,26 @@ private:
         return true;
     }
 
+    static bool textRange(
+        const std::string& text,
+        gint32 start,
+        gint32 end,
+        std::size_t& first,
+        std::size_t& last
+    ) {
+        return start <= end &&
+            textOffset(text, start, first) &&
+            textOffset(text, end, last);
+    }
+
+    bool readClipboardText(std::string& text) const {
+        text.clear();
+        return clipboard && clipboard->readText(text, maximum_clipboard_text_bytes) &&
+            text.size() <= maximum_clipboard_text_bytes &&
+            std::memchr(text.data(), '\0', text.size()) == nullptr &&
+            g_utf8_validate(text.data(), text.size(), nullptr);
+    }
+
     void editableTextMethod(
         const Object& object,
         const char* method,
@@ -1160,9 +1200,7 @@ private:
             std::string text = snapshot(object).value_text;
             std::size_t first = 0;
             std::size_t last = 0;
-            bool accepted = start <= end &&
-                textOffset(text, start, first) &&
-                textOffset(text, end, last);
+            bool accepted = textRange(text, start, end, first, last);
             if (accepted) {
                 text.erase(first, last - first);
                 accepted = adapter.setCurrentText(text.c_str());
@@ -1173,17 +1211,62 @@ private:
             );
             return;
         }
-        if (g_strcmp0(method, "CutText") == 0 ||
-            g_strcmp0(method, "PasteText") == 0) {
-            g_dbus_method_invocation_return_value(invocation, g_variant_new("(b)", false));
+        if (g_strcmp0(method, "CopyText") == 0 ||
+            g_strcmp0(method, "CutText") == 0) {
+            gint32 start = -1;
+            gint32 end = -1;
+            g_variant_get(parameters, "(ii)", &start, &end);
+            std::string text = snapshot(object).value_text;
+            std::size_t first = 0;
+            std::size_t last = 0;
+            const bool valid = textRange(text, start, end, first, last);
+            const bool bounded = valid &&
+                last - first <= maximum_clipboard_text_bytes;
+            const bool copied = bounded && clipboard &&
+                clipboard->writeText(text.substr(first, last - first));
+            if (g_strcmp0(method, "CopyText") == 0) {
+                if (!valid) {
+                    returnError(invocation, "Clipboard text range is invalid");
+                } else if (!bounded) {
+                    returnError(invocation, "Clipboard text exceeds the size limit");
+                } else if (!copied) {
+                    g_dbus_method_invocation_return_error_literal(
+                        invocation,
+                        G_DBUS_ERROR,
+                        G_DBUS_ERROR_FAILED,
+                        "Clipboard write failed"
+                    );
+                } else {
+                    g_dbus_method_invocation_return_value(invocation, nullptr);
+                }
+                return;
+            }
+            bool accepted = copied;
+            if (accepted) {
+                text.erase(first, last - first);
+                accepted = adapter.setCurrentText(text.c_str());
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(b)", accepted)
+            );
             return;
         }
-        if (g_strcmp0(method, "CopyText") == 0) {
-            g_dbus_method_invocation_return_error_literal(
+        if (g_strcmp0(method, "PasteText") == 0) {
+            gint32 position = -1;
+            g_variant_get(parameters, "(i)", &position);
+            std::string text = snapshot(object).value_text;
+            std::size_t offset = 0;
+            std::string inserted;
+            bool accepted = textOffset(text, position, offset) &&
+                readClipboardText(inserted);
+            if (accepted) {
+                text.insert(offset, inserted);
+                accepted = adapter.setCurrentText(text.c_str());
+            }
+            g_dbus_method_invocation_return_value(
                 invocation,
-                G_DBUS_ERROR,
-                G_DBUS_ERROR_NOT_SUPPORTED,
-                "Clipboard access is unavailable"
+                g_variant_new("(b)", accepted)
             );
             return;
         }
@@ -1522,6 +1605,7 @@ private:
     }
 
     VSTGUI::CFrame* frame {nullptr};
+    std::shared_ptr<AccessibilityClipboard> clipboard;
     std::vector<AccessibilityEntry> entries;
     GDBusNodeInfo* introspection {nullptr};
     GDBusConnection* connection {nullptr};
@@ -1541,11 +1625,12 @@ NativeAccessibilityBridge::~NativeAccessibilityBridge() { close(); }
 
 bool NativeAccessibilityBridge::open(
     VSTGUI::CFrame* frame,
-    const std::vector<AccessibilityEntry>& entries
+    const std::vector<AccessibilityEntry>& entries,
+    std::shared_ptr<AccessibilityClipboard> clipboard
 ) {
     close();
     auto next = std::make_unique<Impl>();
-    if (!next->initialize(frame, entries)) return false;
+    if (!next->initialize(frame, entries, std::move(clipboard))) return false;
     impl = std::move(next);
     return true;
 }
@@ -1583,7 +1668,8 @@ NativeAccessibilityBridge::~NativeAccessibilityBridge() = default;
 
 bool NativeAccessibilityBridge::open(
     VSTGUI::CFrame*,
-    const std::vector<AccessibilityEntry>&
+    const std::vector<AccessibilityEntry>&,
+    std::shared_ptr<AccessibilityClipboard>
 ) {
     return false;
 }
