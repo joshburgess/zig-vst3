@@ -9228,6 +9228,8 @@ pub const VorbisAudioPacketResult = struct {
     header: VorbisAudioPacketHeader,
     decoded_bit_count: usize,
     truncated: bool,
+    floor_truncated: bool,
+    residue_truncated: bool,
 };
 
 pub fn requiredVorbisAudioPacketScratch(
@@ -9366,7 +9368,8 @@ pub fn VorbisAudioPacketDecoder(
                 header.payload_bit_offset,
             );
             var no_residue = [_]bool{true} ** channel_count;
-            var truncated = false;
+            var floor_truncated = false;
+            var residue_truncated = false;
             var floor_zero_coefficients: [255]f64 = undefined;
             var floor_one_values: [65]u32 = undefined;
             for (0..channel_count) |channel| {
@@ -9382,7 +9385,8 @@ pub fn VorbisAudioPacketDecoder(
                             submap.floor,
                             &floor_zero_coefficients,
                         );
-                        truncated = truncated or floor_packet.truncated;
+                        floor_truncated =
+                            floor_truncated or floor_packet.truncated;
                         no_residue[channel] = !floor_packet.used;
                         try synthesizeVorbisFloorZero(
                             Float,
@@ -9398,7 +9402,8 @@ pub fn VorbisAudioPacketDecoder(
                             submap.floor,
                             &floor_one_values,
                         );
-                        truncated = truncated or floor_packet.truncated;
+                        floor_truncated =
+                            floor_truncated or floor_packet.truncated;
                         no_residue[channel] = !floor_packet.used;
                         try synthesizeVorbisFloorOne(
                             Float,
@@ -9417,7 +9422,7 @@ pub fn VorbisAudioPacketDecoder(
                     spectra[index * coefficient_count ..][0..coefficient_count];
             }
 
-            if (!truncated) {
+            if (!floor_truncated) {
                 for (mapping.coupling_steps[0..mapping.coupling_step_count]) |step| {
                     if (!no_residue[step.magnitude] or
                         !no_residue[step.angle])
@@ -9448,7 +9453,8 @@ pub fn VorbisAudioPacketDecoder(
                         bundle_outputs[0..bundle_count],
                         classifications,
                     );
-                    truncated = truncated or residue_packet.truncated;
+                    residue_truncated =
+                        residue_truncated or residue_packet.truncated;
                 }
 
                 try inverseCoupleVorbisChannels(
@@ -9493,7 +9499,9 @@ pub fn VorbisAudioPacketDecoder(
             return .{
                 .header = header,
                 .decoded_bit_count = reader.bit_offset,
-                .truncated = truncated,
+                .truncated = floor_truncated or residue_truncated,
+                .floor_truncated = floor_truncated,
+                .residue_truncated = residue_truncated,
             };
         }
     };
@@ -23437,6 +23445,8 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
         },
     );
     try std.testing.expect(!result.truncated);
+    try std.testing.expect(!result.floor_truncated);
+    try std.testing.expect(!result.residue_truncated);
     try std.testing.expectEqual(packet_writer.bit_offset, result.decoded_bit_count);
     try std.testing.expectEqualSlices(f64, &([_]f64{0} ** 64), &right);
 
@@ -23470,6 +23480,8 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
         },
     );
     try std.testing.expect(truncated.truncated);
+    try std.testing.expect(!truncated.floor_truncated);
+    try std.testing.expect(truncated.residue_truncated);
     for (left) |sample| try std.testing.expect(std.math.isFinite(sample));
     for (right) |sample| try std.testing.expect(std.math.isFinite(sample));
 
@@ -23489,6 +23501,8 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
         },
     );
     try std.testing.expect(truncated_floor.truncated);
+    try std.testing.expect(truncated_floor.floor_truncated);
+    try std.testing.expect(!truncated_floor.residue_truncated);
     try std.testing.expectEqualSlices(f64, &([_]f64{0} ** 64), &left);
     try std.testing.expectEqualSlices(f64, &([_]f64{0} ** 64), &right);
 
