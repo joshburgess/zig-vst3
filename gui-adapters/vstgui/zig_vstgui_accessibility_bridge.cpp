@@ -11,10 +11,12 @@
 
 #include <gio/gio.h>
 
+#include <algorithm>
 #include <clocale>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -30,6 +32,7 @@ constexpr const char* accessible_interface = "org.a11y.atspi.Accessible";
 constexpr const char* application_interface = "org.a11y.atspi.Application";
 constexpr const char* action_interface = "org.a11y.atspi.Action";
 constexpr const char* component_interface = "org.a11y.atspi.Component";
+constexpr const char* editable_text_interface = "org.a11y.atspi.EditableText";
 constexpr const char* value_interface = "org.a11y.atspi.Value";
 constexpr const char* registry_name = "org.a11y.atspi.Registry";
 constexpr const char* registry_path = "/org/a11y/atspi/registry";
@@ -132,6 +135,15 @@ constexpr const char* introspection_xml = R"xml(
     <property name='MinimumIncrement' type='d' access='read'/>
     <property name='CurrentValue' type='d' access='readwrite'/>
     <property name='Text' type='s' access='read'/>
+  </interface>
+  <interface name='org.a11y.atspi.EditableText'>
+    <property name='version' type='u' access='read'/>
+    <method name='SetTextContents'><arg direction='in' type='s'/><arg direction='out' type='b'/></method>
+    <method name='InsertText'><arg direction='in' type='i'/><arg direction='in' type='s'/><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
+    <method name='CopyText'><arg direction='in' type='i'/><arg direction='in' type='i'/></method>
+    <method name='CutText'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
+    <method name='DeleteText'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
+    <method name='PasteText'><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
   </interface>
 </node>
 )xml";
@@ -332,6 +344,10 @@ private:
             object->owner->componentMethod(*object, method_name, parameters, invocation);
             return;
         }
+        if (g_strcmp0(interface_name, editable_text_interface) == 0) {
+            object->owner->editableTextMethod(*object, method_name, parameters, invocation);
+            return;
+        }
         g_dbus_method_invocation_return_error_literal(
             invocation,
             G_DBUS_ERROR,
@@ -358,6 +374,8 @@ private:
         if (g_strcmp0(interface_name, action_interface) == 0)
             return object->owner->actionProperty(*object, property_name);
         if (g_strcmp0(interface_name, component_interface) == 0)
+            return object->owner->versionProperty(property_name);
+        if (g_strcmp0(interface_name, editable_text_interface) == 0)
             return object->owner->versionProperty(property_name);
         if (g_strcmp0(interface_name, value_interface) == 0)
             return object->owner->valueProperty(*object, property_name);
@@ -505,6 +523,8 @@ private:
                 !registerInterface(child, action_interface)) return false;
             if (current.hasInterface(AtspiInterface::value) &&
                 !registerInterface(child, value_interface)) return false;
+            if (current.hasInterface(AtspiInterface::editable_text) &&
+                !registerInterface(child, editable_text_interface)) return false;
         }
         return true;
     }
@@ -708,6 +728,112 @@ private:
             G_DBUS_ERROR,
             G_DBUS_ERROR_UNKNOWN_METHOD,
             "Unknown accessibility action method"
+        );
+    }
+
+    static bool textOffset(
+        const std::string& text,
+        gint32 character_offset,
+        std::size_t& byte_offset
+    ) {
+        if (character_offset < 0) return false;
+        const auto characters = g_utf8_strlen(text.c_str(), text.size());
+        if (character_offset > characters) return false;
+        byte_offset = static_cast<std::size_t>(
+            g_utf8_offset_to_pointer(text.c_str(), character_offset) - text.c_str()
+        );
+        return true;
+    }
+
+    void editableTextMethod(
+        const Object& object,
+        const char* method,
+        GVariant* parameters,
+        GDBusMethodInvocation* invocation
+    ) const {
+        const auto* current = entry(object);
+        if (!current) {
+            returnError(invocation, "Editable accessibility text is unavailable");
+            return;
+        }
+        AtspiNodeAdapter adapter(current->node);
+        if (g_strcmp0(method, "SetTextContents") == 0) {
+            const char* text = nullptr;
+            g_variant_get(parameters, "(&s)", &text);
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(b)", adapter.setCurrentText(text))
+            );
+            return;
+        }
+        if (g_strcmp0(method, "InsertText") == 0) {
+            gint32 position = -1;
+            gint32 length = -1;
+            const char* inserted = nullptr;
+            g_variant_get(parameters, "(i&si)", &position, &inserted, &length);
+            std::string text = snapshot(object).value_text;
+            std::size_t offset = 0;
+            bool accepted = inserted && length >= 0 &&
+                textOffset(text, position, offset);
+            if (accepted) {
+                const auto available = std::strlen(inserted);
+                const auto requested = std::min<std::size_t>(
+                    static_cast<std::size_t>(length),
+                    available
+                );
+                const char* valid_end = nullptr;
+                if (!g_utf8_validate(inserted, requested, &valid_end))
+                    accepted = false;
+                if (accepted) {
+                    text.insert(offset, inserted, requested);
+                    accepted = adapter.setCurrentText(text.c_str());
+                }
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(b)", accepted)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "DeleteText") == 0) {
+            gint32 start = -1;
+            gint32 end = -1;
+            g_variant_get(parameters, "(ii)", &start, &end);
+            std::string text = snapshot(object).value_text;
+            std::size_t first = 0;
+            std::size_t last = 0;
+            bool accepted = start <= end &&
+                textOffset(text, start, first) &&
+                textOffset(text, end, last);
+            if (accepted) {
+                text.erase(first, last - first);
+                accepted = adapter.setCurrentText(text.c_str());
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(b)", accepted)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "CutText") == 0 ||
+            g_strcmp0(method, "PasteText") == 0) {
+            g_dbus_method_invocation_return_value(invocation, g_variant_new("(b)", false));
+            return;
+        }
+        if (g_strcmp0(method, "CopyText") == 0) {
+            g_dbus_method_invocation_return_error_literal(
+                invocation,
+                G_DBUS_ERROR,
+                G_DBUS_ERROR_NOT_SUPPORTED,
+                "Clipboard access is unavailable"
+            );
+            return;
+        }
+        g_dbus_method_invocation_return_error_literal(
+            invocation,
+            G_DBUS_ERROR,
+            G_DBUS_ERROR_UNKNOWN_METHOD,
+            "Unknown editable accessibility text method"
         );
     }
 
@@ -991,6 +1117,8 @@ private:
                     g_variant_builder_add(&builder, "s", "Action");
                 if (current.hasInterface(AtspiInterface::value))
                     g_variant_builder_add(&builder, "s", "Value");
+                if (current.hasInterface(AtspiInterface::editable_text))
+                    g_variant_builder_add(&builder, "s", "EditableText");
             }
             g_dbus_method_invocation_return_value(
                 invocation,

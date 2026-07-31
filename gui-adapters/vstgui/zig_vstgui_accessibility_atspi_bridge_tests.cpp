@@ -54,6 +54,10 @@ struct Evidence {
     std::atomic<bool> action_performed {false};
     std::atomic<bool> value_read {false};
     std::atomic<bool> value_set {false};
+    std::atomic<bool> editable_interface {false};
+    std::atomic<bool> text_set {false};
+    std::atomic<bool> text_inserted {false};
+    std::atomic<bool> text_deleted {false};
 };
 
 bool callSucceeded(GVariant* result, GError* error) {
@@ -204,7 +208,7 @@ void inspectApplication(
     if (result) {
         guint32 role = 0;
         g_variant_get(result, "(u)", &role);
-        evidence.child_role.store(role == 51, std::memory_order_release);
+        evidence.child_role.store(role == 79, std::memory_order_release);
         g_variant_unref(result);
     } else if (error) {
         g_error_free(error);
@@ -230,6 +234,7 @@ void inspectApplication(
         bool accessible = false;
         bool action = false;
         bool component = false;
+        bool editable_text = false;
         bool value = false;
         GVariantIter interface_iterator;
         g_variant_iter_init(&interface_iterator, interfaces);
@@ -238,10 +243,15 @@ void inspectApplication(
             accessible |= std::strcmp(interface, "Accessible") == 0;
             action |= std::strcmp(interface, "Action") == 0;
             component |= std::strcmp(interface, "Component") == 0;
+            editable_text |= std::strcmp(interface, "EditableText") == 0;
             value |= std::strcmp(interface, "Value") == 0;
         }
         evidence.child_interfaces.store(
-            accessible && action && component && value,
+            accessible && action && component && editable_text && value,
+            std::memory_order_release
+        );
+        evidence.editable_interface.store(
+            editable_text,
             std::memory_order_release
         );
         g_variant_unref(interfaces);
@@ -327,6 +337,38 @@ void inspectApplication(
         connection,
         child_bus.c_str(),
         path.c_str(),
+        "org.a11y.atspi.EditableText",
+        "InsertText",
+        g_variant_new("(isi)", 2, "x", 1),
+        G_VARIANT_TYPE("(b)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    callSucceeded(result, error);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.EditableText",
+        "DeleteText",
+        g_variant_new("(ii)", 1, 2),
+        G_VARIANT_TYPE("(b)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    callSucceeded(result, error);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
         "org.freedesktop.DBus.Properties",
         "Get",
         g_variant_new("(ss)", "org.a11y.atspi.Value", "CurrentValue"),
@@ -363,6 +405,22 @@ void inspectApplication(
             g_variant_new_double(0.75)
         ),
         nullptr,
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    callSucceeded(result, error);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.EditableText",
+        "SetTextContents",
+        g_variant_new("(s)", "Output gain"),
+        G_VARIANT_TYPE("(b)"),
         G_DBUS_CALL_FLAGS_NONE,
         timeout_ms,
         nullptr,
@@ -564,6 +622,15 @@ bool perform(
     if (request.action == ZigVstgui::AccessibilityAction::set_value &&
         request.value == 0.75)
         evidence->value_set.store(true, std::memory_order_release);
+    if (request.action == ZigVstgui::AccessibilityAction::set_value &&
+        request.text && std::strcmp(request.text, "Output gain") == 0)
+        evidence->text_set.store(true, std::memory_order_release);
+    if (request.action == ZigVstgui::AccessibilityAction::set_value &&
+        request.text && std::strcmp(request.text, "AéxB") == 0)
+        evidence->text_inserted.store(true, std::memory_order_release);
+    if (request.action == ZigVstgui::AccessibilityAction::set_value &&
+        request.text && std::strcmp(request.text, "AB") == 0)
+        evidence->text_deleted.store(true, std::memory_order_release);
     return true;
 }
 
@@ -580,9 +647,10 @@ int runTest() {
     }
 
     ZigVstgui::AccessibilityNode node;
-    node.setRole(ZigVstgui::AccessibilityRole::slider);
+    node.setRole(ZigVstgui::AccessibilityRole::text_field);
     node.setName("Gain");
     node.setDescription("Output level");
+    node.setValueText("AéB");
     node.setRange(0.0, 1.0, 0.5);
     node.setActionHandler(
         &service.evidence,
@@ -620,7 +688,11 @@ int runTest() {
         service.evidence.action_count.load(std::memory_order_acquire) &&
         service.evidence.action_performed.load(std::memory_order_acquire) &&
         service.evidence.value_read.load(std::memory_order_acquire) &&
-        service.evidence.value_set.load(std::memory_order_acquire);
+        service.evidence.value_set.load(std::memory_order_acquire) &&
+        service.evidence.editable_interface.load(std::memory_order_acquire) &&
+        service.evidence.text_set.load(std::memory_order_acquire) &&
+        service.evidence.text_inserted.load(std::memory_order_acquire) &&
+        service.evidence.text_deleted.load(std::memory_order_acquire);
     bridge.close();
     const bool closed = !bridge.active() && bridge.elementCount() == 0;
     if (!published || !closed) {
@@ -629,7 +701,8 @@ int runTest() {
             "AT-SPI bridge evidence: opened=%d active=%d count=%zu "
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
             "interfaces=%d bounds=%d action-count=%d action=%d "
-            "value-read=%d value-set=%d closed=%d\n",
+            "value-read=%d value-set=%d editable=%d text-set=%d insert=%d "
+            "delete=%d closed=%d\n",
             opened,
             active,
             element_count,
@@ -645,6 +718,10 @@ int runTest() {
             service.evidence.action_performed.load(std::memory_order_acquire),
             service.evidence.value_read.load(std::memory_order_acquire),
             service.evidence.value_set.load(std::memory_order_acquire),
+            service.evidence.editable_interface.load(std::memory_order_acquire),
+            service.evidence.text_set.load(std::memory_order_acquire),
+            service.evidence.text_inserted.load(std::memory_order_acquire),
+            service.evidence.text_deleted.load(std::memory_order_acquire),
             closed
         );
     }
