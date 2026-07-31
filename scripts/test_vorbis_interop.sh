@@ -57,6 +57,28 @@ compare_xiph_reference_pcm() {
     printf '%s\n' "$success_message"
 }
 
+compare_xiph_two_stream_reference_pcm() {
+    chained_path=$1
+    first_path=$2
+    second_path=$3
+    reference_path=$4
+    success_message=$5
+    first_reference="${reference_path}.first"
+    second_reference="${reference_path}.second"
+    oggdec -Q -R -b 16 -e 0 -s 1 \
+        -o "$first_reference" \
+        "$first_path"
+    oggdec -Q -R -b 16 -e 0 -s 1 \
+        -o "$second_reference" \
+        "$second_path"
+    cat "$first_reference" "$second_reference" >"$reference_path"
+    "$reference_probe" \
+        "$chained_path" \
+        --reference-s16le \
+        "$reference_path"
+    printf '%s\n' "$success_message"
+}
+
 wav_data_range() {
     wav_path=$1
     wav_bytes=$(wc -c <"$wav_path")
@@ -212,8 +234,10 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             printf 'Vorbis FFmpeg chained encoder decode and seek test passed\n'
             if [ -n "$reference_probe" ] &&
                 command -v oggdec >/dev/null 2>&1; then
-                compare_xiph_reference_pcm \
+                compare_xiph_two_stream_reference_pcm \
                     "$external_chained_fixture" \
+                    "$external_fixture" \
+                    "$external_second_fixture" \
                     "$temporary/xiph-external-chained-reference.s16le" \
                     'Vorbis Xiph chained decoded-PCM reference passed'
             fi
@@ -343,8 +367,10 @@ if [ -n "$decode_probe" ] &&
         "$fixture" \
         "$temporary/xiph-project-reference.s16le" \
         'Vorbis project fixture Xiph decoded-PCM reference passed'
-    compare_xiph_reference_pcm \
+    compare_xiph_two_stream_reference_pcm \
         "$project_chained_fixture" \
+        "$fixture" \
+        "$fixture" \
         "$temporary/xiph-project-chained-reference.s16le" \
         'Vorbis project chained Xiph decoded-PCM reference passed'
 fi
