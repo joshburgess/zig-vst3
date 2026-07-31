@@ -12,6 +12,7 @@
 #include <gio/gio.h>
 
 #include <clocale>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -27,6 +28,9 @@ constexpr const char* root_path = "/org/a11y/atspi/accessible/root";
 constexpr const char* null_path = "/org/a11y/atspi/null";
 constexpr const char* accessible_interface = "org.a11y.atspi.Accessible";
 constexpr const char* application_interface = "org.a11y.atspi.Application";
+constexpr const char* action_interface = "org.a11y.atspi.Action";
+constexpr const char* component_interface = "org.a11y.atspi.Component";
+constexpr const char* value_interface = "org.a11y.atspi.Value";
 constexpr const char* registry_name = "org.a11y.atspi.Registry";
 constexpr const char* registry_path = "/org/a11y/atspi/registry";
 constexpr const char* socket_interface = "org.a11y.atspi.Socket";
@@ -93,6 +97,41 @@ constexpr const char* introspection_xml = R"xml(
     <method name='GetApplicationBusAddress'>
       <arg direction='out' type='s'/>
     </method>
+  </interface>
+  <interface name='org.a11y.atspi.Action'>
+    <property name='version' type='u' access='read'/>
+    <property name='NActions' type='i' access='read'/>
+    <method name='GetDescription'><arg direction='in' type='i'/><arg direction='out' type='s'/></method>
+    <method name='GetName'><arg direction='in' type='i'/><arg direction='out' type='s'/></method>
+    <method name='GetLocalizedName'><arg direction='in' type='i'/><arg direction='out' type='s'/></method>
+    <method name='GetKeyBinding'><arg direction='in' type='i'/><arg direction='out' type='s'/></method>
+    <method name='GetActions'><arg direction='out' type='a(sss)'/></method>
+    <method name='DoAction'><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
+  </interface>
+  <interface name='org.a11y.atspi.Component'>
+    <property name='version' type='u' access='read'/>
+    <method name='Contains'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='b'/></method>
+    <method name='GetAccessibleAtPoint'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='(so)'/></method>
+    <method name='GetExtents'><arg direction='in' type='u'/><arg direction='out' type='(iiii)'/></method>
+    <method name='GetPosition'><arg direction='in' type='u'/><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetSize'><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetLayer'><arg direction='out' type='u'/></method>
+    <method name='GetMDIZOrder'><arg direction='out' type='n'/></method>
+    <method name='GrabFocus'><arg direction='out' type='b'/></method>
+    <method name='GetAlpha'><arg direction='out' type='d'/></method>
+    <method name='SetExtents'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='b'/></method>
+    <method name='SetPosition'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='b'/></method>
+    <method name='SetSize'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
+    <method name='ScrollTo'><arg direction='in' type='u'/><arg direction='out' type='b'/></method>
+    <method name='ScrollToPoint'><arg direction='in' type='u'/><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
+  </interface>
+  <interface name='org.a11y.atspi.Value'>
+    <property name='version' type='u' access='read'/>
+    <property name='MinimumValue' type='d' access='read'/>
+    <property name='MaximumValue' type='d' access='read'/>
+    <property name='MinimumIncrement' type='d' access='read'/>
+    <property name='CurrentValue' type='d' access='readwrite'/>
+    <property name='Text' type='s' access='read'/>
   </interface>
 </node>
 )xml";
@@ -285,6 +324,14 @@ private:
             object->owner->applicationMethod(method_name, invocation);
             return;
         }
+        if (g_strcmp0(interface_name, action_interface) == 0) {
+            object->owner->actionMethod(*object, method_name, parameters, invocation);
+            return;
+        }
+        if (g_strcmp0(interface_name, component_interface) == 0) {
+            object->owner->componentMethod(*object, method_name, parameters, invocation);
+            return;
+        }
         g_dbus_method_invocation_return_error_literal(
             invocation,
             G_DBUS_ERROR,
@@ -308,6 +355,12 @@ private:
             return object->owner->accessibleProperty(*object, property_name);
         if (object->root && g_strcmp0(interface_name, application_interface) == 0)
             return object->owner->applicationProperty(property_name);
+        if (g_strcmp0(interface_name, action_interface) == 0)
+            return object->owner->actionProperty(*object, property_name);
+        if (g_strcmp0(interface_name, component_interface) == 0)
+            return object->owner->versionProperty(property_name);
+        if (g_strcmp0(interface_name, value_interface) == 0)
+            return object->owner->valueProperty(*object, property_name);
         return nullptr;
     }
 
@@ -322,6 +375,21 @@ private:
         gpointer userdata
     ) {
         auto* object = static_cast<Object*>(userdata);
+        if (object && object->owner && !object->root &&
+            g_strcmp0(interface_name, value_interface) == 0 &&
+            g_strcmp0(property_name, "CurrentValue") == 0 &&
+            g_variant_is_of_type(value, G_VARIANT_TYPE_DOUBLE)) {
+            const auto* current = object->owner->entry(*object);
+            if (current && AtspiNodeAdapter(current->node)
+                .setCurrentValue(g_variant_get_double(value))) return true;
+            g_set_error_literal(
+                error,
+                G_DBUS_ERROR,
+                G_DBUS_ERROR_FAILED,
+                "Accessibility value was rejected"
+            );
+            return false;
+        }
         if (!object || !object->owner || !object->root ||
             g_strcmp0(interface_name, application_interface) != 0 ||
             g_strcmp0(property_name, "Id") != 0 ||
@@ -419,7 +487,8 @@ private:
         Object* root_object = root.get();
         objects.push_back(std::move(root));
         if (!registerInterface(root_object, accessible_interface) ||
-            !registerInterface(root_object, application_interface)) return false;
+            !registerInterface(root_object, application_interface) ||
+            !registerInterface(root_object, component_interface)) return false;
 
         for (std::size_t index = 0; index < entries.size(); ++index) {
             auto object = std::make_unique<Object>();
@@ -429,7 +498,13 @@ private:
             if (object->path.empty()) return false;
             Object* child = object.get();
             objects.push_back(std::move(object));
-            if (!registerInterface(child, accessible_interface)) return false;
+            if (!registerInterface(child, accessible_interface) ||
+                !registerInterface(child, component_interface)) return false;
+            const auto current = snapshot(*child);
+            if (current.hasInterface(AtspiInterface::action) &&
+                !registerInterface(child, action_interface)) return false;
+            if (current.hasInterface(AtspiInterface::value) &&
+                !registerInterface(child, value_interface)) return false;
         }
         return true;
     }
@@ -519,6 +594,239 @@ private:
             return registry_root.empty() ? null_path : registry_root.c_str();
         }
         return root_path;
+    }
+
+    struct Bounds {
+        gint32 x {0};
+        gint32 y {0};
+        gint32 width {0};
+        gint32 height {0};
+    };
+
+    static gint32 coordinate(double value) {
+        if (value <= static_cast<double>(G_MININT32)) return G_MININT32;
+        if (value >= static_cast<double>(G_MAXINT32)) return G_MAXINT32;
+        return static_cast<gint32>(std::lround(value));
+    }
+
+    Bounds bounds(const Object& object, guint32 coordinate_type) const {
+        VSTGUI::CRect rectangle;
+        if (object.root) {
+            rectangle = frame->getViewSize();
+        } else {
+            const auto* current = entry(object);
+            if (!current) return {};
+            rectangle = current->view->getViewSize();
+            current->view->translateToGlobal(rectangle, true);
+        }
+        if (coordinate_type == 0 && frame->getPlatformFrame()) {
+            VSTGUI::CPoint origin;
+            if (frame->getPlatformFrame()->getGlobalPosition(origin))
+                rectangle.offset(origin.x, origin.y);
+        }
+        return {
+            coordinate(rectangle.left),
+            coordinate(rectangle.top),
+            coordinate(rectangle.getWidth()),
+            coordinate(rectangle.getHeight()),
+        };
+    }
+
+    static bool contains(const Bounds& bounds, gint32 x, gint32 y) {
+        const gint64 right = static_cast<gint64>(bounds.x) + bounds.width;
+        const gint64 bottom = static_cast<gint64>(bounds.y) + bounds.height;
+        return x >= bounds.x && y >= bounds.y && x < right && y < bottom;
+    }
+
+    GVariant* versionProperty(const char* property) const {
+        return g_strcmp0(property, "version") == 0
+            ? g_variant_new_uint32(1)
+            : nullptr;
+    }
+
+    GVariant* actionProperty(const Object& object, const char* property) const {
+        if (auto* version = versionProperty(property)) return version;
+        if (g_strcmp0(property, "NActions") != 0) return nullptr;
+        const auto* current = entry(object);
+        const auto count = current
+            ? AtspiNodeAdapter(current->node).actionCount()
+            : 0;
+        return g_variant_new_int32(static_cast<gint32>(count));
+    }
+
+    void actionMethod(
+        const Object& object,
+        const char* method,
+        GVariant* parameters,
+        GDBusMethodInvocation* invocation
+    ) const {
+        const auto* current = entry(object);
+        if (!current) {
+            returnError(invocation, "Accessibility action is unavailable");
+            return;
+        }
+        AtspiNodeAdapter adapter(current->node);
+        if (g_strcmp0(method, "GetActions") == 0) {
+            GVariantBuilder builder;
+            g_variant_builder_init(&builder, G_VARIANT_TYPE("a(sss)"));
+            for (std::size_t index = 0; index < adapter.actionCount(); ++index) {
+                AtspiAction action;
+                if (adapter.actionAt(index, action))
+                    g_variant_builder_add(&builder, "(sss)", action.name, action.description, "");
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(@a(sss))", g_variant_builder_end(&builder))
+            );
+            return;
+        }
+        gint32 index = -1;
+        g_variant_get(parameters, "(i)", &index);
+        AtspiAction action;
+        if (index < 0 || !adapter.actionAt(static_cast<std::size_t>(index), action)) {
+            returnError(invocation, "Accessibility action index is out of range");
+            return;
+        }
+        if (g_strcmp0(method, "DoAction") == 0) {
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(b)", adapter.performAction(static_cast<std::size_t>(index)))
+            );
+            return;
+        }
+        const char* result = nullptr;
+        if (g_strcmp0(method, "GetDescription") == 0) result = action.description;
+        if (g_strcmp0(method, "GetName") == 0 ||
+            g_strcmp0(method, "GetLocalizedName") == 0) result = action.name;
+        if (g_strcmp0(method, "GetKeyBinding") == 0) result = "";
+        if (result) {
+            g_dbus_method_invocation_return_value(invocation, g_variant_new("(s)", result));
+            return;
+        }
+        g_dbus_method_invocation_return_error_literal(
+            invocation,
+            G_DBUS_ERROR,
+            G_DBUS_ERROR_UNKNOWN_METHOD,
+            "Unknown accessibility action method"
+        );
+    }
+
+    GVariant* valueProperty(const Object& object, const char* property) const {
+        if (auto* version = versionProperty(property)) return version;
+        const auto current = snapshot(object);
+        if (!current.range.present) return nullptr;
+        if (g_strcmp0(property, "MinimumValue") == 0)
+            return g_variant_new_double(current.range.minimum);
+        if (g_strcmp0(property, "MaximumValue") == 0)
+            return g_variant_new_double(current.range.maximum);
+        if (g_strcmp0(property, "MinimumIncrement") == 0)
+            return g_variant_new_double(0.0);
+        if (g_strcmp0(property, "CurrentValue") == 0)
+            return g_variant_new_double(current.range.current);
+        if (g_strcmp0(property, "Text") == 0)
+            return g_variant_new_string(current.value_text.c_str());
+        return nullptr;
+    }
+
+    void componentMethod(
+        const Object& object,
+        const char* method,
+        GVariant* parameters,
+        GDBusMethodInvocation* invocation
+    ) const {
+        if (g_strcmp0(method, "GetSize") == 0) {
+            const auto area = bounds(object, 1);
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(ii)", area.width, area.height)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetLayer") == 0) {
+            g_dbus_method_invocation_return_value(invocation, g_variant_new("(u)", 3u));
+            return;
+        }
+        if (g_strcmp0(method, "GetMDIZOrder") == 0) {
+            g_dbus_method_invocation_return_value(invocation, g_variant_new("(n)", -1));
+            return;
+        }
+        if (g_strcmp0(method, "GrabFocus") == 0) {
+            const auto* current = entry(object);
+            const bool focused = current && AtspiNodeAdapter(current->node).grabFocus();
+            g_dbus_method_invocation_return_value(invocation, g_variant_new("(b)", focused));
+            return;
+        }
+        if (g_strcmp0(method, "GetAlpha") == 0) {
+            g_dbus_method_invocation_return_value(invocation, g_variant_new("(d)", 1.0));
+            return;
+        }
+        if (g_strcmp0(method, "SetExtents") == 0 ||
+            g_strcmp0(method, "SetPosition") == 0 ||
+            g_strcmp0(method, "SetSize") == 0 ||
+            g_strcmp0(method, "ScrollTo") == 0 ||
+            g_strcmp0(method, "ScrollToPoint") == 0) {
+            g_dbus_method_invocation_return_value(invocation, g_variant_new("(b)", false));
+            return;
+        }
+        if (g_strcmp0(method, "GetExtents") == 0 ||
+            g_strcmp0(method, "GetPosition") == 0) {
+            guint32 coordinate_type = 0;
+            g_variant_get(parameters, "(u)", &coordinate_type);
+            const auto area = bounds(object, coordinate_type);
+            if (g_strcmp0(method, "GetExtents") == 0) {
+                g_dbus_method_invocation_return_value(
+                    invocation,
+                    g_variant_new("((iiii))", area.x, area.y, area.width, area.height)
+                );
+            } else {
+                g_dbus_method_invocation_return_value(
+                    invocation,
+                    g_variant_new("(ii)", area.x, area.y)
+                );
+            }
+            return;
+        }
+        if (g_strcmp0(method, "Contains") == 0 ||
+            g_strcmp0(method, "GetAccessibleAtPoint") == 0) {
+            gint32 x = 0;
+            gint32 y = 0;
+            guint32 coordinate_type = 0;
+            g_variant_get(parameters, "(iiu)", &x, &y, &coordinate_type);
+            if (g_strcmp0(method, "Contains") == 0) {
+                g_dbus_method_invocation_return_value(
+                    invocation,
+                    g_variant_new("(b)", contains(bounds(object, coordinate_type), x, y))
+                );
+                return;
+            }
+            const Object* match = nullptr;
+            if (object.root) {
+                for (std::size_t index = objects.size(); index > 1; --index) {
+                    const auto* candidate = objects[index - 1].get();
+                    if (contains(bounds(*candidate, coordinate_type), x, y)) {
+                        match = candidate;
+                        break;
+                    }
+                }
+            } else if (contains(bounds(object, coordinate_type), x, y)) {
+                match = &object;
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new(
+                    "((so))",
+                    match ? bus_name.c_str() : "",
+                    match ? match->path.c_str() : null_path
+                )
+            );
+            return;
+        }
+        g_dbus_method_invocation_return_error_literal(
+            invocation,
+            G_DBUS_ERROR,
+            G_DBUS_ERROR_UNKNOWN_METHOD,
+            "Unknown accessibility component method"
+        );
     }
 
     GVariant* accessibleProperty(const Object& object, const char* property) const {
@@ -674,7 +982,16 @@ private:
             GVariantBuilder builder;
             g_variant_builder_init(&builder, G_VARIANT_TYPE("as"));
             g_variant_builder_add(&builder, "s", "Accessible");
-            if (object.root) g_variant_builder_add(&builder, "s", "Application");
+            g_variant_builder_add(&builder, "s", "Component");
+            if (object.root) {
+                g_variant_builder_add(&builder, "s", "Application");
+            } else {
+                const auto current = snapshot(object);
+                if (current.hasInterface(AtspiInterface::action))
+                    g_variant_builder_add(&builder, "s", "Action");
+                if (current.hasInterface(AtspiInterface::value))
+                    g_variant_builder_add(&builder, "s", "Value");
+            }
             g_dbus_method_invocation_return_value(
                 invocation,
                 g_variant_new("(@as)", g_variant_builder_end(&builder))

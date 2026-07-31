@@ -49,6 +49,11 @@ struct Evidence {
     std::atomic<bool> child_name {false};
     std::atomic<bool> child_role {false};
     std::atomic<bool> child_interfaces {false};
+    std::atomic<bool> component_bounds {false};
+    std::atomic<bool> action_count {false};
+    std::atomic<bool> action_performed {false};
+    std::atomic<bool> value_read {false};
+    std::atomic<bool> value_set {false};
 };
 
 bool callSucceeded(GVariant* result, GError* error) {
@@ -222,8 +227,21 @@ void inspectApplication(
     if (result) {
         GVariant* interfaces = nullptr;
         g_variant_get(result, "(@as)", &interfaces);
+        bool accessible = false;
+        bool action = false;
+        bool component = false;
+        bool value = false;
+        GVariantIter interface_iterator;
+        g_variant_iter_init(&interface_iterator, interfaces);
+        const char* interface = nullptr;
+        while (g_variant_iter_next(&interface_iterator, "&s", &interface)) {
+            accessible |= std::strcmp(interface, "Accessible") == 0;
+            action |= std::strcmp(interface, "Action") == 0;
+            component |= std::strcmp(interface, "Component") == 0;
+            value |= std::strcmp(interface, "Value") == 0;
+        }
         evidence.child_interfaces.store(
-            g_variant_n_children(interfaces) == 1,
+            accessible && action && component && value,
             std::memory_order_release
         );
         g_variant_unref(interfaces);
@@ -231,6 +249,126 @@ void inspectApplication(
     } else if (error) {
         g_error_free(error);
     }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Component",
+        "GetExtents",
+        g_variant_new("(u)", 1u),
+        G_VARIANT_TYPE("((iiii))"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        gint32 x = 0;
+        gint32 y = 0;
+        gint32 width = 0;
+        gint32 height = 0;
+        g_variant_get(result, "((iiii))", &x, &y, &width, &height);
+        evidence.component_bounds.store(
+            x == 10 && y == 20 && width == 100 && height == 40,
+            std::memory_order_release
+        );
+        g_variant_unref(result);
+    } else if (error) {
+        g_error_free(error);
+    }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.freedesktop.DBus.Properties",
+        "Get",
+        g_variant_new("(ss)", "org.a11y.atspi.Action", "NActions"),
+        G_VARIANT_TYPE("(v)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        GVariant* count = nullptr;
+        g_variant_get(result, "(v)", &count);
+        evidence.action_count.store(
+            g_variant_get_int32(count) == 1,
+            std::memory_order_release
+        );
+        g_variant_unref(count);
+        g_variant_unref(result);
+    } else if (error) {
+        g_error_free(error);
+    }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Action",
+        "DoAction",
+        g_variant_new("(i)", 0),
+        G_VARIANT_TYPE("(b)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    callSucceeded(result, error);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.freedesktop.DBus.Properties",
+        "Get",
+        g_variant_new("(ss)", "org.a11y.atspi.Value", "CurrentValue"),
+        G_VARIANT_TYPE("(v)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        GVariant* value_variant = nullptr;
+        g_variant_get(result, "(v)", &value_variant);
+        evidence.value_read.store(
+            g_variant_get_double(value_variant) == 0.5,
+            std::memory_order_release
+        );
+        g_variant_unref(value_variant);
+        g_variant_unref(result);
+    } else if (error) {
+        g_error_free(error);
+    }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.freedesktop.DBus.Properties",
+        "Set",
+        g_variant_new(
+            "(ssv)",
+            "org.a11y.atspi.Value",
+            "CurrentValue",
+            g_variant_new_double(0.75)
+        ),
+        nullptr,
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    callSucceeded(result, error);
 }
 
 struct Service {
@@ -415,10 +553,17 @@ struct Service {
 };
 
 bool perform(
-    void*,
+    void* userdata,
     const ZigVstgui::AccessibilityNode&,
-    const ZigVstgui::AccessibilityActionRequest&
+    const ZigVstgui::AccessibilityActionRequest& request
 ) {
+    auto* evidence = static_cast<Evidence*>(userdata);
+    if (!evidence) return false;
+    if (request.action == ZigVstgui::AccessibilityAction::press)
+        evidence->action_performed.store(true, std::memory_order_release);
+    if (request.action == ZigVstgui::AccessibilityAction::set_value &&
+        request.value == 0.75)
+        evidence->value_set.store(true, std::memory_order_release);
     return true;
 }
 
@@ -440,23 +585,25 @@ int runTest() {
     node.setDescription("Output level");
     node.setRange(0.0, 1.0, 0.5);
     node.setActionHandler(
-        nullptr,
+        &service.evidence,
         perform,
         static_cast<uint32_t>(ZigVstgui::AccessibilityAction::focus) |
+            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::press) |
             static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_value)
     );
     auto frame = VSTGUI::owned(new VSTGUI::CFrame(
         VSTGUI::CRect(0, 0, 640, 480),
         nullptr
     ));
-    auto view = VSTGUI::owned(new VSTGUI::CView(
+    auto* view = new VSTGUI::CView(
         VSTGUI::CRect(10, 20, 110, 60)
-    ));
+    );
+    frame->addView(view);
     view->setWantsFocus(true);
     ZigVstgui::NativeAccessibilityBridge bridge;
     const bool opened = bridge.open(
         frame.get(),
-        {{&node, view.get()}}
+        {{&node, view}}
     );
     const bool active = bridge.active();
     const std::size_t element_count = bridge.elementCount();
@@ -468,7 +615,12 @@ int runTest() {
         service.evidence.child_found.load(std::memory_order_acquire) &&
         service.evidence.child_name.load(std::memory_order_acquire) &&
         service.evidence.child_role.load(std::memory_order_acquire) &&
-        service.evidence.child_interfaces.load(std::memory_order_acquire);
+        service.evidence.child_interfaces.load(std::memory_order_acquire) &&
+        service.evidence.component_bounds.load(std::memory_order_acquire) &&
+        service.evidence.action_count.load(std::memory_order_acquire) &&
+        service.evidence.action_performed.load(std::memory_order_acquire) &&
+        service.evidence.value_read.load(std::memory_order_acquire) &&
+        service.evidence.value_set.load(std::memory_order_acquire);
     bridge.close();
     const bool closed = !bridge.active() && bridge.elementCount() == 0;
     if (!published || !closed) {
@@ -476,7 +628,8 @@ int runTest() {
             stderr,
             "AT-SPI bridge evidence: opened=%d active=%d count=%zu "
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
-            "interfaces=%d closed=%d\n",
+            "interfaces=%d bounds=%d action-count=%d action=%d "
+            "value-read=%d value-set=%d closed=%d\n",
             opened,
             active,
             element_count,
@@ -487,6 +640,11 @@ int runTest() {
             service.evidence.child_name.load(std::memory_order_acquire),
             service.evidence.child_role.load(std::memory_order_acquire),
             service.evidence.child_interfaces.load(std::memory_order_acquire),
+            service.evidence.component_bounds.load(std::memory_order_acquire),
+            service.evidence.action_count.load(std::memory_order_acquire),
+            service.evidence.action_performed.load(std::memory_order_acquire),
+            service.evidence.value_read.load(std::memory_order_acquire),
+            service.evidence.value_set.load(std::memory_order_acquire),
             closed
         );
     }
