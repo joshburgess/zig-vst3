@@ -210,6 +210,14 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 --require-junk-resync \
                 "$temporary/ffmpeg-encoded-long-junk.ogg"
             printf 'Vorbis FFmpeg bounded junk resynchronization probe passed\n'
+            external_invalid_audio_packet="$temporary/ffmpeg-invalid-audio-packet.ogg"
+            "$decode_probe" "$external_long_fixture" \
+                --write-invalid-audio-packet \
+                "$external_invalid_audio_packet"
+            require_probe_rejection \
+                "$external_invalid_audio_packet" \
+                "Project decoder accepted a checksum-correct invalid Vorbis audio packet" \
+                "Vorbis FFmpeg invalid audio-packet rejection passed"
             if [ -n "$reference_probe" ]; then
                 if command -v oggdec >/dev/null 2>&1; then
                     compare_xiph_reference_pcm \

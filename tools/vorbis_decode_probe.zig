@@ -11,6 +11,8 @@ pub fn main(init: std.process.Init) !void {
         return error.InvalidArguments;
     const require_junk_resync = args.len == 4 and
         std.mem.eql(u8, args[2], "--require-junk-resync");
+    const write_invalid_audio_packet = args.len == 4 and
+        std.mem.eql(u8, args[2], "--write-invalid-audio-packet");
     const require_midpoint_seek = args.len == 3;
     if (require_midpoint_seek and
         !std.mem.eql(
@@ -21,7 +23,9 @@ pub fn main(init: std.process.Init) !void {
     {
         return error.InvalidArguments;
     }
-    const compare_reference = args.len == 4 and !require_junk_resync;
+    const compare_reference = args.len == 4 and
+        !require_junk_resync and
+        !write_invalid_audio_packet;
     const reference_encoding: ReferenceEncoding = if (compare_reference)
         if (std.mem.eql(u8, args[2], "--reference-f32le"))
             .f32le
@@ -40,6 +44,15 @@ pub fn main(init: std.process.Init) !void {
     );
     if (require_junk_resync) {
         try verifyJunkResynchronization(
+            init.io,
+            encoded,
+            args[3],
+            allocator,
+        );
+        return;
+    }
+    if (write_invalid_audio_packet) {
+        try writeInvalidAudioPacket(
             init.io,
             encoded,
             args[3],
@@ -352,6 +365,81 @@ fn verifyJunkResynchronization(
         file_packet_storage,
         junk.len,
     );
+}
+
+const AudioPacketLocation = struct {
+    page_offset: usize,
+    page_bytes: usize,
+    packet_offset: usize,
+};
+
+fn writeInvalidAudioPacket(
+    io: std.Io,
+    encoded: []const u8,
+    damaged_path: []const u8,
+    allocator: std.mem.Allocator,
+) !void {
+    const location = try firstAudioPacketLocation(encoded);
+    const damaged = try allocator.dupe(u8, encoded);
+    damaged[location.packet_offset] |= 1;
+    const page = damaged[location.page_offset..][0..location.page_bytes];
+    std.mem.writeInt(u32, page[22..26], oggPageChecksum(page), .little);
+    var output = try std.Io.Dir.cwd().createFile(io, damaged_path, .{});
+    defer output.close(io);
+    try output.writeStreamingAll(io, damaged);
+}
+
+fn firstAudioPacketLocation(encoded: []const u8) !AudioPacketLocation {
+    var pages = plug.dsp.OggPageIterator.initChained(encoded);
+    var completed_packets: u64 = 0;
+    while (try pages.next()) |page| {
+        var body_offset: usize = 0;
+        var continues = page.continued;
+        for (page.lacing_values) |lace| {
+            if (!continues and completed_packets == 3) {
+                if (lace == 0 or body_offset >= page.body.len)
+                    return error.InvalidVorbisAudioPacket;
+                const page_offset: usize = @intCast(page.byte_offset);
+                return .{
+                    .page_offset = page_offset,
+                    .page_bytes = page.byte_length,
+                    .packet_offset = std.math.add(
+                        usize,
+                        @intFromPtr(page.body.ptr) -
+                            @intFromPtr(encoded.ptr),
+                        body_offset,
+                    ) catch return error.OggByteCountOverflow,
+                };
+            }
+            body_offset += lace;
+            if (lace == 255) {
+                continues = true;
+            } else {
+                continues = false;
+                completed_packets = std.math.add(
+                    u64,
+                    completed_packets,
+                    1,
+                ) catch return error.OggPacketCountOverflow;
+            }
+        }
+    }
+    return error.MissingVorbisAudioPacket;
+}
+
+fn oggPageChecksum(page: []const u8) u32 {
+    var crc: u32 = 0;
+    for (page, 0..) |byte, index| {
+        const value: u8 = if (index >= 22 and index < 26) 0 else byte;
+        crc ^= @as(u32, value) << 24;
+        for (0..8) |_| {
+            crc = if (crc & 0x80000000 != 0)
+                (crc << 1) ^ 0x04c11db7
+            else
+                crc << 1;
+        }
+    }
+    return crc;
 }
 
 fn completePacketPageBoundary(encoded: []const u8) !usize {

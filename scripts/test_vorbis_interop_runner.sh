@@ -56,8 +56,9 @@ chmod +x "$fake_bin/oggenc" "$fake_bin/uname"
 printf '%s\n' \
     '#!/bin/sh' \
     'test -s "$1"' \
+    'if [ "${2-}" = "--write-invalid-audio-packet" ]; then cp "$1" "$3"; exit 0; fi' \
     'case "$1" in' \
-    '    *-corrupt.ogg|*-truncated.ogg|*-geometry-change.ogg) exit 1 ;;' \
+    '    *-corrupt.ogg|*-truncated.ogg|*-geometry-change.ogg|*-invalid-audio-packet.ogg) exit 1 ;;' \
     'esac' \
     >"$fake_bin/decode-probe"
 chmod +x "$fake_bin/decode-probe"
@@ -83,6 +84,8 @@ grep -q 'Vorbis FFmpeg stereo encoder decode and seek test passed' \
 grep -q 'Vorbis FFmpeg multi-page encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg bounded junk resynchronization probe passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg invalid audio-packet rejection passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg chained encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
@@ -152,8 +155,9 @@ expect_probe_failure() {
     printf '%s\n' \
         '#!/bin/sh' \
         'count_file="${TMPDIR:-/tmp}/probe-count"' \
+        'if [ "${2-}" = "--write-invalid-audio-packet" ]; then cp "$1" "$3"; fi' \
         'case "$1" in' \
-        '    *-corrupt.ogg|*-truncated.ogg|*-geometry-change.ogg) exit 1 ;;' \
+        '    *-corrupt.ogg|*-truncated.ogg|*-geometry-change.ogg|*-invalid-audio-packet.ogg) exit 1 ;;' \
         'esac' \
         'count=0' \
         '[ ! -f "$count_file" ] || count=$(cat "$count_file")' \
@@ -188,21 +192,24 @@ expect_probe_failure \
     'Vorbis runner accepted a bounded junk recovery failure'
 expect_probe_failure \
     6 \
-    'Vorbis runner accepted a chained decode failure'
+    'Vorbis runner accepted an invalid audio-packet fixture failure'
 expect_probe_failure \
     7 \
-    'Vorbis runner accepted a mono decode failure'
+    'Vorbis runner accepted a chained decode failure'
 expect_probe_failure \
     8 \
-    'Vorbis runner accepted an 8 kHz decode failure'
+    'Vorbis runner accepted a mono decode failure'
 expect_probe_failure \
     9 \
-    'Vorbis runner accepted a 16 kHz decode failure'
+    'Vorbis runner accepted an 8 kHz decode failure'
 expect_probe_failure \
     10 \
-    'Vorbis runner accepted a low-quality geometry decode failure'
+    'Vorbis runner accepted a 16 kHz decode failure'
 expect_probe_failure \
     11 \
+    'Vorbis runner accepted a low-quality geometry decode failure'
+expect_probe_failure \
+    12 \
     'Vorbis runner accepted a 5.1 decode failure'
 rm -f "$probe_count"
 
