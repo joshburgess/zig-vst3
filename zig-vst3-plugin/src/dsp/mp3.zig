@@ -22,6 +22,7 @@ pub const maximum_free_format_frame_bytes: usize = 16 * 1024;
 pub const maximum_encoded_frame_bytes: usize = 1441;
 const maximum_frame_main_data_bytes: usize =
     (4 * std.math.maxInt(u12) + 7) / 8;
+const decoder_delay_samples: u16 = 528 + 1;
 
 pub const Header = struct {
     version: Version,
@@ -2075,7 +2076,9 @@ pub const VbrPcmStreamEncoder = struct {
                     try metadata_config.header(false),
                     stream_summary.encoder_delay,
                 ),
-                .encoder_padding = @intCast(stream_summary.end_padding),
+                .encoder_padding = try storedXingEncoderPadding(
+                    stream_summary.end_padding,
+                ),
             },
             destination,
         );
@@ -3479,24 +3482,37 @@ pub fn encodeInfoFrame(
         return error.Mp3EncoderMetadataFrameCountOverflow;
     if (summary.byte_count > std.math.maxInt(u32))
         return error.Mp3EncoderMetadataByteCountOverflow;
-    if (summary.end_padding > std.math.maxInt(u12))
-        return error.Mp3EncoderMetadataGaplessOverflow;
     const header = try config.header(false);
     return encodeInfoFrameFields(
         header,
         @intCast(summary.frame_count),
         @intCast(summary.byte_count),
         try storedXingEncoderDelay(header, summary.encoder_delay),
-        @intCast(summary.end_padding),
+        try storedXingEncoderPadding(summary.end_padding),
         destination,
     );
 }
 
 fn storedXingEncoderDelay(header: Header, total_delay: u16) !u12 {
-    const metadata_samples = header.samplesPerFrame();
-    if (total_delay < metadata_samples)
+    const stored_offset = std.math.add(
+        u16,
+        header.samplesPerFrame(),
+        decoder_delay_samples,
+    ) catch return error.Mp3EncoderMetadataDelayUnderflow;
+    if (total_delay < stored_offset)
         return error.Mp3EncoderMetadataDelayUnderflow;
-    const stored = total_delay - metadata_samples;
+    const stored = total_delay - stored_offset;
+    if (stored > std.math.maxInt(u12))
+        return error.Mp3EncoderMetadataGaplessOverflow;
+    return @intCast(stored);
+}
+
+fn storedXingEncoderPadding(end_padding: u16) !u12 {
+    const stored = std.math.add(
+        u16,
+        end_padding,
+        decoder_delay_samples,
+    ) catch return error.Mp3EncoderMetadataGaplessOverflow;
     if (stored > std.math.maxInt(u12))
         return error.Mp3EncoderMetadataGaplessOverflow;
     return @intCast(stored);
@@ -6220,13 +6236,21 @@ pub const GaplessPlan = struct {
             if (xing.encoder_delay) |delay| {
                 const metadata_samples: u32 =
                     if (summary.sample_rate >= 32_000) 1152 else 576;
-                leading = std.math.add(
+                const encoder_and_metadata = std.math.add(
                     u32,
                     delay,
                     metadata_samples,
                 ) catch return error.InvalidMp3GaplessMetadata;
-                trailing = xing.encoder_padding orelse
+                leading = std.math.add(
+                    u32,
+                    encoder_and_metadata,
+                    decoder_delay_samples,
+                ) catch return error.InvalidMp3GaplessMetadata;
+                const stored_padding = xing.encoder_padding orelse
                     return error.InvalidMp3GaplessMetadata;
+                if (stored_padding < decoder_delay_samples)
+                    return error.InvalidMp3GaplessMetadata;
+                trailing = stored_padding - decoder_delay_samples;
             }
         }
         const trimmed = std.math.add(
@@ -13895,13 +13919,13 @@ test "trims MP3 decoder frames with gapless metadata" {
             .quality = null,
             .encoder = null,
             .encoder_delay = 100,
-            .encoder_padding = 200,
+            .encoder_padding = 729,
         },
         .first_vbri = null,
     };
     const plan = try GaplessPlan.fromSummary(summary);
     try std.testing.expectEqual(@as(u64, 3456), plan.encoded_samples);
-    try std.testing.expectEqual(@as(u64, 2004), plan.audible_samples);
+    try std.testing.expectEqual(@as(u64, 1475), plan.audible_samples);
 
     var encoded: [500]u8 = undefined;
     const frame_end = try appendFrame(
@@ -13922,7 +13946,7 @@ test "trims MP3 decoder frames with gapless metadata" {
     );
     const second = try decoder.decode(frame);
     try std.testing.expectEqual(
-        PcmRange{ .start = 100, .length = 1052 },
+        PcmRange{ .start = 629, .length = 523 },
         second.audible,
     );
     const third = try decoder.decode(frame);
@@ -16059,11 +16083,11 @@ test "finishes MP3 VBR streams with Xing metadata" {
     );
     try std.testing.expectEqual(@as(?u32, 37), xing.quality);
     try std.testing.expectEqual(
-        @as(?u12, 1057),
+        @as(?u12, 528),
         xing.encoder_delay,
     );
     try std.testing.expectEqual(
-        @as(?u12, 95),
+        @as(?u12, 624),
         xing.encoder_padding,
     );
     const toc = xing.toc.?;
@@ -17579,7 +17603,9 @@ test "emits exact gapless MP3 stream metadata" {
         xing.encoder_delay,
     );
     try std.testing.expectEqual(
-        @as(?u12, @intCast(finished.summary.end_padding)),
+        @as(?u12, try storedXingEncoderPadding(
+            finished.summary.end_padding,
+        )),
         xing.encoder_padding,
     );
     try std.testing.expectEqual(
@@ -17634,10 +17660,22 @@ test "emits exact gapless MP3 stream metadata" {
     );
     var oversized_delay = valid_counts;
     oversized_delay.encoder_delay =
-        samples_per_frame + std.math.maxInt(u12) + 1;
+        samples_per_frame +
+        decoder_delay_samples +
+        std.math.maxInt(u12) +
+        1;
     try std.testing.expectError(
         error.Mp3EncoderMetadataGaplessOverflow,
         encodeInfoFrame(config, oversized_delay, &retained),
+    );
+    var oversized_padding = valid_counts;
+    oversized_padding.encoder_delay =
+        samples_per_frame + decoder_delay_samples;
+    oversized_padding.end_padding =
+        std.math.maxInt(u12) - decoder_delay_samples + 1;
+    try std.testing.expectError(
+        error.Mp3EncoderMetadataGaplessOverflow,
+        encodeInfoFrame(config, oversized_padding, &retained),
     );
     try std.testing.expectEqual(@as(u8, 0x5a), retained[0]);
 }
