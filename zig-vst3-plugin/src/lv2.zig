@@ -491,14 +491,14 @@ pub const StateRetrieveFunction = *const fn (
 pub const StateInterface = extern struct {
     save: *const fn (
         instance: Handle,
-        store: StateStoreFunction,
+        store: ?StateStoreFunction,
         handle: StateHandle,
         flags: u32,
         features: ?[*:null]const ?*const Feature,
     ) callconv(.c) StateStatus,
     restore: *const fn (
         instance: Handle,
-        retrieve: StateRetrieveFunction,
+        retrieve: ?StateRetrieveFunction,
         handle: StateHandle,
         flags: u32,
         features: ?[*:null]const ?*const Feature,
@@ -1833,13 +1833,14 @@ pub fn CoreAdapterWithParameters(
 
         fn saveState(
             instance: Handle,
-            store: StateStoreFunction,
+            raw_store: ?StateStoreFunction,
             handle: StateHandle,
             _: u32,
             features: ?[*:null]const ?*const Feature,
         ) callconv(.c) StateStatus {
             const self = instanceFromHandle(instance) orelse
                 return .unknown;
+            const store = raw_store orelse return .unknown;
             if (self.state_key == 0 or self.state_type == 0)
                 return .no_feature;
             const path_features: ?StatePathFeatures =
@@ -1897,13 +1898,14 @@ pub fn CoreAdapterWithParameters(
 
         fn restoreState(
             instance: Handle,
-            retrieve: StateRetrieveFunction,
+            raw_retrieve: ?StateRetrieveFunction,
             handle: StateHandle,
             _: u32,
             features: ?[*:null]const ?*const Feature,
         ) callconv(.c) StateStatus {
             const self = instanceFromHandle(instance) orelse
                 return .unknown;
+            const retrieve = raw_retrieve orelse return .unknown;
             if (self.state_key == 0 or self.state_type == 0)
                 return .no_feature;
             const path_features: ?StatePathFeatures =

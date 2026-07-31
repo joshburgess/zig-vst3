@@ -1631,6 +1631,20 @@ pub fn main(init: std.process.Init) !void {
     if (descriptor.deactivate) |deactivate| deactivate(handle);
     if (state.save(
         handle,
+        null,
+        &state_host,
+        0,
+        state_features[0..].ptr,
+    ) != .unknown) return error.NullStateStoreCallbackAccepted;
+    if (state.restore(
+        handle,
+        null,
+        &state_host,
+        0,
+        state_features[0..].ptr,
+    ) != .unknown) return error.NullStateRetrieveCallbackAccepted;
+    if (state.save(
+        handle,
         StateHost.store,
         &state_host,
         0,
