@@ -35,12 +35,14 @@ pub const Feature = extern struct {
 
 pub const Urid = u32;
 
+pub const UridMapFunction = *const fn (
+    handle: ?*anyopaque,
+    URI: [*:0]const u8,
+) callconv(.c) Urid;
+
 pub const UridMap = extern struct {
     handle: ?*anyopaque,
-    map: *const fn (
-        handle: ?*anyopaque,
-        URI: [*:0]const u8,
-    ) callconv(.c) Urid,
+    map: ?UridMapFunction,
 };
 
 pub const OptionsOption = extern struct {
@@ -723,8 +725,9 @@ fn readScaleOptions(
             return error.InvalidOptions;
         return .{};
     };
-    const scale_key = map.map(map.handle, scale_factor_uri);
-    const float_type = map.map(map.handle, atom_float_uri);
+    const map_uri = map.map orelse return error.InvalidOptions;
+    const scale_key = map_uri(map.handle, scale_factor_uri);
+    const float_type = map_uri(map.handle, atom_float_uri);
     if (scale_key == 0 or float_type == 0)
         return error.InvalidOptions;
     var result = ScaleOptions{
@@ -823,6 +826,13 @@ test "LV2 UI scale option validates host data transactionally" {
         @as(?f32, 2.0),
         (try readScaleOptions(&features)).value,
     );
+
+    urid_map.map = null;
+    try std.testing.expectError(
+        error.InvalidOptions,
+        readScaleOptions(&features),
+    );
+    urid_map.map = Host.map;
 
     const duplicate_options = [_]OptionsOption{
         options[0],

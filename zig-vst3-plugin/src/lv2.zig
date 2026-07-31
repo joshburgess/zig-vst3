@@ -139,12 +139,19 @@ pub const Feature = extern struct {
 
 pub const Urid = u32;
 
+pub const UridMapFunction = *const fn (
+    handle: ?*anyopaque,
+    URI: [*:0]const u8,
+) callconv(.c) Urid;
+
 pub const UridMap = extern struct {
     handle: ?*anyopaque,
-    map: *const fn (
-        handle: ?*anyopaque,
-        URI: [*:0]const u8,
-    ) callconv(.c) Urid,
+    map: ?UridMapFunction,
+};
+
+const CheckedUridMap = struct {
+    handle: ?*anyopaque,
+    map: UridMapFunction,
 };
 
 pub const UridUnmap = extern struct {
@@ -1212,13 +1219,21 @@ pub fn CoreAdapterWithParameters(
                 );
             }
             if (featureWithUri(features, urid_map_uri)) |map_feature| {
-                const map = featureValue(
+                const raw_map = featureValue(
                     UridMap,
                     map_feature,
                 ) orelse {
                     self.runtime.deinit();
                     allocator.destroy(self);
                     return null;
+                };
+                const map = CheckedUridMap{
+                    .handle = raw_map.handle,
+                    .map = raw_map.map orelse {
+                        self.runtime.deinit();
+                        allocator.destroy(self);
+                        return null;
+                    },
                 };
                 self.state_key = map.map(
                     map.handle,
@@ -4856,6 +4871,18 @@ test "LV2 instantiation options constrain block length" {
         ),
     );
     map_feature.data = &urid_map;
+
+    urid_map.map = null;
+    try std.testing.expectEqual(
+        @as(Handle, null),
+        Adapter.descriptor.instantiate(
+            &Adapter.descriptor,
+            48_000.0,
+            "/tmp/lv2-options-probe.lv2",
+            features[0..].ptr,
+        ),
+    );
+    urid_map.map = TestStateHost.map;
 
     var misaligned_options_storage: [@sizeOf(OptionsOption) + 1]u8 align(@alignOf(OptionsOption)) = undefined;
     options_feature.data =

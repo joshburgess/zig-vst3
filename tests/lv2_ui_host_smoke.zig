@@ -116,6 +116,14 @@ pub fn main(init: std.process.Init) !void {
         .URI = ui.urid_map_uri,
         .data = &urid_map,
     };
+    var null_urid_map = ui.UridMap{
+        .handle = null,
+        .map = null,
+    };
+    const null_map_feature = ui.Feature{
+        .URI = ui.urid_map_uri,
+        .data = &null_urid_map,
+    };
     const initial_scale: f32 = 1.25;
     const initial_options = [_]ui.OptionsOption{
         .{
@@ -143,6 +151,19 @@ pub fn main(init: std.process.Init) !void {
         &options_feature,
     };
     var widget: ui.Widget = null;
+    const null_map_features = [_:null]?*const ui.Feature{
+        &parent_feature,
+        &null_map_feature,
+    };
+    if (descriptor.instantiate(
+        descriptor,
+        "https://zig-vst3.dev/tests/lv2-ui-probe",
+        "/tmp/lv2-ui-probe.lv2",
+        Host.write,
+        &host,
+        &widget,
+        &null_map_features,
+    ) != null) return error.NullUridMapCallbackAccepted;
     if (descriptor.instantiate(
         null,
         "https://zig-vst3.dev/tests/lv2-ui-probe",

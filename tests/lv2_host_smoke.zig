@@ -228,6 +228,17 @@ pub fn main(init: std.process.Init) !void {
         .URI = core.lv2.urid_map_uri,
         .data = &urid_map,
     };
+    var null_urid_map = core.lv2.UridMap{
+        .handle = null,
+        .map = null,
+    };
+    const null_map_feature = core.lv2.Feature{
+        .URI = core.lv2.urid_map_uri,
+        .data = &null_urid_map,
+    };
+    const null_map_features = [_:null]?*const core.lv2.Feature{
+        &null_map_feature,
+    };
     const minimum_block_length: i32 = 1;
     const maximum_block_length: i32 = 4;
     const nominal_block_length: i32 = 4;
@@ -272,6 +283,12 @@ pub fn main(init: std.process.Init) !void {
         &map_feature,
         &options_feature,
     };
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/zig_vst3_mono_gain.lv2",
+        &null_map_features,
+    ) != null) return error.NullUridMapCallbackAccepted;
     if (descriptor.instantiate(
         null,
         48_000.0,
