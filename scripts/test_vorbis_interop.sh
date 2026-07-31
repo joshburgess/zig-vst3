@@ -207,6 +207,14 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$decode_probe" "$external_16k_fixture"
             printf 'Vorbis FFmpeg 16 kHz mono geometry test passed\n'
 
+            external_geometry_change_fixture="$temporary/ffmpeg-encoded-geometry-change.ogg"
+            cat "$external_8k_fixture" "$external_16k_fixture" \
+                >"$external_geometry_change_fixture"
+            require_probe_rejection \
+                "$external_geometry_change_fixture" \
+                "Project decoder accepted a chained Vorbis geometry change" \
+                "Vorbis FFmpeg chained geometry-change rejection passed"
+
             external_low_quality_fixture="$temporary/ffmpeg-encoded-low-quality.ogg"
             ffmpeg -v error -y \
                 -f lavfi \

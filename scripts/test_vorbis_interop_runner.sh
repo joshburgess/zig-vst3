@@ -27,7 +27,7 @@ printf '%s\n' \
     '#!/bin/sh' \
     'test -s "$1"' \
     'case "$1" in' \
-    '    *-corrupt.ogg|*-truncated.ogg) exit 1 ;;' \
+    '    *-corrupt.ogg|*-truncated.ogg|*-geometry-change.ogg) exit 1 ;;' \
     'esac' \
     >"$fake_bin/decode-probe"
 chmod +x "$fake_bin/decode-probe"
@@ -47,6 +47,8 @@ grep -q 'Vorbis FFmpeg mono encoder decode and seek test passed' \
 grep -q 'Vorbis FFmpeg 8 kHz stereo geometry test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg 16 kHz mono geometry test passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg chained geometry-change rejection passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg low-quality 512/4096 geometry test passed' \
     "$root/ffmpeg.txt"
@@ -75,7 +77,7 @@ expect_probe_failure() {
         '#!/bin/sh' \
         'count_file="${TMPDIR:-/tmp}/probe-count"' \
         'case "$1" in' \
-        '    *-corrupt.ogg|*-truncated.ogg) exit 1 ;;' \
+        '    *-corrupt.ogg|*-truncated.ogg|*-geometry-change.ogg) exit 1 ;;' \
         'esac' \
         'count=0' \
         '[ ! -f "$count_file" ] || count=$(cat "$count_file")' \
