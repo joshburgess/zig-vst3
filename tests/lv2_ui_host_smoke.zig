@@ -451,4 +451,19 @@ pub fn main(init: std.process.Init) !void {
         &widget,
         &no_features,
     ) != null) return error.MissingParentAccepted;
+    const null_parent_feature = ui.Feature{
+        .URI = ui.parent_uri,
+        .data = null,
+    };
+    const null_parent_features =
+        [_:null]?*const ui.Feature{&null_parent_feature};
+    if (descriptor.instantiate(
+        descriptor,
+        "https://zig-vst3.dev/tests/lv2-ui-probe",
+        "/tmp/lv2-ui-probe.lv2",
+        Host.write,
+        &host,
+        &widget,
+        &null_parent_features,
+    ) != null) return error.NullParentAccepted;
 }

@@ -269,6 +269,7 @@ pub fn Adapter(
             const widget_out = widget orelse return null;
             const parent_feature = findFeature(features, parent_uri) orelse
                 return null;
+            const parent = parent_feature.data orelse return null;
             const scale_options = readScaleOptions(features) catch return null;
 
             const allocator = std.heap.page_allocator;
@@ -290,7 +291,7 @@ pub fn Adapter(
             };
             instance.editor.attach(.{
                 .platform = platform,
-                .handle = parent_feature.data,
+                .handle = parent,
             }) catch {
                 instance.editor.deinit();
                 allocator.destroy(instance);
@@ -1001,6 +1002,8 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         }
     };
     const Backend = struct {
+        var create_count: usize = 0;
+
         const State = struct {
             attached: bool = false,
             parameter: f64 = 0.5,
@@ -1010,6 +1013,7 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         };
 
         pub fn create(context: gui.Context) gui.Error!gui.Editor {
+            create_count += 1;
             const backend_state = std.heap.page_allocator.create(State) catch
                 return error.Rejected;
             backend_state.* = .{};
@@ -1233,6 +1237,23 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         &options_feature,
     };
     var widget: Widget = null;
+    const null_parent_feature = Feature{
+        .URI = parent_uri,
+        .data = null,
+    };
+    const null_parent_features =
+        [_:null]?*const Feature{&null_parent_feature};
+    Backend.create_count = 0;
+    try std.testing.expect(Ui.descriptor.instantiate(
+        &Ui.descriptor,
+        "https://example.test/ui-probe",
+        "/tmp/ui-probe.lv2",
+        Host.write,
+        &host,
+        &widget,
+        &null_parent_features,
+    ) == null);
+    try std.testing.expectEqual(@as(usize, 0), Backend.create_count);
     const handle = Ui.descriptor.instantiate(
         &Ui.descriptor,
         "https://example.test/ui-probe",
@@ -1244,6 +1265,7 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
     ) orelse return error.UiInstantiationFailed;
     defer Ui.descriptor.cleanup(handle);
     try std.testing.expect(widget != null);
+    try std.testing.expectEqual(@as(usize, 1), Backend.create_count);
 
     const instance = Ui.instanceFromHandle(handle) orelse
         return error.UiInstantiationFailed;
