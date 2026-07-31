@@ -513,6 +513,7 @@ struct Service {
     std::condition_variable condition;
     bool ready {false};
     bool valid {false};
+    bool register_registry {true};
     GMainContext* context {nullptr};
     GMainLoop* loop {nullptr};
     std::thread thread;
@@ -614,13 +615,10 @@ struct Service {
         };
         guint bus_registration = 0;
         guint registry_registration = 0;
-        if (node && requestName(connection, bus_name) &&
-            requestName(connection, registry_name)) {
+        const bool names_ready = node && requestName(connection, bus_name) &&
+            (!register_registry || requestName(connection, registry_name));
+        if (names_ready) {
             auto* bus_info = g_dbus_node_info_lookup_interface(node, bus_name);
-            auto* registry_info = g_dbus_node_info_lookup_interface(
-                node,
-                "org.a11y.atspi.Socket"
-            );
             bus_registration = g_dbus_connection_register_object(
                 connection,
                 bus_path,
@@ -630,19 +628,26 @@ struct Service {
                 nullptr,
                 &error
             );
-            registry_registration = g_dbus_connection_register_object(
-                connection,
-                registry_path,
-                registry_info,
-                &vtable,
-                this,
-                nullptr,
-                &error
-            );
+            if (register_registry) {
+                auto* registry_info = g_dbus_node_info_lookup_interface(
+                    node,
+                    "org.a11y.atspi.Socket"
+                );
+                registry_registration = g_dbus_connection_register_object(
+                    connection,
+                    registry_path,
+                    registry_info,
+                    &vtable,
+                    this,
+                    nullptr,
+                    &error
+                );
+            }
         }
         {
             std::lock_guard<std::mutex> lock(mutex);
-            valid = bus_registration != 0 && registry_registration != 0;
+            valid = bus_registration != 0 &&
+                (!register_registry || registry_registration != 0);
             ready = true;
         }
         condition.notify_one();
@@ -661,8 +666,9 @@ struct Service {
         context = nullptr;
     }
 
-    bool start(const char* bus_address) {
+    bool start(const char* bus_address, bool with_registry = true) {
         address = bus_address;
+        register_registry = with_registry;
         thread = std::thread([this] { run(); });
         std::unique_lock<std::mutex> lock(mutex);
         return condition.wait_for(
@@ -716,13 +722,6 @@ int runTest() {
     GTestDBus* bus = g_test_dbus_new(G_TEST_DBUS_NONE);
     g_test_dbus_up(bus);
     Service service;
-    if (!service.start(g_test_dbus_get_bus_address(bus))) {
-        service.stop();
-        g_test_dbus_down(bus);
-        g_object_unref(bus);
-        return 1;
-    }
-
     ZigVstgui::AccessibilityNode node;
     node.setRole(ZigVstgui::AccessibilityRole::text_field);
     node.setName("Gain");
@@ -746,6 +745,29 @@ int runTest() {
     frame->addView(view);
     view->setWantsFocus(true);
     ZigVstgui::NativeAccessibilityBridge bridge;
+    const bool missing_bus_safe = !bridge.open(
+        frame.get(),
+        {{&node, view}}
+    ) && !bridge.active() && bridge.elementCount() == 0;
+    Service bus_without_registry;
+    if (!bus_without_registry.start(g_test_dbus_get_bus_address(bus), false)) {
+        bus_without_registry.stop();
+        g_test_dbus_down(bus);
+        g_object_unref(bus);
+        return 1;
+    }
+    const bool missing_registry_safe = !bridge.open(
+        frame.get(),
+        {{&node, view}}
+    ) && !bridge.active() && bridge.elementCount() == 0;
+    bridge.close();
+    bus_without_registry.stop();
+    if (!service.start(g_test_dbus_get_bus_address(bus))) {
+        service.stop();
+        g_test_dbus_down(bus);
+        g_object_unref(bus);
+        return 1;
+    }
     const bool opened = bridge.open(
         frame.get(),
         {{&node, view}}
@@ -762,7 +784,8 @@ int runTest() {
             service.evidence.event_count.load(std::memory_order_acquire) == 3) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-    const bool published = opened && active &&
+    const bool published = missing_bus_safe && missing_registry_safe &&
+        opened && active &&
         element_count == 1 &&
         service.evidence.embedded.load(std::memory_order_acquire) &&
         service.evidence.id_set.load(std::memory_order_acquire) &&
@@ -797,12 +820,15 @@ int runTest() {
     if (!published || !closed) {
         std::fprintf(
             stderr,
-            "AT-SPI bridge evidence: opened=%d active=%d count=%zu "
+            "AT-SPI bridge evidence: missing-bus=%d missing-registry=%d "
+            "opened=%d active=%d count=%zu "
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
             "interfaces=%d bounds=%d action-count=%d action=%d "
             "value-read=%d value-set=%d editable=%d text-set=%d insert=%d "
             "delete=%d cache=%d property-event=%d focus-event=%d "
             "bounds-event=%d closed=%d\n",
+            missing_bus_safe,
+            missing_registry_safe,
             opened,
             active,
             element_count,
