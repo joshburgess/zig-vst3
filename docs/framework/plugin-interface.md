@@ -48,6 +48,8 @@ pub const Runtime = plug.plugin.ProcessorRuntime(Gain);
 
 `ProcessorRuntime(Plugin)` adds a format-neutral lifecycle contract around the instance. VST3, future plugin formats, standalone applications, and offline tools can translate their host data into the same `ProcessContext` instead of defining different processor lifecycles.
 
+`PluginInstance.initInto` and `ProcessorRuntime.initInto` construct directly in caller-owned storage. Custom adapters should use these forms when a plugin retains large fixed-capacity state. The value-returning `init` functions remain available for compatibility. The VST3 processor adapter and high-level effect constructor select the in-place path automatically.
+
 ## Metadata
 
 Every plugin declares:
