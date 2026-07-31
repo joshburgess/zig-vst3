@@ -806,11 +806,11 @@ test "installed core package runs an LV2 audio control descriptor" {
             }},
         };
 
-        urid_unmap: ?*const core.lv2.UridUnmap = null,
+        urid_unmap: ?*const core.lv2.UridUnmapSink = null,
 
         pub fn bindLv2UridUnmap(
             self: *@This(),
-            unmap: *const core.lv2.UridUnmap,
+            unmap: *const core.lv2.UridUnmapSink,
         ) void {
             self.urid_unmap = unmap;
         }
@@ -911,10 +911,8 @@ test "installed core package runs an LV2 audio control descriptor" {
     const bound_unmap =
         adapter_instance.runtime.instance.plugin.urid_unmap orelse
         return error.MissingLv2UridUnmap;
-    const known_uri = bound_unmap.unmap(
-        bound_unmap.handle,
-        7,
-    ) orelse return error.MissingLv2KnownUri;
+    const known_uri = bound_unmap.unmap(7) orelse
+        return error.MissingLv2KnownUri;
     try std.testing.expectEqualStrings(
         "https://example.test/installed-known",
         std.mem.span(known_uri),

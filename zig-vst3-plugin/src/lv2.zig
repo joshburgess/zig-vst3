@@ -156,10 +156,24 @@ const CheckedUridMap = struct {
 
 pub const UridUnmap = extern struct {
     handle: ?*anyopaque,
-    unmap: *const fn (
-        handle: ?*anyopaque,
+    unmap: ?UridUnmapFunction,
+};
+
+pub const UridUnmapFunction = *const fn (
+    handle: ?*anyopaque,
+    urid: Urid,
+) callconv(.c) ?[*:0]const u8;
+
+pub const UridUnmapSink = struct {
+    handle: ?*anyopaque,
+    unmap_uri: UridUnmapFunction,
+
+    pub fn unmap(
+        self: *const UridUnmapSink,
         urid: Urid,
-    ) callconv(.c) ?[*:0]const u8,
+    ) ?[*:0]const u8 {
+        return self.unmap_uri(self.handle, urid);
+    }
 };
 
 pub const Atom = extern struct {
@@ -1069,6 +1083,7 @@ pub fn CoreAdapterWithParameters(
         sequence_size_configured: bool = false,
         worker_schedule: ?CheckedWorkerSchedule = null,
         worker_schedule_sink: WorkerScheduleSink = undefined,
+        urid_unmap_sink: UridUnmapSink = undefined,
         inside_run: bool = false,
         transport: ?process_api.Transport = null,
         transport_speed: f64 = 0.0,
@@ -1191,7 +1206,7 @@ pub fn CoreAdapterWithParameters(
                 .sample_rate = sample_rate,
             };
             if (comptime requires_lv2_urid_unmap) {
-                const unmap = featureStruct(
+                const raw_unmap = featureStruct(
                     UridUnmap,
                     features,
                     urid_unmap_uri,
@@ -1200,7 +1215,17 @@ pub fn CoreAdapterWithParameters(
                     allocator.destroy(self);
                     return null;
                 };
-                self.runtime.instance.plugin.bindLv2UridUnmap(unmap);
+                self.urid_unmap_sink = .{
+                    .handle = raw_unmap.handle,
+                    .unmap_uri = raw_unmap.unmap orelse {
+                        self.runtime.deinit();
+                        allocator.destroy(self);
+                        return null;
+                    },
+                };
+                self.runtime.instance.plugin.bindLv2UridUnmap(
+                    &self.urid_unmap_sink,
+                );
             }
             if (comptime has_worker) {
                 if (featureWithUri(
@@ -4456,11 +4481,11 @@ test "LV2 URID unmap opt-in binds stable host reverse mappings" {
         pub const Params = struct {};
         pub const lv2_urid_unmap_required = true;
 
-        urid_unmap: ?*const UridUnmap = null,
+        urid_unmap: ?*const UridUnmapSink = null,
 
         pub fn bindLv2UridUnmap(
             self: *@This(),
-            unmap: *const UridUnmap,
+            unmap: *const UridUnmapSink,
         ) void {
             self.urid_unmap = unmap;
         }
@@ -4510,7 +4535,7 @@ test "LV2 URID unmap opt-in binds stable host reverse mappings" {
     const bound =
         instance.runtime.instance.plugin.urid_unmap orelse
         return error.MissingUridUnmap;
-    const known = bound.unmap(bound.handle, 23) orelse
+    const known = bound.unmap(23) orelse
         return error.MissingKnownUri;
     try std.testing.expectEqualStrings(
         "https://example.test/known-type",
@@ -4518,7 +4543,7 @@ test "LV2 URID unmap opt-in binds stable host reverse mappings" {
     );
     try std.testing.expectEqual(
         @as(?[*:0]const u8, null),
-        bound.unmap(bound.handle, 24),
+        bound.unmap(24),
     );
 }
 
@@ -4533,7 +4558,7 @@ test "LV2 URID unmap opt-in rejects missing and malformed features" {
 
         pub fn bindLv2UridUnmap(
             _: *@This(),
-            _: *const UridUnmap,
+            _: *const UridUnmapSink,
         ) void {}
 
         pub fn process(
@@ -4587,6 +4612,26 @@ test "LV2 URID unmap opt-in rejects missing and malformed features" {
             48_000.0,
             "/tmp/lv2-urid-unmap-validation.lv2",
             misaligned_features[0..].ptr,
+        ),
+    );
+
+    var null_callback = UridUnmap{
+        .handle = null,
+        .unmap = null,
+    };
+    const null_callback_feature = Feature{
+        .URI = urid_unmap_uri,
+        .data = &null_callback,
+    };
+    const null_callback_features =
+        [_:null]?*const Feature{&null_callback_feature};
+    try std.testing.expectEqual(
+        @as(Handle, null),
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-urid-unmap-validation.lv2",
+            null_callback_features[0..].ptr,
         ),
     );
 }
