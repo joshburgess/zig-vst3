@@ -62,10 +62,19 @@ pub fn ProcessorWithParameters(
         last_prepare_config: ?core.plugin.PrepareConfig = null,
         last_process_succeeded: bool = true,
 
+        pub fn initInPlaceWithAllocator(
+            self: *Self,
+            allocator: std.mem.Allocator,
+        ) !void {
+            try self.runtime.initInto(allocator, params);
+            self.last_prepare_config = null;
+            self.last_process_succeeded = true;
+        }
+
         pub fn initWithAllocator(allocator: std.mem.Allocator) !Self {
-            return .{
-                .runtime = try Runtime.init(allocator, params),
-            };
+            var self: Self = undefined;
+            try self.initInPlaceWithAllocator(allocator);
+            return self;
         }
 
         pub fn prepareChecked(
@@ -400,7 +409,8 @@ test "VST3 processor adapter carries lifecycle, parameters, and precision suppor
     };
 
     const Adapter = Processor(Gain);
-    var adapter = try Adapter.initWithAllocator(std.testing.allocator);
+    var adapter: Adapter = undefined;
+    try adapter.initInPlaceWithAllocator(std.testing.allocator);
     defer adapter.deinit();
 
     try std.testing.expect(adapter.supportsSampleType(f32));

@@ -2979,6 +2979,8 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         },
     );
     try std.testing.expect(!installed_result.truncated);
+    try std.testing.expect(!installed_result.floor_truncated);
+    try std.testing.expect(!installed_result.residue_truncated);
     try std.testing.expectEqualSlices(
         f32,
         &([_]f32{0} ** 64),

@@ -165,7 +165,8 @@ test "plugin instance reports empty parameter metadata" {
         pub const vendor = "zig-vst3";
         pub const Params = struct {};
     };
-    var instance = try PluginInstance(Empty).init(std.testing.allocator, .{});
+    var instance: PluginInstance(Empty) = undefined;
+    try instance.initInto(std.testing.allocator, .{});
     const view = instance.parameterView();
     const editor = instance.parameterEditor();
 

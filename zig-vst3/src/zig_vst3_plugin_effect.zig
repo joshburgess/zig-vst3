@@ -4414,7 +4414,14 @@ pub fn SimpleEffect(comptime Config: type) type {
                     AudioBusSnapshotPublisher.init(
                         initial_audio_bus_snapshot,
                     );
-                if (@hasDecl(Config.Processor, "initWithAllocator")) {
+                if (@hasDecl(
+                    Config.Processor,
+                    "initInPlaceWithAllocator",
+                )) {
+                    try self.processor_impl.initInPlaceWithAllocator(
+                        std.heap.page_allocator,
+                    );
+                } else if (@hasDecl(Config.Processor, "initWithAllocator")) {
                     self.processor_impl = try Config.Processor.initWithAllocator(
                         std.heap.page_allocator,
                     );

@@ -20,13 +20,23 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
         state: RuntimeState = .initialized,
         prepare_config: ?instance_mod.PrepareConfig = null,
 
+        pub fn initInto(
+            self: *Self,
+            allocator: std.mem.Allocator,
+            params: Plugin.Params,
+        ) !void {
+            try self.instance.initInto(allocator, params);
+            self.state = .initialized;
+            self.prepare_config = null;
+        }
+
         pub fn init(
             allocator: std.mem.Allocator,
             params: Plugin.Params,
         ) !Self {
-            return .{
-                .instance = try Instance.init(allocator, params),
-            };
+            var self: Self = undefined;
+            try self.initInto(allocator, params);
+            return self;
         }
 
         pub fn runtimeState(self: *const Self) RuntimeState {
@@ -292,8 +302,8 @@ test "processor runtime enforces lifecycle and carries host-neutral process data
         }
     };
 
-    var runtime =
-        try ProcessorRuntime(Gain).init(std.testing.allocator, .{});
+    var runtime: ProcessorRuntime(Gain) = undefined;
+    try runtime.initInto(std.testing.allocator, .{});
     defer runtime.deinit();
 
     try std.testing.expectError(

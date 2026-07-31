@@ -23,17 +23,23 @@ pub fn PluginInstance(comptime Plugin: type) type {
         spec: Spec,
         plugin: Plugin,
 
-        pub fn init(allocator: std.mem.Allocator, params: Plugin.Params) !Self {
-            const spec = try Spec.initChecked(params);
-            const plugin = if (Spec.has_init)
-                try Plugin.init(allocator)
-            else
-                Plugin{};
+        pub fn initInto(
+            self: *Self,
+            allocator: std.mem.Allocator,
+            params: Plugin.Params,
+        ) !void {
+            self.spec = try Spec.initChecked(params);
+            if (Spec.has_init) {
+                self.plugin = try Plugin.init(allocator);
+            } else {
+                self.plugin = .{};
+            }
+        }
 
-            return .{
-                .spec = spec,
-                .plugin = plugin,
-            };
+        pub fn init(allocator: std.mem.Allocator, params: Plugin.Params) !Self {
+            var self: Self = undefined;
+            try self.initInto(allocator, params);
+            return self;
         }
 
         pub fn prepareChecked(self: *Self, config: PrepareConfig) !void {
