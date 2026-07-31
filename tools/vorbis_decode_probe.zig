@@ -488,6 +488,8 @@ const ReferenceComparison = struct {
     project_values: u64 = 0,
     sample_values: u64 = 0,
     reference_energy: f64 = 0,
+    project_energy: f64 = 0,
+    cross_energy: f64 = 0,
     error_energy: f64 = 0,
     peak_error: f64 = 0,
     peak_index: u64 = 0,
@@ -546,6 +548,10 @@ const ReferenceComparison = struct {
                 const absolute_difference = @abs(difference);
                 self.reference_energy +=
                     reference_sample * reference_sample;
+                self.project_energy +=
+                    @as(f64, project_sample) * project_sample;
+                self.cross_energy +=
+                    @as(f64, project_sample) * reference_sample;
                 self.error_energy += difference * difference;
                 if (absolute_difference > self.peak_error) {
                     self.peak_error = absolute_difference;
@@ -583,9 +589,21 @@ const ReferenceComparison = struct {
         const error_rms = @sqrt(self.error_energy / divisor);
         const reference_rms = @sqrt(self.reference_energy / divisor);
         const normalized_rms_error = error_rms / reference_rms;
+        const optimal_project_gain = if (self.project_energy > 0)
+            self.cross_energy / self.project_energy
+        else
+            0;
+        const aligned_error_energy = @max(
+            0,
+            self.reference_energy -
+                self.cross_energy * self.cross_energy /
+                    @max(self.project_energy, std.math.floatMin(f64)),
+        );
+        const gain_aligned_normalized_rms =
+            @sqrt(aligned_error_energy / divisor) / reference_rms;
         if (self.report) {
             std.debug.print(
-                "Vorbis PCM reference samples={d} peak_error={d:.9} peak_index={d} project_at_peak={d:.9} reference_at_peak={d:.9} rms_error={d:.9} normalized_rms_error={d:.9}\n",
+                "Vorbis PCM reference samples={d} peak_error={d:.9} peak_index={d} project_at_peak={d:.9} reference_at_peak={d:.9} rms_error={d:.9} normalized_rms_error={d:.9} optimal_project_gain={d:.9} gain_aligned_normalized_rms={d:.9}\n",
                 .{
                     self.sample_values,
                     self.peak_error,
@@ -594,6 +612,8 @@ const ReferenceComparison = struct {
                     self.peak_reference,
                     error_rms,
                     normalized_rms_error,
+                    optimal_project_gain,
+                    gain_aligned_normalized_rms,
                 },
             );
         }
