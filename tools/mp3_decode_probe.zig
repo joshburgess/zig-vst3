@@ -18,6 +18,8 @@ pub fn main(init: std.process.Init) !void {
         .id3v2_4
     else if (std.mem.eql(u8, args[4], "--require-protected"))
         .protected
+    else if (std.mem.eql(u8, args[4], "--require-free-format"))
+        .free_format
     else
         return error.InvalidArguments;
     const require_multiple_seek_points =
@@ -43,7 +45,7 @@ pub fn main(init: std.process.Init) !void {
             if (!hasId3v2Version(encoded, 4))
                 return error.MissingExpectedMp3Tags;
         },
-        .protected => {},
+        .protected, .free_format => {},
     }
     const summary = try plug.dsp.Mp3Stream.summarize(encoded);
     if (requirement == .protected) {
@@ -56,6 +58,14 @@ pub fn main(init: std.process.Init) !void {
         {
             return error.MissingExpectedMp3Protection;
         }
+    }
+    if (requirement == .free_format) {
+        const first_frame = try plug.dsp.Mp3Frame.parse(
+            encoded,
+            summary.audio_offset,
+        );
+        if (!first_frame.header.free_format)
+            return error.MissingExpectedMp3FreeFormat;
     }
     if (args.len >= 4) {
         const expected_sample_rate = try std.fmt.parseInt(
@@ -183,6 +193,7 @@ const Requirement = enum {
     tagged_multiple_seek_points,
     id3v2_4,
     protected,
+    free_format,
 };
 
 fn hasId3v2Version(encoded: []const u8, version: u8) bool {

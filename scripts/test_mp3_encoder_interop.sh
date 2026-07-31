@@ -44,6 +44,26 @@ compare_reference_pcm() {
     printf '%s\n' "$success_message"
 }
 
+compare_lame_reference_pcm() {
+    encoded_path=$1
+    channels=$2
+    decoded_wav=$3
+    reference_path=$4
+    success_message=$5
+    lame --silent --decode "$encoded_path" "$decoded_wav"
+    ffmpeg -v error -y \
+        -i "$decoded_wav" \
+        -map 0:a:0 \
+        -f f32le \
+        -acodec pcm_f32le \
+        "$reference_path"
+    "$reference_probe" \
+        "$encoded_path" \
+        "$reference_path" \
+        "$channels"
+    printf '%s\n' "$success_message"
+}
+
 wav_data_range() {
     wav_path=$1
     wav_bytes=$(wc -c <"$wav_path")
@@ -181,8 +201,24 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                         "$temporary/lame-protected-reference.f32le" \
                         'MP3 LAME protected decoded-PCM reference probe passed'
                 fi
+
+                free_format_mp3="$temporary/lame-free-format.mp3"
+                lame --silent --freeformat -b 320 \
+                    "$protected_wav" \
+                    "$free_format_mp3"
+                "$decode_probe" "$free_format_mp3" 44100 2 \
+                    --require-free-format
+                printf 'MP3 LAME free-format decoder probe passed\n'
+                if [ -n "$reference_probe" ]; then
+                    compare_lame_reference_pcm \
+                        "$free_format_mp3" \
+                        2 \
+                        "$temporary/lame-free-format-reference.wav" \
+                        "$temporary/lame-free-format-reference.f32le" \
+                        'MP3 LAME free-format decoded-PCM reference probe passed'
+                fi
             else
-                printf 'MP3 LAME executable unavailable; protected test skipped\n'
+                printf 'MP3 LAME executable unavailable; protected and free-format tests skipped\n'
             fi
 
             external_tagged_long="$temporary/ffmpeg-mpeg1-tagged-long.mp3"
