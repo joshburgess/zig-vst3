@@ -83,7 +83,11 @@ grep -q 'Vorbis FFmpeg 5.1 encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis project decoder and seek probe passed' \
     "$root/ffmpeg.txt"
+grep -q 'Vorbis project fixture Xiph decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
 grep -q 'Vorbis project chained decoder and seek probe passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis project chained Xiph decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis project chained checksum corruption rejection passed' \
     "$root/ffmpeg.txt"
@@ -97,6 +101,8 @@ grep -q 'Vorbis Xiph stereo decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis Xiph multi-page decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
+grep -q 'Vorbis Xiph chained decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg multi-page decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis Xiph mono decoded-PCM reference passed' \
@@ -107,7 +113,7 @@ grep -q 'Vorbis Xiph 16 kHz decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis Xiph low-quality decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
-[ "$(cat "$reference_probe_count")" -eq 7 ] || {
+[ "$(cat "$reference_probe_count")" -eq 10 ] || {
     printf 'Vorbis runner skipped a decoded-PCM reference probe\n' >&2
     exit 1
 }
