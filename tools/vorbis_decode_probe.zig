@@ -9,6 +9,8 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(allocator);
     if (args.len != 2 and args.len != 3 and args.len != 4)
         return error.InvalidArguments;
+    const require_junk_resync = args.len == 4 and
+        std.mem.eql(u8, args[2], "--require-junk-resync");
     const require_midpoint_seek = args.len == 3;
     if (require_midpoint_seek and
         !std.mem.eql(
@@ -19,7 +21,7 @@ pub fn main(init: std.process.Init) !void {
     {
         return error.InvalidArguments;
     }
-    const compare_reference = args.len == 4;
+    const compare_reference = args.len == 4 and !require_junk_resync;
     const reference_encoding: ReferenceEncoding = if (compare_reference)
         if (std.mem.eql(u8, args[2], "--reference-f32le"))
             .f32le
@@ -36,6 +38,15 @@ pub fn main(init: std.process.Init) !void {
         allocator,
         .limited(16 * 1024 * 1024),
     );
+    if (require_junk_resync) {
+        try verifyJunkResynchronization(
+            init.io,
+            encoded,
+            args[3],
+            allocator,
+        );
+        return;
+    }
     const reference = if (compare_reference)
         ReferencePcm{
             .bytes = try std.Io.Dir.cwd().readFileAlloc(
@@ -281,6 +292,185 @@ pub fn main(init: std.process.Init) !void {
         }
     } else {
         return error.UnexpectedVorbisGeometry;
+    }
+}
+
+fn verifyJunkResynchronization(
+    io: std.Io,
+    encoded: []const u8,
+    damaged_path: []const u8,
+    allocator: std.mem.Allocator,
+) !void {
+    const junk = [_]u8{ 'O', 'g', 'g', 'S', 0xff, 0x5a };
+    const insertion = try completePacketPageBoundary(encoded);
+    const damaged = try allocator.alloc(u8, encoded.len + junk.len);
+    @memcpy(damaged[0..insertion], encoded[0..insertion]);
+    @memcpy(damaged[insertion..][0..junk.len], &junk);
+    @memcpy(damaged[insertion + junk.len ..], encoded[insertion..]);
+
+    var output = try std.Io.Dir.cwd().createFile(
+        io,
+        damaged_path,
+        .{ .read = true },
+    );
+    defer output.close(io);
+    try output.writePositionalAll(io, damaged, 0);
+
+    const clean_packet_storage = try allocator.alloc(u8, 4 * 1024 * 1024);
+    const damaged_packet_storage = try allocator.alloc(u8, 4 * 1024 * 1024);
+    var clean_packets = plug.dsp.OggPacketIterator.initChained(
+        encoded,
+        clean_packet_storage,
+    );
+    var damaged_packets = plug.dsp.OggPacketIterator.initChained(
+        damaged,
+        damaged_packet_storage,
+    );
+    try compareRecoveredMemoryPackets(
+        &clean_packets,
+        &damaged_packets,
+        junk.len,
+    );
+
+    const file_packet_storage = try allocator.alloc(u8, 4 * 1024 * 1024);
+    const page_storage = try allocator.alloc(
+        u8,
+        plug.dsp.maximum_ogg_page_bytes,
+    );
+    clean_packets = plug.dsp.OggPacketIterator.initChained(
+        encoded,
+        clean_packet_storage,
+    );
+    var file_packets = try plug.dsp.OggFilePacketReader.initChained(
+        io,
+        output,
+    );
+    try compareRecoveredFilePackets(
+        &clean_packets,
+        &file_packets,
+        page_storage,
+        file_packet_storage,
+        junk.len,
+    );
+}
+
+fn completePacketPageBoundary(encoded: []const u8) !usize {
+    var pages = plug.dsp.OggPageIterator.initChained(encoded);
+    while (try pages.next()) |page| {
+        if (page.sequence_number == 0 or page.end or
+            page.lacing_values.len == 0 or
+            page.lacing_values[page.lacing_values.len - 1] == 255)
+        {
+            continue;
+        }
+        return std.math.add(
+            usize,
+            @intCast(page.byte_offset),
+            page.byte_length,
+        ) catch return error.OggByteCountOverflow;
+    }
+    return error.MissingOggRecoveryBoundary;
+}
+
+fn compareRecoveredMemoryPackets(
+    clean: *plug.dsp.OggPacketIterator,
+    damaged: *plug.dsp.OggPacketIterator,
+    junk_bytes: usize,
+) !void {
+    var recovered = false;
+    while (try clean.next()) |expected| {
+        const actual = damaged.next() catch |err| retry: {
+            if (recovered or err != error.UnsupportedOggVersion)
+                return err;
+            const retained_offset = damaged.pages.offset;
+            const retained_packet_index = damaged.packet_index;
+            if (damaged.resynchronize(junk_bytes - 1)) |_| {
+                return error.OggJunkExceededDeclaredBound;
+            } else |resync_err| {
+                if (resync_err != error.OggResynchronizationLimitReached)
+                    return resync_err;
+            }
+            if (damaged.pages.offset != retained_offset or
+                damaged.packet_index != retained_packet_index)
+            {
+                return error.OggFailedResynchronizationChangedState;
+            }
+            if (try damaged.resynchronize(junk_bytes) != junk_bytes)
+                return error.UnexpectedOggResynchronizationDistance;
+            recovered = true;
+            break :retry try damaged.next() orelse
+                return error.MissingOggPacketAfterRecovery;
+        } orelse return error.MissingOggPacketAfterRecovery;
+        try requireMatchingPacket(expected, actual);
+    }
+    if (!recovered) return error.OggJunkWasNotRejected;
+    if ((try damaged.next()) != null)
+        return error.UnexpectedOggPacketAfterRecovery;
+}
+
+fn compareRecoveredFilePackets(
+    clean: *plug.dsp.OggPacketIterator,
+    damaged: *plug.dsp.OggFilePacketReader,
+    page_storage: []u8,
+    packet_storage: []u8,
+    junk_bytes: u64,
+) !void {
+    var recovered = false;
+    while (try clean.next()) |expected| {
+        const actual = damaged.next(
+            page_storage,
+            packet_storage,
+        ) catch |err| retry: {
+            if (recovered or err != error.UnsupportedOggVersion)
+                return err;
+            const retained_offset = damaged.pages.offset;
+            const retained_packet_index = damaged.packet_index;
+            if (damaged.resynchronize(
+                page_storage,
+                packet_storage,
+                junk_bytes - 1,
+            )) |_| {
+                return error.OggJunkExceededDeclaredBound;
+            } else |resync_err| {
+                if (resync_err != error.OggResynchronizationLimitReached)
+                    return resync_err;
+            }
+            if (damaged.pages.offset != retained_offset or
+                damaged.packet_index != retained_packet_index)
+            {
+                return error.OggFailedResynchronizationChangedState;
+            }
+            if (try damaged.resynchronize(
+                page_storage,
+                packet_storage,
+                junk_bytes,
+            ) != junk_bytes) {
+                return error.UnexpectedOggResynchronizationDistance;
+            }
+            recovered = true;
+            break :retry try damaged.next(
+                page_storage,
+                packet_storage,
+            ) orelse return error.MissingOggPacketAfterRecovery;
+        } orelse return error.MissingOggPacketAfterRecovery;
+        try requireMatchingPacket(expected, actual);
+    }
+    if (!recovered) return error.OggJunkWasNotRejected;
+    if ((try damaged.next(page_storage, packet_storage)) != null)
+        return error.UnexpectedOggPacketAfterRecovery;
+}
+
+fn requireMatchingPacket(
+    expected: plug.dsp.OggPacket,
+    actual: plug.dsp.OggPacket,
+) !void {
+    if (expected.granule_position != actual.granule_position or
+        expected.beginning != actual.beginning or
+        expected.end != actual.end or
+        expected.logical_stream_index != actual.logical_stream_index or
+        !std.mem.eql(u8, expected.bytes, actual.bytes))
+    {
+        return error.OggRecoveredPacketDiffered;
     }
 }
 

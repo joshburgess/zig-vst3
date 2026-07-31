@@ -82,6 +82,8 @@ grep -q 'Vorbis FFmpeg stereo encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg multi-page encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg bounded junk resynchronization probe passed' \
+    "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg chained encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg mono encoder decode and seek test passed' \
@@ -183,21 +185,24 @@ expect_probe_failure \
     'Vorbis runner accepted a multi-page stereo decode failure'
 expect_probe_failure \
     5 \
-    'Vorbis runner accepted a chained decode failure'
+    'Vorbis runner accepted a bounded junk recovery failure'
 expect_probe_failure \
     6 \
-    'Vorbis runner accepted a mono decode failure'
+    'Vorbis runner accepted a chained decode failure'
 expect_probe_failure \
     7 \
-    'Vorbis runner accepted an 8 kHz decode failure'
+    'Vorbis runner accepted a mono decode failure'
 expect_probe_failure \
     8 \
-    'Vorbis runner accepted a 16 kHz decode failure'
+    'Vorbis runner accepted an 8 kHz decode failure'
 expect_probe_failure \
     9 \
-    'Vorbis runner accepted a low-quality geometry decode failure'
+    'Vorbis runner accepted a 16 kHz decode failure'
 expect_probe_failure \
     10 \
+    'Vorbis runner accepted a low-quality geometry decode failure'
+expect_probe_failure \
+    11 \
     'Vorbis runner accepted a 5.1 decode failure'
 rm -f "$probe_count"
 
