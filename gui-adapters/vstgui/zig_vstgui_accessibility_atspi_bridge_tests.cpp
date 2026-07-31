@@ -63,11 +63,53 @@ struct Evidence {
     std::atomic<bool> text_inserted {false};
     std::atomic<bool> text_deleted {false};
     std::atomic<bool> cache_items {false};
+    std::atomic<bool> cache_root_added {false};
+    std::atomic<bool> cache_child_added {false};
+    std::atomic<bool> cache_root_removed {false};
+    std::atomic<bool> cache_child_removed {false};
+    std::atomic<unsigned int> cache_add_count {0};
+    std::atomic<unsigned int> cache_remove_count {0};
     std::atomic<bool> property_event {false};
     std::atomic<bool> focus_event {false};
     std::atomic<bool> bounds_event {false};
     std::atomic<unsigned int> event_count {0};
 };
+
+void cacheEventReceived(
+    GDBusConnection*,
+    const gchar*,
+    const gchar*,
+    const gchar*,
+    const gchar* signal_name,
+    GVariant* parameters,
+    gpointer userdata
+) {
+    auto* evidence = static_cast<Evidence*>(userdata);
+    if (!evidence || !signal_name || !parameters) return;
+    const char* application = nullptr;
+    const char* path = nullptr;
+    if (std::strcmp(signal_name, "AddAccessible") == 0) {
+        GVariant* item = g_variant_get_child_value(parameters, 0);
+        GVariant* reference = g_variant_get_child_value(item, 0);
+        g_variant_get(reference, "(&s&o)", &application, &path);
+        if (path && std::strcmp(path, "/org/a11y/atspi/accessible/root") == 0)
+            evidence->cache_root_added.store(true, std::memory_order_release);
+        if (path && std::strcmp(path, first_child_path) == 0)
+            evidence->cache_child_added.store(true, std::memory_order_release);
+        evidence->cache_add_count.fetch_add(1, std::memory_order_acq_rel);
+        g_variant_unref(reference);
+        g_variant_unref(item);
+        return;
+    }
+    if (std::strcmp(signal_name, "RemoveAccessible") == 0) {
+        g_variant_get(parameters, "((&s&o))", &application, &path);
+        if (path && std::strcmp(path, "/org/a11y/atspi/accessible/root") == 0)
+            evidence->cache_root_removed.store(true, std::memory_order_release);
+        if (path && std::strcmp(path, first_child_path) == 0)
+            evidence->cache_child_removed.store(true, std::memory_order_release);
+        evidence->cache_remove_count.fetch_add(1, std::memory_order_acq_rel);
+    }
+}
 
 bool callSucceeded(GVariant* result, GError* error) {
     if (result) {
@@ -113,6 +155,18 @@ void inspectApplication(
     const char* root,
     Evidence& evidence
 ) {
+    g_dbus_connection_signal_subscribe(
+        connection,
+        application,
+        cache_interface,
+        nullptr,
+        cache_path,
+        nullptr,
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        cacheEventReceived,
+        &evidence,
+        nullptr
+    );
     g_dbus_connection_signal_subscribe(
         connection,
         application,
@@ -781,7 +835,8 @@ int runTest() {
         if (service.evidence.property_event.load(std::memory_order_acquire) &&
             service.evidence.focus_event.load(std::memory_order_acquire) &&
             service.evidence.bounds_event.load(std::memory_order_acquire) &&
-            service.evidence.event_count.load(std::memory_order_acquire) == 3) break;
+            service.evidence.event_count.load(std::memory_order_acquire) == 3 &&
+            service.evidence.cache_add_count.load(std::memory_order_acquire) == 2) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     const bool published = missing_bus_safe && missing_registry_safe &&
@@ -804,6 +859,9 @@ int runTest() {
         service.evidence.text_inserted.load(std::memory_order_acquire) &&
         service.evidence.text_deleted.load(std::memory_order_acquire) &&
         service.evidence.cache_items.load(std::memory_order_acquire) &&
+        service.evidence.cache_root_added.load(std::memory_order_acquire) &&
+        service.evidence.cache_child_added.load(std::memory_order_acquire) &&
+        service.evidence.cache_add_count.load(std::memory_order_acquire) == 2 &&
         service.evidence.property_event.load(std::memory_order_acquire) &&
         service.evidence.focus_event.load(std::memory_order_acquire) &&
         service.evidence.bounds_event.load(std::memory_order_acquire);
@@ -812,11 +870,18 @@ int runTest() {
     );
     bridge.close();
     node.setName("Detached node");
-    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        if (service.evidence.cache_remove_count.load(std::memory_order_acquire) == 2)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
     const bool closed = !bridge.active() && bridge.elementCount() == 0 &&
         events_before_close == 3 &&
         service.evidence.event_count.load(std::memory_order_acquire) ==
-            events_before_close;
+            events_before_close &&
+        service.evidence.cache_root_removed.load(std::memory_order_acquire) &&
+        service.evidence.cache_child_removed.load(std::memory_order_acquire) &&
+        service.evidence.cache_remove_count.load(std::memory_order_acquire) == 2;
     if (!published || !closed) {
         std::fprintf(
             stderr,
@@ -825,7 +890,9 @@ int runTest() {
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
             "interfaces=%d bounds=%d action-count=%d action=%d "
             "value-read=%d value-set=%d editable=%d text-set=%d insert=%d "
-            "delete=%d cache=%d property-event=%d focus-event=%d "
+            "delete=%d cache=%d cache-root-add=%d cache-child-add=%d "
+            "cache-add-count=%u cache-root-remove=%d cache-child-remove=%d "
+            "cache-remove-count=%u property-event=%d focus-event=%d "
             "bounds-event=%d closed=%d\n",
             missing_bus_safe,
             missing_registry_safe,
@@ -849,6 +916,12 @@ int runTest() {
             service.evidence.text_inserted.load(std::memory_order_acquire),
             service.evidence.text_deleted.load(std::memory_order_acquire),
             service.evidence.cache_items.load(std::memory_order_acquire),
+            service.evidence.cache_root_added.load(std::memory_order_acquire),
+            service.evidence.cache_child_added.load(std::memory_order_acquire),
+            service.evidence.cache_add_count.load(std::memory_order_acquire),
+            service.evidence.cache_root_removed.load(std::memory_order_acquire),
+            service.evidence.cache_child_removed.load(std::memory_order_acquire),
+            service.evidence.cache_remove_count.load(std::memory_order_acquire),
             service.evidence.property_event.load(std::memory_order_acquire),
             service.evidence.focus_event.load(std::memory_order_acquire),
             service.evidence.bounds_event.load(std::memory_order_acquire),

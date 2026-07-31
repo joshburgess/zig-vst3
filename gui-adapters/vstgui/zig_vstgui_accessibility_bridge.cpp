@@ -290,6 +290,7 @@ public:
             diagnostic("registry embedding failed");
             return false;
         }
+        publishCache();
         installObservers();
         ready = true;
         return true;
@@ -301,6 +302,7 @@ public:
             if (observer->node) observer->node->setObserver(nullptr, nullptr);
         }
         observers.clear();
+        withdrawCache();
         if (connection) {
             for (auto registration = registrations.rbegin();
                  registration != registrations.rend(); ++registration) {
@@ -731,12 +733,13 @@ private:
             g_variant_builder_add(&builder, "s", "EditableText");
     }
 
-    void appendCacheItem(GVariantBuilder& builder, const Object& object) const {
-        const auto current = snapshot(object);
-        g_variant_builder_open(
+    GVariant* cacheItem(const Object& object) const {
+        GVariantBuilder builder;
+        g_variant_builder_init(
             &builder,
             G_VARIANT_TYPE("((so)(so)(so)iiassusau)")
         );
+        const auto current = snapshot(object);
         g_variant_builder_add(&builder, "(so)", bus_name.c_str(), object.path.c_str());
         g_variant_builder_add(&builder, "(so)", bus_name.c_str(), root_path);
         g_variant_builder_add(
@@ -777,7 +780,52 @@ private:
         g_variant_builder_add(&builder, "u", current.states[0]);
         g_variant_builder_add(&builder, "u", current.states[1]);
         g_variant_builder_close(&builder);
-        g_variant_builder_close(&builder);
+        return g_variant_builder_end(&builder);
+    }
+
+    void emitCacheAdd(const Object& object) const {
+        GError* error = nullptr;
+        if (!g_dbus_connection_emit_signal(
+                connection,
+                nullptr,
+                cache_path,
+                cache_interface,
+                "AddAccessible",
+                g_variant_new("(@((so)(so)(so)iiassusau))", cacheItem(object)),
+                &error
+            )) {
+            diagnostic("could not publish an accessibility cache addition", error);
+            if (error) g_error_free(error);
+        }
+    }
+
+    void emitCacheRemove(const Object& object) const {
+        GError* error = nullptr;
+        if (!g_dbus_connection_emit_signal(
+                connection,
+                nullptr,
+                cache_path,
+                cache_interface,
+                "RemoveAccessible",
+                g_variant_new("((so))", bus_name.c_str(), object.path.c_str()),
+                &error
+            )) {
+            diagnostic("could not publish an accessibility cache removal", error);
+            if (error) g_error_free(error);
+        }
+    }
+
+    void publishCache() {
+        for (std::size_t index = 0; index <= entries.size(); ++index)
+            emitCacheAdd(*objects[index]);
+        cache_published = true;
+    }
+
+    void withdrawCache() {
+        if (!cache_published || !connection) return;
+        for (std::size_t index = entries.size() + 1; index > 0; --index)
+            emitCacheRemove(*objects[index - 1]);
+        cache_published = false;
     }
 
     void cacheMethod(
@@ -798,9 +846,9 @@ private:
             &builder,
             G_VARIANT_TYPE("a((so)(so)(so)iiassusau)")
         );
-        appendCacheItem(builder, *objects[0]);
+        g_variant_builder_add_value(&builder, cacheItem(*objects[0]));
         for (std::size_t index = 0; index < entries.size(); ++index)
-            appendCacheItem(builder, *objects[index + 1]);
+            g_variant_builder_add_value(&builder, cacheItem(*objects[index + 1]));
         g_dbus_method_invocation_return_value(
             invocation,
             g_variant_new(
@@ -1478,6 +1526,7 @@ private:
     std::vector<std::unique_ptr<Observer>> observers;
     std::vector<guint> registrations;
     gint32 application_id {0};
+    bool cache_published {false};
     bool ready {false};
 };
 
