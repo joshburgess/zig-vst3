@@ -1745,6 +1745,23 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         @as(u32, 1),
         (try damaged_pages.next()).?.sequence_number,
     );
+    var damaged_packet_storage: [8]u8 = undefined;
+    var damaged_packets = plugin.dsp.OggPacketIterator.init(
+        damaged_ogg_storage[0 .. indexed_ogg_bytes.len + inserted_junk.len],
+        &damaged_packet_storage,
+    );
+    try std.testing.expectEqualStrings(
+        "header 1",
+        (try damaged_packets.next()).?.bytes,
+    );
+    try std.testing.expectEqual(
+        inserted_junk.len,
+        try damaged_packets.resynchronize(inserted_junk.len),
+    );
+    try std.testing.expectEqualStrings(
+        "header 2",
+        (try damaged_packets.next()).?.bytes,
+    );
     try std.testing.expectEqual(
         @as(usize, 2),
         try plugin.dsp.requiredVorbisSeekPoints(

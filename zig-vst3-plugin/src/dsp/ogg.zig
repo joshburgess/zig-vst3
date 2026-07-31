@@ -213,6 +213,30 @@ pub const PacketIterator = struct {
         return packet;
     }
 
+    /// Recover only after a complete packet exhausts its page.
+    pub fn resynchronize(
+        self: *PacketIterator,
+        maximum_skip_bytes: usize,
+    ) !usize {
+        try self.validateState();
+        const at_page_boundary = if (self.page) |page|
+            self.segment_index == page.lacing_values.len
+        else
+            true;
+        if (self.packet_bytes != 0 or !at_page_boundary) {
+            return error.OggPacketResynchronizationRequiresPageBoundary;
+        }
+        var pages = self.pages;
+        const skipped = try pages.resynchronize(
+            maximum_skip_bytes,
+        );
+        self.pages = pages;
+        self.page = null;
+        self.segment_index = 0;
+        self.body_offset = 0;
+        return skipped;
+    }
+
     fn nextInPlace(self: *PacketIterator) !?Packet {
         try self.validateState();
         while (true) {
@@ -851,6 +875,48 @@ pub const FilePacketReader = struct {
             }
             return packet;
         }
+    }
+
+    /// Recover only after a complete packet exhausts its page.
+    pub fn resynchronize(
+        self: *FilePacketReader,
+        page_storage: []u8,
+        packet_storage: []u8,
+        maximum_skip_bytes: u64,
+    ) !u64 {
+        try self.validateState(page_storage, packet_storage);
+        if (self.page_storage_pointer) |page_pointer| {
+            if (page_pointer != page_storage.ptr or
+                self.packet_storage_pointer.? !=
+                    packet_storage.ptr or
+                self.page_storage_length != page_storage.len or
+                self.packet_storage_length != packet_storage.len)
+            {
+                return error.OggReaderStorageChanged;
+            }
+        }
+        const at_page_boundary = if (self.page) |page|
+            self.segment_index == page.lacing_values.len
+        else
+            true;
+        if (self.packet_bytes != 0 or
+            self.reload_segment_index != 0 or
+            self.reload_body_offset != 0 or
+            self.preserve_logical_index_on_reload or
+            !at_page_boundary)
+        {
+            return error.OggPacketResynchronizationRequiresPageBoundary;
+        }
+        var pages = self.pages;
+        const skipped = try pages.resynchronize(
+            page_storage,
+            maximum_skip_bytes,
+        );
+        self.pages = pages;
+        self.page = null;
+        self.segment_index = 0;
+        self.body_offset = 0;
+        return skipped;
     }
 
     fn packetCheckpoint(
@@ -14079,6 +14145,68 @@ test "Ogg page readers resynchronize across bounded inserted junk" {
     );
     try std.testing.expect((try pages.next()) == null);
 
+    var packet_storage: [5]u8 = undefined;
+    var packets = PacketIterator.init(
+        damaged_bytes,
+        &packet_storage,
+    );
+    try std.testing.expectEqualStrings(
+        "one",
+        (try packets.next()).?.bytes,
+    );
+    const retained_packets = packets;
+    try std.testing.expectError(
+        error.UnsupportedOggVersion,
+        packets.next(),
+    );
+    try std.testing.expectEqual(
+        retained_packets.packet_index,
+        packets.packet_index,
+    );
+    try std.testing.expectEqual(
+        junk.len,
+        try packets.resynchronize(junk.len),
+    );
+    try std.testing.expectEqualStrings(
+        "two",
+        (try packets.next()).?.bytes,
+    );
+    try std.testing.expectEqualStrings(
+        "three",
+        (try packets.next()).?.bytes,
+    );
+    try std.testing.expect((try packets.next()) == null);
+    try std.testing.expectEqual(
+        @as(u64, 3),
+        packets.packet_index,
+    );
+
+    var packed_encoded: [64]u8 = undefined;
+    const packed_bytes = try appendTestOggPage(
+        &packed_encoded,
+        0,
+        56,
+        0,
+        0x06,
+        2,
+        &.{ 3, 3 },
+        "onetwo",
+    );
+    var packed_storage: [3]u8 = undefined;
+    var packed_packets = PacketIterator.init(
+        packed_encoded[0..packed_bytes],
+        &packed_storage,
+    );
+    _ = try packed_packets.next();
+    try std.testing.expectError(
+        error.OggPacketResynchronizationRequiresPageBoundary,
+        packed_packets.resynchronize(1),
+    );
+    try std.testing.expectEqualStrings(
+        "two",
+        (try packed_packets.next()).?.bytes,
+    );
+
     var corrupt: [clean.len]u8 = undefined;
     @memcpy(corrupt[0..clean_bytes], clean[0..clean_bytes]);
     corrupt[third_offset - 1] ^= 1;
@@ -14165,6 +14293,87 @@ test "Ogg page readers resynchronize across bounded inserted junk" {
     );
     try std.testing.expect(
         (try file_pages.next(&page_storage)) == null,
+    );
+
+    var file_packets = try FilePacketReader.init(
+        std.testing.io,
+        file,
+    );
+    var file_packet_storage: [5]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "one",
+        (try file_packets.next(
+            &page_storage,
+            &file_packet_storage,
+        )).?.bytes,
+    );
+    const retained_file_packets = file_packets;
+    try std.testing.expectError(
+        error.UnsupportedOggVersion,
+        file_packets.next(
+            &page_storage,
+            &file_packet_storage,
+        ),
+    );
+    try std.testing.expectEqual(
+        retained_file_packets.packet_index,
+        file_packets.packet_index,
+    );
+    var other_page_storage: [maximum_page_bytes]u8 = undefined;
+    try std.testing.expectError(
+        error.OggReaderStorageChanged,
+        file_packets.resynchronize(
+            &other_page_storage,
+            &file_packet_storage,
+            junk.len,
+        ),
+    );
+    var reload_pending = file_packets;
+    reload_pending.page = null;
+    reload_pending.segment_index = 0;
+    reload_pending.body_offset = 0;
+    reload_pending.reload_segment_index = 1;
+    reload_pending.reload_body_offset = 1;
+    reload_pending.preserve_logical_index_on_reload = true;
+    try std.testing.expectError(
+        error.OggPacketResynchronizationRequiresPageBoundary,
+        reload_pending.resynchronize(
+            &page_storage,
+            &file_packet_storage,
+            junk.len,
+        ),
+    );
+    try std.testing.expectEqual(
+        junk.len,
+        try file_packets.resynchronize(
+            &page_storage,
+            &file_packet_storage,
+            junk.len,
+        ),
+    );
+    try std.testing.expectEqualStrings(
+        "two",
+        (try file_packets.next(
+            &page_storage,
+            &file_packet_storage,
+        )).?.bytes,
+    );
+    try std.testing.expectEqualStrings(
+        "three",
+        (try file_packets.next(
+            &page_storage,
+            &file_packet_storage,
+        )).?.bytes,
+    );
+    try std.testing.expect(
+        (try file_packets.next(
+            &page_storage,
+            &file_packet_storage,
+        )) == null,
+    );
+    try std.testing.expectEqual(
+        @as(u64, 3),
+        file_packets.packet_index,
     );
 }
 
