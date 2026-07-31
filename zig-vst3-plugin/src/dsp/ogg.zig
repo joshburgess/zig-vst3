@@ -12831,7 +12831,7 @@ fn parseVorbisCodebook(
     else
         0;
     if (output) |entry_output| {
-        assignVorbisCodewords(&length_counts, entry_output);
+        assignVorbisCodewords(entry_output);
         if (node_destination) |destination| {
             try buildVorbisHuffmanTree(
                 entry_output,
@@ -12960,20 +12960,30 @@ fn vorbisFloat32PackExact(value: f64) !u32 {
     return error.UnrepresentableVorbisCodebookFloat;
 }
 
-fn assignVorbisCodewords(
-    length_counts: *const [32]u32,
-    entries: []VorbisCodebookEntry,
-) void {
-    var next_code = [_]u64{0} ** 32;
-    for (1..32) |index| {
-        next_code[index] =
-            (next_code[index - 1] + length_counts[index - 1]) << 1;
-    }
+fn assignVorbisCodewords(entries: []VorbisCodebookEntry) void {
+    var next_code = [_]u32{0} ** 33;
     for (entries) |*entry| {
         if (entry.length == 0) continue;
-        const index = entry.length - 1;
-        entry.codeword = @intCast(next_code[index]);
-        next_code[index] += 1;
+        const length: usize = entry.length;
+        entry.codeword = next_code[length];
+
+        var level = length + 1;
+        while (level != 0) {
+            level -= 1;
+            if (next_code[level] & 1 != 0) {
+                std.debug.assert(level != 0);
+                next_code[level] = next_code[level - 1] << 1;
+                break;
+            }
+            next_code[level] += 1;
+        }
+
+        const next_branch = next_code[length];
+        for (length + 1..next_code.len) |deeper| {
+            const shift: u5 = @intCast(deeper - length);
+            if (next_code[deeper] != entry.codeword << shift) break;
+            next_code[deeper] = next_branch << shift;
+        }
     }
 }
 
@@ -15867,6 +15877,20 @@ test "Vorbis setup rejects malformed structure transactionally" {
             2,
         ),
     );
+}
+
+test "Vorbis codewords follow entry order across mixed lengths" {
+    var entries = [_]VorbisCodebookEntry{
+        .{ .length = 2 },
+        .{ .length = 1 },
+        .{ .length = 2 },
+    };
+
+    assignVorbisCodewords(&entries);
+
+    try std.testing.expectEqual(@as(u32, 0b00), entries[0].codeword);
+    try std.testing.expectEqual(@as(u32, 0b1), entries[1].codeword);
+    try std.testing.expectEqual(@as(u32, 0b01), entries[2].codeword);
 }
 
 test "Vorbis packet writer round trips headers and canonical codewords" {
