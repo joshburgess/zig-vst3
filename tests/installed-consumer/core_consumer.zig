@@ -1011,6 +1011,13 @@ test "installed core package runs an LV2 audio control descriptor" {
         std.mem.indexOf(
             u8,
             metadata_writer.buffered(),
+            "opts:supportedOption ui:scaleFactor",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            metadata_writer.buffered(),
             "lv2:requiredFeature urid:map , urid:unmap",
         ) != null,
     );

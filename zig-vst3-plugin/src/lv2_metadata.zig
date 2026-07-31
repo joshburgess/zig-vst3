@@ -242,7 +242,8 @@ pub fn Generator(
                 try writer.writeAll(
                     "> ;\n" ++
                         "    lv2:requiredFeature ui:parent ;\n" ++
-                        "    lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch ;\n" ++
+                        "    lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch , opts:options , urid:map ;\n" ++
+                        "    opts:supportedOption ui:scaleFactor ;\n" ++
                         "    lv2:extensionData ui:idleInterface , ui:resize , ui:showInterface",
                 );
                 if (has_programs)
@@ -1424,7 +1425,14 @@ test "LV2 metadata generator writes ports workers and presets" {
         std.mem.indexOf(
             u8,
             plugin,
-            "lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch",
+            "lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch , opts:options , urid:map",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "opts:supportedOption ui:scaleFactor",
         ) != null,
     );
     try std.testing.expect(

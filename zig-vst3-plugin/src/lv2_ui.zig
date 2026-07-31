@@ -12,6 +12,13 @@ pub const idle_interface_uri = ui_uri ++ "#idleInterface";
 pub const resize_uri = ui_uri ++ "#resize";
 pub const show_interface_uri = ui_uri ++ "#showInterface";
 pub const touch_uri = ui_uri ++ "#touch";
+pub const scale_factor_uri = ui_uri ++ "#scaleFactor";
+pub const options_options_uri =
+    "http://lv2plug.in/ns/ext/options#options";
+pub const urid_map_uri =
+    "http://lv2plug.in/ns/ext/urid#map";
+pub const atom_float_uri =
+    "http://lv2plug.in/ns/ext/atom#Float";
 pub const programs_ui_interface_uri =
     "http://kxstudio.sf.net/ns/lv2ext/programs#UIInterface";
 
@@ -22,6 +29,25 @@ pub const Widget = ?*anyopaque;
 pub const Feature = extern struct {
     URI: [*:0]const u8,
     data: ?*anyopaque,
+};
+
+pub const Urid = u32;
+
+pub const UridMap = extern struct {
+    handle: ?*anyopaque,
+    map: *const fn (
+        handle: ?*anyopaque,
+        URI: [*:0]const u8,
+    ) callconv(.c) Urid,
+};
+
+pub const OptionsOption = extern struct {
+    context: c_int = 0,
+    subject: u32 = 0,
+    key: Urid = 0,
+    size: u32 = 0,
+    type: Urid = 0,
+    value: ?*const anyopaque = null,
 };
 
 pub const WriteFunction = *const fn (
@@ -196,6 +222,7 @@ pub fn Adapter(
             const widget_out = widget orelse return null;
             const parent_feature = findFeature(features, parent_uri) orelse
                 return null;
+            const scale_factor = readScaleFactor(features) catch return null;
 
             const allocator = std.heap.page_allocator;
             const instance = allocator.create(Instance) catch return null;
@@ -219,6 +246,16 @@ pub fn Adapter(
                 allocator.destroy(instance);
                 return null;
             };
+            if (scale_factor) |scale| {
+                instance.editor.setScale(.{
+                    .x = scale,
+                    .y = scale,
+                }) catch {
+                    instance.editor.deinit();
+                    allocator.destroy(instance);
+                    return null;
+                };
+            }
             widget_out.* = Backend.widget(instance.editor.adapter) orelse {
                 instance.editor.deinit();
                 allocator.destroy(instance);
@@ -535,6 +572,44 @@ fn sizeFromHost(width: c_int, height: c_int) ?gui.Size {
     };
 }
 
+fn readScaleFactor(
+    features: ?[*:null]const ?*const Feature,
+) !?f32 {
+    const options_feature =
+        findFeature(features, options_options_uri) orelse return null;
+    const options_data = options_feature.data orelse
+        return error.InvalidOptions;
+    if (@intFromPtr(options_data) % @alignOf(OptionsOption) != 0)
+        return error.InvalidOptions;
+    const map = featureData(UridMap, features, urid_map_uri) orelse
+        return error.InvalidOptions;
+    const scale_key = map.map(map.handle, scale_factor_uri);
+    const float_type = map.map(map.handle, atom_float_uri);
+    if (scale_key == 0 or float_type == 0)
+        return error.InvalidOptions;
+    const options: [*]const OptionsOption =
+        @ptrCast(@alignCast(options_data));
+    var scale: ?f32 = null;
+    for (0..256) |index| {
+        const option = options[index];
+        if (option.key == 0 and option.value == null)
+            return scale;
+        if (option.key == 0)
+            return error.InvalidOptions;
+        if (option.context != 0 or option.key != scale_key)
+            continue;
+        if (scale != null or option.size != @sizeOf(f32) or
+            option.type != float_type)
+            return error.InvalidOptions;
+        const raw = option.value orelse return error.InvalidOptions;
+        const value = @as(*align(1) const f32, @ptrCast(raw)).*;
+        if (!std.math.isFinite(value) or value <= 0.0)
+            return error.InvalidOptions;
+        scale = value;
+    }
+    return error.InvalidOptions;
+}
+
 test "LV2 UI feature lookup is bounded and validates resize dimensions" {
     const parent = Feature{
         .URI = parent_uri,
@@ -555,6 +630,85 @@ test "LV2 UI feature lookup is bounded and validates resize dimensions" {
     try std.testing.expect(sizeFromHost(640, 480) != null);
     try std.testing.expect(sizeFromHost(0, 480) == null);
     try std.testing.expect(sizeFromHost(640, -1) == null);
+}
+
+test "LV2 UI scale option validates host data transactionally" {
+    const Host = struct {
+        fn map(
+            _: ?*anyopaque,
+            uri: [*:0]const u8,
+        ) callconv(.c) Urid {
+            const value = std.mem.span(uri);
+            if (std.mem.eql(u8, value, scale_factor_uri)) return 139;
+            if (std.mem.eql(u8, value, atom_float_uri)) return 47;
+            return 0;
+        }
+    };
+    var urid_map = UridMap{
+        .handle = null,
+        .map = Host.map,
+    };
+    const map_feature = Feature{
+        .URI = urid_map_uri,
+        .data = &urid_map,
+    };
+    const scale: f32 = 2.0;
+    const options = [_]OptionsOption{
+        .{
+            .key = 139,
+            .size = @sizeOf(f32),
+            .type = 47,
+            .value = &scale,
+        },
+        .{},
+    };
+    var options_feature = Feature{
+        .URI = options_options_uri,
+        .data = @constCast(&options),
+    };
+    const features = [_:null]?*const Feature{
+        &map_feature,
+        &options_feature,
+    };
+    try std.testing.expectEqual(
+        @as(?f32, 2.0),
+        try readScaleFactor(&features),
+    );
+
+    const duplicate_options = [_]OptionsOption{
+        options[0],
+        options[0],
+        .{},
+    };
+    options_feature.data = @constCast(&duplicate_options);
+    try std.testing.expectError(
+        error.InvalidOptions,
+        readScaleFactor(&features),
+    );
+
+    const invalid_scale: f32 = 0.0;
+    const invalid_options = [_]OptionsOption{
+        .{
+            .key = 139,
+            .size = @sizeOf(f32),
+            .type = 47,
+            .value = &invalid_scale,
+        },
+        .{},
+    };
+    options_feature.data = @constCast(&invalid_options);
+    try std.testing.expectError(
+        error.InvalidOptions,
+        readScaleFactor(&features),
+    );
+
+    var misaligned_storage: [@sizeOf(OptionsOption) + 1]u8 align(@alignOf(OptionsOption)) =
+        undefined;
+    options_feature.data = @ptrCast(&misaligned_storage[1]);
+    try std.testing.expectError(
+        error.InvalidOptions,
+        readScaleFactor(&features),
+    );
 }
 
 test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
@@ -604,6 +758,7 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
             attached: bool = false,
             parameter: f64 = 0.5,
             size: gui.Size = .{ .width = 320, .height = 200 },
+            scale: gui.Scale = .{},
             idle_count: usize = 0,
         };
 
@@ -657,7 +812,9 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
             state(raw).size = new_size;
         }
 
-        fn scale(_: *anyopaque, _: gui.Scale) gui.Error!void {}
+        fn scale(raw: *anyopaque, value: gui.Scale) gui.Error!void {
+            state(raw).scale = value;
+        }
         fn focus(_: *anyopaque, _: bool) void {}
 
         fn parameterChanged(
@@ -720,6 +877,16 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         released: usize = 0,
         resized: usize = 0,
         last_plain: f32 = 0.0,
+
+        fn map(
+            _: ?*anyopaque,
+            uri: [*:0]const u8,
+        ) callconv(.c) Urid {
+            const value = std.mem.span(uri);
+            if (std.mem.eql(u8, value, scale_factor_uri)) return 139;
+            if (std.mem.eql(u8, value, atom_float_uri)) return 47;
+            return 0;
+        }
 
         fn write(
             controller: Controller,
@@ -787,10 +954,34 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         .URI = resize_uri,
         .data = @constCast(&resize),
     };
+    var urid_map = UridMap{
+        .handle = null,
+        .map = Host.map,
+    };
+    const map_feature = Feature{
+        .URI = urid_map_uri,
+        .data = &urid_map,
+    };
+    const scale_factor: f32 = 1.5;
+    const options = [_]OptionsOption{
+        .{
+            .key = 139,
+            .size = @sizeOf(f32),
+            .type = 47,
+            .value = &scale_factor,
+        },
+        .{},
+    };
+    const options_feature = Feature{
+        .URI = options_options_uri,
+        .data = @constCast(&options),
+    };
     const features = [_:null]?*const Feature{
         &parent_feature,
         &touch_feature,
         &resize_feature,
+        &map_feature,
+        &options_feature,
     };
     var widget: Widget = null;
     const handle = Ui.descriptor.instantiate(
@@ -807,6 +998,11 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
 
     const instance = Ui.instanceFromHandle(handle) orelse
         return error.UiInstantiationFailed;
+    const backend = Backend.state(instance.editor.adapter.userdata);
+    try std.testing.expectEqual(
+        gui.Scale{ .x = 1.5, .y = 1.5 },
+        backend.scale,
+    );
     try instance.editor.beginGesture(7);
     try instance.editor.setGestureValue(0.75);
     instance.editor.endGesture();
@@ -821,7 +1017,6 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
 
     const plain: f32 = 0.5;
     Ui.descriptor.port_event(handle, 2, @sizeOf(f32), 0, &plain);
-    const backend = Backend.state(instance.editor.adapter.userdata);
     try std.testing.expectApproxEqAbs(
         @as(f64, 0.25),
         backend.parameter,
