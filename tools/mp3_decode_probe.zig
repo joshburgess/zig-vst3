@@ -4,8 +4,18 @@ const std = @import("std");
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
     const args = try init.minimal.args.toSlice(allocator);
-    if (args.len != 2 and args.len != 4)
+    if (args.len != 2 and args.len != 4 and args.len != 5)
         return error.InvalidArguments;
+    const require_multiple_seek_points = args.len == 5;
+    if (require_multiple_seek_points and
+        !std.mem.eql(
+            u8,
+            args[4],
+            "--require-tagged-multiple-seek-points",
+        ))
+    {
+        return error.InvalidArguments;
+    }
 
     const encoded = try std.Io.Dir.cwd().readFileAlloc(
         init.io,
@@ -13,8 +23,15 @@ pub fn main(init: std.process.Init) !void {
         allocator,
         .limited(16 * 1024 * 1024),
     );
+    if (require_multiple_seek_points and
+        (!std.mem.startsWith(u8, encoded, "ID3") or
+            encoded.len < 128 or
+            !std.mem.eql(u8, encoded[encoded.len - 128 ..][0..3], "TAG")))
+    {
+        return error.MissingExpectedMp3Tags;
+    }
     const summary = try plug.dsp.Mp3Stream.summarize(encoded);
-    if (args.len == 4) {
+    if (args.len >= 4) {
         const expected_sample_rate = try std.fmt.parseInt(
             u32,
             args[2],
@@ -55,6 +72,67 @@ pub fn main(init: std.process.Init) !void {
             (summary.first_vbri == null))
     {
         return error.Mp3MemoryAndFileSummariesDiffer;
+    }
+
+    const seek_stride: u32 = @intCast(@max(
+        @as(u64, 1),
+        summary.frame_count / 8,
+    ));
+    const seek_point_count = try plug.dsp.requiredMp3SeekPoints(
+        encoded,
+        seek_stride,
+    );
+    const file_seek_point_count =
+        try plug.dsp.requiredMp3FileSeekPoints(
+            init.io,
+            file,
+            &frame_storage,
+            seek_stride,
+        );
+    if (file_seek_point_count != seek_point_count)
+        return error.Mp3MemoryAndFileSeekPointCountsDiffer;
+    const seek_storage = try allocator.alloc(
+        plug.dsp.Mp3SeekPoint,
+        seek_point_count,
+    );
+    const file_seek_storage = try allocator.alloc(
+        plug.dsp.Mp3SeekPoint,
+        file_seek_point_count,
+    );
+    const seek_index = try plug.dsp.buildMp3SeekIndex(
+        encoded,
+        seek_stride,
+        seek_storage,
+    );
+    const file_seek_index = try plug.dsp.buildMp3FileSeekIndex(
+        init.io,
+        file,
+        &frame_storage,
+        seek_stride,
+        file_seek_storage,
+    );
+    if (require_multiple_seek_points and seek_index.len < 4)
+        return error.InsufficientMp3SeekCoverage;
+    if (seek_index.len != file_seek_index.len)
+        return error.Mp3MemoryAndFileSeekIndexesDiffer;
+    for (seek_index, file_seek_index) |memory_point, file_point| {
+        if (!std.meta.eql(memory_point, file_point))
+            return error.Mp3MemoryAndFileSeekIndexesDiffer;
+    }
+    const midpoint = try plug.dsp.findMp3SeekPoint(
+        seek_index,
+        summary.sample_count / 2,
+    );
+    var seek_reader = try plug.dsp.Mp3FileReader.init(init.io, file);
+    try seek_reader.seek(midpoint);
+    const seek_frame = try seek_reader.next(&frame_storage) orelse
+        return error.Mp3SeekPointHasNoFrame;
+    if (seek_frame.byte_offset != @as(u64, @intCast(midpoint.byte_offset)) or
+        seek_reader.frame_index != midpoint.frame_index + 1 or
+        seek_reader.sample_offset != midpoint.sample_offset +
+            seek_frame.header.samplesPerFrame())
+    {
+        return error.Mp3SeekPositionMismatch;
     }
 
     const memory_evidence = try decodeMemory(encoded, summary);

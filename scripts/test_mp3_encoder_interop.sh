@@ -107,6 +107,22 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$decode_probe" "$external_mpeg1" 44100 2
             printf 'MP3 FFmpeg MPEG-1 stereo decoder probe passed\n'
 
+            external_tagged_long="$temporary/ffmpeg-mpeg1-tagged-long.mp3"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.20*sin(2*PI*275*t)|0.15*sin(2*PI*715*t):s=44100' \
+                -t 2.2 \
+                -c:a libmp3lame \
+                -q:a 4 \
+                -id3v2_version 3 \
+                -write_id3v1 1 \
+                -metadata title='Interop seek fixture' \
+                -metadata artist='zig-vst3' \
+                "$external_tagged_long"
+            "$decode_probe" "$external_tagged_long" 44100 2 \
+                --require-tagged-multiple-seek-points
+            printf 'MP3 FFmpeg tagged multi-point seek probe passed\n'
+
             external_mpeg2="$temporary/ffmpeg-mpeg2-mono.mp3"
             ffmpeg -v error -y \
                 -f lavfi \
