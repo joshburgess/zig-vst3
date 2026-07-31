@@ -826,6 +826,12 @@ private:
         for (std::size_t index = entries.size() + 1; index > 0; --index)
             emitCacheRemove(*objects[index - 1]);
         cache_published = false;
+
+        GError* error = nullptr;
+        if (!g_dbus_connection_flush_sync(connection, nullptr, &error)) {
+            diagnostic("could not flush accessibility cache removals", error);
+            if (error) g_error_free(error);
+        }
     }
 
     void cacheMethod(
