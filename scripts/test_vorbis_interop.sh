@@ -2,6 +2,7 @@
 set -eu
 
 fixture=${1:?missing Vorbis fixture path}
+decode_probe=${2-}
 test -f "$fixture"
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-vorbis-interop.XXXXXX")
@@ -68,6 +69,23 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
     fi
     printf 'Vorbis FFmpeg interoperability test passed\n'
     tested=1
+
+    if [ -n "$decode_probe" ]; then
+        external_fixture="$temporary/ffmpeg-encoded.ogg"
+        if ffmpeg -v error -y \
+            -f lavfi \
+            -i 'aevalsrc=0.25*sin(2*PI*440*t)|0.2*sin(2*PI*660*t):s=44100' \
+            -t 0.12 \
+            -c:a libvorbis \
+            -q:a 4 \
+            "$external_fixture"; then
+            "$decode_probe" "$external_fixture"
+            printf 'Vorbis FFmpeg encoder interoperability test passed\n'
+            tested=1
+        else
+            printf 'Vorbis FFmpeg encoder unavailable; test skipped\n'
+        fi
+    fi
 fi
 
 if [ "${VORBIS_INTEROP_ONLY_FFMPEG-0}" != "1" ] &&

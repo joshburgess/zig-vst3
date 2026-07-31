@@ -22,10 +22,31 @@ printf '%s\n' \
     "printf '\\001\\000\\002\\000' >\"\$output\"" \
     >"$fake_bin/ffmpeg"
 chmod +x "$fake_bin/ffprobe" "$fake_bin/ffmpeg"
+printf '%s\n' \
+    '#!/bin/sh' \
+    'test -s "$1"' \
+    >"$fake_bin/decode-probe"
+chmod +x "$fake_bin/decode-probe"
 
 PATH="$fake_bin:$PATH" \
     VORBIS_INTEROP_ONLY_FFMPEG=1 \
-    scripts/test_vorbis_interop.sh "$fixture"
+    scripts/test_vorbis_interop.sh "$fixture" "$fake_bin/decode-probe" \
+    >"$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg encoder interoperability test passed' \
+    "$root/ffmpeg.txt"
+
+printf '%s\n' \
+    '#!/bin/sh' \
+    'exit 1' \
+    >"$fake_bin/decode-probe"
+chmod +x "$fake_bin/decode-probe"
+if PATH="$fake_bin:$PATH" \
+    VORBIS_INTEROP_ONLY_FFMPEG=1 \
+    scripts/test_vorbis_interop.sh "$fixture" "$fake_bin/decode-probe" \
+    >/dev/null 2>&1; then
+    printf 'Vorbis runner accepted an external decode failure\n' >&2
+    exit 1
+fi
 
 printf '%s\n' \
     '#!/bin/sh' \

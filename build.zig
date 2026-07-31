@@ -3240,10 +3240,25 @@ pub fn build(b: *std.Build) void {
     generate_vorbis_interop_step.dependOn(
         &run_vorbis_interop_fixture.step,
     );
+    const vorbis_decode_probe = b.addExecutable(.{
+        .name = "vorbis-decode-probe",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tools/vorbis_decode_probe.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    vorbis_decode_probe.root_module.addImport(
+        "zig-vst3-plugin",
+        zig_vst3_plugin,
+    );
     const test_vorbis_interop = b.addSystemCommand(
         &.{"scripts/test_vorbis_interop.sh"},
     );
     test_vorbis_interop.addFileArg(vorbis_interop_ogg);
+    test_vorbis_interop.addArtifactArg(vorbis_decode_probe);
 
     const mp3_interop_fixture = b.addExecutable(.{
         .name = "mp3-interop-fixture",
