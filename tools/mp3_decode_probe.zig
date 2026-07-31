@@ -25,6 +25,8 @@ pub fn main(init: std.process.Init) !void {
     );
     if (require_multiple_seek_points and
         (!std.mem.startsWith(u8, encoded, "ID3") or
+            encoded.len < 4 or
+            encoded[3] != 3 or
             encoded.len < 128 or
             !std.mem.eql(u8, encoded[encoded.len - 128 ..][0..3], "TAG")))
     {
@@ -144,10 +146,18 @@ pub fn main(init: std.process.Init) !void {
     );
     if (!std.meta.eql(memory_evidence, file_evidence))
         return error.Mp3MemoryAndFilePcmDiffer;
+    if (require_multiple_seek_points and
+        (memory_evidence.padded_frames == 0 or
+            memory_evidence.unpadded_frames == 0))
+    {
+        return error.InsufficientMp3PaddingCoverage;
+    }
 }
 
 const PcmEvidence = struct {
     frames: u64 = 0,
+    padded_frames: u64 = 0,
+    unpadded_frames: u64 = 0,
     audible_samples: u64 = 0,
     energy: f64 = 0.0,
     digest: u64 = 14_695_981_039_346_656_037,
@@ -155,6 +165,7 @@ const PcmEvidence = struct {
     fn observe(
         self: *PcmEvidence,
         decoded: plug.dsp.Mp3TrimmedPcmFrame,
+        padded: bool,
     ) !void {
         const start: usize = decoded.audible.start;
         const end = start + decoded.audible.length;
@@ -172,6 +183,15 @@ const PcmEvidence = struct {
         }
         self.frames = std.math.add(u64, self.frames, 1) catch
             return error.Mp3DecodedCountOverflow;
+        const padding_count = if (padded)
+            &self.padded_frames
+        else
+            &self.unpadded_frames;
+        padding_count.* = std.math.add(
+            u64,
+            padding_count.*,
+            1,
+        ) catch return error.Mp3DecodedCountOverflow;
         self.audible_samples = std.math.add(
             u64,
             self.audible_samples,
@@ -203,7 +223,7 @@ fn decodeMemory(
     var evidence = PcmEvidence{};
     while (try stream.next()) |frame| {
         const decoded = try decoder.decode(frame);
-        try evidence.observe(decoded);
+        try evidence.observe(decoded, frame.header.padding);
     }
     try evidence.validate(summary, decoder);
     return evidence;
@@ -220,7 +240,7 @@ fn decodeFile(
     var evidence = PcmEvidence{};
     while (try reader.next(frame_storage)) |frame| {
         const decoded = try decoder.decode(frame);
-        try evidence.observe(decoded);
+        try evidence.observe(decoded, frame.header.padding);
     }
     try evidence.validate(summary, decoder);
     return evidence;
