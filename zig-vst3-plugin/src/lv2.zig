@@ -354,13 +354,20 @@ pub const WorkerRespondFunction = *const fn (
     data: ?*const anyopaque,
 ) callconv(.c) WorkerStatus;
 
+pub const WorkerScheduleFunction = *const fn (
+    handle: ?*anyopaque,
+    size: u32,
+    data: ?*const anyopaque,
+) callconv(.c) WorkerStatus;
+
 pub const WorkerSchedule = extern struct {
     handle: ?*anyopaque,
-    schedule_work: *const fn (
-        handle: ?*anyopaque,
-        size: u32,
-        data: ?*const anyopaque,
-    ) callconv(.c) WorkerStatus,
+    schedule_work: ?WorkerScheduleFunction,
+};
+
+const CheckedWorkerSchedule = struct {
+    handle: ?*anyopaque,
+    schedule_work: WorkerScheduleFunction,
 };
 
 pub const WorkerInterface = extern struct {
@@ -1060,7 +1067,7 @@ pub fn CoreAdapterWithParameters(
         configured_nominal_frames: i32 = @intCast(maximum_block_size),
         configured_sequence_size_value: i32 = 0,
         sequence_size_configured: bool = false,
-        worker_schedule: ?*const WorkerSchedule = null,
+        worker_schedule: ?CheckedWorkerSchedule = null,
         worker_schedule_sink: WorkerScheduleSink = undefined,
         inside_run: bool = false,
         transport: ?process_api.Transport = null,
@@ -1200,13 +1207,21 @@ pub fn CoreAdapterWithParameters(
                     features,
                     worker_schedule_uri,
                 )) |feature| {
-                    self.worker_schedule = featureValue(
+                    const raw_schedule = featureValue(
                         WorkerSchedule,
                         feature,
                     ) orelse {
                         self.runtime.deinit();
                         allocator.destroy(self);
                         return null;
+                    };
+                    self.worker_schedule = .{
+                        .handle = raw_schedule.handle,
+                        .schedule_work = raw_schedule.schedule_work orelse {
+                            self.runtime.deinit();
+                            allocator.destroy(self);
+                            return null;
+                        },
                     };
                 }
                 self.worker_schedule_sink = .{
@@ -6020,6 +6035,18 @@ test "LV2 worker supports immediate offline and bounded responses" {
         ),
     );
     schedule_feature.data = &schedule;
+
+    schedule.schedule_work = null;
+    try std.testing.expectEqual(
+        @as(Handle, null),
+        Adapter.descriptor.instantiate(
+            &Adapter.descriptor,
+            48_000.0,
+            "/tmp/lv2-worker.lv2",
+            features[0..].ptr,
+        ),
+    );
+    schedule.schedule_work = Host.schedule;
 
     const handle = Adapter.descriptor.instantiate(
         &Adapter.descriptor,

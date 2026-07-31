@@ -821,10 +821,28 @@ pub fn main(init: std.process.Init) !void {
         .URI = core.lv2.worker_schedule_uri,
         .data = &worker_schedule,
     };
+    var null_worker_schedule = core.lv2.WorkerSchedule{
+        .handle = null,
+        .schedule_work = null,
+    };
+    const null_worker_feature = core.lv2.Feature{
+        .URI = core.lv2.worker_schedule_uri,
+        .data = &null_worker_schedule,
+    };
+    const null_worker_features = [_:null]?*const core.lv2.Feature{
+        &map_feature,
+        &null_worker_feature,
+    };
     const features = [_:null]?*const core.lv2.Feature{
         &map_feature,
         &worker_feature,
     };
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-component-state.lv2",
+        null_worker_features[0..].ptr,
+    ) != null) return error.NullWorkerScheduleCallbackAccepted;
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
