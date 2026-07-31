@@ -48,6 +48,47 @@ pub const PageIterator = struct {
         return page;
     }
 
+    /// Advances past at most `maximum_skip_bytes` to a continuous valid page.
+    pub fn resynchronize(
+        self: *PageIterator,
+        maximum_skip_bytes: usize,
+    ) !usize {
+        if (self.offset > self.encoded.len)
+            return error.InvalidOggReaderState;
+        if (maximum_skip_bytes == 0)
+            return error.InvalidOggResynchronizationLimit;
+        if (self.offset >= self.encoded.len -| 27)
+            return error.OggResynchronizationLimitReached;
+        const first_candidate = std.math.add(
+            usize,
+            self.offset,
+            1,
+        ) catch return error.OggByteCountOverflow;
+        const last_candidate = @min(
+            self.encoded.len - 27,
+            std.math.add(
+                usize,
+                self.offset,
+                maximum_skip_bytes,
+            ) catch self.encoded.len - 27,
+        );
+        var candidate = first_candidate;
+        while (candidate <= last_candidate) : (candidate += 1) {
+            if (!std.mem.eql(
+                u8,
+                self.encoded[candidate..][0..4],
+                "OggS",
+            )) continue;
+            var trial = self.*;
+            trial.offset = candidate;
+            _ = trial.nextInPlace() catch continue;
+            const skipped = candidate - self.offset;
+            self.offset = candidate;
+            return skipped;
+        }
+        return error.OggResynchronizationLimitReached;
+    }
+
     fn nextInPlace(self: *PageIterator) !?Page {
         if (self.offset > self.encoded.len)
             return error.InvalidOggReaderState;
@@ -510,6 +551,85 @@ pub const FilePageReader = struct {
         self.logical_stream_index = parser.logical_stream_index;
         self.offset += page_bytes;
         return page;
+    }
+
+    /// Advances past at most `maximum_skip_bytes` to a continuous valid page.
+    pub fn resynchronize(
+        self: *FilePageReader,
+        storage: []u8,
+        maximum_skip_bytes: u64,
+    ) !u64 {
+        if (self.offset > self.file_size)
+            return error.InvalidOggFileReaderState;
+        if (storage.len < maximum_page_bytes)
+            return error.OggPageBufferTooSmall;
+        if (maximum_skip_bytes == 0)
+            return error.InvalidOggResynchronizationLimit;
+        if (self.offset >= self.file_size -| 27)
+            return error.OggResynchronizationLimitReached;
+        const first_candidate = std.math.add(
+            u64,
+            self.offset,
+            1,
+        ) catch return error.OggByteCountOverflow;
+        const last_candidate = @min(
+            self.file_size - 27,
+            std.math.add(
+                u64,
+                self.offset,
+                maximum_skip_bytes,
+            ) catch self.file_size - 27,
+        );
+        var candidate = first_candidate;
+        while (candidate <= last_candidate) : (candidate += 1) {
+            try readExactAt(
+                self.io,
+                self.file,
+                candidate,
+                storage[0..27],
+            );
+            if (!std.mem.eql(u8, storage[0..4], "OggS"))
+                continue;
+            if (storage[4] != 0 or storage[5] & 0xf8 != 0)
+                continue;
+            const segment_count: usize = storage[26];
+            const header_bytes = 27 + segment_count;
+            if (@as(u64, @intCast(header_bytes)) >
+                self.file_size - candidate)
+                continue;
+            try readExactAt(
+                self.io,
+                self.file,
+                candidate + 27,
+                storage[27..header_bytes],
+            );
+            var body_bytes: usize = 0;
+            for (storage[27..header_bytes]) |value|
+                body_bytes += value;
+            const page_bytes = header_bytes + body_bytes;
+            if (page_bytes > self.file_size - candidate)
+                continue;
+            try readExactAt(
+                self.io,
+                self.file,
+                candidate + header_bytes,
+                storage[header_bytes..page_bytes],
+            );
+            var parser = PageIterator{
+                .encoded = storage[0..page_bytes],
+                .serial_number = self.serial_number,
+                .expected_sequence = self.expected_sequence,
+                .packet_continues = self.packet_continues,
+                .ended = self.ended,
+                .allow_chaining = self.allow_chaining,
+                .logical_stream_index = self.logical_stream_index,
+            };
+            _ = parser.next() catch continue;
+            const skipped = candidate - self.offset;
+            self.offset = candidate;
+            return skipped;
+        }
+        return error.OggResynchronizationLimitReached;
     }
 };
 
@@ -13874,6 +13994,177 @@ test "Ogg parser rejects corruption and sequence gaps" {
     try std.testing.expectError(
         error.InvalidOggPageSequence,
         gap_pages.next(),
+    );
+}
+
+test "Ogg page readers resynchronize across bounded inserted junk" {
+    var clean: [256]u8 = undefined;
+    var clean_bytes = try appendTestOggPage(
+        &clean,
+        0,
+        55,
+        0,
+        0x02,
+        1,
+        &.{3},
+        "one",
+    );
+    const second_offset = clean_bytes;
+    clean_bytes = try appendTestOggPage(
+        &clean,
+        clean_bytes,
+        55,
+        1,
+        0,
+        2,
+        &.{3},
+        "two",
+    );
+    const third_offset = clean_bytes;
+    clean_bytes = try appendTestOggPage(
+        &clean,
+        clean_bytes,
+        55,
+        2,
+        0x04,
+        3,
+        &.{5},
+        "three",
+    );
+    const junk = [_]u8{ 'O', 'g', 'g', 'S', 0xff, 0x5a };
+    var damaged: [clean.len + junk.len]u8 = undefined;
+    @memcpy(damaged[0..second_offset], clean[0..second_offset]);
+    @memcpy(
+        damaged[second_offset..][0..junk.len],
+        &junk,
+    );
+    @memcpy(
+        damaged[second_offset + junk.len ..][0 .. clean_bytes - second_offset],
+        clean[second_offset..clean_bytes],
+    );
+    const damaged_bytes =
+        damaged[0 .. clean_bytes + junk.len];
+
+    var pages = PageIterator.init(damaged_bytes);
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        (try pages.next()).?.sequence_number,
+    );
+    const retained_pages = pages;
+    try std.testing.expectError(
+        error.UnsupportedOggVersion,
+        pages.next(),
+    );
+    try std.testing.expectEqual(retained_pages.offset, pages.offset);
+    try std.testing.expectError(
+        error.InvalidOggResynchronizationLimit,
+        pages.resynchronize(0),
+    );
+    try std.testing.expectError(
+        error.OggResynchronizationLimitReached,
+        pages.resynchronize(junk.len - 1),
+    );
+    try std.testing.expectEqual(retained_pages.offset, pages.offset);
+    try std.testing.expectEqual(
+        junk.len,
+        try pages.resynchronize(junk.len),
+    );
+    try std.testing.expectEqual(
+        @as(u32, 1),
+        (try pages.next()).?.sequence_number,
+    );
+    try std.testing.expectEqual(
+        @as(u32, 2),
+        (try pages.next()).?.sequence_number,
+    );
+    try std.testing.expect((try pages.next()) == null);
+
+    var corrupt: [clean.len]u8 = undefined;
+    @memcpy(corrupt[0..clean_bytes], clean[0..clean_bytes]);
+    corrupt[third_offset - 1] ^= 1;
+    var corrupt_pages = PageIterator.init(
+        corrupt[0..clean_bytes],
+    );
+    _ = try corrupt_pages.next();
+    try std.testing.expectError(
+        error.OggPageChecksumMismatch,
+        corrupt_pages.next(),
+    );
+    try std.testing.expectError(
+        error.OggResynchronizationLimitReached,
+        corrupt_pages.resynchronize(
+            clean_bytes - second_offset,
+        ),
+    );
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "resynchronize.ogg",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    try file.writePositionalAll(
+        std.testing.io,
+        damaged_bytes,
+        0,
+    );
+    var file_pages = try FilePageReader.init(
+        std.testing.io,
+        file,
+    );
+    var page_storage: [maximum_page_bytes]u8 = undefined;
+    _ = try file_pages.next(&page_storage);
+    const retained_file_pages = file_pages;
+    try std.testing.expectError(
+        error.UnsupportedOggVersion,
+        file_pages.next(&page_storage),
+    );
+    try std.testing.expectEqual(
+        retained_file_pages.offset,
+        file_pages.offset,
+    );
+    try std.testing.expectError(
+        error.OggResynchronizationLimitReached,
+        file_pages.resynchronize(
+            &page_storage,
+            junk.len - 1,
+        ),
+    );
+    try std.testing.expectEqual(
+        retained_file_pages.offset,
+        file_pages.offset,
+    );
+    try std.testing.expectError(
+        error.InvalidOggResynchronizationLimit,
+        file_pages.resynchronize(&page_storage, 0),
+    );
+    var short_page_storage: [maximum_page_bytes - 1]u8 = undefined;
+    try std.testing.expectError(
+        error.OggPageBufferTooSmall,
+        file_pages.resynchronize(
+            &short_page_storage,
+            junk.len,
+        ),
+    );
+    try std.testing.expectEqual(
+        junk.len,
+        try file_pages.resynchronize(
+            &page_storage,
+            junk.len,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(u32, 1),
+        (try file_pages.next(&page_storage)).?.sequence_number,
+    );
+    try std.testing.expectEqual(
+        @as(u32, 2),
+        (try file_pages.next(&page_storage)).?.sequence_number,
+    );
+    try std.testing.expect(
+        (try file_pages.next(&page_storage)) == null,
     );
 }
 

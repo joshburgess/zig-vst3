@@ -1709,16 +1709,52 @@ test "installed package exposes DSP blocks contexts and math primitives" {
     try indexed_ogg_writer.appendPacket("header 3", 0, false, false);
     try indexed_ogg_writer.appendPacket("audio 1", 0, false, false);
     try indexed_ogg_writer.appendPacket("audio 2", 32, false, true);
+    const indexed_ogg_bytes = indexed_ogg_writer.bytes();
+    var clean_pages = plugin.dsp.OggPageIterator.init(
+        indexed_ogg_bytes,
+    );
+    const first_clean_page = (try clean_pages.next()).?;
+    const inserted_junk = [_]u8{ 0x49, 0x44, 0x33 };
+    const insertion_offset: usize =
+        @intCast(first_clean_page.byte_length);
+    var damaged_ogg_storage: [
+        indexed_ogg_storage.len +
+            inserted_junk.len
+    ]u8 = undefined;
+    @memcpy(
+        damaged_ogg_storage[0..insertion_offset],
+        indexed_ogg_bytes[0..insertion_offset],
+    );
+    @memcpy(
+        damaged_ogg_storage[insertion_offset..][0..inserted_junk.len],
+        &inserted_junk,
+    );
+    @memcpy(
+        damaged_ogg_storage[insertion_offset + inserted_junk.len ..][0 .. indexed_ogg_bytes.len - insertion_offset],
+        indexed_ogg_bytes[insertion_offset..],
+    );
+    var damaged_pages = plugin.dsp.OggPageIterator.init(
+        damaged_ogg_storage[0 .. indexed_ogg_bytes.len + inserted_junk.len],
+    );
+    _ = try damaged_pages.next();
+    try std.testing.expectEqual(
+        inserted_junk.len,
+        try damaged_pages.resynchronize(inserted_junk.len),
+    );
+    try std.testing.expectEqual(
+        @as(u32, 1),
+        (try damaged_pages.next()).?.sequence_number,
+    );
     try std.testing.expectEqual(
         @as(usize, 2),
         try plugin.dsp.requiredVorbisSeekPoints(
-            indexed_ogg_writer.bytes(),
+            indexed_ogg_bytes,
         ),
     );
     var installed_seek_points: [2]plugin.dsp.VorbisSeekPoint =
         undefined;
     const installed_seek_index = try plugin.dsp.buildVorbisSeekIndex(
-        indexed_ogg_writer.bytes(),
+        indexed_ogg_bytes,
         &installed_seek_points,
     );
     const installed_seek_point = try plugin.dsp.findVorbisSeekPoint(
