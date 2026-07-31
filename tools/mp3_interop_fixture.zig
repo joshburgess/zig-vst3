@@ -51,9 +51,10 @@ fn writeGaplessFixture(io: std.Io, path: []const u8) !void {
 fn writeVbriFixture(io: std.Io, path: []const u8) !void {
     const config = plug.dsp.Mp3EncoderConfig{
         .version = .mpeg1,
-        .bitrate_kbps = 320,
+        .bitrate_kbps = 192,
         .sample_rate = 44_100,
-        .channel_mode = .stereo,
+        .channel_mode = .joint_stereo,
+        .mode_extension = 3,
     };
     var encoder = try plug.dsp.Mp3PcmStreamEncoder.init(config);
     var encoded: [plug.dsp.maximumMp3EncodedFrameBytes * 6]u8 = undefined;
