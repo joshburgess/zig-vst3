@@ -851,6 +851,13 @@ pub fn main(init: std.process.Init) !void {
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(handle);
     worker_host.instance = handle;
+    if (worker_interface.work(
+        handle,
+        null,
+        &worker_host,
+        1,
+        "x".ptr,
+    ) != .unknown) return error.NullWorkerRespondCallbackAccepted;
 
     const raw_state = descriptor.extension_data(
         core.lv2.state_interface_uri,

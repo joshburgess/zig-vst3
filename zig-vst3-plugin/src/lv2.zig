@@ -387,7 +387,7 @@ const CheckedWorkerSchedule = struct {
 pub const WorkerInterface = extern struct {
     work: *const fn (
         instance: Handle,
-        respond: WorkerRespondFunction,
+        respond: ?WorkerRespondFunction,
         handle: WorkerRespondHandle,
         size: u32,
         data: ?*const anyopaque,
@@ -1774,13 +1774,14 @@ pub fn CoreAdapterWithParameters(
 
         fn runWorker(
             instance: Handle,
-            respond: WorkerRespondFunction,
+            raw_respond: ?WorkerRespondFunction,
             handle: WorkerRespondHandle,
             size: u32,
             data: ?*const anyopaque,
         ) callconv(.c) WorkerStatus {
             const self = instanceFromHandle(instance) orelse
                 return .unknown;
+            const respond = raw_respond orelse return .unknown;
             const request = workerBytes(
                 size,
                 data,
@@ -6224,6 +6225,16 @@ test "LV2 worker supports immediate offline and bounded responses" {
     try std.testing.expectEqual(
         WorkerStatus.unknown,
         plugin.schedule.?.schedule("late"),
+    );
+    try std.testing.expectEqual(
+        WorkerStatus.unknown,
+        worker.work(
+            handle,
+            null,
+            &host,
+            1,
+            "x".ptr,
+        ),
     );
     try std.testing.expectEqual(
         WorkerStatus.no_space,
