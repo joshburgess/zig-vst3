@@ -113,7 +113,7 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 -i 'aevalsrc=0.20*sin(2*PI*275*t)|0.15*sin(2*PI*715*t):s=44100' \
                 -t 2.2 \
                 -c:a libmp3lame \
-                -q:a 4 \
+                -b:a 128k \
                 -id3v2_version 3 \
                 -write_id3v1 1 \
                 -metadata title='Interop seek fixture' \
