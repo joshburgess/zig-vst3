@@ -376,6 +376,8 @@ pub fn Adapter(
                 return options_status_unknown;
             const options = raw_options orelse
                 return options_status_unknown;
+            if (@intFromPtr(options) % @alignOf(OptionsOption) != 0)
+                return options_status_unknown;
             var status = options_status_success;
             var terminated = false;
             for (0..256) |index| {
@@ -415,6 +417,8 @@ pub fn Adapter(
             const instance = instanceFromHandle(handle) orelse
                 return options_status_unknown;
             const options = raw_options orelse
+                return options_status_unknown;
+            if (@intFromPtr(options) % @alignOf(OptionsOption) != 0)
                 return options_status_unknown;
             var scale: ?f32 = null;
             var status = options_status_success;
@@ -1287,6 +1291,28 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
     try std.testing.expectEqual(
         options_status_unknown,
         runtime_options.set(handle, null),
+    );
+    var misaligned_option_storage: [@sizeOf(OptionsOption) * 2 + 1]u8 align(@alignOf(OptionsOption)) =
+        undefined;
+    const misaligned_option_address =
+        @intFromPtr(&misaligned_option_storage[1]);
+    var misaligned_query: ?[*]OptionsOption = null;
+    @memcpy(
+        std.mem.asBytes(&misaligned_query),
+        std.mem.asBytes(&misaligned_option_address),
+    );
+    try std.testing.expectEqual(
+        options_status_unknown,
+        runtime_options.get(handle, misaligned_query),
+    );
+    var misaligned_update: ?[*]const OptionsOption = null;
+    @memcpy(
+        std.mem.asBytes(&misaligned_update),
+        std.mem.asBytes(&misaligned_option_address),
+    );
+    try std.testing.expectEqual(
+        options_status_unknown,
+        runtime_options.set(handle, misaligned_update),
     );
     var scale_query = [_]OptionsOption{
         .{ .key = 139 },

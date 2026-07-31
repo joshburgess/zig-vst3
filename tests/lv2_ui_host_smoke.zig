@@ -254,6 +254,26 @@ pub fn main(init: std.process.Init) !void {
     if (runtime_options.set(handle, null) !=
         ui.options_status_unknown)
         return error.NullScaleUpdateAccepted;
+    var misaligned_option_storage: [@sizeOf(ui.OptionsOption) * 2 + 1]u8 align(@alignOf(ui.OptionsOption)) =
+        undefined;
+    const misaligned_option_address =
+        @intFromPtr(&misaligned_option_storage[1]);
+    var misaligned_query: ?[*]ui.OptionsOption = null;
+    @memcpy(
+        std.mem.asBytes(&misaligned_query),
+        std.mem.asBytes(&misaligned_option_address),
+    );
+    if (runtime_options.get(handle, misaligned_query) !=
+        ui.options_status_unknown)
+        return error.MisalignedScaleQueryAccepted;
+    var misaligned_update: ?[*]const ui.OptionsOption = null;
+    @memcpy(
+        std.mem.asBytes(&misaligned_update),
+        std.mem.asBytes(&misaligned_option_address),
+    );
+    if (runtime_options.set(handle, misaligned_update) !=
+        ui.options_status_unknown)
+        return error.MisalignedScaleUpdateAccepted;
     var scale_query = [_]ui.OptionsOption{
         .{ .key = 139 },
         .{},
