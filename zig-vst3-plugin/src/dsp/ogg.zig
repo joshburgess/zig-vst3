@@ -346,6 +346,7 @@ const VorbisSeekIndexer = struct {
     logical_stream_index: ?u32 = null,
     logical_packet_index: u64 = 0,
     current_packet: ?VorbisPacketLocation = null,
+    first_audio_packet: ?VorbisPacketLocation = null,
     previous_audio_packet: ?VorbisPacketLocation = null,
     previous_pcm_end: ?i64 = null,
 
@@ -357,6 +358,7 @@ const VorbisSeekIndexer = struct {
             self.logical_stream_index = page.logical_stream_index;
             self.logical_packet_index = 0;
             self.current_packet = null;
+            self.first_audio_packet = null;
             self.previous_audio_packet = null;
             self.previous_pcm_end = null;
         } else if (self.logical_stream_index != page.logical_stream_index) {
@@ -381,6 +383,8 @@ const VorbisSeekIndexer = struct {
             const completed_packet = self.current_packet orelse
                 return error.InvalidVorbisSeekContinuation;
             if (self.logical_packet_index >= 3) {
+                if (self.first_audio_packet == null)
+                    self.first_audio_packet = completed_packet;
                 decode_packet =
                     self.previous_audio_packet orelse completed_packet;
                 last_audio_packet = completed_packet;
@@ -410,7 +414,10 @@ const VorbisSeekIndexer = struct {
         }
         const point = VorbisSeekPoint{
             .pcm_end = pcm_end,
-            .decode = decode_packet.?,
+            .decode = if (self.previous_pcm_end == null)
+                self.first_audio_packet.?
+            else
+                decode_packet.?,
             .packet = last_audio_packet.?,
         };
         if (self.destination) |destination| {
@@ -15085,11 +15092,11 @@ test "Vorbis seeking handles packed packets and chained streams" {
     );
     try std.testing.expectEqual(@as(usize, 1), packed_index.len);
     try std.testing.expectEqual(
-        @as(u64, 4),
+        @as(u64, 3),
         packed_index[0].decode.logical_packet_index,
     );
     try std.testing.expectEqual(
-        @as(u16, 1),
+        @as(u16, 0),
         packed_index[0].decode.completed_packets_before,
     );
     try std.testing.expectEqual(
@@ -15123,10 +15130,19 @@ test "Vorbis seeking handles packed packets and chained streams" {
         &page_storage,
         &packet_storage,
     )).?;
-    try std.testing.expectEqualSlices(u8, &.{0x22}, prime.bytes);
+    try std.testing.expectEqualSlices(u8, &.{0x11}, prime.bytes);
     try std.testing.expectEqual(
         unknown_granule,
         prime.granule_position,
+    );
+    const middle = (try packets.next(
+        &page_storage,
+        &packet_storage,
+    )).?;
+    try std.testing.expectEqualSlices(u8, &.{0x22}, middle.bytes);
+    try std.testing.expectEqual(
+        unknown_granule,
+        middle.granule_position,
     );
     const target = (try packets.next(
         &page_storage,
