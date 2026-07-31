@@ -56,6 +56,10 @@ wav_data_range() {
 if [ -n "$decode_probe" ]; then
     "$decode_probe" "$fixture"
     printf 'Vorbis project decoder probe passed\n'
+    project_chained_fixture="$temporary/project-chained.ogg"
+    cat "$fixture" "$fixture" >"$project_chained_fixture"
+    "$decode_probe" "$project_chained_fixture"
+    printf 'Vorbis project chained decoder probe passed\n'
 fi
 
 if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
@@ -86,6 +90,20 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$external_fixture"; then
             "$decode_probe" "$external_fixture"
             printf 'Vorbis FFmpeg stereo encoder interoperability test passed\n'
+
+            external_second_fixture="$temporary/ffmpeg-encoded-second.ogg"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.15*sin(2*PI*330*t)|0.1*sin(2*PI*550*t):s=44100' \
+                -t 0.08 \
+                -c:a libvorbis \
+                -q:a 4 \
+                "$external_second_fixture"
+            external_chained_fixture="$temporary/ffmpeg-encoded-chained.ogg"
+            cat "$external_fixture" "$external_second_fixture" \
+                >"$external_chained_fixture"
+            "$decode_probe" "$external_chained_fixture"
+            printf 'Vorbis FFmpeg chained encoder interoperability test passed\n'
 
             external_mono_fixture="$temporary/ffmpeg-encoded-mono.ogg"
             ffmpeg -v error -y \

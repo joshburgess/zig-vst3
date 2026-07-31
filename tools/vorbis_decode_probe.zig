@@ -13,28 +13,212 @@ pub fn main(init: std.process.Init) !void {
         .limited(16 * 1024 * 1024),
     );
     const packet_storage = try allocator.alloc(u8, 4 * 1024 * 1024);
-    var packets = plug.dsp.OggPacketIterator.init(
+    var packets = plug.dsp.OggPacketIterator.initChained(
         encoded,
         packet_storage,
     );
 
-    const identification_packet =
+    const first_identification_packet =
         try packets.next() orelse return error.MissingIdentification;
     const identification = try plug.dsp.VorbisIdentification.parse(
-        identification_packet.bytes,
+        first_identification_packet.bytes,
     );
-    const comment_packet =
-        try packets.next() orelse return error.MissingComments;
-    var comments = try plug.dsp.VorbisCommentIterator.init(
-        comment_packet.bytes,
-    );
-    while (try comments.next()) |_| {}
 
-    const setup_packet =
-        try packets.next() orelse return error.MissingSetup;
+    if (identification.small_block_size == 64 and
+        identification.large_block_size == 64)
+    {
+        switch (identification.channel_count) {
+            1 => try decodeStreams(
+                1,
+                64,
+                64,
+                allocator,
+                &packets,
+                first_identification_packet,
+            ),
+            else => return error.UnsupportedVorbisChannelCount,
+        }
+    } else if (identification.small_block_size == 256 and
+        identification.large_block_size == 2_048)
+    {
+        switch (identification.channel_count) {
+            1 => try decodeStreams(
+                1,
+                256,
+                2_048,
+                allocator,
+                &packets,
+                first_identification_packet,
+            ),
+            2 => try decodeStreams(
+                2,
+                256,
+                2_048,
+                allocator,
+                &packets,
+                first_identification_packet,
+            ),
+            6 => try decodeStreams(
+                6,
+                256,
+                2_048,
+                allocator,
+                &packets,
+                first_identification_packet,
+            ),
+            else => return error.UnsupportedVorbisChannelCount,
+        }
+    } else {
+        return error.UnexpectedVorbisGeometry;
+    }
+}
+
+fn decodeStreams(
+    comptime channel_count: usize,
+    comptime small_block_size: usize,
+    comptime large_block_size: usize,
+    allocator: std.mem.Allocator,
+    packets: *plug.dsp.OggPacketIterator,
+    first_identification_packet: plug.dsp.OggPacket,
+) !void {
+    var decoder = plug.dsp.VorbisChainedPcmStreamDecoder(
+        f32,
+        channel_count,
+        small_block_size,
+        large_block_size,
+    ).init();
+    var spectra: [channel_count * large_block_size / 2]f32 = undefined;
+    var floors: [channel_count * large_block_size / 2]f32 = undefined;
+    var coupling: [channel_count * large_block_size / 2]f32 = undefined;
+    var time: [channel_count * large_block_size]f32 = undefined;
+    var classifications: [large_block_size * channel_count]u8 =
+        undefined;
+    var windowed: [channel_count * large_block_size]f32 = undefined;
+    var output_storage: [channel_count][large_block_size]f32 = undefined;
+    var outputs: [channel_count][]f32 = undefined;
+    for (&outputs, &output_storage) |*output, *storage|
+        output.* = storage;
+    const scratch = plug.dsp.VorbisPcmStreamScratch(f32){
+        .packet = .{
+            .spectra = &spectra,
+            .floor_curves = &floors,
+            .coupling = &coupling,
+            .time = &time,
+            .classifications = &classifications,
+        },
+        .windowed = &windowed,
+    };
+
+    var next_identification_packet: ?plug.dsp.OggPacket = first_identification_packet;
+    var logical_stream_count: u32 = 0;
+    var audio_packets: usize = 0;
+    var sample_count: u64 = 0;
+    var energy: f64 = 0.0;
+    while (next_identification_packet) |identification_packet| {
+        if (!identification_packet.beginning)
+            return error.MissingVorbisBeginningOfStream;
+        const logical_stream_index =
+            identification_packet.logical_stream_index;
+        if (logical_stream_index != logical_stream_count)
+            return error.UnexpectedVorbisLogicalStreamIndex;
+        const identification =
+            try plug.dsp.VorbisIdentification.parse(
+                identification_packet.bytes,
+            );
+        if (identification.channel_count != channel_count or
+            identification.small_block_size != small_block_size or
+            identification.large_block_size != large_block_size)
+        {
+            return error.VorbisChainedGeometryChanged;
+        }
+
+        const comment_packet =
+            try packets.next() orelse return error.MissingComments;
+        try requireLogicalStream(comment_packet, logical_stream_index);
+        var comments = try plug.dsp.VorbisCommentIterator.init(
+            comment_packet.bytes,
+        );
+        while (try comments.next()) |_| {}
+
+        const setup_packet =
+            try packets.next() orelse return error.MissingSetup;
+        try requireLogicalStream(setup_packet, logical_stream_index);
+        const setup = try parseSetup(
+            allocator,
+            setup_packet.bytes,
+            identification.channel_count,
+        );
+        try decoder.beginLogicalStream(identification);
+
+        var stream_audio_packets: usize = 0;
+        while (true) {
+            const packet =
+                try packets.next() orelse
+                return error.MissingVorbisEndOfStream;
+            try requireLogicalStream(packet, logical_stream_index);
+            const decoded = try decoder.decode(
+                packet,
+                identification,
+                setup,
+                &outputs,
+                scratch,
+            );
+            if (decoded.stream.packet.floor_truncated)
+                return error.TruncatedVorbisFloorPacket;
+            if (decoded.global_pcm_start != sample_count)
+                return error.DiscontinuousVorbisPcmPosition;
+            stream_audio_packets += 1;
+            audio_packets += 1;
+            const expected_end = std.math.add(
+                u64,
+                sample_count,
+                @intCast(decoded.stream.sample_count),
+            ) catch return error.VorbisPcmPositionOverflow;
+            if (decoded.global_pcm_end != expected_end)
+                return error.DiscontinuousVorbisPcmPosition;
+            sample_count = expected_end;
+            for (outputs) |output| {
+                for (output[0..decoded.stream.sample_count]) |sample|
+                    energy += @as(f64, sample) * sample;
+            }
+            if (packet.end) break;
+        }
+        if (stream_audio_packets == 0)
+            return error.EmptyVorbisLogicalStream;
+        logical_stream_count = std.math.add(
+            u32,
+            logical_stream_count,
+            1,
+        ) catch return error.VorbisLogicalStreamIndexOverflow;
+        next_identification_packet = try packets.next();
+    }
+    if (!decoder.stream.ended) return error.MissingVorbisEndOfStream;
+    if (logical_stream_count == 0 or
+        audio_packets == 0 or
+        sample_count == 0)
+    {
+        return error.EmptyVorbisStream;
+    }
+    if (!std.math.isFinite(energy) or energy <= 0.0)
+        return error.SilentVorbisStream;
+}
+
+fn requireLogicalStream(
+    packet: plug.dsp.OggPacket,
+    logical_stream_index: u32,
+) !void {
+    if (packet.logical_stream_index != logical_stream_index)
+        return error.TruncatedVorbisLogicalStream;
+}
+
+fn parseSetup(
+    allocator: std.mem.Allocator,
+    packet: []const u8,
+    channel_count: u8,
+) !plug.dsp.VorbisSetup {
     const summary = try plug.dsp.validateVorbisSetup(
-        setup_packet.bytes,
-        identification.channel_count,
+        packet,
+        channel_count,
     );
     const entry_count = std.math.cast(
         usize,
@@ -48,9 +232,9 @@ pub fn main(init: std.process.Init) !void {
         usize,
         summary.codebook_multiplicand_count,
     ) orelse return error.VorbisSetupTooLarge;
-    const setup = try plug.dsp.parseVorbisSetup(
-        setup_packet.bytes,
-        identification.channel_count,
+    return plug.dsp.parseVorbisSetup(
+        packet,
+        channel_count,
         .{
             .codebooks = try allocator.alloc(
                 plug.dsp.VorbisCodebook,
@@ -86,115 +270,4 @@ pub fn main(init: std.process.Init) !void {
             ),
         },
     );
-
-    if (identification.small_block_size == 64 and
-        identification.large_block_size == 64)
-    {
-        switch (identification.channel_count) {
-            1 => try decodePackets(
-                1,
-                64,
-                64,
-                &packets,
-                identification,
-                setup,
-            ),
-            else => return error.UnsupportedVorbisChannelCount,
-        }
-    } else if (identification.small_block_size == 256 and
-        identification.large_block_size == 2_048)
-    {
-        switch (identification.channel_count) {
-            1 => try decodePackets(
-                1,
-                256,
-                2_048,
-                &packets,
-                identification,
-                setup,
-            ),
-            2 => try decodePackets(
-                2,
-                256,
-                2_048,
-                &packets,
-                identification,
-                setup,
-            ),
-            6 => try decodePackets(
-                6,
-                256,
-                2_048,
-                &packets,
-                identification,
-                setup,
-            ),
-            else => return error.UnsupportedVorbisChannelCount,
-        }
-    } else {
-        return error.UnexpectedVorbisGeometry;
-    }
-}
-
-fn decodePackets(
-    comptime channel_count: usize,
-    comptime small_block_size: usize,
-    comptime large_block_size: usize,
-    packets: *plug.dsp.OggPacketIterator,
-    identification: plug.dsp.VorbisIdentification,
-    setup: plug.dsp.VorbisSetup,
-) !void {
-    var decoder = plug.dsp.VorbisPcmStreamDecoder(
-        f32,
-        channel_count,
-        small_block_size,
-        large_block_size,
-    ).init();
-    var spectra: [channel_count * large_block_size / 2]f32 = undefined;
-    var floors: [channel_count * large_block_size / 2]f32 = undefined;
-    var coupling: [channel_count * large_block_size / 2]f32 = undefined;
-    var time: [channel_count * large_block_size]f32 = undefined;
-    var classifications: [large_block_size * channel_count]u8 =
-        undefined;
-    var windowed: [channel_count * large_block_size]f32 = undefined;
-    var output_storage: [channel_count][large_block_size]f32 = undefined;
-    var outputs: [channel_count][]f32 = undefined;
-    for (&outputs, &output_storage) |*output, *storage|
-        output.* = storage;
-    const scratch = plug.dsp.VorbisPcmStreamScratch(f32){
-        .packet = .{
-            .spectra = &spectra,
-            .floor_curves = &floors,
-            .coupling = &coupling,
-            .time = &time,
-            .classifications = &classifications,
-        },
-        .windowed = &windowed,
-    };
-
-    var audio_packets: usize = 0;
-    var sample_count: usize = 0;
-    var energy: f64 = 0.0;
-    while (try packets.next()) |packet| {
-        const decoded = try decoder.decode(
-            packet,
-            identification,
-            setup,
-            &outputs,
-            scratch,
-        );
-        if (decoded.packet.floor_truncated)
-            return error.TruncatedVorbisFloorPacket;
-        audio_packets += 1;
-        sample_count += decoded.sample_count;
-        for (outputs) |output| {
-            for (output[0..decoded.sample_count]) |sample|
-                energy += @as(f64, sample) * sample;
-        }
-    }
-    if (!decoder.ended) return error.MissingVorbisEndOfStream;
-    if (audio_packets == 0 or sample_count == 0)
-        return error.EmptyVorbisStream;
-    if (!std.math.isFinite(energy) or energy <= 0.0)
-        return error.SilentVorbisStream;
 }

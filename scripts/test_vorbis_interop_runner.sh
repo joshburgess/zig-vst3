@@ -35,11 +35,15 @@ PATH="$fake_bin:$PATH" \
     >"$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg stereo encoder interoperability test passed' \
     "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg chained encoder interoperability test passed' \
+    "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg mono encoder interoperability test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg 5.1 encoder interoperability test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis project decoder probe passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis project chained decoder probe passed' \
     "$root/ffmpeg.txt"
 
 probe_count="$root/probe-count"
@@ -72,12 +76,18 @@ expect_probe_failure() {
 
 expect_probe_failure \
     2 \
-    'Vorbis runner accepted a stereo decode failure'
+    'Vorbis runner accepted a project chained decode failure'
 expect_probe_failure \
     3 \
-    'Vorbis runner accepted a mono decode failure'
+    'Vorbis runner accepted a stereo decode failure'
 expect_probe_failure \
     4 \
+    'Vorbis runner accepted a chained decode failure'
+expect_probe_failure \
+    5 \
+    'Vorbis runner accepted a mono decode failure'
+expect_probe_failure \
+    6 \
     'Vorbis runner accepted a 5.1 decode failure'
 rm -f "$probe_count"
 
