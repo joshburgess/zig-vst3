@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const hrtf = @import("hrtf.zig");
 
@@ -154,27 +155,27 @@ pub fn Loader(
         const DatabaseType =
             hrtf.Database(maximum_measurements, maximum_frames);
 
-        library: std.DynLib,
+        library: DynamicLibrary,
         api: Api,
 
         pub fn openDefault() !Self {
-            const names = switch (@import("builtin").os.tag) {
-                .windows => &[_][]const u8{
+            const names = switch (builtin.os.tag) {
+                .windows => &[_][:0]const u8{
                     "netcdf.dll",
                     "netcdf-19.dll",
                 },
-                .macos => &[_][]const u8{
+                .macos => &[_][:0]const u8{
                     "libnetcdf.19.dylib",
                     "libnetcdf.dylib",
                 },
-                else => &[_][]const u8{
+                else => &[_][:0]const u8{
                     "libnetcdf.so.19",
                     "libnetcdf.so",
                 },
             };
             for (names) |name| {
                 var library =
-                    std.DynLib.open(name) catch continue;
+                    DynamicLibrary.open(name) catch continue;
                 const api = Api.load(&library) catch {
                     library.close();
                     continue;
@@ -341,6 +342,50 @@ const nc_no_error: c_int = 0;
 const nc_nowrite: c_int = 0;
 const nc_global: c_int = -1;
 
+const DynamicLibrary = if (builtin.os.tag == .windows)
+    WindowsDynamicLibrary
+else
+    std.DynLib;
+
+const WindowsDynamicLibrary = struct {
+    const windows = std.os.windows;
+
+    handle: windows.HMODULE,
+
+    fn open(name: [:0]const u8) !WindowsDynamicLibrary {
+        return .{
+            .handle = LoadLibraryA(name.ptr) orelse
+                return error.LoadDynamicLibraryFailed,
+        };
+    }
+
+    fn close(self: *WindowsDynamicLibrary) void {
+        _ = FreeLibrary(self.handle);
+        self.* = undefined;
+    }
+
+    fn lookup(
+        self: *WindowsDynamicLibrary,
+        comptime T: type,
+        name: [:0]const u8,
+    ) ?T {
+        const procedure =
+            GetProcAddress(self.handle, name.ptr) orelse return null;
+        return @ptrCast(procedure);
+    }
+
+    extern "kernel32" fn LoadLibraryA(
+        name: [*:0]const u8,
+    ) callconv(.winapi) ?windows.HMODULE;
+    extern "kernel32" fn GetProcAddress(
+        module: windows.HMODULE,
+        name: [*:0]const u8,
+    ) callconv(.winapi) ?windows.FARPROC;
+    extern "kernel32" fn FreeLibrary(
+        module: windows.HMODULE,
+    ) callconv(.winapi) windows.BOOL;
+};
+
 const Api = struct {
     open: *const fn (
         [*:0]const u8,
@@ -386,7 +431,7 @@ const Api = struct {
         [*]f64,
     ) callconv(.c) c_int,
 
-    fn load(library: *std.DynLib) !Api {
+    fn load(library: *DynamicLibrary) !Api {
         return .{
             .open = library.lookup(
                 @FieldType(Api, "open"),

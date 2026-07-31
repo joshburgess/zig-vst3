@@ -2341,6 +2341,26 @@ pub fn build(b: *std.Build) void {
     const zig_vst3_plugin_core_tests = b.addTest(.{
         .root_module = zig_vst3_plugin_core_test_module,
     });
+    const plugin_core_cross_build_step = b.step(
+        "test-plugin-core-builds",
+        "Compile plugin-core tests for supported cross targets",
+    );
+    const windows_gnu_plugin_core_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .gnu,
+            }),
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    plugin_core_cross_build_step.dependOn(
+        &windows_gnu_plugin_core_tests.step,
+    );
     const audio_unit_test_step = b.step(
         "test-audio-unit",
         "Run Audio Unit render, AUv2 ABI, and cross-target checks",
@@ -3259,6 +3279,13 @@ pub fn build(b: *std.Build) void {
     );
     test_vorbis_interop.addFileArg(vorbis_interop_ogg);
     test_vorbis_interop.addArtifactArg(vorbis_decode_probe);
+    const vorbis_interop_test_step = b.step(
+        "test-vorbis-interop",
+        "Run external Vorbis encoder and decoder checks",
+    );
+    vorbis_interop_test_step.dependOn(
+        &test_vorbis_interop.step,
+    );
 
     const mp3_interop_fixture = b.addExecutable(.{
         .name = "mp3-interop-fixture",
@@ -3352,6 +3379,7 @@ pub fn build(b: *std.Build) void {
         realtime_source_audit,
         gui_examples,
     });
+    test_step.dependOn(plugin_core_cross_build_step);
     test_step.dependOn(core_midi_test_step);
     test_step.dependOn(audio_unit_cross_build_step);
     if (b.graph.host.result.os.tag == .macos) {

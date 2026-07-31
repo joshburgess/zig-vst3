@@ -340,7 +340,7 @@ fn interoperabilitySetup() plug.dsp.VorbisSetup {
                 .active_entry_count = 1,
                 .tree_node_offset = 0,
                 .tree_node_count = 0,
-                .lookup_type = 2,
+                .lookup_type = 1,
                 .minimum_value = 0,
                 .delta_value = 1,
                 .sequence = false,
