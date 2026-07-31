@@ -183,8 +183,6 @@ fn decodePackets(
             &outputs,
             scratch,
         );
-        if (decoded.packet.truncated)
-            return error.TruncatedVorbisAudioPacket;
         audio_packets += 1;
         sample_count += decoded.sample_count;
         for (outputs) |output| {
