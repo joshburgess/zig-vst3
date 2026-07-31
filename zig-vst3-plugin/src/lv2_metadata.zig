@@ -213,8 +213,12 @@ pub fn Generator(
             try writer.writeAll(
                 " ;\n    opts:supportedOption bufsz:minBlockLength ,\n" ++
                     "                         bufsz:maxBlockLength ,\n" ++
-                    "                         bufsz:nominalBlockLength ;\n",
+                    "                         bufsz:nominalBlockLength",
             );
+            if (Adapter.event_input_port != null or
+                Adapter.event_output_port != null)
+                try writer.writeAll(" ,\n                         bufsz:sequenceSize");
+            try writer.writeAll(" ;\n");
             if (Spec.audio_input_layout.hasBus()) {
                 try writer.writeAll("    pg:mainInput <");
                 try writeGroupUri(writer, .input, 0);
@@ -1332,6 +1336,9 @@ test "LV2 metadata generator writes ports workers and presets" {
         ) != null,
     );
     try std.testing.expect(
+        std.mem.indexOf(u8, plugin, "bufsz:sequenceSize") != null,
+    );
+    try std.testing.expect(
         std.mem.indexOf(u8, plugin, "lv2:symbol \"events_input\"") !=
             null,
     );
@@ -1494,6 +1501,9 @@ test "LV2 metadata groups main sidechain and auxiliary audio buses" {
     try Generated.writePlugin(&writer, .{});
     const plugin = writer.buffered();
 
+    try std.testing.expect(
+        std.mem.indexOf(u8, plugin, "bufsz:sequenceSize") == null,
+    );
     try std.testing.expect(
         std.mem.indexOf(
             u8,

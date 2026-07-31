@@ -128,6 +128,8 @@ pub const buffer_maximum_block_length_uri =
     "http://lv2plug.in/ns/ext/buf-size#maxBlockLength";
 pub const buffer_nominal_block_length_uri =
     "http://lv2plug.in/ns/ext/buf-size#nominalBlockLength";
+pub const buffer_sequence_size_uri =
+    "http://lv2plug.in/ns/ext/buf-size#sequenceSize";
 pub const Handle = ?*anyopaque;
 
 pub const Feature = extern struct {
@@ -1044,10 +1046,13 @@ pub fn CoreAdapterWithParameters(
         minimum_block_length_key: Urid = 0,
         maximum_block_length_key: Urid = 0,
         nominal_block_length_key: Urid = 0,
+        sequence_size_key: Urid = 0,
         configured_minimum_frames: i32 = 0,
         configured_maximum_frames: usize = maximum_block_size,
         configured_maximum_value: i32 = @intCast(maximum_block_size),
         configured_nominal_frames: i32 = @intCast(maximum_block_size),
+        configured_sequence_size_value: i32 = 0,
+        sequence_size_configured: bool = false,
         worker_schedule: ?*const WorkerSchedule = null,
         worker_schedule_sink: WorkerScheduleSink = undefined,
         inside_run: bool = false,
@@ -1143,6 +1148,11 @@ pub fn CoreAdapterWithParameters(
 
         pub fn configuredNominalFrames(self: *const Self) usize {
             return @intCast(self.configured_nominal_frames);
+        }
+
+        pub fn configuredSequenceSize(self: *const Self) ?usize {
+            if (!self.sequence_size_configured) return null;
+            return @intCast(self.configured_sequence_size_value);
         }
 
         fn instantiate(
@@ -1388,6 +1398,12 @@ pub fn CoreAdapterWithParameters(
                     map.handle,
                     buffer_nominal_block_length_uri,
                 );
+                if (comptime event_port_count != 0) {
+                    self.sequence_size_key = map.map(
+                        map.handle,
+                        buffer_sequence_size_uri,
+                    );
+                }
                 if (self.state_key == 0 or
                     (has_component_state and
                         self.component_state_key == 0) or
@@ -1444,7 +1460,9 @@ pub fn CoreAdapterWithParameters(
                     self.time_speed_key == 0 or
                     self.minimum_block_length_key == 0 or
                     self.maximum_block_length_key == 0 or
-                    self.nominal_block_length_key == 0)
+                    self.nominal_block_length_key == 0 or
+                    (event_port_count != 0 and
+                        self.sequence_size_key == 0))
                 {
                     self.runtime.deinit();
                     allocator.destroy(self);
@@ -1973,6 +1991,14 @@ pub fn CoreAdapterWithParameters(
                         &self.configured_maximum_value
                     else if (option.key == self.nominal_block_length_key)
                         &self.configured_nominal_frames
+                    else if (event_port_count != 0 and
+                    option.key == self.sequence_size_key)
+                        if (self.sequence_size_configured)
+                            &self.configured_sequence_size_value
+                        else {
+                            status |= options_status_unknown;
+                            continue;
+                        }
                     else {
                         status |= options_status_bad_key;
                         continue;
@@ -1994,6 +2020,7 @@ pub fn CoreAdapterWithParameters(
             var minimum: ?usize = null;
             var maximum: ?usize = null;
             var nominal: ?usize = null;
+            var sequence_size: ?usize = null;
             var status = options_status_success;
             var terminated = false;
             for (0..256) |index| {
@@ -2015,6 +2042,9 @@ pub fn CoreAdapterWithParameters(
                         &maximum
                     else if (option.key == self.nominal_block_length_key)
                         &nominal
+                    else if (event_port_count != 0 and
+                    option.key == self.sequence_size_key)
+                        &sequence_size
                     else {
                         status |= options_status_bad_key;
                         continue;
@@ -2070,6 +2100,10 @@ pub fn CoreAdapterWithParameters(
             self.configured_maximum_frames = next_maximum;
             self.configured_maximum_value = @intCast(next_maximum);
             self.configured_nominal_frames = @intCast(next_nominal);
+            if (sequence_size) |value| {
+                self.configured_sequence_size_value = @intCast(value);
+                self.sequence_size_configured = true;
+            }
             return options_status_success;
         }
 
@@ -2082,6 +2116,7 @@ pub fn CoreAdapterWithParameters(
             var minimum: ?usize = null;
             var maximum: ?usize = null;
             var nominal: ?usize = null;
+            var sequence_size: ?usize = null;
             var terminated = false;
             for (0..256) |index| {
                 const option = options[index];
@@ -2115,6 +2150,15 @@ pub fn CoreAdapterWithParameters(
                         option,
                         true,
                     );
+                } else if (event_port_count != 0 and
+                    option.key == self.sequence_size_key)
+                {
+                    if (sequence_size != null)
+                        return error.InvalidOptions;
+                    sequence_size = try self.readBlockLengthOption(
+                        option,
+                        true,
+                    );
                 }
             }
             if (!terminated) return error.InvalidOptions;
@@ -2134,6 +2178,10 @@ pub fn CoreAdapterWithParameters(
                 @intCast(effective_maximum);
             self.configured_nominal_frames =
                 @intCast(effective_nominal);
+            if (sequence_size) |value| {
+                self.configured_sequence_size_value = @intCast(value);
+                self.sequence_size_configured = true;
+            }
         }
 
         fn readBlockLengthOption(
@@ -4158,6 +4206,8 @@ const TestStateHost = struct {
             return 113;
         if (std.mem.eql(u8, uri, buffer_nominal_block_length_uri))
             return 127;
+        if (std.mem.eql(u8, uri, buffer_sequence_size_uri))
+            return 131;
         if (std.mem.endsWith(u8, uri, "#parameterState")) return 17;
         if (std.mem.endsWith(u8, uri, "#componentState")) return 19;
         return 0;
@@ -4717,6 +4767,7 @@ test "LV2 instantiation options constrain block length" {
         pub const vendor = "zig-vst3";
         pub const audio_input_layout: plugin_api.AudioBusLayout = .mono;
         pub const audio_output_layout: plugin_api.AudioBusLayout = .mono;
+        pub const event_input = true;
         pub const Params = struct {};
 
         pub fn process(
@@ -4748,6 +4799,7 @@ test "LV2 instantiation options constrain block length" {
     const minimum: i32 = 0;
     const maximum: i32 = 2;
     const nominal: i32 = 2;
+    const sequence_size: i32 = 512;
     const options = [_]OptionsOption{
         .{
             .subject = 123,
@@ -4767,6 +4819,12 @@ test "LV2 instantiation options constrain block length" {
             .size = @sizeOf(i32),
             .type = 59,
             .value = &nominal,
+        },
+        .{
+            .key = 131,
+            .size = @sizeOf(i32),
+            .type = 59,
+            .value = &sequence_size,
         },
         .{},
     };
@@ -4819,16 +4877,43 @@ test "LV2 instantiation options constrain block length" {
         @as(usize, 2),
         instance.configuredMaximumFrames(),
     );
+    try std.testing.expectEqual(
+        @as(?usize, 512),
+        instance.configuredSequenceSize(),
+    );
     const raw_options_interface =
         Adapter.descriptor.extension_data(
             options_interface_uri,
         ) orelse return error.MissingOptionsInterface;
     const runtime_options: *const OptionsInterface =
         @ptrCast(@alignCast(raw_options_interface));
+    const map_only_features = [_:null]?*const Feature{&map_feature};
+    const default_handle = Adapter.descriptor.instantiate(
+        &Adapter.descriptor,
+        48_000.0,
+        "/tmp/lv2-options-probe.lv2",
+        map_only_features[0..].ptr,
+    ) orelse return error.InstantiateFailed;
+    defer Adapter.descriptor.cleanup(default_handle);
+    const default_instance = Adapter.instanceFromHandle(default_handle) orelse
+        return error.MissingInstance;
+    try std.testing.expectEqual(
+        @as(?usize, null),
+        default_instance.configuredSequenceSize(),
+    );
+    var missing_sequence_query = [_]OptionsOption{
+        .{ .key = 131 },
+        .{},
+    };
+    try std.testing.expectEqual(
+        options_status_unknown,
+        runtime_options.get(default_handle, &missing_sequence_query),
+    );
     var queries = [_]OptionsOption{
         .{ .subject = 91, .key = 109 },
         .{ .subject = 92, .key = 113 },
         .{ .subject = 93, .key = 127 },
+        .{ .subject = 94, .key = 131 },
         .{},
     };
     try std.testing.expectEqual(
@@ -4856,6 +4941,13 @@ test "LV2 instantiation options constrain block length" {
         @as(
             *align(1) const i32,
             @ptrCast(queries[2].value.?),
+        ).*,
+    );
+    try std.testing.expectEqual(
+        @as(i32, 512),
+        @as(
+            *align(1) const i32,
+            @ptrCast(queries[3].value.?),
         ).*,
     );
 
@@ -4890,6 +4982,7 @@ test "LV2 instantiation options constrain block length" {
 
     const expanded_maximum: i32 = 3;
     const expanded_nominal: i32 = 3;
+    const expanded_sequence_size: i32 = 1024;
     const expanded_options = [_]OptionsOption{
         .{
             .key = 113,
@@ -4902,6 +4995,12 @@ test "LV2 instantiation options constrain block length" {
             .size = @sizeOf(i32),
             .type = 59,
             .value = &expanded_nominal,
+        },
+        .{
+            .key = 131,
+            .size = @sizeOf(i32),
+            .type = 59,
+            .value = &expanded_sequence_size,
         },
         .{},
     };
@@ -4921,6 +5020,10 @@ test "LV2 instantiation options constrain block length" {
     try std.testing.expectEqual(
         @as(usize, 3),
         instance.configuredMaximumFrames(),
+    );
+    try std.testing.expectEqual(
+        @as(?usize, 1024),
+        instance.configuredSequenceSize(),
     );
     const input = [_]f32{ 0.25, -0.5, 0.75 };
     var output = [_]f32{0.0} ** input.len;
@@ -4944,6 +5047,42 @@ test "LV2 instantiation options constrain block length" {
         f32,
         &input,
         &output,
+    );
+    const active_sequence_size: i32 = 2048;
+    const active_sequence_options = [_]OptionsOption{
+        .{
+            .key = 131,
+            .size = @sizeOf(i32),
+            .type = 59,
+            .value = &active_sequence_size,
+        },
+        .{},
+    };
+    try std.testing.expectEqual(
+        options_status_success,
+        runtime_options.set(handle, &active_sequence_options),
+    );
+    try std.testing.expectEqual(
+        @as(?usize, 2048),
+        instance.configuredSequenceSize(),
+    );
+    const invalid_sequence_size: i32 = -1;
+    const invalid_sequence_options = [_]OptionsOption{
+        .{
+            .key = 131,
+            .size = @sizeOf(i32),
+            .type = 59,
+            .value = &invalid_sequence_size,
+        },
+        .{},
+    };
+    try std.testing.expectEqual(
+        options_status_bad_value,
+        runtime_options.set(handle, &invalid_sequence_options),
+    );
+    try std.testing.expectEqual(
+        @as(?usize, 2048),
+        instance.configuredSequenceSize(),
     );
 
     const reduced_maximum: i32 = 2;

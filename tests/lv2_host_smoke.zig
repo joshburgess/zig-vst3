@@ -151,6 +151,11 @@ const StateHost = struct {
             uri,
             core.lv2.buffer_nominal_block_length_uri,
         )) return 127;
+        if (std.mem.eql(
+            u8,
+            uri,
+            core.lv2.buffer_sequence_size_uri,
+        )) return 131;
         if (std.mem.endsWith(u8, uri, "#parameterState"))
             return 17;
         return 0;
@@ -226,6 +231,7 @@ pub fn main(init: std.process.Init) !void {
     const minimum_block_length: i32 = 1;
     const maximum_block_length: i32 = 4;
     const nominal_block_length: i32 = 4;
+    const sequence_size: i32 = 1024;
     const options = [_]core.lv2.OptionsOption{
         .{
             .key = 109,
@@ -244,6 +250,12 @@ pub fn main(init: std.process.Init) !void {
             .size = @sizeOf(i32),
             .type = 59,
             .value = &nominal_block_length,
+        },
+        .{
+            .key = 131,
+            .size = @sizeOf(i32),
+            .type = 59,
+            .value = &sequence_size,
         },
         .{},
     };
@@ -268,20 +280,28 @@ pub fn main(init: std.process.Init) !void {
     ) orelse return error.MissingOptionsInterface;
     const runtime_options: *const core.lv2.OptionsInterface =
         @ptrCast(@alignCast(raw_options));
-    var maximum_query = [_]core.lv2.OptionsOption{
+    var option_queries = [_]core.lv2.OptionsOption{
         .{ .key = 113 },
+        .{ .key = 131 },
         .{},
     };
-    if (runtime_options.get(handle, &maximum_query) !=
+    if (runtime_options.get(handle, &option_queries) !=
         core.lv2.options_status_success)
         return error.OptionsGetFailed;
     const initial_maximum = @as(
         *align(1) const i32,
-        @ptrCast(maximum_query[0].value orelse
+        @ptrCast(option_queries[0].value orelse
             return error.MissingMaximumOption),
     ).*;
     if (initial_maximum != 4)
         return error.InvalidMaximumOption;
+    const initial_sequence_size = @as(
+        *align(1) const i32,
+        @ptrCast(option_queries[1].value orelse
+            return error.MissingSequenceSizeOption),
+    ).*;
+    if (initial_sequence_size != 1024)
+        return error.InvalidSequenceSizeOption;
 
     const reduced_maximum: i32 = 3;
     const reduced_nominal: i32 = 3;

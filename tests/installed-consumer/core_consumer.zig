@@ -782,6 +782,7 @@ test "installed core package runs an LV2 audio control descriptor" {
         pub const vendor = "zig-vst3";
         pub const audio_input_layout: core.plugin.AudioBusLayout = .mono;
         pub const audio_output_layout: core.plugin.AudioBusLayout = .mono;
+        pub const event_input = true;
         pub const lv2_urid_unmap_required = true;
         pub const Params = struct {
             gain: core.parameters.FloatParam = .{
@@ -869,10 +870,28 @@ test "installed core package runs an LV2 audio control descriptor" {
         .URI = core.lv2.urid_unmap_uri,
         .data = &urid_unmap,
     };
+    const sequence_size: i32 = 4096;
+    const sequence_options = [_]core.lv2.OptionsOption{
+        .{
+            .key = MapHost.map(
+                null,
+                core.lv2.buffer_sequence_size_uri,
+            ),
+            .size = @sizeOf(i32),
+            .type = MapHost.map(null, core.lv2.atom_int_uri),
+            .value = &sequence_size,
+        },
+        .{},
+    };
+    var options_feature = core.lv2.Feature{
+        .URI = core.lv2.options_options_uri,
+        .data = @constCast(&sequence_options),
+    };
     const features =
         [_:null]?*const core.lv2.Feature{
             &map_feature,
             &unmap_feature,
+            &options_feature,
         };
     const descriptor = Adapter.descriptorAt(0) orelse
         return error.MissingLv2Descriptor;
@@ -885,6 +904,10 @@ test "installed core package runs an LV2 audio control descriptor" {
     defer descriptor.cleanup(handle);
     const adapter_instance = Adapter.instanceFromHandle(handle) orelse
         return error.MissingLv2Instance;
+    try std.testing.expectEqual(
+        @as(?usize, 4096),
+        adapter_instance.configuredSequenceSize(),
+    );
     const bound_unmap =
         adapter_instance.runtime.instance.plugin.urid_unmap orelse
         return error.MissingLv2UridUnmap;
@@ -1010,6 +1033,13 @@ test "installed core package runs an LV2 audio control descriptor" {
             u8,
             metadata_writer.buffered(),
             "pgm:UIInterface",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            metadata_writer.buffered(),
+            "bufsz:sequenceSize",
         ) != null,
     );
     try std.testing.expect(
