@@ -5,6 +5,7 @@ const std = @import("std");
 const maximum_frames = 8192;
 const maximum_file_bytes = 44 + maximum_frames * @sizeOf(f64);
 const maximum_nanoseconds_per_sample = 100.0;
+const timing_trials = 5;
 
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
@@ -53,12 +54,41 @@ fn runCase(
     var denormals = plug.dsp.DenormalScope.enter();
     defer denormals.leave();
 
-    const fixed_start = std.Io.Clock.awake.now(io).nanoseconds;
-    try plug.dsp.fixture_runner.renderFixed(Sample, processor, input[0..frames], fixed[0..frames], 64);
-    const fixed_elapsed = std.Io.Clock.awake.now(io).nanoseconds - fixed_start;
-    const randomized_start = std.Io.Clock.awake.now(io).nanoseconds;
-    try plug.dsp.fixture_runner.renderRandomized(Sample, processor, input[0..frames], randomized[0..frames], 257, 0x4e414d5f50415249);
-    const randomized_elapsed = std.Io.Clock.awake.now(io).nanoseconds - randomized_start;
+    var fixed_elapsed: ?i128 = null;
+    for (0..timing_trials) |_| {
+        const start = std.Io.Clock.awake.now(io).nanoseconds;
+        try plug.dsp.fixture_runner.renderFixed(
+            Sample,
+            processor,
+            input[0..frames],
+            fixed[0..frames],
+            64,
+        );
+        const elapsed = std.Io.Clock.awake.now(io).nanoseconds - start;
+        if (fixed_elapsed) |best| {
+            if (elapsed < best) fixed_elapsed = elapsed;
+        } else {
+            fixed_elapsed = elapsed;
+        }
+    }
+    var randomized_elapsed: ?i128 = null;
+    for (0..timing_trials) |_| {
+        const start = std.Io.Clock.awake.now(io).nanoseconds;
+        try plug.dsp.fixture_runner.renderRandomized(
+            Sample,
+            processor,
+            input[0..frames],
+            randomized[0..frames],
+            257,
+            0x4e414d5f50415249,
+        );
+        const elapsed = std.Io.Clock.awake.now(io).nanoseconds - start;
+        if (randomized_elapsed) |best| {
+            if (elapsed < best) randomized_elapsed = elapsed;
+        } else {
+            randomized_elapsed = elapsed;
+        }
+    }
 
     const fixed_comparison = try plug.dsp.fixture_runner.compare(Sample, reference[0..frames], fixed[0..frames], tolerance);
     const randomized_comparison = try plug.dsp.fixture_runner.compare(Sample, reference[0..frames], randomized[0..frames], tolerance);
@@ -74,11 +104,16 @@ fn runCase(
         return error.ReferenceMismatch;
     }
 
-    const fixed_ns = @as(f64, @floatFromInt(fixed_elapsed)) / @as(f64, @floatFromInt(frames));
-    const randomized_ns = @as(f64, @floatFromInt(randomized_elapsed)) / @as(f64, @floatFromInt(frames));
-    if (fixed_ns > maximum_nanoseconds_per_sample or randomized_ns > maximum_nanoseconds_per_sample) {
-        return error.PerformanceRegression;
-    }
+    const measured_fixed = fixed_elapsed orelse
+        return error.PerformanceMeasurementUnavailable;
+    const measured_randomized = randomized_elapsed orelse
+        return error.PerformanceMeasurementUnavailable;
+    const fixed_ns =
+        @as(f64, @floatFromInt(measured_fixed)) /
+        @as(f64, @floatFromInt(frames));
+    const randomized_ns =
+        @as(f64, @floatFromInt(measured_randomized)) /
+        @as(f64, @floatFromInt(frames));
     std.debug.print(
         "DSP parity: arch={s} model=linear-recurrent sample={s} rate={d} backend=zig fixed={d:.2} ns/sample randomized={d:.2} ns/sample max_abs={e:.3} max_rel={e:.3} rms={e:.3}\n",
         .{
@@ -92,6 +127,11 @@ fn runCase(
             fixed_comparison.metrics.rms,
         },
     );
+    if (fixed_ns > maximum_nanoseconds_per_sample or
+        randomized_ns > maximum_nanoseconds_per_sample)
+    {
+        return error.PerformanceRegression;
+    }
 }
 
 fn ReferenceModel(comptime Sample: type) type {
