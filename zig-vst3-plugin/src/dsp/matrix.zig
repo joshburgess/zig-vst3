@@ -418,6 +418,33 @@ pub fn DynamicMatrix(comptime Sample: type) type {
             return result;
         }
 
+        pub fn addInto(
+            self: *const Self,
+            other: *const Self,
+            destination: *Self,
+            workspace: []Sample,
+        ) !void {
+            try validateSameShape(self, other);
+            try validateOutput(
+                destination,
+                workspace,
+                self.rows,
+                self.columns,
+                &.{ self.values, other.values },
+            );
+            for (self.values, other.values, workspace) |
+                first,
+                second,
+                *output,
+            | {
+                const value = first + second;
+                if (!std.math.isFinite(value))
+                    return error.MatrixNonFiniteValue;
+                output.* = value;
+            }
+            @memcpy(destination.values, workspace);
+        }
+
         pub fn subtract(
             self: *const Self,
             other: *const Self,
@@ -439,6 +466,33 @@ pub fn DynamicMatrix(comptime Sample: type) type {
             return result;
         }
 
+        pub fn subtractInto(
+            self: *const Self,
+            other: *const Self,
+            destination: *Self,
+            workspace: []Sample,
+        ) !void {
+            try validateSameShape(self, other);
+            try validateOutput(
+                destination,
+                workspace,
+                self.rows,
+                self.columns,
+                &.{ self.values, other.values },
+            );
+            for (self.values, other.values, workspace) |
+                first,
+                second,
+                *output,
+            | {
+                const value = first - second;
+                if (!std.math.isFinite(value))
+                    return error.MatrixNonFiniteValue;
+                output.* = value;
+            }
+            @memcpy(destination.values, workspace);
+        }
+
         pub fn scaled(
             self: *const Self,
             factor: Sample,
@@ -458,6 +512,31 @@ pub fn DynamicMatrix(comptime Sample: type) type {
             return result;
         }
 
+        pub fn scaledInto(
+            self: *const Self,
+            factor: Sample,
+            destination: *Self,
+            workspace: []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidDynamicMatrix;
+            if (!std.math.isFinite(factor))
+                return error.MatrixNonFiniteValue;
+            try validateOutput(
+                destination,
+                workspace,
+                self.rows,
+                self.columns,
+                &.{self.values},
+            );
+            for (self.values, workspace) |source, *output| {
+                const value = source * factor;
+                if (!std.math.isFinite(value))
+                    return error.MatrixNonFiniteValue;
+                output.* = value;
+            }
+            @memcpy(destination.values, workspace);
+        }
+
         pub fn transpose(
             self: *const Self,
             allocator: std.mem.Allocator,
@@ -474,6 +553,31 @@ pub fn DynamicMatrix(comptime Sample: type) type {
                 }
             }
             return result;
+        }
+
+        pub fn transposeInto(
+            self: *const Self,
+            destination: *Self,
+            workspace: []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidDynamicMatrix;
+            try validateOutput(
+                destination,
+                workspace,
+                self.columns,
+                self.rows,
+                &.{self.values},
+            );
+            for (0..self.rows) |row_index| {
+                for (0..self.columns) |column_index| {
+                    workspace[
+                        column_index * self.rows + row_index
+                    ] = self.values[
+                        row_index * self.columns + column_index
+                    ];
+                }
+            }
+            @memcpy(destination.values, workspace);
         }
 
         pub fn multiply(
@@ -507,6 +611,45 @@ pub fn DynamicMatrix(comptime Sample: type) type {
                 }
             }
             return result;
+        }
+
+        pub fn multiplyInto(
+            self: *const Self,
+            other: *const Self,
+            destination: *Self,
+            workspace: []Sample,
+        ) !void {
+            if (!self.valid() or !other.valid())
+                return error.InvalidDynamicMatrix;
+            if (self.columns != other.rows)
+                return error.DynamicMatrixShapeMismatch;
+            try validateOutput(
+                destination,
+                workspace,
+                self.rows,
+                other.columns,
+                &.{ self.values, other.values },
+            );
+            for (0..self.rows) |row_index| {
+                for (0..other.columns) |column_index| {
+                    var value: Sample = 0.0;
+                    for (0..self.columns) |inner| {
+                        value +=
+                            self.values[
+                                row_index * self.columns + inner
+                            ] *
+                            other.values[
+                                inner * other.columns + column_index
+                            ];
+                        if (!std.math.isFinite(value))
+                            return error.MatrixNonFiniteValue;
+                    }
+                    workspace[
+                        row_index * other.columns + column_index
+                    ] = value;
+                }
+            }
+            @memcpy(destination.values, workspace);
         }
 
         pub fn multiplyVectorInto(
@@ -614,6 +757,32 @@ pub fn DynamicMatrix(comptime Sample: type) type {
                 first.columns != second.columns)
             {
                 return error.DynamicMatrixShapeMismatch;
+            }
+        }
+
+        fn validateOutput(
+            destination: *const Self,
+            workspace: []Sample,
+            rows: usize,
+            columns: usize,
+            sources: []const []const Sample,
+        ) !void {
+            if (!destination.valid())
+                return error.InvalidDynamicMatrix;
+            if (destination.rows != rows or
+                destination.columns != columns or
+                workspace.len != destination.values.len)
+            {
+                return error.DynamicMatrixShapeMismatch;
+            }
+            if (slicesOverlap(
+                Sample,
+                destination.values,
+                workspace,
+            )) return error.DynamicMatrixAliasedBuffers;
+            for (sources) |source| {
+                if (slicesOverlap(Sample, source, workspace))
+                    return error.DynamicMatrixAliasedBuffers;
             }
         }
 
@@ -3407,6 +3576,144 @@ test "dynamic matrices own runtime-shaped arithmetic" {
     try std.testing.expectEqual(
         @as(f64, -3.0),
         try scaled.at(1, 2),
+    );
+}
+
+test "dynamic matrix caller-buffer arithmetic is transactional" {
+    const D = DynamicMatrix(f64);
+    var first = try D.fromSlice(
+        std.testing.allocator,
+        2,
+        2,
+        &.{ 1.0, 2.0, 3.0, 4.0 },
+    );
+    defer first.deinit();
+    var second = try D.fromSlice(
+        std.testing.allocator,
+        2,
+        2,
+        &.{ 5.0, 6.0, 7.0, 8.0 },
+    );
+    defer second.deinit();
+    var destination = try D.identity(std.testing.allocator, 2);
+    defer destination.deinit();
+    var workspace: [4]f64 = undefined;
+
+    try first.addInto(&second, &destination, &workspace);
+    try std.testing.expectEqualDeep(
+        [_]f64{ 6.0, 8.0, 10.0, 12.0 },
+        destination.values[0..4].*,
+    );
+    try first.subtractInto(&second, &destination, &workspace);
+    try std.testing.expectEqualDeep(
+        [_]f64{ -4.0, -4.0, -4.0, -4.0 },
+        destination.values[0..4].*,
+    );
+    try first.scaledInto(-0.5, &destination, &workspace);
+    try std.testing.expectEqualDeep(
+        [_]f64{ -0.5, -1.0, -1.5, -2.0 },
+        destination.values[0..4].*,
+    );
+    try first.multiplyInto(&second, &destination, &workspace);
+    try std.testing.expectEqualDeep(
+        [_]f64{ 19.0, 22.0, 43.0, 50.0 },
+        destination.values[0..4].*,
+    );
+    try destination.transposeInto(&destination, &workspace);
+    try std.testing.expectEqualDeep(
+        [_]f64{ 19.0, 43.0, 22.0, 50.0 },
+        destination.values[0..4].*,
+    );
+
+    try first.addInto(&second, &first, &workspace);
+    try std.testing.expectEqualDeep(
+        [_]f64{ 6.0, 8.0, 10.0, 12.0 },
+        first.values[0..4].*,
+    );
+
+    var rectangular = try D.fromSlice(
+        std.testing.allocator,
+        2,
+        3,
+        &.{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 },
+    );
+    defer rectangular.deinit();
+    var transposed = try D.init(std.testing.allocator, 3, 2);
+    defer transposed.deinit();
+    var transpose_workspace: [6]f64 = undefined;
+    try rectangular.transposeInto(
+        &transposed,
+        &transpose_workspace,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f64{ 1.0, 4.0, 2.0, 5.0, 3.0, 6.0 },
+        transposed.values[0..6].*,
+    );
+
+    destination.values[0..4].* = .{ 7.0, 8.0, 9.0, 10.0 };
+    try std.testing.expectError(
+        error.DynamicMatrixShapeMismatch,
+        rectangular.addInto(
+            &rectangular,
+            &destination,
+            &transpose_workspace,
+        ),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        destination.scaledInto(
+            2.0,
+            &destination,
+            destination.values,
+        ),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        first.scaledInto(
+            2.0,
+            &destination,
+            first.values,
+        ),
+    );
+    try std.testing.expectError(
+        error.MatrixNonFiniteValue,
+        destination.scaledInto(
+            std.math.inf(f64),
+            &destination,
+            &workspace,
+        ),
+    );
+    first.values[0] = std.math.floatMax(f64);
+    second.values[0] = std.math.floatMax(f64);
+    try std.testing.expectError(
+        error.MatrixNonFiniteValue,
+        first.addInto(&second, &destination, &workspace),
+    );
+    second.values[0] = -std.math.floatMax(f64);
+    try std.testing.expectError(
+        error.MatrixNonFiniteValue,
+        first.subtractInto(&second, &destination, &workspace),
+    );
+    second.values[0] = 2.0;
+    try std.testing.expectError(
+        error.MatrixNonFiniteValue,
+        first.multiplyInto(&second, &destination, &workspace),
+    );
+    first.values[0] = 6.0;
+    second.values[0] = 5.0;
+    destination.values[0] = std.math.floatMax(f64);
+    try std.testing.expectError(
+        error.MatrixNonFiniteValue,
+        destination.scaledInto(
+            2.0,
+            &destination,
+            &workspace,
+        ),
+    );
+    destination.values[0] = 7.0;
+    try std.testing.expectEqualDeep(
+        [_]f64{ 7.0, 8.0, 9.0, 10.0 },
+        destination.values[0..4].*,
     );
 }
 

@@ -5949,6 +5949,54 @@ test "installed package owns and decomposes runtime-shaped matrices" {
         [_]f64{ -2.0, -2.0 },
         vector_product[0..2].*,
     );
+    var vector_destination: [2]f64 = undefined;
+    var vector_workspace: [2]f64 = undefined;
+    try first.multiplyVectorInto(
+        &.{ 1.0, 0.0, -1.0 },
+        &vector_destination,
+        &vector_workspace,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f64{ -2.0, -2.0 },
+        vector_destination,
+    );
+
+    var arithmetic = try Matrix.init(std.testing.allocator, 2, 3);
+    defer arithmetic.deinit();
+    var arithmetic_workspace: [6]f64 = undefined;
+    try first.addInto(&first, &arithmetic, &arithmetic_workspace);
+    try first.subtractInto(
+        &first,
+        &arithmetic,
+        &arithmetic_workspace,
+    );
+    try first.scaledInto(
+        0.5,
+        &arithmetic,
+        &arithmetic_workspace,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f64{ 0.5, 1.0, 1.5, 2.0, 2.5, 3.0 },
+        arithmetic.values[0..6].*,
+    );
+    var transposed = try Matrix.init(std.testing.allocator, 3, 2);
+    defer transposed.deinit();
+    try first.transposeInto(&transposed, &arithmetic_workspace);
+    try std.testing.expectEqualDeep(
+        [_]f64{ 1.0, 4.0, 2.0, 5.0, 3.0, 6.0 },
+        transposed.values[0..6].*,
+    );
+    var buffered_product = try Matrix.init(std.testing.allocator, 2, 1);
+    defer buffered_product.deinit();
+    try first.multiplyInto(
+        &second,
+        &buffered_product,
+        &vector_workspace,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f64{ -2.0, -2.0 },
+        buffered_product.values[0..2].*,
+    );
 
     var square = try Matrix.fromSlice(
         std.testing.allocator,
