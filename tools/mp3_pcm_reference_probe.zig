@@ -40,8 +40,14 @@ pub fn main(init: std.process.Init) !void {
         sample_values,
         @sizeOf(f32),
     ) catch return error.Mp3PcmReferenceSizeOverflow;
-    if (@as(u64, @intCast(reference.len)) != expected_bytes)
+    if (@as(u64, @intCast(reference.len)) != expected_bytes) {
+        const reference_sample_values = reference.len / @sizeOf(f32);
+        std.debug.print(
+            "MP3 PCM reference sample-count mismatch project={d} reference={d}\n",
+            .{ sample_values, reference_sample_values },
+        );
         return error.Mp3PcmReferenceSampleCountMismatch;
+    }
 
     var reference_offset: usize = 0;
     var compared_samples: u64 = 0;
