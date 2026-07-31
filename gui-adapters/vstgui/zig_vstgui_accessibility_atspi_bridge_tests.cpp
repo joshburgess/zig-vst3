@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
@@ -69,6 +70,8 @@ struct Evidence {
     std::atomic<bool> cache_child_removed {false};
     std::atomic<unsigned int> cache_add_count {0};
     std::atomic<unsigned int> cache_remove_count {0};
+    std::atomic<bool> hostile_inputs_rejected {false};
+    std::atomic<unsigned int> action_call_count {0};
     std::atomic<bool> property_event {false};
     std::atomic<bool> focus_event {false};
     std::atomic<bool> bounds_event {false};
@@ -118,6 +121,29 @@ bool callSucceeded(GVariant* result, GError* error) {
     }
     if (error) g_error_free(error);
     return false;
+}
+
+bool booleanResult(GVariant* result, GError* error, bool expected) {
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    gboolean value = false;
+    g_variant_get(result, "(b)", &value);
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    return static_cast<bool>(value) == expected;
+}
+
+bool callRejected(GVariant* result, GError* error) {
+    if (result) {
+        g_variant_unref(result);
+        if (error) g_error_free(error);
+        return false;
+    }
+    if (!error) return false;
+    g_error_free(error);
+    return true;
 }
 
 void eventReceived(
@@ -558,6 +584,100 @@ void inspectApplication(
         &error
     );
     callSucceeded(result, error);
+
+    const auto calls_before_hostile = evidence.action_call_count.load(
+        std::memory_order_acquire
+    );
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Action",
+        "DoAction",
+        g_variant_new("(i)", -1),
+        G_VARIANT_TYPE("(b)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    bool hostile_rejected = callRejected(result, error);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.EditableText",
+        "InsertText",
+        g_variant_new("(isi)", 4, "x", 1),
+        G_VARIANT_TYPE("(b)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    hostile_rejected &= booleanResult(result, error, false);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.EditableText",
+        "InsertText",
+        g_variant_new("(isi)", 1, "é", 1),
+        G_VARIANT_TYPE("(b)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    hostile_rejected &= booleanResult(result, error, false);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.EditableText",
+        "DeleteText",
+        g_variant_new("(ii)", 2, 1),
+        G_VARIANT_TYPE("(b)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    hostile_rejected &= booleanResult(result, error, false);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.freedesktop.DBus.Properties",
+        "Set",
+        g_variant_new(
+            "(ssv)",
+            "org.a11y.atspi.Value",
+            "CurrentValue",
+            g_variant_new_double(std::nan(""))
+        ),
+        nullptr,
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    hostile_rejected &= callRejected(result, error);
+    evidence.hostile_inputs_rejected.store(
+        hostile_rejected &&
+            evidence.action_call_count.load(std::memory_order_acquire) ==
+                calls_before_hostile,
+        std::memory_order_release
+    );
 }
 
 struct Service {
@@ -754,6 +874,7 @@ bool perform(
 ) {
     auto* evidence = static_cast<Evidence*>(userdata);
     if (!evidence) return false;
+    evidence->action_call_count.fetch_add(1, std::memory_order_acq_rel);
     if (request.action == ZigVstgui::AccessibilityAction::press)
         evidence->action_performed.store(true, std::memory_order_release);
     if (request.action == ZigVstgui::AccessibilityAction::set_value &&
@@ -862,6 +983,7 @@ int runTest() {
         service.evidence.cache_root_added.load(std::memory_order_acquire) &&
         service.evidence.cache_child_added.load(std::memory_order_acquire) &&
         service.evidence.cache_add_count.load(std::memory_order_acquire) == 2 &&
+        service.evidence.hostile_inputs_rejected.load(std::memory_order_acquire) &&
         service.evidence.property_event.load(std::memory_order_acquire) &&
         service.evidence.focus_event.load(std::memory_order_acquire) &&
         service.evidence.bounds_event.load(std::memory_order_acquire);
@@ -892,7 +1014,8 @@ int runTest() {
             "value-read=%d value-set=%d editable=%d text-set=%d insert=%d "
             "delete=%d cache=%d cache-root-add=%d cache-child-add=%d "
             "cache-add-count=%u cache-root-remove=%d cache-child-remove=%d "
-            "cache-remove-count=%u property-event=%d focus-event=%d "
+            "cache-remove-count=%u hostile-inputs=%d action-calls=%u "
+            "property-event=%d focus-event=%d "
             "bounds-event=%d closed=%d\n",
             missing_bus_safe,
             missing_registry_safe,
@@ -922,6 +1045,8 @@ int runTest() {
             service.evidence.cache_root_removed.load(std::memory_order_acquire),
             service.evidence.cache_child_removed.load(std::memory_order_acquire),
             service.evidence.cache_remove_count.load(std::memory_order_acquire),
+            service.evidence.hostile_inputs_rejected.load(std::memory_order_acquire),
+            service.evidence.action_call_count.load(std::memory_order_acquire),
             service.evidence.property_event.load(std::memory_order_acquire),
             service.evidence.focus_event.load(std::memory_order_acquire),
             service.evidence.bounds_event.load(std::memory_order_acquire),
