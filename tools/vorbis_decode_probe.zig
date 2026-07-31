@@ -452,6 +452,9 @@ fn validateSeekParity(
     var cursor = plug.dsp.VorbisPcmSeekCursor.init(seek_target);
     var digest = PcmDigest.init();
     var ended = false;
+    var unpositioned_frames: u64 = 0;
+    var first_positioned_pcm: ?i64 = null;
+    var final_positioned_pcm: ?i64 = null;
     while (try packets.next(
         page_storage,
         packet_storage,
@@ -466,6 +469,15 @@ fn validateSeekParity(
         );
         if (decoded.packet.floor_truncated)
             return error.TruncatedVorbisFloorPacket;
+        if (decoded.sample_count != 0 and
+            (decoded.pcm_start == null or decoded.pcm_end == null))
+        {
+            unpositioned_frames += @intCast(decoded.sample_count);
+        } else if (decoded.sample_count != 0) {
+            if (first_positioned_pcm == null)
+                first_positioned_pcm = decoded.pcm_start;
+            final_positioned_pcm = decoded.pcm_end;
+        }
         const selected = try selectSeekSuffix(&cursor, decoded);
         digest.update(
             outputs,
@@ -479,8 +491,27 @@ fn validateSeekParity(
     }
     if (!ended) return error.MissingVorbisEndOfStream;
     if (!cursor.reached) return error.VorbisSeekTargetNotReached;
-    if (!std.meta.eql(expected, digest.result()))
+    const actual = digest.result();
+    if (!std.meta.eql(expected, actual)) {
+        std.debug.print(
+            "Vorbis seek mismatch: stream={d} target={d} point_end={d} decode_page={d} decode_packet={d} expected_frames={d} expected_hash={x} actual_frames={d} actual_hash={x} unpositioned_frames={d} positioned_start={?d} positioned_end={?d}\n",
+            .{
+                logical_stream_index,
+                seek_target,
+                seek_point.pcm_end,
+                seek_point.decode.sequence_number,
+                seek_point.decode.logical_packet_index,
+                expected.sample_count,
+                expected.hash,
+                actual.sample_count,
+                actual.hash,
+                unpositioned_frames,
+                first_positioned_pcm,
+                final_positioned_pcm,
+            },
+        );
         return error.VorbisSeekPcmMismatch;
+    }
 }
 
 fn selectSeekSuffix(
