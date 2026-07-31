@@ -268,6 +268,9 @@ test "installed core package exposes format-neutral processor and editor contrac
     try std.testing.expect(@hasDecl(core.lv2, "PatchValueKind"));
     try std.testing.expect(@hasDecl(core.lv2, "AtomBool"));
     try std.testing.expect(@hasDecl(core.lv2, "AtomUrid"));
+    try std.testing.expect(@hasDecl(core.lv2, "ResizePortStatus"));
+    try std.testing.expect(@hasDecl(core.lv2, "ResizePortFeature"));
+    try std.testing.expect(@hasDecl(core.lv2, "PortResizeSink"));
     const patch_property = core.lv2.PatchProperty{
         .uri = "https://example.test/property",
         .value_kind = .double,
@@ -972,7 +975,7 @@ test "installed core package runs an LV2 audio control descriptor" {
         "https://example.test/installed-lv2-gain",
         .{},
     );
-    var metadata_bytes: [4096]u8 = undefined;
+    var metadata_bytes: [8192]u8 = undefined;
     var metadata_writer = std.Io.Writer.fixed(&metadata_bytes);
     try Metadata.writePlugin(&metadata_writer, .{
         .description = "Installed metadata consumer.",

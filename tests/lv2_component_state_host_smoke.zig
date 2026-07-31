@@ -42,7 +42,7 @@ const PatchIds = struct {
 
 const PatchSequence = extern struct {
     sequence: core.lv2.AtomSequence,
-    storage: [1024]u8,
+    storage: [4096]u8,
 
     fn empty(ids: PatchIds) PatchSequence {
         var result = std.mem.zeroes(PatchSequence);
@@ -688,6 +688,26 @@ const WorkerHost = struct {
     }
 };
 
+const ResizePortHost = struct {
+    call_count: usize = 0,
+    port_index: u32 = std.math.maxInt(u32),
+    size: usize = 0,
+
+    fn resize(
+        raw: ?*anyopaque,
+        port_index: u32,
+        size: usize,
+    ) callconv(.c) core.lv2.ResizePortStatus {
+        const self: *@This() = @ptrCast(
+            @alignCast(raw orelse return .unknown),
+        );
+        self.call_count += 1;
+        self.port_index = port_index;
+        self.size = size;
+        return .success;
+    }
+};
+
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(
         init.arena.allocator(),
@@ -821,6 +841,15 @@ pub fn main(init: std.process.Init) !void {
         .URI = core.lv2.worker_schedule_uri,
         .data = &worker_schedule,
     };
+    var resize_port_host = ResizePortHost{};
+    var resize_port = core.lv2.ResizePortFeature{
+        .data = &resize_port_host,
+        .resize = ResizePortHost.resize,
+    };
+    var resize_port_feature = core.lv2.Feature{
+        .URI = core.lv2.resize_port_resize_uri,
+        .data = &resize_port,
+    };
     var null_worker_schedule = core.lv2.WorkerSchedule{
         .handle = null,
         .schedule_work = null,
@@ -833,9 +862,23 @@ pub fn main(init: std.process.Init) !void {
         &map_feature,
         &null_worker_feature,
     };
+    var null_resize_port = core.lv2.ResizePortFeature{
+        .data = null,
+        .resize = null,
+    };
+    const null_resize_port_feature = core.lv2.Feature{
+        .URI = core.lv2.resize_port_resize_uri,
+        .data = &null_resize_port,
+    };
+    const null_resize_port_features = [_:null]?*const core.lv2.Feature{
+        &map_feature,
+        &worker_feature,
+        &null_resize_port_feature,
+    };
     const features = [_:null]?*const core.lv2.Feature{
         &map_feature,
         &worker_feature,
+        &resize_port_feature,
     };
     if (descriptor.instantiate(
         descriptor,
@@ -843,6 +886,12 @@ pub fn main(init: std.process.Init) !void {
         "/tmp/lv2-component-state.lv2",
         null_worker_features[0..].ptr,
     ) != null) return error.NullWorkerScheduleCallbackAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-component-state.lv2",
+        null_resize_port_features[0..].ptr,
+    ) != null) return error.NullResizePortCallbackAccepted;
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
@@ -880,6 +929,10 @@ pub fn main(init: std.process.Init) !void {
     if (descriptor.activate) |activate| activate(handle);
     event_output.resetOutput(patch_ids);
     descriptor.run(handle, input.len);
+    if (resize_port_host.call_count != 1 or
+        resize_port_host.port_index != 3 or
+        resize_port_host.size != 4096)
+        return error.PortResizeRequestMismatch;
     if (!worker_host.request_pending or worker_host.work_count != 0)
         return error.WorkerWasNotScheduled;
     if (worker_host.response_count != 0)

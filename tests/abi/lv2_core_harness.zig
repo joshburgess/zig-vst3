@@ -144,6 +144,12 @@ export fn zig_lv2_layout_value(index: u32) usize {
         135 => @alignOf(lv2.UridUnmap),
         136 => @offsetOf(lv2.UridUnmap, "handle"),
         137 => @offsetOf(lv2.UridUnmap, "unmap"),
+        138 => @sizeOf(lv2.ResizePortStatus),
+        139 => @intFromEnum(lv2.ResizePortStatus.no_space),
+        140 => @sizeOf(lv2.ResizePortFeature),
+        141 => @alignOf(lv2.ResizePortFeature),
+        142 => @offsetOf(lv2.ResizePortFeature, "data"),
+        143 => @offsetOf(lv2.ResizePortFeature, "resize"),
         else => std.math.maxInt(usize),
     };
 }

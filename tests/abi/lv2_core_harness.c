@@ -80,6 +80,17 @@ typedef struct {
 	const char* (*unmap)(void*, LV2_URID);
 } LV2_URID_Unmap;
 
+typedef enum {
+	LV2_RESIZE_PORT_SUCCESS = 0,
+	LV2_RESIZE_PORT_ERR_UNKNOWN = 1,
+	LV2_RESIZE_PORT_ERR_NO_SPACE = 2
+} LV2_Resize_Port_Status;
+
+typedef struct {
+	void* data;
+	LV2_Resize_Port_Status (*resize)(void*, uint32_t, size_t);
+} LV2_Resize_Port_Resize;
+
 typedef struct {
 	uint32_t size;
 	uint32_t type;
@@ -433,6 +444,12 @@ int main(void)
 		_Alignof(LV2_URID_Unmap),
 		offsetof(LV2_URID_Unmap, handle),
 		offsetof(LV2_URID_Unmap, unmap),
+		sizeof(LV2_Resize_Port_Status),
+		LV2_RESIZE_PORT_ERR_NO_SPACE,
+		sizeof(LV2_Resize_Port_Resize),
+		_Alignof(LV2_Resize_Port_Resize),
+		offsetof(LV2_Resize_Port_Resize, data),
+		offsetof(LV2_Resize_Port_Resize, resize),
 	};
 	const size_t count = sizeof(expected) / sizeof(expected[0]);
 	for (size_t index = 0; index < count; ++index) {

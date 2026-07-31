@@ -5,7 +5,9 @@ const ComponentStateProbe = struct {
     mode: u32 = 7,
     pending_mode: u32 = 7,
     worker_schedule: ?*core.lv2.WorkerScheduleSink = null,
+    port_resize: ?*core.lv2.PortResizeSink = null,
     worker_requested: bool = false,
+    port_resize_requested: bool = false,
     worker_value: u32 = 0,
     worker_end_run_count: usize = 0,
     resource_path: [128]u8 = undefined,
@@ -65,6 +67,11 @@ const ComponentStateProbe = struct {
             if (self.worker_schedule) |schedule|
                 _ = schedule.schedule(bytes);
         }
+        if (!self.port_resize_requested) {
+            self.port_resize_requested = true;
+            if (self.port_resize) |resize|
+                _ = resize.resizeOutput(3, 4096);
+        }
         const input = context.inputChannel(0) orelse return;
         const output = context.outputChannel(0) orelse return;
         const gain: f32 = @floatCast(parameters.load("gain"));
@@ -78,6 +85,13 @@ const ComponentStateProbe = struct {
         schedule: *core.lv2.WorkerScheduleSink,
     ) void {
         self.worker_schedule = schedule;
+    }
+
+    pub fn bindLv2PortResize(
+        self: *@This(),
+        resize: *core.lv2.PortResizeSink,
+    ) void {
+        self.port_resize = resize;
     }
 
     pub fn runLv2Worker(

@@ -130,6 +130,8 @@ pub const buffer_nominal_block_length_uri =
     "http://lv2plug.in/ns/ext/buf-size#nominalBlockLength";
 pub const buffer_sequence_size_uri =
     "http://lv2plug.in/ns/ext/buf-size#sequenceSize";
+pub const resize_port_resize_uri =
+    "http://lv2plug.in/ns/ext/resize-port#resize";
 pub const Handle = ?*anyopaque;
 
 pub const Feature = extern struct {
@@ -379,6 +381,23 @@ pub const WorkerSchedule = extern struct {
     schedule_work: ?WorkerScheduleFunction,
 };
 
+pub const ResizePortStatus = enum(c_int) {
+    success = 0,
+    unknown = 1,
+    no_space = 2,
+};
+
+pub const ResizePortFunction = *const fn (
+    data: ?*anyopaque,
+    port_index: u32,
+    size: usize,
+) callconv(.c) ResizePortStatus;
+
+pub const ResizePortFeature = extern struct {
+    data: ?*anyopaque,
+    resize: ?ResizePortFunction,
+};
+
 const CheckedWorkerSchedule = struct {
     handle: ?*anyopaque,
     schedule_work: WorkerScheduleFunction,
@@ -452,6 +471,25 @@ pub const WorkerResponseSink = struct {
     ) WorkerStatus {
         if (data.len > self.maximum_size) return .no_space;
         return self.respond_work(self.context, data);
+    }
+};
+
+/// This sink is valid for the plugin instance lifetime, but resize requests
+/// are accepted only from the realtime process callback.
+pub const PortResizeSink = struct {
+    context: *anyopaque,
+    resize_output: *const fn (
+        context: *anyopaque,
+        port_index: usize,
+        size: usize,
+    ) ResizePortStatus,
+
+    pub fn resizeOutput(
+        self: *PortResizeSink,
+        port_index: usize,
+        size: usize,
+    ) ResizePortStatus {
+        return self.resize_output(self.context, port_index, size);
     }
 };
 
@@ -919,6 +957,10 @@ pub fn CoreAdapterWithParameters(
         Plugin,
         "applyLv2WorkerResponse",
     );
+    const has_port_resize_binding = @hasDecl(
+        Plugin,
+        "bindLv2PortResize",
+    );
     const has_worker =
         declares_worker_request_size and
         declares_worker_response_size and
@@ -1015,6 +1057,7 @@ pub fn CoreAdapterWithParameters(
         pub const port_count = latency_output_port + 1;
         pub const maximum_frames = maximum_block_size;
         pub const worker_enabled = has_worker;
+        pub const port_resize_enabled = has_port_resize_binding;
         pub const programs_enabled = has_programs;
         pub const portable_state_paths_enabled =
             has_lv2_component_state_paths;
@@ -1097,6 +1140,8 @@ pub fn CoreAdapterWithParameters(
         sequence_size_configured: bool = false,
         worker_schedule: ?CheckedWorkerSchedule = null,
         worker_schedule_sink: WorkerScheduleSink = undefined,
+        resize_port: ?ResizePortFeature = null,
+        resize_port_sink: PortResizeSink = undefined,
         urid_unmap_sink: UridUnmapSink = undefined,
         inside_run: bool = false,
         transport: ?process_api.Transport = null,
@@ -1270,6 +1315,29 @@ pub fn CoreAdapterWithParameters(
                 };
                 self.runtime.instance.plugin.bindLv2WorkerSchedule(
                     &self.worker_schedule_sink,
+                );
+            }
+            if (comptime has_port_resize_binding) {
+                if (featureStruct(
+                    ResizePortFeature,
+                    features,
+                    resize_port_resize_uri,
+                )) |resize_port| {
+                    self.resize_port = .{
+                        .data = resize_port.data,
+                        .resize = resize_port.resize orelse {
+                            self.runtime.deinit();
+                            allocator.destroy(self);
+                            return null;
+                        },
+                    };
+                }
+                self.resize_port_sink = .{
+                    .context = self,
+                    .resize_output = requestPortResize,
+                };
+                self.runtime.instance.plugin.bindLv2PortResize(
+                    &self.resize_port_sink,
                 );
             }
             if (featureWithUri(features, urid_map_uri)) |map_feature| {
@@ -1769,6 +1837,28 @@ pub fn CoreAdapterWithParameters(
                 schedule.handle,
                 @intCast(data.len),
                 raw,
+            );
+        }
+
+        fn requestPortResize(
+            context: *anyopaque,
+            port_index: usize,
+            size: usize,
+        ) ResizePortStatus {
+            const self: *Self = @ptrCast(@alignCast(context));
+            if (!self.inside_run or size == 0 or
+                port_index > std.math.maxInt(u32))
+                return .unknown;
+            switch (portKind(port_index) orelse return .unknown) {
+                .audio_output, .event_output => {},
+                else => return .unknown,
+            }
+            const resize_port = self.resize_port orelse return .unknown;
+            const resize = resize_port.resize orelse return .unknown;
+            return resize(
+                resize_port.data,
+                @intCast(port_index),
+                size,
             );
         }
 
@@ -4542,6 +4632,167 @@ test "LV2 core ABI has C pointer layout" {
     try std.testing.expectEqual(
         pointer_size * 2,
         @sizeOf(ProgramsInterface),
+    );
+    try std.testing.expectEqual(
+        pointer_size * 2,
+        @sizeOf(ResizePortFeature),
+    );
+}
+
+test "LV2 output port resize binding is optional and process-scoped" {
+    const Probe = struct {
+        pub const name = "LV2 Port Resize Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout = .none;
+        pub const audio_output_layout: plugin_api.AudioBusLayout = .mono;
+        pub const Params = struct {};
+
+        resize: ?*PortResizeSink = null,
+        output_status: ResizePortStatus = .unknown,
+        non_output_status: ResizePortStatus = .success,
+        zero_size_status: ResizePortStatus = .success,
+
+        pub fn bindLv2PortResize(
+            self: *@This(),
+            resize: *PortResizeSink,
+        ) void {
+            self.resize = resize;
+        }
+
+        pub fn process(
+            self: *@This(),
+            context: *process_api.ProcessContext(f32),
+        ) void {
+            const resize = self.resize orelse return;
+            self.output_status = resize.resizeOutput(0, 4096);
+            self.non_output_status = resize.resizeOutput(1, 4096);
+            self.zero_size_status = resize.resizeOutput(0, 0);
+            const output = context.outputChannel(0) orelse return;
+            @memset(output, 0.25);
+        }
+    };
+    const Adapter = CoreAdapter(
+        Probe,
+        "https://example.test/lv2-port-resize",
+        8,
+    );
+    const Host = struct {
+        calls: usize = 0,
+        port_index: u32 = std.math.maxInt(u32),
+        size: usize = 0,
+
+        fn resize(
+            raw: ?*anyopaque,
+            port_index: u32,
+            size: usize,
+        ) callconv(.c) ResizePortStatus {
+            const self: *@This() = @ptrCast(
+                @alignCast(raw orelse return .unknown),
+            );
+            self.calls += 1;
+            self.port_index = port_index;
+            self.size = size;
+            return .success;
+        }
+    };
+    var host = Host{};
+    var resize_port = ResizePortFeature{
+        .data = &host,
+        .resize = Host.resize,
+    };
+    var feature = Feature{
+        .URI = resize_port_resize_uri,
+        .data = &resize_port,
+    };
+    const features = [_:null]?*const Feature{&feature};
+    const descriptor = &Adapter.descriptor;
+    const handle = descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-port-resize.lv2",
+        features[0..].ptr,
+    ) orelse return error.InstantiateFailed;
+    defer descriptor.cleanup(handle);
+    const instance = Adapter.instanceFromHandle(handle) orelse
+        return error.MissingInstance;
+    const resize = instance.runtime.instance.plugin.resize orelse
+        return error.MissingResizeBinding;
+    try std.testing.expectEqual(
+        ResizePortStatus.unknown,
+        resize.resizeOutput(Adapter.audio_output_port_start, 1024),
+    );
+
+    var output = [_]f32{0.0} ** 8;
+    var latency: f32 = -1.0;
+    descriptor.connect_port(
+        handle,
+        Adapter.audio_output_port_start,
+        &output,
+    );
+    descriptor.connect_port(handle, Adapter.latency_output_port, &latency);
+    if (descriptor.activate) |activate| activate(handle);
+    descriptor.run(handle, output.len);
+    try std.testing.expectEqual(@as(usize, 1), host.calls);
+    try std.testing.expectEqual(
+        @as(u32, Adapter.audio_output_port_start),
+        host.port_index,
+    );
+    try std.testing.expectEqual(@as(usize, 4096), host.size);
+    try std.testing.expectEqual(
+        ResizePortStatus.success,
+        instance.runtime.instance.plugin.output_status,
+    );
+    try std.testing.expectEqual(
+        ResizePortStatus.unknown,
+        instance.runtime.instance.plugin.non_output_status,
+    );
+    try std.testing.expectEqual(
+        ResizePortStatus.unknown,
+        instance.runtime.instance.plugin.zero_size_status,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0.25} ** output.len),
+        &output,
+    );
+
+    const no_feature_handle = descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-port-resize-optional.lv2",
+        null,
+    ) orelse return error.InstantiateFailed;
+    defer descriptor.cleanup(no_feature_handle);
+    var optional_output = [_]f32{0.0} ** 8;
+    var optional_latency: f32 = -1.0;
+    descriptor.connect_port(
+        no_feature_handle,
+        Adapter.audio_output_port_start,
+        &optional_output,
+    );
+    descriptor.connect_port(
+        no_feature_handle,
+        Adapter.latency_output_port,
+        &optional_latency,
+    );
+    if (descriptor.activate) |activate| activate(no_feature_handle);
+    descriptor.run(no_feature_handle, optional_output.len);
+    const optional_instance =
+        Adapter.instanceFromHandle(no_feature_handle) orelse
+        return error.MissingInstance;
+    try std.testing.expectEqual(
+        ResizePortStatus.unknown,
+        optional_instance.runtime.instance.plugin.output_status,
+    );
+
+    resize_port.resize = null;
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-port-resize-malformed.lv2",
+            features[0..].ptr,
+        ) == null,
     );
 }
 

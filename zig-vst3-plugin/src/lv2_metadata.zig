@@ -77,6 +77,9 @@ pub fn Generator(
     const requires_urid_unmap =
         @hasDecl(Adapter, "urid_unmap_required") and
         Adapter.urid_unmap_required;
+    const has_port_resize =
+        @hasDecl(Adapter, "port_resize_enabled") and
+        Adapter.port_resize_enabled;
     const has_patch =
         @hasDecl(Adapter, "patch_enabled") and Adapter.patch_enabled;
     const has_readable_patch =
@@ -146,6 +149,7 @@ pub fn Generator(
                     "@prefix pgm:  <http://kxstudio.sf.net/ns/lv2ext/programs#> .\n" ++
                     "@prefix pg:   <http://lv2plug.in/ns/ext/port-groups#> .\n" ++
                     "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" ++
+                    "@prefix rsz:  <http://lv2plug.in/ns/ext/resize-port#> .\n" ++
                     "@prefix state: <http://lv2plug.in/ns/ext/state#> .\n" ++
                     "@prefix time: <http://lv2plug.in/ns/ext/time#> .\n" ++
                     "@prefix ui:   <http://lv2plug.in/ns/extensions/ui#> .\n" ++
@@ -186,6 +190,8 @@ pub fn Generator(
                 try writer.writeAll(" , lv2:isLive");
             if (Adapter.worker_enabled)
                 try writer.writeAll(" , work:schedule");
+            if (has_port_resize)
+                try writer.writeAll(" , rsz:resize");
             try writer.writeAll(
                 " ;\n    lv2:requiredFeature urid:map",
             );
@@ -1235,6 +1241,7 @@ test "LV2 metadata generator writes ports workers and presets" {
         pub const freewheeling_input_port: ?usize = 5;
         pub const latency_output_port = 6;
         pub const worker_enabled = true;
+        pub const port_resize_enabled = true;
         pub const programs_enabled = true;
         pub const portable_state_paths_enabled = true;
         pub const state_make_path_required = true;
@@ -1297,6 +1304,9 @@ test "LV2 metadata generator writes ports workers and presets" {
     const plugin = writer.buffered();
     try std.testing.expect(
         std.mem.indexOf(u8, plugin, "work:schedule") != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, plugin, "rsz:resize") != null,
     );
     try std.testing.expect(
         std.mem.indexOf(u8, plugin, "pgm:Interface") != null,
