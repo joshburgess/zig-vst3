@@ -3340,6 +3340,10 @@ pub fn build(b: *std.Build) void {
         run_mp3_interop_fixture.addOutputFileArg(
             "mp3-interop.mp3",
         );
+    const mp3_vbri_interop_file =
+        run_mp3_interop_fixture.addOutputFileArg(
+            "mp3-vbri-interop.mp3",
+        );
     const generate_mp3_interop_step = b.step(
         "generate-mp3-interop-fixture",
         "Generate a deterministic MP3 interoperability fixture",
@@ -3381,6 +3385,7 @@ pub fn build(b: *std.Build) void {
     test_mp3_interop.addFileArg(mp3_interop_file);
     test_mp3_interop.addArtifactArg(mp3_decode_probe);
     test_mp3_interop.addArtifactArg(mp3_pcm_reference_probe);
+    test_mp3_interop.addFileArg(mp3_vbri_interop_file);
     const mp3_interop_test_step = b.step(
         "test-mp3-interop",
         "Run external MP3 encoder and decoder checks",

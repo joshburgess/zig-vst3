@@ -4,6 +4,7 @@ set -eu
 fixture=${1:?missing MP3 fixture path}
 decode_probe=${2-}
 reference_probe=${3-}
+vbri_fixture=${4-}
 test -f "$fixture"
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-mp3-interop.XXXXXX")
@@ -109,6 +110,11 @@ assert_nonsilent() {
 if [ -n "$decode_probe" ]; then
     "$decode_probe" "$fixture" 44100 2
     printf 'MP3 project decoder probe passed\n'
+    if [ -n "$vbri_fixture" ]; then
+        test -f "$vbri_fixture"
+        "$decode_probe" "$vbri_fixture" 44100 2 --require-vbri
+        printf 'MP3 project VBRI decoder probe passed\n'
+    fi
 fi
 
 if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
@@ -133,6 +139,17 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
     fi
     printf 'MP3 FFmpeg interoperability test passed\n'
     tested=1
+
+    if [ -n "$vbri_fixture" ]; then
+        vbri_decoded="$temporary/ffmpeg-vbri-decoded.pcm"
+        ffmpeg -v error -y -i "$vbri_fixture" \
+            -map 0:a:0 \
+            -f s16le \
+            -acodec pcm_s16le \
+            "$vbri_decoded"
+        assert_nonsilent "$vbri_decoded" 0 "$(wc -c <"$vbri_decoded")"
+        printf 'MP3 VBRI FFmpeg interoperability test passed\n'
+    fi
 
     if [ -n "$decode_probe" ]; then
         external_mpeg1="$temporary/ffmpeg-mpeg1-stereo.mp3"

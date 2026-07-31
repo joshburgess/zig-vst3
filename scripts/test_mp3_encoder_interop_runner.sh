@@ -6,7 +6,9 @@ trap 'rm -rf "$root"' EXIT HUP INT TERM
 fake_bin="$root/bin"
 mkdir "$fake_bin"
 fixture="$root/fixture.mp3"
+vbri_fixture="$root/vbri-fixture.mp3"
 printf '\377\373\260\104' >"$fixture"
+printf '\377\373\260\104' >"$vbri_fixture"
 probe_count="$root/probe-count"
 reference_probe_count="$root/reference-probe-count"
 
@@ -59,10 +61,14 @@ scripts/test_mp3_encoder_interop.sh \
     "$fixture" \
     "$fake_bin/decode-probe" \
     "$fake_bin/reference-probe" \
+    "$vbri_fixture" \
     >"$root/passed.txt"
 grep -q 'MP3 FFmpeg interoperability test passed' \
     "$root/passed.txt"
 grep -q 'MP3 project decoder probe passed' "$root/passed.txt"
+grep -q 'MP3 project VBRI decoder probe passed' "$root/passed.txt"
+grep -q 'MP3 VBRI FFmpeg interoperability test passed' \
+    "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-1 stereo decoder probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg bounded junk resynchronization probe passed' \
@@ -99,7 +105,7 @@ grep -q 'MP3 FFmpeg truncation rejection passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg format-change rejection passed' \
     "$root/passed.txt"
-[ "$(cat "$probe_count")" -eq 11 ] || {
+[ "$(cat "$probe_count")" -eq 12 ] || {
     printf 'MP3 runner skipped a decoder probe\n' >&2
     exit 1
 }

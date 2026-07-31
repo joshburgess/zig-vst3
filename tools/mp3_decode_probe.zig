@@ -20,6 +20,8 @@ pub fn main(init: std.process.Init) !void {
         .protected
     else if (std.mem.eql(u8, args[4], "--require-free-format"))
         .free_format
+    else if (std.mem.eql(u8, args[4], "--require-vbri"))
+        .vbri
     else if (std.mem.eql(u8, args[4], "--require-junk-resync"))
         .junk_resync
     else if (std.mem.eql(
@@ -55,6 +57,7 @@ pub fn main(init: std.process.Init) !void {
         },
         .protected,
         .free_format,
+        .vbri,
         .junk_resync,
         .trailing_junk_rejection,
         => {},
@@ -86,6 +89,16 @@ pub fn main(init: std.process.Init) !void {
         );
         if (!first_frame.header.free_format)
             return error.MissingExpectedMp3FreeFormat;
+    }
+    if (requirement == .vbri) {
+        const vbri = summary.first_vbri orelse
+            return error.MissingExpectedMp3Vbri;
+        if (vbri.stream_bytes != summary.audio_bytes or
+            vbri.frame_count != summary.frame_count or
+            vbri.toc_entries == 0)
+        {
+            return error.UnexpectedMp3VbriMetadata;
+        }
     }
     if (args.len >= 4) {
         const expected_sample_rate = try std.fmt.parseInt(
@@ -214,6 +227,7 @@ const Requirement = enum {
     id3v2_4,
     protected,
     free_format,
+    vbri,
     junk_resync,
     trailing_junk_rejection,
 };
