@@ -263,7 +263,12 @@ pub fn main(init: std.process.Init) !void {
         .URI = core.lv2.options_options_uri,
         .data = @constCast(&options),
     };
+    const null_uri_feature = core.lv2.Feature{
+        .URI = null,
+        .data = null,
+    };
     const features = [_:null]?*const core.lv2.Feature{
+        &null_uri_feature,
         &map_feature,
         &options_feature,
     };

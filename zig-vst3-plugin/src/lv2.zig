@@ -133,7 +133,7 @@ pub const buffer_sequence_size_uri =
 pub const Handle = ?*anyopaque;
 
 pub const Feature = extern struct {
-    URI: [*:0]const u8,
+    URI: ?[*:0]const u8,
     data: ?*anyopaque,
 };
 
@@ -3781,9 +3781,10 @@ fn featureWithUri(
     const list = features orelse return null;
     for (0..256) |index| {
         const feature = list[index] orelse return null;
+        const uri = feature.URI orelse continue;
         if (std.mem.eql(
             u8,
-            std.mem.span(feature.URI),
+            std.mem.span(uri),
             wanted_uri,
         )) return feature;
     }

@@ -130,7 +130,12 @@ pub fn main(init: std.process.Init) !void {
         .URI = ui.options_options_uri,
         .data = @constCast(&initial_options),
     };
+    const null_uri_feature = ui.Feature{
+        .URI = null,
+        .data = null,
+    };
     const features = [_:null]?*const ui.Feature{
+        &null_uri_feature,
         &parent_feature,
         &touch_feature,
         &resize_feature,
