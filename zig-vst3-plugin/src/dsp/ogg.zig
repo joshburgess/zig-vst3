@@ -785,6 +785,24 @@ pub const FilePacketReader = struct {
         page_storage: []u8,
         packet_storage: []u8,
     ) !?Packet {
+        var trial = self.*;
+        const packet = trial.nextInPlace(
+            page_storage,
+            packet_storage,
+        ) catch |err| {
+            if (err == error.OggPacketBufferTooSmall)
+                self.* = trial;
+            return err;
+        };
+        self.* = trial;
+        return packet;
+    }
+
+    fn nextInPlace(
+        self: *FilePacketReader,
+        page_storage: []u8,
+        packet_storage: []u8,
+    ) !?Packet {
         try self.validateState(page_storage, packet_storage);
         const checkpoint: ?FilePacketCheckpoint =
             if (self.packet_bytes == 0)
@@ -14139,6 +14157,123 @@ test "Ogg readers reject single-bit page damage transactionally" {
             packets.next(),
         );
         try std.testing.expectEqualDeep(packets_before, packets);
+        try std.testing.expectEqualSlices(
+            u8,
+            &@as([4]u8, @splat(0xa5)),
+            &packet_storage,
+        );
+    }
+}
+
+test "file-backed Ogg readers reject single-bit page damage transactionally" {
+    var clean: [128]u8 = undefined;
+    const page_bytes = try appendTestOggPage(
+        &clean,
+        0,
+        0x1020_3040,
+        0,
+        0x06,
+        4,
+        &.{4},
+        "data",
+    );
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "damaged.ogg",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    var page_storage: [maximum_page_bytes]u8 = undefined;
+
+    for (0..page_bytes) |byte_index| {
+        var damaged = clean;
+        damaged[byte_index] ^= 1;
+        try file.setLength(std.testing.io, page_bytes);
+        try file.writePositionalAll(
+            std.testing.io,
+            damaged[0..page_bytes],
+            0,
+        );
+
+        var pages = try FilePageReader.init(
+            std.testing.io,
+            file,
+        );
+        const pages_before = pages;
+        const page_rejected =
+            if (pages.next(&page_storage)) |_|
+                false
+            else |_|
+                true;
+        try std.testing.expect(page_rejected);
+        try std.testing.expectEqualDeep(pages_before, pages);
+
+        var packet_storage: [4]u8 = @splat(0xa5);
+        var packets = try FilePacketReader.init(
+            std.testing.io,
+            file,
+        );
+        const packets_before = packets;
+        const packet_rejected =
+            if (packets.next(
+                &page_storage,
+                &packet_storage,
+            )) |_|
+                false
+            else |_|
+                true;
+        try std.testing.expect(packet_rejected);
+        try std.testing.expectEqualDeep(
+            packets_before,
+            packets,
+        );
+        try std.testing.expectEqualSlices(
+            u8,
+            &@as([4]u8, @splat(0xa5)),
+            &packet_storage,
+        );
+    }
+
+    for (1..page_bytes) |truncated_bytes| {
+        try file.setLength(std.testing.io, page_bytes);
+        try file.writePositionalAll(
+            std.testing.io,
+            clean[0..page_bytes],
+            0,
+        );
+        try file.setLength(std.testing.io, truncated_bytes);
+
+        var pages = try FilePageReader.init(
+            std.testing.io,
+            file,
+        );
+        const pages_before = pages;
+        try std.testing.expectError(
+            error.TruncatedOggPage,
+            pages.next(&page_storage),
+        );
+        try std.testing.expectEqualDeep(pages_before, pages);
+
+        var packet_storage: [4]u8 = @splat(0xa5);
+        var packets = try FilePacketReader.init(
+            std.testing.io,
+            file,
+        );
+        const packets_before = packets;
+        try std.testing.expectError(
+            error.TruncatedOggPage,
+            packets.next(
+                &page_storage,
+                &packet_storage,
+            ),
+        );
+        try std.testing.expectEqualDeep(
+            packets_before,
+            packets,
+        );
         try std.testing.expectEqualSlices(
             u8,
             &@as([4]u8, @splat(0xa5)),
