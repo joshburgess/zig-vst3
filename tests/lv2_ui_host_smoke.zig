@@ -108,6 +108,22 @@ pub fn main(init: std.process.Init) !void {
         .URI = ui.resize_uri,
         .data = &resize,
     };
+    var null_touch = ui.Touch{
+        .handle = null,
+        .touch = null,
+    };
+    const null_touch_feature = ui.Feature{
+        .URI = ui.touch_uri,
+        .data = &null_touch,
+    };
+    var null_resize = ui.Resize{
+        .handle = null,
+        .ui_resize = null,
+    };
+    const null_resize_feature = ui.Feature{
+        .URI = ui.resize_uri,
+        .data = &null_resize,
+    };
     var urid_map = ui.UridMap{
         .handle = null,
         .map = Host.map,
@@ -164,6 +180,22 @@ pub fn main(init: std.process.Init) !void {
         &widget,
         &null_map_features,
     ) != null) return error.NullUridMapCallbackAccepted;
+    const null_optional_callback_features =
+        [_:null]?*const ui.Feature{
+            &parent_feature,
+            &null_touch_feature,
+            &null_resize_feature,
+        };
+    const null_optional_callback_handle = descriptor.instantiate(
+        descriptor,
+        "https://zig-vst3.dev/tests/lv2-ui-probe",
+        "/tmp/lv2-ui-probe.lv2",
+        Host.write,
+        &host,
+        &widget,
+        null_optional_callback_features[0..].ptr,
+    ) orelse return error.NullOptionalCallbackUiRejected;
+    descriptor.cleanup(null_optional_callback_handle);
     if (descriptor.instantiate(
         null,
         "https://zig-vst3.dev/tests/lv2-ui-probe",

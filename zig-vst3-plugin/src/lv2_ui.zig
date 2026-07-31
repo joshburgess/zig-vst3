@@ -108,13 +108,15 @@ pub const IdleInterface = extern struct {
     idle: *const fn (ui: Handle) callconv(.c) c_int,
 };
 
+pub const ResizeFunction = *const fn (
+    handle: Handle,
+    width: c_int,
+    height: c_int,
+) callconv(.c) c_int;
+
 pub const Resize = extern struct {
     handle: Handle,
-    ui_resize: *const fn (
-        handle: Handle,
-        width: c_int,
-        height: c_int,
-    ) callconv(.c) c_int,
+    ui_resize: ?ResizeFunction,
 };
 
 pub const ResizeInterface = extern struct {
@@ -132,11 +134,23 @@ pub const ShowInterface = extern struct {
 
 pub const Touch = extern struct {
     handle: Handle,
-    touch: *const fn (
-        handle: Handle,
-        port_index: u32,
-        grabbed: bool,
-    ) callconv(.c) c_int,
+    touch: ?TouchFunction,
+};
+
+pub const TouchFunction = *const fn (
+    handle: Handle,
+    port_index: u32,
+    grabbed: bool,
+) callconv(.c) c_int;
+
+const CheckedResize = struct {
+    handle: Handle,
+    ui_resize: ResizeFunction,
+};
+
+const CheckedTouch = struct {
+    handle: Handle,
+    touch: TouchFunction,
 };
 
 pub const ProgramsUiInterface = extern struct {
@@ -179,8 +193,8 @@ pub fn Adapter(
         const Instance = struct {
             write_function: WriteFunction,
             controller: Controller,
-            resize: ?*const Resize,
-            touch: ?*const Touch,
+            resize: ?CheckedResize,
+            touch: ?CheckedTouch,
             scale_key: Urid,
             atom_float_type: Urid,
             scale: f32,
@@ -262,8 +276,8 @@ pub fn Adapter(
             instance.* = .{
                 .write_function = write,
                 .controller = controller,
-                .resize = featureData(Resize, features, resize_uri),
-                .touch = featureData(Touch, features, touch_uri),
+                .resize = checkedResize(features),
+                .touch = checkedTouch(features),
                 .scale_key = scale_options.key,
                 .atom_float_type = scale_options.atom_float_type,
                 .scale = scale_options.value orelse 1.0,
@@ -703,6 +717,28 @@ fn featureData(
     return @ptrCast(@alignCast(data));
 }
 
+fn checkedResize(
+    features: ?[*:null]const ?*const Feature,
+) ?CheckedResize {
+    const raw = featureData(Resize, features, resize_uri) orelse
+        return null;
+    return .{
+        .handle = raw.handle,
+        .ui_resize = raw.ui_resize orelse return null,
+    };
+}
+
+fn checkedTouch(
+    features: ?[*:null]const ?*const Feature,
+) ?CheckedTouch {
+    const raw = featureData(Touch, features, touch_uri) orelse
+        return null;
+    return .{
+        .handle = raw.handle,
+        .touch = raw.touch orelse return null,
+    };
+}
+
 fn sizeFromHost(width: c_int, height: c_int) ?gui.Size {
     if (width <= 0 or height <= 0) return null;
     return .{
@@ -778,6 +814,32 @@ test "LV2 UI feature lookup is bounded and validates resize dimensions" {
     const malformed = [_:null]?*const Feature{&resize};
     try std.testing.expect(
         featureData(Resize, &malformed, resize_uri) == null,
+    );
+    var null_resize = Resize{
+        .handle = null,
+        .ui_resize = null,
+    };
+    const null_resize_feature = Feature{
+        .URI = resize_uri,
+        .data = &null_resize,
+    };
+    const null_resize_features =
+        [_:null]?*const Feature{&null_resize_feature};
+    try std.testing.expect(
+        checkedResize(&null_resize_features) == null,
+    );
+    var null_touch = Touch{
+        .handle = null,
+        .touch = null,
+    };
+    const null_touch_feature = Feature{
+        .URI = touch_uri,
+        .data = &null_touch,
+    };
+    const null_touch_features =
+        [_:null]?*const Feature{&null_touch_feature};
+    try std.testing.expect(
+        checkedTouch(&null_touch_features) == null,
     );
     try std.testing.expect(sizeFromHost(640, 480) != null);
     try std.testing.expect(sizeFromHost(0, 480) == null);
