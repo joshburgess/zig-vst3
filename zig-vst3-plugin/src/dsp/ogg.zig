@@ -12987,13 +12987,7 @@ fn assignVorbisCodewords(entries: []VorbisCodebookEntry) void {
             markers[deeper] = markers[deeper - 1] << 1;
         }
 
-        var reversed: u32 = 0;
-        var source = assigned_codeword;
-        for (0..length) |_| {
-            reversed = (reversed << 1) | (source & 1);
-            source >>= 1;
-        }
-        entry.codeword = reversed;
+        entry.codeword = assigned_codeword;
     }
 }
 
@@ -15449,7 +15443,7 @@ test "Vorbis setup validates codebook encodings and codec configuration" {
             if (encoding == .sparse)
                 &.{1}
             else if (deep)
-                &.{0b11100100}
+                &.{0b11011000}
             else
                 &.{0b00000010},
             0,
@@ -15474,7 +15468,7 @@ test "Vorbis setup validates codebook encodings and codec configuration" {
             if (encoding == .sparse)
                 &.{1}
             else if (deep)
-                &.{0b11100100}
+                &.{0b11011000}
             else
                 &.{0b00000010},
             0,
@@ -15900,7 +15894,7 @@ test "Vorbis codewords follow entry order across mixed lengths" {
 
     try std.testing.expectEqual(@as(u32, 0b00), entries[0].codeword);
     try std.testing.expectEqual(@as(u32, 0b1), entries[1].codeword);
-    try std.testing.expectEqual(@as(u32, 0b10), entries[2].codeword);
+    try std.testing.expectEqual(@as(u32, 0b01), entries[2].codeword);
 }
 
 test "Vorbis packet writer round trips headers and canonical codewords" {
