@@ -120,6 +120,14 @@ wav_data_range() {
 if [ -n "$decode_probe" ]; then
     "$decode_probe" "$fixture"
     printf 'Vorbis project decoder and seek probe passed\n'
+    "$decode_probe" "$fixture" \
+        --require-comment TITLE 'Vorbis interoperability fixture'
+    printf 'Vorbis project comment metadata test passed\n'
+    if "$decode_probe" "$fixture" \
+        --require-comment TITLE wrong >/dev/null 2>&1; then
+        fail "Project decoder accepted an incorrect Vorbis comment value"
+    fi
+    printf 'Vorbis project comment metadata mismatch rejection passed\n'
     project_chained_fixture="$temporary/project-chained.ogg"
     cat "$fixture" "$fixture" >"$project_chained_fixture"
     "$decode_probe" "$project_chained_fixture"
@@ -184,9 +192,13 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             -t 0.12 \
             -c:a libvorbis \
             -q:a 4 \
+            -metadata title=interop-stereo \
             "$external_fixture"; then
             "$decode_probe" "$external_fixture"
             printf 'Vorbis FFmpeg stereo encoder decode and seek test passed\n'
+            "$decode_probe" "$external_fixture" \
+                --require-comment TITLE interop-stereo
+            printf 'Vorbis FFmpeg comment metadata test passed\n'
             if [ -n "$reference_probe" ] &&
                 command -v oggdec >/dev/null 2>&1; then
                 compare_xiph_reference_pcm \

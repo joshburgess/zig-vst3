@@ -7,12 +7,17 @@ const maximum_normalized_rms_error = 0.02;
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
     const args = try init.minimal.args.toSlice(allocator);
-    if (args.len != 2 and args.len != 3 and args.len != 4)
+    if (args.len != 2 and args.len != 3 and args.len != 4 and
+        args.len != 5)
         return error.InvalidArguments;
     const require_junk_resync = args.len == 4 and
         std.mem.eql(u8, args[2], "--require-junk-resync");
     const write_invalid_audio_packet = args.len == 4 and
         std.mem.eql(u8, args[2], "--write-invalid-audio-packet");
+    const require_comment = args.len == 5 and
+        std.mem.eql(u8, args[2], "--require-comment");
+    if (args.len == 5 and !require_comment)
+        return error.InvalidArguments;
     const require_midpoint_seek = args.len == 3;
     if (require_midpoint_seek and
         !std.mem.eql(
@@ -42,6 +47,15 @@ pub fn main(init: std.process.Init) !void {
         allocator,
         .limited(16 * 1024 * 1024),
     );
+    if (require_comment) {
+        try verifyComment(
+            encoded,
+            args[3],
+            args[4],
+            allocator,
+        );
+        return;
+    }
     if (require_junk_resync) {
         try verifyJunkResynchronization(
             init.io,
@@ -306,6 +320,43 @@ pub fn main(init: std.process.Init) !void {
     } else {
         return error.UnexpectedVorbisGeometry;
     }
+}
+
+fn verifyComment(
+    encoded: []const u8,
+    expected_name: []const u8,
+    expected_value: []const u8,
+    allocator: std.mem.Allocator,
+) !void {
+    if (expected_name.len == 0) return error.InvalidArguments;
+    const packet_storage = try allocator.alloc(u8, 4 * 1024 * 1024);
+    var packets = plug.dsp.OggPacketIterator.initChained(
+        encoded,
+        packet_storage,
+    );
+    const identification_packet =
+        try packets.next() orelse return error.MissingIdentification;
+    _ = try plug.dsp.VorbisIdentification.parse(
+        identification_packet.bytes,
+    );
+    const comment_packet =
+        try packets.next() orelse return error.MissingComments;
+    try requireLogicalStream(
+        comment_packet,
+        identification_packet.logical_stream_index,
+    );
+    var comments = try plug.dsp.VorbisCommentIterator.init(
+        comment_packet.bytes,
+    );
+    var name_found = false;
+    while (try comments.next()) |comment| {
+        if (!std.ascii.eqlIgnoreCase(comment.name, expected_name))
+            continue;
+        name_found = true;
+        if (std.mem.eql(u8, comment.value, expected_value)) return;
+    }
+    if (name_found) return error.UnexpectedVorbisCommentValue;
+    return error.MissingVorbisComment;
 }
 
 fn verifyJunkResynchronization(

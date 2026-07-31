@@ -57,6 +57,7 @@ printf '%s\n' \
     '#!/bin/sh' \
     'test -s "$1"' \
     'if [ "${2-}" = "--write-invalid-audio-packet" ]; then cp "$1" "$3"; exit 0; fi' \
+    'if [ "${2-}" = "--require-comment" ] && [ "${4-}" = "wrong" ]; then exit 1; fi' \
     'case "$1" in' \
     '    *-corrupt.ogg|*-truncated.ogg|*-geometry-change.ogg|*-invalid-audio-packet.ogg) exit 1 ;;' \
     'esac' \
@@ -81,6 +82,8 @@ PATH="$fake_bin:$PATH" \
     >"$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg stereo encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg comment metadata test passed' \
+    "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg multi-page encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg bounded junk resynchronization probe passed' \
@@ -102,6 +105,10 @@ grep -q 'Vorbis FFmpeg low-quality 512/4096 geometry test passed' \
 grep -q 'Vorbis FFmpeg 5.1 encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis project decoder and seek probe passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis project comment metadata test passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis project comment metadata mismatch rejection passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis project fixture Xiph decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
@@ -156,6 +163,7 @@ expect_probe_failure() {
         '#!/bin/sh' \
         'count_file="${TMPDIR:-/tmp}/probe-count"' \
         'if [ "${2-}" = "--write-invalid-audio-packet" ]; then cp "$1" "$3"; fi' \
+        'if [ "${2-}" = "--require-comment" ] && [ "${4-}" = "wrong" ]; then exit 1; fi' \
         'case "$1" in' \
         '    *-corrupt.ogg|*-truncated.ogg|*-geometry-change.ogg|*-invalid-audio-packet.ogg) exit 1 ;;' \
         'esac' \
@@ -180,36 +188,42 @@ expect_probe_failure() {
 
 expect_probe_failure \
     2 \
-    'Vorbis runner accepted a project chained decode failure'
+    'Vorbis runner accepted a project comment metadata failure'
 expect_probe_failure \
     3 \
-    'Vorbis runner accepted a stereo decode failure'
+    'Vorbis runner accepted a project chained decode failure'
 expect_probe_failure \
     4 \
-    'Vorbis runner accepted a multi-page stereo decode failure'
+    'Vorbis runner accepted a stereo decode failure'
 expect_probe_failure \
     5 \
-    'Vorbis runner accepted a bounded junk recovery failure'
+    'Vorbis runner accepted a comment metadata failure'
 expect_probe_failure \
     6 \
-    'Vorbis runner accepted an invalid audio-packet fixture failure'
+    'Vorbis runner accepted a multi-page stereo decode failure'
 expect_probe_failure \
     7 \
-    'Vorbis runner accepted a chained decode failure'
+    'Vorbis runner accepted a bounded junk recovery failure'
 expect_probe_failure \
     8 \
-    'Vorbis runner accepted a mono decode failure'
+    'Vorbis runner accepted an invalid audio-packet fixture failure'
 expect_probe_failure \
     9 \
-    'Vorbis runner accepted an 8 kHz decode failure'
+    'Vorbis runner accepted a chained decode failure'
 expect_probe_failure \
     10 \
-    'Vorbis runner accepted a 16 kHz decode failure'
+    'Vorbis runner accepted a mono decode failure'
 expect_probe_failure \
     11 \
-    'Vorbis runner accepted a low-quality geometry decode failure'
+    'Vorbis runner accepted an 8 kHz decode failure'
 expect_probe_failure \
     12 \
+    'Vorbis runner accepted a 16 kHz decode failure'
+expect_probe_failure \
+    13 \
+    'Vorbis runner accepted a low-quality geometry decode failure'
+expect_probe_failure \
+    14 \
     'Vorbis runner accepted a 5.1 decode failure'
 rm -f "$probe_count"
 
