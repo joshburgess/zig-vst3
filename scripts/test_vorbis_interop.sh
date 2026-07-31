@@ -15,6 +15,16 @@ fail() {
     exit 1
 }
 
+require_probe_rejection() {
+    damaged_path=$1
+    failure_message=$2
+    success_message=$3
+    if "$decode_probe" "$damaged_path" >/dev/null 2>&1; then
+        fail "$failure_message"
+    fi
+    printf '%s\n' "$success_message"
+}
+
 wav_data_range() {
     wav_path=$1
     wav_bytes=$(wc -c <"$wav_path")
@@ -60,6 +70,27 @@ if [ -n "$decode_probe" ]; then
     cat "$fixture" "$fixture" >"$project_chained_fixture"
     "$decode_probe" "$project_chained_fixture"
     printf 'Vorbis project chained decoder and seek probe passed\n'
+
+    project_corrupt_fixture="$temporary/project-corrupt.ogg"
+    cp "$fixture" "$project_corrupt_fixture"
+    printf 'BAD!' |
+        dd of="$project_corrupt_fixture" bs=1 seek=22 conv=notrunc \
+            2>/dev/null
+    require_probe_rejection \
+        "$project_corrupt_fixture" \
+        "Project decoder accepted a corrupted Ogg checksum" \
+        "Vorbis project checksum corruption rejection passed"
+
+    project_bytes=$(wc -c <"$fixture")
+    [ "$project_bytes" -gt 1 ] ||
+        fail "Vorbis project fixture is too short to truncate"
+    project_truncated_fixture="$temporary/project-truncated.ogg"
+    dd if="$fixture" of="$project_truncated_fixture" bs=1 \
+        count=$((project_bytes - 1)) 2>/dev/null
+    require_probe_rejection \
+        "$project_truncated_fixture" \
+        "Project decoder accepted a truncated Vorbis stream" \
+        "Vorbis project truncation rejection passed"
 fi
 
 if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
@@ -104,6 +135,20 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 >"$external_chained_fixture"
             "$decode_probe" "$external_chained_fixture"
             printf 'Vorbis FFmpeg chained encoder decode and seek test passed\n'
+
+            chained_bytes=$(wc -c <"$external_chained_fixture")
+            [ "$chained_bytes" -gt 1 ] ||
+                fail "Vorbis external chain is too short to truncate"
+            external_truncated_fixture="$temporary/ffmpeg-encoded-chained-truncated.ogg"
+            dd if="$external_chained_fixture" \
+                of="$external_truncated_fixture" \
+                bs=1 \
+                count=$((chained_bytes - 1)) \
+                2>/dev/null
+            require_probe_rejection \
+                "$external_truncated_fixture" \
+                "Project decoder accepted a truncated external chain" \
+                "Vorbis FFmpeg chained truncation rejection passed"
 
             external_mono_fixture="$temporary/ffmpeg-encoded-mono.ogg"
             ffmpeg -v error -y \

@@ -26,6 +26,9 @@ chmod +x "$fake_bin/ffprobe" "$fake_bin/ffmpeg"
 printf '%s\n' \
     '#!/bin/sh' \
     'test -s "$1"' \
+    'case "$1" in' \
+    '    *-corrupt.ogg|*-truncated.ogg) exit 1 ;;' \
+    'esac' \
     >"$fake_bin/decode-probe"
 chmod +x "$fake_bin/decode-probe"
 
@@ -45,6 +48,12 @@ grep -q 'Vorbis project decoder and seek probe passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis project chained decoder and seek probe passed' \
     "$root/ffmpeg.txt"
+grep -q 'Vorbis project checksum corruption rejection passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis project truncation rejection passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg chained truncation rejection passed' \
+    "$root/ffmpeg.txt"
 
 probe_count="$root/probe-count"
 expect_probe_failure() {
@@ -55,6 +64,9 @@ expect_probe_failure() {
     printf '%s\n' \
         '#!/bin/sh' \
         'count_file="${TMPDIR:-/tmp}/probe-count"' \
+        'case "$1" in' \
+        '    *-corrupt.ogg|*-truncated.ogg) exit 1 ;;' \
+        'esac' \
         'count=0' \
         '[ ! -f "$count_file" ] || count=$(cat "$count_file")' \
         'count=$((count + 1))' \
