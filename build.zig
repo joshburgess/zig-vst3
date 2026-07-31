@@ -3376,6 +3376,11 @@ pub fn build(b: *std.Build) void {
             &.{"scripts/test_retired_reference_check.sh"},
         ).step,
     );
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_clean_zig_cache_runner.sh"},
+        ).step,
+    );
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/check_public_gui_examples.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_installed_package.sh"}).step);
     test_step.dependOn(generate_fixtures_step);
