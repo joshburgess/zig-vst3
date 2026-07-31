@@ -15,6 +15,8 @@ pub const touch_uri = ui_uri ++ "#touch";
 pub const scale_factor_uri = ui_uri ++ "#scaleFactor";
 pub const options_options_uri =
     "http://lv2plug.in/ns/ext/options#options";
+pub const options_interface_uri =
+    "http://lv2plug.in/ns/ext/options#interface";
 pub const urid_map_uri =
     "http://lv2plug.in/ns/ext/urid#map";
 pub const atom_float_uri =
@@ -48,6 +50,24 @@ pub const OptionsOption = extern struct {
     size: u32 = 0,
     type: Urid = 0,
     value: ?*const anyopaque = null,
+};
+
+pub const OptionsStatus = u32;
+pub const options_status_success: OptionsStatus = 0;
+pub const options_status_unknown: OptionsStatus = 1 << 0;
+pub const options_status_bad_subject: OptionsStatus = 1 << 1;
+pub const options_status_bad_key: OptionsStatus = 1 << 2;
+pub const options_status_bad_value: OptionsStatus = 1 << 3;
+
+pub const OptionsInterface = extern struct {
+    get: *const fn (
+        instance: Handle,
+        options: [*]OptionsOption,
+    ) callconv(.c) OptionsStatus,
+    set: *const fn (
+        instance: Handle,
+        options: [*]const OptionsOption,
+    ) callconv(.c) OptionsStatus,
 };
 
 pub const WriteFunction = *const fn (
@@ -159,6 +179,9 @@ pub fn Adapter(
             controller: Controller,
             resize: ?*const Resize,
             touch: ?*const Touch,
+            scale_key: Urid,
+            atom_float_type: Urid,
+            scale: f32,
             values: [parameter_count]f64,
             editor: gui.Editor,
 
@@ -188,6 +211,10 @@ pub fn Adapter(
         };
         pub const programs_ui_interface = ProgramsUiInterface{
             .select_program = selectProgram,
+        };
+        pub const options_interface = OptionsInterface{
+            .get = getOptions,
+            .set = setOptions,
         };
 
         pub fn descriptorAt(index: u32) ?*const Descriptor {
@@ -222,7 +249,7 @@ pub fn Adapter(
             const widget_out = widget orelse return null;
             const parent_feature = findFeature(features, parent_uri) orelse
                 return null;
-            const scale_factor = readScaleFactor(features) catch return null;
+            const scale_options = readScaleOptions(features) catch return null;
 
             const allocator = std.heap.page_allocator;
             const instance = allocator.create(Instance) catch return null;
@@ -231,6 +258,9 @@ pub fn Adapter(
                 .controller = controller,
                 .resize = featureData(Resize, features, resize_uri),
                 .touch = featureData(Touch, features, touch_uri),
+                .scale_key = scale_options.key,
+                .atom_float_type = scale_options.atom_float_type,
+                .scale = scale_options.value orelse 1.0,
                 .values = initialValues(),
                 .editor = undefined,
             };
@@ -246,7 +276,7 @@ pub fn Adapter(
                 allocator.destroy(instance);
                 return null;
             };
-            if (scale_factor) |scale| {
+            if (scale_options.value) |scale| {
                 instance.editor.setScale(.{
                     .x = scale,
                     .y = scale,
@@ -302,6 +332,8 @@ pub fn Adapter(
                 return &resize_interface;
             if (std.mem.eql(u8, requested, show_interface_uri))
                 return &show_interface;
+            if (std.mem.eql(u8, requested, options_interface_uri))
+                return &options_interface;
             if (comptime has_programs) {
                 if (std.mem.eql(
                     u8,
@@ -310,6 +342,99 @@ pub fn Adapter(
                 )) return &programs_ui_interface;
             }
             return null;
+        }
+
+        fn getOptions(
+            handle: Handle,
+            options: [*]OptionsOption,
+        ) callconv(.c) OptionsStatus {
+            const instance = instanceFromHandle(handle) orelse
+                return options_status_unknown;
+            var status = options_status_success;
+            var terminated = false;
+            for (0..256) |index| {
+                const option = &options[index];
+                if (option.key == 0 and option.value == null) {
+                    terminated = true;
+                    break;
+                }
+                if (option.context != 0) {
+                    status |= options_status_bad_subject;
+                    continue;
+                }
+                if (option.size != 0 or option.type != 0 or
+                    option.value != null)
+                {
+                    status |= options_status_bad_value;
+                    continue;
+                }
+                if (instance.scale_key == 0 or
+                    option.key != instance.scale_key)
+                {
+                    status |= options_status_bad_key;
+                    continue;
+                }
+                option.size = @sizeOf(f32);
+                option.type = instance.atom_float_type;
+                option.value = &instance.scale;
+            }
+            if (!terminated) status |= options_status_unknown;
+            return status;
+        }
+
+        fn setOptions(
+            handle: Handle,
+            options: [*]const OptionsOption,
+        ) callconv(.c) OptionsStatus {
+            const instance = instanceFromHandle(handle) orelse
+                return options_status_unknown;
+            var scale: ?f32 = null;
+            var status = options_status_success;
+            var terminated = false;
+            for (0..256) |index| {
+                const option = options[index];
+                if (option.key == 0 and option.value == null) {
+                    terminated = true;
+                    break;
+                }
+                if (option.context != 0) {
+                    status |= options_status_bad_subject;
+                    continue;
+                }
+                if (instance.scale_key == 0 or
+                    option.key != instance.scale_key)
+                {
+                    status |= options_status_bad_key;
+                    continue;
+                }
+                if (scale != null or
+                    option.size != @sizeOf(f32) or
+                    option.type != instance.atom_float_type)
+                {
+                    status |= options_status_bad_value;
+                    continue;
+                }
+                const raw = option.value orelse {
+                    status |= options_status_bad_value;
+                    continue;
+                };
+                const option_scale =
+                    @as(*align(1) const f32, @ptrCast(raw)).*;
+                if (!std.math.isFinite(option_scale) or option_scale <= 0.0) {
+                    status |= options_status_bad_value;
+                    continue;
+                }
+                scale = option_scale;
+            }
+            if (!terminated) status |= options_status_unknown;
+            if (status != options_status_success) return status;
+            const next_scale = scale orelse return options_status_success;
+            instance.editor.setScale(.{
+                .x = next_scale,
+                .y = next_scale,
+            }) catch return options_status_unknown;
+            instance.scale = next_scale;
+            return options_status_success;
         }
 
         fn selectProgram(
@@ -572,40 +697,52 @@ fn sizeFromHost(width: c_int, height: c_int) ?gui.Size {
     };
 }
 
-fn readScaleFactor(
+const ScaleOptions = struct {
+    key: Urid = 0,
+    atom_float_type: Urid = 0,
+    value: ?f32 = null,
+};
+
+fn readScaleOptions(
     features: ?[*:null]const ?*const Feature,
-) !?f32 {
-    const options_feature =
-        findFeature(features, options_options_uri) orelse return null;
-    const options_data = options_feature.data orelse
-        return error.InvalidOptions;
-    if (@intFromPtr(options_data) % @alignOf(OptionsOption) != 0)
-        return error.InvalidOptions;
-    const map = featureData(UridMap, features, urid_map_uri) orelse
-        return error.InvalidOptions;
+) !ScaleOptions {
+    const map = featureData(UridMap, features, urid_map_uri) orelse {
+        if (findFeature(features, options_options_uri) != null)
+            return error.InvalidOptions;
+        return .{};
+    };
     const scale_key = map.map(map.handle, scale_factor_uri);
     const float_type = map.map(map.handle, atom_float_uri);
     if (scale_key == 0 or float_type == 0)
         return error.InvalidOptions;
+    var result = ScaleOptions{
+        .key = scale_key,
+        .atom_float_type = float_type,
+    };
+    const options_feature =
+        findFeature(features, options_options_uri) orelse return result;
+    const options_data = options_feature.data orelse
+        return error.InvalidOptions;
+    if (@intFromPtr(options_data) % @alignOf(OptionsOption) != 0)
+        return error.InvalidOptions;
     const options: [*]const OptionsOption =
         @ptrCast(@alignCast(options_data));
-    var scale: ?f32 = null;
     for (0..256) |index| {
         const option = options[index];
         if (option.key == 0 and option.value == null)
-            return scale;
+            return result;
         if (option.key == 0)
             return error.InvalidOptions;
         if (option.context != 0 or option.key != scale_key)
             continue;
-        if (scale != null or option.size != @sizeOf(f32) or
+        if (result.value != null or option.size != @sizeOf(f32) or
             option.type != float_type)
             return error.InvalidOptions;
         const raw = option.value orelse return error.InvalidOptions;
         const value = @as(*align(1) const f32, @ptrCast(raw)).*;
         if (!std.math.isFinite(value) or value <= 0.0)
             return error.InvalidOptions;
-        scale = value;
+        result.value = value;
     }
     return error.InvalidOptions;
 }
@@ -672,7 +809,7 @@ test "LV2 UI scale option validates host data transactionally" {
     };
     try std.testing.expectEqual(
         @as(?f32, 2.0),
-        try readScaleFactor(&features),
+        (try readScaleOptions(&features)).value,
     );
 
     const duplicate_options = [_]OptionsOption{
@@ -683,7 +820,7 @@ test "LV2 UI scale option validates host data transactionally" {
     options_feature.data = @constCast(&duplicate_options);
     try std.testing.expectError(
         error.InvalidOptions,
-        readScaleFactor(&features),
+        readScaleOptions(&features),
     );
 
     const invalid_scale: f32 = 0.0;
@@ -699,7 +836,7 @@ test "LV2 UI scale option validates host data transactionally" {
     options_feature.data = @constCast(&invalid_options);
     try std.testing.expectError(
         error.InvalidOptions,
-        readScaleFactor(&features),
+        readScaleOptions(&features),
     );
 
     var misaligned_storage: [@sizeOf(OptionsOption) + 1]u8 align(@alignOf(OptionsOption)) =
@@ -707,7 +844,7 @@ test "LV2 UI scale option validates host data transactionally" {
     options_feature.data = @ptrCast(&misaligned_storage[1]);
     try std.testing.expectError(
         error.InvalidOptions,
-        readScaleFactor(&features),
+        readScaleOptions(&features),
     );
 }
 
@@ -813,6 +950,8 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         }
 
         fn scale(raw: *anyopaque, value: gui.Scale) gui.Error!void {
+            if (value.x == 3.0 or value.y == 3.0)
+                return error.Rejected;
             state(raw).scale = value;
         }
         fn focus(_: *anyopaque, _: bool) void {}
@@ -1002,6 +1141,95 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
     try std.testing.expectEqual(
         gui.Scale{ .x = 1.5, .y = 1.5 },
         backend.scale,
+    );
+    const options_ptr = Ui.descriptor.extension_data(
+        options_interface_uri,
+    ) orelse return error.MissingOptionsInterface;
+    const runtime_options: *const OptionsInterface =
+        @ptrCast(@alignCast(options_ptr));
+    var scale_query = [_]OptionsOption{
+        .{ .key = 139 },
+        .{},
+    };
+    try std.testing.expectEqual(
+        options_status_success,
+        runtime_options.get(handle, &scale_query),
+    );
+    try std.testing.expectEqual(@as(u32, @sizeOf(f32)), scale_query[0].size);
+    try std.testing.expectEqual(@as(Urid, 47), scale_query[0].type);
+    const queried_scale = scale_query[0].value orelse
+        return error.MissingScaleValue;
+    try std.testing.expectEqual(
+        @as(f32, 1.5),
+        @as(*align(1) const f32, @ptrCast(queried_scale)).*,
+    );
+
+    const next_scale: f32 = 2.0;
+    const scale_update = [_]OptionsOption{
+        .{
+            .key = 139,
+            .size = @sizeOf(f32),
+            .type = 47,
+            .value = &next_scale,
+        },
+        .{},
+    };
+    try std.testing.expectEqual(
+        options_status_success,
+        runtime_options.set(handle, &scale_update),
+    );
+    try std.testing.expectEqual(
+        gui.Scale{ .x = 2.0, .y = 2.0 },
+        backend.scale,
+    );
+
+    const invalid_scale: f32 = 0.0;
+    const rejected_update = [_]OptionsOption{
+        .{
+            .key = 139,
+            .size = @sizeOf(f32),
+            .type = 47,
+            .value = &invalid_scale,
+        },
+        .{},
+    };
+    try std.testing.expectEqual(
+        options_status_bad_value,
+        runtime_options.set(handle, &rejected_update),
+    );
+    try std.testing.expectEqual(
+        gui.Scale{ .x = 2.0, .y = 2.0 },
+        backend.scale,
+    );
+
+    const rejected_backend_scale: f32 = 3.0;
+    const rejected_backend_update = [_]OptionsOption{
+        .{
+            .key = 139,
+            .size = @sizeOf(f32),
+            .type = 47,
+            .value = &rejected_backend_scale,
+        },
+        .{},
+    };
+    try std.testing.expectEqual(
+        options_status_unknown,
+        runtime_options.set(handle, &rejected_backend_update),
+    );
+    try std.testing.expectEqual(
+        gui.Scale{ .x = 2.0, .y = 2.0 },
+        backend.scale,
+    );
+    scale_query[0] = .{ .key = 139 };
+    try std.testing.expectEqual(
+        options_status_success,
+        runtime_options.get(handle, &scale_query),
+    );
+    const retained_scale = scale_query[0].value orelse
+        return error.MissingScaleValue;
+    try std.testing.expectEqual(
+        @as(f32, 2.0),
+        @as(*align(1) const f32, @ptrCast(retained_scale)).*,
     );
     try instance.editor.beginGesture(7);
     try instance.editor.setGestureValue(0.75);

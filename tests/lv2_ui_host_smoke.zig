@@ -13,6 +13,16 @@ const Host = struct {
     resize_requests: usize = 0,
     last_value: f32 = 0.0,
 
+    fn map(
+        _: ?*anyopaque,
+        uri: [*:0]const u8,
+    ) callconv(.c) ui.Urid {
+        const value = std.mem.span(uri);
+        if (std.mem.eql(u8, value, ui.scale_factor_uri)) return 139;
+        if (std.mem.eql(u8, value, ui.atom_float_uri)) return 47;
+        return 0;
+    }
+
     fn write(
         controller: ui.Controller,
         port: u32,
@@ -98,10 +108,34 @@ pub fn main(init: std.process.Init) !void {
         .URI = ui.resize_uri,
         .data = &resize,
     };
+    var urid_map = ui.UridMap{
+        .handle = null,
+        .map = Host.map,
+    };
+    var map_feature = ui.Feature{
+        .URI = ui.urid_map_uri,
+        .data = &urid_map,
+    };
+    const initial_scale: f32 = 1.25;
+    const initial_options = [_]ui.OptionsOption{
+        .{
+            .key = 139,
+            .size = @sizeOf(f32),
+            .type = 47,
+            .value = &initial_scale,
+        },
+        .{},
+    };
+    var options_feature = ui.Feature{
+        .URI = ui.options_options_uri,
+        .data = @constCast(&initial_options),
+    };
     const features = [_:null]?*const ui.Feature{
         &parent_feature,
         &touch_feature,
         &resize_feature,
+        &map_feature,
+        &options_feature,
     };
     var widget: ui.Widget = null;
     const handle = descriptor.instantiate(
@@ -115,6 +149,44 @@ pub fn main(init: std.process.Init) !void {
     ) orelse return error.Lv2UiInstantiationFailed;
     defer descriptor.cleanup(handle);
     if (widget == null) return error.MissingLv2Widget;
+
+    const options_ptr = descriptor.extension_data(
+        ui.options_interface_uri,
+    ) orelse return error.MissingOptionsInterface;
+    const runtime_options: *const ui.OptionsInterface =
+        @ptrCast(@alignCast(options_ptr));
+    var scale_query = [_]ui.OptionsOption{
+        .{ .key = 139 },
+        .{},
+    };
+    if (runtime_options.get(handle, &scale_query) !=
+        ui.options_status_success)
+        return error.ScaleQueryFailed;
+    const queried_scale = scale_query[0].value orelse
+        return error.MissingScaleValue;
+    if (@as(*align(1) const f32, @ptrCast(queried_scale)).* != 1.25)
+        return error.InvalidInitialScale;
+    const next_scale: f32 = 2.0;
+    const scale_update = [_]ui.OptionsOption{
+        .{
+            .key = 139,
+            .size = @sizeOf(f32),
+            .type = 47,
+            .value = &next_scale,
+        },
+        .{},
+    };
+    if (runtime_options.set(handle, &scale_update) !=
+        ui.options_status_success)
+        return error.ScaleUpdateFailed;
+    scale_query[0] = .{ .key = 139 };
+    if (runtime_options.get(handle, &scale_query) !=
+        ui.options_status_success)
+        return error.UpdatedScaleQueryFailed;
+    const updated_scale = scale_query[0].value orelse
+        return error.MissingUpdatedScaleValue;
+    if (@as(*align(1) const f32, @ptrCast(updated_scale)).* != 2.0)
+        return error.InvalidUpdatedScale;
 
     var second_host = Host{};
     var second_widget: ui.Widget = null;
