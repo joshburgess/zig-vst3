@@ -1,10 +1,13 @@
 const plug = @import("zig-vst3-plugin");
 const std = @import("std");
 
+const maximum_peak_error = 0.05;
+const maximum_normalized_rms_error = 0.02;
+
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
     const args = try init.minimal.args.toSlice(allocator);
-    if (args.len != 2 and args.len != 3)
+    if (args.len != 2 and args.len != 3 and args.len != 4)
         return error.InvalidArguments;
     const require_midpoint_seek = args.len == 3;
     if (require_midpoint_seek and
@@ -16,6 +19,12 @@ pub fn main(init: std.process.Init) !void {
     {
         return error.InvalidArguments;
     }
+    const compare_reference = args.len == 4;
+    if (compare_reference and
+        !std.mem.eql(u8, args[2], "--reference-f32le"))
+    {
+        return error.InvalidArguments;
+    }
 
     const encoded = try std.Io.Dir.cwd().readFileAlloc(
         init.io,
@@ -23,6 +32,15 @@ pub fn main(init: std.process.Init) !void {
         allocator,
         .limited(16 * 1024 * 1024),
     );
+    const reference = if (compare_reference)
+        try std.Io.Dir.cwd().readFileAlloc(
+            init.io,
+            args[3],
+            allocator,
+            .limited(64 * 1024 * 1024),
+        )
+    else
+        null;
     const seek_point_count =
         try plug.dsp.requiredVorbisSeekPoints(encoded);
     const seek_storage = try allocator.alloc(
@@ -91,6 +109,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                reference,
             ),
             else => return error.UnsupportedVorbisChannelCount,
         }
@@ -111,6 +130,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                reference,
             ),
             2 => try decodeStreams(
                 2,
@@ -125,6 +145,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                reference,
             ),
             else => return error.UnsupportedVorbisChannelCount,
         }
@@ -145,6 +166,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                reference,
             ),
             2 => try decodeStreams(
                 2,
@@ -159,6 +181,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                reference,
             ),
             else => return error.UnsupportedVorbisChannelCount,
         }
@@ -179,6 +202,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                reference,
             ),
             2 => try decodeStreams(
                 2,
@@ -193,6 +217,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                reference,
             ),
             else => return error.UnsupportedVorbisChannelCount,
         }
@@ -213,6 +238,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                reference,
             ),
             2 => try decodeStreams(
                 2,
@@ -227,6 +253,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                reference,
             ),
             6 => try decodeStreams(
                 6,
@@ -241,6 +268,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                reference,
             ),
             else => return error.UnsupportedVorbisChannelCount,
         }
@@ -262,6 +290,7 @@ fn decodeStreams(
     file_packet_storage: []u8,
     first_identification_packet: plug.dsp.OggPacket,
     require_midpoint_seek: bool,
+    reference: ?[]const u8,
 ) !void {
     var decoder = plug.dsp.VorbisChainedPcmStreamDecoder(
         f32,
@@ -296,6 +325,7 @@ fn decodeStreams(
     var audio_packets: usize = 0;
     var sample_count: u64 = 0;
     var energy: f64 = 0.0;
+    var comparison = ReferenceComparison.init(reference, true);
     while (next_identification_packet) |identification_packet| {
         if (!identification_packet.beginning)
             return error.MissingVorbisBeginningOfStream;
@@ -380,6 +410,10 @@ fn decodeStreams(
                 for (output[0..decoded.stream.sample_count]) |sample|
                     energy += @as(f64, sample) * sample;
             }
+            try comparison.update(
+                outputs,
+                decoded.stream.sample_count,
+            );
             if (packet.end) break;
         }
         if (stream_audio_packets == 0)
@@ -420,6 +454,147 @@ fn decodeStreams(
     }
     if (!std.math.isFinite(energy) or energy <= 0.0)
         return error.SilentVorbisStream;
+    try comparison.finish();
+}
+
+const ReferenceComparison = struct {
+    bytes: ?[]const u8,
+    report: bool,
+    offset: usize = 0,
+    sample_values: u64 = 0,
+    reference_energy: f64 = 0,
+    error_energy: f64 = 0,
+    peak_error: f64 = 0,
+
+    fn init(bytes: ?[]const u8, report: bool) ReferenceComparison {
+        return .{ .bytes = bytes, .report = report };
+    }
+
+    fn update(
+        self: *ReferenceComparison,
+        outputs: anytype,
+        sample_count: usize,
+    ) !void {
+        const bytes = self.bytes orelse return;
+        for (0..sample_count) |sample_index| {
+            for (outputs) |output| {
+                if (self.offset + @sizeOf(f32) > bytes.len) {
+                    if (self.report) {
+                        std.debug.print(
+                            "Vorbis PCM reference sample-count mismatch project_at_least={d} reference={d}\n",
+                            .{ self.sample_values + 1, bytes.len / @sizeOf(f32) },
+                        );
+                    }
+                    return error.VorbisPcmReferenceSampleCountMismatch;
+                }
+                const reference_sample: f32 = @bitCast(std.mem.readInt(
+                    u32,
+                    bytes[self.offset..][0..4],
+                    .little,
+                ));
+                self.offset += @sizeOf(f32);
+                const project_sample = output[sample_index];
+                if (!std.math.isFinite(project_sample) or
+                    !std.math.isFinite(reference_sample))
+                {
+                    return error.NonFiniteVorbisPcmReference;
+                }
+                const reference_value: f64 = reference_sample;
+                const difference = @as(f64, project_sample) -
+                    reference_value;
+                self.reference_energy +=
+                    reference_value * reference_value;
+                self.error_energy += difference * difference;
+                self.peak_error = @max(
+                    self.peak_error,
+                    @abs(difference),
+                );
+                self.sample_values = std.math.add(
+                    u64,
+                    self.sample_values,
+                    1,
+                ) catch return error.VorbisPcmReferenceSizeOverflow;
+            }
+        }
+    }
+
+    fn finish(self: ReferenceComparison) !void {
+        const bytes = self.bytes orelse return;
+        if (self.offset != bytes.len) {
+            if (self.report) {
+                std.debug.print(
+                    "Vorbis PCM reference sample-count mismatch project={d} reference={d}\n",
+                    .{ self.sample_values, bytes.len / @sizeOf(f32) },
+                );
+            }
+            return error.VorbisPcmReferenceSampleCountMismatch;
+        }
+        if (self.sample_values == 0 or self.reference_energy <= 0)
+            return error.SilentVorbisPcmReference;
+        const divisor: f64 = @floatFromInt(self.sample_values);
+        const error_rms = @sqrt(self.error_energy / divisor);
+        const reference_rms = @sqrt(self.reference_energy / divisor);
+        const normalized_rms_error = error_rms / reference_rms;
+        if (self.report) {
+            std.debug.print(
+                "Vorbis PCM reference samples={d} peak_error={d:.9} rms_error={d:.9} normalized_rms_error={d:.9}\n",
+                .{
+                    self.sample_values,
+                    self.peak_error,
+                    error_rms,
+                    normalized_rms_error,
+                },
+            );
+        }
+        if (self.peak_error > maximum_peak_error)
+            return error.VorbisPcmReferencePeakErrorExceeded;
+        if (normalized_rms_error > maximum_normalized_rms_error)
+            return error.VorbisPcmReferenceRmsErrorExceeded;
+    }
+};
+
+test "Vorbis PCM reference comparison accepts exact interleaved samples" {
+    const samples = [_]f32{ 0.25, -0.5 };
+    var reference: [samples.len * @sizeOf(f32)]u8 = undefined;
+    for (samples, 0..) |sample, index| {
+        std.mem.writeInt(
+            u32,
+            reference[index * @sizeOf(f32) ..][0..4],
+            @bitCast(sample),
+            .little,
+        );
+    }
+    var output_storage = samples;
+    const outputs = [_][]f32{&output_storage};
+    var comparison = ReferenceComparison.init(&reference, false);
+    try comparison.update(outputs, samples.len);
+    try comparison.finish();
+}
+
+test "Vorbis PCM reference comparison rejects size and finite-value mismatches" {
+    const reference_sample: f32 = 0.5;
+    var reference: [@sizeOf(f32)]u8 = undefined;
+    std.mem.writeInt(
+        u32,
+        &reference,
+        @bitCast(reference_sample),
+        .little,
+    );
+    var two_samples = [_]f32{ 0.5, 0.5 };
+    const oversized_outputs = [_][]f32{&two_samples};
+    var oversized = ReferenceComparison.init(&reference, false);
+    try std.testing.expectError(
+        error.VorbisPcmReferenceSampleCountMismatch,
+        oversized.update(oversized_outputs, two_samples.len),
+    );
+
+    var nonfinite_sample = [_]f32{std.math.nan(f32)};
+    const nonfinite_outputs = [_][]f32{&nonfinite_sample};
+    var nonfinite = ReferenceComparison.init(&reference, false);
+    try std.testing.expectError(
+        error.NonFiniteVorbisPcmReference,
+        nonfinite.update(nonfinite_outputs, 1),
+    );
 }
 
 const PcmDigest = struct {

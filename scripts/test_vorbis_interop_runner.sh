@@ -9,6 +9,7 @@ trap cleanup EXIT HUP INT TERM
 
 fixture="$root/input.ogg"
 fake_bin="$root/bin"
+reference_probe_count="$root/reference-probe-count"
 mkdir -p "$fake_bin"
 printf 'fixture fixture fixture fixture\n' >"$fixture"
 
@@ -31,10 +32,22 @@ printf '%s\n' \
     'esac' \
     >"$fake_bin/decode-probe"
 chmod +x "$fake_bin/decode-probe"
+cat >"$fake_bin/reference-probe" <<'EOF'
+#!/bin/sh
+count=0
+[ ! -f "$TMPDIR/reference-probe-count" ] ||
+    count=$(cat "$TMPDIR/reference-probe-count")
+printf '%s\n' $((count + 1)) >"$TMPDIR/reference-probe-count"
+EOF
+chmod +x "$fake_bin/reference-probe"
 
 PATH="$fake_bin:$PATH" \
+    TMPDIR="$root" \
     VORBIS_INTEROP_ONLY_FFMPEG=1 \
-    scripts/test_vorbis_interop.sh "$fixture" "$fake_bin/decode-probe" \
+    scripts/test_vorbis_interop.sh \
+    "$fixture" \
+    "$fake_bin/decode-probe" \
+    "$fake_bin/reference-probe" \
     >"$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg stereo encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
@@ -66,6 +79,22 @@ grep -q 'Vorbis project truncation rejection passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg chained truncation rejection passed' \
     "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg stereo decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg multi-page decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg mono decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg 8 kHz decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg 16 kHz decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg low-quality decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
+[ "$(cat "$reference_probe_count")" -eq 6 ] || {
+    printf 'Vorbis runner skipped a decoded-PCM reference probe\n' >&2
+    exit 1
+}
 
 probe_count="$root/probe-count"
 expect_probe_failure() {

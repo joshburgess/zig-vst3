@@ -3294,6 +3294,7 @@ pub fn build(b: *std.Build) void {
     );
     test_vorbis_interop.addFileArg(vorbis_interop_ogg);
     test_vorbis_interop.addArtifactArg(vorbis_decode_probe);
+    test_vorbis_interop.addArtifactArg(vorbis_decode_probe);
     const vorbis_interop_test_step = b.step(
         "test-vorbis-interop",
         "Run external Vorbis encoder and decoder checks",

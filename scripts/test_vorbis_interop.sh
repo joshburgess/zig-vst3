@@ -3,6 +3,7 @@ set -eu
 
 fixture=${1:?missing Vorbis fixture path}
 decode_probe=${2-}
+reference_probe=${3-}
 test -f "$fixture"
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-vorbis-interop.XXXXXX")
@@ -22,6 +23,23 @@ require_probe_rejection() {
     if "$decode_probe" "$damaged_path" >/dev/null 2>&1; then
         fail "$failure_message"
     fi
+    printf '%s\n' "$success_message"
+}
+
+compare_reference_pcm() {
+    encoded_path=$1
+    reference_path=$2
+    success_message=$3
+    ffmpeg -v error -y \
+        -i "$encoded_path" \
+        -map 0:a:0 \
+        -f f32le \
+        -acodec pcm_f32le \
+        "$reference_path"
+    "$reference_probe" \
+        "$encoded_path" \
+        --reference-f32le \
+        "$reference_path"
     printf '%s\n' "$success_message"
 }
 
@@ -133,6 +151,12 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$external_fixture"; then
             "$decode_probe" "$external_fixture"
             printf 'Vorbis FFmpeg stereo encoder decode and seek test passed\n'
+            if [ -n "$reference_probe" ]; then
+                compare_reference_pcm \
+                    "$external_fixture" \
+                    "$temporary/ffmpeg-stereo-reference.f32le" \
+                    'Vorbis FFmpeg stereo decoded-PCM reference passed'
+            fi
 
             external_long_fixture="$temporary/ffmpeg-encoded-long.ogg"
             ffmpeg -v error -y \
@@ -145,6 +169,12 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$decode_probe" "$external_long_fixture" \
                 --require-midpoint-seek
             printf 'Vorbis FFmpeg multi-page encoder decode and seek test passed\n'
+            if [ -n "$reference_probe" ]; then
+                compare_reference_pcm \
+                    "$external_long_fixture" \
+                    "$temporary/ffmpeg-long-reference.f32le" \
+                    'Vorbis FFmpeg multi-page decoded-PCM reference passed'
+            fi
 
             external_second_fixture="$temporary/ffmpeg-encoded-second.ogg"
             ffmpeg -v error -y \
@@ -184,6 +214,12 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 "$external_mono_fixture"
             "$decode_probe" "$external_mono_fixture"
             printf 'Vorbis FFmpeg mono encoder decode and seek test passed\n'
+            if [ -n "$reference_probe" ]; then
+                compare_reference_pcm \
+                    "$external_mono_fixture" \
+                    "$temporary/ffmpeg-mono-reference.f32le" \
+                    'Vorbis FFmpeg mono decoded-PCM reference passed'
+            fi
 
             external_8k_fixture="$temporary/ffmpeg-encoded-8k.ogg"
             ffmpeg -v error -y \
@@ -195,6 +231,12 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 "$external_8k_fixture"
             "$decode_probe" "$external_8k_fixture"
             printf 'Vorbis FFmpeg 8 kHz stereo geometry test passed\n'
+            if [ -n "$reference_probe" ]; then
+                compare_reference_pcm \
+                    "$external_8k_fixture" \
+                    "$temporary/ffmpeg-8k-reference.f32le" \
+                    'Vorbis FFmpeg 8 kHz decoded-PCM reference passed'
+            fi
 
             external_16k_fixture="$temporary/ffmpeg-encoded-16k.ogg"
             ffmpeg -v error -y \
@@ -206,6 +248,12 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 "$external_16k_fixture"
             "$decode_probe" "$external_16k_fixture"
             printf 'Vorbis FFmpeg 16 kHz mono geometry test passed\n'
+            if [ -n "$reference_probe" ]; then
+                compare_reference_pcm \
+                    "$external_16k_fixture" \
+                    "$temporary/ffmpeg-16k-reference.f32le" \
+                    'Vorbis FFmpeg 16 kHz decoded-PCM reference passed'
+            fi
 
             external_geometry_change_fixture="$temporary/ffmpeg-encoded-geometry-change.ogg"
             cat "$external_8k_fixture" "$external_16k_fixture" \
@@ -225,6 +273,12 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 "$external_low_quality_fixture"
             "$decode_probe" "$external_low_quality_fixture"
             printf 'Vorbis FFmpeg low-quality 512/4096 geometry test passed\n'
+            if [ -n "$reference_probe" ]; then
+                compare_reference_pcm \
+                    "$external_low_quality_fixture" \
+                    "$temporary/ffmpeg-low-quality-reference.f32le" \
+                    'Vorbis FFmpeg low-quality decoded-PCM reference passed'
+            fi
 
             external_surround_fixture="$temporary/ffmpeg-encoded-5.1.ogg"
             ffmpeg -v error -y \
