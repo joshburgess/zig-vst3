@@ -12,7 +12,46 @@ pub fn main(init: std.process.Init) !void {
         allocator,
         .limited(16 * 1024 * 1024),
     );
+    const seek_point_count =
+        try plug.dsp.requiredVorbisSeekPoints(encoded);
+    const seek_storage = try allocator.alloc(
+        plug.dsp.VorbisSeekPoint,
+        seek_point_count,
+    );
+    const seek_index = try plug.dsp.buildVorbisSeekIndex(
+        encoded,
+        seek_storage,
+    );
+    const file = try std.Io.Dir.cwd().openFile(
+        init.io,
+        args[1],
+        .{},
+    );
+    defer file.close(init.io);
+    const page_storage = try allocator.alloc(
+        u8,
+        plug.dsp.maximum_ogg_page_bytes,
+    );
+    const file_seek_storage = try allocator.alloc(
+        plug.dsp.VorbisSeekPoint,
+        seek_point_count,
+    );
+    const file_seek_index = try plug.dsp.buildVorbisFileSeekIndex(
+        init.io,
+        file,
+        page_storage,
+        file_seek_storage,
+    );
+    if (seek_index.len != file_seek_index.len)
+        return error.VorbisMemoryAndFileSeekIndexesDiffer;
+    for (seek_index, file_seek_index) |memory_point, file_point| {
+        if (!std.meta.eql(memory_point, file_point))
+            return error.VorbisMemoryAndFileSeekIndexesDiffer;
+    }
+
     const packet_storage = try allocator.alloc(u8, 4 * 1024 * 1024);
+    const file_packet_storage =
+        try allocator.alloc(u8, 4 * 1024 * 1024);
     var packets = plug.dsp.OggPacketIterator.initChained(
         encoded,
         packet_storage,
@@ -33,7 +72,12 @@ pub fn main(init: std.process.Init) !void {
                 64,
                 64,
                 allocator,
+                init.io,
+                file,
                 &packets,
+                seek_index,
+                page_storage,
+                file_packet_storage,
                 first_identification_packet,
             ),
             else => return error.UnsupportedVorbisChannelCount,
@@ -47,7 +91,12 @@ pub fn main(init: std.process.Init) !void {
                 256,
                 2_048,
                 allocator,
+                init.io,
+                file,
                 &packets,
+                seek_index,
+                page_storage,
+                file_packet_storage,
                 first_identification_packet,
             ),
             2 => try decodeStreams(
@@ -55,7 +104,12 @@ pub fn main(init: std.process.Init) !void {
                 256,
                 2_048,
                 allocator,
+                init.io,
+                file,
                 &packets,
+                seek_index,
+                page_storage,
+                file_packet_storage,
                 first_identification_packet,
             ),
             6 => try decodeStreams(
@@ -63,7 +117,12 @@ pub fn main(init: std.process.Init) !void {
                 256,
                 2_048,
                 allocator,
+                init.io,
+                file,
                 &packets,
+                seek_index,
+                page_storage,
+                file_packet_storage,
                 first_identification_packet,
             ),
             else => return error.UnsupportedVorbisChannelCount,
@@ -78,7 +137,12 @@ fn decodeStreams(
     comptime small_block_size: usize,
     comptime large_block_size: usize,
     allocator: std.mem.Allocator,
+    io: std.Io,
+    file: std.Io.File,
     packets: *plug.dsp.OggPacketIterator,
+    seek_index: []const plug.dsp.VorbisSeekPoint,
+    page_storage: []u8,
+    file_packet_storage: []u8,
     first_identification_packet: plug.dsp.OggPacket,
 ) !void {
     var decoder = plug.dsp.VorbisChainedPcmStreamDecoder(
@@ -149,6 +213,13 @@ fn decodeStreams(
             identification.channel_count,
         );
         try decoder.beginLogicalStream(identification);
+        const seek_target = try logicalStreamSeekTarget(
+            seek_index,
+            logical_stream_index,
+        );
+        var sequential_seek =
+            plug.dsp.VorbisPcmSeekCursor.init(seek_target);
+        var sequential_digest = PcmDigest.init();
 
         var stream_audio_packets: usize = 0;
         while (true) {
@@ -167,6 +238,13 @@ fn decodeStreams(
                 return error.TruncatedVorbisFloorPacket;
             if (decoded.global_pcm_start != sample_count)
                 return error.DiscontinuousVorbisPcmPosition;
+            const selected =
+                try sequential_seek.select(decoded.stream);
+            sequential_digest.update(
+                outputs,
+                selected.source_start,
+                selected.sample_count,
+            );
             stream_audio_packets += 1;
             audio_packets += 1;
             const expected_end = std.math.add(
@@ -185,6 +263,26 @@ fn decodeStreams(
         }
         if (stream_audio_packets == 0)
             return error.EmptyVorbisLogicalStream;
+        if (!sequential_seek.reached or
+            sequential_digest.sample_count == 0)
+        {
+            return error.VorbisSeekTargetNotReached;
+        }
+        try validateSeekParity(
+            channel_count,
+            small_block_size,
+            large_block_size,
+            io,
+            file,
+            page_storage,
+            file_packet_storage,
+            seek_index,
+            logical_stream_index,
+            seek_target,
+            identification,
+            setup,
+            sequential_digest.result(),
+        );
         logical_stream_count = std.math.add(
             u32,
             logical_stream_count,
@@ -201,6 +299,151 @@ fn decodeStreams(
     }
     if (!std.math.isFinite(energy) or energy <= 0.0)
         return error.SilentVorbisStream;
+}
+
+const PcmDigest = struct {
+    hasher: std.hash.Wyhash,
+    sample_count: u64 = 0,
+
+    const Result = struct {
+        hash: u64,
+        sample_count: u64,
+    };
+
+    fn init() PcmDigest {
+        return .{ .hasher = std.hash.Wyhash.init(0) };
+    }
+
+    fn update(
+        self: *PcmDigest,
+        outputs: anytype,
+        source_start: usize,
+        sample_count: usize,
+    ) void {
+        for (0..sample_count) |sample_index| {
+            for (outputs) |output| {
+                const bits: u32 =
+                    @bitCast(output[source_start + sample_index]);
+                self.hasher.update(std.mem.asBytes(&bits));
+            }
+        }
+        self.sample_count += @intCast(sample_count);
+    }
+
+    fn result(self: *PcmDigest) Result {
+        return .{
+            .hash = self.hasher.final(),
+            .sample_count = self.sample_count,
+        };
+    }
+};
+
+fn logicalStreamSeekTarget(
+    seek_index: []const plug.dsp.VorbisSeekPoint,
+    logical_stream_index: u32,
+) !i64 {
+    var pcm_end: ?i64 = null;
+    for (seek_index) |point| {
+        if (point.packet.logical_stream_index ==
+            logical_stream_index)
+        {
+            pcm_end = point.pcm_end;
+        }
+    }
+    const end = pcm_end orelse
+        return error.VorbisSeekLogicalStreamNotFound;
+    if (end < 2) return error.VorbisStreamTooShortToSeek;
+    return @divTrunc(end, 2);
+}
+
+fn validateSeekParity(
+    comptime channel_count: usize,
+    comptime small_block_size: usize,
+    comptime large_block_size: usize,
+    io: std.Io,
+    file: std.Io.File,
+    page_storage: []u8,
+    packet_storage: []u8,
+    seek_index: []const plug.dsp.VorbisSeekPoint,
+    logical_stream_index: u32,
+    seek_target: i64,
+    identification: plug.dsp.VorbisIdentification,
+    setup: plug.dsp.VorbisSetup,
+    expected: PcmDigest.Result,
+) !void {
+    const seek_point = try plug.dsp.findVorbisSeekPoint(
+        seek_index,
+        logical_stream_index,
+        seek_target,
+    );
+    var packets = try plug.dsp.OggFilePacketReader.initChained(
+        io,
+        file,
+    );
+    try packets.seek(seek_point);
+    var decoder = plug.dsp.VorbisPcmStreamDecoder(
+        f32,
+        channel_count,
+        small_block_size,
+        large_block_size,
+    ).init();
+    var spectra: [channel_count * large_block_size / 2]f32 =
+        undefined;
+    var floors: [channel_count * large_block_size / 2]f32 =
+        undefined;
+    var coupling: [channel_count * large_block_size / 2]f32 =
+        undefined;
+    var time: [channel_count * large_block_size]f32 = undefined;
+    var classifications: [large_block_size * channel_count]u8 =
+        undefined;
+    var windowed: [channel_count * large_block_size]f32 = undefined;
+    var output_storage: [channel_count][large_block_size]f32 =
+        undefined;
+    var outputs: [channel_count][]f32 = undefined;
+    for (&outputs, &output_storage) |*output, *storage|
+        output.* = storage;
+    const scratch = plug.dsp.VorbisPcmStreamScratch(f32){
+        .packet = .{
+            .spectra = &spectra,
+            .floor_curves = &floors,
+            .coupling = &coupling,
+            .time = &time,
+            .classifications = &classifications,
+        },
+        .windowed = &windowed,
+    };
+    var cursor = plug.dsp.VorbisPcmSeekCursor.init(seek_target);
+    var digest = PcmDigest.init();
+    var ended = false;
+    while (try packets.next(
+        page_storage,
+        packet_storage,
+    )) |packet| {
+        try requireLogicalStream(packet, logical_stream_index);
+        const decoded = try decoder.decode(
+            packet,
+            identification,
+            setup,
+            &outputs,
+            scratch,
+        );
+        if (decoded.packet.floor_truncated)
+            return error.TruncatedVorbisFloorPacket;
+        const selected = try cursor.select(decoded);
+        digest.update(
+            outputs,
+            selected.source_start,
+            selected.sample_count,
+        );
+        if (packet.end) {
+            ended = true;
+            break;
+        }
+    }
+    if (!ended) return error.MissingVorbisEndOfStream;
+    if (!cursor.reached) return error.VorbisSeekTargetNotReached;
+    if (!std.meta.eql(expected, digest.result()))
+        return error.VorbisSeekPcmMismatch;
 }
 
 fn requireLogicalStream(

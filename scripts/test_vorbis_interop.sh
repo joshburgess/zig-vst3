@@ -55,11 +55,11 @@ wav_data_range() {
 
 if [ -n "$decode_probe" ]; then
     "$decode_probe" "$fixture"
-    printf 'Vorbis project decoder probe passed\n'
+    printf 'Vorbis project decoder and seek probe passed\n'
     project_chained_fixture="$temporary/project-chained.ogg"
     cat "$fixture" "$fixture" >"$project_chained_fixture"
     "$decode_probe" "$project_chained_fixture"
-    printf 'Vorbis project chained decoder probe passed\n'
+    printf 'Vorbis project chained decoder and seek probe passed\n'
 fi
 
 if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
@@ -89,7 +89,7 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             -q:a 4 \
             "$external_fixture"; then
             "$decode_probe" "$external_fixture"
-            printf 'Vorbis FFmpeg stereo encoder interoperability test passed\n'
+            printf 'Vorbis FFmpeg stereo encoder decode and seek test passed\n'
 
             external_second_fixture="$temporary/ffmpeg-encoded-second.ogg"
             ffmpeg -v error -y \
@@ -103,7 +103,7 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             cat "$external_fixture" "$external_second_fixture" \
                 >"$external_chained_fixture"
             "$decode_probe" "$external_chained_fixture"
-            printf 'Vorbis FFmpeg chained encoder interoperability test passed\n'
+            printf 'Vorbis FFmpeg chained encoder decode and seek test passed\n'
 
             external_mono_fixture="$temporary/ffmpeg-encoded-mono.ogg"
             ffmpeg -v error -y \
@@ -114,7 +114,7 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 -q:a 4 \
                 "$external_mono_fixture"
             "$decode_probe" "$external_mono_fixture"
-            printf 'Vorbis FFmpeg mono encoder interoperability test passed\n'
+            printf 'Vorbis FFmpeg mono encoder decode and seek test passed\n'
 
             external_surround_fixture="$temporary/ffmpeg-encoded-5.1.ogg"
             ffmpeg -v error -y \
@@ -125,7 +125,7 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 -q:a 4 \
                 "$external_surround_fixture"
             "$decode_probe" "$external_surround_fixture"
-            printf 'Vorbis FFmpeg 5.1 encoder interoperability test passed\n'
+            printf 'Vorbis FFmpeg 5.1 encoder decode and seek test passed\n'
             tested=1
         else
             printf 'Vorbis FFmpeg encoder unavailable; test skipped\n'

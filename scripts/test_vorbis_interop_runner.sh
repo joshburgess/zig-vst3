@@ -33,17 +33,17 @@ PATH="$fake_bin:$PATH" \
     VORBIS_INTEROP_ONLY_FFMPEG=1 \
     scripts/test_vorbis_interop.sh "$fixture" "$fake_bin/decode-probe" \
     >"$root/ffmpeg.txt"
-grep -q 'Vorbis FFmpeg stereo encoder interoperability test passed' \
+grep -q 'Vorbis FFmpeg stereo encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
-grep -q 'Vorbis FFmpeg chained encoder interoperability test passed' \
+grep -q 'Vorbis FFmpeg chained encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
-grep -q 'Vorbis FFmpeg mono encoder interoperability test passed' \
+grep -q 'Vorbis FFmpeg mono encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
-grep -q 'Vorbis FFmpeg 5.1 encoder interoperability test passed' \
+grep -q 'Vorbis FFmpeg 5.1 encoder decode and seek test passed' \
     "$root/ffmpeg.txt"
-grep -q 'Vorbis project decoder probe passed' \
+grep -q 'Vorbis project decoder and seek probe passed' \
     "$root/ffmpeg.txt"
-grep -q 'Vorbis project chained decoder probe passed' \
+grep -q 'Vorbis project chained decoder and seek probe passed' \
     "$root/ffmpeg.txt"
 
 probe_count="$root/probe-count"
