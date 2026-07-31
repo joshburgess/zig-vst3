@@ -490,6 +490,9 @@ const ReferenceComparison = struct {
     reference_energy: f64 = 0,
     error_energy: f64 = 0,
     peak_error: f64 = 0,
+    peak_index: u64 = 0,
+    peak_project: f64 = 0,
+    peak_reference: f64 = 0,
 
     fn init(
         reference: ?ReferencePcm,
@@ -540,13 +543,16 @@ const ReferenceComparison = struct {
                 }
                 const difference = @as(f64, project_sample) -
                     reference_sample;
+                const absolute_difference = @abs(difference);
                 self.reference_energy +=
                     reference_sample * reference_sample;
                 self.error_energy += difference * difference;
-                self.peak_error = @max(
-                    self.peak_error,
-                    @abs(difference),
-                );
+                if (absolute_difference > self.peak_error) {
+                    self.peak_error = absolute_difference;
+                    self.peak_index = self.sample_values;
+                    self.peak_project = project_sample;
+                    self.peak_reference = reference_sample;
+                }
                 self.sample_values = std.math.add(
                     u64,
                     self.sample_values,
@@ -579,10 +585,13 @@ const ReferenceComparison = struct {
         const normalized_rms_error = error_rms / reference_rms;
         if (self.report) {
             std.debug.print(
-                "Vorbis PCM reference samples={d} peak_error={d:.9} rms_error={d:.9} normalized_rms_error={d:.9}\n",
+                "Vorbis PCM reference samples={d} peak_error={d:.9} peak_index={d} project_at_peak={d:.9} reference_at_peak={d:.9} rms_error={d:.9} normalized_rms_error={d:.9}\n",
                 .{
                     self.sample_values,
                     self.peak_error,
+                    self.peak_index,
+                    self.peak_project,
+                    self.peak_reference,
                     error_rms,
                     normalized_rms_error,
                 },
