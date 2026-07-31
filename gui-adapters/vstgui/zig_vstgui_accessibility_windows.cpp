@@ -515,6 +515,8 @@ void NativeAccessibilityBridge::close() {
     impl.reset();
 }
 
+void NativeAccessibilityBridge::dispatch() {}
+
 void NativeAccessibilityBridge::layoutChanged() {
     if (impl) UiaRaiseStructureChangedEvent(impl->state->root, StructureChangeType_ChildrenInvalidated, nullptr, 0);
 }

@@ -474,7 +474,10 @@ ZigVstguiEditor::ZigVstguiEditor(
             (file_drop_count != 1 || progress_indicator_count != 1 || piano_count > 1)) return;
     }
     parameter_update_timer = new (std::nothrow) VSTGUI::CVSTGUITimer(
-        [this](VSTGUI::CVSTGUITimer*) { flushParameterUpdates(); }, 16, false
+        [this](VSTGUI::CVSTGUITimer*) {
+            flushParameterUpdates();
+            accessibility_bridge.dispatch();
+        }, 16, false
     );
     if (!parameter_update_timer) return;
     buildFrame();

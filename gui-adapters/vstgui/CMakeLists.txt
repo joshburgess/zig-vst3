@@ -43,7 +43,9 @@ endif()
 
 set(VSTGUI_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../.vst3-sdk/vst3sdk/vstgui4")
 add_subdirectory("${VSTGUI_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/vstgui")
-if(UNIX AND NOT APPLE)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
     get_target_property(VSTGUI_LIBRARY_SOURCES vstgui SOURCES)
     list(
         FILTER VSTGUI_LIBRARY_SOURCES
@@ -132,6 +134,9 @@ target_include_directories(zig_vstgui_adapter PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../../.vst3-sdk/vst3sdk"
 )
 target_link_libraries(zig_vstgui_adapter PRIVATE vstgui)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(zig_vstgui_adapter PRIVATE PkgConfig::GIO)
+endif()
 if(APPLE AND (ZIG_VSTGUI_ENABLE_SANITIZERS OR ZIG_VSTGUI_ENABLE_THREAD_SANITIZER))
     target_link_libraries(zig_vstgui_adapter PUBLIC "-framework OpenGL")
 endif()
@@ -224,6 +229,36 @@ if(APPLE)
         DEPENDS
             zig_vstgui_accessibility_macos_tests
             zig_vstgui_accessibility_atspi_tests
+    )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(
+        zig_vstgui_accessibility_atspi_bridge_tests
+        zig_vstgui_accessibility_atspi_bridge_tests.cpp
+    )
+    target_compile_features(
+        zig_vstgui_accessibility_atspi_bridge_tests
+        PRIVATE cxx_std_17
+    )
+    target_compile_definitions(
+        zig_vstgui_accessibility_atspi_bridge_tests
+        PRIVATE VSTGUI_ENABLE_XML_PARSER=0
+    )
+    target_include_directories(
+        zig_vstgui_accessibility_atspi_bridge_tests
+        PRIVATE
+            "${VSTGUI_SOURCE_DIR}"
+            "${CMAKE_CURRENT_LIST_DIR}/../../.vst3-sdk/vst3sdk"
+    )
+    target_link_libraries(
+        zig_vstgui_accessibility_atspi_bridge_tests
+        PRIVATE zig_vstgui_adapter PkgConfig::GIO
+    )
+    add_custom_target(zig_vstgui_accessibility_tests_run
+        COMMAND $<TARGET_FILE:zig_vstgui_accessibility_atspi_tests>
+        COMMAND $<TARGET_FILE:zig_vstgui_accessibility_atspi_bridge_tests>
+        DEPENDS
+            zig_vstgui_accessibility_atspi_tests
+            zig_vstgui_accessibility_atspi_bridge_tests
     )
 else()
     add_custom_target(zig_vstgui_accessibility_tests_run

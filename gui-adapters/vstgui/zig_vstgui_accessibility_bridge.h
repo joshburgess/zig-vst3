@@ -25,6 +25,7 @@ public:
 
     bool open(VSTGUI::CFrame* frame, const std::vector<AccessibilityEntry>& entries);
     void close();
+    void dispatch();
     void layoutChanged();
     bool active() const;
     std::size_t elementCount() const;

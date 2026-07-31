@@ -277,6 +277,8 @@ void NativeAccessibilityBridge::close() {
     impl.reset();
 }
 
+void NativeAccessibilityBridge::dispatch() {}
+
 void NativeAccessibilityBridge::layoutChanged() {
     if (impl && impl->root) NSAccessibilityPostNotification(impl->root, NSAccessibilityLayoutChangedNotification);
 }

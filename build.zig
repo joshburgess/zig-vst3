@@ -4632,7 +4632,7 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
         module.linkSystemLibrary("zig_vstgui_gcc_s", .{ .use_pkg_config = .no });
         for ([_][]const u8{
             "X11",            "freetype2",      "xcb",         "xcb-util",       "xcb-cursor", "xcb-keysyms", "xcb-xkb",
-            "xkbcommon",      "xkbcommon-x11",  "glib-2.0",    "cairo",          "pangocairo", "pangoft2",    "fontconfig",
+            "xkbcommon",      "xkbcommon-x11",  "glib-2.0",    "gio-2.0",         "cairo",       "pangocairo",   "pangoft2",    "fontconfig",
             "wayland-client", "wayland-cursor", "wayland-egl", "wayland-server", "pthread",    "dl",
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .yes });
     } else if (target.result.os.tag == .windows) {
