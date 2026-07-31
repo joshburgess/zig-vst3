@@ -3332,10 +3332,30 @@ pub fn build(b: *std.Build) void {
     generate_mp3_interop_step.dependOn(
         &run_mp3_interop_fixture.step,
     );
+    const mp3_decode_probe = b.addExecutable(.{
+        .name = "mp3-decode-probe",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tools/mp3_decode_probe.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    mp3_decode_probe.root_module.addImport(
+        "zig-vst3-plugin",
+        zig_vst3_plugin,
+    );
     const test_mp3_interop = b.addSystemCommand(
         &.{"scripts/test_mp3_encoder_interop.sh"},
     );
     test_mp3_interop.addFileArg(mp3_interop_file);
+    test_mp3_interop.addArtifactArg(mp3_decode_probe);
+    const mp3_interop_test_step = b.step(
+        "test-mp3-interop",
+        "Run external MP3 encoder and decoder checks",
+    );
+    mp3_interop_test_step.dependOn(&test_mp3_interop.step);
 
     const dsp_reference_renderer = b.addExecutable(.{
         .name = "dsp-reference-renderer",
