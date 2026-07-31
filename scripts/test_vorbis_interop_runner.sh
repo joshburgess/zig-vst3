@@ -10,7 +10,7 @@ trap cleanup EXIT HUP INT TERM
 fixture="$root/input.ogg"
 fake_bin="$root/bin"
 mkdir -p "$fake_bin"
-printf 'fixture\n' >"$fixture"
+printf 'fixture fixture fixture fixture\n' >"$fixture"
 
 printf '%s\n' \
     '#!/bin/sh' \
@@ -47,6 +47,8 @@ grep -q 'Vorbis FFmpeg 5.1 encoder decode and seek test passed' \
 grep -q 'Vorbis project decoder and seek probe passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis project chained decoder and seek probe passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis project chained checksum corruption rejection passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis project checksum corruption rejection passed' \
     "$root/ffmpeg.txt"

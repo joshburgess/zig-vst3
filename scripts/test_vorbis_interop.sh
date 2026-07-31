@@ -71,6 +71,19 @@ if [ -n "$decode_probe" ]; then
     "$decode_probe" "$project_chained_fixture"
     printf 'Vorbis project chained decoder and seek probe passed\n'
 
+    project_bytes=$(wc -c <"$fixture")
+    [ "$project_bytes" -gt 26 ] ||
+        fail "Vorbis project fixture is too short to damage"
+    project_chained_corrupt_fixture="$temporary/project-chained-corrupt.ogg"
+    cp "$project_chained_fixture" "$project_chained_corrupt_fixture"
+    printf 'BAD!' |
+        dd of="$project_chained_corrupt_fixture" bs=1 \
+            seek=$((project_bytes + 22)) conv=notrunc 2>/dev/null
+    require_probe_rejection \
+        "$project_chained_corrupt_fixture" \
+        "Project decoder accepted checksum damage in a later logical stream" \
+        "Vorbis project chained checksum corruption rejection passed"
+
     project_corrupt_fixture="$temporary/project-corrupt.ogg"
     cp "$fixture" "$project_corrupt_fixture"
     printf 'BAD!' |
@@ -81,7 +94,6 @@ if [ -n "$decode_probe" ]; then
         "Project decoder accepted a corrupted Ogg checksum" \
         "Vorbis project checksum corruption rejection passed"
 
-    project_bytes=$(wc -c <"$fixture")
     [ "$project_bytes" -gt 1 ] ||
         fail "Vorbis project fixture is too short to truncate"
     project_truncated_fixture="$temporary/project-truncated.ogg"

@@ -342,18 +342,33 @@ fn logicalStreamSeekTarget(
     seek_index: []const plug.dsp.VorbisSeekPoint,
     logical_stream_index: u32,
 ) !i64 {
+    var first_pcm_end: ?i64 = null;
     var pcm_end: ?i64 = null;
     for (seek_index) |point| {
         if (point.packet.logical_stream_index ==
             logical_stream_index)
         {
+            if (first_pcm_end == null)
+                first_pcm_end = point.pcm_end;
             pcm_end = point.pcm_end;
         }
     }
     const end = pcm_end orelse
         return error.VorbisSeekLogicalStreamNotFound;
     if (end < 2) return error.VorbisStreamTooShortToSeek;
-    return @divTrunc(end, 2);
+    const midpoint = @divTrunc(end, 2);
+    for (seek_index) |point| {
+        if (point.packet.logical_stream_index ==
+            logical_stream_index and
+            point.pcm_end <= midpoint)
+        {
+            return midpoint;
+        }
+    }
+    const first_end = first_pcm_end orelse
+        return error.VorbisSeekLogicalStreamNotFound;
+    if (first_end < 1) return error.VorbisStreamTooShortToSeek;
+    return first_end - 1;
 }
 
 fn validateSeekParity(
@@ -429,6 +444,13 @@ fn validateSeekParity(
         );
         if (decoded.packet.floor_truncated)
             return error.TruncatedVorbisFloorPacket;
+        if (decoded.sample_count != 0 and
+            (decoded.pcm_start == null or decoded.pcm_end == null))
+        {
+            if (cursor.reached)
+                return error.VorbisPcmSeekPositionUnavailable;
+            continue;
+        }
         const selected = try cursor.select(decoded);
         digest.update(
             outputs,

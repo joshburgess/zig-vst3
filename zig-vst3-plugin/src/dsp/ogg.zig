@@ -14071,6 +14071,82 @@ test "Ogg parser rejects corruption and sequence gaps" {
     );
 }
 
+test "Ogg readers reject single-bit page damage transactionally" {
+    var clean: [128]u8 = undefined;
+    const page_bytes = try appendTestOggPage(
+        &clean,
+        0,
+        0x1020_3040,
+        0,
+        0x06,
+        4,
+        &.{4},
+        "data",
+    );
+
+    for (0..page_bytes) |byte_index| {
+        var damaged = clean;
+        damaged[byte_index] ^= 1;
+        const encoded = damaged[0..page_bytes];
+
+        var pages = PageIterator.init(encoded);
+        const pages_before = pages;
+        const page_rejected = if (pages.next()) |_|
+            false
+        else |_|
+            true;
+        try std.testing.expect(page_rejected);
+        try std.testing.expectEqualDeep(pages_before, pages);
+
+        var packet_storage: [4]u8 = @splat(0xa5);
+        var packets = PacketIterator.init(
+            encoded,
+            &packet_storage,
+        );
+        const packets_before = packets;
+        const packet_rejected = if (packets.next()) |_|
+            false
+        else |_|
+            true;
+        try std.testing.expect(packet_rejected);
+        try std.testing.expectEqualDeep(packets_before, packets);
+        try std.testing.expectEqualSlices(
+            u8,
+            &@as([4]u8, @splat(0xa5)),
+            &packet_storage,
+        );
+    }
+
+    for (1..page_bytes) |truncated_bytes| {
+        const encoded = clean[0..truncated_bytes];
+
+        var pages = PageIterator.init(encoded);
+        const pages_before = pages;
+        try std.testing.expectError(
+            error.TruncatedOggPage,
+            pages.next(),
+        );
+        try std.testing.expectEqualDeep(pages_before, pages);
+
+        var packet_storage: [4]u8 = @splat(0xa5);
+        var packets = PacketIterator.init(
+            encoded,
+            &packet_storage,
+        );
+        const packets_before = packets;
+        try std.testing.expectError(
+            error.TruncatedOggPage,
+            packets.next(),
+        );
+        try std.testing.expectEqualDeep(packets_before, packets);
+        try std.testing.expectEqualSlices(
+            u8,
+            &@as([4]u8, @splat(0xa5)),
+            &packet_storage,
+        );
+    }
+}
+
 test "Ogg page readers resynchronize across bounded inserted junk" {
     var clean: [256]u8 = undefined;
     var clean_bytes = try appendTestOggPage(
