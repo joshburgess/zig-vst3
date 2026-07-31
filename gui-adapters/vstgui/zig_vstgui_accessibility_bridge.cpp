@@ -35,6 +35,7 @@ constexpr const char* cache_interface = "org.a11y.atspi.Cache";
 constexpr const char* action_interface = "org.a11y.atspi.Action";
 constexpr const char* component_interface = "org.a11y.atspi.Component";
 constexpr const char* editable_text_interface = "org.a11y.atspi.EditableText";
+constexpr const char* object_event_interface = "org.a11y.atspi.Event.Object";
 constexpr const char* value_interface = "org.a11y.atspi.Value";
 constexpr const char* registry_name = "org.a11y.atspi.Registry";
 constexpr const char* registry_path = "/org/a11y/atspi/registry";
@@ -153,6 +154,12 @@ constexpr const char* introspection_xml = R"xml(
     <signal name='AddAccessible'><arg type='((so)(so)(so)iiassusau)'/></signal>
     <signal name='RemoveAccessible'><arg type='(so)'/></signal>
   </interface>
+  <interface name='org.a11y.atspi.Event.Object'>
+    <property name='version' type='u' access='read'/>
+    <signal name='PropertyChange'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
+    <signal name='BoundsChanged'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
+    <signal name='StateChanged'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
+  </interface>
 </node>
 )xml";
 
@@ -219,6 +226,12 @@ public:
         std::string path;
     };
 
+    struct Observer {
+        Impl* owner {nullptr};
+        const AccessibilityNode* node {nullptr};
+        Object* object {nullptr};
+    };
+
     ~Impl() {
         shutdown();
     }
@@ -277,12 +290,17 @@ public:
             diagnostic("registry embedding failed");
             return false;
         }
+        installObservers();
         ready = true;
         return true;
     }
 
     void shutdown() {
         ready = false;
+        for (const auto& observer : observers) {
+            if (observer->node) observer->node->setObserver(nullptr, nullptr);
+        }
+        observers.clear();
         if (connection) {
             for (auto registration = registrations.rbegin();
                  registration != registrations.rend(); ++registration) {
@@ -315,6 +333,13 @@ public:
              ++count) {
             g_main_context_iteration(context, false);
         }
+    }
+
+    void layoutChanged() {
+        if (!ready) return;
+        emitBoundsChanged(*objects[0]);
+        for (std::size_t index = 0; index < entries.size(); ++index)
+            emitBoundsChanged(*objects[index + 1]);
     }
 
     std::size_t elementCount() const {
@@ -391,6 +416,8 @@ private:
         if (g_strcmp0(interface_name, editable_text_interface) == 0)
             return object->owner->versionProperty(property_name);
         if (object->cache && g_strcmp0(interface_name, cache_interface) == 0)
+            return object->owner->versionProperty(property_name);
+        if (g_strcmp0(interface_name, object_event_interface) == 0)
             return object->owner->versionProperty(property_name);
         if (g_strcmp0(interface_name, value_interface) == 0)
             return object->owner->valueProperty(*object, property_name);
@@ -521,7 +548,8 @@ private:
         objects.push_back(std::move(root));
         if (!registerInterface(root_object, accessible_interface) ||
             !registerInterface(root_object, application_interface) ||
-            !registerInterface(root_object, component_interface)) return false;
+            !registerInterface(root_object, component_interface) ||
+            !registerInterface(root_object, object_event_interface)) return false;
 
         for (std::size_t index = 0; index < entries.size(); ++index) {
             auto object = std::make_unique<Object>();
@@ -532,7 +560,8 @@ private:
             Object* child = object.get();
             objects.push_back(std::move(object));
             if (!registerInterface(child, accessible_interface) ||
-                !registerInterface(child, component_interface)) return false;
+                !registerInterface(child, component_interface) ||
+                !registerInterface(child, object_event_interface)) return false;
             const auto current = snapshot(*child);
             if (current.hasInterface(AtspiInterface::action) &&
                 !registerInterface(child, action_interface)) return false;
@@ -779,6 +808,164 @@ private:
                 g_variant_builder_end(&builder)
             )
         );
+    }
+
+    static GVariant* emptyEventProperties() {
+        GVariantBuilder builder;
+        g_variant_builder_init(&builder, G_VARIANT_TYPE("a{sv}"));
+        return g_variant_builder_end(&builder);
+    }
+
+    void emitObjectSignal(
+        const Object& object,
+        const char* signal,
+        const char* detail,
+        gint32 detail1,
+        gint32 detail2,
+        GVariant* value
+    ) const {
+        if (!connection || !value) return;
+        GError* error = nullptr;
+        if (!g_dbus_connection_emit_signal(
+                connection,
+                nullptr,
+                object.path.c_str(),
+                object_event_interface,
+                signal,
+                g_variant_new(
+                    "(siiv@a{sv})",
+                    detail,
+                    detail1,
+                    detail2,
+                    value,
+                    emptyEventProperties()
+                ),
+                &error
+            )) {
+            diagnostic("could not publish an accessibility event", error);
+            if (error) g_error_free(error);
+        }
+    }
+
+    void emitPropertyChange(
+        const Object& object,
+        const char* property,
+        GVariant* value
+    ) const {
+        emitObjectSignal(object, "PropertyChange", property, 0, 0, value);
+    }
+
+    void emitStateChange(
+        const Object& object,
+        const char* state,
+        bool enabled
+    ) const {
+        emitObjectSignal(
+            object,
+            "StateChanged",
+            state,
+            enabled ? 1 : 0,
+            0,
+            g_variant_new_int32(0)
+        );
+    }
+
+    void emitBoundsChanged(const Object& object) const {
+        const auto area = bounds(object, 0);
+        emitObjectSignal(
+            object,
+            "BoundsChanged",
+            "",
+            0,
+            0,
+            g_variant_new("(iiii)", area.x, area.y, area.width, area.height)
+        );
+    }
+
+    void nodeChanged(const Object& object, AccessibilityChange change) const {
+        const auto current = snapshot(object);
+        switch (change) {
+            case AccessibilityChange::role:
+                emitPropertyChange(
+                    object,
+                    "accessible-role",
+                    g_variant_new_uint32(static_cast<guint32>(current.role))
+                );
+                break;
+            case AccessibilityChange::name:
+                emitPropertyChange(
+                    object,
+                    "accessible-name",
+                    g_variant_new_string(current.name.c_str())
+                );
+                break;
+            case AccessibilityChange::description:
+                emitPropertyChange(
+                    object,
+                    "accessible-description",
+                    g_variant_new_string(current.description.c_str())
+                );
+                break;
+            case AccessibilityChange::value:
+                emitPropertyChange(
+                    object,
+                    "accessible-value",
+                    g_variant_new_string(current.value_text.c_str())
+                );
+                break;
+            case AccessibilityChange::range:
+                emitPropertyChange(
+                    object,
+                    "accessible-value",
+                    g_variant_new_double(current.range.current)
+                );
+                break;
+            case AccessibilityChange::state:
+                emitStateChange(
+                    object,
+                    "enabled",
+                    current.hasState(AtspiState::enabled)
+                );
+                emitStateChange(
+                    object,
+                    "checked",
+                    current.hasState(AtspiState::checked)
+                );
+                emitStateChange(
+                    object,
+                    "selected",
+                    current.hasState(AtspiState::selected)
+                );
+                break;
+            case AccessibilityChange::focus:
+                emitStateChange(
+                    object,
+                    "focused",
+                    current.hasState(AtspiState::focused)
+                );
+                break;
+        }
+    }
+
+    static void accessibilityChanged(
+        void* userdata,
+        AccessibilityChange change
+    ) {
+        auto* observer = static_cast<Observer*>(userdata);
+        if (observer && observer->owner && observer->object)
+            observer->owner->nodeChanged(*observer->object, change);
+    }
+
+    void installObservers() {
+        observers.reserve(entries.size());
+        for (std::size_t index = 0; index < entries.size(); ++index) {
+            auto observer = std::make_unique<Observer>();
+            observer->owner = this;
+            observer->node = entries[index].node;
+            observer->object = objects[index + 1].get();
+            observer->node->setObserver(observer.get(), accessibilityChanged);
+            observers.push_back(std::move(observer));
+        }
     }
 
     GVariant* actionProperty(const Object& object, const char* property) const {
@@ -1288,6 +1475,7 @@ private:
     std::string registry_bus;
     std::string registry_root;
     std::vector<std::unique_ptr<Object>> objects;
+    std::vector<std::unique_ptr<Observer>> observers;
     std::vector<guint> registrations;
     gint32 application_id {0};
     bool ready {false};
@@ -1316,7 +1504,7 @@ void NativeAccessibilityBridge::dispatch() {
 }
 
 void NativeAccessibilityBridge::layoutChanged() {
-    dispatch();
+    if (impl) impl->layoutChanged();
 }
 
 bool NativeAccessibilityBridge::active() const {

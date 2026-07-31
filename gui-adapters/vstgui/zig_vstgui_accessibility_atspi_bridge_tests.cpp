@@ -25,6 +25,8 @@ constexpr const char* accessible_interface = "org.a11y.atspi.Accessible";
 constexpr const char* application_interface = "org.a11y.atspi.Application";
 constexpr const char* cache_interface = "org.a11y.atspi.Cache";
 constexpr const char* cache_path = "/org/a11y/atspi/cache";
+constexpr const char* object_event_interface = "org.a11y.atspi.Event.Object";
+constexpr const char* first_child_path = "/org/a11y/atspi/accessible/control_0";
 constexpr int timeout_ms = 2000;
 
 constexpr const char* service_xml = R"xml(
@@ -61,6 +63,10 @@ struct Evidence {
     std::atomic<bool> text_inserted {false};
     std::atomic<bool> text_deleted {false};
     std::atomic<bool> cache_items {false};
+    std::atomic<bool> property_event {false};
+    std::atomic<bool> focus_event {false};
+    std::atomic<bool> bounds_event {false};
+    std::atomic<unsigned int> event_count {0};
 };
 
 bool callSucceeded(GVariant* result, GError* error) {
@@ -72,12 +78,53 @@ bool callSucceeded(GVariant* result, GError* error) {
     return false;
 }
 
+void eventReceived(
+    GDBusConnection*,
+    const gchar*,
+    const gchar*,
+    const gchar*,
+    const gchar* signal_name,
+    GVariant* parameters,
+    gpointer userdata
+) {
+    auto* evidence = static_cast<Evidence*>(userdata);
+    if (!evidence || !signal_name || !parameters) return;
+    const char* detail = nullptr;
+    g_variant_get_child(parameters, 0, "&s", &detail);
+    if (std::strcmp(signal_name, "PropertyChange") == 0 && detail &&
+        std::strcmp(detail, "accessible-name") == 0) {
+        evidence->property_event.store(true, std::memory_order_release);
+        evidence->event_count.fetch_add(1, std::memory_order_acq_rel);
+    }
+    if (std::strcmp(signal_name, "StateChanged") == 0 && detail &&
+        std::strcmp(detail, "focused") == 0) {
+        evidence->focus_event.store(true, std::memory_order_release);
+        evidence->event_count.fetch_add(1, std::memory_order_acq_rel);
+    }
+    if (std::strcmp(signal_name, "BoundsChanged") == 0) {
+        evidence->bounds_event.store(true, std::memory_order_release);
+        evidence->event_count.fetch_add(1, std::memory_order_acq_rel);
+    }
+}
+
 void inspectApplication(
     GDBusConnection* connection,
     const char* application,
     const char* root,
     Evidence& evidence
 ) {
+    g_dbus_connection_signal_subscribe(
+        connection,
+        application,
+        object_event_interface,
+        nullptr,
+        first_child_path,
+        nullptr,
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        eventReceived,
+        &evidence,
+        nullptr
+    );
     GError* error = nullptr;
     GVariant* result = g_dbus_connection_call_sync(
         connection,
@@ -160,7 +207,7 @@ void inspectApplication(
     const std::string path = child_path;
     evidence.child_found.store(
         child_bus == application &&
-            path == "/org/a11y/atspi/accessible/control_0",
+            path == first_child_path,
         std::memory_order_release
     );
     g_variant_unref(children);
@@ -705,6 +752,16 @@ int runTest() {
     );
     const bool active = bridge.active();
     const std::size_t element_count = bridge.elementCount();
+    node.setName("Output gain field");
+    node.setFocused(true);
+    bridge.layoutChanged();
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        if (service.evidence.property_event.load(std::memory_order_acquire) &&
+            service.evidence.focus_event.load(std::memory_order_acquire) &&
+            service.evidence.bounds_event.load(std::memory_order_acquire) &&
+            service.evidence.event_count.load(std::memory_order_acquire) == 3) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
     const bool published = opened && active &&
         element_count == 1 &&
         service.evidence.embedded.load(std::memory_order_acquire) &&
@@ -723,9 +780,20 @@ int runTest() {
         service.evidence.text_set.load(std::memory_order_acquire) &&
         service.evidence.text_inserted.load(std::memory_order_acquire) &&
         service.evidence.text_deleted.load(std::memory_order_acquire) &&
-        service.evidence.cache_items.load(std::memory_order_acquire);
+        service.evidence.cache_items.load(std::memory_order_acquire) &&
+        service.evidence.property_event.load(std::memory_order_acquire) &&
+        service.evidence.focus_event.load(std::memory_order_acquire) &&
+        service.evidence.bounds_event.load(std::memory_order_acquire);
+    const auto events_before_close = service.evidence.event_count.load(
+        std::memory_order_acquire
+    );
     bridge.close();
-    const bool closed = !bridge.active() && bridge.elementCount() == 0;
+    node.setName("Detached node");
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    const bool closed = !bridge.active() && bridge.elementCount() == 0 &&
+        events_before_close == 3 &&
+        service.evidence.event_count.load(std::memory_order_acquire) ==
+            events_before_close;
     if (!published || !closed) {
         std::fprintf(
             stderr,
@@ -733,7 +801,8 @@ int runTest() {
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
             "interfaces=%d bounds=%d action-count=%d action=%d "
             "value-read=%d value-set=%d editable=%d text-set=%d insert=%d "
-            "delete=%d cache=%d closed=%d\n",
+            "delete=%d cache=%d property-event=%d focus-event=%d "
+            "bounds-event=%d closed=%d\n",
             opened,
             active,
             element_count,
@@ -754,6 +823,9 @@ int runTest() {
             service.evidence.text_inserted.load(std::memory_order_acquire),
             service.evidence.text_deleted.load(std::memory_order_acquire),
             service.evidence.cache_items.load(std::memory_order_acquire),
+            service.evidence.property_event.load(std::memory_order_acquire),
+            service.evidence.focus_event.load(std::memory_order_acquire),
+            service.evidence.bounds_event.load(std::memory_order_acquire),
             closed
         );
     }
