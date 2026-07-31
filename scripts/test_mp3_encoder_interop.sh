@@ -123,6 +123,20 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 --require-tagged-multiple-seek-points
             printf 'MP3 FFmpeg tagged multi-point seek probe passed\n'
 
+            external_id3v24="$temporary/ffmpeg-mpeg1-id3v24.mp3"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.18*sin(2*PI*330*t)|0.12*sin(2*PI*550*t):s=44100' \
+                -t 0.35 \
+                -c:a libmp3lame \
+                -q:a 4 \
+                -id3v2_version 4 \
+                -metadata title='ID3v2.4 fixture' \
+                "$external_id3v24"
+            "$decode_probe" "$external_id3v24" 44100 2 \
+                --require-id3v2.4
+            printf 'MP3 FFmpeg ID3v2.4 decoder probe passed\n'
+
             external_mpeg2="$temporary/ffmpeg-mpeg2-mono.mp3"
             ffmpeg -v error -y \
                 -f lavfi \

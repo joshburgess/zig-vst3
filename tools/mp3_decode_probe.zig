@@ -6,16 +6,20 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(allocator);
     if (args.len != 2 and args.len != 4 and args.len != 5)
         return error.InvalidArguments;
-    const require_multiple_seek_points = args.len == 5;
-    if (require_multiple_seek_points and
-        !std.mem.eql(
-            u8,
-            args[4],
-            "--require-tagged-multiple-seek-points",
-        ))
-    {
+    const requirement: Requirement = if (args.len != 5)
+        .none
+    else if (std.mem.eql(
+        u8,
+        args[4],
+        "--require-tagged-multiple-seek-points",
+    ))
+        .tagged_multiple_seek_points
+    else if (std.mem.eql(u8, args[4], "--require-id3v2.4"))
+        .id3v2_4
+    else
         return error.InvalidArguments;
-    }
+    const require_multiple_seek_points =
+        requirement == .tagged_multiple_seek_points;
 
     const encoded = try std.Io.Dir.cwd().readFileAlloc(
         init.io,
@@ -23,14 +27,20 @@ pub fn main(init: std.process.Init) !void {
         allocator,
         .limited(16 * 1024 * 1024),
     );
-    if (require_multiple_seek_points and
-        (!std.mem.startsWith(u8, encoded, "ID3") or
-            encoded.len < 4 or
-            encoded[3] != 3 or
-            encoded.len < 128 or
-            !std.mem.eql(u8, encoded[encoded.len - 128 ..][0..3], "TAG")))
-    {
-        return error.MissingExpectedMp3Tags;
+    switch (requirement) {
+        .none => {},
+        .tagged_multiple_seek_points => {
+            if (!hasId3v2Version(encoded, 3) or
+                encoded.len < 128 or
+                !std.mem.eql(u8, encoded[encoded.len - 128 ..][0..3], "TAG"))
+            {
+                return error.MissingExpectedMp3Tags;
+            }
+        },
+        .id3v2_4 => {
+            if (!hasId3v2Version(encoded, 4))
+                return error.MissingExpectedMp3Tags;
+        },
     }
     const summary = try plug.dsp.Mp3Stream.summarize(encoded);
     if (args.len >= 4) {
@@ -152,6 +162,18 @@ pub fn main(init: std.process.Init) !void {
     {
         return error.InsufficientMp3PaddingCoverage;
     }
+}
+
+const Requirement = enum {
+    none,
+    tagged_multiple_seek_points,
+    id3v2_4,
+};
+
+fn hasId3v2Version(encoded: []const u8, version: u8) bool {
+    return encoded.len >= 4 and
+        std.mem.startsWith(u8, encoded, "ID3") and
+        encoded[3] == version;
 }
 
 const PcmEvidence = struct {
