@@ -326,11 +326,11 @@ pub const options_status_bad_value: OptionsStatus = 1 << 3;
 pub const OptionsInterface = extern struct {
     get: *const fn (
         instance: Handle,
-        options: [*]OptionsOption,
+        options: ?[*]OptionsOption,
     ) callconv(.c) OptionsStatus,
     set: *const fn (
         instance: Handle,
-        options: [*]const OptionsOption,
+        options: ?[*]const OptionsOption,
     ) callconv(.c) OptionsStatus,
 };
 
@@ -1959,9 +1959,11 @@ pub fn CoreAdapterWithParameters(
 
         fn getOptions(
             instance: Handle,
-            options: [*]OptionsOption,
+            raw_options: ?[*]OptionsOption,
         ) callconv(.c) OptionsStatus {
             const self = instanceFromHandle(instance) orelse
+                return options_status_unknown;
+            const options = raw_options orelse
                 return options_status_unknown;
             var status = options_status_success;
             var terminated = false;
@@ -2013,9 +2015,11 @@ pub fn CoreAdapterWithParameters(
 
         fn setOptions(
             instance: Handle,
-            options: [*]const OptionsOption,
+            raw_options: ?[*]const OptionsOption,
         ) callconv(.c) OptionsStatus {
             const self = instanceFromHandle(instance) orelse
+                return options_status_unknown;
+            const options = raw_options orelse
                 return options_status_unknown;
             var minimum: ?usize = null;
             var maximum: ?usize = null;
@@ -4887,6 +4891,14 @@ test "LV2 instantiation options constrain block length" {
         ) orelse return error.MissingOptionsInterface;
     const runtime_options: *const OptionsInterface =
         @ptrCast(@alignCast(raw_options_interface));
+    try std.testing.expectEqual(
+        options_status_unknown,
+        runtime_options.get(handle, null),
+    );
+    try std.testing.expectEqual(
+        options_status_unknown,
+        runtime_options.set(handle, null),
+    );
     const map_only_features = [_:null]?*const Feature{&map_feature};
     const default_handle = Adapter.descriptor.instantiate(
         &Adapter.descriptor,

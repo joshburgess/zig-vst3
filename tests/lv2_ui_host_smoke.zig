@@ -155,6 +155,12 @@ pub fn main(init: std.process.Init) !void {
     ) orelse return error.MissingOptionsInterface;
     const runtime_options: *const ui.OptionsInterface =
         @ptrCast(@alignCast(options_ptr));
+    if (runtime_options.get(handle, null) !=
+        ui.options_status_unknown)
+        return error.NullScaleQueryAccepted;
+    if (runtime_options.set(handle, null) !=
+        ui.options_status_unknown)
+        return error.NullScaleUpdateAccepted;
     var scale_query = [_]ui.OptionsOption{
         .{ .key = 139 },
         .{},

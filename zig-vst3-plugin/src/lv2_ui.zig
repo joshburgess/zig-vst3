@@ -62,11 +62,11 @@ pub const options_status_bad_value: OptionsStatus = 1 << 3;
 pub const OptionsInterface = extern struct {
     get: *const fn (
         instance: Handle,
-        options: [*]OptionsOption,
+        options: ?[*]OptionsOption,
     ) callconv(.c) OptionsStatus,
     set: *const fn (
         instance: Handle,
-        options: [*]const OptionsOption,
+        options: ?[*]const OptionsOption,
     ) callconv(.c) OptionsStatus,
 };
 
@@ -346,9 +346,11 @@ pub fn Adapter(
 
         fn getOptions(
             handle: Handle,
-            options: [*]OptionsOption,
+            raw_options: ?[*]OptionsOption,
         ) callconv(.c) OptionsStatus {
             const instance = instanceFromHandle(handle) orelse
+                return options_status_unknown;
+            const options = raw_options orelse
                 return options_status_unknown;
             var status = options_status_success;
             var terminated = false;
@@ -384,9 +386,11 @@ pub fn Adapter(
 
         fn setOptions(
             handle: Handle,
-            options: [*]const OptionsOption,
+            raw_options: ?[*]const OptionsOption,
         ) callconv(.c) OptionsStatus {
             const instance = instanceFromHandle(handle) orelse
+                return options_status_unknown;
+            const options = raw_options orelse
                 return options_status_unknown;
             var scale: ?f32 = null;
             var status = options_status_success;
@@ -1147,6 +1151,14 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
     ) orelse return error.MissingOptionsInterface;
     const runtime_options: *const OptionsInterface =
         @ptrCast(@alignCast(options_ptr));
+    try std.testing.expectEqual(
+        options_status_unknown,
+        runtime_options.get(handle, null),
+    );
+    try std.testing.expectEqual(
+        options_status_unknown,
+        runtime_options.set(handle, null),
+    );
     var scale_query = [_]OptionsOption{
         .{ .key = 139 },
         .{},

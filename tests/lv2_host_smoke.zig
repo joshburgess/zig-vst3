@@ -280,6 +280,12 @@ pub fn main(init: std.process.Init) !void {
     ) orelse return error.MissingOptionsInterface;
     const runtime_options: *const core.lv2.OptionsInterface =
         @ptrCast(@alignCast(raw_options));
+    if (runtime_options.get(handle, null) !=
+        core.lv2.options_status_unknown)
+        return error.NullOptionsQueryAccepted;
+    if (runtime_options.set(handle, null) !=
+        core.lv2.options_status_unknown)
+        return error.NullOptionsUpdateAccepted;
     var option_queries = [_]core.lv2.OptionsOption{
         .{ .key = 113 },
         .{ .key = 131 },
