@@ -328,6 +328,25 @@ pub fn main(init: std.process.Init) !void {
     if (runtime_options.set(handle, null) !=
         core.lv2.options_status_unknown)
         return error.NullOptionsUpdateAccepted;
+    var misaligned_option_storage: [@sizeOf(core.lv2.OptionsOption) * 2 + 1]u8 align(@alignOf(core.lv2.OptionsOption)) = undefined;
+    const misaligned_option_address =
+        @intFromPtr(&misaligned_option_storage[1]);
+    var misaligned_query: ?[*]core.lv2.OptionsOption = null;
+    @memcpy(
+        std.mem.asBytes(&misaligned_query),
+        std.mem.asBytes(&misaligned_option_address),
+    );
+    if (runtime_options.get(handle, misaligned_query) !=
+        core.lv2.options_status_unknown)
+        return error.MisalignedOptionsQueryAccepted;
+    var misaligned_update: ?[*]const core.lv2.OptionsOption = null;
+    @memcpy(
+        std.mem.asBytes(&misaligned_update),
+        std.mem.asBytes(&misaligned_option_address),
+    );
+    if (runtime_options.set(handle, misaligned_update) !=
+        core.lv2.options_status_unknown)
+        return error.MisalignedOptionsUpdateAccepted;
     var option_queries = [_]core.lv2.OptionsOption{
         .{ .key = 113 },
         .{ .key = 131 },
