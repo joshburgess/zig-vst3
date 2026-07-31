@@ -27,9 +27,11 @@ namespace ZigVstgui {
 namespace {
 
 constexpr const char* root_path = "/org/a11y/atspi/accessible/root";
+constexpr const char* cache_path = "/org/a11y/atspi/cache";
 constexpr const char* null_path = "/org/a11y/atspi/null";
 constexpr const char* accessible_interface = "org.a11y.atspi.Accessible";
 constexpr const char* application_interface = "org.a11y.atspi.Application";
+constexpr const char* cache_interface = "org.a11y.atspi.Cache";
 constexpr const char* action_interface = "org.a11y.atspi.Action";
 constexpr const char* component_interface = "org.a11y.atspi.Component";
 constexpr const char* editable_text_interface = "org.a11y.atspi.EditableText";
@@ -145,6 +147,12 @@ constexpr const char* introspection_xml = R"xml(
     <method name='DeleteText'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
     <method name='PasteText'><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
   </interface>
+  <interface name='org.a11y.atspi.Cache'>
+    <property name='version' type='u' access='read'/>
+    <method name='GetItems'><arg direction='out' type='a((so)(so)(so)iiassusau)'/></method>
+    <signal name='AddAccessible'><arg type='((so)(so)(so)iiassusau)'/></signal>
+    <signal name='RemoveAccessible'><arg type='(so)'/></signal>
+  </interface>
 </node>
 )xml";
 
@@ -207,6 +215,7 @@ public:
         Impl* owner {nullptr};
         std::size_t index {0};
         bool root {false};
+        bool cache {false};
         std::string path;
     };
 
@@ -348,6 +357,10 @@ private:
             object->owner->editableTextMethod(*object, method_name, parameters, invocation);
             return;
         }
+        if (object->cache && g_strcmp0(interface_name, cache_interface) == 0) {
+            object->owner->cacheMethod(method_name, invocation);
+            return;
+        }
         g_dbus_method_invocation_return_error_literal(
             invocation,
             G_DBUS_ERROR,
@@ -376,6 +389,8 @@ private:
         if (g_strcmp0(interface_name, component_interface) == 0)
             return object->owner->versionProperty(property_name);
         if (g_strcmp0(interface_name, editable_text_interface) == 0)
+            return object->owner->versionProperty(property_name);
+        if (object->cache && g_strcmp0(interface_name, cache_interface) == 0)
             return object->owner->versionProperty(property_name);
         if (g_strcmp0(interface_name, value_interface) == 0)
             return object->owner->valueProperty(*object, property_name);
@@ -526,6 +541,13 @@ private:
             if (current.hasInterface(AtspiInterface::editable_text) &&
                 !registerInterface(child, editable_text_interface)) return false;
         }
+        auto cache = std::make_unique<Object>();
+        cache->owner = this;
+        cache->cache = true;
+        cache->path = cache_path;
+        Object* cache_object = cache.get();
+        objects.push_back(std::move(cache));
+        if (!registerInterface(cache_object, cache_interface)) return false;
         return true;
     }
 
@@ -662,6 +684,101 @@ private:
         return g_strcmp0(property, "version") == 0
             ? g_variant_new_uint32(1)
             : nullptr;
+    }
+
+    void appendInterfaces(GVariantBuilder& builder, const Object& object) const {
+        g_variant_builder_add(&builder, "s", "Accessible");
+        g_variant_builder_add(&builder, "s", "Component");
+        if (object.root) {
+            g_variant_builder_add(&builder, "s", "Application");
+            return;
+        }
+        const auto current = snapshot(object);
+        if (current.hasInterface(AtspiInterface::action))
+            g_variant_builder_add(&builder, "s", "Action");
+        if (current.hasInterface(AtspiInterface::value))
+            g_variant_builder_add(&builder, "s", "Value");
+        if (current.hasInterface(AtspiInterface::editable_text))
+            g_variant_builder_add(&builder, "s", "EditableText");
+    }
+
+    void appendCacheItem(GVariantBuilder& builder, const Object& object) const {
+        const auto current = snapshot(object);
+        g_variant_builder_open(
+            &builder,
+            G_VARIANT_TYPE("((so)(so)(so)iiassusau)")
+        );
+        g_variant_builder_add(&builder, "(so)", bus_name.c_str(), object.path.c_str());
+        g_variant_builder_add(&builder, "(so)", bus_name.c_str(), root_path);
+        g_variant_builder_add(
+            &builder,
+            "(so)",
+            objectBus(object),
+            objectParentPath(object)
+        );
+        g_variant_builder_add(
+            &builder,
+            "i",
+            object.root ? -1 : static_cast<gint32>(object.index)
+        );
+        g_variant_builder_add(
+            &builder,
+            "i",
+            object.root ? static_cast<gint32>(entries.size()) : 0
+        );
+        g_variant_builder_open(&builder, G_VARIANT_TYPE("as"));
+        appendInterfaces(builder, object);
+        g_variant_builder_close(&builder);
+        g_variant_builder_add(
+            &builder,
+            "s",
+            object.root ? "Plugin editor" : current.name.c_str()
+        );
+        g_variant_builder_add(
+            &builder,
+            "u",
+            object.root ? 75u : static_cast<guint32>(current.role)
+        );
+        g_variant_builder_add(
+            &builder,
+            "s",
+            object.root ? "" : current.description.c_str()
+        );
+        g_variant_builder_open(&builder, G_VARIANT_TYPE("au"));
+        g_variant_builder_add(&builder, "u", current.states[0]);
+        g_variant_builder_add(&builder, "u", current.states[1]);
+        g_variant_builder_close(&builder);
+        g_variant_builder_close(&builder);
+    }
+
+    void cacheMethod(
+        const char* method,
+        GDBusMethodInvocation* invocation
+    ) const {
+        if (g_strcmp0(method, "GetItems") != 0) {
+            g_dbus_method_invocation_return_error_literal(
+                invocation,
+                G_DBUS_ERROR,
+                G_DBUS_ERROR_UNKNOWN_METHOD,
+                "Unknown accessibility cache method"
+            );
+            return;
+        }
+        GVariantBuilder builder;
+        g_variant_builder_init(
+            &builder,
+            G_VARIANT_TYPE("a((so)(so)(so)iiassusau)")
+        );
+        appendCacheItem(builder, *objects[0]);
+        for (std::size_t index = 0; index < entries.size(); ++index)
+            appendCacheItem(builder, *objects[index + 1]);
+        g_dbus_method_invocation_return_value(
+            invocation,
+            g_variant_new(
+                "(@a((so)(so)(so)iiassusau))",
+                g_variant_builder_end(&builder)
+            )
+        );
     }
 
     GVariant* actionProperty(const Object& object, const char* property) const {
@@ -927,7 +1044,7 @@ private:
             }
             const Object* match = nullptr;
             if (object.root) {
-                for (std::size_t index = objects.size(); index > 1; --index) {
+                for (std::size_t index = entries.size() + 1; index > 1; --index) {
                     const auto* candidate = objects[index - 1].get();
                     if (contains(bounds(*candidate, coordinate_type), x, y)) {
                         match = candidate;
@@ -1019,7 +1136,7 @@ private:
             GVariantBuilder builder;
             g_variant_builder_init(&builder, G_VARIANT_TYPE("a(so)"));
             if (object.root) {
-                for (std::size_t index = 1; index < objects.size(); ++index) {
+                for (std::size_t index = 1; index <= entries.size(); ++index) {
                     g_variant_builder_add(
                         &builder,
                         "(so)",
@@ -1107,19 +1224,7 @@ private:
         if (g_strcmp0(method, "GetInterfaces") == 0) {
             GVariantBuilder builder;
             g_variant_builder_init(&builder, G_VARIANT_TYPE("as"));
-            g_variant_builder_add(&builder, "s", "Accessible");
-            g_variant_builder_add(&builder, "s", "Component");
-            if (object.root) {
-                g_variant_builder_add(&builder, "s", "Application");
-            } else {
-                const auto current = snapshot(object);
-                if (current.hasInterface(AtspiInterface::action))
-                    g_variant_builder_add(&builder, "s", "Action");
-                if (current.hasInterface(AtspiInterface::value))
-                    g_variant_builder_add(&builder, "s", "Value");
-                if (current.hasInterface(AtspiInterface::editable_text))
-                    g_variant_builder_add(&builder, "s", "EditableText");
-            }
+            appendInterfaces(builder, object);
             g_dbus_method_invocation_return_value(
                 invocation,
                 g_variant_new("(@as)", g_variant_builder_end(&builder))

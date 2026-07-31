@@ -23,6 +23,8 @@ constexpr const char* registry_name = "org.a11y.atspi.Registry";
 constexpr const char* registry_path = "/org/a11y/atspi/registry";
 constexpr const char* accessible_interface = "org.a11y.atspi.Accessible";
 constexpr const char* application_interface = "org.a11y.atspi.Application";
+constexpr const char* cache_interface = "org.a11y.atspi.Cache";
+constexpr const char* cache_path = "/org/a11y/atspi/cache";
 constexpr int timeout_ms = 2000;
 
 constexpr const char* service_xml = R"xml(
@@ -58,6 +60,7 @@ struct Evidence {
     std::atomic<bool> text_set {false};
     std::atomic<bool> text_inserted {false};
     std::atomic<bool> text_deleted {false};
+    std::atomic<bool> cache_items {false};
 };
 
 bool callSucceeded(GVariant* result, GError* error) {
@@ -331,6 +334,33 @@ void inspectApplication(
         &error
     );
     callSucceeded(result, error);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        cache_path,
+        cache_interface,
+        "GetItems",
+        nullptr,
+        G_VARIANT_TYPE("(a((so)(so)(so)iiassusau))"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        GVariant* items = nullptr;
+        g_variant_get(result, "(@a((so)(so)(so)iiassusau))", &items);
+        evidence.cache_items.store(
+            g_variant_n_children(items) == 2,
+            std::memory_order_release
+        );
+        g_variant_unref(items);
+        g_variant_unref(result);
+    } else if (error) {
+        g_error_free(error);
+    }
 
     error = nullptr;
     result = g_dbus_connection_call_sync(
@@ -692,7 +722,8 @@ int runTest() {
         service.evidence.editable_interface.load(std::memory_order_acquire) &&
         service.evidence.text_set.load(std::memory_order_acquire) &&
         service.evidence.text_inserted.load(std::memory_order_acquire) &&
-        service.evidence.text_deleted.load(std::memory_order_acquire);
+        service.evidence.text_deleted.load(std::memory_order_acquire) &&
+        service.evidence.cache_items.load(std::memory_order_acquire);
     bridge.close();
     const bool closed = !bridge.active() && bridge.elementCount() == 0;
     if (!published || !closed) {
@@ -702,7 +733,7 @@ int runTest() {
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
             "interfaces=%d bounds=%d action-count=%d action=%d "
             "value-read=%d value-set=%d editable=%d text-set=%d insert=%d "
-            "delete=%d closed=%d\n",
+            "delete=%d cache=%d closed=%d\n",
             opened,
             active,
             element_count,
@@ -722,6 +753,7 @@ int runTest() {
             service.evidence.text_set.load(std::memory_order_acquire),
             service.evidence.text_inserted.load(std::memory_order_acquire),
             service.evidence.text_deleted.load(std::memory_order_acquire),
+            service.evidence.cache_items.load(std::memory_order_acquire),
             closed
         );
     }
