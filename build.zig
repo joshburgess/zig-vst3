@@ -3274,6 +3274,21 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin",
         zig_vst3_plugin,
     );
+    const vorbis_decode_probe_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tools/vorbis_decode_probe.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    vorbis_decode_probe_tests.root_module.addImport(
+        "zig-vst3-plugin",
+        zig_vst3_plugin,
+    );
+    const run_vorbis_decode_probe_tests =
+        b.addRunArtifact(vorbis_decode_probe_tests);
     const test_vorbis_interop = b.addSystemCommand(
         &.{"scripts/test_vorbis_interop.sh"},
     );
@@ -3285,6 +3300,9 @@ pub fn build(b: *std.Build) void {
     );
     vorbis_interop_test_step.dependOn(
         &test_vorbis_interop.step,
+    );
+    vorbis_interop_test_step.dependOn(
+        &run_vorbis_decode_probe_tests.step,
     );
 
     const mp3_interop_fixture = b.addExecutable(.{

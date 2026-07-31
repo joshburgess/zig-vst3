@@ -134,6 +134,18 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$decode_probe" "$external_fixture"
             printf 'Vorbis FFmpeg stereo encoder decode and seek test passed\n'
 
+            external_long_fixture="$temporary/ffmpeg-encoded-long.ogg"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.20*sin(2*PI*275*t)|0.15*sin(2*PI*715*t):s=44100' \
+                -t 2.2 \
+                -c:a libvorbis \
+                -q:a 4 \
+                "$external_long_fixture"
+            "$decode_probe" "$external_long_fixture" \
+                --require-midpoint-seek
+            printf 'Vorbis FFmpeg multi-page encoder decode and seek test passed\n'
+
             external_second_fixture="$temporary/ffmpeg-encoded-second.ogg"
             ffmpeg -v error -y \
                 -f lavfi \

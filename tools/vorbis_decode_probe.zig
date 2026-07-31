@@ -4,7 +4,18 @@ const std = @import("std");
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
     const args = try init.minimal.args.toSlice(allocator);
-    if (args.len != 2) return error.InvalidArguments;
+    if (args.len != 2 and args.len != 3)
+        return error.InvalidArguments;
+    const require_midpoint_seek = args.len == 3;
+    if (require_midpoint_seek and
+        !std.mem.eql(
+            u8,
+            args[2],
+            "--require-midpoint-seek",
+        ))
+    {
+        return error.InvalidArguments;
+    }
 
     const encoded = try std.Io.Dir.cwd().readFileAlloc(
         init.io,
@@ -79,6 +90,7 @@ pub fn main(init: std.process.Init) !void {
                 page_storage,
                 file_packet_storage,
                 first_identification_packet,
+                require_midpoint_seek,
             ),
             else => return error.UnsupportedVorbisChannelCount,
         }
@@ -98,6 +110,7 @@ pub fn main(init: std.process.Init) !void {
                 page_storage,
                 file_packet_storage,
                 first_identification_packet,
+                require_midpoint_seek,
             ),
             2 => try decodeStreams(
                 2,
@@ -111,6 +124,7 @@ pub fn main(init: std.process.Init) !void {
                 page_storage,
                 file_packet_storage,
                 first_identification_packet,
+                require_midpoint_seek,
             ),
             6 => try decodeStreams(
                 6,
@@ -124,6 +138,7 @@ pub fn main(init: std.process.Init) !void {
                 page_storage,
                 file_packet_storage,
                 first_identification_packet,
+                require_midpoint_seek,
             ),
             else => return error.UnsupportedVorbisChannelCount,
         }
@@ -144,6 +159,7 @@ fn decodeStreams(
     page_storage: []u8,
     file_packet_storage: []u8,
     first_identification_packet: plug.dsp.OggPacket,
+    require_midpoint_seek: bool,
 ) !void {
     var decoder = plug.dsp.VorbisChainedPcmStreamDecoder(
         f32,
@@ -216,6 +232,7 @@ fn decodeStreams(
         const seek_target = try logicalStreamSeekTarget(
             seek_index,
             logical_stream_index,
+            require_midpoint_seek,
         );
         var sequential_seek =
             plug.dsp.VorbisPcmSeekCursor.init(seek_target);
@@ -238,8 +255,10 @@ fn decodeStreams(
                 return error.TruncatedVorbisFloorPacket;
             if (decoded.global_pcm_start != sample_count)
                 return error.DiscontinuousVorbisPcmPosition;
-            const selected =
-                try sequential_seek.select(decoded.stream);
+            const selected = try selectSeekSuffix(
+                &sequential_seek,
+                decoded.stream,
+            );
             sequential_digest.update(
                 outputs,
                 selected.source_start,
@@ -341,6 +360,7 @@ const PcmDigest = struct {
 fn logicalStreamSeekTarget(
     seek_index: []const plug.dsp.VorbisSeekPoint,
     logical_stream_index: u32,
+    require_midpoint: bool,
 ) !i64 {
     var first_pcm_end: ?i64 = null;
     var pcm_end: ?i64 = null;
@@ -365,6 +385,8 @@ fn logicalStreamSeekTarget(
             return midpoint;
         }
     }
+    if (require_midpoint)
+        return error.VorbisMidpointSeekUnavailable;
     const first_end = first_pcm_end orelse
         return error.VorbisSeekLogicalStreamNotFound;
     if (first_end < 1) return error.VorbisStreamTooShortToSeek;
@@ -444,14 +466,7 @@ fn validateSeekParity(
         );
         if (decoded.packet.floor_truncated)
             return error.TruncatedVorbisFloorPacket;
-        if (decoded.sample_count != 0 and
-            (decoded.pcm_start == null or decoded.pcm_end == null))
-        {
-            if (cursor.reached)
-                return error.VorbisPcmSeekPositionUnavailable;
-            continue;
-        }
-        const selected = try cursor.select(decoded);
+        const selected = try selectSeekSuffix(&cursor, decoded);
         digest.update(
             outputs,
             selected.source_start,
@@ -468,12 +483,152 @@ fn validateSeekParity(
         return error.VorbisSeekPcmMismatch;
 }
 
+fn selectSeekSuffix(
+    cursor: *plug.dsp.VorbisPcmSeekCursor,
+    decoded: plug.dsp.VorbisPcmStreamResult,
+) !plug.dsp.VorbisGranuleRange {
+    if (decoded.sample_count != 0 and
+        (decoded.pcm_start == null or decoded.pcm_end == null))
+    {
+        if (cursor.reached)
+            return error.VorbisPcmSeekPositionUnavailable;
+        return .{
+            .source_start = 0,
+            .sample_count = 0,
+            .pcm_start = null,
+            .pcm_end = null,
+        };
+    }
+    return cursor.select(decoded);
+}
+
 fn requireLogicalStream(
     packet: plug.dsp.OggPacket,
     logical_stream_index: u32,
 ) !void {
     if (packet.logical_stream_index != logical_stream_index)
         return error.TruncatedVorbisLogicalStream;
+}
+
+test "Vorbis seek targets require an indexed midpoint or use a positioned tail" {
+    const fixture = struct {
+        fn point(
+            logical_stream_index: u32,
+            pcm_end: i64,
+        ) plug.dsp.VorbisSeekPoint {
+            const location = plug.dsp.VorbisPacketLocation{
+                .byte_offset = 0,
+                .serial_number = logical_stream_index + 1,
+                .sequence_number = 0,
+                .logical_stream_index = logical_stream_index,
+                .logical_packet_index = 3,
+                .completed_packets_before = 0,
+                .continued = false,
+            };
+            return .{
+                .pcm_end = pcm_end,
+                .decode = location,
+                .packet = location,
+            };
+        }
+    };
+
+    const single = [_]plug.dsp.VorbisSeekPoint{
+        fixture.point(0, 100),
+    };
+    try std.testing.expectEqual(
+        @as(i64, 99),
+        try logicalStreamSeekTarget(&single, 0, false),
+    );
+    try std.testing.expectError(
+        error.VorbisMidpointSeekUnavailable,
+        logicalStreamSeekTarget(&single, 0, true),
+    );
+
+    const multiple = [_]plug.dsp.VorbisSeekPoint{
+        fixture.point(0, 40),
+        fixture.point(0, 100),
+    };
+    try std.testing.expectEqual(
+        @as(i64, 50),
+        try logicalStreamSeekTarget(&multiple, 0, true),
+    );
+
+    const other_stream = [_]plug.dsp.VorbisSeekPoint{
+        fixture.point(0, 40),
+        fixture.point(1, 100),
+    };
+    try std.testing.expectEqual(
+        @as(i64, 99),
+        try logicalStreamSeekTarget(&other_stream, 1, false),
+    );
+    try std.testing.expectError(
+        error.VorbisStreamTooShortToSeek,
+        logicalStreamSeekTarget(
+            &.{fixture.point(0, 1)},
+            0,
+            false,
+        ),
+    );
+    try std.testing.expectError(
+        error.VorbisSeekLogicalStreamNotFound,
+        logicalStreamSeekTarget(&.{}, 0, false),
+    );
+}
+
+test "Vorbis seek selection discards only unpositioned prime output" {
+    const packet = plug.dsp.VorbisAudioPacketResult{
+        .header = .{
+            .mode_number = 0,
+            .large_block = false,
+            .previous_window_flag = null,
+            .next_window_flag = null,
+            .block_size = 64,
+            .payload_bit_offset = 1,
+        },
+        .decoded_bit_count = 0,
+        .truncated = false,
+        .floor_truncated = false,
+        .residue_truncated = false,
+    };
+    const unpositioned = plug.dsp.VorbisPcmStreamResult{
+        .packet = packet,
+        .sample_count = 4,
+        .pcm_start = null,
+        .pcm_end = null,
+    };
+    var cursor = plug.dsp.VorbisPcmSeekCursor.init(10);
+    try std.testing.expectEqualDeep(
+        plug.dsp.VorbisGranuleRange{
+            .source_start = 0,
+            .sample_count = 0,
+            .pcm_start = null,
+            .pcm_end = null,
+        },
+        try selectSeekSuffix(&cursor, unpositioned),
+    );
+    try std.testing.expect(!cursor.reached);
+
+    const positioned = plug.dsp.VorbisPcmStreamResult{
+        .packet = packet,
+        .sample_count = 4,
+        .pcm_start = 8,
+        .pcm_end = 12,
+    };
+    try std.testing.expectEqualDeep(
+        plug.dsp.VorbisGranuleRange{
+            .source_start = 2,
+            .sample_count = 2,
+            .pcm_start = 10,
+            .pcm_end = 12,
+        },
+        try selectSeekSuffix(&cursor, positioned),
+    );
+    try std.testing.expect(cursor.reached);
+    try std.testing.expectError(
+        error.VorbisPcmSeekPositionUnavailable,
+        selectSeekSuffix(&cursor, unpositioned),
+    );
 }
 
 fn parseSetup(
