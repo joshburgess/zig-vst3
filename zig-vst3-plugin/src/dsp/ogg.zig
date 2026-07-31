@@ -15881,9 +15881,9 @@ test "Vorbis setup rejects malformed structure transactionally" {
 
 test "Vorbis codewords follow entry order across mixed lengths" {
     var entries = [_]VorbisCodebookEntry{
-        .{ .length = 2 },
-        .{ .length = 1 },
-        .{ .length = 2 },
+        .{ .codeword = 0, .length = 2 },
+        .{ .codeword = 0, .length = 1 },
+        .{ .codeword = 0, .length = 2 },
     };
 
     assignVorbisCodewords(&entries);

@@ -3289,6 +3289,17 @@ pub fn build(b: *std.Build) void {
     );
     const run_vorbis_decode_probe_tests =
         b.addRunArtifact(vorbis_decode_probe_tests);
+    const vorbis_module_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/dsp/ogg.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    const run_vorbis_module_tests =
+        b.addRunArtifact(vorbis_module_tests);
     const test_vorbis_interop = b.addSystemCommand(
         &.{"scripts/test_vorbis_interop.sh"},
     );
@@ -3304,6 +3315,9 @@ pub fn build(b: *std.Build) void {
     );
     vorbis_interop_test_step.dependOn(
         &run_vorbis_decode_probe_tests.step,
+    );
+    vorbis_interop_test_step.dependOn(
+        &run_vorbis_module_tests.step,
     );
 
     const mp3_interop_fixture = b.addExecutable(.{
@@ -3488,6 +3502,7 @@ pub fn build(b: *std.Build) void {
         ).step,
     );
     test_step.dependOn(&test_vorbis_interop.step);
+    test_step.dependOn(&run_vorbis_module_tests.step);
     test_step.dependOn(
         &b.addSystemCommand(
             &.{"scripts/test_mp3_encoder_interop_runner.sh"},
