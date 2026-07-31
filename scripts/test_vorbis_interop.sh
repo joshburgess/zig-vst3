@@ -185,6 +185,28 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$decode_probe" "$external_mono_fixture"
             printf 'Vorbis FFmpeg mono encoder decode and seek test passed\n'
 
+            external_8k_fixture="$temporary/ffmpeg-encoded-8k.ogg"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.20*sin(2*PI*440*t)|0.15*sin(2*PI*660*t):s=8000' \
+                -t 0.35 \
+                -c:a libvorbis \
+                -q:a 4 \
+                "$external_8k_fixture"
+            "$decode_probe" "$external_8k_fixture"
+            printf 'Vorbis FFmpeg 8 kHz stereo geometry test passed\n'
+
+            external_16k_fixture="$temporary/ffmpeg-encoded-16k.ogg"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.25*sin(2*PI*440*t):s=16000' \
+                -t 0.35 \
+                -c:a libvorbis \
+                -q:a 4 \
+                "$external_16k_fixture"
+            "$decode_probe" "$external_16k_fixture"
+            printf 'Vorbis FFmpeg 16 kHz mono geometry test passed\n'
+
             external_surround_fixture="$temporary/ffmpeg-encoded-5.1.ogg"
             ffmpeg -v error -y \
                 -f lavfi \
