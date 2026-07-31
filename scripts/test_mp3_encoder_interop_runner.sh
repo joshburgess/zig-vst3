@@ -53,7 +53,11 @@ grep -q 'MP3 FFmpeg interoperability test passed' \
 grep -q 'MP3 project decoder probe passed' "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-1 stereo decoder probe passed' \
     "$root/passed.txt"
-grep -q 'MP3 FFmpeg decoded-PCM reference probe passed' \
+grep -q 'MP3 FFmpeg MPEG-1 decoded-PCM reference probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 FFmpeg MPEG-2 decoded-PCM reference probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 FFmpeg MPEG-2.5 decoded-PCM reference probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg tagged multi-point seek probe passed' \
     "$root/passed.txt"
@@ -71,7 +75,7 @@ grep -q 'MP3 FFmpeg format-change rejection passed' \
     printf 'MP3 runner skipped a decoder probe\n' >&2
     exit 1
 }
-[ "$(cat "$reference_probe_count")" -eq 1 ] || {
+[ "$(cat "$reference_probe_count")" -eq 3 ] || {
     printf 'MP3 runner skipped the decoded-PCM reference probe\n' >&2
     exit 1
 }

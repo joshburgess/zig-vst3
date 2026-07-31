@@ -26,6 +26,24 @@ require_probe_rejection() {
     printf '%s\n' "$success_message"
 }
 
+compare_reference_pcm() {
+    encoded_path=$1
+    channels=$2
+    reference_path=$3
+    success_message=$4
+    ffmpeg -v error -y \
+        -i "$encoded_path" \
+        -map 0:a:0 \
+        -f f32le \
+        -acodec pcm_f32le \
+        "$reference_path"
+    "$reference_probe" \
+        "$encoded_path" \
+        "$reference_path" \
+        "$channels"
+    printf '%s\n' "$success_message"
+}
+
 wav_data_range() {
     wav_path=$1
     wav_bytes=$(wc -c <"$wav_path")
@@ -109,18 +127,11 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             printf 'MP3 FFmpeg MPEG-1 stereo decoder probe passed\n'
 
             if [ -n "$reference_probe" ]; then
-                external_mpeg1_reference="$temporary/ffmpeg-mpeg1-reference.f32le"
-                ffmpeg -v error -y \
-                    -i "$external_mpeg1" \
-                    -map 0:a:0 \
-                    -f f32le \
-                    -acodec pcm_f32le \
-                    "$external_mpeg1_reference"
-                "$reference_probe" \
+                compare_reference_pcm \
                     "$external_mpeg1" \
-                    "$external_mpeg1_reference" \
-                    2
-                printf 'MP3 FFmpeg decoded-PCM reference probe passed\n'
+                    2 \
+                    "$temporary/ffmpeg-mpeg1-reference.f32le" \
+                    'MP3 FFmpeg MPEG-1 decoded-PCM reference probe passed'
             fi
 
             external_tagged_long="$temporary/ffmpeg-mpeg1-tagged-long.mp3"
@@ -164,6 +175,13 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 "$external_mpeg2"
             "$decode_probe" "$external_mpeg2" 22050 1
             printf 'MP3 FFmpeg MPEG-2 mono decoder probe passed\n'
+            if [ -n "$reference_probe" ]; then
+                compare_reference_pcm \
+                    "$external_mpeg2" \
+                    1 \
+                    "$temporary/ffmpeg-mpeg2-reference.f32le" \
+                    'MP3 FFmpeg MPEG-2 decoded-PCM reference probe passed'
+            fi
 
             external_mpeg25="$temporary/ffmpeg-mpeg25-mono.mp3"
             ffmpeg -v error -y \
@@ -176,6 +194,13 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 "$external_mpeg25"
             "$decode_probe" "$external_mpeg25" 8000 1
             printf 'MP3 FFmpeg MPEG-2.5 mono decoder probe passed\n'
+            if [ -n "$reference_probe" ]; then
+                compare_reference_pcm \
+                    "$external_mpeg25" \
+                    1 \
+                    "$temporary/ffmpeg-mpeg25-reference.f32le" \
+                    'MP3 FFmpeg MPEG-2.5 decoded-PCM reference probe passed'
+            fi
 
             external_truncated="$temporary/ffmpeg-mpeg1-truncated.mp3"
             external_bytes=$(wc -c <"$external_mpeg1")
