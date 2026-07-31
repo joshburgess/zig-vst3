@@ -64,6 +64,7 @@ jobs:
             libxcb-util-dev \
             libxcb-xkb-dev \
             libxkbcommon-x11-dev \
+            vorbis-tools \
             xauth \
             xvfb
       - name: Detect Windows SDK libraries

@@ -23,6 +23,20 @@ printf '%s\n' \
     "printf '\\001\\000\\002\\000' >\"\$output\"" \
     >"$fake_bin/ffmpeg"
 chmod +x "$fake_bin/ffprobe" "$fake_bin/ffmpeg"
+cat >"$fake_bin/oggdec" <<'EOF'
+#!/bin/sh
+output=
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "-o" ]; then
+        shift
+        output=$1
+    fi
+    shift
+done
+[ -n "$output" ]
+printf '\001\000\002\000' >"$output"
+EOF
+chmod +x "$fake_bin/oggdec"
 # shellcheck disable=SC2016
 printf '%s\n' \
     '#!/bin/sh' \
@@ -79,19 +93,21 @@ grep -q 'Vorbis project truncation rejection passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg chained truncation rejection passed' \
     "$root/ffmpeg.txt"
-grep -q 'Vorbis FFmpeg stereo decoded-PCM reference passed' \
+grep -q 'Vorbis Xiph stereo decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis Xiph multi-page decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis FFmpeg multi-page decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
-grep -q 'Vorbis FFmpeg mono decoded-PCM reference passed' \
+grep -q 'Vorbis Xiph mono decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
-grep -q 'Vorbis FFmpeg 8 kHz decoded-PCM reference passed' \
+grep -q 'Vorbis Xiph 8 kHz decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
-grep -q 'Vorbis FFmpeg 16 kHz decoded-PCM reference passed' \
+grep -q 'Vorbis Xiph 16 kHz decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
-grep -q 'Vorbis FFmpeg low-quality decoded-PCM reference passed' \
+grep -q 'Vorbis Xiph low-quality decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
-[ "$(cat "$reference_probe_count")" -eq 6 ] || {
+[ "$(cat "$reference_probe_count")" -eq 7 ] || {
     printf 'Vorbis runner skipped a decoded-PCM reference probe\n' >&2
     exit 1
 }

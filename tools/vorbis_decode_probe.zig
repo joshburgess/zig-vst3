@@ -20,11 +20,15 @@ pub fn main(init: std.process.Init) !void {
         return error.InvalidArguments;
     }
     const compare_reference = args.len == 4;
-    if (compare_reference and
-        !std.mem.eql(u8, args[2], "--reference-f32le"))
-    {
-        return error.InvalidArguments;
-    }
+    const reference_encoding: ReferenceEncoding = if (compare_reference)
+        if (std.mem.eql(u8, args[2], "--reference-f32le"))
+            .f32le
+        else if (std.mem.eql(u8, args[2], "--reference-s16le"))
+            .s16le
+        else
+            return error.InvalidArguments
+    else
+        .f32le;
 
     const encoded = try std.Io.Dir.cwd().readFileAlloc(
         init.io,
@@ -33,12 +37,15 @@ pub fn main(init: std.process.Init) !void {
         .limited(16 * 1024 * 1024),
     );
     const reference = if (compare_reference)
-        try std.Io.Dir.cwd().readFileAlloc(
-            init.io,
-            args[3],
-            allocator,
-            .limited(64 * 1024 * 1024),
-        )
+        ReferencePcm{
+            .bytes = try std.Io.Dir.cwd().readFileAlloc(
+                init.io,
+                args[3],
+                allocator,
+                .limited(64 * 1024 * 1024),
+            ),
+            .encoding = reference_encoding,
+        }
     else
         null;
     const seek_point_count =
@@ -290,7 +297,7 @@ fn decodeStreams(
     file_packet_storage: []u8,
     first_identification_packet: plug.dsp.OggPacket,
     require_midpoint_seek: bool,
-    reference: ?[]const u8,
+    reference: ?ReferencePcm,
 ) !void {
     var decoder = plug.dsp.VorbisChainedPcmStreamDecoder(
         f32,
@@ -457,8 +464,25 @@ fn decodeStreams(
     try comparison.finish();
 }
 
+const ReferenceEncoding = enum {
+    f32le,
+    s16le,
+
+    fn sampleSize(self: ReferenceEncoding) usize {
+        return switch (self) {
+            .f32le => @sizeOf(f32),
+            .s16le => @sizeOf(i16),
+        };
+    }
+};
+
+const ReferencePcm = struct {
+    bytes: []const u8,
+    encoding: ReferenceEncoding,
+};
+
 const ReferenceComparison = struct {
-    bytes: ?[]const u8,
+    reference: ?ReferencePcm,
     report: bool,
     offset: usize = 0,
     project_values: u64 = 0,
@@ -467,8 +491,11 @@ const ReferenceComparison = struct {
     error_energy: f64 = 0,
     peak_error: f64 = 0,
 
-    fn init(bytes: ?[]const u8, report: bool) ReferenceComparison {
-        return .{ .bytes = bytes, .report = report };
+    fn init(
+        reference: ?ReferencePcm,
+        report: bool,
+    ) ReferenceComparison {
+        return .{ .reference = reference, .report = report };
     }
 
     fn update(
@@ -476,7 +503,8 @@ const ReferenceComparison = struct {
         outputs: anytype,
         sample_count: usize,
     ) !void {
-        const bytes = self.bytes orelse return;
+        const reference = self.reference orelse return;
+        const sample_size = reference.encoding.sampleSize();
         for (0..sample_count) |sample_index| {
             for (outputs) |output| {
                 self.project_values = std.math.add(
@@ -484,26 +512,36 @@ const ReferenceComparison = struct {
                     self.project_values,
                     1,
                 ) catch return error.VorbisPcmReferenceSizeOverflow;
-                if (self.offset + @sizeOf(f32) > bytes.len) {
+                if (self.offset + sample_size > reference.bytes.len) {
                     continue;
                 }
-                const reference_sample: f32 = @bitCast(std.mem.readInt(
-                    u32,
-                    bytes[self.offset..][0..4],
-                    .little,
-                ));
-                self.offset += @sizeOf(f32);
+                const reference_sample = switch (reference.encoding) {
+                    .f32le => @as(f64, @floatCast(@as(f32, @bitCast(
+                        std.mem.readInt(
+                            u32,
+                            reference.bytes[self.offset..][0..4],
+                            .little,
+                        ),
+                    )))),
+                    .s16le => @as(f64, @floatFromInt(@as(i16, @bitCast(
+                        std.mem.readInt(
+                            u16,
+                            reference.bytes[self.offset..][0..2],
+                            .little,
+                        ),
+                    )))) / 32_768.0,
+                };
+                self.offset += sample_size;
                 const project_sample = output[sample_index];
                 if (!std.math.isFinite(project_sample) or
                     !std.math.isFinite(reference_sample))
                 {
                     return error.NonFiniteVorbisPcmReference;
                 }
-                const reference_value: f64 = reference_sample;
                 const difference = @as(f64, project_sample) -
-                    reference_value;
+                    reference_sample;
                 self.reference_energy +=
-                    reference_value * reference_value;
+                    reference_sample * reference_sample;
                 self.error_energy += difference * difference;
                 self.peak_error = @max(
                     self.peak_error,
@@ -519,10 +557,11 @@ const ReferenceComparison = struct {
     }
 
     fn finish(self: ReferenceComparison) !void {
-        const bytes = self.bytes orelse return;
-        if (bytes.len % @sizeOf(f32) != 0)
+        const reference = self.reference orelse return;
+        const sample_size = reference.encoding.sampleSize();
+        if (reference.bytes.len % sample_size != 0)
             return error.VorbisPcmReferenceSampleCountMismatch;
-        const reference_values = bytes.len / @sizeOf(f32);
+        const reference_values = reference.bytes.len / sample_size;
         if (self.project_values != reference_values) {
             if (self.report) {
                 std.debug.print(
@@ -569,7 +608,10 @@ test "Vorbis PCM reference comparison accepts exact interleaved samples" {
     }
     var output_storage = samples;
     const outputs = [_][]f32{&output_storage};
-    var comparison = ReferenceComparison.init(&reference, false);
+    var comparison = ReferenceComparison.init(.{
+        .bytes = &reference,
+        .encoding = .f32le,
+    }, false);
     try comparison.update(outputs, samples.len);
     try comparison.finish();
 }
@@ -585,7 +627,10 @@ test "Vorbis PCM reference comparison rejects size and finite-value mismatches" 
     );
     var two_samples = [_]f32{ 0.5, 0.5 };
     const oversized_outputs = [_][]f32{&two_samples};
-    var oversized = ReferenceComparison.init(&reference, false);
+    var oversized = ReferenceComparison.init(.{
+        .bytes = &reference,
+        .encoding = .f32le,
+    }, false);
     try oversized.update(oversized_outputs, two_samples.len);
     try std.testing.expectError(
         error.VorbisPcmReferenceSampleCountMismatch,
@@ -594,10 +639,43 @@ test "Vorbis PCM reference comparison rejects size and finite-value mismatches" 
 
     var nonfinite_sample = [_]f32{std.math.nan(f32)};
     const nonfinite_outputs = [_][]f32{&nonfinite_sample};
-    var nonfinite = ReferenceComparison.init(&reference, false);
+    var nonfinite = ReferenceComparison.init(.{
+        .bytes = &reference,
+        .encoding = .f32le,
+    }, false);
     try std.testing.expectError(
         error.NonFiniteVorbisPcmReference,
         nonfinite.update(nonfinite_outputs, 1),
+    );
+}
+
+test "Vorbis PCM reference comparison accepts signed 16-bit samples" {
+    const samples = [_]i16{ 8_192, -16_384 };
+    var reference: [samples.len * @sizeOf(i16)]u8 = undefined;
+    for (samples, 0..) |sample, index| {
+        std.mem.writeInt(
+            i16,
+            reference[index * @sizeOf(i16) ..][0..2],
+            sample,
+            .little,
+        );
+    }
+    var output_storage = [_]f32{ 0.25, -0.5 };
+    const outputs = [_][]f32{&output_storage};
+    var comparison = ReferenceComparison.init(.{
+        .bytes = &reference,
+        .encoding = .s16le,
+    }, false);
+    try comparison.update(outputs, output_storage.len);
+    try comparison.finish();
+
+    var malformed = ReferenceComparison.init(.{
+        .bytes = reference[0 .. reference.len - 1],
+        .encoding = .s16le,
+    }, false);
+    try std.testing.expectError(
+        error.VorbisPcmReferenceSampleCountMismatch,
+        malformed.finish(),
     );
 }
 
