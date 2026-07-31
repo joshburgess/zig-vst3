@@ -68,6 +68,32 @@ pub const patch_get_uri =
     "http://lv2plug.in/ns/ext/patch#Get";
 pub const patch_set_uri =
     "http://lv2plug.in/ns/ext/patch#Set";
+pub const patch_ack_uri =
+    "http://lv2plug.in/ns/ext/patch#Ack";
+pub const patch_error_uri =
+    "http://lv2plug.in/ns/ext/patch#Error";
+pub const patch_put_uri =
+    "http://lv2plug.in/ns/ext/patch#Put";
+pub const patch_insert_uri =
+    "http://lv2plug.in/ns/ext/patch#Insert";
+pub const patch_patch_uri =
+    "http://lv2plug.in/ns/ext/patch#Patch";
+pub const patch_delete_uri =
+    "http://lv2plug.in/ns/ext/patch#Delete";
+pub const patch_copy_uri =
+    "http://lv2plug.in/ns/ext/patch#Copy";
+pub const patch_move_uri =
+    "http://lv2plug.in/ns/ext/patch#Move";
+pub const patch_add_uri =
+    "http://lv2plug.in/ns/ext/patch#add";
+pub const patch_remove_uri =
+    "http://lv2plug.in/ns/ext/patch#remove";
+pub const patch_body_uri =
+    "http://lv2plug.in/ns/ext/patch#body";
+pub const patch_context_uri =
+    "http://lv2plug.in/ns/ext/patch#context";
+pub const patch_destination_uri =
+    "http://lv2plug.in/ns/ext/patch#destination";
 pub const patch_property_uri =
     "http://lv2plug.in/ns/ext/patch#property";
 pub const patch_sequence_number_uri =
@@ -228,6 +254,48 @@ pub const PatchProperty = struct {
     value_kind: PatchValueKind,
     readable: bool = false,
     writable: bool = false,
+};
+
+/// Body storage is valid only while the graph request callback is running.
+pub const PatchAtomValue = struct {
+    atom_type: Urid,
+    body: []const u8,
+};
+
+pub const maximum_patch_graph_subject_count = 16;
+
+pub const PatchGraphOperation = union(enum) {
+    put: struct {
+        subject: Urid,
+        body: PatchAtomValue,
+    },
+    insert: struct {
+        subject: Urid,
+        body: PatchAtomValue,
+    },
+    patch: struct {
+        subject: Urid,
+        add: PatchAtomValue,
+        remove: PatchAtomValue,
+    },
+    delete: struct {
+        subjects: []const Urid,
+    },
+    copy: struct {
+        subjects: []const Urid,
+        destination: Urid,
+    },
+    move: struct {
+        subject: Urid,
+        destination: Urid,
+    },
+};
+
+/// Subject and Atom body slices are valid only during the callback.
+pub const PatchGraphRequest = struct {
+    operation: PatchGraphOperation,
+    context: ?Urid = null,
+    sequence_number: ?i32 = null,
 };
 
 pub const OptionsContext = enum(c_int) {
@@ -741,6 +809,23 @@ pub fn CoreAdapterWithParameters(
     const has_readable_patch_properties = patch_access.readable;
     const has_writable_patch_properties = patch_access.writable;
     const has_patch_properties = patch_properties.len != 0;
+    const has_patch_graph_operations = if (@hasDecl(
+        Plugin,
+        "lv2_patch_graph_operations",
+    ))
+        Plugin.lv2_patch_graph_operations
+    else
+        false;
+    const declares_patch_graph_handler = @hasDecl(
+        Plugin,
+        "applyLv2PatchGraphRequest",
+    );
+    if (has_patch_graph_operations != declares_patch_graph_handler)
+        @compileError(
+            "LV2 Patch graph operations require lv2_patch_graph_operations and applyLv2PatchGraphRequest",
+        );
+    const has_patch_messages =
+        has_patch_properties or has_patch_graph_operations;
     const declares_patch_reader = @hasDecl(
         Plugin,
         "readLv2PatchProperty",
@@ -757,16 +842,18 @@ pub fn CoreAdapterWithParameters(
         @compileError(
             "Writable LV2 Patch properties require writeLv2PatchProperty",
         );
-    const patch_response_capacity = if (has_readable_patch_properties and
+    const needs_patch_responses =
+        has_readable_patch_properties or has_patch_graph_operations;
+    const patch_response_capacity = if (needs_patch_responses and
         @hasDecl(Plugin, "lv2_patch_response_capacity"))
         Plugin.lv2_patch_response_capacity
     else
         0;
-    if (has_readable_patch_properties and
+    if (needs_patch_responses and
         (patch_response_capacity < 64 or
             patch_response_capacity > 64 * 1024))
         @compileError(
-            "Readable LV2 Patch properties require a 64 byte through 64 KiB response capacity",
+            "LV2 Patch responses require a 64 byte through 64 KiB response capacity",
         );
     const declares_worker_request_size = @hasDecl(
         Plugin,
@@ -840,10 +927,10 @@ pub fn CoreAdapterWithParameters(
         main_output_channel_count + auxiliary_output_channel_count;
     const has_event_input = Spec.event_input;
     const has_event_output = Spec.event_output;
-    if (has_patch_properties and !has_event_input)
-        @compileError("LV2 Patch properties require an event input");
-    if (has_readable_patch_properties and !has_event_output)
-        @compileError("Readable LV2 Patch properties require an event output");
+    if (has_patch_messages and !has_event_input)
+        @compileError("LV2 Patch messages require an event input");
+    if (needs_patch_responses and !has_event_output)
+        @compileError("LV2 Patch responses require an event output");
     const event_port_count =
         @as(usize, @intFromBool(has_event_input)) +
         @as(usize, @intFromBool(has_event_output));
@@ -891,7 +978,7 @@ pub fn CoreAdapterWithParameters(
             requires_lv2_state_make_path;
         pub const urid_unmap_required =
             requires_lv2_urid_unmap;
-        pub const patch_enabled = has_patch_properties;
+        pub const patch_enabled = has_patch_messages;
         pub const patch_readable = has_readable_patch_properties;
         pub const patch_writable = has_writable_patch_properties;
         pub const input_channels = input_channel_count;
@@ -924,6 +1011,19 @@ pub fn CoreAdapterWithParameters(
         atom_urid_type: Urid = 0,
         patch_get_type: Urid = 0,
         patch_set_type: Urid = 0,
+        patch_ack_type: Urid = 0,
+        patch_error_type: Urid = 0,
+        patch_put_type: Urid = 0,
+        patch_insert_type: Urid = 0,
+        patch_patch_type: Urid = 0,
+        patch_delete_type: Urid = 0,
+        patch_copy_type: Urid = 0,
+        patch_move_type: Urid = 0,
+        patch_add_key: Urid = 0,
+        patch_remove_key: Urid = 0,
+        patch_body_key: Urid = 0,
+        patch_context_key: Urid = 0,
+        patch_destination_key: Urid = 0,
         patch_property_key: Urid = 0,
         patch_sequence_number_key: Urid = 0,
         patch_subject_key: Urid = 0,
@@ -1136,7 +1236,7 @@ pub fn CoreAdapterWithParameters(
                 );
                 self.atom_blank_type = map.map(map.handle, atom_blank_uri);
                 self.atom_object_type = map.map(map.handle, atom_object_uri);
-                if (comptime has_patch_properties) {
+                if (comptime has_patch_messages) {
                     self.atom_bool_type = map.map(
                         map.handle,
                         atom_bool_uri,
@@ -1164,6 +1264,58 @@ pub fn CoreAdapterWithParameters(
                     self.patch_set_type = map.map(
                         map.handle,
                         patch_set_uri,
+                    );
+                    self.patch_ack_type = map.map(
+                        map.handle,
+                        patch_ack_uri,
+                    );
+                    self.patch_error_type = map.map(
+                        map.handle,
+                        patch_error_uri,
+                    );
+                    self.patch_put_type = map.map(
+                        map.handle,
+                        patch_put_uri,
+                    );
+                    self.patch_insert_type = map.map(
+                        map.handle,
+                        patch_insert_uri,
+                    );
+                    self.patch_patch_type = map.map(
+                        map.handle,
+                        patch_patch_uri,
+                    );
+                    self.patch_delete_type = map.map(
+                        map.handle,
+                        patch_delete_uri,
+                    );
+                    self.patch_copy_type = map.map(
+                        map.handle,
+                        patch_copy_uri,
+                    );
+                    self.patch_move_type = map.map(
+                        map.handle,
+                        patch_move_uri,
+                    );
+                    self.patch_add_key = map.map(
+                        map.handle,
+                        patch_add_uri,
+                    );
+                    self.patch_remove_key = map.map(
+                        map.handle,
+                        patch_remove_uri,
+                    );
+                    self.patch_body_key = map.map(
+                        map.handle,
+                        patch_body_uri,
+                    );
+                    self.patch_context_key = map.map(
+                        map.handle,
+                        patch_context_uri,
+                    );
+                    self.patch_destination_key = map.map(
+                        map.handle,
+                        patch_destination_uri,
                     );
                     self.patch_property_key = map.map(
                         map.handle,
@@ -1245,7 +1397,7 @@ pub fn CoreAdapterWithParameters(
                     self.midi_event_type == 0 or
                     self.atom_blank_type == 0 or
                     self.atom_object_type == 0 or
-                    (has_patch_properties and
+                    (has_patch_messages and
                         (self.atom_bool_type == 0 or
                             self.atom_path_type == 0 or
                             self.atom_string_type == 0 or
@@ -1253,6 +1405,19 @@ pub fn CoreAdapterWithParameters(
                             self.atom_urid_type == 0 or
                             self.patch_get_type == 0 or
                             self.patch_set_type == 0 or
+                            self.patch_ack_type == 0 or
+                            self.patch_error_type == 0 or
+                            self.patch_put_type == 0 or
+                            self.patch_insert_type == 0 or
+                            self.patch_patch_type == 0 or
+                            self.patch_delete_type == 0 or
+                            self.patch_copy_type == 0 or
+                            self.patch_move_type == 0 or
+                            self.patch_add_key == 0 or
+                            self.patch_remove_key == 0 or
+                            self.patch_body_key == 0 or
+                            self.patch_context_key == 0 or
+                            self.patch_destination_key == 0 or
                             self.patch_property_key == 0 or
                             self.patch_sequence_number_key == 0 or
                             self.patch_subject_key == 0 or
@@ -2385,7 +2550,7 @@ pub fn CoreAdapterWithParameters(
             sample_offset: usize,
             payload: []const u8,
         ) !?TimedPatchRequest {
-            if (comptime !has_patch_properties) return null;
+            if (comptime !has_patch_messages) return null;
             if (payload.len < @sizeOf(AtomObjectBody))
                 return error.InvalidPatch;
             const object: *align(1) const AtomObjectBody =
@@ -2395,6 +2560,18 @@ pub fn CoreAdapterWithParameters(
                     .get
                 else if (object.otype == self.patch_set_type)
                     .set
+                else if (object.otype == self.patch_put_type)
+                    .put
+                else if (object.otype == self.patch_insert_type)
+                    .insert
+                else if (object.otype == self.patch_patch_type)
+                    .patch
+                else if (object.otype == self.patch_delete_type)
+                    .delete
+                else if (object.otype == self.patch_copy_type)
+                    .copy
+                else if (object.otype == self.patch_move_type)
+                    .move
                 else
                     return null;
 
@@ -2402,7 +2579,15 @@ pub fn CoreAdapterWithParameters(
             var sequence_number: ?i32 = null;
             var subject_matches = true;
             var subject: ?Urid = null;
+            var graph_subjects =
+                [_]Urid{0} ** maximum_patch_graph_subject_count;
+            var graph_subject_count: usize = 0;
+            var destination: ?Urid = null;
+            var context: ?Urid = null;
             var raw_value: ?RawPatchValue = null;
+            var body: ?RawPatchValue = null;
+            var add: ?RawPatchValue = null;
+            var remove: ?RawPatchValue = null;
             var offset: usize = @sizeOf(AtomObjectBody);
             while (offset < payload.len) {
                 if (payload.len - offset < @sizeOf(AtomPropertyBody))
@@ -2438,12 +2623,54 @@ pub fn CoreAdapterWithParameters(
                         value,
                     );
                 } else if (property.key == self.patch_subject_key) {
-                    if (subject != null) return error.InvalidPatch;
-                    subject = try self.readPatchUrid(
+                    const parsed_subject = try self.readPatchUrid(
                         property.value.type,
                         value,
                     );
-                    subject_matches = subject.? == self.patch_subject;
+                    if (kind == .get or kind == .set) {
+                        if (subject != null) return error.InvalidPatch;
+                        subject = parsed_subject;
+                        subject_matches =
+                            parsed_subject == self.patch_subject;
+                    } else {
+                        if (graph_subject_count >= graph_subjects.len)
+                            return error.InvalidPatch;
+                        graph_subjects[graph_subject_count] =
+                            parsed_subject;
+                        graph_subject_count += 1;
+                    }
+                } else if (property.key ==
+                    self.patch_destination_key)
+                {
+                    if (destination != null) return error.InvalidPatch;
+                    destination = try self.readPatchUrid(
+                        property.value.type,
+                        value,
+                    );
+                } else if (property.key == self.patch_context_key) {
+                    if (context != null) return error.InvalidPatch;
+                    context = try self.readPatchUrid(
+                        property.value.type,
+                        value,
+                    );
+                } else if (property.key == self.patch_body_key) {
+                    if (body != null) return error.InvalidPatch;
+                    body = .{
+                        .atom_type = property.value.type,
+                        .body = value,
+                    };
+                } else if (property.key == self.patch_add_key) {
+                    if (add != null) return error.InvalidPatch;
+                    add = .{
+                        .atom_type = property.value.type,
+                        .body = value,
+                    };
+                } else if (property.key == self.patch_remove_key) {
+                    if (remove != null) return error.InvalidPatch;
+                    remove = .{
+                        .atom_type = property.value.type,
+                        .body = value,
+                    };
                 } else if (property.key == self.patch_value_key) {
                     if (raw_value != null) return error.InvalidPatch;
                     raw_value = .{
@@ -2453,6 +2680,56 @@ pub fn CoreAdapterWithParameters(
                 }
                 offset += padded_size;
             }
+            if (kind != .get and kind != .set) {
+                if (comptime !has_patch_graph_operations) return null;
+                if (property_urid != null or raw_value != null)
+                    return error.InvalidPatch;
+                if (graph_subject_count == 0)
+                    return error.InvalidPatch;
+                const request = TimedPatchRequest{
+                    .sample_offset = sample_offset,
+                    .kind = kind,
+                    .sequence_number = sequence_number,
+                    .graph_subjects = graph_subjects,
+                    .graph_subject_count = graph_subject_count,
+                    .destination = destination,
+                    .context = context,
+                    .body = body,
+                    .add = add,
+                    .remove = remove,
+                };
+                switch (kind) {
+                    .put, .insert => {
+                        if (graph_subject_count != 1 or body == null or
+                            destination != null or
+                            add != null or remove != null)
+                            return error.InvalidPatch;
+                    },
+                    .patch => {
+                        if (graph_subject_count != 1 or add == null or
+                            remove == null or
+                            body != null or destination != null)
+                            return error.InvalidPatch;
+                    },
+                    .delete => {
+                        if (body != null or destination != null or
+                            add != null or remove != null)
+                            return error.InvalidPatch;
+                    },
+                    .copy, .move => {
+                        if ((kind == .move and
+                            graph_subject_count != 1) or
+                            destination == null or body != null or
+                            add != null or remove != null)
+                            return error.InvalidPatch;
+                    },
+                    .get, .set => unreachable,
+                }
+                return request;
+            }
+            if (body != null or add != null or remove != null or
+                destination != null or context != null)
+                return error.InvalidPatch;
             const property_id = property_urid orelse
                 return error.InvalidPatch;
             const property_index = self.patchPropertyIndex(property_id);
@@ -2487,6 +2764,13 @@ pub fn CoreAdapterWithParameters(
                     .sequence_number = sequence_number,
                     .subject = subject,
                 },
+                .put,
+                .insert,
+                .patch,
+                .delete,
+                .copy,
+                .move,
+                => return error.InvalidPatch,
             };
         }
 
@@ -2660,7 +2944,36 @@ pub fn CoreAdapterWithParameters(
             response_storage: *[patch_response_capacity]u8,
             response_size: *usize,
         ) !void {
-            if (comptime !has_patch_properties) return;
+            if (comptime !has_patch_messages) return;
+            if (request.kind != .get and request.kind != .set) {
+                if (comptime has_patch_graph_operations) {
+                    const graph_request = try patchGraphRequest(&request);
+                    var succeeded = true;
+                    self.runtime.instance.plugin
+                        .applyLv2PatchGraphRequest(graph_request) catch {
+                        succeeded = false;
+                    };
+                    if (request.sequence_number == null or
+                        request.sequence_number == 0)
+                        return;
+                    const payload = try self.appendPatchGraphResponse(
+                        response_storage,
+                        response_size,
+                        request.sequence_number.?,
+                        succeeded,
+                    );
+                    if (output_event_count.* >= output_events.len)
+                        return error.EventStorageFull;
+                    output_events[output_event_count.*] =
+                        process_api.Event.dataEvent(
+                            request.sample_offset,
+                            self.atom_object_type,
+                            payload,
+                        );
+                    output_event_count.* += 1;
+                }
+                return;
+            }
             const property_index = request.property_index orelse return;
             const property = patch_properties[property_index];
             switch (request.kind) {
@@ -2704,7 +3017,42 @@ pub fn CoreAdapterWithParameters(
                         output_event_count.* += 1;
                     }
                 },
+                .put, .insert, .patch, .delete, .copy, .move => unreachable,
             }
+        }
+
+        fn appendPatchGraphResponse(
+            self: *const Self,
+            storage: *[patch_response_capacity]u8,
+            used: *usize,
+            sequence_number: i32,
+            succeeded: bool,
+        ) ![]const u8 {
+            const start = alignAtomSize(used.*) orelse
+                return error.EventStorageFull;
+            if (start > storage.len or
+                @sizeOf(AtomObjectBody) > storage.len - start)
+                return error.EventStorageFull;
+            @memset(storage[used.*..start], 0);
+            const object: *align(1) AtomObjectBody =
+                @ptrCast(storage[start..].ptr);
+            object.* = .{
+                .id = 0,
+                .otype = if (succeeded)
+                    self.patch_ack_type
+                else
+                    self.patch_error_type,
+            };
+            var cursor = start + @sizeOf(AtomObjectBody);
+            try appendPatchAtomProperty(
+                storage,
+                &cursor,
+                self.patch_sequence_number_key,
+                self.atom_int_type,
+                std.mem.asBytes(&sequence_number),
+            );
+            used.* = cursor;
+            return storage[start..cursor];
         }
 
         fn appendPatchSetResponse(
@@ -3529,6 +3877,12 @@ const TimedPositionUpdate = struct {
 const PatchRequestKind = enum {
     get,
     set,
+    put,
+    insert,
+    patch,
+    delete,
+    copy,
+    move,
 };
 
 const RawPatchValue = struct {
@@ -3539,11 +3893,74 @@ const RawPatchValue = struct {
 const TimedPatchRequest = struct {
     sample_offset: usize,
     kind: PatchRequestKind,
-    property_index: ?usize,
+    property_index: ?usize = null,
     value: ?PatchValue = null,
     sequence_number: ?i32 = null,
     subject: ?Urid = null,
+    graph_subjects: [maximum_patch_graph_subject_count]Urid =
+        [_]Urid{0} ** maximum_patch_graph_subject_count,
+    graph_subject_count: usize = 0,
+    destination: ?Urid = null,
+    context: ?Urid = null,
+    body: ?RawPatchValue = null,
+    add: ?RawPatchValue = null,
+    remove: ?RawPatchValue = null,
 };
+
+fn patchGraphRequest(request: *const TimedPatchRequest) !PatchGraphRequest {
+    if (request.graph_subject_count == 0 or
+        request.graph_subject_count > request.graph_subjects.len)
+        return error.InvalidPatch;
+    const subjects =
+        request.graph_subjects[0..request.graph_subject_count];
+    const subject = subjects[0];
+    return .{
+        .operation = switch (request.kind) {
+            .put => .{ .put = .{
+                .subject = subject,
+                .body = patchAtomValue(
+                    request.body orelse return error.InvalidPatch,
+                ),
+            } },
+            .insert => .{ .insert = .{
+                .subject = subject,
+                .body = patchAtomValue(
+                    request.body orelse return error.InvalidPatch,
+                ),
+            } },
+            .patch => .{ .patch = .{
+                .subject = subject,
+                .add = patchAtomValue(
+                    request.add orelse return error.InvalidPatch,
+                ),
+                .remove = patchAtomValue(
+                    request.remove orelse return error.InvalidPatch,
+                ),
+            } },
+            .delete => .{ .delete = .{ .subjects = subjects } },
+            .copy => .{ .copy = .{
+                .subjects = subjects,
+                .destination = request.destination orelse
+                    return error.InvalidPatch,
+            } },
+            .move => .{ .move = .{
+                .subject = subject,
+                .destination = request.destination orelse
+                    return error.InvalidPatch,
+            } },
+            .get, .set => return error.InvalidPatch,
+        },
+        .context = request.context,
+        .sequence_number = request.sequence_number,
+    };
+}
+
+fn patchAtomValue(raw: RawPatchValue) PatchAtomValue {
+    return .{
+        .atom_type = raw.atom_type,
+        .body = raw.body,
+    };
+}
 
 const InputReadResult = struct {
     event_count: usize = 0,

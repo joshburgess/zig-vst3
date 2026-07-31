@@ -1039,6 +1039,7 @@ test "installed core package compiles typed LV2 Patch declarations" {
         pub const event_input = true;
         pub const event_output = true;
         pub const lv2_patch_response_capacity = 256;
+        pub const lv2_patch_graph_operations = true;
         pub const lv2_patch_properties = &[_]core.lv2.PatchProperty{
             .{
                 .uri = "https://example.test/installed-patch#mode",
@@ -1074,6 +1075,46 @@ test "installed core package compiles typed LV2 Patch declarations" {
                 .int => |item| item,
                 else => return error.InvalidPatchValue,
             };
+        }
+
+        pub fn applyLv2PatchGraphRequest(
+            _: *@This(),
+            request: core.lv2.PatchGraphRequest,
+        ) !void {
+            switch (request.operation) {
+                .put => |operation| {
+                    if (operation.subject == 0 or
+                        operation.body.atom_type == 0)
+                        return error.InvalidPatchGraphRequest;
+                },
+                .insert => |operation| {
+                    if (operation.subject == 0 or
+                        operation.body.atom_type == 0)
+                        return error.InvalidPatchGraphRequest;
+                },
+                .patch => |operation| {
+                    if (operation.subject == 0 or
+                        operation.add.atom_type == 0 or
+                        operation.remove.atom_type == 0)
+                        return error.InvalidPatchGraphRequest;
+                },
+                .delete => |operation| {
+                    if (operation.subjects.len == 0 or
+                        operation.subjects[0] == 0)
+                        return error.InvalidPatchGraphRequest;
+                },
+                .copy => |operation| {
+                    if (operation.subjects.len == 0 or
+                        operation.subjects[0] == 0 or
+                        operation.destination == 0)
+                        return error.InvalidPatchGraphRequest;
+                },
+                .move => |operation| {
+                    if (operation.subject == 0 or
+                        operation.destination == 0)
+                        return error.InvalidPatchGraphRequest;
+                },
+            }
         }
     };
     const Adapter = core.lv2.CoreAdapter(

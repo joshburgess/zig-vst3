@@ -260,7 +260,48 @@ pub fn writeLv2PatchProperty(
 }
 ```
 
-Writable properties require an event input. Readable properties also require an event output and an explicit aggregate response capacity from 64 bytes through 64 KiB. The adapter handles property-specific `patch:Set` and `patch:Get` objects. Sets take effect at their event frame before the following audio segment. Gets return a `patch:Set` at the same frame and preserve an explicit subject and sequence number. Sequence number zero suppresses the response. Supported values are Bool, Int, Long, Float, Double, String, Path, URI, and URID Atoms. String-like input borrows host storage only for the write callback, and Path values must be absolute. The adapter validates the complete input sequence before invoking a property hook, ignores unknown properties and foreign subjects, bounds response serialization, and clears connected outputs when a recognized message is malformed or a response does not fit. Generated metadata lists readable and writable properties and marks both event ports as supporting `patch:Message`. General Put, Patch, Insert, Delete, Copy, and Move requests are not part of this typed property boundary.
+Writable properties require an event input. Readable properties also require an event output and an explicit aggregate response capacity from 64 bytes through 64 KiB. The adapter handles property-specific `patch:Set` and `patch:Get` objects. Sets take effect at their event frame before the following audio segment. Gets return a `patch:Set` at the same frame and preserve an explicit subject and sequence number. Sequence number zero suppresses the response. Supported values are Bool, Int, Long, Float, Double, String, Path, URI, and URID Atoms. String-like input borrows host storage only for the write callback, and Path values must be absolute. The adapter validates the complete input sequence before invoking a property hook, ignores unknown properties and foreign subjects, bounds response serialization, and clears connected outputs when a recognized message is malformed or a response does not fit. Generated metadata lists readable and writable properties and marks both event ports as supporting `patch:Message`.
+
+Plugins that manage an application-defined resource graph can opt into the general Patch mutation messages:
+
+```zig
+pub const event_input = true;
+pub const event_output = true;
+pub const lv2_patch_response_capacity = 1024;
+pub const lv2_patch_graph_operations = true;
+
+pub fn applyLv2PatchGraphRequest(
+    self: *@This(),
+    request: plug.lv2.PatchGraphRequest,
+) !void {
+    switch (request.operation) {
+        .put => |operation| try self.replace(
+            operation.subject,
+            operation.body,
+        ),
+        .insert => |operation| try self.insert(
+            operation.subject,
+            operation.body,
+        ),
+        .patch => |operation| try self.patch(
+            operation.subject,
+            operation.add,
+            operation.remove,
+        ),
+        .delete => |operation| try self.delete(operation.subjects),
+        .copy => |operation| try self.copy(
+            operation.subjects,
+            operation.destination,
+        ),
+        .move => |operation| try self.move(
+            operation.subject,
+            operation.destination,
+        ),
+    }
+}
+```
+
+Put, Insert, Patch, and Move require one subject. Delete and Copy accept one through `maximum_patch_graph_subject_count` subjects. Body, add, and remove values preserve the host Atom type and borrow their body storage only during the callback. Context and sequence number are optional. A nonzero sequence number produces a correlated `patch:Ack` after success or `patch:Error` when the callback returns an error. Zero or omitted sequence numbers suppress responses. The adapter validates the complete object and applies graph requests at their event frame. Recognized malformed requests reject the block before a graph callback runs. Graph support is independent of typed property declarations, and graph-only metadata still marks both event ports as supporting `patch:Message`.
 
 Plugins with declared program lists expose the KXStudio LV2 Programs interface automatically. Each nonnegative `ProgramList.id` is the LV2 bank number and each program's declaration index is its program number. Enumeration uses fixed instance storage, so descriptors and names remain valid for the required lifetime. A valid selection applies the program's normalized parameter snapshot on the next run and updates connected writable control ports immediately when their storage is valid. If a port cannot be written safely, the selected value remains active until the host sends a different control value. Invalid selections are ignored, partial programs retain unspecified values, and successful state restore clears any pending program override.
 

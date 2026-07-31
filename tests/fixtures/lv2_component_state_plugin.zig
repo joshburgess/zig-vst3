@@ -26,6 +26,7 @@ const ComponentStateProbe = struct {
     pub const component_state_maximum_encoded_size = 265;
     pub const lv2_state_requires_make_path = true;
     pub const lv2_patch_response_capacity = 1024;
+    pub const lv2_patch_graph_operations = true;
     pub const lv2_patch_properties = &[_]core.lv2.PatchProperty{
         .{
             .uri = "https://zig-vst3.dev/tests/lv2-component-state#mode",
@@ -151,6 +152,63 @@ const ComponentStateProbe = struct {
             },
             else => return error.UnknownPatchProperty,
         }
+    }
+
+    pub fn applyLv2PatchGraphRequest(
+        self: *@This(),
+        request: core.lv2.PatchGraphRequest,
+    ) !void {
+        self.mode = switch (request.operation) {
+            .put => |operation| blk: {
+                if (operation.subject == 0 or
+                    request.context == null or
+                    request.sequence_number == null)
+                    return error.InvalidPatchGraphRequest;
+                break :blk try graphInt(operation.body);
+            },
+            .insert => |operation| blk: {
+                if (operation.subject == 0)
+                    return error.InvalidPatchGraphRequest;
+                break :blk try graphInt(operation.body);
+            },
+            .patch => |operation| blk: {
+                if (operation.subject == 0 or
+                    try graphInt(operation.remove) != 24)
+                    return error.InvalidPatchGraphRequest;
+                break :blk try graphInt(operation.add);
+            },
+            .delete => |operation| blk: {
+                if (operation.subjects.len != 2 or
+                    operation.subjects[0] == 0 or
+                    operation.subjects[1] == 0)
+                    return error.InvalidPatchGraphRequest;
+                break :blk 25;
+            },
+            .copy => |operation| blk: {
+                if (operation.subjects.len != 2 or
+                    operation.destination == 0)
+                    return error.InvalidPatchGraphRequest;
+                break :blk 26;
+            },
+            .move => |operation| blk: {
+                if (operation.subject == 0 or
+                    operation.destination == 0)
+                    return error.InvalidPatchGraphRequest;
+                break :blk 27;
+            },
+        };
+    }
+
+    fn graphInt(value: core.lv2.PatchAtomValue) !u32 {
+        if (value.atom_type == 0 or
+            value.body.len != @sizeOf(i32))
+            return error.InvalidPatchGraphRequest;
+        const result = @as(
+            *align(1) const i32,
+            @ptrCast(value.body.ptr),
+        ).*;
+        if (result < 0) return error.InvalidPatchGraphRequest;
+        return @intCast(result);
     }
 
     pub fn writeComponentState(

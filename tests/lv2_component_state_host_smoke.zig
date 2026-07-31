@@ -14,6 +14,19 @@ const PatchIds = struct {
     urid: core.lv2.Urid,
     get: core.lv2.Urid,
     set: core.lv2.Urid,
+    ack: core.lv2.Urid,
+    graph_error: core.lv2.Urid,
+    put: core.lv2.Urid,
+    insert: core.lv2.Urid,
+    patch: core.lv2.Urid,
+    delete: core.lv2.Urid,
+    copy: core.lv2.Urid,
+    move: core.lv2.Urid,
+    add: core.lv2.Urid,
+    remove: core.lv2.Urid,
+    body: core.lv2.Urid,
+    context: core.lv2.Urid,
+    destination: core.lv2.Urid,
     property: core.lv2.Urid,
     sequence_number: core.lv2.Urid,
     subject: core.lv2.Urid,
@@ -21,6 +34,10 @@ const PatchIds = struct {
     plugin: core.lv2.Urid,
     mode: core.lv2.Urid,
     resource: core.lv2.Urid,
+    graph_subject: core.lv2.Urid,
+    graph_subject_two: core.lv2.Urid,
+    graph_destination: core.lv2.Urid,
+    graph_context: core.lv2.Urid,
 };
 
 const PatchSequence = extern struct {
@@ -258,6 +275,108 @@ fn readPatchResponse(
             return error.InvalidPatchResponse,
         .value = value,
     };
+}
+
+const PatchGraphResponse = struct {
+    frame_offset: i64,
+    response_type: core.lv2.Urid,
+    sequence_number: i32,
+};
+
+fn readPatchGraphResponse(
+    buffer: *const PatchSequence,
+    ids: PatchIds,
+) !PatchGraphResponse {
+    if (buffer.sequence.atom.type != ids.sequence or
+        buffer.sequence.atom.size < @sizeOf(core.lv2.AtomSequenceBody) +
+            @sizeOf(core.lv2.AtomEvent) +
+            @sizeOf(core.lv2.AtomObjectBody))
+        return error.InvalidPatchGraphResponse;
+    const bytes: [*]const u8 = @ptrCast(&buffer.sequence.body);
+    const event_offset = @sizeOf(core.lv2.AtomSequenceBody);
+    const event: *const core.lv2.AtomEvent = @ptrCast(
+        @alignCast(bytes + event_offset),
+    );
+    if (event.body.type != ids.object)
+        return error.InvalidPatchGraphResponse;
+    const payload_start = event_offset + @sizeOf(core.lv2.AtomEvent);
+    const payload_size: usize = event.body.size;
+    if (payload_start + payload_size > buffer.sequence.atom.size)
+        return error.InvalidPatchGraphResponse;
+    const object: *align(1) const core.lv2.AtomObjectBody =
+        @ptrCast(bytes + payload_start);
+    if (object.otype != ids.ack and
+        object.otype != ids.graph_error)
+        return error.InvalidPatchGraphResponse;
+    var sequence_number: ?i32 = null;
+    var cursor: usize =
+        payload_start + @sizeOf(core.lv2.AtomObjectBody);
+    const payload_end = payload_start + payload_size;
+    while (cursor < payload_end) {
+        if (payload_end - cursor <
+            @sizeOf(core.lv2.AtomPropertyBody))
+            return error.InvalidPatchGraphResponse;
+        const property: *align(1) const core.lv2.AtomPropertyBody =
+            @ptrCast(bytes + cursor);
+        const raw_size = @sizeOf(core.lv2.AtomPropertyBody) +
+            property.value.size;
+        const padded_size = std.mem.alignForward(
+            usize,
+            raw_size,
+            8,
+        );
+        if (padded_size > payload_end - cursor)
+            return error.InvalidPatchGraphResponse;
+        const body = bytes[cursor +
+            @sizeOf(core.lv2.AtomPropertyBody) .. cursor + raw_size];
+        if (property.key == ids.sequence_number) {
+            if (sequence_number != null or
+                property.value.type != ids.int or
+                body.len != @sizeOf(i32))
+                return error.InvalidPatchGraphResponse;
+            sequence_number = @as(
+                *align(1) const i32,
+                @ptrCast(body.ptr),
+            ).*;
+        }
+        cursor += padded_size;
+    }
+    return .{
+        .frame_offset = event.time.frames,
+        .response_type = object.otype,
+        .sequence_number = sequence_number orelse
+            return error.InvalidPatchGraphResponse,
+    };
+}
+
+fn runPatchGraphRequest(
+    descriptor: *const core.lv2.Descriptor,
+    handle: core.lv2.Handle,
+    end_run: *const fn (
+        core.lv2.Handle,
+    ) callconv(.c) core.lv2.WorkerStatus,
+    output: *[2]f32,
+    event_output: *PatchSequence,
+    ids: PatchIds,
+    sequence_number: i32,
+    response_type: core.lv2.Urid,
+    expected_mode: u32,
+) !void {
+    event_output.resetOutput(ids);
+    descriptor.run(handle, output.len);
+    const response = try readPatchGraphResponse(event_output, ids);
+    if (response.frame_offset != 0 or
+        response.response_type != response_type or
+        response.sequence_number != sequence_number)
+        return error.InvalidPatchGraphResponse;
+    const mode: f32 = @floatFromInt(expected_mode);
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ mode + 3.375, mode + 2.25 },
+        output,
+    );
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
 }
 
 const StateHost = struct {
@@ -597,6 +716,22 @@ pub fn main(init: std.process.Init) !void {
         .urid = StateHost.map(null, core.lv2.atom_urid_uri),
         .get = StateHost.map(null, core.lv2.patch_get_uri),
         .set = StateHost.map(null, core.lv2.patch_set_uri),
+        .ack = StateHost.map(null, core.lv2.patch_ack_uri),
+        .graph_error = StateHost.map(null, core.lv2.patch_error_uri),
+        .put = StateHost.map(null, core.lv2.patch_put_uri),
+        .insert = StateHost.map(null, core.lv2.patch_insert_uri),
+        .patch = StateHost.map(null, core.lv2.patch_patch_uri),
+        .delete = StateHost.map(null, core.lv2.patch_delete_uri),
+        .copy = StateHost.map(null, core.lv2.patch_copy_uri),
+        .move = StateHost.map(null, core.lv2.patch_move_uri),
+        .add = StateHost.map(null, core.lv2.patch_add_uri),
+        .remove = StateHost.map(null, core.lv2.patch_remove_uri),
+        .body = StateHost.map(null, core.lv2.patch_body_uri),
+        .context = StateHost.map(null, core.lv2.patch_context_uri),
+        .destination = StateHost.map(
+            null,
+            core.lv2.patch_destination_uri,
+        ),
         .property = StateHost.map(null, core.lv2.patch_property_uri),
         .sequence_number = StateHost.map(
             null,
@@ -615,6 +750,22 @@ pub fn main(init: std.process.Init) !void {
         .resource = StateHost.map(
             null,
             "https://zig-vst3.dev/tests/lv2-component-state#resource",
+        ),
+        .graph_subject = StateHost.map(
+            null,
+            "https://zig-vst3.dev/tests/lv2-component-state#graph-a",
+        ),
+        .graph_subject_two = StateHost.map(
+            null,
+            "https://zig-vst3.dev/tests/lv2-component-state#graph-b",
+        ),
+        .graph_destination = StateHost.map(
+            null,
+            "https://zig-vst3.dev/tests/lv2-component-state#graph-dest",
+        ),
+        .graph_context = StateHost.map(
+            null,
+            "https://zig-vst3.dev/tests/lv2-component-state#graph-context",
         ),
     };
     var map_feature = core.lv2.Feature{
@@ -794,6 +945,353 @@ pub fn main(init: std.process.Init) !void {
     if (event_output.sequence.atom.size !=
         @sizeOf(core.lv2.AtomSequenceBody))
         return error.UnexpectedPatchSetResponse;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    var graph_sequence: i32 = 101;
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.put,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    const put_mode: i32 = 21;
+    try patch.append(
+        patch_ids.body,
+        patch_ids.int,
+        std.mem.asBytes(&put_mode),
+    );
+    try patch.append(
+        patch_ids.context,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_context),
+    );
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&graph_sequence),
+    );
+    try runPatchGraphRequest(
+        descriptor,
+        handle,
+        end_run,
+        &output,
+        &event_output,
+        patch_ids,
+        graph_sequence,
+        patch_ids.ack,
+        21,
+    );
+
+    graph_sequence += 1;
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.insert,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    const insert_mode: i32 = 22;
+    try patch.append(
+        patch_ids.body,
+        patch_ids.int,
+        std.mem.asBytes(&insert_mode),
+    );
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&graph_sequence),
+    );
+    try runPatchGraphRequest(
+        descriptor,
+        handle,
+        end_run,
+        &output,
+        &event_output,
+        patch_ids,
+        graph_sequence,
+        patch_ids.ack,
+        22,
+    );
+
+    graph_sequence += 1;
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.patch,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    const add_mode: i32 = 23;
+    const remove_mode: i32 = 24;
+    try patch.append(
+        patch_ids.add,
+        patch_ids.int,
+        std.mem.asBytes(&add_mode),
+    );
+    try patch.append(
+        patch_ids.remove,
+        patch_ids.int,
+        std.mem.asBytes(&remove_mode),
+    );
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&graph_sequence),
+    );
+    try runPatchGraphRequest(
+        descriptor,
+        handle,
+        end_run,
+        &output,
+        &event_output,
+        patch_ids,
+        graph_sequence,
+        patch_ids.ack,
+        23,
+    );
+
+    graph_sequence += 1;
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.delete,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject_two),
+    );
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&graph_sequence),
+    );
+    try runPatchGraphRequest(
+        descriptor,
+        handle,
+        end_run,
+        &output,
+        &event_output,
+        patch_ids,
+        graph_sequence,
+        patch_ids.ack,
+        25,
+    );
+
+    graph_sequence += 1;
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.copy,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject_two),
+    );
+    try patch.append(
+        patch_ids.destination,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_destination),
+    );
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&graph_sequence),
+    );
+    try runPatchGraphRequest(
+        descriptor,
+        handle,
+        end_run,
+        &output,
+        &event_output,
+        patch_ids,
+        graph_sequence,
+        patch_ids.ack,
+        26,
+    );
+
+    graph_sequence += 1;
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.move,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    try patch.append(
+        patch_ids.destination,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_destination),
+    );
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&graph_sequence),
+    );
+    try runPatchGraphRequest(
+        descriptor,
+        handle,
+        end_run,
+        &output,
+        &event_output,
+        patch_ids,
+        graph_sequence,
+        patch_ids.ack,
+        27,
+    );
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.insert,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    const uncorrelated_mode: i32 = 28;
+    try patch.append(
+        patch_ids.body,
+        patch_ids.int,
+        std.mem.asBytes(&uncorrelated_mode),
+    );
+    const zero_sequence: i32 = 0;
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&zero_sequence),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 31.375, 30.25 },
+        &output,
+    );
+    if (event_output.sequence.atom.size !=
+        @sizeOf(core.lv2.AtomSequenceBody))
+        return error.ZeroSequenceProducedPatchGraphResponse;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    graph_sequence += 1;
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.put,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    const invalid_mode: i32 = -1;
+    try patch.append(
+        patch_ids.body,
+        patch_ids.int,
+        std.mem.asBytes(&invalid_mode),
+    );
+    try patch.append(
+        patch_ids.context,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_context),
+    );
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&graph_sequence),
+    );
+    try runPatchGraphRequest(
+        descriptor,
+        handle,
+        end_run,
+        &output,
+        &event_output,
+        patch_ids,
+        graph_sequence,
+        patch_ids.graph_error,
+        28,
+    );
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.put,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0.0} ** input.len),
+        &output,
+    );
+    if (event_output.sequence.atom.size !=
+        @sizeOf(core.lv2.AtomSequenceBody))
+        return error.MalformedPatchGraphProducedOutput;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.set,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.mode),
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.plugin),
+    );
+    try patch.append(
+        patch_ids.value,
+        patch_ids.int,
+        std.mem.asBytes(&next_mode),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
     if (end_run(handle) != .success)
         return error.WorkerEndRunFailed;
 

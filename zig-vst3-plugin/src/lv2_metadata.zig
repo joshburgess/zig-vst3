@@ -517,7 +517,7 @@ pub fn Generator(
                     }
                 }
             }
-            if (has_patch) {
+            if (comptime has_readable_patch or has_writable_patch) {
                 inline for (Plugin.lv2_patch_properties, 0..) |property, index| {
                     if (!validUri(property.uri))
                         return error.InvalidLv2MetadataUri;
@@ -1112,6 +1112,59 @@ fn validSymbol(value: []const u8) bool {
             return false;
     }
     return true;
+}
+
+test "LV2 metadata publishes graph-only Patch event support" {
+    const Probe = struct {
+        pub const name = "Graph Patch Metadata Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout = .mono;
+        pub const audio_output_layout: plugin_api.AudioBusLayout = .mono;
+        pub const event_input = true;
+        pub const event_output = true;
+        pub const Params = struct {};
+
+        pub fn process(
+            _: *@This(),
+            _: *process_api.ProcessContext(f32),
+        ) void {}
+    };
+    const Adapter = struct {
+        pub const input_channels = 1;
+        pub const output_channels = 1;
+        pub const audio_output_port_start = 1;
+        pub const event_input_port: ?usize = 2;
+        pub const event_output_port: ?usize = 3;
+        pub const control_input_port_start = 4;
+        pub const freewheeling_input_port: ?usize = null;
+        pub const latency_output_port = 4;
+        pub const worker_enabled = false;
+        pub const programs_enabled = false;
+        pub const portable_state_paths_enabled = false;
+        pub const state_make_path_required = false;
+        pub const patch_enabled = true;
+        pub const patch_readable = false;
+        pub const patch_writable = false;
+    };
+    const Generated = Generator(
+        Probe,
+        Adapter,
+        "https://example.test/graph-patch-metadata",
+        .{},
+    );
+    var bytes: [4096]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try Generated.writePlugin(&writer, .{});
+    const output = writer.buffered();
+    try std.testing.expect(
+        std.mem.count(u8, output, "patch:Message") == 2,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, output, "patch:readable") == null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, output, "patch:writable") == null,
+    );
 }
 
 fn validSlug(value: []const u8) bool {
