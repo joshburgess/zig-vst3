@@ -144,6 +144,7 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                     -c:a libshine \
                     -b:a 128k \
                     -id3v2_version 0 \
+                    -write_xing 0 \
                     "$external_shine"
                 "$decode_probe" "$external_shine" 44100 2
                 printf 'MP3 Shine MPEG-1 stereo decoder probe passed\n'

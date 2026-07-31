@@ -3794,8 +3794,7 @@ fn encodeXingFrameFields(
 ) ![]u8 {
     const frame_bytes = header.frameBytes();
     const side_offset: usize = if (header.crc_present) 6 else 4;
-    const metadata_offset =
-        side_offset + header.sideInformationBytes();
+    const metadata_offset = 4 + header.sideInformationBytes();
     const optional_bytes: usize =
         @as(usize, @intFromBool(metadata.toc != null)) * 100 +
         @as(usize, @intFromBool(metadata.quality != null)) * 4;
@@ -9416,9 +9415,7 @@ pub fn buildFileSeekIndex(
 }
 
 fn parseXing(frame: []const u8, header: Header) !?Xing {
-    const offset: usize =
-        4 + @as(usize, if (header.crc_present) 2 else 0) +
-        header.sideInformationBytes();
+    const offset: usize = 4 + header.sideInformationBytes();
     if (frame.len < offset + 4) return null;
     const marker = frame[offset .. offset + 4];
     const kind: XingKind = if (std.mem.eql(u8, marker, "Xing"))
@@ -14263,7 +14260,7 @@ test "parses bounded Xing fields and LAME delay metadata" {
     var storage: [500]u8 = undefined;
     const header_bytes = testHeader(3, false, 9, 0, false, .stereo);
     const end = try appendFrame(&storage, 0, header_bytes);
-    const offset = 6 + 32;
+    const offset = 4 + 32;
     @memcpy(storage[offset..][0..4], "Xing");
     storage[offset + 7] = 0xf;
     storage[offset + 8 ..][0..4].* = .{ 0, 0, 0, 10 };
