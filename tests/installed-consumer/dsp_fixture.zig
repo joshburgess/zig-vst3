@@ -3837,7 +3837,7 @@ test "installed package exposes bounded MP3 framing and seeking" {
         metadata_summary.first_xing.?.frame_count,
     );
     try std.testing.expectEqual(
-        @as(?u12, @intCast(file_encoder_summary.encoder_delay)),
+        @as(?u12, 1057),
         metadata_summary.first_xing.?.encoder_delay,
     );
     var tagged_file = try mp3_temporary.dir.createFile(

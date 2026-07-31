@@ -2071,7 +2071,10 @@ pub const VbrPcmStreamEncoder = struct {
                 .stream_bytes = @intCast(stream_summary.byte_count),
                 .toc = toc,
                 .quality = quality,
-                .encoder_delay = @intCast(stream_summary.encoder_delay),
+                .encoder_delay = try storedXingEncoderDelay(
+                    try metadata_config.header(false),
+                    stream_summary.encoder_delay,
+                ),
                 .encoder_padding = @intCast(stream_summary.end_padding),
             },
             destination,
@@ -3476,17 +3479,27 @@ pub fn encodeInfoFrame(
         return error.Mp3EncoderMetadataFrameCountOverflow;
     if (summary.byte_count > std.math.maxInt(u32))
         return error.Mp3EncoderMetadataByteCountOverflow;
-    if (summary.encoder_delay > std.math.maxInt(u12) or
-        summary.end_padding > std.math.maxInt(u12))
+    if (summary.end_padding > std.math.maxInt(u12))
         return error.Mp3EncoderMetadataGaplessOverflow;
+    const header = try config.header(false);
     return encodeInfoFrameFields(
-        try config.header(false),
+        header,
         @intCast(summary.frame_count),
         @intCast(summary.byte_count),
-        @intCast(summary.encoder_delay),
+        try storedXingEncoderDelay(header, summary.encoder_delay),
         @intCast(summary.end_padding),
         destination,
     );
+}
+
+fn storedXingEncoderDelay(header: Header, total_delay: u16) !u12 {
+    const metadata_samples = header.samplesPerFrame();
+    if (total_delay < metadata_samples)
+        return error.Mp3EncoderMetadataDelayUnderflow;
+    const stored = total_delay - metadata_samples;
+    if (stored > std.math.maxInt(u12))
+        return error.Mp3EncoderMetadataGaplessOverflow;
+    return @intCast(stored);
 }
 
 pub const XingEncoderMetadata = struct {
@@ -6205,7 +6218,13 @@ pub const GaplessPlan = struct {
                 (xing.encoder_padding == null))
                 return error.InvalidMp3GaplessMetadata;
             if (xing.encoder_delay) |delay| {
-                leading = delay;
+                const metadata_samples: u32 =
+                    if (summary.sample_rate >= 32_000) 1152 else 576;
+                leading = std.math.add(
+                    u32,
+                    delay,
+                    metadata_samples,
+                ) catch return error.InvalidMp3GaplessMetadata;
                 trailing = xing.encoder_padding orelse
                     return error.InvalidMp3GaplessMetadata;
             }
@@ -13882,7 +13901,7 @@ test "trims MP3 decoder frames with gapless metadata" {
     };
     const plan = try GaplessPlan.fromSummary(summary);
     try std.testing.expectEqual(@as(u64, 3456), plan.encoded_samples);
-    try std.testing.expectEqual(@as(u64, 3156), plan.audible_samples);
+    try std.testing.expectEqual(@as(u64, 2004), plan.audible_samples);
 
     var encoded: [500]u8 = undefined;
     const frame_end = try appendFrame(
@@ -13898,12 +13917,12 @@ test "trims MP3 decoder frames with gapless metadata" {
     );
     const first = try decoder.decode(frame);
     try std.testing.expectEqual(
-        PcmRange{ .start = 100, .length = 1052 },
+        PcmRange{ .start = 1152, .length = 0 },
         first.audible,
     );
     const second = try decoder.decode(frame);
     try std.testing.expectEqual(
-        PcmRange{ .start = 0, .length = 1152 },
+        PcmRange{ .start = 100, .length = 1052 },
         second.audible,
     );
     const third = try decoder.decode(frame);
@@ -16040,7 +16059,7 @@ test "finishes MP3 VBR streams with Xing metadata" {
     );
     try std.testing.expectEqual(@as(?u32, 37), xing.quality);
     try std.testing.expectEqual(
-        @as(?u12, 2209),
+        @as(?u12, 1057),
         xing.encoder_delay,
     );
     try std.testing.expectEqual(
@@ -17249,7 +17268,8 @@ test "writes and recovers MP3 reservoir files" {
         parsed_metadata.first_xing.?.frame_count,
     );
     try std.testing.expectEqual(
-        @as(?u12, @intCast(
+        @as(?u12, try storedXingEncoderDelay(
+            try config.header(false),
             metadata_summary.stream.encoder_delay,
         )),
         parsed_metadata.first_xing.?.encoder_delay,
@@ -17552,7 +17572,10 @@ test "emits exact gapless MP3 stream metadata" {
         xing.stream_bytes,
     );
     try std.testing.expectEqual(
-        @as(?u12, @intCast(finished.summary.encoder_delay)),
+        @as(?u12, try storedXingEncoderDelay(
+            try config.header(false),
+            finished.summary.encoder_delay,
+        )),
         xing.encoder_delay,
     );
     try std.testing.expectEqual(
@@ -17597,6 +17620,26 @@ test "emits exact gapless MP3 stream metadata" {
         @as(u8, 0x5a),
         retained[0],
     );
+    const valid_counts = EncoderStreamSummary{
+        .frame_count = 1,
+        .input_samples = 0,
+        .encoded_samples = samples_per_frame,
+        .byte_count = 0,
+        .encoder_delay = samples_per_frame - 1,
+        .end_padding = 0,
+    };
+    try std.testing.expectError(
+        error.Mp3EncoderMetadataDelayUnderflow,
+        encodeInfoFrame(config, valid_counts, &retained),
+    );
+    var oversized_delay = valid_counts;
+    oversized_delay.encoder_delay =
+        samples_per_frame + std.math.maxInt(u12) + 1;
+    try std.testing.expectError(
+        error.Mp3EncoderMetadataGaplessOverflow,
+        encodeInfoFrame(config, oversized_delay, &retained),
+    );
+    try std.testing.expectEqual(@as(u8, 0x5a), retained[0]);
 }
 
 test "writes and recovers transactional MP3 PCM files" {
@@ -17649,12 +17692,16 @@ test "writes and recovers transactional MP3 PCM files" {
         file_summary.first_xing.?.frame_count,
     );
     try std.testing.expectEqual(
-        @as(?u12, @intCast(summary.encoder_delay)),
+        @as(?u12, try storedXingEncoderDelay(
+            try config.header(false),
+            summary.encoder_delay,
+        )),
         file_summary.first_xing.?.encoder_delay,
     );
     try std.testing.expectEqual(
         summary.input_samples,
         file_summary.sample_count -
+            (try config.header(false)).samplesPerFrame() -
             file_summary.first_xing.?.encoder_delay.? -
             file_summary.first_xing.?.encoder_padding.?,
     );
