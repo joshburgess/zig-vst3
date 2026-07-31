@@ -53,6 +53,11 @@ wav_data_range() {
     return 1
 }
 
+if [ -n "$decode_probe" ]; then
+    "$decode_probe" "$fixture"
+    printf 'Vorbis project decoder probe passed\n'
+fi
+
 if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
     command -v ffmpeg >/dev/null 2>&1; then
     ffmpeg_decoded="$temporary/ffmpeg-decoded.pcm"
@@ -80,7 +85,29 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             -q:a 4 \
             "$external_fixture"; then
             "$decode_probe" "$external_fixture"
-            printf 'Vorbis FFmpeg encoder interoperability test passed\n'
+            printf 'Vorbis FFmpeg stereo encoder interoperability test passed\n'
+
+            external_mono_fixture="$temporary/ffmpeg-encoded-mono.ogg"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.25*sin(2*PI*440*t):s=44100' \
+                -t 0.12 \
+                -c:a libvorbis \
+                -q:a 4 \
+                "$external_mono_fixture"
+            "$decode_probe" "$external_mono_fixture"
+            printf 'Vorbis FFmpeg mono encoder interoperability test passed\n'
+
+            external_surround_fixture="$temporary/ffmpeg-encoded-5.1.ogg"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.20*sin(2*PI*220*t)|0.18*sin(2*PI*330*t)|0.16*sin(2*PI*440*t)|0.14*sin(2*PI*110*t)|0.12*sin(2*PI*550*t)|0.10*sin(2*PI*660*t):s=44100:c=5.1' \
+                -t 0.12 \
+                -c:a libvorbis \
+                -q:a 4 \
+                "$external_surround_fixture"
+            "$decode_probe" "$external_surround_fixture"
+            printf 'Vorbis FFmpeg 5.1 encoder interoperability test passed\n'
             tested=1
         else
             printf 'Vorbis FFmpeg encoder unavailable; test skipped\n'

@@ -22,6 +22,7 @@ printf '%s\n' \
     "printf '\\001\\000\\002\\000' >\"\$output\"" \
     >"$fake_bin/ffmpeg"
 chmod +x "$fake_bin/ffprobe" "$fake_bin/ffmpeg"
+# shellcheck disable=SC2016
 printf '%s\n' \
     '#!/bin/sh' \
     'test -s "$1"' \
@@ -32,21 +33,53 @@ PATH="$fake_bin:$PATH" \
     VORBIS_INTEROP_ONLY_FFMPEG=1 \
     scripts/test_vorbis_interop.sh "$fixture" "$fake_bin/decode-probe" \
     >"$root/ffmpeg.txt"
-grep -q 'Vorbis FFmpeg encoder interoperability test passed' \
+grep -q 'Vorbis FFmpeg stereo encoder interoperability test passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg mono encoder interoperability test passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis FFmpeg 5.1 encoder interoperability test passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis project decoder probe passed' \
     "$root/ffmpeg.txt"
 
-printf '%s\n' \
-    '#!/bin/sh' \
-    'exit 1' \
-    >"$fake_bin/decode-probe"
-chmod +x "$fake_bin/decode-probe"
-if PATH="$fake_bin:$PATH" \
-    VORBIS_INTEROP_ONLY_FFMPEG=1 \
-    scripts/test_vorbis_interop.sh "$fixture" "$fake_bin/decode-probe" \
-    >/dev/null 2>&1; then
-    printf 'Vorbis runner accepted an external decode failure\n' >&2
-    exit 1
-fi
+probe_count="$root/probe-count"
+expect_probe_failure() {
+    failure_call=$1
+    failure_message=$2
+    rm -f "$probe_count"
+    # shellcheck disable=SC2016
+    printf '%s\n' \
+        '#!/bin/sh' \
+        'count_file="${TMPDIR:-/tmp}/probe-count"' \
+        'count=0' \
+        '[ ! -f "$count_file" ] || count=$(cat "$count_file")' \
+        'count=$((count + 1))' \
+        'printf "%s\n" "$count" >"$count_file"' \
+        "[ \"\$count\" -lt \"$failure_call\" ]" \
+        >"$fake_bin/decode-probe"
+    chmod +x "$fake_bin/decode-probe"
+    if PATH="$fake_bin:$PATH" \
+        TMPDIR="$root" \
+        VORBIS_INTEROP_ONLY_FFMPEG=1 \
+        scripts/test_vorbis_interop.sh \
+        "$fixture" \
+        "$fake_bin/decode-probe" \
+        >/dev/null 2>&1; then
+        printf '%s\n' "$failure_message" >&2
+        exit 1
+    fi
+}
+
+expect_probe_failure \
+    2 \
+    'Vorbis runner accepted a stereo decode failure'
+expect_probe_failure \
+    3 \
+    'Vorbis runner accepted a mono decode failure'
+expect_probe_failure \
+    4 \
+    'Vorbis runner accepted a 5.1 decode failure'
+rm -f "$probe_count"
 
 printf '%s\n' \
     '#!/bin/sh' \

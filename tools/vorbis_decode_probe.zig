@@ -1,10 +1,6 @@
 const plug = @import("zig-vst3-plugin");
 const std = @import("std");
 
-const channel_count = 2;
-const small_block_size = 256;
-const large_block_size = 2_048;
-
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
     const args = try init.minimal.args.toSlice(allocator);
@@ -27,11 +23,6 @@ pub fn main(init: std.process.Init) !void {
     const identification = try plug.dsp.VorbisIdentification.parse(
         identification_packet.bytes,
     );
-    if (identification.channel_count != channel_count or
-        identification.small_block_size != small_block_size or
-        identification.large_block_size != large_block_size)
-        return error.UnexpectedVorbisGeometry;
-
     const comment_packet =
         try packets.next() orelse return error.MissingComments;
     var comments = try plug.dsp.VorbisCommentIterator.init(
@@ -96,6 +87,63 @@ pub fn main(init: std.process.Init) !void {
         },
     );
 
+    if (identification.small_block_size == 64 and
+        identification.large_block_size == 64)
+    {
+        switch (identification.channel_count) {
+            1 => try decodePackets(
+                1,
+                64,
+                64,
+                &packets,
+                identification,
+                setup,
+            ),
+            else => return error.UnsupportedVorbisChannelCount,
+        }
+    } else if (identification.small_block_size == 256 and
+        identification.large_block_size == 2_048)
+    {
+        switch (identification.channel_count) {
+            1 => try decodePackets(
+                1,
+                256,
+                2_048,
+                &packets,
+                identification,
+                setup,
+            ),
+            2 => try decodePackets(
+                2,
+                256,
+                2_048,
+                &packets,
+                identification,
+                setup,
+            ),
+            6 => try decodePackets(
+                6,
+                256,
+                2_048,
+                &packets,
+                identification,
+                setup,
+            ),
+            else => return error.UnsupportedVorbisChannelCount,
+        }
+    } else {
+        return error.UnexpectedVorbisGeometry;
+    }
+}
+
+fn decodePackets(
+    comptime channel_count: usize,
+    comptime small_block_size: usize,
+    comptime large_block_size: usize,
+    packets: *plug.dsp.OggPacketIterator,
+    identification: plug.dsp.VorbisIdentification,
+    setup: plug.dsp.VorbisSetup,
+) !void {
     var decoder = plug.dsp.VorbisPcmStreamDecoder(
         f32,
         channel_count,
@@ -109,9 +157,10 @@ pub fn main(init: std.process.Init) !void {
     var classifications: [large_block_size * channel_count]u8 =
         undefined;
     var windowed: [channel_count * large_block_size]f32 = undefined;
-    var left: [large_block_size]f32 = undefined;
-    var right: [large_block_size]f32 = undefined;
-    const outputs = [_][]f32{ &left, &right };
+    var output_storage: [channel_count][large_block_size]f32 = undefined;
+    var outputs: [channel_count][]f32 = undefined;
+    for (&outputs, &output_storage) |*output, *storage|
+        output.* = storage;
     const scratch = plug.dsp.VorbisPcmStreamScratch(f32){
         .packet = .{
             .spectra = &spectra,
@@ -138,10 +187,10 @@ pub fn main(init: std.process.Init) !void {
             return error.TruncatedVorbisAudioPacket;
         audio_packets += 1;
         sample_count += decoded.sample_count;
-        for (left[0..decoded.sample_count]) |sample|
-            energy += @as(f64, sample) * sample;
-        for (right[0..decoded.sample_count]) |sample|
-            energy += @as(f64, sample) * sample;
+        for (outputs) |output| {
+            for (output[0..decoded.sample_count]) |sample|
+                energy += @as(f64, sample) * sample;
+        }
     }
     if (!decoder.ended) return error.MissingVorbisEndOfStream;
     if (audio_packets == 0 or sample_count == 0)
