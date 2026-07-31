@@ -20,6 +20,8 @@ pub fn main(init: std.process.Init) !void {
         .protected
     else if (std.mem.eql(u8, args[4], "--require-free-format"))
         .free_format
+    else if (std.mem.eql(u8, args[4], "--require-junk-resync"))
+        .junk_resync
     else
         return error.InvalidArguments;
     const require_multiple_seek_points =
@@ -45,9 +47,13 @@ pub fn main(init: std.process.Init) !void {
             if (!hasId3v2Version(encoded, 4))
                 return error.MissingExpectedMp3Tags;
         },
-        .protected, .free_format => {},
+        .protected, .free_format, .junk_resync => {},
     }
     const summary = try plug.dsp.Mp3Stream.summarize(encoded);
+    if (requirement == .junk_resync) {
+        try verifyJunkResynchronization(encoded, summary, allocator);
+        return;
+    }
     if (requirement == .protected) {
         const first_frame = try plug.dsp.Mp3Frame.parse(
             encoded,
@@ -194,6 +200,7 @@ const Requirement = enum {
     id3v2_4,
     protected,
     free_format,
+    junk_resync,
 };
 
 fn hasId3v2Version(encoded: []const u8, version: u8) bool {
@@ -275,6 +282,62 @@ fn decodeMemory(
     }
     try evidence.validate(summary, decoder);
     return evidence;
+}
+
+fn verifyJunkResynchronization(
+    encoded: []const u8,
+    summary: plug.dsp.Mp3Summary,
+    allocator: std.mem.Allocator,
+) !void {
+    const junk = [_]u8{ 0x00, 0x49, 0x44, 0x33, 0x7f };
+    var source = try plug.dsp.Mp3Stream.init(encoded);
+    const first = try source.next() orelse
+        return error.InsufficientMp3FramesForResynchronization;
+    if ((try source.next()) == null)
+        return error.InsufficientMp3FramesForResynchronization;
+    const insertion = first.offset + first.bytes.len;
+    const damaged = try allocator.alloc(u8, encoded.len + junk.len);
+    @memcpy(damaged[0..insertion], encoded[0..insertion]);
+    @memcpy(damaged[insertion..][0..junk.len], &junk);
+    @memcpy(
+        damaged[insertion + junk.len ..],
+        encoded[insertion..],
+    );
+
+    const expected = try decodeMemory(encoded, summary);
+    var stream = try plug.dsp.Mp3Stream.init(damaged);
+    var decoder = try plug.dsp.Mp3StreamDecoder.init(summary);
+    var evidence = PcmEvidence{};
+    const recovered_first = try stream.next() orelse
+        return error.InsufficientMp3FramesForResynchronization;
+    try evidence.observe(
+        try decoder.decode(recovered_first),
+        recovered_first.header.padding,
+    );
+    if (stream.next()) |_| {
+        return error.Mp3JunkWasNotRejected;
+    } else |err| {
+        if (err != error.InvalidMp3Sync) return err;
+    }
+    const retained = stream;
+    if (stream.resynchronize(junk.len - 1)) |_| {
+        return error.Mp3JunkExceededDeclaredBound;
+    } else |err| {
+        if (err != error.Mp3ResynchronizationLimitReached) return err;
+    }
+    if (!std.meta.eql(retained, stream))
+        return error.Mp3FailedResynchronizationChangedState;
+    if (try stream.resynchronize(junk.len) != junk.len)
+        return error.UnexpectedMp3ResynchronizationDistance;
+    while (try stream.next()) |frame| {
+        try evidence.observe(
+            try decoder.decode(frame),
+            frame.header.padding,
+        );
+    }
+    try evidence.validate(summary, decoder);
+    if (!std.meta.eql(expected, evidence))
+        return error.Mp3ResynchronizedPcmDiffered;
 }
 
 fn decodeFile(

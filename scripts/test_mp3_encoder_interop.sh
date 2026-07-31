@@ -145,6 +145,9 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$external_mpeg1"; then
             "$decode_probe" "$external_mpeg1" 44100 2
             printf 'MP3 FFmpeg MPEG-1 stereo decoder probe passed\n'
+            "$decode_probe" "$external_mpeg1" 44100 2 \
+                --require-junk-resync
+            printf 'MP3 FFmpeg bounded junk resynchronization probe passed\n'
 
             if [ -n "$reference_probe" ]; then
                 compare_reference_pcm \
