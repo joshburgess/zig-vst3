@@ -1116,6 +1116,33 @@ test "ARA playback product bounds inline spectral storage" {
     try std.testing.expect(@sizeOf(SpectralSource) <= 160 * 1024);
 }
 
+const BoundedStackCreation = struct {
+    succeeded: bool = false,
+};
+
+fn createEffectWithBoundedStack(context: *BoundedStackCreation) void {
+    var component_out: ?*anyopaque = null;
+    if (Effect.create(
+        @ptrCast(&vst.ivstcomponent.icomponent_iid),
+        &component_out,
+    ) != types.kResultOk) return;
+    const component: *vst.ivstcomponent.IComponent =
+        @ptrCast(@alignCast(component_out orelse return));
+    _ = component.vtable.release(component);
+    context.succeeded = true;
+}
+
+test "ARA playback product constructs on a bounded host stack" {
+    var context = BoundedStackCreation{};
+    const thread = try std.Thread.spawn(
+        .{ .stack_size = 1024 * 1024 },
+        createEffectWithBoundedStack,
+        .{&context},
+    );
+    thread.join();
+    try std.testing.expect(context.succeeded);
+}
+
 test "ARA playback product fills cache and renders through VST3" {
     var audio = TestAudio{};
     @memcpy(
