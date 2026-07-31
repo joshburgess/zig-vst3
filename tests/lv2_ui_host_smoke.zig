@@ -138,6 +138,33 @@ pub fn main(init: std.process.Init) !void {
         &options_feature,
     };
     var widget: ui.Widget = null;
+    if (descriptor.instantiate(
+        null,
+        "https://zig-vst3.dev/tests/lv2-ui-probe",
+        "/tmp/lv2-ui-probe.lv2",
+        Host.write,
+        &host,
+        &widget,
+        &features,
+    ) != null) return error.NullDescriptorAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        null,
+        "/tmp/lv2-ui-probe.lv2",
+        Host.write,
+        &host,
+        &widget,
+        &features,
+    ) != null) return error.NullPluginUriAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        "https://zig-vst3.dev/tests/lv2-ui-probe",
+        null,
+        Host.write,
+        &host,
+        &widget,
+        &features,
+    ) != null) return error.NullBundlePathAccepted;
     const handle = descriptor.instantiate(
         descriptor,
         "https://zig-vst3.dev/tests/lv2-ui-probe",
@@ -150,6 +177,8 @@ pub fn main(init: std.process.Init) !void {
     defer descriptor.cleanup(handle);
     if (widget == null) return error.MissingLv2Widget;
 
+    if (descriptor.extension_data(null) != null)
+        return error.NullExtensionUriAccepted;
     const options_ptr = descriptor.extension_data(
         ui.options_interface_uri,
     ) orelse return error.MissingOptionsInterface;

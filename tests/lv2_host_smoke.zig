@@ -267,6 +267,18 @@ pub fn main(init: std.process.Init) !void {
         &map_feature,
         &options_feature,
     };
+    if (descriptor.instantiate(
+        null,
+        48_000.0,
+        "/tmp/zig_vst3_mono_gain.lv2",
+        features[0..].ptr,
+    ) != null) return error.NullDescriptorAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        null,
+        features[0..].ptr,
+    ) != null) return error.NullBundlePathAccepted;
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
@@ -275,6 +287,8 @@ pub fn main(init: std.process.Init) !void {
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(handle);
 
+    if (descriptor.extension_data(null) != null)
+        return error.NullExtensionUriAccepted;
     const raw_options = descriptor.extension_data(
         core.lv2.options_interface_uri,
     ) orelse return error.MissingOptionsInterface;

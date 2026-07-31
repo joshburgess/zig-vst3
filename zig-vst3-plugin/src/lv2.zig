@@ -589,9 +589,9 @@ pub const StatePathFeatures = struct {
 pub const Descriptor = extern struct {
     URI: [*:0]const u8,
     instantiate: *const fn (
-        descriptor: *const Descriptor,
+        descriptor: ?*const Descriptor,
         sample_rate: f64,
-        bundle_path: [*:0]const u8,
+        bundle_path: ?[*:0]const u8,
         features: ?[*:null]const ?*const Feature,
     ) callconv(.c) Handle,
     connect_port: *const fn (
@@ -607,7 +607,7 @@ pub const Descriptor = extern struct {
     deactivate: ?*const fn (instance: Handle) callconv(.c) void,
     cleanup: *const fn (instance: Handle) callconv(.c) void,
     extension_data: *const fn (
-        URI: [*:0]const u8,
+        URI: ?[*:0]const u8,
     ) callconv(.c) ?*const anyopaque,
 };
 
@@ -1156,11 +1156,13 @@ pub fn CoreAdapterWithParameters(
         }
 
         fn instantiate(
-            _: *const Descriptor,
+            raw_descriptor: ?*const Descriptor,
             sample_rate: f64,
-            _: [*:0]const u8,
+            raw_bundle_path: ?[*:0]const u8,
             features: ?[*:null]const ?*const Feature,
         ) callconv(.c) Handle {
+            _ = raw_descriptor orelse return null;
+            _ = raw_bundle_path orelse return null;
             if (!common.isPositiveFinite(sample_rate)) return null;
             const allocator = std.heap.page_allocator;
             const self = allocator.create(Self) catch return null;
@@ -1562,8 +1564,9 @@ pub fn CoreAdapterWithParameters(
         }
 
         fn extensionData(
-            URI: [*:0]const u8,
+            raw_uri: ?[*:0]const u8,
         ) callconv(.c) ?*const anyopaque {
+            const URI = raw_uri orelse return null;
             if (std.mem.eql(
                 u8,
                 std.mem.span(URI),
@@ -4884,6 +4887,9 @@ test "LV2 instantiation options constrain block length" {
     try std.testing.expectEqual(
         @as(?usize, 512),
         instance.configuredSequenceSize(),
+    );
+    try std.testing.expect(
+        Adapter.descriptor.extension_data(null) == null,
     );
     const raw_options_interface =
         Adapter.descriptor.extension_data(

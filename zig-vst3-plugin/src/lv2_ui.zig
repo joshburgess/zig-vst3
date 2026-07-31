@@ -81,9 +81,9 @@ pub const WriteFunction = *const fn (
 pub const Descriptor = extern struct {
     URI: [*:0]const u8,
     instantiate: *const fn (
-        descriptor: *const Descriptor,
-        plugin_uri: [*:0]const u8,
-        bundle_path: [*:0]const u8,
+        descriptor: ?*const Descriptor,
+        plugin_uri: ?[*:0]const u8,
+        bundle_path: ?[*:0]const u8,
         write_function: ?WriteFunction,
         controller: Controller,
         widget: ?*Widget,
@@ -98,7 +98,7 @@ pub const Descriptor = extern struct {
         buffer: ?*const anyopaque,
     ) callconv(.c) void,
     extension_data: *const fn (
-        uri: [*:0]const u8,
+        uri: ?[*:0]const u8,
     ) callconv(.c) ?*const anyopaque,
 };
 
@@ -232,14 +232,18 @@ pub fn Adapter(
         }
 
         fn instantiate(
-            _: *const Descriptor,
-            requested_plugin_uri: [*:0]const u8,
-            _: [*:0]const u8,
+            raw_descriptor: ?*const Descriptor,
+            raw_plugin_uri: ?[*:0]const u8,
+            raw_bundle_path: ?[*:0]const u8,
             write_function: ?WriteFunction,
             controller: Controller,
             widget: ?*Widget,
             features: ?[*:null]const ?*const Feature,
         ) callconv(.c) Handle {
+            _ = raw_descriptor orelse return null;
+            const requested_plugin_uri =
+                raw_plugin_uri orelse return null;
+            _ = raw_bundle_path orelse return null;
             if (!std.mem.eql(
                 u8,
                 std.mem.span(requested_plugin_uri),
@@ -324,7 +328,10 @@ pub fn Adapter(
             instance.editor.hostParameterChanged(id, normalized_value);
         }
 
-        fn extensionData(uri: [*:0]const u8) callconv(.c) ?*const anyopaque {
+        fn extensionData(
+            raw_uri: ?[*:0]const u8,
+        ) callconv(.c) ?*const anyopaque {
+            const uri = raw_uri orelse return null;
             const requested = std.mem.span(uri);
             if (std.mem.eql(u8, requested, idle_interface_uri))
                 return &idle_interface;
@@ -1146,6 +1153,7 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         gui.Scale{ .x = 1.5, .y = 1.5 },
         backend.scale,
     );
+    try std.testing.expect(Ui.descriptor.extension_data(null) == null);
     const options_ptr = Ui.descriptor.extension_data(
         options_interface_uri,
     ) orelse return error.MissingOptionsInterface;
