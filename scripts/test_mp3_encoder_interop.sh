@@ -3,6 +3,7 @@ set -eu
 
 fixture=${1:?missing MP3 fixture path}
 decode_probe=${2-}
+reference_probe=${3-}
 test -f "$fixture"
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-mp3-interop.XXXXXX")
@@ -106,6 +107,21 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$external_mpeg1"; then
             "$decode_probe" "$external_mpeg1" 44100 2
             printf 'MP3 FFmpeg MPEG-1 stereo decoder probe passed\n'
+
+            if [ -n "$reference_probe" ]; then
+                external_mpeg1_reference="$temporary/ffmpeg-mpeg1-reference.f32le"
+                ffmpeg -v error -y \
+                    -i "$external_mpeg1" \
+                    -map 0:a:0 \
+                    -f f32le \
+                    -acodec pcm_f32le \
+                    "$external_mpeg1_reference"
+                "$reference_probe" \
+                    "$external_mpeg1" \
+                    "$external_mpeg1_reference" \
+                    2
+                printf 'MP3 FFmpeg decoded-PCM reference probe passed\n'
+            fi
 
             external_tagged_long="$temporary/ffmpeg-mpeg1-tagged-long.mp3"
             ffmpeg -v error -y \
