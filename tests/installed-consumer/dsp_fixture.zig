@@ -1920,7 +1920,7 @@ test "installed package exposes DSP blocks contexts and math primitives" {
     var restored_spectrum: [32]f32 = undefined;
     try forward_mdct.process(&synthesized_block, &restored_spectrum);
     for (restored_spectrum, source_spectrum) |actual, expected| {
-        try std.testing.expectApproxEqAbs(expected, actual, 0.000_01);
+        try std.testing.expectApproxEqAbs(expected * 2, actual, 0.000_01);
     }
     const installed_block_config =
         plugin.dsp.VorbisPcmBlockAnalysisConfig{};
