@@ -364,6 +364,40 @@ test "dual-band HOA routes low and high frequencies independently" {
     try std.testing.expect(high_energy > high_leakage * 1_000.0);
 }
 
+test "dual-band HOA retains a consistent screen reference" {
+    var blocks = try testBlocks();
+    for (&blocks) |*block| block.screen_ref = true;
+
+    const DualBand = Decoder(f32, 2, 1);
+    const decoder = try DualBand.init(
+        &blocks,
+        1,
+        &.{ 1.0, 0.5 },
+        &.{ 0.75, 0.25 },
+        .{
+            .sample_rate = 48_000.0,
+            .crossover_hz = 1_000.0,
+        },
+    );
+    try std.testing.expect(decoder.low_decoder.screen_reference);
+    try std.testing.expect(decoder.high_decoder.screen_reference);
+
+    blocks[1].screen_ref = false;
+    try std.testing.expectError(
+        error.MixedAdmHoaScreenReference,
+        DualBand.init(
+            &blocks,
+            1,
+            &.{ 1.0, 0.5 },
+            &.{ 0.75, 0.25 },
+            .{
+                .sample_rate = 48_000.0,
+                .crossover_hz = 1_000.0,
+            },
+        ),
+    );
+}
+
 test "dual-band HOA processing is partition-independent and transactional" {
     const blocks = try testBlocks();
     const DualBand = Decoder(f32, 2, 2);

@@ -156,6 +156,8 @@ pub const AdmMatrixVariablePoint = adm_render.MatrixVariablePoint;
 pub const AdmMatrixVariableTimeline =
     adm_render.MatrixVariableTimeline;
 pub const AdmHoaMatrixDecoder = adm_hoa_decoder.MatrixDecoder;
+pub const AdmHoaScreenReferencePolicy =
+    adm_hoa_decoder.ScreenReferencePolicy;
 pub const AdmHoaDualBandDecoder = adm_hoa_dual_band.Decoder;
 pub const AdmHoaDualBandConfig = adm_hoa_dual_band.Config;
 pub const AdmHoaLoudspeakerMatrix =

@@ -3,6 +3,11 @@ const adm_xml = @import("adm_xml.zig");
 
 pub const maximum_supported_order: u32 = 50;
 
+pub const ScreenReferencePolicy = enum {
+    reject,
+    render_unchanged,
+};
+
 pub fn MatrixDecoder(
     comptime Sample: type,
     comptime maximum_inputs: usize,

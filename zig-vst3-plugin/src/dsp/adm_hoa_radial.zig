@@ -1,6 +1,7 @@
 const std = @import("std");
 const adm = @import("adm.zig");
 const adm_time = @import("adm_time.zig");
+const adm_hoa_decoder = @import("adm_hoa_decoder.zig");
 const adm_xml = @import("adm_xml.zig");
 const biquad = @import("biquad.zig");
 const polynomial = @import("polynomial.zig");
@@ -23,6 +24,7 @@ pub const Config = struct {
     speed_of_sound: f64 = 343.0,
     normalization: Normalization = .high_frequency_unity,
     regularization: Regularization = .none,
+    screen_reference_policy: adm_hoa_decoder.ScreenReferencePolicy = .reject,
 };
 
 pub fn RadialFilterBank(
@@ -50,6 +52,7 @@ pub fn RadialFilterBank(
 
         input_count: usize,
         reference_distance: f64,
+        screen_reference: bool,
         config: Config,
         orders: [maximum_inputs]u8 = undefined,
         section_counts: [maximum_inputs]u8 = @splat(0),
@@ -77,6 +80,7 @@ pub fn RadialFilterBank(
             var result = Self{
                 .input_count = blocks.len,
                 .reference_distance = reference_distance,
+                .screen_reference = blocks[0].screen_ref,
                 .config = config,
             };
             var designs: [maximum_order + 1][section_capacity]biquad.Coefficients =
@@ -89,8 +93,13 @@ pub fn RadialFilterBank(
                 try validateBlockKind(block);
                 if (block.hoa_equation != null)
                     return error.UnsupportedAdmHoaRadialEquation;
-                if (block.screen_ref)
+                if (block.screen_ref != result.screen_reference)
+                    return error.MixedAdmHoaScreenReference;
+                if (block.screen_ref and
+                    config.screen_reference_policy == .reject)
+                {
                     return error.UnsupportedAdmHoaRadialScreenReference;
+                }
                 if (block.hoa_nfc_reference_distance !=
                     reference_distance)
                 {
@@ -704,6 +713,18 @@ test "ADM HOA radial filter rejects malformed policy and retained state" {
             .sample_rate = 48_000.0,
             .loudspeaker_distance = 1.0,
         }),
+    );
+    const screen_referenced =
+        try RadialFilterBank(f64, 1, 4).init(&blocks, .{
+            .sample_rate = 48_000.0,
+            .loudspeaker_distance = 1.0,
+            .screen_reference_policy = .render_unchanged,
+        });
+    try std.testing.expect(screen_referenced.screen_reference);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        screen_referenced.magnitude(0, 0.0),
+        1.0e-12,
     );
     blocks[0].screen_ref = false;
     blocks[0].hoa_degree = 2;

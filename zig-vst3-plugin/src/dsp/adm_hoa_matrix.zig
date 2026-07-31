@@ -16,6 +16,7 @@ pub const OrderWeighting = enum {
 
 pub const GenerationOptions = struct {
     order_weighting: OrderWeighting = .basic,
+    screen_reference_policy: adm_hoa_decoder.ScreenReferencePolicy = .reject,
     convergence_tolerance: f64 = 1.0e-12,
     relative_rank_tolerance: f64 = 1.0e-10,
     maximum_sweeps: usize = 128,
@@ -65,6 +66,7 @@ pub fn LoudspeakerMatrix(
         maximum_order: u8,
         normalization: adm_xml.HoaNormalization,
         nfc_reference_distance: f64,
+        screen_reference: bool,
         order_weighting: OrderWeighting,
         condition_number: f64,
         orders: [maximum_inputs]u8 = undefined,
@@ -87,7 +89,10 @@ pub fn LoudspeakerMatrix(
             }
             try validateOptions(options);
 
-            const metadata = try analyzeBlocks(blocks);
+            const metadata = try analyzeBlocks(
+                blocks,
+                options.screen_reference_policy,
+            );
             var directions: [maximum_outputs][3]f64 =
                 @splat(@splat(0.0));
             var non_lfe_count: usize = 0;
@@ -161,6 +166,7 @@ pub fn LoudspeakerMatrix(
                 .maximum_order = metadata.maximum_order,
                 .normalization = metadata.normalization,
                 .nfc_reference_distance = metadata.nfc_reference_distance,
+                .screen_reference = metadata.screen_reference,
                 .order_weighting = options.order_weighting,
                 .condition_number = condition_number,
             };
@@ -318,10 +324,14 @@ pub fn LoudspeakerMatrix(
             blocks: []const adm_xml.BlockFormat,
         ) bool {
             if (blocks.len != self.input_count) return false;
-            const metadata = analyzeBlocks(blocks) catch return false;
+            const metadata = analyzeBlocks(
+                blocks,
+                .render_unchanged,
+            ) catch return false;
             if (metadata.normalization != self.normalization or
                 metadata.nfc_reference_distance !=
                     self.nfc_reference_distance or
+                metadata.screen_reference != self.screen_reference or
                 metadata.maximum_order != self.maximum_order)
             {
                 return false;
@@ -400,17 +410,19 @@ pub fn realSphericalHarmonic(
 const BlockMetadata = struct {
     normalization: adm_xml.HoaNormalization,
     nfc_reference_distance: f64,
+    screen_reference: bool,
     maximum_order: u8,
 };
 
 fn analyzeBlocks(
     blocks: []const adm_xml.BlockFormat,
+    screen_reference_policy: adm_hoa_decoder.ScreenReferencePolicy,
 ) !BlockMetadata {
     const first = blocks[0];
     try validateBlockKind(first);
     if (first.hoa_equation != null)
         return error.UnsupportedAdmHoaEquation;
-    if (first.screen_ref)
+    if (first.screen_ref and screen_reference_policy == .reject)
         return error.UnsupportedAdmHoaScreenReference;
     if (!std.math.isFinite(first.hoa_nfc_reference_distance) or
         first.hoa_nfc_reference_distance < 0.0)
@@ -421,6 +433,7 @@ fn analyzeBlocks(
     var result = BlockMetadata{
         .normalization = first.hoa_normalization,
         .nfc_reference_distance = first.hoa_nfc_reference_distance,
+        .screen_reference = first.screen_ref,
         .maximum_order = 0,
     };
     for (blocks, 0..) |block, input_index| {
@@ -439,8 +452,8 @@ fn analyzeBlocks(
         {
             return error.MixedAdmHoaReferenceDistance;
         }
-        if (block.screen_ref)
-            return error.UnsupportedAdmHoaScreenReference;
+        if (block.screen_ref != result.screen_reference)
+            return error.MixedAdmHoaScreenReference;
 
         const order =
             block.hoa_order orelse return error.MissingAdmHoaOrder;
@@ -923,6 +936,64 @@ test "HOA loudspeaker matrix applies max-rE order weighting" {
             @as(f32, @floatCast(expected_weight)),
         try weighted.coefficient(0, 1),
         1.0e-6,
+    );
+}
+
+test "HOA loudspeaker matrix applies explicit screen reference policy" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00041001">
+        \\    <audioBlockFormatHoa audioBlockFormatID="AB_00041001_00000001">
+        \\      <order>0</order><degree>0</degree>
+        \\    </audioBlockFormatHoa>
+        \\  </audioChannelFormat>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00041002">
+        \\    <audioBlockFormatHoa audioBlockFormatID="AB_00041002_00000001">
+        \\      <order>1</order><degree>0</degree>
+        \\    </audioBlockFormatHoa>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var iterator = document.blocks();
+    var blocks = [_]adm_xml.BlockFormat{
+        (try iterator.next()).?,
+        (try iterator.next()).?,
+    };
+    const loudspeakers = [_]Loudspeaker{
+        .{ .azimuth_degrees = 0.0, .elevation_degrees = 45.0 },
+        .{ .azimuth_degrees = 180.0, .elevation_degrees = -45.0 },
+    };
+    const Matrix = LoudspeakerMatrix(f64, 2, 2);
+    const ordinary = try Matrix.init(&blocks, &loudspeakers, .{});
+
+    blocks[0].screen_ref = true;
+    blocks[1].screen_ref = true;
+    try std.testing.expectError(
+        error.UnsupportedAdmHoaScreenReference,
+        Matrix.init(&blocks, &loudspeakers, .{}),
+    );
+    const screen_referenced = try Matrix.init(
+        &blocks,
+        &loudspeakers,
+        .{ .screen_reference_policy = .render_unchanged },
+    );
+    try std.testing.expect(screen_referenced.screen_reference);
+    try std.testing.expectEqualSlices(
+        f64,
+        try ordinary.coefficientSlice(),
+        try screen_referenced.coefficientSlice(),
+    );
+    const decoder = try screen_referenced.decoder(&blocks);
+    try std.testing.expect(decoder.screen_reference);
+
+    blocks[1].screen_ref = false;
+    try std.testing.expectError(
+        error.MixedAdmHoaScreenReference,
+        Matrix.init(
+            &blocks,
+            &loudspeakers,
+            .{ .screen_reference_policy = .render_unchanged },
+        ),
     );
 }
 

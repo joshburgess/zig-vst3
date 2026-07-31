@@ -5740,6 +5740,32 @@ test "installed package generates ADM HOA loudspeaker matrices" {
     );
     for (radial_first ++ radial_second) |sample|
         try std.testing.expect(std.math.isFinite(sample));
+
+    var screen_blocks = blocks;
+    for (&screen_blocks) |*block| block.screen_ref = true;
+    const screen_matrix = try Matrix.init(
+        &screen_blocks,
+        &loudspeakers,
+        .{
+            .screen_reference_policy = plugin.dsp.AdmHoaScreenReferencePolicy.render_unchanged,
+        },
+    );
+    try std.testing.expect(screen_matrix.screen_reference);
+    const screen_decoder =
+        try screen_matrix.decoder(&screen_blocks);
+    try std.testing.expect(screen_decoder.screen_reference);
+    var screen_radial = try Radial.init(
+        &screen_blocks,
+        .{
+            .sample_rate = 48_000.0,
+            .loudspeaker_distance = 2.0,
+            .screen_reference_policy = .render_unchanged,
+        },
+    );
+    try screen_radial.process(
+        &band_inputs,
+        &.{ &radial_first, &radial_second },
+    );
 }
 
 test "installed package renders bounded HRTF responses" {
