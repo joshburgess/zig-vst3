@@ -5617,12 +5617,14 @@ test "installed package generates ADM HOA loudspeaker matrices" {
         \\    <audioBlockFormatHoa audioBlockFormatID="AB_00041001_00000001">
         \\      <order>0</order><degree>0</degree>
         \\      <normalization>SN3D</normalization>
+        \\      <nfcRefDist>1</nfcRefDist>
         \\    </audioBlockFormatHoa>
         \\  </audioChannelFormat>
         \\  <audioChannelFormat audioChannelFormatID="AC_00041002">
         \\    <audioBlockFormatHoa audioBlockFormatID="AB_00041002_00000001">
         \\      <order>1</order><degree>0</degree>
         \\      <normalization>SN3D</normalization>
+        \\      <nfcRefDist>1</nfcRefDist>
         \\    </audioBlockFormatHoa>
         \\  </audioChannelFormat>
         \\</audioFormatExtended>
@@ -5711,6 +5713,33 @@ test "installed package generates ADM HOA loudspeaker matrices" {
         .crossover_hz = 1_500.0,
     }, 32);
     try dual_band.reset();
+
+    const Radial = plugin.dsp.AdmHoaRadialFilterBank(f32, 2, 4);
+    var radial = try Radial.init(
+        &blocks,
+        plugin.dsp.AdmHoaRadialConfig{
+            .sample_rate = 48_000.0,
+            .loudspeaker_distance = 2.0,
+            .normalization = .high_frequency_unity,
+            .regularization = .{ .gain_limit = .{
+                .maximum_gain_db = 12.0,
+                .transition_hz = 100.0,
+            } },
+        },
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 2.0),
+        radial.magnitude(1, 0.0),
+        1.0e-6,
+    );
+    var radial_first: [first_band.len]f32 = undefined;
+    var radial_second: [second_band.len]f32 = undefined;
+    try radial.process(
+        &band_inputs,
+        &.{ &radial_first, &radial_second },
+    );
+    for (radial_first ++ radial_second) |sample|
+        try std.testing.expect(std.math.isFinite(sample));
 }
 
 test "installed package renders bounded HRTF responses" {

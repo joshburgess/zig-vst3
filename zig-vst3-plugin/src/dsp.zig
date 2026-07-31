@@ -7,6 +7,7 @@ pub const adm_direct_speaker_mapping =
 pub const adm_hoa_decoder = @import("dsp/adm_hoa_decoder.zig");
 pub const adm_hoa_dual_band = @import("dsp/adm_hoa_dual_band.zig");
 pub const adm_hoa_matrix = @import("dsp/adm_hoa_matrix.zig");
+pub const adm_hoa_radial = @import("dsp/adm_hoa_radial.zig");
 pub const adm_render = @import("dsp/adm_render.zig");
 pub const adm_time = @import("dsp/adm_time.zig");
 pub const adm_xml = @import("dsp/adm_xml.zig");
@@ -163,6 +164,10 @@ pub const AdmHoaLoudspeaker = adm_hoa_matrix.Loudspeaker;
 pub const AdmHoaOrderWeighting = adm_hoa_matrix.OrderWeighting;
 pub const AdmHoaMatrixGenerationOptions =
     adm_hoa_matrix.GenerationOptions;
+pub const AdmHoaRadialFilterBank = adm_hoa_radial.RadialFilterBank;
+pub const AdmHoaRadialConfig = adm_hoa_radial.Config;
+pub const AdmHoaRadialNormalization = adm_hoa_radial.Normalization;
+pub const AdmHoaRadialRegularization = adm_hoa_radial.Regularization;
 pub const evaluateAdmHoaBasis =
     adm_hoa_matrix.realSphericalHarmonic;
 pub const maximum_supported_adm_hoa_order =
@@ -1035,6 +1040,7 @@ test {
     _ = adm_hoa_decoder;
     _ = adm_hoa_dual_band;
     _ = adm_hoa_matrix;
+    _ = adm_hoa_radial;
     _ = hrtf;
     _ = adm_diffuse;
     _ = adm_direct_speaker_mapping;
