@@ -509,6 +509,58 @@ pub fn DynamicMatrix(comptime Sample: type) type {
             return result;
         }
 
+        pub fn multiplyVectorInto(
+            self: *const Self,
+            vector: []const Sample,
+            destination: []Sample,
+            workspace: []Sample,
+        ) !void {
+            if (!self.valid()) return error.InvalidDynamicMatrix;
+            if (vector.len != self.columns or
+                destination.len != self.rows or
+                workspace.len != self.rows)
+                return error.DynamicMatrixShapeMismatch;
+            if (slicesOverlap(Sample, vector, workspace) or
+                slicesOverlap(Sample, destination, workspace))
+                return error.DynamicMatrixAliasedBuffers;
+            for (vector) |value| {
+                if (!std.math.isFinite(value))
+                    return error.MatrixNonFiniteValue;
+            }
+            for (0..self.rows) |row_index| {
+                var value: Sample = 0.0;
+                for (0..self.columns) |column_index| {
+                    value += self.values[
+                        row_index * self.columns + column_index
+                    ] * vector[column_index];
+                    if (!std.math.isFinite(value))
+                        return error.MatrixNonFiniteValue;
+                }
+                workspace[row_index] = value;
+            }
+            @memcpy(destination, workspace);
+        }
+
+        pub fn multiplyVector(
+            self: *const Self,
+            vector: []const Sample,
+            allocator: std.mem.Allocator,
+        ) ![]Sample {
+            if (!self.valid()) return error.InvalidDynamicMatrix;
+            if (vector.len != self.columns)
+                return error.DynamicMatrixShapeMismatch;
+            const destination = try allocator.alloc(Sample, self.rows);
+            errdefer allocator.free(destination);
+            const workspace = try allocator.alloc(Sample, self.rows);
+            defer allocator.free(workspace);
+            try self.multiplyVectorInto(
+                vector,
+                destination,
+                workspace,
+            );
+            return destination;
+        }
+
         pub fn decomposeLu(
             self: *const Self,
             allocator: std.mem.Allocator,
@@ -3379,6 +3431,94 @@ test "dynamic matrix identity clone and checked mutation" {
         identity.set(0, 0, std.math.nan(f32)),
     );
     try std.testing.expectEqual(@as(f32, 1.0), try identity.at(0, 0));
+}
+
+test "dynamic matrix vector multiplication is transactional" {
+    const D = DynamicMatrix(f64);
+    var matrix = try D.fromSlice(
+        std.testing.allocator,
+        2,
+        3,
+        &.{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 },
+    );
+    defer matrix.deinit();
+    const allocated = try matrix.multiplyVector(
+        &.{ 1.0, 0.0, -1.0 },
+        std.testing.allocator,
+    );
+    defer std.testing.allocator.free(allocated);
+    try std.testing.expectEqualDeep(
+        [_]f64{ -2.0, -2.0 },
+        allocated[0..2].*,
+    );
+
+    var in_place = [_]f64{ 1.0, 0.0, -1.0 };
+    var workspace: [2]f64 = undefined;
+    try matrix.multiplyVectorInto(
+        &in_place,
+        in_place[0..2],
+        &workspace,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f64{ -2.0, -2.0 },
+        in_place[0..2].*,
+    );
+
+    var destination = [_]f64{ 7.0, 8.0 };
+    try std.testing.expectError(
+        error.DynamicMatrixShapeMismatch,
+        matrix.multiplyVectorInto(
+            &.{ 1.0, 2.0 },
+            &destination,
+            &workspace,
+        ),
+    );
+    try std.testing.expectError(
+        error.MatrixNonFiniteValue,
+        matrix.multiplyVectorInto(
+            &.{ 1.0, std.math.nan(f64), 3.0 },
+            &destination,
+            &workspace,
+        ),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        matrix.multiplyVectorInto(
+            &.{ 1.0, 2.0, 3.0 },
+            &destination,
+            &destination,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        [_]f64{ 7.0, 8.0 },
+        destination,
+    );
+
+    var failing_allocator = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 1 },
+    );
+    try std.testing.expectError(
+        error.OutOfMemory,
+        matrix.multiplyVector(
+            &.{ 1.0, 2.0, 3.0 },
+            failing_allocator.allocator(),
+        ),
+    );
+
+    matrix.values[0] = std.math.floatMax(f64);
+    try std.testing.expectError(
+        error.MatrixNonFiniteValue,
+        matrix.multiplyVectorInto(
+            &.{ 2.0, 0.0, 0.0 },
+            &destination,
+            &workspace,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        [_]f64{ 7.0, 8.0 },
+        destination,
+    );
 }
 
 test "dynamic matrices reject shapes overflow and hostile state" {

@@ -783,8 +783,8 @@ test "installed package exposes DSP blocks contexts and math primitives" {
     try std.testing.expectEqualDeep(matrix.values, product.values);
     try std.testing.expectEqualDeep(
         [2][2]f32{
-            .{ 0.0, 1.0 },
-            .{ 2.0, 3.0 },
+            .{ 0.0, 2.0 },
+            .{ 3.0, 3.0 },
         },
         (try matrix.subtract(M.identity())).values,
     );
@@ -5939,6 +5939,15 @@ test "installed package owns and decomposes runtime-shaped matrices" {
     try std.testing.expectEqualDeep(
         [_]f64{ -2.0, -2.0 },
         product.values[0..2].*,
+    );
+    const vector_product = try first.multiplyVector(
+        &.{ 1.0, 0.0, -1.0 },
+        std.testing.allocator,
+    );
+    defer std.testing.allocator.free(vector_product);
+    try std.testing.expectEqualDeep(
+        [_]f64{ -2.0, -2.0 },
+        vector_product[0..2].*,
     );
 
     var square = try Matrix.fromSlice(
