@@ -64,11 +64,11 @@ pub const options_status_bad_value: OptionsStatus = 1 << 3;
 pub const OptionsInterface = extern struct {
     get: *const fn (
         instance: Handle,
-        options: ?[*]OptionsOption,
+        options: ?[*]align(1) OptionsOption,
     ) callconv(.c) OptionsStatus,
     set: *const fn (
         instance: Handle,
-        options: ?[*]const OptionsOption,
+        options: ?[*]align(1) const OptionsOption,
     ) callconv(.c) OptionsStatus,
 };
 
@@ -370,14 +370,16 @@ pub fn Adapter(
 
         fn getOptions(
             handle: Handle,
-            raw_options: ?[*]OptionsOption,
+            raw_options: ?[*]align(1) OptionsOption,
         ) callconv(.c) OptionsStatus {
             const instance = instanceFromHandle(handle) orelse
                 return options_status_unknown;
-            const options = raw_options orelse
+            const unaligned_options = raw_options orelse
                 return options_status_unknown;
-            if (@intFromPtr(options) % @alignOf(OptionsOption) != 0)
+            if (@intFromPtr(unaligned_options) % @alignOf(OptionsOption) != 0)
                 return options_status_unknown;
+            const options: [*]OptionsOption =
+                @alignCast(unaligned_options);
             var status = options_status_success;
             var terminated = false;
             for (0..256) |index| {
@@ -412,14 +414,16 @@ pub fn Adapter(
 
         fn setOptions(
             handle: Handle,
-            raw_options: ?[*]const OptionsOption,
+            raw_options: ?[*]align(1) const OptionsOption,
         ) callconv(.c) OptionsStatus {
             const instance = instanceFromHandle(handle) orelse
                 return options_status_unknown;
-            const options = raw_options orelse
+            const unaligned_options = raw_options orelse
                 return options_status_unknown;
-            if (@intFromPtr(options) % @alignOf(OptionsOption) != 0)
+            if (@intFromPtr(unaligned_options) % @alignOf(OptionsOption) != 0)
                 return options_status_unknown;
+            const options: [*]const OptionsOption =
+                @alignCast(unaligned_options);
             var scale: ?f32 = null;
             var status = options_status_success;
             var terminated = false;
@@ -1296,20 +1300,14 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         undefined;
     const misaligned_option_address =
         @intFromPtr(&misaligned_option_storage[1]);
-    var misaligned_query: ?[*]OptionsOption = null;
-    @memcpy(
-        std.mem.asBytes(&misaligned_query),
-        std.mem.asBytes(&misaligned_option_address),
-    );
+    const misaligned_query: ?[*]align(1) OptionsOption =
+        @ptrFromInt(misaligned_option_address);
     try std.testing.expectEqual(
         options_status_unknown,
         runtime_options.get(handle, misaligned_query),
     );
-    var misaligned_update: ?[*]const OptionsOption = null;
-    @memcpy(
-        std.mem.asBytes(&misaligned_update),
-        std.mem.asBytes(&misaligned_option_address),
-    );
+    const misaligned_update: ?[*]align(1) const OptionsOption =
+        @ptrFromInt(misaligned_option_address);
     try std.testing.expectEqual(
         options_status_unknown,
         runtime_options.set(handle, misaligned_update),
