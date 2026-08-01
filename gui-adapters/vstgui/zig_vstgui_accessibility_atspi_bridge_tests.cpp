@@ -59,6 +59,8 @@ struct Evidence {
     std::atomic<bool> action_performed {false};
     std::atomic<bool> value_read {false};
     std::atomic<bool> value_set {false};
+    std::atomic<bool> text_interface {false};
+    std::atomic<bool> text_queries {false};
     std::atomic<bool> editable_interface {false};
     std::atomic<bool> text_set {false};
     std::atomic<bool> text_inserted {false};
@@ -293,6 +295,7 @@ void inspectApplication(
         g_error_free(error);
     }
 
+
     error = nullptr;
     result = g_dbus_connection_call_sync(
         connection,
@@ -461,6 +464,7 @@ void inspectApplication(
         bool action = false;
         bool component = false;
         bool editable_text = false;
+        bool text = false;
         bool value = false;
         GVariantIter interface_iterator;
         g_variant_iter_init(&interface_iterator, interfaces);
@@ -470,12 +474,14 @@ void inspectApplication(
             action |= std::strcmp(interface, "Action") == 0;
             component |= std::strcmp(interface, "Component") == 0;
             editable_text |= std::strcmp(interface, "EditableText") == 0;
+            text |= std::strcmp(interface, "Text") == 0;
             value |= std::strcmp(interface, "Value") == 0;
         }
         evidence.child_interfaces.store(
-            accessible && action && component && editable_text && value,
+            accessible && action && component && editable_text && text && value,
             std::memory_order_release
         );
+        evidence.text_interface.store(text, std::memory_order_release);
         evidence.editable_interface.store(
             editable_text,
             std::memory_order_release
@@ -485,6 +491,160 @@ void inspectApplication(
     } else if (error) {
         g_error_free(error);
     }
+
+    bool text_queries = false;
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.freedesktop.DBus.Properties",
+        "Get",
+        g_variant_new("(ss)", "org.a11y.atspi.Text", "CharacterCount"),
+        G_VARIANT_TYPE("(v)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        GVariant* value = nullptr;
+        g_variant_get(result, "(v)", &value);
+        text_queries = g_variant_is_of_type(value, G_VARIANT_TYPE_INT32) &&
+            g_variant_get_int32(value) == 3;
+        g_variant_unref(value);
+        g_variant_unref(result);
+    } else if (error) {
+        g_error_free(error);
+    }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Text",
+        "GetText",
+        g_variant_new("(ii)", 0, -1),
+        G_VARIANT_TYPE("(s)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        const char* value = nullptr;
+        g_variant_get(result, "(&s)", &value);
+        text_queries &= value && std::strcmp(value, "AéB") == 0;
+        g_variant_unref(result);
+    } else {
+        text_queries = false;
+        if (error) g_error_free(error);
+    }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Text",
+        "GetStringAtOffset",
+        g_variant_new("(iu)", 1, 0u),
+        G_VARIANT_TYPE("(sii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        const char* value = nullptr;
+        gint32 start = -1;
+        gint32 end = -1;
+        g_variant_get(result, "(&sii)", &value, &start, &end);
+        text_queries &= value && std::strcmp(value, "é") == 0 &&
+            start == 1 && end == 2;
+        g_variant_unref(result);
+    } else {
+        text_queries = false;
+        if (error) g_error_free(error);
+    }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Text",
+        "GetCharacterAtOffset",
+        g_variant_new("(i)", 1),
+        G_VARIANT_TYPE("(i)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        gint32 value = -1;
+        g_variant_get(result, "(i)", &value);
+        text_queries &= value == 0xE9;
+        g_variant_unref(result);
+    } else {
+        text_queries = false;
+        if (error) g_error_free(error);
+    }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Text",
+        "GetCharacterExtents",
+        g_variant_new("(iu)", 1, 1u),
+        G_VARIANT_TYPE("(iiii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        gint32 x = 0;
+        gint32 y = 0;
+        gint32 width = 0;
+        gint32 height = 0;
+        g_variant_get(result, "(iiii)", &x, &y, &width, &height);
+        text_queries &= x == 43 && y == 20 && width == 33 && height == 40;
+        g_variant_unref(result);
+    } else {
+        text_queries = false;
+        if (error) g_error_free(error);
+    }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Text",
+        "GetBoundedRanges",
+        g_variant_new("(iiiiuuu)", 0, 0, 200, 200, 1u, 0u, 0u),
+        G_VARIANT_TYPE("(a(iisv))"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        GVariant* ranges = nullptr;
+        g_variant_get(result, "(@a(iisv))", &ranges);
+        text_queries &= g_variant_n_children(ranges) == 1;
+        g_variant_unref(ranges);
+        g_variant_unref(result);
+    } else {
+        text_queries = false;
+        if (error) g_error_free(error);
+    }
+    evidence.text_queries.store(text_queries, std::memory_order_release);
 
     error = nullptr;
     result = g_dbus_connection_call_sync(
@@ -831,6 +991,38 @@ void inspectApplication(
         &error
     );
     hostile_rejected &= callRejected(result, error);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Text",
+        "GetText",
+        g_variant_new("(ii)", 2, 1),
+        G_VARIANT_TYPE("(s)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    hostile_rejected &= callRejected(result, error);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Text",
+        "GetStringAtOffset",
+        g_variant_new("(iu)", 4, 0u),
+        G_VARIANT_TYPE("(sii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    hostile_rejected &= callRejected(result, error);
     evidence.hostile_inputs_rejected.store(
         hostile_rejected &&
             evidence.action_call_count.load(std::memory_order_acquire) ==
@@ -1143,6 +1335,8 @@ int runTest() {
         service.evidence.action_performed.load(std::memory_order_acquire) &&
         service.evidence.value_read.load(std::memory_order_acquire) &&
         service.evidence.value_set.load(std::memory_order_acquire) &&
+        service.evidence.text_interface.load(std::memory_order_acquire) &&
+        service.evidence.text_queries.load(std::memory_order_acquire) &&
         service.evidence.editable_interface.load(std::memory_order_acquire) &&
         service.evidence.text_set.load(std::memory_order_acquire) &&
         service.evidence.text_inserted.load(std::memory_order_acquire) &&
@@ -1184,7 +1378,8 @@ int runTest() {
             "opened=%d active=%d count=%zu "
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
             "interfaces=%d bounds=%d action-count=%d action=%d "
-            "value-read=%d value-set=%d editable=%d text-set=%d insert=%d "
+            "value-read=%d value-set=%d text-interface=%d text-queries=%d "
+            "editable=%d text-set=%d insert=%d "
             "delete=%d paste=%d ab-updates=%u clipboard-writes=%u clipboard-reads=%u "
             "clipboard-methods=%d "
             "cache=%d cache-root-add=%d cache-child-add=%d "
@@ -1209,6 +1404,8 @@ int runTest() {
             service.evidence.action_performed.load(std::memory_order_acquire),
             service.evidence.value_read.load(std::memory_order_acquire),
             service.evidence.value_set.load(std::memory_order_acquire),
+            service.evidence.text_interface.load(std::memory_order_acquire),
+            service.evidence.text_queries.load(std::memory_order_acquire),
             service.evidence.editable_interface.load(std::memory_order_acquire),
             service.evidence.text_set.load(std::memory_order_acquire),
             service.evidence.text_inserted.load(std::memory_order_acquire),

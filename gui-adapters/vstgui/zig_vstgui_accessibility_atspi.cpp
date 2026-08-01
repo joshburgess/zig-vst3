@@ -116,6 +116,9 @@ AtspiSnapshot AtspiNodeAdapter::snapshot(
     if (node->role() == AccessibilityRole::text_field)
         setState(result.states, AtspiState::single_line);
 
+    if (node->role() == AccessibilityRole::text_field)
+        result.interfaces |= interfaceMask(AtspiInterface::text);
+
     const bool editable_text =
         node->role() == AccessibilityRole::text_field &&
         node->supports(AccessibilityAction::set_value) &&

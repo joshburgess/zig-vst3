@@ -43,6 +43,7 @@ enum class AtspiInterface : uint32_t {
     component = 1u << 2,
     editable_text = 1u << 3,
     value = 1u << 4,
+    text = 1u << 5,
 };
 
 enum class AtspiChange {

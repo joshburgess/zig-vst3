@@ -40,6 +40,7 @@ constexpr const char* action_interface = "org.a11y.atspi.Action";
 constexpr const char* component_interface = "org.a11y.atspi.Component";
 constexpr const char* editable_text_interface = "org.a11y.atspi.EditableText";
 constexpr const char* object_event_interface = "org.a11y.atspi.Event.Object";
+constexpr const char* text_interface = "org.a11y.atspi.Text";
 constexpr const char* value_interface = "org.a11y.atspi.Value";
 constexpr const char* registry_name = "org.a11y.atspi.Registry";
 constexpr const char* registry_path = "/org/a11y/atspi/registry";
@@ -143,6 +144,34 @@ constexpr const char* introspection_xml = R"xml(
     <property name='MinimumIncrement' type='d' access='read'/>
     <property name='CurrentValue' type='d' access='readwrite'/>
     <property name='Text' type='s' access='read'/>
+  </interface>
+  <interface name='org.a11y.atspi.Text'>
+    <property name='version' type='u' access='read'/>
+    <property name='CharacterCount' type='i' access='read'/>
+    <property name='CaretOffset' type='i' access='read'/>
+    <method name='GetStringAtOffset'><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='s'/><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetText'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='out' type='s'/></method>
+    <method name='SetCaretOffset'><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
+    <method name='GetTextBeforeOffset'><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='s'/><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetTextAtOffset'><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='s'/><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetTextAfterOffset'><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='s'/><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetCharacterAtOffset'><arg direction='in' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetAttributeValue'><arg direction='in' type='i'/><arg direction='in' type='s'/><arg direction='out' type='s'/></method>
+    <method name='GetAttributes'><arg direction='in' type='i'/><arg direction='out' type='a{ss}'/><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetDefaultAttributes'><arg direction='out' type='a{ss}'/></method>
+    <method name='GetCharacterExtents'><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='i'/><arg direction='out' type='i'/><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetOffsetAtPoint'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='i'/></method>
+    <method name='GetNSelections'><arg direction='out' type='i'/></method>
+    <method name='GetSelection'><arg direction='in' type='i'/><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='AddSelection'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
+    <method name='RemoveSelection'><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
+    <method name='SetSelection'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
+    <method name='GetRangeExtents'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='i'/><arg direction='out' type='i'/><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetBoundedRanges'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='in' type='u'/><arg direction='in' type='u'/><arg direction='out' type='a(iisv)'/></method>
+    <method name='GetAttributeRun'><arg direction='in' type='i'/><arg direction='in' type='b'/><arg direction='out' type='a{ss}'/><arg direction='out' type='i'/><arg direction='out' type='i'/></method>
+    <method name='GetDefaultAttributeSet'><arg direction='out' type='a{ss}'/></method>
+    <method name='ScrollSubstringTo'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='out' type='b'/></method>
+    <method name='ScrollSubstringToPoint'><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='in' type='u'/><arg direction='in' type='i'/><arg direction='in' type='i'/><arg direction='out' type='b'/></method>
   </interface>
   <interface name='org.a11y.atspi.EditableText'>
     <property name='version' type='u' access='read'/>
@@ -413,6 +442,10 @@ private:
             object->owner->componentMethod(*object, method_name, parameters, invocation);
             return;
         }
+        if (g_strcmp0(interface_name, text_interface) == 0) {
+            object->owner->textMethod(*object, method_name, parameters, invocation);
+            return;
+        }
         if (g_strcmp0(interface_name, editable_text_interface) == 0) {
             object->owner->editableTextMethod(*object, method_name, parameters, invocation);
             return;
@@ -448,6 +481,8 @@ private:
             return object->owner->actionProperty(*object, property_name);
         if (g_strcmp0(interface_name, component_interface) == 0)
             return object->owner->versionProperty(property_name);
+        if (g_strcmp0(interface_name, text_interface) == 0)
+            return object->owner->textProperty(*object, property_name);
         if (g_strcmp0(interface_name, editable_text_interface) == 0)
             return object->owner->versionProperty(property_name);
         if (object->cache && g_strcmp0(interface_name, cache_interface) == 0)
@@ -602,6 +637,8 @@ private:
                 !registerInterface(child, action_interface)) return false;
             if (current.hasInterface(AtspiInterface::value) &&
                 !registerInterface(child, value_interface)) return false;
+            if (current.hasInterface(AtspiInterface::text) &&
+                !registerInterface(child, text_interface)) return false;
             if (current.hasInterface(AtspiInterface::editable_text) &&
                 !registerInterface(child, editable_text_interface)) return false;
         }
@@ -762,6 +799,8 @@ private:
             g_variant_builder_add(&builder, "s", "Action");
         if (current.hasInterface(AtspiInterface::value))
             g_variant_builder_add(&builder, "s", "Value");
+        if (current.hasInterface(AtspiInterface::text))
+            g_variant_builder_add(&builder, "s", "Text");
         if (current.hasInterface(AtspiInterface::editable_text))
             g_variant_builder_add(&builder, "s", "EditableText");
     }
@@ -1146,6 +1185,352 @@ private:
         return start <= end &&
             textOffset(text, start, first) &&
             textOffset(text, end, last);
+    }
+
+    static gint32 textCharacterCount(const std::string& text) {
+        const auto count = g_utf8_strlen(text.data(), text.size());
+        return count > G_MAXINT32 ? G_MAXINT32 : static_cast<gint32>(count);
+    }
+
+    static bool textSlice(
+        const std::string& text,
+        gint32 start,
+        gint32 end,
+        std::string& result
+    ) {
+        const auto count = textCharacterCount(text);
+        if (end == -1) end = count;
+        std::size_t first = 0;
+        std::size_t last = 0;
+        if (!textRange(text, start, end, first, last)) return false;
+        result.assign(text, first, last - first);
+        return true;
+    }
+
+    static bool textSegment(
+        const std::string& text,
+        gint32 offset,
+        guint32 granularity,
+        std::string& result,
+        gint32& start,
+        gint32& end
+    ) {
+        const auto count = textCharacterCount(text);
+        if (offset < 0 || offset > count || granularity > 4) return false;
+        if (offset == count) {
+            result.clear();
+            start = count;
+            end = count;
+            return true;
+        }
+        start = granularity == 0 ? offset : 0;
+        end = granularity == 0 ? offset + 1 : count;
+        return textSlice(text, start, end, result);
+    }
+
+    GVariant* textProperty(const Object& object, const char* property) const {
+        if (auto* version = versionProperty(property)) return version;
+        const auto current = snapshot(object);
+        if (!g_utf8_validate(
+                current.value_text.data(),
+                current.value_text.size(),
+                nullptr
+            )) return nullptr;
+        if (g_strcmp0(property, "CharacterCount") == 0)
+            return g_variant_new_int32(textCharacterCount(current.value_text));
+        if (g_strcmp0(property, "CaretOffset") == 0)
+            return g_variant_new_int32(-1);
+        return nullptr;
+    }
+
+    void textMethod(
+        const Object& object,
+        const char* method,
+        GVariant* parameters,
+        GDBusMethodInvocation* invocation
+    ) const {
+        const auto* current_entry = entry(object);
+        const auto current = snapshot(object);
+        const auto& text = current.value_text;
+        if (!current_entry || current.role != AtspiRole::entry ||
+            !g_utf8_validate(text.data(), text.size(), nullptr)) {
+            returnError(invocation, "Accessibility text is unavailable");
+            return;
+        }
+        const auto count = textCharacterCount(text);
+
+        if (g_strcmp0(method, "GetText") == 0) {
+            gint32 start = -1;
+            gint32 end = -1;
+            g_variant_get(parameters, "(ii)", &start, &end);
+            std::string result;
+            if (!textSlice(text, start, end, result)) {
+                returnError(invocation, "Accessibility text range is invalid");
+                return;
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(s)", result.c_str())
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetStringAtOffset") == 0 ||
+            g_strcmp0(method, "GetTextAtOffset") == 0) {
+            gint32 offset = -1;
+            guint32 granularity = 0;
+            g_variant_get(parameters, "(iu)", &offset, &granularity);
+            if (g_strcmp0(method, "GetTextAtOffset") == 0 &&
+                granularity <= 6 && granularity > 4) granularity = 4;
+            std::string result;
+            gint32 start = 0;
+            gint32 end = 0;
+            if (!textSegment(text, offset, granularity, result, start, end)) {
+                returnError(invocation, "Accessibility text offset is invalid");
+                return;
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(sii)", result.c_str(), start, end)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetTextBeforeOffset") == 0 ||
+            g_strcmp0(method, "GetTextAfterOffset") == 0) {
+            gint32 offset = -1;
+            guint32 boundary = 0;
+            g_variant_get(parameters, "(iu)", &offset, &boundary);
+            if (offset < 0 || offset > count || boundary > 6) {
+                returnError(invocation, "Accessibility text offset is invalid");
+                return;
+            }
+            const bool before = g_strcmp0(method, "GetTextBeforeOffset") == 0;
+            gint32 start = 0;
+            gint32 end = 0;
+            if (boundary == 0) {
+                start = before ? std::max<gint32>(0, offset - 1) :
+                    std::min<gint32>(count, offset + 1);
+                end = std::min<gint32>(count, start + 1);
+            } else if (before) {
+                end = offset;
+            } else {
+                start = offset;
+                end = count;
+            }
+            std::string result;
+            if (!textSlice(text, start, end, result)) {
+                returnError(invocation, "Accessibility text range is invalid");
+                return;
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(sii)", result.c_str(), start, end)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetCharacterAtOffset") == 0) {
+            gint32 offset = -1;
+            g_variant_get(parameters, "(i)", &offset);
+            std::size_t byte_offset = 0;
+            const bool valid = offset < count && textOffset(text, offset, byte_offset);
+            const gint32 character = valid
+                ? static_cast<gint32>(g_utf8_get_char(text.data() + byte_offset))
+                : -1;
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(i)", character)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "SetCaretOffset") == 0 ||
+            g_strcmp0(method, "AddSelection") == 0 ||
+            g_strcmp0(method, "RemoveSelection") == 0 ||
+            g_strcmp0(method, "SetSelection") == 0 ||
+            g_strcmp0(method, "ScrollSubstringTo") == 0 ||
+            g_strcmp0(method, "ScrollSubstringToPoint") == 0) {
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(b)", false)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetAttributeValue") == 0) {
+            gint32 offset = -1;
+            const char* attribute = nullptr;
+            g_variant_get(parameters, "(i&s)", &offset, &attribute);
+            if (offset < 0 || offset >= count || !attribute) {
+                returnError(invocation, "Accessibility text offset is invalid");
+                return;
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(s)", "")
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetAttributes") == 0 ||
+            g_strcmp0(method, "GetAttributeRun") == 0) {
+            gint32 offset = -1;
+            if (g_strcmp0(method, "GetAttributes") == 0)
+                g_variant_get(parameters, "(i)", &offset);
+            else {
+                gboolean include_defaults = false;
+                g_variant_get(parameters, "(ib)", &offset, &include_defaults);
+            }
+            if (offset < 0 || offset > count ||
+                (offset == count && count != 0)) {
+                returnError(invocation, "Accessibility text offset is invalid");
+                return;
+            }
+            GVariantBuilder builder;
+            g_variant_builder_init(&builder, G_VARIANT_TYPE("a{ss}"));
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(@a{ss}ii)", g_variant_builder_end(&builder), 0, count)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetDefaultAttributes") == 0 ||
+            g_strcmp0(method, "GetDefaultAttributeSet") == 0) {
+            GVariantBuilder builder;
+            g_variant_builder_init(&builder, G_VARIANT_TYPE("a{ss}"));
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(@a{ss})", g_variant_builder_end(&builder))
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetCharacterExtents") == 0) {
+            gint32 offset = -1;
+            guint32 coordinate_type = 0;
+            g_variant_get(parameters, "(iu)", &offset, &coordinate_type);
+            if (offset < 0 || offset >= count) {
+                returnError(invocation, "Accessibility text offset is invalid");
+                return;
+            }
+            const auto area = bounds(object, coordinate_type);
+            const gint64 first = static_cast<gint64>(area.width) * offset / count;
+            const gint64 last = static_cast<gint64>(area.width) * (offset + 1) / count;
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new(
+                    "(iiii)",
+                    area.x + static_cast<gint32>(first),
+                    area.y,
+                    static_cast<gint32>(last - first),
+                    area.height
+                )
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetOffsetAtPoint") == 0) {
+            gint32 x = 0;
+            gint32 y = 0;
+            guint32 coordinate_type = 0;
+            g_variant_get(parameters, "(iiu)", &x, &y, &coordinate_type);
+            const auto area = bounds(object, coordinate_type);
+            gint32 offset = -1;
+            if (count == 0 && contains(area, x, y)) offset = 0;
+            if (count > 0 && contains(area, x, y) && area.width > 0) {
+                const auto relative = static_cast<gint64>(x) - area.x;
+                offset = static_cast<gint32>(std::min<gint64>(
+                    count - 1,
+                    relative * count / area.width
+                ));
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(i)", offset)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetNSelections") == 0) {
+            g_dbus_method_invocation_return_value(invocation, g_variant_new("(i)", 0));
+            return;
+        }
+        if (g_strcmp0(method, "GetSelection") == 0) {
+            gint32 selection = -1;
+            g_variant_get(parameters, "(i)", &selection);
+            (void)selection;
+            returnError(invocation, "Accessibility text selection is unavailable");
+            return;
+        }
+        if (g_strcmp0(method, "GetRangeExtents") == 0) {
+            gint32 start = -1;
+            gint32 end = -1;
+            guint32 coordinate_type = 0;
+            g_variant_get(parameters, "(iiu)", &start, &end, &coordinate_type);
+            std::string ignored;
+            if (!textSlice(text, start, end, ignored)) {
+                returnError(invocation, "Accessibility text range is invalid");
+                return;
+            }
+            const auto area = bounds(object, coordinate_type);
+            const gint64 first = count == 0 ? 0 :
+                static_cast<gint64>(area.width) * start / count;
+            const gint64 last = count == 0 ? 0 :
+                static_cast<gint64>(area.width) * end / count;
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new(
+                    "(iiii)",
+                    area.x + static_cast<gint32>(first),
+                    area.y,
+                    static_cast<gint32>(last - first),
+                    area.height
+                )
+            );
+            return;
+        }
+        if (g_strcmp0(method, "GetBoundedRanges") == 0) {
+            gint32 x = 0;
+            gint32 y = 0;
+            gint32 width = 0;
+            gint32 height = 0;
+            guint32 coordinate_type = 0;
+            guint32 x_clip = 0;
+            guint32 y_clip = 0;
+            g_variant_get(
+                parameters,
+                "(iiiiuuu)",
+                &x,
+                &y,
+                &width,
+                &height,
+                &coordinate_type,
+                &x_clip,
+                &y_clip
+            );
+            GVariantBuilder builder;
+            g_variant_builder_init(&builder, G_VARIANT_TYPE("a(iisv)"));
+            const auto area = bounds(object, coordinate_type);
+            const gint64 right = static_cast<gint64>(x) + width;
+            const gint64 bottom = static_cast<gint64>(y) + height;
+            const gint64 area_right = static_cast<gint64>(area.x) + area.width;
+            const gint64 area_bottom = static_cast<gint64>(area.y) + area.height;
+            if (width >= 0 && height >= 0 && x_clip <= 3 && y_clip <= 3 &&
+                count > 0 && x < area_right && right > area.x &&
+                y < area_bottom && bottom > area.y) {
+                g_variant_builder_add(
+                    &builder,
+                    "(iisv)",
+                    0,
+                    count,
+                    text.c_str(),
+                    g_variant_new_string("")
+                );
+            }
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(@a(iisv))", g_variant_builder_end(&builder))
+            );
+            return;
+        }
+        g_dbus_method_invocation_return_error_literal(
+            invocation,
+            G_DBUS_ERROR,
+            G_DBUS_ERROR_UNKNOWN_METHOD,
+            "Unknown accessibility text method"
+        );
     }
 
     bool readClipboardText(std::string& text) const {

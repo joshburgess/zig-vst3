@@ -111,11 +111,13 @@ int testTextAndReadOnlyState() {
     auto snapshot = AtspiNodeAdapter(&node).snapshot(true, true, true);
     if (!snapshot.hasState(AtspiState::editable) ||
         !snapshot.hasState(AtspiState::single_line) ||
+        !snapshot.hasInterface(AtspiInterface::text) ||
         !snapshot.hasInterface(AtspiInterface::editable_text)) return 1;
     node.setReadOnly(true);
     snapshot = AtspiNodeAdapter(&node).snapshot(true, true, true);
     if (snapshot.hasState(AtspiState::editable) ||
         !snapshot.hasState(AtspiState::read_only) ||
+        !snapshot.hasInterface(AtspiInterface::text) ||
         snapshot.hasInterface(AtspiInterface::editable_text)) return 2;
     return 0;
 }
