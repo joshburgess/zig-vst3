@@ -1469,6 +1469,106 @@ private:
         return textSlice(text, start, end, result);
     }
 
+    enum class RelativeTextSegment {
+        before,
+        at,
+        after,
+    };
+
+    static bool legacyTextSegment(
+        const std::string& text,
+        gint32 offset,
+        guint32 boundary,
+        RelativeTextSegment relative,
+        std::string& result,
+        gint32& start,
+        gint32& end
+    ) {
+        const auto count = textCharacterCount(text);
+        if (offset < 0 || offset > count || boundary > 6) return false;
+        if (boundary == 0) {
+            if (relative == RelativeTextSegment::before) {
+                start = std::max<gint32>(0, offset - 1);
+            } else if (relative == RelativeTextSegment::after) {
+                start = std::min<gint32>(count, offset + 1);
+            } else {
+                start = offset;
+            }
+            end = std::min<gint32>(count, start + 1);
+            return textSlice(text, start, end, result);
+        }
+        if (text.size() > G_MAXINT || count >= G_MAXINT) return false;
+
+        std::vector<gint32> boundaries {0};
+        if (boundary <= 4) {
+            std::vector<PangoLogAttr> attributes(
+                static_cast<std::size_t>(count) + 1
+            );
+            pango_get_log_attrs(
+                text.c_str(),
+                static_cast<int>(text.size()),
+                -1,
+                pango_language_get_default(),
+                attributes.data(),
+                static_cast<int>(attributes.size())
+            );
+            for (gint32 index = 1; index < count; ++index) {
+                const auto& attribute = attributes[static_cast<std::size_t>(index)];
+                const bool is_boundary =
+                    (boundary == 1 && attribute.is_word_start != 0) ||
+                    (boundary == 2 && attribute.is_word_end != 0) ||
+                    (boundary == 3 && attribute.is_sentence_start != 0) ||
+                    (boundary == 4 && attribute.is_sentence_end != 0);
+                if (is_boundary) boundaries.push_back(index);
+            }
+        }
+        if (boundaries.back() != count) boundaries.push_back(count);
+
+        if (relative == RelativeTextSegment::before) {
+            const auto last = std::upper_bound(
+                boundaries.begin(),
+                boundaries.end(),
+                offset
+            );
+            const auto end_iterator = last == boundaries.begin()
+                ? boundaries.begin()
+                : last - 1;
+            if (end_iterator == boundaries.begin()) {
+                start = 0;
+                end = 0;
+            } else {
+                end = *end_iterator;
+                start = *(end_iterator - 1);
+            }
+        } else if (relative == RelativeTextSegment::after) {
+            const auto start_iterator = std::lower_bound(
+                boundaries.begin(),
+                boundaries.end(),
+                offset
+            );
+            if (start_iterator == boundaries.end() ||
+                start_iterator + 1 == boundaries.end()) {
+                start = count;
+                end = count;
+            } else {
+                start = *start_iterator;
+                end = *(start_iterator + 1);
+            }
+        } else if (offset == count) {
+            start = count;
+            end = count;
+        } else {
+            const auto end_iterator = std::upper_bound(
+                boundaries.begin(),
+                boundaries.end(),
+                offset
+            );
+            end = end_iterator == boundaries.end() ? count : *end_iterator;
+            start = end_iterator == boundaries.begin() ? 0 : *(end_iterator - 1);
+        }
+        return textSlice(text, start, end, result);
+    }
+
     GVariant* textProperty(const Object& object, const char* property) const {
         if (auto* version = versionProperty(property)) return version;
         const auto current = snapshot(object);
@@ -1515,16 +1615,10 @@ private:
             );
             return;
         }
-        if (g_strcmp0(method, "GetStringAtOffset") == 0 ||
-            g_strcmp0(method, "GetTextAtOffset") == 0) {
+        if (g_strcmp0(method, "GetStringAtOffset") == 0) {
             gint32 offset = -1;
             guint32 granularity = 0;
             g_variant_get(parameters, "(iu)", &offset, &granularity);
-            if (g_strcmp0(method, "GetTextAtOffset") == 0) {
-                if (granularity == 1 || granularity == 2) granularity = 1;
-                else if (granularity == 3 || granularity == 4) granularity = 2;
-                else if (granularity == 5 || granularity == 6) granularity = 3;
-            }
             std::string result;
             gint32 start = 0;
             gint32 end = 0;
@@ -1539,30 +1633,29 @@ private:
             return;
         }
         if (g_strcmp0(method, "GetTextBeforeOffset") == 0 ||
+            g_strcmp0(method, "GetTextAtOffset") == 0 ||
             g_strcmp0(method, "GetTextAfterOffset") == 0) {
             gint32 offset = -1;
             guint32 boundary = 0;
             g_variant_get(parameters, "(iu)", &offset, &boundary);
-            if (offset < 0 || offset > count || boundary > 6) {
-                returnError(invocation, "Accessibility text offset is invalid");
-                return;
-            }
-            const bool before = g_strcmp0(method, "GetTextBeforeOffset") == 0;
+            auto relative = RelativeTextSegment::at;
+            if (g_strcmp0(method, "GetTextBeforeOffset") == 0)
+                relative = RelativeTextSegment::before;
+            if (g_strcmp0(method, "GetTextAfterOffset") == 0)
+                relative = RelativeTextSegment::after;
+            std::string result;
             gint32 start = 0;
             gint32 end = 0;
-            if (boundary == 0) {
-                start = before ? std::max<gint32>(0, offset - 1) :
-                    std::min<gint32>(count, offset + 1);
-                end = std::min<gint32>(count, start + 1);
-            } else if (before) {
-                end = offset;
-            } else {
-                start = offset;
-                end = count;
-            }
-            std::string result;
-            if (!textSlice(text, start, end, result)) {
-                returnError(invocation, "Accessibility text range is invalid");
+            if (!legacyTextSegment(
+                    text,
+                    offset,
+                    boundary,
+                    relative,
+                    result,
+                    start,
+                    end
+                )) {
+                returnError(invocation, "Accessibility text offset is invalid");
                 return;
             }
             g_dbus_method_invocation_return_value(

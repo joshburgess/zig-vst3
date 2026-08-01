@@ -213,6 +213,47 @@ bool callRejected(GVariant* result, GError* error) {
     return true;
 }
 
+bool textRangeMatches(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path,
+    const char* method,
+    gint32 offset,
+    guint32 boundary,
+    const char* expected_text,
+    gint32 expected_start,
+    gint32 expected_end
+) {
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        method,
+        g_variant_new("(iu)", offset, boundary),
+        G_VARIANT_TYPE("(sii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    const char* text = nullptr;
+    gint32 start = -1;
+    gint32 end = -1;
+    g_variant_get(result, "(&sii)", &text, &start, &end);
+    const bool matches = text && expected_text &&
+        std::strcmp(text, expected_text) == 0 &&
+        start == expected_start && end == expected_end;
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    return matches;
+}
+
 bool boundedRangeMatches(
     GDBusConnection* connection,
     const char* application,
@@ -718,6 +759,76 @@ void inspectApplication(
     } else {
         text_boundaries = false;
         if (error) g_error_free(error);
+    }
+    const bool legacy_word_at = textRangeMatches(
+        connection,
+        child_bus.c_str(),
+        second_child_path,
+        "GetTextAtOffset",
+        6,
+        1u,
+        "au ",
+        5,
+        8
+    );
+    const bool legacy_word_end_at = textRangeMatches(
+        connection,
+        child_bus.c_str(),
+        second_child_path,
+        "GetTextAtOffset",
+        6,
+        2u,
+        " au",
+        4,
+        7
+    );
+    const bool legacy_word_before = textRangeMatches(
+        connection,
+        child_bus.c_str(),
+        second_child_path,
+        "GetTextBeforeOffset",
+        6,
+        1u,
+        "Café ",
+        0,
+        5
+    );
+    const bool legacy_word_after = textRangeMatches(
+        connection,
+        child_bus.c_str(),
+        second_child_path,
+        "GetTextAfterOffset",
+        6,
+        1u,
+        "lait. ",
+        8,
+        14
+    );
+    const bool legacy_sentence_end = textRangeMatches(
+        connection,
+        child_bus.c_str(),
+        second_child_path,
+        "GetTextAtOffset",
+        15,
+        4u,
+        " 你好！",
+        13,
+        17
+    );
+    text_boundaries &= legacy_word_at && legacy_word_end_at &&
+        legacy_word_before && legacy_word_after && legacy_sentence_end;
+    if (!legacy_word_at || !legacy_word_end_at || !legacy_word_before ||
+        !legacy_word_after || !legacy_sentence_end) {
+        std::fprintf(
+            stderr,
+            "AT-SPI legacy boundaries: at=%d end-at=%d before=%d "
+            "after=%d sentence-end=%d\n",
+            legacy_word_at,
+            legacy_word_end_at,
+            legacy_word_before,
+            legacy_word_after,
+            legacy_sentence_end
+        );
     }
     evidence.text_boundaries.store(text_boundaries, std::memory_order_release);
 
