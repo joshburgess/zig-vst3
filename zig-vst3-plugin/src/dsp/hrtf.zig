@@ -57,6 +57,7 @@ pub const MotionClock = struct {
         self: *MotionClock,
         tracker_timestamp: u64,
     ) !u64 {
+        try self.validate();
         if (tracker_timestamp < self.tracker_anchor or
             (self.has_mapped_timestamp and
                 tracker_timestamp <= self.last_tracker_timestamp))
@@ -93,6 +94,7 @@ pub const MotionClock = struct {
         tracker_anchor: u64,
         sample_anchor: u64,
     ) !void {
+        try self.validate();
         if (self.has_mapped_timestamp and
             (tracker_anchor <= self.last_tracker_timestamp or
                 sample_anchor <= self.last_sample_position))
@@ -101,6 +103,14 @@ pub const MotionClock = struct {
         }
         self.tracker_anchor = tracker_anchor;
         self.sample_anchor = sample_anchor;
+    }
+
+    fn validate(self: *const MotionClock) !void {
+        if (self.sample_rate < 8_000 or self.sample_rate > 384_000 or
+            self.tracker_ticks_per_second == 0)
+        {
+            return error.InvalidHrtfMotionClockState;
+        }
     }
 };
 
@@ -1206,6 +1216,19 @@ test "HRTF motion clock rejects invalid and unresolved time transactionally" {
     try std.testing.expectEqual(
         @as(u64, std.math.maxInt(u64)),
         try overflowing.map(0),
+    );
+
+    var corrupt = clock;
+    corrupt.tracker_ticks_per_second = 0;
+    try std.testing.expectError(
+        error.InvalidHrtfMotionClockState,
+        corrupt.map(50_000),
+    );
+    corrupt = clock;
+    corrupt.sample_rate = 1;
+    try std.testing.expectError(
+        error.InvalidHrtfMotionClockState,
+        corrupt.reanchor(50_000, 10),
     );
 }
 
