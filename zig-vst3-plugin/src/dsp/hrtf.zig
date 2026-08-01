@@ -25,6 +25,85 @@ pub const MotionPoint = struct {
     head_pose: HeadPose,
 };
 
+/// Maps an ordered tracker clock onto absolute audio sample positions.
+pub const MotionClock = struct {
+    sample_rate: u32,
+    tracker_ticks_per_second: u64,
+    tracker_anchor: u64,
+    sample_anchor: u64,
+    last_tracker_timestamp: u64 = 0,
+    last_sample_position: u64 = 0,
+    has_mapped_timestamp: bool = false,
+
+    pub fn init(
+        sample_rate: u32,
+        tracker_ticks_per_second: u64,
+        tracker_anchor: u64,
+        sample_anchor: u64,
+    ) !MotionClock {
+        if (sample_rate < 8_000 or sample_rate > 384_000)
+            return error.InvalidHrtfSampleRate;
+        if (tracker_ticks_per_second == 0)
+            return error.InvalidHrtfTrackerClockRate;
+        return .{
+            .sample_rate = sample_rate,
+            .tracker_ticks_per_second = tracker_ticks_per_second,
+            .tracker_anchor = tracker_anchor,
+            .sample_anchor = sample_anchor,
+        };
+    }
+
+    pub fn map(
+        self: *MotionClock,
+        tracker_timestamp: u64,
+    ) !u64 {
+        if (tracker_timestamp < self.tracker_anchor or
+            (self.has_mapped_timestamp and
+                tracker_timestamp <= self.last_tracker_timestamp))
+        {
+            return error.InvalidHrtfTrackerTimestamp;
+        }
+
+        const tracker_delta = tracker_timestamp - self.tracker_anchor;
+        const sample_delta_wide =
+            (@as(u128, tracker_delta) * self.sample_rate) /
+            self.tracker_ticks_per_second;
+        if (sample_delta_wide > std.math.maxInt(u64))
+            return error.HrtfMotionSamplePositionOverflow;
+        const sample_delta: u64 = @intCast(sample_delta_wide);
+        const sample_position = std.math.add(
+            u64,
+            self.sample_anchor,
+            sample_delta,
+        ) catch return error.HrtfMotionSamplePositionOverflow;
+        if (self.has_mapped_timestamp and
+            sample_position <= self.last_sample_position)
+        {
+            return error.HrtfTrackerTimestampTooDense;
+        }
+
+        self.last_tracker_timestamp = tracker_timestamp;
+        self.last_sample_position = sample_position;
+        self.has_mapped_timestamp = true;
+        return sample_position;
+    }
+
+    pub fn reanchor(
+        self: *MotionClock,
+        tracker_anchor: u64,
+        sample_anchor: u64,
+    ) !void {
+        if (self.has_mapped_timestamp and
+            (tracker_anchor <= self.last_tracker_timestamp or
+                sample_anchor <= self.last_sample_position))
+        {
+            return error.InvalidHrtfTrackerClockAnchor;
+        }
+        self.tracker_anchor = tracker_anchor;
+        self.sample_anchor = sample_anchor;
+    }
+};
+
 /// Bounded single-producer, single-consumer transport for tracker updates.
 pub fn MotionPointQueue(comptime capacity: usize) type {
     if (capacity == 0)
@@ -1043,6 +1122,91 @@ fn chordDistanceSquared(first: [3]f64, second: [3]f64) f64 {
 fn sameDirection(first: [3]f64, second: [3]f64) bool {
     return chordDistanceSquared(first, second) <=
         direction_tolerance_squared;
+}
+
+test "HRTF motion clock maps ordered tracker timestamps exactly" {
+    var clock = try MotionClock.init(
+        48_000,
+        1_000_000_000,
+        10_000_000_000,
+        100,
+    );
+    try std.testing.expectEqual(
+        @as(u64, 100),
+        try clock.map(10_000_000_000),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 101),
+        try clock.map(10_000_020_834),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 48_100),
+        try clock.map(11_000_000_000),
+    );
+
+    try clock.reanchor(12_000_000_000, 96_101);
+    try std.testing.expectEqual(
+        @as(u64, 96_101),
+        try clock.map(12_000_000_000),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 120_101),
+        try clock.map(12_500_000_000),
+    );
+}
+
+test "HRTF motion clock rejects invalid and unresolved time transactionally" {
+    try std.testing.expectError(
+        error.InvalidHrtfSampleRate,
+        MotionClock.init(7_999, 1, 0, 0),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerClockRate,
+        MotionClock.init(48_000, 0, 0, 0),
+    );
+
+    var clock = try MotionClock.init(48_000, 1_000_000_000, 1_000, 7);
+    try std.testing.expectEqual(@as(u64, 7), try clock.map(1_000));
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerTimestamp,
+        clock.map(999),
+    );
+    try std.testing.expectError(
+        error.HrtfTrackerTimestampTooDense,
+        clock.map(1_001),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 8),
+        try clock.map(21_834),
+    );
+
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerClockAnchor,
+        clock.reanchor(21_834, 9),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerClockAnchor,
+        clock.reanchor(30_000, 8),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 9),
+        try clock.map(42_667),
+    );
+
+    var overflowing = try MotionClock.init(
+        384_000,
+        1,
+        0,
+        std.math.maxInt(u64),
+    );
+    try std.testing.expectError(
+        error.HrtfMotionSamplePositionOverflow,
+        overflowing.map(1),
+    );
+    try std.testing.expectEqual(
+        @as(u64, std.math.maxInt(u64)),
+        try overflowing.map(0),
+    );
 }
 
 test "HRTF motion point queue validates and preserves tracker updates" {

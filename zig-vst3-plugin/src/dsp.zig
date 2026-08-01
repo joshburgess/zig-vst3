@@ -184,6 +184,7 @@ pub const HrtfDirection = hrtf.Direction;
 pub const HrtfPosition = hrtf.Position;
 pub const HrtfHeadPose = hrtf.HeadPose;
 pub const HrtfMotionPoint = hrtf.MotionPoint;
+pub const HrtfMotionClock = hrtf.MotionClock;
 pub const HrtfMotionPointQueue = hrtf.MotionPointQueue;
 pub const HrtfInterpolation = hrtf.Interpolation;
 pub const HrtfSofaLoader = hrtf_sofa.Loader;
