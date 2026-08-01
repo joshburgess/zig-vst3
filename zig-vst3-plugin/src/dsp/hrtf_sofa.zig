@@ -112,6 +112,10 @@ pub fn databaseFromDecoded(
             @abs(value) > std.math.floatMax(f32))
             return error.InvalidSofaResponse;
     }
+    for (decoded.delays_measurement_ear) |delay| {
+        if (!std.math.isFinite(delay) or delay < 0.0)
+            return error.InvalidHrtfDelay;
+    }
 
     const interleaved = try allocator.alloc(f32, response_count);
     defer allocator.free(interleaved);
@@ -911,6 +915,17 @@ test "decoded standard HRTF dataset rejects inconsistent data" {
         invalid,
     );
     try std.testing.expect(boundary.valid());
+
+    invalid = base;
+    invalid.delays_measurement_ear = &.{ std.math.nan(f64), 0.0 };
+    var delay_failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfDelay,
+        databaseFromDecoded(1, 1, delay_failing.allocator(), invalid),
+    );
 
     var failing = std.testing.FailingAllocator.init(
         std.testing.allocator,
