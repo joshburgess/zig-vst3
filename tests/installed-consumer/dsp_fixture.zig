@@ -5938,6 +5938,20 @@ test "installed package renders bounded HRTF responses" {
     );
     try std.testing.expectEqual(@as(usize, 0), try motion_queue.pending());
 
+    const StreamingMotion =
+        plugin.dsp.HrtfStreamingMotionRenderer(8, 2, 4);
+    var streaming_motion = try StreamingMotion.init(0, 2);
+    try std.testing.expect(try streaming_motion.prepare(
+        &database,
+        points[0],
+        .delay_aligned,
+    ));
+    const streaming_output = try streaming_motion.processSample(1.0);
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.5, 0.25 },
+        streaming_output,
+    );
+
     const decoded = plugin.dsp.hrtf_sofa.DecodedDataset{
         .measurement_count = 1,
         .response_frame_count = 1,
