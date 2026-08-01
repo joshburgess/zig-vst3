@@ -23,6 +23,163 @@ pub const Config = struct {
     }
 };
 
+pub fn FiniteImpulseResponseResampler(
+    comptime Sample: type,
+    comptime maximum_input_frames: usize,
+    comptime maximum_output_frames: usize,
+) type {
+    if (Sample != f32 and Sample != f64)
+        @compileError("finite impulse-response resampling requires f32 or f64");
+    if (maximum_input_frames == 0 or maximum_output_frames == 0)
+        @compileError("finite impulse-response resampling requires frame capacity");
+
+    return struct {
+        const Self = @This();
+
+        pub const input_frame_capacity = maximum_input_frames;
+        pub const output_frame_capacity = maximum_output_frames;
+
+        input_rate: u32,
+        output_rate: u32,
+        coefficients: [phase_count][tap_count]Sample,
+
+        pub fn init(input_rate: u32, output_rate: u32) !Self {
+            if (!validFiniteRate(input_rate) or
+                !validFiniteRate(output_rate))
+            {
+                return error.InvalidResamplerConfig;
+            }
+            var result = Self{
+                .input_rate = input_rate,
+                .output_rate = output_rate,
+                .coefficients = undefined,
+            };
+            buildCoefficientTable(
+                Sample,
+                @floatFromInt(input_rate),
+                @floatFromInt(output_rate),
+                &result.coefficients,
+            );
+            return result;
+        }
+
+        pub fn outputFrameCount(
+            self: *const Self,
+            input_frames: usize,
+        ) !usize {
+            if (!self.valid() or input_frames == 0 or
+                input_frames > maximum_input_frames)
+            {
+                return error.InvalidFiniteImpulseResponseShape;
+            }
+            const scaled = std.math.mul(
+                u128,
+                @intCast(input_frames),
+                @intCast(self.output_rate),
+            ) catch return error.FiniteImpulseResponseCapacityExceeded;
+            const rounded = std.math.add(
+                u128,
+                scaled,
+                @intCast(self.input_rate / 2),
+            ) catch return error.FiniteImpulseResponseCapacityExceeded;
+            const frame_count = std.math.cast(
+                usize,
+                rounded / @as(u128, self.input_rate),
+            ) orelse return error.FiniteImpulseResponseCapacityExceeded;
+            if (frame_count == 0 or frame_count > maximum_output_frames)
+                return error.FiniteImpulseResponseCapacityExceeded;
+            return frame_count;
+        }
+
+        pub fn resample(
+            self: *const Self,
+            input: []const Sample,
+            destination: []Sample,
+        ) !void {
+            const output_frames = try self.outputFrameCount(input.len);
+            if (destination.len != output_frames)
+                return error.InvalidFiniteImpulseResponseShape;
+
+            var source: [maximum_input_frames]Sample = undefined;
+            var staged: [maximum_output_frames]f64 = undefined;
+            var source_sum: f128 = 0.0;
+            for (input, 0..) |sample, index| {
+                if (!std.math.isFinite(sample))
+                    return error.InvalidFiniteImpulseResponseSample;
+                source[index] = sample;
+                source_sum += @as(f128, @floatCast(sample));
+            }
+
+            if (self.input_rate == self.output_rate) {
+                for (source[0..input.len], 0..) |sample, index|
+                    staged[index] = @floatCast(sample);
+            } else {
+                const step =
+                    @as(f64, @floatFromInt(self.input_rate)) /
+                    @as(f64, @floatFromInt(self.output_rate));
+                for (staged[0..output_frames], 0..) |*output, index| {
+                    const position =
+                        @as(f64, @floatFromInt(index)) * step;
+                    const base_floor = @floor(position);
+                    const base: i64 = @intFromFloat(base_floor);
+                    const phase_position =
+                        (position - base_floor) * (phase_count - 1);
+                    const phase: usize = @intFromFloat(@round(
+                        phase_position,
+                    ));
+                    const first = base - left_radius;
+                    var value: f64 = 0.0;
+                    for (0..tap_count) |tap| {
+                        const source_index = first + @as(
+                            i64,
+                            @intCast(tap),
+                        );
+                        if (source_index < 0 or
+                            source_index >= @as(i64, @intCast(input.len)))
+                        {
+                            continue;
+                        }
+                        value += @as(
+                            f64,
+                            @floatCast(source[@intCast(source_index)]),
+                        ) * @as(
+                            f64,
+                            @floatCast(self.coefficients[phase][tap]),
+                        );
+                    }
+                    output.* = value * step;
+                }
+            }
+
+            var output_sum: f128 = 0.0;
+            for (staged[0..output_frames]) |sample|
+                output_sum += @floatCast(sample);
+            const correction: f128 =
+                (source_sum - output_sum) /
+                @as(f128, @floatFromInt(output_frames));
+            if (!std.math.isFinite(correction))
+                return error.InvalidFiniteImpulseResponseResult;
+            for (staged[0..output_frames]) |*sample| {
+                const corrected = @as(f128, sample.*) + correction;
+                if (!std.math.isFinite(corrected) or
+                    corrected < -std.math.floatMax(Sample) or
+                    corrected > std.math.floatMax(Sample))
+                {
+                    return error.InvalidFiniteImpulseResponseResult;
+                }
+                sample.* = @floatCast(corrected);
+            }
+            for (destination, staged[0..output_frames]) |*output, sample|
+                output.* = @floatCast(sample);
+        }
+
+        fn valid(self: *const Self) bool {
+            return validFiniteRate(self.input_rate) and
+                validFiniteRate(self.output_rate);
+        }
+    };
+}
+
 pub const ProcessResult = struct {
     consumed: usize,
     produced: usize,
@@ -442,23 +599,12 @@ pub fn StreamingResampler(comptime Sample: type) type {
         }
 
         fn buildCoefficients(self: *Self) void {
-            const rate_ratio = self.output_rate / self.input_rate;
-            const cutoff = 0.94 * @min(1.0, rate_ratio);
-            for (0..phase_count) |phase| {
-                const fraction = @as(f64, @floatFromInt(phase)) / (phase_count - 1);
-                var sum: f64 = 0.0;
-                for (0..tap_count) |tap| {
-                    const offset = @as(f64, @floatFromInt(tap)) - left_radius;
-                    const distance = fraction - offset;
-                    const coefficient = cutoff * sinc(cutoff * distance) * blackman(distance / right_radius);
-                    self.coefficients[phase][tap] = @floatCast(coefficient);
-                    sum += coefficient;
-                }
-                const inverse_sum = 1.0 / sum;
-                for (0..tap_count) |tap| {
-                    self.coefficients[phase][tap] *= @floatCast(inverse_sum);
-                }
-            }
+            buildCoefficientTable(
+                Sample,
+                self.input_rate,
+                self.output_rate,
+                &self.coefficients,
+            );
         }
     };
 }
@@ -521,6 +667,38 @@ fn validRate(rate: f64) bool {
     return std.math.isFinite(rate) and rate >= 1_000.0 and rate <= 2_000_000.0;
 }
 
+fn validFiniteRate(rate: u32) bool {
+    return rate >= 8_000 and rate <= 384_000;
+}
+
+fn buildCoefficientTable(
+    comptime Sample: type,
+    input_rate: f64,
+    output_rate: f64,
+    coefficients: *[phase_count][tap_count]Sample,
+) void {
+    const rate_ratio = output_rate / input_rate;
+    const cutoff = 0.94 * @min(1.0, rate_ratio);
+    for (0..phase_count) |phase| {
+        const fraction =
+            @as(f64, @floatFromInt(phase)) / (phase_count - 1);
+        var sum: f64 = 0.0;
+        for (0..tap_count) |tap| {
+            const offset =
+                @as(f64, @floatFromInt(tap)) - left_radius;
+            const distance = fraction - offset;
+            const coefficient = cutoff *
+                sinc(cutoff * distance) *
+                blackman(distance / right_radius);
+            coefficients[phase][tap] = @floatCast(coefficient);
+            sum += coefficient;
+        }
+        const inverse_sum = 1.0 / sum;
+        for (0..tap_count) |tap|
+            coefficients[phase][tap] *= @floatCast(inverse_sum);
+    }
+}
+
 fn validRateCorrection(correction_ppm: f64) bool {
     return std.math.isFinite(correction_ppm) and
         @abs(correction_ppm) <= maximum_rate_correction_ppm;
@@ -536,6 +714,85 @@ fn blackman(normalized_distance: f64) f64 {
     if (@abs(normalized_distance) > 1.0) return 0.0;
     return 0.42 + 0.5 * @cos(std.math.pi * normalized_distance) +
         0.08 * @cos(std.math.tau * normalized_distance);
+}
+
+test "finite impulse-response resampler preserves coefficient sums" {
+    const Resampler = FiniteImpulseResponseResampler(f64, 128, 256);
+    const upsampler = try Resampler.init(24_000, 48_000);
+    var impulse = [_]f64{0.0} ** 32;
+    impulse[0] = 1.0;
+    var upsampled: [64]f64 = undefined;
+    try upsampler.resample(&impulse, &upsampled);
+    var upsampled_sum: f64 = 0.0;
+    for (upsampled) |sample| upsampled_sum += sample;
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        upsampled_sum,
+        1.0e-12,
+    );
+
+    const downsampler = try Resampler.init(96_000, 24_000);
+    var alternating: [128]f64 = undefined;
+    for (&alternating, 0..) |*sample, index|
+        sample.* = if (index % 2 == 0) 1.0 else -1.0;
+    var downsampled: [32]f64 = undefined;
+    try downsampler.resample(&alternating, &downsampled);
+    var downsampled_sum: f64 = 0.0;
+    for (downsampled) |sample| {
+        downsampled_sum += sample;
+    }
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.0),
+        downsampled_sum,
+        1.0e-12,
+    );
+    var interior_peak: f64 = 0.0;
+    for (downsampled[4..28]) |sample|
+        interior_peak = @max(interior_peak, @abs(sample));
+    try std.testing.expect(interior_peak < 0.02);
+}
+
+test "finite impulse-response resampler is exact and transactional" {
+    const Resampler = FiniteImpulseResponseResampler(f32, 4, 8);
+    const unchanged = try Resampler.init(48_000, 48_000);
+    const input = [_]f32{ 1.0, -0.5, 0.25 };
+    var destination = [_]f32{99.0} ** 3;
+    try unchanged.resample(&input, &destination);
+    try std.testing.expectEqualDeep(input, destination);
+
+    const doubled = try Resampler.init(24_000, 48_000);
+    var reference: [6]f32 = undefined;
+    try doubled.resample(&input, &reference);
+    var overlapping = [_]f32{
+        1.0,  -0.5, 0.25, 99.0,
+        99.0, 99.0, 99.0, 99.0,
+    };
+    try doubled.resample(overlapping[0..3], overlapping[1..7]);
+    try std.testing.expectEqualDeep(reference, overlapping[1..7].*);
+
+    destination = @splat(99.0);
+    try std.testing.expectError(
+        error.InvalidFiniteImpulseResponseShape,
+        unchanged.resample(&input, destination[0..2]),
+    );
+    try std.testing.expectEqualDeep([_]f32{99.0} ** 3, destination);
+
+    const malformed = [_]f32{ 1.0, std.math.nan(f32), 0.0 };
+    try std.testing.expectError(
+        error.InvalidFiniteImpulseResponseSample,
+        unchanged.resample(&malformed, &destination),
+    );
+    try std.testing.expectEqualDeep([_]f32{99.0} ** 3, destination);
+
+    const excessive = try Resampler.init(8_000, 384_000);
+    try std.testing.expectError(
+        error.FiniteImpulseResponseCapacityExceeded,
+        excessive.outputFrameCount(1),
+    );
+    try std.testing.expectError(
+        error.InvalidResamplerConfig,
+        Resampler.init(7_999, 48_000),
+    );
 }
 
 test "streaming resampler reports and renders its causal impulse latency" {

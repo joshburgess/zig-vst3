@@ -978,6 +978,8 @@ pub const PolyphaseIirOversamplingOptions =
     polyphase_iir_oversampling.Options;
 pub const ResamplerConfig = resampler.Config;
 pub const StreamingResampler = resampler.StreamingResampler;
+pub const FiniteImpulseResponseResampler =
+    resampler.FiniteImpulseResponseResampler;
 pub const maximum_resampler_rate_correction_ppm =
     resampler.maximum_rate_correction_ppm;
 pub const Reverb = reverb.Reverb;

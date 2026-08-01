@@ -471,6 +471,21 @@ test "installed package exposes validated DSP and telemetry state" {
     );
     var resampler = try Resampler.init(.{ .input_rate = 48_000, .output_rate = 48_000 });
     try std.testing.expect(resampler.validState());
+    const FirResampler =
+        plugin.dsp.FiniteImpulseResponseResampler(f64, 4, 8);
+    const fir_resampler = try FirResampler.init(24_000, 48_000);
+    var converted_response: [8]f64 = undefined;
+    try fir_resampler.resample(
+        &.{ 1.0, 0.0, 0.0, 0.0 },
+        &converted_response,
+    );
+    var converted_sum: f64 = 0.0;
+    for (converted_response) |sample| converted_sum += sample;
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0),
+        converted_sum,
+        1.0e-12,
+    );
     const phase_before = resampler.next_input_position;
     try resampler.setRateCorrectionPpm(
         plugin.dsp.maximum_resampler_rate_correction_ppm / 2.0,

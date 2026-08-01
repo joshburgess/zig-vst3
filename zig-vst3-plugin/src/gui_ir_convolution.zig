@@ -1,5 +1,6 @@
 const std = @import("std");
 const dsp_fft = @import("dsp/fft.zig");
+const dsp_resampler = @import("dsp/resampler.zig");
 const realtime_audit = @import("realtime_audit.zig");
 const serial_generation = @import("serial_generation.zig");
 
@@ -556,27 +557,44 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             const target_rate = if (self.target_sample_rate == 0) slot.metadata.sample_rate else self.target_sample_rate;
             slot.prepared_sample_rate = target_rate;
             if (slot.metadata.frames == 0) return;
-            const scaled_frames = @as(u128, slot.metadata.frames) * target_rate;
-            const destination_frames: usize = @intCast((scaled_frames + slot.metadata.sample_rate / 2) / slot.metadata.sample_rate);
-            if (destination_frames == 0 or destination_frames > maximum_frames) return error.TooManyFrames;
+            const IrResampler = dsp_resampler.FiniteImpulseResponseResampler(
+                f32,
+                maximum_frames,
+                maximum_frames,
+            );
+            const ir_resampler = IrResampler.init(
+                slot.metadata.sample_rate,
+                target_rate,
+            ) catch return error.InvalidSampleRate;
+            const destination_frames = ir_resampler.outputFrameCount(
+                slot.metadata.frames,
+            ) catch return error.TooManyFrames;
             slot.prepared_frames = destination_frames;
             slot.prepared_partitions = (destination_frames + partition_size - 1) / partition_size;
             slot.head = @splat(@splat(0.0));
             slot.spectra = @splat(@splat(@splat(.{})));
 
             var transform: [fft_size]Complex = @splat(.{});
+            var source: [maximum_frames]f32 = undefined;
+            var response: [maximum_frames]f32 = undefined;
             for (0..slot.metadata.channels) |channel| {
+                for (source[0..slot.metadata.frames], 0..) |*sample, frame|
+                    sample.* = slot.raw[frame * slot.metadata.channels + channel];
+                ir_resampler.resample(
+                    source[0..slot.metadata.frames],
+                    response[0..destination_frames],
+                ) catch |err| switch (err) {
+                    error.InvalidFiniteImpulseResponseShape,
+                    error.FiniteImpulseResponseCapacityExceeded,
+                    => return error.TooManyFrames,
+                    else => return error.NonFiniteSample,
+                };
                 for (0..slot.prepared_partitions) |partition| {
                     transform = @splat(.{});
                     for (0..partition_size) |offset| {
                         const destination = partition * partition_size + offset;
                         if (destination >= destination_frames) break;
-                        const sample_value = resample(
-                            slot,
-                            channel,
-                            destination,
-                            destination_frames,
-                        );
+                        const sample_value = response[destination];
                         transform[offset].real = sample_value;
                         if (partition == 0)
                             slot.head[channel][offset] = sample_value;
@@ -586,19 +604,6 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
                     slot.spectra[channel][partition] = transform;
                 }
             }
-        }
-
-        fn resample(slot: *const Slot, channel: usize, destination: usize, destination_frames: usize) f32 {
-            if (slot.metadata.frames == 1 or destination_frames == 1) return slot.raw[channel];
-            const position = @as(f64, @floatFromInt(destination)) * @as(f64, @floatFromInt(slot.metadata.frames - 1)) /
-                @as(f64, @floatFromInt(destination_frames - 1));
-            const first: usize = @intFromFloat(@floor(position));
-            const second = @min(first + 1, slot.metadata.frames - 1);
-            const fraction: f32 = @floatCast(position - @floor(position));
-            const channels: usize = slot.metadata.channels;
-            const first_sample = slot.raw[first * channels + channel];
-            const second_sample = slot.raw[second * channels + channel];
-            return first_sample + (second_sample - first_sample) * fraction;
         }
 
         fn advanceSample(self: *Self) void {
@@ -906,9 +911,15 @@ test "partitioned convolver republishes immutable IR data for sample rate change
     for (&output, 0..) |*sample, index| {
         sample.* = convolver.processFrame(if (index == 0) 1.0 else 0.0, 0.0)[0];
     }
-    try std.testing.expectApproxEqAbs(@as(f32, 1.0), output[8], 0.0001);
-    try std.testing.expect(output[9] > output[10]);
-    try std.testing.expect(output[10] > output[11]);
+    var response_sum: f32 = 0.0;
+    for (output[8..16]) |sample| response_sum += sample;
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.0),
+        response_sum,
+        0.000_01,
+    );
+    for (output[16..20]) |sample|
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), sample, 0.000_001);
 }
 
 test "partitioned convolver rejects malformed staging sequences" {
