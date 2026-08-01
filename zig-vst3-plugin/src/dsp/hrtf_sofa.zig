@@ -146,6 +146,15 @@ fn sampleRate(value: f64) !u32 {
     return @intFromFloat(value);
 }
 
+fn terminatedPath(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+) ![:0]u8 {
+    if (path.len == 0 or std.mem.indexOfScalar(u8, path, 0) != null)
+        return error.InvalidSofaPath;
+    return allocator.dupeZ(u8, path);
+}
+
 pub fn Loader(
     comptime maximum_measurements: usize,
     comptime maximum_frames: usize,
@@ -195,7 +204,7 @@ pub fn Loader(
             allocator: std.mem.Allocator,
             path: []const u8,
         ) !DatabaseType {
-            const terminated_path = try allocator.dupeZ(u8, path);
+            const terminated_path = try terminatedPath(allocator, path);
             defer allocator.free(terminated_path);
 
             var file_id: c_int = 0;
@@ -840,6 +849,33 @@ test "decoded standard HRTF dataset rejects inconsistent data" {
         error.OutOfMemory,
         databaseFromDecoded(1, 1, failing.allocator(), base),
     );
+}
+
+test "standard HRTF loader rejects ambiguous paths" {
+    try std.testing.expectError(
+        error.InvalidSofaPath,
+        terminatedPath(std.testing.allocator, ""),
+    );
+    try std.testing.expectError(
+        error.InvalidSofaPath,
+        terminatedPath(std.testing.allocator, "fixture.sofa\x00ignored"),
+    );
+
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.OutOfMemory,
+        terminatedPath(failing.allocator(), "fixture.sofa"),
+    );
+
+    const path = try terminatedPath(
+        std.testing.allocator,
+        "fixture.sofa",
+    );
+    defer std.testing.allocator.free(path);
+    try std.testing.expectEqualStrings("fixture.sofa", path);
 }
 
 test "standard HRTF loader reads an external public fixture" {
