@@ -2886,6 +2886,26 @@ pub fn build(b: *std.Build) void {
         .root_module = dynamic_topology_lv2_module,
     });
 
+    const dynamic_topology_lv2_metadata_module = b.createModule(.{
+        .root_source_file = b.path(
+            "tools/generate_dynamic_topology_lv2_metadata.zig",
+        ),
+        .target = b.graph.host,
+        .optimize = .ReleaseSafe,
+    });
+    dynamic_topology_lv2_metadata_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    dynamic_topology_lv2_metadata_module.addImport(
+        "dynamic-topology-lv2",
+        dynamic_topology_lv2_module,
+    );
+    const dynamic_topology_lv2_metadata = b.addExecutable(.{
+        .name = "generate-dynamic-topology-lv2-metadata",
+        .root_module = dynamic_topology_lv2_metadata_module,
+    });
+
     const lv2_ui_module = b.createModule(.{
         .root_source_file = b.path(
             "tests/fixtures/lv2_ui_plugin.zig",
@@ -2962,6 +2982,52 @@ pub fn build(b: *std.Build) void {
     );
     mono_gain_lv2_lint_step.dependOn(
         &mono_gain_lv2_lint.step,
+    );
+
+    const dynamic_topology_lv2_bundle_step = b.step(
+        "bundle-lv2-dynamic-topology",
+        "Build the native dynamic-topology LV2 validation bundle",
+    );
+    const dynamic_topology_lv2_bundle = b.addSystemCommand(
+        &.{"scripts/bundle_lv2.sh"},
+    );
+    dynamic_topology_lv2_bundle.addFileArg(
+        dynamic_topology_lv2.getEmittedBin(),
+    );
+    dynamic_topology_lv2_bundle.addArg(
+        b.getInstallPath(
+            .prefix,
+            "bundle/zig_vst3_dynamic_topology.lv2",
+        ),
+    );
+    dynamic_topology_lv2_bundle.addFileArg(
+        dynamic_topology_lv2_metadata.getEmittedBin(),
+    );
+    dynamic_topology_lv2_bundle_step.dependOn(
+        &dynamic_topology_lv2_bundle.step,
+    );
+
+    const dynamic_topology_lv2_lint_step = b.step(
+        "lint-lv2-dynamic-topology",
+        "Run external schema and metadata lint for dynamic LV2 topology",
+    );
+    const dynamic_topology_lv2_lint = b.addSystemCommand(
+        &.{"scripts/lint_lv2_bundle.sh"},
+    );
+    dynamic_topology_lv2_lint.addArg(
+        b.getInstallPath(
+            .prefix,
+            "bundle/zig_vst3_dynamic_topology.lv2",
+        ),
+    );
+    dynamic_topology_lv2_lint.addArg(
+        "https://zig-vst3.dev/tests/lv2-dynamic-topology",
+    );
+    dynamic_topology_lv2_lint.step.dependOn(
+        &dynamic_topology_lv2_bundle.step,
+    );
+    dynamic_topology_lv2_lint_step.dependOn(
+        &dynamic_topology_lv2_lint.step,
     );
 
     const mono_gain_lv2_entry_check = b.addSystemCommand(
@@ -3239,6 +3305,14 @@ pub fn build(b: *std.Build) void {
     lv2_dynamic_topology_test_step.dependOn(
         lv2_cross_build_step,
     );
+    const test_lv2_dynamic_topology_bundle =
+        b.addSystemCommand(&.{"scripts/test_lv2_dynamic_topology_bundle.sh"});
+    test_lv2_dynamic_topology_bundle.addFileArg(
+        dynamic_topology_lv2_metadata.getEmittedBin(),
+    );
+    lv2_dynamic_topology_test_step.dependOn(
+        &test_lv2_dynamic_topology_bundle.step,
+    );
 
     const lv2_test_step = b.step(
         "test-lv2",
@@ -3265,6 +3339,7 @@ pub fn build(b: *std.Build) void {
     lv2_test_step.dependOn(
         &run_lv2_dynamic_topology_host_smoke.step,
     );
+    lv2_test_step.dependOn(dynamic_topology_lv2_bundle_step);
     lv2_test_step.dependOn(&run_lv2_ui_host_smoke.step);
     lv2_test_step.dependOn(&run_lv2_abi_harness.step);
     lv2_test_step.dependOn(lv2_cross_build_step);
@@ -3274,6 +3349,9 @@ pub fn build(b: *std.Build) void {
         mono_gain_lv2_metadata.getEmittedBin(),
     );
     lv2_test_step.dependOn(&test_lv2_bundle.step);
+    lv2_test_step.dependOn(
+        &test_lv2_dynamic_topology_bundle.step,
+    );
 
     if (native_vstgui) {
         vst3_tests.step.dependOn(vstgui_native_test_step);

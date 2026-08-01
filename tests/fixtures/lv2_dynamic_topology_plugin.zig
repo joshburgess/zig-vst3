@@ -1,6 +1,6 @@
 const core = @import("zig-vst3-plugin-core");
 
-const DynamicTopologyProbe = struct {
+pub const DynamicTopologyProbe = struct {
     const Topology =
         core.plugin.BoundedDynamicAudioBusTopology(1);
 
@@ -64,9 +64,11 @@ const DynamicTopologyProbe = struct {
     }
 };
 
-const Adapter = core.lv2.CoreAdapter(
+pub const uri = "https://zig-vst3.dev/tests/lv2-dynamic-topology";
+
+pub const Adapter = core.lv2.CoreAdapter(
     DynamicTopologyProbe,
-    "https://zig-vst3.dev/tests/lv2-dynamic-topology",
+    uri,
     64,
 );
 

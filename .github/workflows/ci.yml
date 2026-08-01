@@ -226,12 +226,16 @@ jobs:
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Validate LV2 distribution
-        run: zig build lint-lv2-mono-gain -Doptimize=ReleaseFast
+        run: |
+          zig build lint-lv2-mono-gain -Doptimize=ReleaseFast
+          zig build lint-lv2-dynamic-topology -Doptimize=ReleaseFast
       - name: Upload validated LV2 bundle
         uses: actions/upload-artifact@v7
         with:
           name: validated-lv2-bundle
-          path: zig-out/bundle/zig_vst3_mono_gain.lv2/
+          path: |
+            zig-out/bundle/zig_vst3_mono_gain.lv2/
+            zig-out/bundle/zig_vst3_dynamic_topology.lv2/
           if-no-files-found: error
 
   pluginval:
