@@ -16283,6 +16283,89 @@ test "Vorbis PCM concealment advances overlap and granules explicitly" {
     );
 }
 
+test "Vorbis granule loss inference covers every block geometry" {
+    const decoded_positions = [_]u64{ 512, 10_000, 1_000_000 };
+    const position_offsets = [_]i64{ -200, 0, 300 };
+
+    for (6..14) |small_exponent| {
+        const small_block_size: u16 =
+            @as(u16, 1) << @intCast(small_exponent);
+        for (small_exponent + 1..14) |large_exponent| {
+            const large_block_size: u16 =
+                @as(u16, 1) << @intCast(large_exponent);
+            const identification = VorbisIdentification{
+                .channel_count = 2,
+                .sample_rate = 48_000,
+                .bitrate_maximum = 0,
+                .bitrate_nominal = 128_000,
+                .bitrate_minimum = 0,
+                .small_block_size = small_block_size,
+                .large_block_size = large_block_size,
+            };
+            const following = VorbisAudioPacketHeader{
+                .mode_number = 0,
+                .large_block = false,
+                .previous_window_flag = null,
+                .next_window_flag = null,
+                .block_size = small_block_size,
+                .payload_bit_offset = 2,
+            };
+            const previous_sizes = [_]u16{
+                small_block_size,
+                large_block_size,
+            };
+            for (previous_sizes) |previous_block_size| {
+                for ([_]bool{ false, true }) |missing_large| {
+                    const missing_block_size = if (missing_large)
+                        large_block_size
+                    else
+                        small_block_size;
+                    const emitted_samples =
+                        previous_block_size / 4 +
+                        missing_block_size / 2 +
+                        following.block_size / 4;
+                    for (decoded_positions) |decoded_samples| {
+                        for (position_offsets) |position_offset| {
+                            const expected_end = position_offset +
+                                @as(i64, @intCast(
+                                    decoded_samples + emitted_samples,
+                                ));
+                            try std.testing.expectEqual(
+                                missing_large,
+                                try inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+                                    identification,
+                                    previous_block_size,
+                                    following,
+                                    .{
+                                        .decoded_samples = decoded_samples,
+                                        .position_offset = position_offset,
+                                    },
+                                    @bitCast(expected_end),
+                                    false,
+                                ),
+                            );
+                            try std.testing.expectError(
+                                error.InvalidVorbisGranulePosition,
+                                inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+                                    identification,
+                                    previous_block_size,
+                                    following,
+                                    .{
+                                        .decoded_samples = decoded_samples,
+                                        .position_offset = position_offset,
+                                    },
+                                    @bitCast(expected_end + 1),
+                                    false,
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 test "Vorbis seeking handles packed packets and chained streams" {
     var packed_encoded: [512]u8 = undefined;
     var packed_writer = StreamWriter.init(&packed_encoded, 0x1020_3040);
