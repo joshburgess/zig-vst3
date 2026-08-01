@@ -393,7 +393,7 @@ Each step binds to a distinct boolean parameter. The pattern therefore remains i
 
 Clicking a cell selects and toggles it. Dragging paints the first cell's new state across later cells. Command-click or Control-click changes additive selection, and Shift-click selects a range from the anchor. Left and Right move the cursor, Shift with arrows extends the selection, Home and End move to boundaries, Space toggles every selected step, Command+A or Control+A selects all, and Escape returns to one selected cursor step. Selection, active pattern, cursor, and playhead are rendered and announced as separate states.
 
-The sequencer is one focus stop with choice semantics. Accessibility increment and decrement move the cursor, and press toggles the selected steps. Disabled declarations reject pointer, keyboard, and accessibility edits. A rejected host edit keeps the old parameter value and exposes visible and semantic retry feedback. The component supports 1–32 steps; an empty pattern is rejected at editor creation rather than producing an ambiguous empty control.
+The sequencer is one focus stop with choice semantics. Accessibility increment and decrement move the cursor, and press toggles the selected steps. Disabled declarations reject pointer, keyboard, and accessibility edits. A rejected host edit keeps the old parameter value and exposes visible and semantic retry feedback. The component supports 1–32 steps; an empty pattern is rejected at editor creation rather than producing an ambiguous empty control. Playhead telemetry accepts nonnegative finite positions. Values beyond the pattern select its final step, while non-finite and negative values publish no active playhead.
 
 ## File Importer
 

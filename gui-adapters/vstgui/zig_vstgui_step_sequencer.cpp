@@ -202,7 +202,10 @@ bool StepSequencerControl::tick() {
     const double value = telemetry.load(telemetry.userdata, description.playhead_source_id);
     int32_t next = -1;
     if (std::isfinite(value) && value >= 0.0) {
-        next = std::min(static_cast<int32_t>(description.step_count - 1), static_cast<int32_t>(std::floor(value)));
+        const auto final_step = static_cast<int32_t>(description.step_count - 1);
+        next = value >= static_cast<double>(final_step)
+            ? final_step
+            : static_cast<int32_t>(std::floor(value));
     }
     if (next == playhead_step) return false;
     playhead_step = next;

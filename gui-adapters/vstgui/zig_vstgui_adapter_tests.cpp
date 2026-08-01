@@ -3236,6 +3236,21 @@ int testStepSequencer() {
             VSTGUI::exit();
             return 1;
         }
+        state.meter_values[4] = std::numeric_limits<double>::max();
+        if (!control.tick() || control.playhead() != 7) {
+            VSTGUI::exit();
+            return 11;
+        }
+        state.meter_values[4] = std::numeric_limits<double>::quiet_NaN();
+        if (!control.tick() || control.playhead() != -1) {
+            VSTGUI::exit();
+            return 12;
+        }
+        state.meter_values[4] = 3.0;
+        if (!control.tick() || control.playhead() != 3) {
+            VSTGUI::exit();
+            return 13;
+        }
         control.pointerBegin(2, true, false);
         control.pointerEnd();
         if (state.perform_count != 0 || state.stored_state_index != 5) {
