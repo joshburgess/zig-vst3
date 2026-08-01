@@ -3087,8 +3087,8 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         &installed_stream_windowed,
     );
     const installed_concealment: plugin.dsp.VorbisPcmConcealmentResult =
-        try installed_concealing_stream.concealMissingPacket(
-            false,
+        try installed_concealing_stream
+            .concealMissingPacketUsingPreviousBlockSize(
             32,
             true,
             installed_identification,
@@ -3177,8 +3177,8 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         &installed_stream_windowed,
     );
     const installed_chained_loss: plugin.dsp.VorbisChainedPcmConcealmentResult =
-        try installed_chained_concealment.concealMissingPacket(
-            false,
+        try installed_chained_concealment
+            .concealMissingPacketUsingPreviousBlockSize(
             32,
             true,
             installed_identification,

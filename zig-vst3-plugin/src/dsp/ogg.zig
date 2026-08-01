@@ -9396,6 +9396,36 @@ pub fn VorbisPcmStreamDecoder(
                 .concealed_packet_count = self.concealed_packet_count,
             };
         }
+
+        /// Selects the missing block size from the retained preceding block.
+        pub fn concealMissingPacketUsingPreviousBlockSize(
+            self: *Self,
+            granule_position: u64,
+            end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisPcmConcealmentResult {
+            const previous_size =
+                self.overlap.channels[0].previousBlockSize();
+            for (self.overlap.channels[1..]) |channel| {
+                if (channel.previousBlockSize() != previous_size)
+                    return error.InvalidVorbisChannelOverlapState;
+            }
+            if (previous_size == 0)
+                return error.VorbisPreviousBlockSizeUnavailable;
+            if (previous_size != small_block_size and
+                previous_size != large_block_size)
+                return error.InvalidVorbisChannelOverlapState;
+            return self.concealMissingPacket(
+                previous_size == large_block_size,
+                granule_position,
+                end,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+        }
     };
 }
 
@@ -9414,6 +9444,10 @@ pub fn VorbisChainedPcmStreamDecoder(
 
     return struct {
         const Self = @This();
+        const MissingPacketBlockSelection = union(enum) {
+            explicit: bool,
+            previous,
+        };
 
         stream: StreamDecoder,
         sample_rate: ?u32 = null,
@@ -9525,6 +9559,44 @@ pub fn VorbisChainedPcmStreamDecoder(
             outputs: []const []Float,
             windowed_scratch: []Float,
         ) !VorbisChainedPcmConcealmentResult {
+            return self.concealMissingPacketSelected(
+                .{ .explicit = large_block },
+                granule_position,
+                end,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+        }
+
+        /// Selects the missing block size from the retained preceding block.
+        pub fn concealMissingPacketUsingPreviousBlockSize(
+            self: *Self,
+            granule_position: u64,
+            end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisChainedPcmConcealmentResult {
+            return self.concealMissingPacketSelected(
+                .previous,
+                granule_position,
+                end,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+        }
+
+        fn concealMissingPacketSelected(
+            self: *Self,
+            selection: MissingPacketBlockSelection,
+            granule_position: u64,
+            end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisChainedPcmConcealmentResult {
             if (!self.started)
                 return error.VorbisLogicalStreamNotStarted;
             try validateIdentification(identification);
@@ -9543,14 +9615,23 @@ pub fn VorbisChainedPcmStreamDecoder(
                 global_start,
                 large_block_size / 2,
             ) catch return error.VorbisChainedPcmPositionOverflow;
-            const concealed = try self.stream.concealMissingPacket(
-                large_block,
-                granule_position,
-                end,
-                identification,
-                outputs,
-                windowed_scratch,
-            );
+            const concealed = switch (selection) {
+                .explicit => |large_block| try self.stream.concealMissingPacket(
+                    large_block,
+                    granule_position,
+                    end,
+                    identification,
+                    outputs,
+                    windowed_scratch,
+                ),
+                .previous => try self.stream.concealMissingPacketUsingPreviousBlockSize(
+                    granule_position,
+                    end,
+                    identification,
+                    outputs,
+                    windowed_scratch,
+                ),
+            };
             const global_end = global_start +
                 @as(u64, @intCast(concealed.sample_count));
             self.current_stream_pcm +=
@@ -15645,6 +15726,71 @@ test "Vorbis PCM concealment advances overlap and granules explicitly" {
     );
     try std.testing.expectEqual(@as(u16, 64), mixed_small.block_size);
     try std.testing.expectEqual(@as(usize, 80), mixed_small.sample_count);
+
+    var predicted = VorbisPcmStreamDecoder(f32, 1, 64, 256).init();
+    const predicted_before = predicted;
+    try std.testing.expectError(
+        error.VorbisPreviousBlockSizeUnavailable,
+        predicted.concealMissingPacketUsingPreviousBlockSize(
+            unknown_granule,
+            false,
+            mixed_identification,
+            &empty_outputs,
+            &mixed_windowed,
+        ),
+    );
+    try std.testing.expectEqualDeep(predicted_before, predicted);
+    _ = try predicted.concealMissingPacket(
+        true,
+        unknown_granule,
+        false,
+        mixed_identification,
+        &empty_outputs,
+        &mixed_windowed,
+    );
+    var predicted_output: [128]f32 = undefined;
+    const predicted_outputs = [_][]f32{&predicted_output};
+    const predicted_loss =
+        try predicted.concealMissingPacketUsingPreviousBlockSize(
+            128,
+            false,
+            mixed_identification,
+            &predicted_outputs,
+            &mixed_windowed,
+        );
+    try std.testing.expectEqual(@as(u16, 256), predicted_loss.block_size);
+    try std.testing.expectEqual(@as(usize, 128), predicted_loss.sample_count);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0} ** 128),
+        &predicted_output,
+    );
+
+    predicted.reset();
+    _ = try predicted.concealMissingPacket(
+        false,
+        unknown_granule,
+        false,
+        mixed_identification,
+        &empty_outputs,
+        &mixed_windowed,
+    );
+    predicted_output = [_]f32{99} ** 128;
+    const predicted_small =
+        try predicted.concealMissingPacketUsingPreviousBlockSize(
+            32,
+            false,
+            mixed_identification,
+            &predicted_outputs,
+            &mixed_windowed,
+        );
+    try std.testing.expectEqual(@as(u16, 64), predicted_small.block_size);
+    try std.testing.expectEqual(@as(usize, 32), predicted_small.sample_count);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0} ** 32),
+        predicted_output[0..32],
+    );
 }
 
 test "Vorbis seeking handles packed packets and chained streams" {
@@ -24818,14 +24964,14 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
     );
     try std.testing.expectEqual(@as(u64, 0), chained.current_stream_pcm);
     var recovering = chained;
-    const concealed = try recovering.concealMissingPacket(
-        false,
-        32,
-        false,
-        identification,
-        &stream_outputs,
-        &stream_windowed,
-    );
+    const concealed =
+        try recovering.concealMissingPacketUsingPreviousBlockSize(
+            32,
+            false,
+            identification,
+            &stream_outputs,
+            &stream_windowed,
+        );
     try std.testing.expectEqual(@as(u64, 0), concealed.global_pcm_start);
     try std.testing.expectEqual(@as(u64, 32), concealed.global_pcm_end);
     try std.testing.expectEqual(@as(u64, 1), concealed.stream.concealed_packet_count);
