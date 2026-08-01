@@ -1679,6 +1679,13 @@ int testAssetsAndFonts() {
     };
     ZigVstgui::AssetStore assets;
     if (!assets.load(&svg_asset, 1) || assets.count() != 1 || !assets.find(7)) return 10;
+    if (ZigVstgui::boundedAssetAlpha(std::numeric_limits<float>::quiet_NaN()) != 0.f ||
+        ZigVstgui::boundedAssetAlpha(-std::numeric_limits<float>::infinity()) != 0.f ||
+        ZigVstgui::boundedAssetAlpha(std::numeric_limits<float>::infinity()) != 0.f ||
+        ZigVstgui::boundedAssetAlpha(-1.f) != 0.f ||
+        ZigVstgui::boundedAssetAlpha(2.f) != 1.f ||
+        ZigVstgui::boundedAssetAlpha(0.25f) != 0.25f) return 15;
+#if !defined(_WIN32)
     VSTGUI::init(nullptr);
     const auto transparent_asset = VSTGUI::renderBitmapOffscreen(
         VSTGUI::CPoint(32, 32),
@@ -1694,6 +1701,7 @@ int testAssetsAndFonts() {
     );
     VSTGUI::exit();
     if (!transparent_asset) return 15;
+#endif
     const ZigVstguiAssetDescription duplicate_assets[] = {svg_asset, svg_asset};
     if (assets.load(duplicate_assets, 2) || assets.count() != 1 || !assets.find(7)) return 11;
 

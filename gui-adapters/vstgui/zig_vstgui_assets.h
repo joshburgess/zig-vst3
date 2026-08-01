@@ -32,6 +32,8 @@ AssetPlacement placeAsset(
     ZigVstguiAssetScale scale
 );
 
+float boundedAssetAlpha(float alpha);
+
 class SvgDocument {
 public:
     bool parse(const uint8_t* data, uint32_t size);
