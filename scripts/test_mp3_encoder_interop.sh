@@ -5,6 +5,7 @@ fixture=${1:?missing MP3 fixture path}
 decode_probe=${2-}
 reference_probe=${3-}
 vbri_fixture=${4-}
+external_vbri_fixture=${5-}
 test -f "$fixture"
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-mp3-interop.XXXXXX")
@@ -162,6 +163,26 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$external_mpeg1"; then
             "$decode_probe" "$external_mpeg1" 44100 2
             printf 'MP3 FFmpeg MPEG-1 stereo decoder probe passed\n'
+            if [ -n "$external_vbri_fixture" ]; then
+                external_vbri="$temporary/ffmpeg-mpeg1-vbri.mp3"
+                "$external_vbri_fixture" \
+                    "$external_mpeg1" \
+                    "$external_vbri"
+                "$decode_probe" "$external_vbri" 44100 2 \
+                    --require-vbri
+                printf 'MP3 external-audio VBRI decoder probe passed\n'
+                external_vbri_decoded="$temporary/ffmpeg-mpeg1-vbri-decoded.pcm"
+                ffmpeg -v error -y -i "$external_vbri" \
+                    -map 0:a:0 \
+                    -f s16le \
+                    -acodec pcm_s16le \
+                    "$external_vbri_decoded"
+                assert_nonsilent \
+                    "$external_vbri_decoded" \
+                    0 \
+                    "$(wc -c <"$external_vbri_decoded")"
+                printf 'MP3 external-audio VBRI FFmpeg decode passed\n'
+            fi
             "$decode_probe" "$external_mpeg1" 44100 2 \
                 --require-junk-resync
             printf 'MP3 FFmpeg bounded junk resynchronization probe passed\n'

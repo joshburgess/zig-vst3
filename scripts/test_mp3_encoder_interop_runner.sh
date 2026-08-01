@@ -11,6 +11,7 @@ printf '\377\373\260\104' >"$fixture"
 printf '\377\373\260\104' >"$vbri_fixture"
 probe_count="$root/probe-count"
 reference_probe_count="$root/reference-probe-count"
+external_vbri_fixture="$fake_bin/external-vbri-fixture"
 
 cat >"$fake_bin/ffprobe" <<'EOF'
 #!/bin/sh
@@ -53,6 +54,11 @@ count=0
 printf '%s\n' $((count + 1)) >"$TMPDIR/reference-probe-count"
 EOF
 chmod +x "$fake_bin/reference-probe"
+cat >"$external_vbri_fixture" <<'EOF'
+#!/bin/sh
+cp "$1" "$2"
+EOF
+chmod +x "$external_vbri_fixture"
 
 PATH="$fake_bin:$PATH" \
 TMPDIR="$root" \
@@ -62,6 +68,7 @@ scripts/test_mp3_encoder_interop.sh \
     "$fake_bin/decode-probe" \
     "$fake_bin/reference-probe" \
     "$vbri_fixture" \
+    "$external_vbri_fixture" \
     >"$root/passed.txt"
 grep -q 'MP3 FFmpeg interoperability test passed' \
     "$root/passed.txt"
@@ -70,6 +77,10 @@ grep -q 'MP3 project VBRI decoder probe passed' "$root/passed.txt"
 grep -q 'MP3 VBRI FFmpeg interoperability test passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-1 stereo decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 external-audio VBRI decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 external-audio VBRI FFmpeg decode passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg bounded junk resynchronization probe passed' \
     "$root/passed.txt"
@@ -105,7 +116,7 @@ grep -q 'MP3 FFmpeg truncation rejection passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg format-change rejection passed' \
     "$root/passed.txt"
-[ "$(cat "$probe_count")" -eq 12 ] || {
+[ "$(cat "$probe_count")" -eq 13 ] || {
     printf 'MP3 runner skipped a decoder probe\n' >&2
     exit 1
 }
