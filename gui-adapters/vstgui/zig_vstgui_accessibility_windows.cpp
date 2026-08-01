@@ -1,4 +1,7 @@
 #if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #ifdef WIN32
 #undef WIN32
 #endif
@@ -14,6 +17,7 @@
 #include "vstgui/lib/platform/iplatformframe.h"
 
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -24,11 +28,18 @@ namespace {
 constexpr UINT_PTR subclass_id = 0x5a564153;
 
 std::wstring wide(const std::string& value) {
-    if (value.empty()) return {};
+    if (value.empty() || value.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) return {};
     const int length = MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0);
     if (length <= 0) return {};
     std::wstring result(static_cast<std::size_t>(length), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), length);
+    if (MultiByteToWideChar(
+            CP_UTF8,
+            0,
+            value.data(),
+            static_cast<int>(value.size()),
+            result.data(),
+            length
+        ) != length) return {};
     return result;
 }
 
@@ -64,6 +75,7 @@ int controlType(AccessibilityRole role) {
         case AccessibilityRole::graph: return UIA_GroupControlTypeId;
         case AccessibilityRole::group: return UIA_GroupControlTypeId;
     }
+    return UIA_GroupControlTypeId;
 }
 
 struct WindowsState;
