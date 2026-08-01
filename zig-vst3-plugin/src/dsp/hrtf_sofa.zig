@@ -78,17 +78,20 @@ pub fn databaseFromDecoded(
         }
         directions[measurement_index] = switch (decoded.position_encoding) {
             .spherical_degrees => blk: {
-                if (position[2] < 0.0)
+                if (position[2] <= 0.0 or
+                    position[0] < -180.0 or
+                    position[0] >= 360.0 or
+                    position[1] < -90.0 or
+                    position[1] > 90.0)
                     return error.InvalidSofaPosition;
+                const azimuth = if (position[0] > 180.0)
+                    position[0] - 360.0
+                else
+                    position[0];
                 const direction = hrtf.Direction{
-                    .azimuth_degrees = position[0],
+                    .azimuth_degrees = azimuth,
                     .elevation_degrees = position[1],
                 };
-                if (direction.azimuth_degrees < -180.0 or
-                    direction.azimuth_degrees > 180.0 or
-                    direction.elevation_degrees < -90.0 or
-                    direction.elevation_degrees > 90.0)
-                    return error.InvalidSofaPosition;
                 break :blk direction;
             },
             .cartesian_metres => hrtf.directionFromPositions(
@@ -810,6 +813,43 @@ test "decoded standard HRTF dataset converts layout and positions" {
     try std.testing.expectEqualDeep(
         [_]f32{ 1.0, 0.25, 0.5, 0.125, 0.0, 0.0 },
         output,
+    );
+}
+
+test "decoded standard HRTF dataset normalizes spherical azimuth" {
+    const decoded = DecodedDataset{
+        .measurement_count = 1,
+        .response_frame_count = 1,
+        .sampling_rates = &.{48_000.0},
+        .source_positions = &.{ 270.0, 15.0, 1.0 },
+        .position_encoding = .spherical_degrees,
+        .responses_measurement_ear_frame = &.{ 1.0, 1.0 },
+    };
+    const database = try databaseFromDecoded(
+        1,
+        1,
+        std.testing.allocator,
+        decoded,
+    );
+    try std.testing.expectEqual(
+        @as(f64, -90.0),
+        database.directions[0].azimuth_degrees,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 15.0),
+        database.directions[0].elevation_degrees,
+    );
+
+    var invalid = decoded;
+    invalid.source_positions = &.{ 0.0, 0.0, 0.0 };
+    try std.testing.expectError(
+        error.InvalidSofaPosition,
+        databaseFromDecoded(1, 1, std.testing.allocator, invalid),
+    );
+    invalid.source_positions = &.{ 360.0, 0.0, 1.0 };
+    try std.testing.expectError(
+        error.InvalidSofaPosition,
+        databaseFromDecoded(1, 1, std.testing.allocator, invalid),
     );
 }
 
