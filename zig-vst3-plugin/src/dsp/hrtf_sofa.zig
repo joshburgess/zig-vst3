@@ -112,9 +112,15 @@ pub fn databaseFromDecoded(
             @abs(value) > std.math.floatMax(f32))
             return error.InvalidSofaResponse;
     }
+    const available_delay_frames =
+        maximum_frames - decoded.response_frame_count;
+    const maximum_delay_samples: f64 =
+        @floatFromInt(available_delay_frames);
     for (decoded.delays_measurement_ear) |delay| {
         if (!std.math.isFinite(delay) or delay < 0.0)
             return error.InvalidHrtfDelay;
+        if (delay > maximum_delay_samples)
+            return error.HrtfFrameCapacityExceeded;
     }
 
     const interleaved = try allocator.alloc(f32, response_count);
@@ -925,6 +931,20 @@ test "decoded standard HRTF dataset rejects inconsistent data" {
     try std.testing.expectError(
         error.InvalidHrtfDelay,
         databaseFromDecoded(1, 1, delay_failing.allocator(), invalid),
+    );
+    invalid.delays_measurement_ear = &.{ 0.25, 0.0 };
+    var delay_capacity_failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.HrtfFrameCapacityExceeded,
+        databaseFromDecoded(
+            1,
+            1,
+            delay_capacity_failing.allocator(),
+            invalid,
+        ),
     );
 
     var failing = std.testing.FailingAllocator.init(
