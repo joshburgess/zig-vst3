@@ -55,6 +55,35 @@ if [ "$mode" = test ]; then
       -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_atspi.cpp" \
       -o /tmp/zig_vstgui_accessibility_atspi_aarch64_linux.o
 
+  if [ "$(uname -s)" = Linux ]; then
+    clipboard_cflags=$(pkg-config --cflags glib-2.0 xcb)
+    env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
+        ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+        zig c++ -target x86_64-linux-gnu -std=c++17 \
+        -DVSTGUI_ENABLE_XML_PARSER=0 \
+        -DVSTGUI_ENABLE_DEPRECATED_METHODS=1 \
+        -DVSTGUI_OPENGL_SUPPORT=0 \
+        -I"$root/gui-adapters/vstgui" \
+        -I"$root/.vst3-sdk/vst3sdk/vstgui4" \
+        -I"$root/.vst3-sdk/vst3sdk" \
+        $clipboard_cflags \
+        -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_linux_clipboard.cpp" \
+        -o /tmp/zig_vstgui_accessibility_linux_clipboard_x86_64.o
+
+    env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
+        ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+        zig c++ -target aarch64-linux-gnu -std=c++17 \
+        -DVSTGUI_ENABLE_XML_PARSER=0 \
+        -DVSTGUI_ENABLE_DEPRECATED_METHODS=1 \
+        -DVSTGUI_OPENGL_SUPPORT=0 \
+        -I"$root/gui-adapters/vstgui" \
+        -I"$root/.vst3-sdk/vst3sdk/vstgui4" \
+        -I"$root/.vst3-sdk/vst3sdk" \
+        $clipboard_cflags \
+        -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_linux_clipboard.cpp" \
+        -o /tmp/zig_vstgui_accessibility_linux_clipboard_aarch64.o
+  fi
+
   env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
       ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
       zig c++ -target x86_64-windows-gnu -std=c++17 -Wno-nullability-completeness \

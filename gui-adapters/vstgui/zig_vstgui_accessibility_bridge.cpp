@@ -7,8 +7,11 @@
 
 #include "zig_vstgui_accessibility_atspi.h"
 
-#include "vstgui/lib/cclipboard.h"
 #include "vstgui/lib/platform/iplatformframe.h"
+
+#if !defined(__linux__)
+#include "vstgui/lib/cclipboard.h"
+#endif
 
 #include <gio/gio.h>
 
@@ -216,6 +219,7 @@ void diagnostic(const char* stage, const GError* error = nullptr) {
     );
 }
 
+#if !defined(__linux__)
 class SystemAccessibilityClipboard final : public AccessibilityClipboard {
 public:
     bool writeText(const std::string& text) override {
@@ -229,6 +233,7 @@ public:
         return text.size() <= maximum_bytes;
     }
 };
+#endif
 
 }
 
@@ -259,8 +264,15 @@ public:
     ) {
         if (!source_frame) return false;
         frame = source_frame;
-        clipboard = source_clipboard ? std::move(source_clipboard) :
-            std::make_shared<SystemAccessibilityClipboard>();
+        if (source_clipboard) {
+            clipboard = std::move(source_clipboard);
+        } else {
+#if defined(__linux__)
+            clipboard = createLinuxAccessibilityClipboard();
+#else
+            clipboard = std::make_shared<SystemAccessibilityClipboard>();
+#endif
+        }
         for (const auto& entry : source_entries) {
             if (entry.node && entry.view) entries.push_back(entry);
         }
@@ -348,6 +360,7 @@ public:
 
     void dispatch() {
         if (!ready) return;
+        if (clipboard) clipboard->dispatch();
         auto* context = g_main_context_default();
         for (unsigned int count = 0;
              count < maximum_dispatches_per_tick &&

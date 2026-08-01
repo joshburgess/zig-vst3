@@ -46,6 +46,7 @@ add_subdirectory("${VSTGUI_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/vstgui")
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
+    pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
     get_target_property(VSTGUI_LIBRARY_SOURCES vstgui SOURCES)
     list(
         FILTER VSTGUI_LIBRARY_SOURCES
@@ -113,6 +114,10 @@ elseif(WIN32)
     list(APPEND ZIG_VSTGUI_ADAPTER_SOURCES
         zig_vstgui_accessibility_windows.cpp
     )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND ZIG_VSTGUI_ADAPTER_SOURCES
+        zig_vstgui_accessibility_linux_clipboard.cpp
+    )
 endif()
 
 add_library(zig_vstgui_adapter STATIC ${ZIG_VSTGUI_ADAPTER_SOURCES})
@@ -135,7 +140,10 @@ target_include_directories(zig_vstgui_adapter PRIVATE
 )
 target_link_libraries(zig_vstgui_adapter PRIVATE vstgui)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(zig_vstgui_adapter PRIVATE PkgConfig::GIO)
+    target_link_libraries(
+        zig_vstgui_adapter
+        PRIVATE PkgConfig::GIO PkgConfig::XCB
+    )
 endif()
 if(APPLE AND (ZIG_VSTGUI_ENABLE_SANITIZERS OR ZIG_VSTGUI_ENABLE_THREAD_SANITIZER))
     target_link_libraries(zig_vstgui_adapter PUBLIC "-framework OpenGL")
@@ -232,6 +240,24 @@ if(APPLE)
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_executable(
+        zig_vstgui_accessibility_linux_clipboard_tests
+        zig_vstgui_accessibility_linux_clipboard_tests.cpp
+    )
+    target_compile_features(
+        zig_vstgui_accessibility_linux_clipboard_tests
+        PRIVATE cxx_std_17
+    )
+    target_include_directories(
+        zig_vstgui_accessibility_linux_clipboard_tests
+        PRIVATE
+            "${VSTGUI_SOURCE_DIR}"
+            "${CMAKE_CURRENT_LIST_DIR}/../../.vst3-sdk/vst3sdk"
+    )
+    target_link_libraries(
+        zig_vstgui_accessibility_linux_clipboard_tests
+        PRIVATE zig_vstgui_adapter PkgConfig::GIO PkgConfig::XCB
+    )
+    add_executable(
         zig_vstgui_accessibility_atspi_bridge_tests
         zig_vstgui_accessibility_atspi_bridge_tests.cpp
     )
@@ -256,9 +282,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_custom_target(zig_vstgui_accessibility_tests_run
         COMMAND $<TARGET_FILE:zig_vstgui_accessibility_atspi_tests>
         COMMAND $<TARGET_FILE:zig_vstgui_accessibility_atspi_bridge_tests>
+        COMMAND $<TARGET_FILE:zig_vstgui_accessibility_linux_clipboard_tests>
         DEPENDS
             zig_vstgui_accessibility_atspi_tests
             zig_vstgui_accessibility_atspi_bridge_tests
+            zig_vstgui_accessibility_linux_clipboard_tests
     )
 else()
     add_custom_target(zig_vstgui_accessibility_tests_run

@@ -2,6 +2,7 @@
 #define ZIG_VSTGUI_ACCESSIBILITY_BRIDGE_H
 
 #include "zig_vstgui_accessibility.h"
+#include "zig_vstgui_accessibility_clipboard.h"
 
 #include "vstgui/lib/cframe.h"
 
@@ -15,13 +16,6 @@ namespace ZigVstgui {
 struct AccessibilityEntry {
     const AccessibilityNode* node {nullptr};
     const VSTGUI::CView* view {nullptr};
-};
-
-class AccessibilityClipboard {
-public:
-    virtual ~AccessibilityClipboard() = default;
-    virtual bool writeText(const std::string& text) = 0;
-    virtual bool readText(std::string& text, std::size_t maximum_bytes) = 0;
 };
 
 class NativeAccessibilityBridge {
