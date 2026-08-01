@@ -6001,14 +6001,15 @@ test "installed package renders bounded HRTF responses" {
         @as(usize, 7),
         plugin.dsp.maximum_first_order_hrtf_room_paths,
     );
-    const room_plan = try plugin.dsp.HrtfFirstOrderRoomPathPlan.init(
-        plugin.dsp.HrtfShoeboxRoom{
-            .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
-            .maximum = .{ .x = 0.02, .y = 0.02, .z = 0.02 },
-            .absorption = plugin.dsp.HrtfRoomSurfaceAbsorption{
-                .maximum_x = 0.75,
-            },
+    const planned_room = plugin.dsp.HrtfShoeboxRoom{
+        .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        .maximum = .{ .x = 0.02, .y = 0.02, .z = 0.02 },
+        .absorption = plugin.dsp.HrtfRoomSurfaceAbsorption{
+            .maximum_x = 0.75,
         },
+    };
+    const room_plan = try plugin.dsp.HrtfFirstOrderRoomPathPlan.init(
+        planned_room,
         48_000,
         343.0,
         .{ .x = 0.014, .y = 0.01, .z = 0.01 },
@@ -6023,6 +6024,23 @@ test "installed package renders bounded HRTF responses" {
         planned_paths[1].gain,
         1.0e-12,
     );
+    const RoomMoving = plugin.dsp.HrtfMotionRenderer(16, 1, 4);
+    var room_moving = RoomMoving{};
+    try room_moving.prepareRoom(
+        database,
+        planned_room,
+        343.0,
+        &.{.{
+            .sample_position = 0,
+            .source_position = .{ .x = 0.014, .y = 0.01, .z = 0.01 },
+            .head_pose = .{
+                .position = .{ .x = 0.01, .y = 0.01, .z = 0.01 },
+            },
+        }},
+        .nearest,
+        4,
+    );
+    try std.testing.expect(room_moving.currentDirection() != null);
     const room_path = plugin.dsp.HrtfRoomPath{
         .direction = directions[0],
         .gain = 0.5,

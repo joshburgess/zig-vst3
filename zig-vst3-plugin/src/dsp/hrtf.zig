@@ -1534,16 +1534,11 @@ pub fn MotionRenderer(
             interpolation: Interpolation,
             crossfade_samples: usize,
         ) !void {
-            if (!database.valid()) return error.InvalidHrtfDatabase;
-            if (database.frame_count > maximum_frames)
-                return error.HrtfFrameCapacityExceeded;
-            if (points.len == 0 or points.len > maximum_points)
-                return error.InvalidHrtfMotionPointCount;
-            if (crossfade_samples == 0 or
-                crossfade_samples > maximum_crossfade_samples)
-                return error.InvalidHrtfCrossfade;
-            if (points[0].sample_position != 0)
-                return error.InvalidHrtfMotionSchedule;
+            try validatePreparation(
+                database,
+                points,
+                crossfade_samples,
+            );
 
             var staged_directions: [maximum_points]Direction =
                 @splat(.{
@@ -1553,14 +1548,6 @@ pub fn MotionRenderer(
             var staged_filters: [maximum_points][maximum_frames][2]f32 =
                 @splat(@splat(@splat(0.0)));
             for (points, 0..) |point, point_index| {
-                if (point_index != 0) {
-                    const previous =
-                        points[point_index - 1].sample_position;
-                    if (point.sample_position <= previous or
-                        point.sample_position - previous <
-                            crossfade_samples)
-                        return error.InvalidHrtfMotionSchedule;
-                }
                 const direction = try directionFromPositions(
                     point.source_position,
                     point.head_pose,
@@ -1577,21 +1564,78 @@ pub fn MotionRenderer(
                 );
             }
 
-            self.sample_rate = database.sample_rate;
-            self.frame_count = database.frame_count;
-            self.point_count = points.len;
-            self.crossfade_samples = crossfade_samples;
-            @memcpy(self.points[0..points.len], points);
-            @memcpy(
-                self.directions[0..points.len],
-                staged_directions[0..points.len],
+            self.commitPreparation(
+                database.sample_rate,
+                database.frame_count,
+                points,
+                crossfade_samples,
+                &staged_directions,
+                &staged_filters,
             );
-            @memcpy(
-                self.filters[0..points.len],
-                staged_filters[0..points.len],
+        }
+
+        pub fn prepareRoom(
+            self: *Self,
+            database: anytype,
+            room: ShoeboxRoom,
+            speed_of_sound_meters_per_second: f64,
+            points: []const MotionPoint,
+            interpolation: Interpolation,
+            crossfade_samples: usize,
+        ) !void {
+            try validatePreparation(
+                database,
+                points,
+                crossfade_samples,
             );
-            self.reset();
-            self.prepared = true;
+
+            const Composer = RoomResponseComposer(
+                maximum_frames,
+                maximum_first_order_room_paths,
+            );
+            var composer = Composer{};
+            var staged_directions: [maximum_points]Direction =
+                @splat(.{
+                    .azimuth_degrees = 0.0,
+                    .elevation_degrees = 0.0,
+                });
+            var staged_filters: [maximum_points][maximum_frames][2]f32 =
+                @splat(@splat(@splat(0.0)));
+            var frame_count: usize = 0;
+            for (points, 0..) |point, point_index| {
+                const plan = try FirstOrderRoomPathPlan.init(
+                    room,
+                    database.sample_rate,
+                    speed_of_sound_meters_per_second,
+                    point.source_position,
+                    point.head_pose,
+                );
+                const paths = try plan.items();
+                staged_directions[point_index] = paths[0].direction;
+                const destination = @as(
+                    [*]f32,
+                    @ptrCast(&staged_filters[point_index]),
+                )[0 .. maximum_frames * 2];
+                const composed_frames = composer.compose(
+                    database,
+                    paths,
+                    interpolation,
+                    destination,
+                ) catch |err| switch (err) {
+                    error.InvalidHrtfRoomPathDelay => return error.HrtfFrameCapacityExceeded,
+                    else => return err,
+                };
+                frame_count = @max(frame_count, composed_frames);
+            }
+
+            self.commitPreparation(
+                database.sample_rate,
+                frame_count,
+                points,
+                crossfade_samples,
+                &staged_directions,
+                &staged_filters,
+            );
         }
 
         pub fn processSample(self: *Self, input: f32) [2]f32 {
@@ -1676,6 +1720,64 @@ pub fn MotionRenderer(
                 !std.math.isFinite(converted[1]))
                 return @splat(0.0);
             return converted;
+        }
+
+        fn validatePreparation(
+            database: anytype,
+            prepared_points: []const MotionPoint,
+            prepared_crossfade_samples: usize,
+        ) !void {
+            if (!database.valid()) return error.InvalidHrtfDatabase;
+            if (database.frame_count > maximum_frames)
+                return error.HrtfFrameCapacityExceeded;
+            if (prepared_points.len == 0 or
+                prepared_points.len > maximum_points)
+            {
+                return error.InvalidHrtfMotionPointCount;
+            }
+            if (prepared_crossfade_samples == 0 or
+                prepared_crossfade_samples > maximum_crossfade_samples)
+            {
+                return error.InvalidHrtfCrossfade;
+            }
+            if (prepared_points[0].sample_position != 0)
+                return error.InvalidHrtfMotionSchedule;
+            for (prepared_points[1..], 1..) |point, point_index| {
+                const previous =
+                    prepared_points[point_index - 1].sample_position;
+                if (point.sample_position <= previous or
+                    point.sample_position - previous <
+                        prepared_crossfade_samples)
+                {
+                    return error.InvalidHrtfMotionSchedule;
+                }
+            }
+        }
+
+        fn commitPreparation(
+            self: *Self,
+            prepared_sample_rate: u32,
+            prepared_frame_count: usize,
+            prepared_points: []const MotionPoint,
+            prepared_crossfade_samples: usize,
+            prepared_directions: *const [maximum_points]Direction,
+            prepared_filters: *const [maximum_points][maximum_frames][2]f32,
+        ) void {
+            self.sample_rate = prepared_sample_rate;
+            self.frame_count = prepared_frame_count;
+            self.point_count = prepared_points.len;
+            self.crossfade_samples = prepared_crossfade_samples;
+            @memcpy(self.points[0..prepared_points.len], prepared_points);
+            @memcpy(
+                self.directions[0..prepared_points.len],
+                prepared_directions[0..prepared_points.len],
+            );
+            @memcpy(
+                self.filters[0..prepared_points.len],
+                prepared_filters[0..prepared_points.len],
+            );
+            self.reset();
+            self.prepared = true;
         }
     };
 }
@@ -3089,6 +3191,140 @@ test "HRTF motion schedule follows head pose with smooth filter changes" {
         original_direction,
         renderer.currentDirection(),
     );
+}
+
+test "HRTF motion schedule crossfades first-order room responses" {
+    const direction = Direction{
+        .azimuth_degrees = 0.0,
+        .elevation_degrees = 0.0,
+    };
+    const Db = Database(1, 1);
+    const database = try Db.init(
+        48_000,
+        &.{direction},
+        &.{ 1.0, 1.0 },
+    );
+    const room = ShoeboxRoom{
+        .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        .maximum = .{ .x = 0.02, .y = 0.02, .z = 0.02 },
+        .absorption = .{
+            .minimum_x = 0.75,
+            .maximum_x = 0.75,
+        },
+    };
+    const points = [_]MotionPoint{
+        .{
+            .sample_position = 0,
+            .source_position = .{ .x = 0.014, .y = 0.01, .z = 0.01 },
+            .head_pose = .{
+                .position = .{ .x = 0.008, .y = 0.01, .z = 0.01 },
+            },
+        },
+        .{
+            .sample_position = 8,
+            .source_position = .{ .x = 0.004, .y = 0.01, .z = 0.01 },
+            .head_pose = .{
+                .position = .{ .x = 0.008, .y = 0.01, .z = 0.01 },
+            },
+        },
+    };
+    const Moving = MotionRenderer(8, 2, 2);
+    var renderer = Moving{};
+    try renderer.prepareRoom(
+        database,
+        room,
+        343.0,
+        &points,
+        .nearest,
+        2,
+    );
+    try std.testing.expectEqual(
+        Direction{ .azimuth_degrees = 0.0, .elevation_degrees = 0.0 },
+        renderer.currentDirection().?,
+    );
+
+    var left_sum: f32 = 0.0;
+    var right_sum: f32 = 0.0;
+    for (0..5) |sample_index| {
+        const output = renderer.processSample(
+            if (sample_index == 0) 1.0 else 0.0,
+        );
+        left_sum += output[0];
+        right_sum += output[1];
+    }
+    const expected_sum: f32 = @floatCast(
+        1.0 + 0.5 * 0.006 / 0.022 + 0.5 * 0.006 / 0.018,
+    );
+    try std.testing.expectApproxEqAbs(expected_sum, left_sum, 0.000_001);
+    try std.testing.expectApproxEqAbs(expected_sum, right_sum, 0.000_001);
+
+    const expected_second_sum: f32 = @floatCast(
+        1.0 + 0.5 * 0.004 / 0.012 + 0.5 * 0.004 / 0.028,
+    );
+    renderer.reset();
+    var transition_output: [10][2]f32 = undefined;
+    for (&transition_output) |*output| {
+        output.* = renderer.processSample(1.0);
+    }
+    try std.testing.expectApproxEqAbs(
+        expected_sum,
+        transition_output[7][0],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        (expected_sum + expected_second_sum) * 0.5,
+        transition_output[8][0],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        expected_second_sum,
+        transition_output[9][0],
+        0.000_001,
+    );
+    for (7..10) |sample_index| {
+        try std.testing.expectApproxEqAbs(
+            transition_output[sample_index][0],
+            transition_output[sample_index][1],
+            0.000_001,
+        );
+    }
+    try std.testing.expectEqual(
+        Direction{ .azimuth_degrees = 180.0, .elevation_degrees = 0.0 },
+        renderer.currentDirection().?,
+    );
+
+    var invalid = points;
+    invalid[1].source_position.x = room.maximum.x;
+    const original_direction = renderer.currentDirection();
+    try std.testing.expectError(
+        error.HrtfRoomPositionOutsideBounds,
+        renderer.prepareRoom(
+            database,
+            room,
+            343.0,
+            &invalid,
+            .nearest,
+            2,
+        ),
+    );
+    try std.testing.expectEqual(
+        original_direction,
+        renderer.currentDirection(),
+    );
+
+    var too_small = MotionRenderer(2, 2, 2){};
+    try std.testing.expectError(
+        error.HrtfFrameCapacityExceeded,
+        too_small.prepareRoom(
+            database,
+            room,
+            343.0,
+            &points,
+            .nearest,
+            2,
+        ),
+    );
+    try std.testing.expect(too_small.currentDirection() == null);
 }
 
 test "HRTF database rejects malformed measurements transactionally" {
