@@ -77,7 +77,8 @@ bool ViewportModel::zoomOut(double anchor_x, double anchor_y) {
 }
 
 bool ViewportModel::setZoom(double value, double anchor_x, double anchor_y) {
-    if (!enabled() || !std::isfinite(value)) return false;
+    if (!enabled() || !std::isfinite(value) ||
+        !std::isfinite(anchor_x) || !std::isfinite(anchor_y)) return false;
     const double next = std::clamp(value, config.minimum_zoom, config.maximum_zoom);
     if (next == current_zoom) return false;
     const double old_span = 1.0 / current_zoom;

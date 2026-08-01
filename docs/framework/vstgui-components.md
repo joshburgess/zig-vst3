@@ -520,7 +520,7 @@ State field IDs are optional. When present, each field must be a typed editor-st
 
 Use a pointer wheel or trackpad to pan. Command-wheel or Control-wheel zooms around the pointer, as does a native pinch gesture. Plus and minus zoom, arrows pan, Shift with arrows moves faster, Page Up and Page Down move one visible page, Home and End reach a boundary, and 0 restores the initial transform. On an editable graph, plain arrows continue editing the selected point; Command or Control with arrows pans instead.
 
-Each viewport draws a numeric zoom value and a proportional navigator. The accessibility value includes zoom and position. Increment and decrement zoom, set-value selects an exact zoom, and press resets the transform. The macOS bridge exposes the zoom range and actions through the native graph element. Windows uses the same toolkit-neutral range and action contract.
+Each viewport draws a numeric zoom value and a proportional navigator. The accessibility value includes zoom and position. Increment and decrement zoom, set-value selects an exact zoom, and press resets the transform. Zoom changes require finite zoom and anchor values and preserve the complete transform when any value is malformed. The macOS bridge exposes the zoom range and actions through the native graph element. Windows uses the same toolkit-neutral range and action contract.
 
 `Viewport` and `ViewportAxes` are supported. The gallery and production IR loader share their public declaration, bounded model, persistence, interactions, rendering, and accessibility semantics.
 

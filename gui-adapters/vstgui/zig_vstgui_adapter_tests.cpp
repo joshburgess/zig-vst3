@@ -2012,6 +2012,14 @@ int testGraphs() {
         control.accessibilityNode().valueText().find("Zoom 200%") == std::string::npos ||
         !control.handleKey('+', 0, 0) || !closeEnough(control.graphView()->viewportZoom(), 2.5) ||
         state.stored_scalar_count != 2 || state.stored_scalar_ids[0] != 12 || state.stored_scalar_ids[1] != 13) return 39;
+    const double direct_zoom = control.graphView()->viewportZoom();
+    const double direct_x_offset = control.graphView()->viewportXOffset();
+    const double direct_y_offset = control.graphView()->viewportYOffset();
+    if (control.graphView()->setViewportZoom(3.0, std::nan(""), 0.5) ||
+        control.graphView()->setViewportZoom(3.0, 0.5, std::numeric_limits<double>::infinity()) ||
+        !closeEnough(control.graphView()->viewportZoom(), direct_zoom) ||
+        !closeEnough(control.graphView()->viewportXOffset(), direct_x_offset) ||
+        !closeEnough(control.graphView()->viewportYOffset(), direct_y_offset)) return 73;
     if (!control.handleKey(0, Steinberg::KEY_RIGHT, 0) || control.graphView()->viewportXOffset() <= 0.1 ||
         !control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::increment) ||
         control.graphView()->viewportZoom() <= 2.5) return 40;
