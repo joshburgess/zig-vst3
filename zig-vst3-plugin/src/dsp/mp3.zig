@@ -8252,6 +8252,94 @@ pub const Vbri = struct {
     entry_bytes: u16,
     frames_per_entry: u16,
     toc: []const u8,
+
+    /// Approximate an audio-relative byte offset for an encoded frame.
+    pub fn approximateByteOffsetForFrame(
+        self: Vbri,
+        target_frame: u32,
+    ) !u32 {
+        if (self.version != 1)
+            return error.UnsupportedVbriVersion;
+        if (self.entry_bytes < 1 or self.entry_bytes > 4)
+            return error.InvalidVbriEntrySize;
+        if (self.toc_scale == 0)
+            return error.InvalidVbriTocScale;
+        if (self.frames_per_entry == 0)
+            return error.InvalidVbriFramesPerEntry;
+        if (self.frame_count == 0 or target_frame > self.frame_count)
+            return error.InvalidVbriTargetFrame;
+        const expected_toc_bytes = std.math.mul(
+            usize,
+            self.toc_entries,
+            self.entry_bytes,
+        ) catch return error.VbriSizeOverflow;
+        if (self.toc.len != expected_toc_bytes)
+            return error.InvalidVbriTocSize;
+        const covered_frames = std.math.mul(
+            u64,
+            self.toc_entries,
+            self.frames_per_entry,
+        ) catch return error.VbriFrameCoverageOverflow;
+        if (covered_frames < self.frame_count)
+            return error.IncompleteVbriFrameCoverage;
+
+        const target_frame_wide: u64 = target_frame;
+        var cumulative_bytes: u64 = 0;
+        var target_offset: ?u64 = if (target_frame == 0) 0 else null;
+        for (0..self.toc_entries) |entry_index| {
+            const entry_offset = entry_index * self.entry_bytes;
+            var entry: u32 = 0;
+            for (self.toc[entry_offset..][0..self.entry_bytes]) |byte| {
+                entry = (entry << 8) | byte;
+            }
+            if (entry == 0) return error.InvalidVbriTocEntry;
+            const segment_bytes = std.math.mul(
+                u64,
+                entry,
+                self.toc_scale,
+            ) catch return error.VbriByteOffsetOverflow;
+
+            const segment_first_frame = std.math.mul(
+                u64,
+                @intCast(entry_index),
+                self.frames_per_entry,
+            ) catch return error.VbriFrameCoverageOverflow;
+            const segment_end_frame = std.math.add(
+                u64,
+                segment_first_frame,
+                self.frames_per_entry,
+            ) catch return error.VbriFrameCoverageOverflow;
+            if (target_offset == null and
+                target_frame_wide >= segment_first_frame and
+                target_frame_wide < segment_end_frame)
+            {
+                const frame_in_segment =
+                    target_frame_wide - segment_first_frame;
+                const partial_bytes =
+                    segment_bytes * frame_in_segment /
+                    self.frames_per_entry;
+                target_offset = std.math.add(
+                    u64,
+                    cumulative_bytes,
+                    partial_bytes,
+                ) catch return error.VbriByteOffsetOverflow;
+            }
+            cumulative_bytes = std.math.add(
+                u64,
+                cumulative_bytes,
+                segment_bytes,
+            ) catch return error.VbriByteOffsetOverflow;
+            if (cumulative_bytes > self.stream_bytes)
+                return error.InvalidVbriStreamBytes;
+        }
+        if (target_frame == self.frame_count)
+            target_offset = self.stream_bytes;
+        const result = target_offset orelse
+            return error.IncompleteVbriFrameCoverage;
+        if (result > self.stream_bytes or result > std.math.maxInt(u32))
+            return error.InvalidVbriStreamBytes;
+        return @intCast(result);
+    }
 };
 
 pub const VbriSummary = struct {
@@ -14322,18 +14410,73 @@ test "parses bounded VBRI header and table" {
     const offset = 36;
     @memcpy(storage[offset..][0..4], "VBRI");
     storage[offset + 4 ..][0..22].* = .{
-        0, 1, 0, 2, 0, 3,
-        0, 0, 4, 0, 0, 0,
-        0, 9, 0, 2, 0, 1,
-        0, 2, 0, 4,
+        0, 1,  0, 2, 0, 3,
+        0, 0,  4, 0, 0, 0,
+        0, 10, 0, 3, 0, 1,
+        0, 2,  0, 4,
     };
-    storage[offset + 26 ..][0..4].* = .{ 0, 5, 0, 6 };
+    storage[offset + 26 ..][0..6].* = .{ 0, 5, 0, 6, 0, 7 };
     const frame = try Frame.parse(storage[0..end], 0);
     const vbri = frame.vbri.?;
     try std.testing.expectEqual(@as(u16, 1), vbri.version);
     try std.testing.expectEqual(@as(u32, 1024), vbri.stream_bytes);
-    try std.testing.expectEqual(@as(u32, 9), vbri.frame_count);
-    try std.testing.expectEqualSlices(u8, &.{ 0, 5, 0, 6 }, vbri.toc);
+    try std.testing.expectEqual(@as(u32, 10), vbri.frame_count);
+    try std.testing.expectEqualSlices(
+        u8,
+        &.{ 0, 5, 0, 6, 0, 7 },
+        vbri.toc,
+    );
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        try vbri.approximateByteOffsetForFrame(0),
+    );
+    try std.testing.expectEqual(
+        @as(u32, 2),
+        try vbri.approximateByteOffsetForFrame(2),
+    );
+    try std.testing.expectEqual(
+        @as(u32, 5),
+        try vbri.approximateByteOffsetForFrame(4),
+    );
+    try std.testing.expectEqual(
+        @as(u32, 12),
+        try vbri.approximateByteOffsetForFrame(9),
+    );
+    try std.testing.expectEqual(
+        @as(u32, 1024),
+        try vbri.approximateByteOffsetForFrame(10),
+    );
+
+    try std.testing.expectError(
+        error.InvalidVbriTargetFrame,
+        vbri.approximateByteOffsetForFrame(11),
+    );
+    var short_toc = vbri;
+    short_toc.toc = short_toc.toc[0..4];
+    try std.testing.expectError(
+        error.InvalidVbriTocSize,
+        short_toc.approximateByteOffsetForFrame(1),
+    );
+    var incomplete = vbri;
+    incomplete.toc_entries = 2;
+    incomplete.toc = incomplete.toc[0..4];
+    try std.testing.expectError(
+        error.IncompleteVbriFrameCoverage,
+        incomplete.approximateByteOffsetForFrame(1),
+    );
+    var oversized = vbri;
+    oversized.stream_bytes = 10;
+    try std.testing.expectError(
+        error.InvalidVbriStreamBytes,
+        oversized.approximateByteOffsetForFrame(1),
+    );
+    const zero_toc = [_]u8{ 0, 5, 0, 0, 0, 7 };
+    var zero_entry = vbri;
+    zero_entry.toc = &zero_toc;
+    try std.testing.expectError(
+        error.InvalidVbriTocEntry,
+        zero_entry.approximateByteOffsetForFrame(1),
+    );
 
     storage[offset + 23] = 5;
     try std.testing.expectError(
@@ -14364,6 +14507,38 @@ test "parses bounded VBRI header and table" {
         error.UnsupportedVbriVersion,
         Frame.parse(storage[0..end], 0),
     );
+}
+
+test "VBRI seek lookup decodes every table entry width" {
+    for (1..5) |entry_bytes| {
+        var toc_storage: [8]u8 = @splat(0);
+        toc_storage[entry_bytes - 1] = 3;
+        toc_storage[entry_bytes * 2 - 1] = 5;
+        const vbri = Vbri{
+            .version = 1,
+            .delay = 0,
+            .quality = 0,
+            .stream_bytes = 16,
+            .frame_count = 2,
+            .toc_entries = 2,
+            .toc_scale = 2,
+            .entry_bytes = @intCast(entry_bytes),
+            .frames_per_entry = 1,
+            .toc = toc_storage[0 .. entry_bytes * 2],
+        };
+        try std.testing.expectEqual(
+            @as(u32, 0),
+            try vbri.approximateByteOffsetForFrame(0),
+        );
+        try std.testing.expectEqual(
+            @as(u32, 6),
+            try vbri.approximateByteOffsetForFrame(1),
+        );
+        try std.testing.expectEqual(
+            @as(u32, 16),
+            try vbri.approximateByteOffsetForFrame(2),
+        );
+    }
 }
 
 test "encodes bounded VBRI metadata frames transactionally" {

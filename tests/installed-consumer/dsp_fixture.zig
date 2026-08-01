@@ -4006,12 +4006,21 @@ test "installed package exposes bounded MP3 framing and seeking" {
         public_vbri,
         &automatic_storage,
     );
+    const parsed_public_vbri = (try plugin.dsp.Mp3Frame.parse(
+        public_vbri_frame,
+        0,
+    )).vbri.?;
     try std.testing.expectEqual(
         @as(u32, 2),
-        (try plugin.dsp.Mp3Frame.parse(
-            public_vbri_frame,
-            0,
-        )).vbri.?.frame_count,
+        parsed_public_vbri.frame_count,
+    );
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        try parsed_public_vbri.approximateByteOffsetForFrame(0),
+    );
+    try std.testing.expectEqual(
+        @as(u32, @intCast(vbr_frame.frame.len)),
+        try parsed_public_vbri.approximateByteOffsetForFrame(1),
     );
 
     var vbr_stream_offsets: [4]u64 = undefined;
