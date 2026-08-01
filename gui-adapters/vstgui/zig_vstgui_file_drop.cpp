@@ -11,6 +11,8 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <string_view>
 
 namespace ZigVstgui {
 
@@ -161,8 +163,17 @@ FileDropStatus FileDropView::inspectPaths(const char* const* values, uint32_t co
             setStatus(FileDropStatus::rejected_path);
             return current_status;
         }
-        const std::size_t length = std::char_traits<char>::length(values[index]);
-        if (length == 0 || length > ZIG_VSTGUI_MAX_DROP_PATH_BYTES) {
+        const auto* terminator = static_cast<const char*>(std::memchr(
+            values[index],
+            0,
+            ZIG_VSTGUI_MAX_DROP_PATH_BYTES + 1
+        ));
+        if (!terminator) {
+            setStatus(FileDropStatus::rejected_path);
+            return current_status;
+        }
+        const std::size_t length = static_cast<std::size_t>(terminator - values[index]);
+        if (length == 0 || !validUtf8(std::string_view(values[index], length))) {
             setStatus(FileDropStatus::rejected_path);
             return current_status;
         }

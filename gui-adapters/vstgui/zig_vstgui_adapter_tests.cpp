@@ -3559,6 +3559,20 @@ int testFileDrop() {
             VSTGUI::exit();
             return 3;
         }
+        const char malformed_path[] = {
+            '/', 't', 'm', 'p', '/', static_cast<char>(0xc0), static_cast<char>(0x80),
+            '.', 'w', 'a', 'v', 0,
+        };
+        const char* malformed_paths[] = {malformed_path};
+        std::array<char, ZIG_VSTGUI_MAX_DROP_PATH_BYTES + 1> unterminated_path {};
+        unterminated_path.fill('a');
+        const char* unterminated_paths[] = {unterminated_path.data()};
+        if (view->inspectPaths(malformed_paths, 1) != ZigVstgui::FileDropStatus::rejected_path ||
+            view->inspectPaths(unterminated_paths, 1) != ZigVstgui::FileDropStatus::rejected_path ||
+            view->dispatchInspected() || state.dropped_count != 1) {
+            VSTGUI::exit();
+            return 14;
+        }
         const char* rejected[] = {"/tmp/pattern.mid"};
         if (view->inspectPaths(rejected, 1) != ZigVstgui::FileDropStatus::rejected_type ||
             view->inspectPaths(nullptr, 0) != ZigVstgui::FileDropStatus::rejected_count) {

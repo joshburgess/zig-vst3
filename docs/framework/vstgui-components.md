@@ -411,7 +411,7 @@ Declare a bounded operating-system file target through `EditorDescription.file_i
 }},
 ```
 
-The adapter accepts only VSTGUI file-path payloads. Matching is case-insensitive and occurs before plugin code runs. One target may accept 1–8 files and 1–8 extensions. Each copied path is limited to 1,024 bytes. The callback receives borrowed slices backed by adapter-owned copies and must finish synchronously. Host package storage and pointers never escape the drag callback.
+The adapter accepts only VSTGUI file-path payloads. Matching is case-insensitive and occurs before plugin code runs. One target may accept 1–8 files and 1–8 extensions. Each path must terminate within 1,024 bytes and contain complete UTF-8 before it is copied or passed to plugin code. The callback receives borrowed slices backed by adapter-owned copies and must finish synchronously. Host package storage and pointers never escape the drag callback.
 
 The operating-system picker is the primary action. Pointer activation, Enter, Space, and the accessibility press action all open it. Drag and drop is an equivalent shortcut. Both paths copy and validate files through the same public callback, restore focus after picker completion, and reject late callbacks after teardown.
 
