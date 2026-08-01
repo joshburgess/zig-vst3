@@ -1667,4 +1667,125 @@ test "standard HRTF loader reads a CC BY public fixture" {
         database.responses[0][1][1],
     );
     try std.testing.expect(database.valid());
+
+    const ReferenceRenderer = hrtf.Renderer(128, 8);
+    var renderer = try ReferenceRenderer.init(48_000, .zero);
+    try renderer.prepare(
+        database,
+        database.directions[0],
+        .nearest,
+        1,
+    );
+    try std.testing.expect(renderer.adoptPending());
+    const landmarks = [_]struct {
+        frame: usize,
+        left: f32,
+        right: f32,
+    }{
+        .{ .frame = 0, .left = 0.0, .right = -0.0 },
+        .{
+            .frame = 1,
+            .left = @floatCast(-3.291246727869612e-05),
+            .right = @floatCast(-4.532169016517203e-06),
+        },
+        .{
+            .frame = 2,
+            .left = @floatCast(0.00016669660850223125),
+            .right = @floatCast(7.105737413937792e-05),
+        },
+        .{
+            .frame = 3,
+            .left = @floatCast(-0.0003543910958605596),
+            .right = @floatCast(-0.0002460186435713287),
+        },
+        .{
+            .frame = 20,
+            .left = @floatCast(-0.07695341805993125),
+            .right = @floatCast(-0.07333583739130722),
+        },
+        .{
+            .frame = 50,
+            .left = @floatCast(-0.0017677580567186757),
+            .right = @floatCast(-0.029643876148183076),
+        },
+        .{
+            .frame = 100,
+            .left = @floatCast(-0.002584351474286651),
+            .right = @floatCast(-0.004129589743778246),
+        },
+        .{ .frame = 127, .left = -0.0, .right = -0.0 },
+    };
+    var landmark_index: usize = 0;
+    const render_tolerance = 4.0 * std.math.floatEps(f32);
+    for (0..database.response_frame_count) |frame_index| {
+        const output = renderer.processSample(
+            if (frame_index == 0) 1.0 else 0.0,
+        );
+        if (landmark_index < landmarks.len and
+            landmarks[landmark_index].frame == frame_index)
+        {
+            const expected = landmarks[landmark_index];
+            try std.testing.expectApproxEqAbs(
+                expected.left,
+                output[0],
+                render_tolerance,
+            );
+            try std.testing.expectApproxEqAbs(
+                expected.right,
+                output[1],
+                render_tolerance,
+            );
+            landmark_index += 1;
+        }
+    }
+    try std.testing.expectEqual(landmarks.len, landmark_index);
+
+    const interpolated_direction = hrtf.Direction{
+        .azimuth_degrees = -2.5,
+        .elevation_degrees = -45.0,
+    };
+    var interpolated_response: [128 * 2]f32 = undefined;
+    try database.interpolate(
+        interpolated_direction,
+        .inverse_distance,
+        &interpolated_response,
+    );
+    const interpolated_landmark = [2]f32{
+        @floatCast(-1.5554327187593181e-05),
+        @floatCast(1.1508772282509495e-05),
+    };
+    try std.testing.expectApproxEqAbs(
+        interpolated_landmark[0],
+        interpolated_response[2],
+        render_tolerance,
+    );
+    try std.testing.expectApproxEqAbs(
+        interpolated_landmark[1],
+        interpolated_response[3],
+        render_tolerance,
+    );
+
+    var interpolation_renderer = try ReferenceRenderer.init(
+        48_000,
+        .zero,
+    );
+    try interpolation_renderer.prepare(
+        database,
+        interpolated_direction,
+        .inverse_distance,
+        2,
+    );
+    try std.testing.expect(interpolation_renderer.adoptPending());
+    _ = interpolation_renderer.processSample(1.0);
+    const interpolated_output = interpolation_renderer.processSample(0.0);
+    try std.testing.expectApproxEqAbs(
+        interpolated_landmark[0],
+        interpolated_output[0],
+        render_tolerance,
+    );
+    try std.testing.expectApproxEqAbs(
+        interpolated_landmark[1],
+        interpolated_output[1],
+        render_tolerance,
+    );
 }
