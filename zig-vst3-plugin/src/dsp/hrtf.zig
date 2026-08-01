@@ -25,6 +25,102 @@ pub const MotionPoint = struct {
     head_pose: HeadPose,
 };
 
+/// Bounded single-producer, single-consumer transport for tracker updates.
+pub fn MotionPointQueue(comptime capacity: usize) type {
+    if (capacity == 0)
+        @compileError("HRTF motion point queue requires capacity");
+
+    return struct {
+        const Self = @This();
+
+        points: [capacity]MotionPoint = undefined,
+        write_index: std.atomic.Value(usize) =
+            std.atomic.Value(usize).init(0),
+        read_index: std.atomic.Value(usize) =
+            std.atomic.Value(usize).init(0),
+        dropped_count: std.atomic.Value(usize) =
+            std.atomic.Value(usize).init(0),
+        last_submitted_sample: u64 = 0,
+        has_submitted_sample: bool = false,
+
+        pub fn submit(self: *Self, point: MotionPoint) !bool {
+            _ = try directionFromPositions(
+                point.source_position,
+                point.head_pose,
+            );
+            if (self.has_submitted_sample and
+                point.sample_position <= self.last_submitted_sample)
+            {
+                return error.InvalidHrtfMotionSchedule;
+            }
+
+            const write = self.write_index.load(.monotonic);
+            const read = self.read_index.load(.acquire);
+            const pending_count = write -% read;
+            if (pending_count > capacity)
+                return error.InvalidHrtfMotionQueueState;
+            if (pending_count == capacity) {
+                self.recordDrop();
+                return false;
+            }
+
+            self.points[write % capacity] = point;
+            self.write_index.store(write +% 1, .release);
+            self.last_submitted_sample = point.sample_position;
+            self.has_submitted_sample = true;
+            return true;
+        }
+
+        pub fn receive(self: *Self) !?MotionPoint {
+            const read = self.read_index.load(.monotonic);
+            const write = self.write_index.load(.acquire);
+            const pending_count = write -% read;
+            if (pending_count > capacity)
+                return error.InvalidHrtfMotionQueueState;
+            if (pending_count == 0) return null;
+            const point = self.points[read % capacity];
+            self.read_index.store(read +% 1, .release);
+            return point;
+        }
+
+        pub fn pending(self: *const Self) !usize {
+            const read = self.read_index.load(.acquire);
+            const write = self.write_index.load(.acquire);
+            const count = write -% read;
+            if (count > capacity)
+                return error.InvalidHrtfMotionQueueState;
+            return count;
+        }
+
+        pub fn dropped(self: *const Self) usize {
+            return self.dropped_count.load(.acquire);
+        }
+
+        /// Reset is only valid while both participating threads are stopped.
+        pub fn reset(self: *Self) void {
+            self.write_index.store(0, .release);
+            self.read_index.store(0, .release);
+            self.dropped_count.store(0, .release);
+            self.last_submitted_sample = 0;
+            self.has_submitted_sample = false;
+        }
+
+        fn recordDrop(self: *Self) void {
+            var current = self.dropped_count.load(.monotonic);
+            while (current != std.math.maxInt(usize)) {
+                if (self.dropped_count.cmpxchgWeak(
+                    current,
+                    current + 1,
+                    .monotonic,
+                    .monotonic,
+                )) |observed| {
+                    current = observed;
+                } else return;
+            }
+        }
+    };
+}
+
 pub const Interpolation = enum {
     nearest,
     inverse_distance,
@@ -947,6 +1043,177 @@ fn chordDistanceSquared(first: [3]f64, second: [3]f64) f64 {
 fn sameDirection(first: [3]f64, second: [3]f64) bool {
     return chordDistanceSquared(first, second) <=
         direction_tolerance_squared;
+}
+
+test "HRTF motion point queue validates and preserves tracker updates" {
+    const Queue = MotionPointQueue(2);
+    var queue = Queue{};
+    const first = MotionPoint{
+        .sample_position = 10,
+        .source_position = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
+        .head_pose = .{
+            .position = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        },
+    };
+    const second = MotionPoint{
+        .sample_position = 20,
+        .source_position = .{ .x = 0.0, .y = 1.0, .z = 0.0 },
+        .head_pose = .{
+            .position = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+            .yaw_degrees = 15.0,
+        },
+    };
+    const third = MotionPoint{
+        .sample_position = 30,
+        .source_position = .{ .x = 0.0, .y = 0.0, .z = 1.0 },
+        .head_pose = .{
+            .position = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        },
+    };
+
+    try std.testing.expect(try queue.submit(first));
+    try std.testing.expect(try queue.submit(second));
+    try std.testing.expect(!(try queue.submit(third)));
+    try std.testing.expectEqual(@as(usize, 2), try queue.pending());
+    try std.testing.expectEqual(@as(usize, 1), queue.dropped());
+    try std.testing.expectEqualDeep(first, (try queue.receive()).?);
+    try std.testing.expect(try queue.submit(third));
+    try std.testing.expectEqualDeep(second, (try queue.receive()).?);
+    try std.testing.expectEqualDeep(third, (try queue.receive()).?);
+    try std.testing.expect((try queue.receive()) == null);
+
+    try std.testing.expectError(
+        error.InvalidHrtfMotionSchedule,
+        queue.submit(third),
+    );
+    var invalid = third;
+    invalid.sample_position = 40;
+    invalid.source_position = invalid.head_pose.position;
+    try std.testing.expectError(
+        error.InvalidHrtfSourcePosition,
+        queue.submit(invalid),
+    );
+    try std.testing.expectEqual(@as(usize, 0), try queue.pending());
+
+    queue.reset();
+    try std.testing.expectEqual(@as(usize, 0), queue.dropped());
+    try std.testing.expect(try queue.submit(.{
+        .sample_position = 0,
+        .source_position = first.source_position,
+        .head_pose = first.head_pose,
+    }));
+}
+
+test "HRTF motion point queue contains cursor overflow" {
+    const Queue = MotionPointQueue(2);
+    var queue = Queue{};
+    const point = MotionPoint{
+        .sample_position = 0,
+        .source_position = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
+        .head_pose = .{
+            .position = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        },
+    };
+    const near_wrap = std.math.maxInt(usize);
+    queue.write_index.store(near_wrap, .release);
+    queue.read_index.store(near_wrap, .release);
+    try std.testing.expect(try queue.submit(point));
+    try std.testing.expectEqualDeep(point, (try queue.receive()).?);
+    var next = point;
+    next.sample_position = 1;
+    try std.testing.expect(try queue.submit(next));
+    try std.testing.expectEqualDeep(next, (try queue.receive()).?);
+
+    queue.write_index.store(3, .release);
+    queue.read_index.store(0, .release);
+    try std.testing.expectError(
+        error.InvalidHrtfMotionQueueState,
+        queue.pending(),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfMotionQueueState,
+        queue.receive(),
+    );
+    next.sample_position = 2;
+    try std.testing.expectError(
+        error.InvalidHrtfMotionQueueState,
+        queue.submit(next),
+    );
+
+    queue.reset();
+    try std.testing.expect(try queue.submit(point));
+    next.sample_position = 1;
+    try std.testing.expect(try queue.submit(next));
+    queue.dropped_count.store(std.math.maxInt(usize), .release);
+    var overflow = next;
+    overflow.sample_position = 2;
+    try std.testing.expect(!(try queue.submit(overflow)));
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        queue.dropped(),
+    );
+}
+
+test "HRTF motion point queue transfers concurrent tracker updates" {
+    const Queue = MotionPointQueue(32);
+    const point_count = 4_096;
+    const Producer = struct {
+        fn run(
+            queue: *Queue,
+            failed: *std.atomic.Value(bool),
+        ) void {
+            var index: usize = 0;
+            while (index < point_count) {
+                const accepted = queue.submit(.{
+                    .sample_position = @intCast(index),
+                    .source_position = .{
+                        .x = 1.0,
+                        .y = 0.0,
+                        .z = 0.0,
+                    },
+                    .head_pose = .{
+                        .position = .{
+                            .x = 0.0,
+                            .y = 0.0,
+                            .z = 0.0,
+                        },
+                    },
+                }) catch {
+                    failed.store(true, .release);
+                    return;
+                };
+                if (!accepted) {
+                    std.Thread.yield() catch {};
+                    continue;
+                }
+                index += 1;
+            }
+        }
+    };
+
+    var queue = Queue{};
+    var failed = std.atomic.Value(bool).init(false);
+    const producer = try std.Thread.spawn(
+        .{},
+        Producer.run,
+        .{ &queue, &failed },
+    );
+    var expected: usize = 0;
+    while (expected < point_count) {
+        const point = try queue.receive() orelse {
+            if (failed.load(.acquire)) break;
+            std.Thread.yield() catch {};
+            continue;
+        };
+        if (point.sample_position != expected) {
+            failed.store(true, .release);
+        }
+        expected += 1;
+    }
+    producer.join();
+    try std.testing.expect(!failed.load(.acquire));
+    try std.testing.expectEqual(point_count, expected);
+    try std.testing.expectEqual(@as(usize, 0), try queue.pending());
 }
 
 test "HRTF database interpolates nearest and inverse-distance responses" {

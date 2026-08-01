@@ -5897,6 +5897,12 @@ test "installed package renders bounded HRTF responses" {
         moving.processSample(1.0),
     );
 
+    const MotionQueue = plugin.dsp.HrtfMotionPointQueue(2);
+    var motion_queue = MotionQueue{};
+    try std.testing.expect(try motion_queue.submit(points[0]));
+    try std.testing.expectEqual(points[0], (try motion_queue.receive()).?);
+    try std.testing.expectEqual(@as(usize, 0), try motion_queue.pending());
+
     const decoded = plugin.dsp.hrtf_sofa.DecodedDataset{
         .measurement_count = 1,
         .response_frame_count = 1,
