@@ -318,8 +318,7 @@ pub fn Loader(
                 null,
             );
             defer allocator.free(rates.values);
-            if (rates.values.len != 1 and
-                rates.values.len != ir.shape[0])
+            if (!validSamplingRateVariable(rates, ir.shape[0]))
                 return error.InvalidSofaSamplingRateShape;
             try requireAttribute(
                 &self.api,
@@ -344,17 +343,7 @@ pub fn Loader(
                     null,
                 );
                 delays = loaded.values;
-                const expanded_delay_count = std.math.mul(
-                    usize,
-                    ir.shape[0],
-                    2,
-                ) catch {
-                    allocator.free(delays);
-                    return error.InvalidSofaDelayShape;
-                };
-                if (delays.len != 2 and
-                    delays.len != expanded_delay_count)
-                {
+                if (!validDelayVariable(loaded, ir.shape[0])) {
                     allocator.free(delays);
                     return error.InvalidSofaDelayShape;
                 }
@@ -520,6 +509,32 @@ const Variable = struct {
     shape: [4]usize,
     values: []f64,
 };
+
+fn validSamplingRateVariable(
+    variable: Variable,
+    measurement_count: usize,
+) bool {
+    return variable.rank == 1 and
+        variable.values.len == variable.shape[0] and
+        (variable.shape[0] == 1 or
+            variable.shape[0] == measurement_count);
+}
+
+fn validDelayVariable(
+    variable: Variable,
+    measurement_count: usize,
+) bool {
+    const value_count = std.math.mul(
+        usize,
+        variable.shape[0],
+        2,
+    ) catch return false;
+    return variable.rank == 2 and
+        variable.shape[1] == 2 and
+        variable.values.len == value_count and
+        (variable.shape[0] == 1 or
+            variable.shape[0] == measurement_count);
+}
 
 fn readVariable(
     api: *const Api,
@@ -894,6 +909,38 @@ test "decoded standard HRTF response shape arithmetic is bounded" {
         error.InvalidSofaResponseShape,
         responseValueCount(std.math.maxInt(usize), 1),
     );
+}
+
+test "standard HRTF file variables require convention ranks" {
+    var values: [6]f64 = @splat(0.0);
+    var variable = Variable{
+        .variable_id = 0,
+        .rank = 1,
+        .shape = .{ 1, 1, 1, 1 },
+        .values = values[0..1],
+    };
+    try std.testing.expect(validSamplingRateVariable(variable, 3));
+    variable.shape[0] = 3;
+    variable.values = values[0..3];
+    try std.testing.expect(validSamplingRateVariable(variable, 3));
+    variable.rank = 0;
+    try std.testing.expect(!validSamplingRateVariable(variable, 3));
+    variable.rank = 1;
+    variable.shape[0] = 2;
+    try std.testing.expect(!validSamplingRateVariable(variable, 3));
+
+    variable.rank = 2;
+    variable.shape = .{ 1, 2, 1, 1 };
+    variable.values = values[0..2];
+    try std.testing.expect(validDelayVariable(variable, 3));
+    variable.shape[0] = 3;
+    variable.values = values[0..6];
+    try std.testing.expect(validDelayVariable(variable, 3));
+    variable.rank = 1;
+    try std.testing.expect(!validDelayVariable(variable, 3));
+    variable.rank = 2;
+    variable.shape = .{ 2, 3, 1, 1 };
+    try std.testing.expect(!validDelayVariable(variable, 3));
 }
 
 test "decoded standard HRTF dataset rejects inconsistent data" {
