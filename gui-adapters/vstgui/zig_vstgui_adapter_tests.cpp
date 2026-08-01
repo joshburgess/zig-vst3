@@ -3181,6 +3181,14 @@ int testActionButtons() {
         nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
         &invalid, 1, {}
     )) return 12;
+    const char malformed_label[] = {static_cast<char>(0xc0), static_cast<char>(0x80), 0};
+    invalid = description;
+    invalid.accessible_label = malformed_label;
+    if (zig_vstgui_editor_create_widgets(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        &invalid, 1, {}
+    )) return 20;
     auto invalid_focus = description;
     invalid_focus.success_focus_importer_id = 10;
     if (zig_vstgui_editor_create_widgets(
@@ -3577,6 +3585,13 @@ int testFileDrop() {
         &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
         nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, &invalid, 1, {}
     )) return 9;
+    const char malformed_prompt[] = {static_cast<char>(0xc0), static_cast<char>(0x80), 0};
+    invalid = description;
+    invalid.prompt = malformed_prompt;
+    if (zig_vstgui_editor_create_latest(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, &invalid, 1, {}
+    )) return 14;
     return 0;
 }
 
@@ -3736,6 +3751,16 @@ int testEditableLabelsAndProgress() {
         nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
         nullptr, 0, &invalid_editable, 1, &progress, 1, {}
     )) return 17;
+    auto invalid_parameter = parameter;
+    invalid_parameter.info.title = malformed_initial_text;
+    if (zig_vstgui_editor_create_with_skin(
+        &invalid_parameter, 1, callbacks, nullptr, 0, {}, {}
+    )) return 18;
+    ZigVstguiSkinDescription invalid_skin {};
+    invalid_skin.editor_title = malformed_initial_text;
+    if (zig_vstgui_editor_create_with_skin(
+        &parameter, 1, callbacks, nullptr, 0, {}, invalid_skin
+    )) return 19;
     auto invalid_progress = progress;
     invalid_progress.maximum_refresh_hz = 61;
     if (zig_vstgui_editor_create_components(
@@ -3743,6 +3768,13 @@ int testEditableLabelsAndProgress() {
         nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
         nullptr, 0, &editable, 1, &invalid_progress, 1, {}
     )) return 10;
+    invalid_progress = progress;
+    invalid_progress.running_text = malformed_initial_text;
+    if (zig_vstgui_editor_create_components(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        nullptr, 0, &editable, 1, &invalid_progress, 1, {}
+    )) return 20;
     ZigVstguiCallbacks read_only_callbacks = callbacks;
     read_only_callbacks.store_editor_text = nullptr;
     const ZigVstguiEditableLabelDescription read_only {

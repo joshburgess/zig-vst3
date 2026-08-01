@@ -18,7 +18,7 @@ Focused declarations live in:
 - [accessibility](../../examples/gui/accessibility.zig)
 - [toolkit-neutral lifecycle](../../examples/gui/lifecycle.zig)
 
-Descriptions and their referenced slices must remain alive until `createEditor` returns. Editor creation copies bounded declaration data into instance-owned storage. The returned view owns its native widget tree and retained telemetry sources until the host releases the view. File parsing, decoding, and other unbounded work belong on a controller-owned worker. Processor callbacks may publish bounded lock-free telemetry and adopt complete decoded generations, but must not allocate, lock, read files, log, call the host, or perform GUI work.
+Descriptions and their referenced slices must remain alive until `createEditor` returns. Editor creation copies bounded declaration data into instance-owned storage. Every declaration string must contain complete UTF-8; malformed text rejects the complete editor before widget allocation. The returned view owns its native widget tree and retained telemetry sources until the host releases the view. File parsing, decoding, and other unbounded work belong on a controller-owned worker. Processor callbacks may publish bounded lock-free telemetry and adopt complete decoded generations, but must not allocate, lock, read files, log, call the host, or perform GUI work.
 
 Custom pointer-driven components reject non-finite native positions, wheel deltas, and zoom changes before hit testing or mutation. A malformed event remains unconsumed and preserves the active editor transaction, selection, viewport, menu, and preset state.
 
@@ -499,7 +499,7 @@ Implement `loadGuiProgress` and return a `ProgressSnapshot`. Determinate values 
 
 Polling is bounded to 1–60 Hz while the editor is open. Unchanged determinate states do not repaint. Indeterminate state animates a bounded segment. Idle, running, complete, and failed states always expose explicit text, and failure does not rely on color alone. The accessibility node uses meter semantics and exposes a numeric range only for running determinate work.
 
-`EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and production IR loader use the same public declaration, callback, validation, rendering, lifecycle, and accessibility contracts. Every editable-label declaration string must contain complete UTF-8. External text refresh requires an exact bounded byte count, a terminator at that boundary, no embedded terminator, and complete UTF-8. Malformed callback output preserves the accepted visual and accessibility text. Editable commits reject malformed UTF-8 before invoking the storage callback.
+`EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and production IR loader use the same public declaration, callback, validation, rendering, lifecycle, and accessibility contracts. External text refresh requires an exact bounded byte count, a terminator at that boundary, no embedded terminator, and complete UTF-8. Malformed callback output preserves the accepted visual and accessibility text. Editable commits reject malformed UTF-8 before invoking the storage callback.
 
 Parameter and XY-pad formatting callbacks use the same exact output contract. Malformed callback output falls back to bounded numeric text.
 

@@ -21,6 +21,10 @@ std::string normalizedExtension(const char* value) {
     return result;
 }
 
+bool validOptionalUtf8(const char* value) {
+    return !value || ZigVstgui::validUtf8(value);
+}
+
 template <typename Function>
 int32_t guardedResult(Function&& function) {
     try {
@@ -315,17 +319,28 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
     if ((!meters && meter_count > 0) || meter_count > ZIG_VSTGUI_MAX_METERS) return nullptr;
     if ((!graphs && graph_count > 0) || graph_count > ZIG_VSTGUI_MAX_GRAPHS) return nullptr;
     if ((!xy_pads && xy_pad_count > 0) || xy_pad_count > ZIG_VSTGUI_MAX_XY_PADS) return nullptr;
+    for (uint32_t index = 0; index < parameter_count; ++index) {
+        const auto& info = parameters[index].info;
+        if (!info.title || !ZigVstgui::validUtf8(info.title) ||
+            !validOptionalUtf8(info.units) || !validOptionalUtf8(info.tooltip)) return nullptr;
+    }
+    for (uint32_t index = 0; index < meter_count; ++index) {
+        if (!meters[index].title || !ZigVstgui::validUtf8(meters[index].title)) return nullptr;
+    }
     if ((!preset_browsers && preset_browser_count > 0) ||
         preset_browser_count > ZIG_VSTGUI_MAX_PRESET_BROWSERS) return nullptr;
     for (uint32_t index = 0; index < preset_browser_count; ++index) {
         const auto& browser = preset_browsers[index];
-        if (!browser.title || !browser.presets || browser.preset_count == 0 ||
+        if (!browser.title || !ZigVstgui::validUtf8(browser.title) || !browser.presets ||
+            browser.preset_count == 0 ||
             browser.preset_count > ZIG_VSTGUI_MAX_PRESETS || !browser.initial_search ||
+            !ZigVstgui::validUtf8(browser.initial_search) ||
             browser.search_state_id == 0 || browser.selection_state_id == 0 ||
             browser.search_state_id == browser.selection_state_id) return nullptr;
         for (uint32_t preset = 0; preset < browser.preset_count; ++preset) {
             if (browser.presets[preset].preset_id == 0 || !browser.presets[preset].name ||
-                browser.presets[preset].name[0] == 0) return nullptr;
+                browser.presets[preset].name[0] == 0 ||
+                !ZigVstgui::validUtf8(browser.presets[preset].name)) return nullptr;
             for (uint32_t previous = 0; previous < preset; ++previous) {
                 if (browser.presets[previous].preset_id == browser.presets[preset].preset_id) return nullptr;
             }
@@ -335,7 +350,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         (action_menu_count > 0 && !callbacks.invoke_menu_action)) return nullptr;
     for (uint32_t index = 0; index < action_menu_count; ++index) {
         const auto& menu = action_menus[index];
-        if (menu.menu_id == 0 || !menu.title || menu.title[0] == 0 || !menu.items || menu.item_count == 0 ||
+        if (menu.menu_id == 0 || !menu.title || menu.title[0] == 0 ||
+            !ZigVstgui::validUtf8(menu.title) || !menu.items || menu.item_count == 0 ||
             menu.item_count > ZIG_VSTGUI_MAX_MENU_ITEMS) return nullptr;
         for (uint32_t previous_menu = 0; previous_menu < index; ++previous_menu) {
             if (action_menus[previous_menu].menu_id == menu.menu_id) return nullptr;
@@ -349,6 +365,7 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
             }
             if (item.kind < ZIG_VSTGUI_MENU_ACTION || item.kind > ZIG_VSTGUI_MENU_TOGGLE ||
                 item.item_id == 0 || !item.label || item.label[0] == 0 ||
+                !ZigVstgui::validUtf8(item.label) ||
                 (item.kind == ZIG_VSTGUI_MENU_ACTION && item.checked_state_id != 0) ||
                 (item.kind == ZIG_VSTGUI_MENU_TOGGLE &&
                     (item.checked_state_id == 0 || item.destructive || !callbacks.store_editor_bool))) return nullptr;
@@ -362,7 +379,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         (piano_count > 0 && !callbacks.send_note)) return nullptr;
     for (uint32_t index = 0; index < piano_count; ++index) {
         const auto& piano = pianos[index];
-        if (!piano.title || piano.title[0] == 0 || piano.note_count == 0 || piano.note_count > 48 ||
+        if (!piano.title || piano.title[0] == 0 || !ZigVstgui::validUtf8(piano.title) ||
+            piano.note_count == 0 || piano.note_count > 48 ||
             piano.first_note >= 128 || piano.first_note + piano.note_count > 128 ||
             piano.channel < 0 || piano.channel > 15 || !std::isfinite(piano.velocity) ||
             piano.velocity <= 0.0 || piano.velocity > 1.0 || piano.computer_base_pitch >= 128) return nullptr;
@@ -371,7 +389,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         step_sequencer_count > ZIG_VSTGUI_MAX_STEP_SEQUENCERS) return nullptr;
     for (uint32_t index = 0; index < step_sequencer_count; ++index) {
         const auto& sequencer = step_sequencers[index];
-        if (!sequencer.title || sequencer.title[0] == 0 || !sequencer.parameter_ids ||
+        if (!sequencer.title || sequencer.title[0] == 0 ||
+            !ZigVstgui::validUtf8(sequencer.title) || !sequencer.parameter_ids ||
             sequencer.step_count == 0 || sequencer.step_count > ZIG_VSTGUI_MAX_STEPS ||
             sequencer.selection_state_id == 0 ||
             (sequencer.enabled != 0 && sequencer.enabled != 1) ||
@@ -393,6 +412,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
     for (uint32_t index = 0; index < file_drop_count; ++index) {
         const auto& drop = file_drops[index];
         if (drop.drop_id == 0 || !drop.title || drop.title[0] == 0 || !drop.prompt || drop.prompt[0] == 0 ||
+            !ZigVstgui::validUtf8(drop.title) || !ZigVstgui::validUtf8(drop.prompt) ||
+            !validOptionalUtf8(drop.picker_label) || !validOptionalUtf8(drop.picker_title) ||
             (drop.picker_label && drop.picker_label[0] == 0) || (drop.picker_title && drop.picker_title[0] == 0) ||
             !drop.extensions || drop.extension_count == 0 || drop.extension_count > ZIG_VSTGUI_MAX_DROP_EXTENSIONS ||
             drop.maximum_files == 0 || drop.maximum_files > ZIG_VSTGUI_MAX_DROP_FILES ||
@@ -403,7 +424,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         for (uint32_t extension = 0; extension < drop.extension_count; ++extension) {
             const char* value = drop.extensions[extension];
             if (!value || value[0] != '.' || value[1] == 0 ||
-                std::char_traits<char>::length(value) > ZIG_VSTGUI_MAX_DROP_EXTENSION_BYTES) return nullptr;
+                std::char_traits<char>::length(value) > ZIG_VSTGUI_MAX_DROP_EXTENSION_BYTES ||
+                !ZigVstgui::validUtf8(value)) return nullptr;
             const auto normalized = normalizedExtension(value);
             for (uint32_t previous = 0; previous < extension; ++previous) {
                 if (normalizedExtension(drop.extensions[previous]) == normalized) return nullptr;
@@ -417,6 +439,9 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         const auto& action = action_buttons[index];
         if (action.group_id == 0 || action.action_id == 0 || !action.accessible_label ||
             action.accessible_label[0] == 0 || (action.enabled != 0 && action.enabled != 1) ||
+            !ZigVstgui::validUtf8(action.accessible_label) || !validOptionalUtf8(action.label) ||
+            !validOptionalUtf8(action.tooltip) || !validOptionalUtf8(action.confirmation_label) ||
+            !validOptionalUtf8(action.failure_label) ||
             action.role < ZIG_VSTGUI_ACTION_PRIMARY || action.role > ZIG_VSTGUI_ACTION_DESTRUCTIVE ||
             action.icon < ZIG_VSTGUI_ACTION_ICON_NONE || action.icon > ZIG_VSTGUI_ACTION_ICON_ZOOM_OUT ||
             ((!action.label || action.label[0] == 0) && action.icon == ZIG_VSTGUI_ACTION_ICON_NONE) ||
@@ -489,6 +514,12 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
             !progress.running_text || progress.running_text[0] == 0 ||
             !progress.complete_text || progress.complete_text[0] == 0 ||
             !progress.failure_text || progress.failure_text[0] == 0 ||
+            !ZigVstgui::validUtf8(progress.label) ||
+            !ZigVstgui::validUtf8(progress.accessible_label) ||
+            !ZigVstgui::validUtf8(progress.idle_text) ||
+            !ZigVstgui::validUtf8(progress.running_text) ||
+            !ZigVstgui::validUtf8(progress.complete_text) ||
+            !ZigVstgui::validUtf8(progress.failure_text) ||
             progress.maximum_refresh_hz == 0 || progress.maximum_refresh_hz > 60) return nullptr;
         for (uint32_t previous = 0; previous < index; ++previous) {
             if (progress_indicators[previous].source_id == progress.source_id) return nullptr;
@@ -498,14 +529,20 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         const auto& graph = graphs[index];
         const bool editable = graph.point_capacity > 0;
         const auto& viewport = graph.viewport;
-        if (graph.layer_count > ZIG_VSTGUI_MAX_GRAPH_LAYERS ||
+        if (!validOptionalUtf8(graph.title) || !validOptionalUtf8(graph.x_axis.label) ||
+            !validOptionalUtf8(graph.y_axis.label) ||
+            graph.handle_count > ZIG_VSTGUI_MAX_GRAPH_HANDLES ||
+            (graph.handle_count > 0 && !graph.handles) ||
+            (graph.handle_count == 0 && graph.handles) ||
+            graph.layer_count > ZIG_VSTGUI_MAX_GRAPH_LAYERS ||
             (graph.layer_count > 0 && !graph.layers) ||
             (graph.layer_count == 0 && graph.layers)) return nullptr;
         bool has_dynamic_source = graph.dynamic != 0;
         bool has_parameter_source = graph.parameter_driven != 0;
         for (uint32_t layer_index = 0; layer_index < graph.layer_count; ++layer_index) {
             const auto& layer = graph.layers[layer_index];
-            if (layer.style < ZIG_VSTGUI_GRAPH_PRIMARY || layer.style > ZIG_VSTGUI_GRAPH_WARNING ||
+            if (!validOptionalUtf8(layer.y_axis.label) ||
+                layer.style < ZIG_VSTGUI_GRAPH_PRIMARY || layer.style > ZIG_VSTGUI_GRAPH_WARNING ||
                 layer.kind < ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION || layer.kind > ZIG_VSTGUI_GRAPH_SPECTRUM ||
                 layer.point_count > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
                 (layer.point_count > 0 && !layer.points) ||
@@ -697,10 +734,16 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
                 if (!found_x || !found_y) return nullptr;
             }
         }
+        for (uint32_t handle = 0; handle < graph.handle_count; ++handle) {
+            if (!validOptionalUtf8(graph.handles[handle].name) ||
+                !validOptionalUtf8(graph.handles[handle].adjustment_label)) return nullptr;
+        }
     }
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         const auto& xy_pad = xy_pads[index];
         if (!xy_pad.title || !xy_pad.x_label || !xy_pad.y_label ||
+            !ZigVstgui::validUtf8(xy_pad.title) || !ZigVstgui::validUtf8(xy_pad.x_label) ||
+            !ZigVstgui::validUtf8(xy_pad.y_label) ||
             xy_pad.x_parameter_id == xy_pad.y_parameter_id) return nullptr;
         bool found_x = false;
         bool found_y = false;
@@ -712,9 +755,13 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
     }
     if ((!skin.assets && skin.asset_count > 0) || skin.asset_count > ZIG_VSTGUI_MAX_ASSETS) return nullptr;
     if ((!skin.groups && skin.group_count > 0) || skin.group_count > ZIG_VSTGUI_MAX_GROUPS) return nullptr;
+    if (!validOptionalUtf8(skin.editor_title) ||
+        !validOptionalUtf8(skin.fonts.title_family) || !validOptionalUtf8(skin.fonts.body_family) ||
+        !validOptionalUtf8(skin.fonts.value_family) || !validOptionalUtf8(skin.fonts.fallback_family)) return nullptr;
     if (skin.editor_style.mask & ~style_mask) return nullptr;
     for (uint32_t index = 0; index < skin.group_count; ++index) {
-        if (skin.groups[index].style.mask & ~style_mask) return nullptr;
+        if (!skin.groups[index].title || !ZigVstgui::validUtf8(skin.groups[index].title) ||
+            skin.groups[index].style.mask & ~style_mask) return nullptr;
     }
     if (skin.theme != ZIG_VSTGUI_THEME_DEFAULT && skin.theme != ZIG_VSTGUI_THEME_ALTERNATE) return nullptr;
     if (skin.layout < ZIG_VSTGUI_LAYOUT_ADAPTIVE ||
