@@ -17,6 +17,7 @@
 #include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/events.h"
 #include "vstgui/lib/dragging.h"
+#include "vstgui/lib/coffscreencontext.h"
 #include "vstgui/lib/vstguiinit.h"
 
 #include <atomic>
@@ -1613,6 +1614,21 @@ int testAssetsAndFonts() {
     };
     ZigVstgui::AssetStore assets;
     if (!assets.load(&svg_asset, 1) || assets.count() != 1 || !assets.find(7)) return 10;
+    VSTGUI::init(nullptr);
+    const auto transparent_asset = VSTGUI::renderBitmapOffscreen(
+        VSTGUI::CPoint(32, 32),
+        1.0,
+        [&](VSTGUI::CDrawContext& context) {
+            assets.draw(
+                7,
+                &context,
+                VSTGUI::CRect(0, 0, 32, 32),
+                std::numeric_limits<float>::quiet_NaN()
+            );
+        }
+    );
+    VSTGUI::exit();
+    if (!transparent_asset) return 15;
     const ZigVstguiAssetDescription duplicate_assets[] = {svg_asset, svg_asset};
     if (assets.load(duplicate_assets, 2) || assets.count() != 1 || !assets.find(7)) return 11;
 

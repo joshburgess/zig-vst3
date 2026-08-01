@@ -80,7 +80,10 @@ bool nextNumber(const char*& cursor, double& value) {
 }
 
 VSTGUI::CColor withAlpha(VSTGUI::CColor color, float alpha) {
-    color.alpha = static_cast<uint8_t>(std::clamp(alpha, 0.f, 1.f) * color.alpha);
+    const float bounded = std::isfinite(alpha)
+        ? std::clamp(alpha, 0.f, 1.f)
+        : 0.f;
+    color.alpha = static_cast<uint8_t>(bounded * color.alpha);
     return color;
 }
 
@@ -396,8 +399,11 @@ bool AssetResource::valid() const {
 
 void AssetResource::draw(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds, float alpha) const {
     if (!context || !valid()) return;
+    const float bounded_alpha = std::isfinite(alpha)
+        ? std::clamp(alpha, 0.f, 1.f)
+        : 0.f;
     if (format == ZIG_VSTGUI_ASSET_SVG) {
-        svg.draw(context, bounds, scale, alpha);
+        svg.draw(context, bounds, scale, bounded_alpha);
         return;
     }
     const auto placement = placeAsset(bounds, bitmap->getWidth(), bitmap->getHeight(), scale);
@@ -408,7 +414,7 @@ void AssetResource::draw(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bou
         bitmap,
         VSTGUI::CRect(0.0, 0.0, bitmap->getWidth(), bitmap->getHeight()),
         placement.destination,
-        std::clamp(alpha, 0.f, 1.f)
+        bounded_alpha
     );
 }
 
