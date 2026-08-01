@@ -2869,6 +2869,23 @@ pub fn build(b: *std.Build) void {
         .root_module = component_state_lv2_module,
     });
 
+    const dynamic_topology_lv2_module = b.createModule(.{
+        .root_source_file = b.path(
+            "tests/fixtures/lv2_dynamic_topology_plugin.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    dynamic_topology_lv2_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const dynamic_topology_lv2 = b.addLibrary(.{
+        .linkage = .dynamic,
+        .name = "zig_vst3_dynamic_topology_lv2",
+        .root_module = dynamic_topology_lv2_module,
+    });
+
     const lv2_ui_module = b.createModule(.{
         .root_source_file = b.path(
             "tests/fixtures/lv2_ui_plugin.zig",
@@ -2953,6 +2970,12 @@ pub fn build(b: *std.Build) void {
     mono_gain_lv2_entry_check.addFileArg(
         mono_gain_lv2.getEmittedBin(),
     );
+    const dynamic_topology_lv2_entry_check = b.addSystemCommand(
+        &.{"scripts/check_lv2_entry_symbol.sh"},
+    );
+    dynamic_topology_lv2_entry_check.addFileArg(
+        dynamic_topology_lv2.getEmittedBin(),
+    );
     var mono_gain_lv2_ui_entry_check: ?*std.Build.Step.Run = null;
     if (mono_gain_lv2_ui) |ui_library| {
         const check = b.addSystemCommand(
@@ -2998,6 +3021,27 @@ pub fn build(b: *std.Build) void {
         b.addRunArtifact(lv2_component_state_host_smoke);
     run_lv2_component_state_host_smoke.addFileArg(
         component_state_lv2.getEmittedBin(),
+    );
+
+    const lv2_dynamic_topology_host_smoke = b.addExecutable(.{
+        .name = "lv2-dynamic-topology-host-smoke",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/lv2_dynamic_topology_host_smoke.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+        }),
+    });
+    lv2_dynamic_topology_host_smoke.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const run_lv2_dynamic_topology_host_smoke =
+        b.addRunArtifact(lv2_dynamic_topology_host_smoke);
+    run_lv2_dynamic_topology_host_smoke.addFileArg(
+        dynamic_topology_lv2.getEmittedBin(),
     );
 
     const lv2_ui_host_smoke = b.addExecutable(.{
@@ -3129,6 +3173,32 @@ pub fn build(b: *std.Build) void {
             &target_component_state_library.step,
         );
 
+        const target_dynamic_topology_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tests/fixtures/lv2_dynamic_topology_plugin.zig",
+            ),
+            .target = lv2_target,
+            .optimize = .ReleaseSafe,
+        });
+        target_dynamic_topology_module.addImport(
+            "zig-vst3-plugin-core",
+            target_core,
+        );
+        const target_dynamic_topology_library = b.addLibrary(.{
+            .linkage = .dynamic,
+            .name = b.fmt(
+                "zig_vst3_dynamic_topology_lv2_{s}_{s}",
+                .{
+                    @tagName(lv2_target.result.cpu.arch),
+                    @tagName(lv2_target.result.os.tag),
+                },
+            ),
+            .root_module = target_dynamic_topology_module,
+        });
+        lv2_cross_build_step.dependOn(
+            &target_dynamic_topology_library.step,
+        );
+
         const target_ui_module = b.createModule(.{
             .root_source_file = b.path(
                 "tests/fixtures/lv2_ui_plugin.zig",
@@ -3156,6 +3226,20 @@ pub fn build(b: *std.Build) void {
         );
     }
 
+    const lv2_dynamic_topology_test_step = b.step(
+        "test-lv2-dynamic-topology",
+        "Run dynamic-topology LV2 host and cross-build tests",
+    );
+    lv2_dynamic_topology_test_step.dependOn(
+        &dynamic_topology_lv2_entry_check.step,
+    );
+    lv2_dynamic_topology_test_step.dependOn(
+        &run_lv2_dynamic_topology_host_smoke.step,
+    );
+    lv2_dynamic_topology_test_step.dependOn(
+        lv2_cross_build_step,
+    );
+
     const lv2_test_step = b.step(
         "test-lv2",
         "Run LV2 ABI, host, bundle, and cross-build tests",
@@ -3165,6 +3249,9 @@ pub fn build(b: *std.Build) void {
     );
     lv2_test_step.dependOn(mono_gain_lv2_bundle_step);
     lv2_test_step.dependOn(&mono_gain_lv2_entry_check.step);
+    lv2_test_step.dependOn(
+        &dynamic_topology_lv2_entry_check.step,
+    );
     if (mono_gain_lv2_ui_entry_check) |check|
         lv2_test_step.dependOn(&check.step);
     if (mono_gain_lv2_ui_tests) |ui_tests|
@@ -3174,6 +3261,9 @@ pub fn build(b: *std.Build) void {
     lv2_test_step.dependOn(&run_lv2_host_smoke.step);
     lv2_test_step.dependOn(
         &run_lv2_component_state_host_smoke.step,
+    );
+    lv2_test_step.dependOn(
+        &run_lv2_dynamic_topology_host_smoke.step,
     );
     lv2_test_step.dependOn(&run_lv2_ui_host_smoke.step);
     lv2_test_step.dependOn(&run_lv2_abi_harness.step);
@@ -4733,9 +4823,9 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
         module.linkSystemLibrary("zig_vstgui_stdcxx", .{ .use_pkg_config = .no });
         module.linkSystemLibrary("zig_vstgui_gcc_s", .{ .use_pkg_config = .no });
         for ([_][]const u8{
-            "X11",            "freetype2",      "xcb",         "xcb-util",       "xcb-cursor", "xcb-keysyms", "xcb-xkb",
-            "xkbcommon",      "xkbcommon-x11",  "glib-2.0",    "gio-2.0",         "cairo",       "pangocairo",   "pangoft2",    "fontconfig",
-            "wayland-client", "wayland-cursor", "wayland-egl", "wayland-server", "pthread",    "dl",
+            "X11",        "freetype2",      "xcb",            "xcb-util",    "xcb-cursor",     "xcb-keysyms", "xcb-xkb",
+            "xkbcommon",  "xkbcommon-x11",  "glib-2.0",       "gio-2.0",     "cairo",          "pangocairo",  "pangoft2",
+            "fontconfig", "wayland-client", "wayland-cursor", "wayland-egl", "wayland-server", "pthread",     "dl",
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .yes });
     } else if (target.result.os.tag == .windows) {
         module.addCSourceFile(.{

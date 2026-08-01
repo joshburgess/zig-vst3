@@ -200,6 +200,8 @@ Parametric EQ and Resonant Filter are the graph-only references. Their high-leve
 
 `plug.lv2.CoreAdapter(Plugin, plugin_uri, maximum_block_size)` exports a fixed f32 port graph through the LV2 core ABI. Static declarations map directly. A dynamic audio-bus declaration maps its current bus set and selected layouts to the same fixed graph when each declared main bus is active. Its auxiliary ports carry `lv2:connectionOptional`. A complete null connection deactivates that bus for the next block, a complete connection activates it, and a partial multichannel connection rejects the block. The adapter exposes `dynamic_audio_topology_projected` so compile-time consumers can distinguish that projection. LV2 does not receive the declaration's alternate layouts or live insertion and removal behavior. `CoreAdapterWithParameters` accepts a configured compile-time parameter set. Null descriptor, bundle-path, and extension-data URI pointers are rejected at the exported boundary.
 
+The dynamically loaded topology fixture covers disconnected, connected, disconnected-again, and reconnected stereo auxiliary input and output buses. It also proves that partial input or output connection clears every connected output without calling the processor. `zig build test-lv2-dynamic-topology` runs that host, checks the exported descriptor symbol, and compiles the core, component-state, topology, and UI libraries for Linux AArch64, Linux x86-64, and Windows x86-64 GNU.
+
 Ports use deterministic declaration order:
 
 1. Main input channels, followed by every auxiliary input bus.
