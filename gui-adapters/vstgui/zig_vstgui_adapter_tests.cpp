@@ -85,6 +85,7 @@ struct CallbackState {
     ZigVstguiFileImportCommand import_command {ZIG_VSTGUI_FILE_IMPORT_RESET};
     std::string editor_text {"Studio Plate"};
     bool reject_editor_text {false};
+    uint32_t malformed_editor_text {0};
     ZigVstguiProgressSnapshot progress_snapshot {};
     bool progress_available {false};
     uint32_t stored_scalar_ids[3] {};
@@ -168,7 +169,20 @@ int32_t storeEditableText(void* userdata, uint32_t field_id, const char* text) {
 
 int32_t loadEditorText(void* userdata, uint32_t, char* output, uint32_t capacity) {
     auto* state = static_cast<CallbackState*>(userdata);
-    if (!output || state->editor_text.size() >= capacity) return -1;
+    if (!output || capacity == 0) return -1;
+    if (state->malformed_editor_text == 1) {
+        std::fill(output, output + capacity, 'x');
+        return static_cast<int32_t>(capacity);
+    }
+    if (state->malformed_editor_text == 2) {
+        if (capacity < 4) return -1;
+        output[0] = 'x';
+        output[1] = 0;
+        output[2] = 'y';
+        output[3] = 0;
+        return 3;
+    }
+    if (state->editor_text.size() >= capacity) return -1;
     std::copy(state->editor_text.begin(), state->editor_text.end(), output);
     output[state->editor_text.size()] = 0;
     return static_cast<int32_t>(state->editor_text.size());
@@ -3550,6 +3564,17 @@ int testEditableLabelsAndProgress() {
             VSTGUI::exit();
             return 3;
         }
+        state.malformed_editor_text = 1;
+        if (label.refresh() || label.accessibilityNode().valueText() != "External Name") {
+            VSTGUI::exit();
+            return 13;
+        }
+        state.malformed_editor_text = 2;
+        if (label.refresh() || label.accessibilityNode().valueText() != "External Name") {
+            VSTGUI::exit();
+            return 14;
+        }
+        state.malformed_editor_text = 0;
 
         ZigVstguiCallbacks read_only_callbacks {};
         read_only_callbacks.userdata = &state;

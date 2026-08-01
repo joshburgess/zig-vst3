@@ -132,10 +132,19 @@ void EditableLabelControl::setBounds(const VSTGUI::CRect& label_bounds,
 bool EditableLabelControl::refresh() {
     if (!edit || edit->isEditing() || !callbacks.load_editor_text) return false;
     char text[97] {};
-    if (callbacks.load_editor_text(callbacks.userdata, description.field_id, text,
-            std::min<uint32_t>(description.maximum_bytes + 1, sizeof(text))) < 0) return false;
-    if (accepted_text == text) return false;
-    accepted_text = text;
+    const uint32_t capacity = std::min<uint32_t>(description.maximum_bytes + 1, sizeof(text));
+    const int32_t written = callbacks.load_editor_text(
+        callbacks.userdata,
+        description.field_id,
+        text,
+        capacity
+    );
+    if (written < 0 || static_cast<uint32_t>(written) >= capacity) return false;
+    const auto length = static_cast<std::size_t>(written);
+    if (text[length] != 0 || std::find(text, text + length, '\0') != text + length) return false;
+    const std::string next(text, length);
+    if (accepted_text == next) return false;
+    accepted_text = next;
     edit->setText(accepted_text.c_str());
     edit_component.accessibility().setValueText(accepted_text);
     showError(false);
