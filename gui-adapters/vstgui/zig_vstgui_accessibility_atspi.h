@@ -33,6 +33,7 @@ enum class AtspiState : uint32_t {
     showing = 25,
     single_line = 26,
     visible = 30,
+    truncated = 34,
     selectable_text = 38,
     checkable = 41,
     read_only = 43,
@@ -77,6 +78,7 @@ struct AtspiSnapshot {
     uint64_t generation {0};
 
     bool hasState(AtspiState state) const;
+    void setState(AtspiState state);
     bool hasInterface(AtspiInterface interface) const;
 };
 

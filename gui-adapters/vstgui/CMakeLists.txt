@@ -134,6 +134,7 @@ target_compile_definitions(zig_vstgui_adapter PUBLIC
     VSTGUI_ENABLE_DEPRECATED_METHODS=1
     VSTGUI_ENABLE_XML_PARSER=0
     VSTGUI_OPENGL_SUPPORT=0
+    $<$<CONFIG:Debug>:DEBUG>
 )
 target_include_directories(zig_vstgui_adapter PRIVATE
     "${VSTGUI_SOURCE_DIR}"

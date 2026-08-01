@@ -71,6 +71,11 @@ bool AtspiSnapshot::hasState(AtspiState state) const {
     return (states[value / 32] & (uint32_t {1} << (value % 32))) != 0;
 }
 
+void AtspiSnapshot::setState(AtspiState state) {
+    const auto value = static_cast<uint32_t>(state);
+    states[value / 32] |= uint32_t {1} << (value % 32);
+}
+
 bool AtspiSnapshot::hasInterface(AtspiInterface interface) const {
     return (interfaces & interfaceMask(interface)) != 0;
 }

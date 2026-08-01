@@ -17,6 +17,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -31,6 +32,9 @@ constexpr const char* cache_path = "/org/a11y/atspi/cache";
 constexpr const char* object_event_interface = "org.a11y.atspi.Event.Object";
 constexpr const char* first_child_path = "/org/a11y/atspi/accessible/control_0";
 constexpr const char* second_child_path = "/org/a11y/atspi/accessible/control_1";
+constexpr const char* third_child_path = "/org/a11y/atspi/accessible/control_2";
+constexpr const char* fourth_child_path = "/org/a11y/atspi/accessible/control_3";
+constexpr const char* fifth_child_path = "/org/a11y/atspi/accessible/control_4";
 constexpr int timeout_ms = 2000;
 
 class VstguiRuntime final {
@@ -76,6 +80,10 @@ struct Evidence {
     std::atomic<bool> text_interface {false};
     std::atomic<bool> text_queries {false};
     std::atomic<bool> text_boundaries {false};
+    std::atomic<bool> rotated_text_geometry {false};
+    std::atomic<bool> tail_truncated_text_geometry {false};
+    std::atomic<bool> head_truncated_text_geometry {false};
+    std::atomic<bool> truncated_state_event {false};
     std::atomic<bool> text_selection_queries {false};
     std::atomic<bool> caret_set {false};
     std::atomic<bool> selection_added {false};
@@ -459,6 +467,337 @@ bool boundedRangeMatches(
     return matches;
 }
 
+bool rotatedTextGeometryMatches(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path
+) {
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        "GetCharacterExtents",
+        g_variant_new("(iu)", 0, 1u),
+        G_VARIANT_TYPE("(iiii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    gint32 x = 0;
+    gint32 y = 0;
+    gint32 width = 0;
+    gint32 height = 0;
+    g_variant_get(result, "(iiii)", &x, &y, &width, &height);
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    bool matches = x >= 240 && x < 340 && y >= 20 && y < 120 &&
+        width > 0 && width < 100 && height > 0 && height < 100;
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        "GetOffsetAtPoint",
+        g_variant_new("(iiu)", x + width / 2, y + height / 2, 1u),
+        G_VARIANT_TYPE("(i)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        gint32 offset = -1;
+        g_variant_get(result, "(i)", &offset);
+        matches &= offset == 0;
+        g_variant_unref(result);
+    } else {
+        matches = false;
+    }
+    if (error) g_error_free(error);
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        "GetRangeExtents",
+        g_variant_new("(iiu)", 0, 2, 1u),
+        G_VARIANT_TYPE("(iiii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        gint32 range_x = 0;
+        gint32 range_y = 0;
+        gint32 range_width = 0;
+        gint32 range_height = 0;
+        g_variant_get(
+            result,
+            "(iiii)",
+            &range_x,
+            &range_y,
+            &range_width,
+            &range_height
+        );
+        matches &= range_x <= x && range_y <= y &&
+            range_x + range_width >= x + width &&
+            range_y + range_height >= y + height;
+        g_variant_unref(result);
+    } else {
+        matches = false;
+    }
+    if (error) g_error_free(error);
+
+    return matches && boundedRangeMatches(
+        connection,
+        application,
+        path,
+        x,
+        y,
+        width,
+        height,
+        0u,
+        0u,
+        0,
+        1,
+        "A"
+    );
+}
+
+struct TextExtent {
+    gint32 x {-1};
+    gint32 y {-1};
+    gint32 width {-1};
+    gint32 height {-1};
+
+    bool available() const {
+        return x >= 0 && y >= 0 && width >= 0 && height >= 0;
+    }
+};
+
+bool characterExtent(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path,
+    gint32 offset,
+    TextExtent& extent
+) {
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        "GetCharacterExtents",
+        g_variant_new("(iu)", offset, 1u),
+        G_VARIANT_TYPE("(iiii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    g_variant_get(
+        result,
+        "(iiii)",
+        &extent.x,
+        &extent.y,
+        &extent.width,
+        &extent.height
+    );
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    return true;
+}
+
+bool hasState(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path,
+    guint32 state
+) {
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        accessible_interface,
+        "GetState",
+        nullptr,
+        G_VARIANT_TYPE("(au)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    GVariant* states = nullptr;
+    g_variant_get(result, "(@au)", &states);
+    const guint32 word = state / 32;
+    guint32 value = 0;
+    if (word < g_variant_n_children(states)) {
+        GVariant* state_value = g_variant_get_child_value(states, word);
+        value = g_variant_get_uint32(state_value);
+        g_variant_unref(state_value);
+    }
+    const bool present = (value & (guint32 {1} << (state % 32))) != 0;
+    g_variant_unref(states);
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    return present;
+}
+
+bool truncatedTextGeometryMatches(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path,
+    const char* text,
+    bool truncate_head
+) {
+    const auto count = static_cast<gint32>(std::strlen(text));
+    if (count < 3 || !hasState(connection, application, path, 34u)) return false;
+
+    std::vector<TextExtent> extents(static_cast<std::size_t>(count));
+    gint32 first_visible = -1;
+    gint32 last_visible = -1;
+    for (gint32 offset = 0; offset < count; ++offset) {
+        auto& extent = extents[static_cast<std::size_t>(offset)];
+        if (!characterExtent(connection, application, path, offset, extent))
+            return false;
+        if (!extent.available()) continue;
+        if (first_visible < 0) first_visible = offset;
+        last_visible = offset;
+        GError* error = nullptr;
+        GVariant* result = g_dbus_connection_call_sync(
+            connection,
+            application,
+            path,
+            "org.a11y.atspi.Text",
+            "GetOffsetAtPoint",
+            g_variant_new(
+                "(iiu)",
+                extent.x + extent.width / 2,
+                extent.y + extent.height / 2,
+                1u
+            ),
+            G_VARIANT_TYPE("(i)"),
+            G_DBUS_CALL_FLAGS_NONE,
+            timeout_ms,
+            nullptr,
+            &error
+        );
+        if (!result) {
+            if (error) g_error_free(error);
+            return false;
+        }
+        gint32 resolved = -1;
+        g_variant_get(result, "(i)", &resolved);
+        g_variant_unref(result);
+        if (error) g_error_free(error);
+        if (resolved != offset) return false;
+    }
+    if (first_visible < 0 || last_visible < first_visible ||
+        last_visible - first_visible + 1 >= count) return false;
+    if (truncate_head ? last_visible != count - 1 : first_visible != 0)
+        return false;
+    for (gint32 offset = first_visible; offset <= last_visible; ++offset) {
+        if (!extents[static_cast<std::size_t>(offset)].available()) return false;
+    }
+    for (gint32 offset = 0; offset < first_visible; ++offset) {
+        if (extents[static_cast<std::size_t>(offset)].available()) return false;
+    }
+    for (gint32 offset = last_visible + 1; offset < count; ++offset) {
+        if (extents[static_cast<std::size_t>(offset)].available()) return false;
+    }
+
+    const gint32 hidden_start = truncate_head ? 0 : last_visible + 1;
+    const gint32 hidden_end = truncate_head ? first_visible : count;
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        "GetRangeExtents",
+        g_variant_new("(iiu)", hidden_start, hidden_end, 1u),
+        G_VARIANT_TYPE("(iiii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    TextExtent hidden;
+    g_variant_get(
+        result,
+        "(iiii)",
+        &hidden.x,
+        &hidden.y,
+        &hidden.width,
+        &hidden.height
+    );
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    if (hidden.x != -1 || hidden.y != -1 || hidden.width != -1 ||
+        hidden.height != -1) return false;
+
+    TextExtent visible_bounds = extents[static_cast<std::size_t>(first_visible)];
+    for (gint32 offset = first_visible + 1; offset <= last_visible; ++offset) {
+        const auto& extent = extents[static_cast<std::size_t>(offset)];
+        const gint32 right = std::max(
+            visible_bounds.x + visible_bounds.width,
+            extent.x + extent.width
+        );
+        const gint32 bottom = std::max(
+            visible_bounds.y + visible_bounds.height,
+            extent.y + extent.height
+        );
+        visible_bounds.x = std::min(visible_bounds.x, extent.x);
+        visible_bounds.y = std::min(visible_bounds.y, extent.y);
+        visible_bounds.width = right - visible_bounds.x;
+        visible_bounds.height = bottom - visible_bounds.y;
+    }
+    const std::string visible_text(
+        text + first_visible,
+        text + last_visible + 1
+    );
+    return boundedRangeMatches(
+        connection,
+        application,
+        path,
+        visible_bounds.x,
+        visible_bounds.y,
+        visible_bounds.width,
+        visible_bounds.height,
+        0u,
+        0u,
+        first_visible,
+        last_visible + 1,
+        visible_text.c_str()
+    );
+}
+
 void eventReceived(
     GDBusConnection*,
     const gchar*,
@@ -533,6 +872,26 @@ void eventReceived(
     }
 }
 
+void truncatedEventReceived(
+    GDBusConnection*,
+    const gchar*,
+    const gchar*,
+    const gchar*,
+    const gchar* signal_name,
+    GVariant* parameters,
+    gpointer userdata
+) {
+    auto* evidence = static_cast<Evidence*>(userdata);
+    if (!evidence || !signal_name || !parameters ||
+        std::strcmp(signal_name, "StateChanged") != 0) return;
+    const char* detail = nullptr;
+    gint32 enabled = -1;
+    g_variant_get_child(parameters, 0, "&s", &detail);
+    g_variant_get_child(parameters, 1, "i", &enabled);
+    if (detail && std::strcmp(detail, "truncated") == 0 && enabled == 0)
+        evidence->truncated_state_event.store(true, std::memory_order_release);
+}
+
 void inspectApplication(
     GDBusConnection* connection,
     const char* application,
@@ -560,6 +919,18 @@ void inspectApplication(
         nullptr,
         G_DBUS_SIGNAL_FLAGS_NONE,
         eventReceived,
+        &evidence,
+        nullptr
+    );
+    g_dbus_connection_signal_subscribe(
+        connection,
+        application,
+        object_event_interface,
+        "StateChanged",
+        fourth_child_path,
+        nullptr,
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        truncatedEventReceived,
         &evidence,
         nullptr
     );
@@ -1332,6 +1703,34 @@ void inspectApplication(
         );
     }
     evidence.text_queries.store(text_queries, std::memory_order_release);
+    evidence.rotated_text_geometry.store(
+        rotatedTextGeometryMatches(
+            connection,
+            child_bus.c_str(),
+            third_child_path
+        ),
+        std::memory_order_release
+    );
+    evidence.tail_truncated_text_geometry.store(
+        truncatedTextGeometryMatches(
+            connection,
+            child_bus.c_str(),
+            fourth_child_path,
+            "ABCDEFGHIJKLMN",
+            false
+        ),
+        std::memory_order_release
+    );
+    evidence.head_truncated_text_geometry.store(
+        truncatedTextGeometryMatches(
+            connection,
+            child_bus.c_str(),
+            fifth_child_path,
+            "OPQRSTUVWXYZAB",
+            true
+        ),
+        std::memory_order_release
+    );
 
     error = nullptr;
     result = g_dbus_connection_call_sync(
@@ -1423,7 +1822,7 @@ void inspectApplication(
         GVariant* items = nullptr;
         g_variant_get(result, "(@a((so)(so)(so)iiassusau))", &items);
         evidence.cache_items.store(
-            g_variant_n_children(items) == 3,
+            g_variant_n_children(items) == 6,
             std::memory_order_release
         );
         g_variant_unref(items);
@@ -2004,6 +2403,45 @@ int runTest() {
         VSTGUI::CRect(10, 70, 210, 110)
     );
     frame->addView(boundary_view);
+    ZigVstgui::AccessibilityNode rotated_node;
+    rotated_node.setRole(ZigVstgui::AccessibilityRole::text_field);
+    rotated_node.setName("Rotated fixture");
+    rotated_node.setValueText("AB");
+    rotated_node.setReadOnly(true);
+    auto* rotated_view = new VSTGUI::CTextLabel(
+        VSTGUI::CRect(240, 20, 340, 120),
+        "AB"
+    );
+    rotated_view->setHoriAlign(VSTGUI::kLeftText);
+    rotated_view->setTextInset(VSTGUI::CPoint(4, 2));
+    rotated_view->setTextRotation(90.0);
+    frame->addView(rotated_view);
+    ZigVstgui::AccessibilityNode tail_truncated_node;
+    tail_truncated_node.setRole(ZigVstgui::AccessibilityRole::text_field);
+    tail_truncated_node.setName("Tail truncated fixture");
+    tail_truncated_node.setValueText("ABCDEFGHIJKLMN");
+    tail_truncated_node.setReadOnly(true);
+    auto* tail_truncated_view = new VSTGUI::CTextLabel(
+        VSTGUI::CRect(360, 20, 410, 60),
+        "ABCDEFGHIJKLMN"
+    );
+    tail_truncated_view->setHoriAlign(VSTGUI::kLeftText);
+    tail_truncated_view->setTextInset(VSTGUI::CPoint(2, 2));
+    tail_truncated_view->setTextTruncateMode(VSTGUI::CTextLabel::kTruncateTail);
+    frame->addView(tail_truncated_view);
+    ZigVstgui::AccessibilityNode head_truncated_node;
+    head_truncated_node.setRole(ZigVstgui::AccessibilityRole::text_field);
+    head_truncated_node.setName("Head truncated fixture");
+    head_truncated_node.setValueText("OPQRSTUVWXYZAB");
+    head_truncated_node.setReadOnly(true);
+    auto* head_truncated_view = new VSTGUI::CTextLabel(
+        VSTGUI::CRect(420, 20, 470, 60),
+        "OPQRSTUVWXYZAB"
+    );
+    head_truncated_view->setHoriAlign(VSTGUI::kLeftText);
+    head_truncated_view->setTextInset(VSTGUI::CPoint(2, 2));
+    head_truncated_view->setTextTruncateMode(VSTGUI::CTextLabel::kTruncateHead);
+    frame->addView(head_truncated_view);
     ZigVstgui::NativeAccessibilityBridge bridge;
     auto clipboard = std::make_shared<TestClipboard>(service.evidence);
     const bool missing_bus_safe = !bridge.open(
@@ -2033,7 +2471,13 @@ int runTest() {
     }
     const bool opened = bridge.open(
         frame.get(),
-        {{&node, view}, {&boundary_node, boundary_view}},
+        {
+            {&node, view},
+            {&boundary_node, boundary_view},
+            {&rotated_node, rotated_view},
+            {&tail_truncated_node, tail_truncated_view},
+            {&head_truncated_node, head_truncated_view},
+        },
         clipboard
     );
     const bool active = bridge.active();
@@ -2051,6 +2495,7 @@ int runTest() {
     node.setValueText("AøB");
     node.setName("Output gain field");
     node.setFocused(true);
+    tail_truncated_view->setViewSize(VSTGUI::CRect(360, 20, 580, 60));
     bridge.layoutChanged();
     for (int attempt = 0; attempt < 100; ++attempt) {
         if (service.evidence.property_event.load(std::memory_order_acquire) &&
@@ -2068,14 +2513,15 @@ int runTest() {
             service.evidence.selection_event.load(std::memory_order_acquire) &&
             service.evidence.caret_event_count.load(std::memory_order_acquire) == 2 &&
             service.evidence.selection_event_count.load(std::memory_order_acquire) == 3 &&
+            service.evidence.truncated_state_event.load(std::memory_order_acquire) &&
             service.evidence.text_event_count.load(std::memory_order_acquire) == 4 &&
             service.evidence.event_count.load(std::memory_order_acquire) == 3 &&
-            service.evidence.cache_add_count.load(std::memory_order_acquire) == 3) break;
+            service.evidence.cache_add_count.load(std::memory_order_acquire) == 6) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     const bool published = missing_bus_safe && missing_registry_safe &&
         opened && active &&
-        element_count == 2 &&
+        element_count == 5 &&
         service.evidence.embedded.load(std::memory_order_acquire) &&
         service.evidence.id_set.load(std::memory_order_acquire) &&
         service.evidence.root_role.load(std::memory_order_acquire) &&
@@ -2091,6 +2537,14 @@ int runTest() {
         service.evidence.text_interface.load(std::memory_order_acquire) &&
         service.evidence.text_queries.load(std::memory_order_acquire) &&
         service.evidence.text_boundaries.load(std::memory_order_acquire) &&
+        service.evidence.rotated_text_geometry.load(std::memory_order_acquire) &&
+        service.evidence.tail_truncated_text_geometry.load(
+            std::memory_order_acquire
+        ) &&
+        service.evidence.head_truncated_text_geometry.load(
+            std::memory_order_acquire
+        ) &&
+        service.evidence.truncated_state_event.load(std::memory_order_acquire) &&
         service.evidence.text_selection_queries.load(std::memory_order_acquire) &&
         service.evidence.caret_set.load(std::memory_order_acquire) &&
         service.evidence.selection_added.load(std::memory_order_acquire) &&
@@ -2108,7 +2562,7 @@ int runTest() {
         service.evidence.cache_items.load(std::memory_order_acquire) &&
         service.evidence.cache_root_added.load(std::memory_order_acquire) &&
         service.evidence.cache_child_added.load(std::memory_order_acquire) &&
-        service.evidence.cache_add_count.load(std::memory_order_acquire) == 3 &&
+        service.evidence.cache_add_count.load(std::memory_order_acquire) == 6 &&
         service.evidence.hostile_inputs_rejected.load(std::memory_order_acquire) &&
         service.evidence.inspection_complete.load(std::memory_order_acquire) &&
         service.evidence.property_event.load(std::memory_order_acquire) &&
@@ -2144,7 +2598,7 @@ int runTest() {
     node.setValueText("Detached value");
     node.setTextSelection(0, 1);
     for (int attempt = 0; attempt < 100; ++attempt) {
-        if (service.evidence.cache_remove_count.load(std::memory_order_acquire) == 3)
+        if (service.evidence.cache_remove_count.load(std::memory_order_acquire) == 6)
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
@@ -2160,7 +2614,7 @@ int runTest() {
             selection_events_before_close &&
         service.evidence.cache_root_removed.load(std::memory_order_acquire) &&
         service.evidence.cache_child_removed.load(std::memory_order_acquire) &&
-        service.evidence.cache_remove_count.load(std::memory_order_acquire) == 3;
+        service.evidence.cache_remove_count.load(std::memory_order_acquire) == 6;
     if (!published || !closed) {
         std::fprintf(
             stderr,
@@ -2169,7 +2623,8 @@ int runTest() {
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
             "interfaces=%d bounds=%d action-count=%d action=%d "
             "value-read=%d value-set=%d text-interface=%d text-queries=%d "
-            "text-boundaries=%d selection-queries=%d caret-set=%d "
+            "text-boundaries=%d rotated-geometry=%d truncated-geometry=%d/%d/%d "
+            "selection-queries=%d caret-set=%d "
             "selection=%d/%d/%d "
             "editable=%d text-set=%d insert=%d "
             "delete=%d paste=%d ab-updates=%u clipboard-writes=%u clipboard-reads=%u "
@@ -2202,6 +2657,14 @@ int runTest() {
             service.evidence.text_interface.load(std::memory_order_acquire),
             service.evidence.text_queries.load(std::memory_order_acquire),
             service.evidence.text_boundaries.load(std::memory_order_acquire),
+            service.evidence.rotated_text_geometry.load(std::memory_order_acquire),
+            service.evidence.tail_truncated_text_geometry.load(
+                std::memory_order_acquire
+            ),
+            service.evidence.head_truncated_text_geometry.load(
+                std::memory_order_acquire
+            ),
+            service.evidence.truncated_state_event.load(std::memory_order_acquire),
             service.evidence.text_selection_queries.load(std::memory_order_acquire),
             service.evidence.caret_set.load(std::memory_order_acquire),
             service.evidence.selection_added.load(std::memory_order_acquire),

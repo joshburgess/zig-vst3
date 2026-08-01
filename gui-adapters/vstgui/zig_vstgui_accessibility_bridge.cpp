@@ -7,7 +7,9 @@
 
 #include "zig_vstgui_accessibility_atspi.h"
 
+#include "vstgui/lib/cgraphicstransform.h"
 #include "vstgui/lib/controls/cparamdisplay.h"
+#include "vstgui/lib/controls/ctextlabel.h"
 #include "vstgui/lib/platform/iplatformfont.h"
 #include "vstgui/lib/platform/iplatformframe.h"
 
@@ -287,6 +289,7 @@ public:
         const AccessibilityNode* node {nullptr};
         Object* object {nullptr};
         std::string previous_text;
+        bool previous_truncated {false};
     };
 
     ~Impl() {
@@ -409,8 +412,15 @@ public:
     void layoutChanged() {
         if (!ready) return;
         emitBoundsChanged(*objects[0]);
-        for (std::size_t index = 0; index < entries.size(); ++index)
-            emitBoundsChanged(*objects[index + 1]);
+        for (std::size_t index = 0; index < entries.size(); ++index) {
+            const auto& object = *objects[index + 1];
+            emitBoundsChanged(object);
+            if (index >= observers.size()) continue;
+            const bool truncated = snapshot(object).hasState(AtspiState::truncated);
+            if (truncated == observers[index]->previous_truncated) continue;
+            emitStateChange(object, "truncated", truncated);
+            observers[index]->previous_truncated = truncated;
+        }
     }
 
     std::size_t elementCount() const {
@@ -725,11 +735,15 @@ private:
         const auto* current = entry(object);
         if (!current) return {};
         const bool visible = current->view->isVisible();
-        return AtspiNodeAdapter(current->node).snapshot(
+        auto result = AtspiNodeAdapter(current->node).snapshot(
             current->view->wantsFocus(),
             visible,
             visible
         );
+        const auto* label = dynamic_cast<const VSTGUI::CTextLabel*>(current->view);
+        if (label && !label->getTruncatedText().empty())
+            result.setState(AtspiState::truncated);
+        return result;
     }
 
     const char* objectBus(const Object& object) const {
@@ -758,7 +772,70 @@ private:
         double y {0.0};
         double height {0.0};
         std::vector<double> offsets;
+        std::vector<bool> visible;
+        VSTGUI::CGraphicsTransform transform;
     };
+
+    struct FloatingBounds {
+        double left {0.0};
+        double top {0.0};
+        double right {0.0};
+        double bottom {0.0};
+    };
+
+    static bool textCharacterBounds(
+        const TextLayout& layout,
+        std::size_t index,
+        FloatingBounds& result
+    ) {
+        if (index >= layout.visible.size() || !layout.visible[index] ||
+            index + 1 >= layout.offsets.size()) return false;
+        const double left = layout.x + layout.offsets[index];
+        const double right = layout.x + layout.offsets[index + 1];
+        VSTGUI::CPoint points[] {
+            {left, layout.y},
+            {right, layout.y},
+            {right, layout.y + layout.height},
+            {left, layout.y + layout.height},
+        };
+        for (auto& point : points) layout.transform.transform(point);
+        result = {
+            points[0].x,
+            points[0].y,
+            points[0].x,
+            points[0].y,
+        };
+        for (const auto& point : points) {
+            result.left = std::min(result.left, point.x);
+            result.top = std::min(result.top, point.y);
+            result.right = std::max(result.right, point.x);
+            result.bottom = std::max(result.bottom, point.y);
+        }
+        return true;
+    }
+
+    static bool textRangeBounds(
+        const TextLayout& layout,
+        std::size_t start,
+        std::size_t end,
+        FloatingBounds& result
+    ) {
+        bool found = false;
+        for (std::size_t index = start; index < end; ++index) {
+            FloatingBounds character;
+            if (!textCharacterBounds(layout, index, character)) continue;
+            if (!found) {
+                result = character;
+                found = true;
+                continue;
+            }
+            result.left = std::min(result.left, character.left);
+            result.top = std::min(result.top, character.top);
+            result.right = std::max(result.right, character.right);
+            result.bottom = std::max(result.bottom, character.bottom);
+        }
+        return found;
+    }
 
     static gint32 coordinate(double value) {
         if (value <= static_cast<double>(G_MININT32)) return G_MININT32;
@@ -800,7 +877,7 @@ private:
         const auto* display = dynamic_cast<const VSTGUI::CParamDisplay*>(
             current->view
         );
-        if (!display || display->getTextRotation() != 0.0) return false;
+        if (!display) return false;
         const auto* font = display->getFont();
         if (!font) return false;
         const auto platform_font = font->getPlatformFont();
@@ -810,22 +887,84 @@ private:
 
         const auto count = g_utf8_strlen(text.data(), text.size());
         if (count < 0) return false;
-        layout.offsets.clear();
-        layout.offsets.reserve(static_cast<std::size_t>(count) + 1);
-        const char* cursor = text.data();
-        for (glong index = 0; index <= count; ++index) {
-            const auto byte_count = static_cast<std::size_t>(cursor - text.data());
-            VSTGUI::UTF8String prefix(text.substr(0, byte_count));
-            const double width = painter->getStringWidth(
-                nullptr,
-                prefix.getPlatformString(),
-                display->getAntialias()
-            );
-            if (!std::isfinite(width) || width < 0.0) return false;
-            if (!layout.offsets.empty() && width < layout.offsets.back())
+        const auto measureOffsets = [&](const std::string& value, std::vector<double>& offsets) {
+            if (!g_utf8_validate(value.data(), value.size(), nullptr)) return false;
+            const auto character_count = g_utf8_strlen(value.data(), value.size());
+            if (character_count < 0) return false;
+            offsets.clear();
+            offsets.reserve(static_cast<std::size_t>(character_count) + 1);
+            const char* cursor = value.data();
+            for (glong index = 0; index <= character_count; ++index) {
+                const auto byte_count = static_cast<std::size_t>(cursor - value.data());
+                VSTGUI::UTF8String prefix(value.substr(0, byte_count));
+                const double width = painter->getStringWidth(
+                    nullptr,
+                    prefix.getPlatformString(),
+                    display->getAntialias()
+                );
+                if (!std::isfinite(width) || width < 0.0 ||
+                    (!offsets.empty() && width < offsets.back())) return false;
+                offsets.push_back(width);
+                if (index < character_count) cursor = g_utf8_next_char(cursor);
+            }
+            return true;
+        };
+
+        std::string visual_text = text;
+        const auto* label = dynamic_cast<const VSTGUI::CTextLabel*>(display);
+        bool truncated = false;
+        if (label && !label->getTruncatedText().empty()) {
+            visual_text = label->getTruncatedText().getString();
+            truncated = true;
+        }
+        std::vector<double> visual_offsets;
+        if (!measureOffsets(visual_text, visual_offsets)) return false;
+        const auto semantic_count = static_cast<std::size_t>(count);
+        layout.offsets.assign(semantic_count + 1, 0.0);
+        layout.visible.assign(semantic_count, true);
+        if (!truncated) {
+            if (visual_offsets.size() != layout.offsets.size()) return false;
+            layout.offsets = visual_offsets;
+        } else {
+            if (visual_text.size() < 2) return false;
+            layout.visible.assign(semantic_count, false);
+            if (label->getTextTruncateMode() == VSTGUI::CTextLabel::kTruncateTail &&
+                visual_text.compare(visual_text.size() - 2, 2, "..") == 0) {
+                const std::string visible_text = visual_text.substr(0, visual_text.size() - 2);
+                if (text.compare(0, visible_text.size(), visible_text) != 0) return false;
+                const auto visible_count = static_cast<std::size_t>(
+                    g_utf8_strlen(visible_text.data(), visible_text.size())
+                );
+                if (visible_count > semantic_count ||
+                    visual_offsets.size() < visible_count + 1) return false;
+                for (std::size_t index = 0; index <= visible_count; ++index)
+                    layout.offsets[index] = visual_offsets[index];
+                for (std::size_t index = visible_count + 1;
+                    index < layout.offsets.size(); ++index)
+                    layout.offsets[index] = visual_offsets[visible_count];
+                for (std::size_t index = 0; index < visible_count; ++index)
+                    layout.visible[index] = true;
+            } else if (label->getTextTruncateMode() == VSTGUI::CTextLabel::kTruncateHead &&
+                visual_text.compare(0, 2, "..") == 0) {
+                const std::string visible_text = visual_text.substr(2);
+                if (visible_text.size() > text.size() ||
+                    text.compare(text.size() - visible_text.size(), visible_text.size(), visible_text) != 0)
+                    return false;
+                const auto visible_count = static_cast<std::size_t>(
+                    g_utf8_strlen(visible_text.data(), visible_text.size())
+                );
+                if (visible_count > semantic_count ||
+                    visual_offsets.size() < visible_count + 3) return false;
+                const auto visible_start = semantic_count - visible_count;
+                for (std::size_t index = 0; index <= visible_start; ++index)
+                    layout.offsets[index] = visual_offsets[2];
+                for (std::size_t index = 0; index <= visible_count; ++index)
+                    layout.offsets[visible_start + index] = visual_offsets[index + 2];
+                for (std::size_t index = visible_start; index < semantic_count; ++index)
+                    layout.visible[index] = true;
+            } else {
                 return false;
-            layout.offsets.push_back(width);
-            if (index < count) cursor = g_utf8_next_char(cursor);
+            }
         }
 
         const auto area = bounds(object, coordinate_type);
@@ -836,7 +975,7 @@ private:
         const double text_bottom = static_cast<double>(area.y) + area.height - inset.y;
         if (text_right < text_left || text_bottom < text_top) return false;
 
-        const double text_width = layout.offsets.back();
+        const double text_width = visual_offsets.back();
         switch (display->getHoriAlign()) {
             case VSTGUI::kLeftText:
                 layout.x = text_left;
@@ -871,6 +1010,14 @@ private:
         } else {
             return false;
         }
+        layout.transform = {};
+        layout.transform.rotate(
+            display->getTextRotation(),
+            VSTGUI::CPoint(
+                (text_left + text_right) / 2.0,
+                (text_top + text_bottom) / 2.0
+            )
+        );
         return true;
     }
 
@@ -1320,6 +1467,9 @@ private:
             observer->node = entries[index].node;
             observer->object = objects[index + 1].get();
             observer->previous_text = entries[index].node->valueText();
+            observer->previous_truncated = snapshot(*observer->object).hasState(
+                AtspiState::truncated
+            );
             observer->node->setObserver(observer.get(), accessibilityChanged);
             observers.push_back(std::move(observer));
         }
@@ -1835,21 +1985,29 @@ private:
             }
             TextLayout layout;
             if (measuredTextLayout(object, text, coordinate_type, layout)) {
-                const gint32 first = coordinate(
-                    layout.x + layout.offsets[static_cast<std::size_t>(offset)]
-                );
-                const gint32 last = coordinate(
-                    layout.x + layout.offsets[static_cast<std::size_t>(offset + 1)]
-                );
-                const gint32 top = coordinate(layout.y);
-                const gint32 bottom = coordinate(layout.y + layout.height);
+                FloatingBounds measured;
+                if (!textCharacterBounds(
+                        layout,
+                        static_cast<std::size_t>(offset),
+                        measured
+                    )) {
+                    g_dbus_method_invocation_return_value(
+                        invocation,
+                        g_variant_new("(iiii)", -1, -1, -1, -1)
+                    );
+                    return;
+                }
+                const gint32 left = coordinate(measured.left);
+                const gint32 right = coordinate(measured.right);
+                const gint32 top = coordinate(measured.top);
+                const gint32 bottom = coordinate(measured.bottom);
                 g_dbus_method_invocation_return_value(
                     invocation,
                     g_variant_new(
                         "(iiii)",
-                        first,
+                        left,
                         top,
-                        std::max<gint32>(0, last - first),
+                        std::max<gint32>(0, right - left),
                         std::max<gint32>(0, bottom - top)
                     )
                 );
@@ -1882,11 +2040,15 @@ private:
             TextLayout layout;
             if (count > 0 &&
                 measuredTextLayout(object, text, coordinate_type, layout)) {
-                const double point_x = x;
-                const double point_y = y;
+                VSTGUI::CPoint point(x, y);
+                layout.transform.inverse().transform(point);
+                const double point_x = point.x;
+                const double point_y = point.y;
                 if (point_y >= layout.y &&
                     point_y < layout.y + layout.height) {
                     for (gint32 index = 0; index < count; ++index) {
+                        if (!layout.visible[static_cast<std::size_t>(index)])
+                            continue;
                         const double first = layout.x +
                             layout.offsets[static_cast<std::size_t>(index)];
                         const double last = layout.x +
@@ -1954,21 +2116,30 @@ private:
             }
             TextLayout layout;
             if (measuredTextLayout(object, text, coordinate_type, layout)) {
-                const gint32 first = coordinate(
-                    layout.x + layout.offsets[static_cast<std::size_t>(start)]
-                );
-                const gint32 last = coordinate(
-                    layout.x + layout.offsets[static_cast<std::size_t>(end)]
-                );
-                const gint32 top = coordinate(layout.y);
-                const gint32 bottom = coordinate(layout.y + layout.height);
+                FloatingBounds measured;
+                if (!textRangeBounds(
+                        layout,
+                        static_cast<std::size_t>(start),
+                        static_cast<std::size_t>(end),
+                        measured
+                    )) {
+                    g_dbus_method_invocation_return_value(
+                        invocation,
+                        g_variant_new("(iiii)", -1, -1, -1, -1)
+                    );
+                    return;
+                }
+                const gint32 left = coordinate(measured.left);
+                const gint32 right = coordinate(measured.right);
+                const gint32 top = coordinate(measured.top);
+                const gint32 bottom = coordinate(measured.bottom);
                 g_dbus_method_invocation_return_value(
                     invocation,
                     g_variant_new(
                         "(iiii)",
-                        first,
+                        left,
                         top,
-                        std::max<gint32>(0, last - first),
+                        std::max<gint32>(0, right - left),
                         std::max<gint32>(0, bottom - top)
                     )
                 );
@@ -2024,18 +2195,26 @@ private:
                     coordinate_type,
                     layout
                 );
-                const auto edge = [&](gint32 offset) {
+                const auto characterBounds = [&](gint32 offset, FloatingBounds& result) {
                     if (measured) {
-                        return layout.x +
-                            layout.offsets[static_cast<std::size_t>(offset)];
+                        return textCharacterBounds(
+                            layout,
+                            static_cast<std::size_t>(offset),
+                            result
+                        );
                     }
-                    return static_cast<double>(area.x) +
+                    const double left = static_cast<double>(area.x) +
                         static_cast<double>(area.width) * offset / count;
+                    const double right = static_cast<double>(area.x) +
+                        static_cast<double>(area.width) * (offset + 1) / count;
+                    result = {
+                        left,
+                        static_cast<double>(area.y),
+                        right,
+                        static_cast<double>(area.y) + area.height,
+                    };
+                    return true;
                 };
-                const double text_top = measured ? layout.y : area.y;
-                const double text_bottom = measured
-                    ? layout.y + layout.height
-                    : static_cast<double>(area.y) + area.height;
                 const auto retained = [](
                     double minimum,
                     double maximum,
@@ -2055,15 +2234,16 @@ private:
                 for (gint32 index = 0; index <= count; ++index) {
                     bool include = false;
                     if (index < count) {
-                        include = retained(
-                            edge(index),
-                            edge(index + 1),
+                        FloatingBounds character;
+                        include = characterBounds(index, character) && retained(
+                            character.left,
+                            character.right,
                             x,
                             static_cast<double>(right),
                             x_clip
                         ) && retained(
-                            text_top,
-                            text_bottom,
+                            character.top,
+                            character.bottom,
                             y,
                             static_cast<double>(bottom),
                             y_clip
