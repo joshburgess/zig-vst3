@@ -115,7 +115,8 @@ pub fn databaseFromDecoded(
                     frame_index;
                 const value =
                     decoded.responses_measurement_ear_frame[source_index];
-                if (!std.math.isFinite(value))
+                if (!std.math.isFinite(value) or
+                    @abs(value) > std.math.floatMax(f32))
                     return error.InvalidSofaResponse;
                 interleaved[
                     (measurement_index *
@@ -840,6 +841,25 @@ test "decoded standard HRTF dataset rejects inconsistent data" {
         error.InvalidSofaResponse,
         databaseFromDecoded(1, 1, std.testing.allocator, invalid),
     );
+    invalid = base;
+    invalid.responses_measurement_ear_frame =
+        &.{ std.math.floatMax(f64), 1.0 };
+    try std.testing.expectError(
+        error.InvalidSofaResponse,
+        databaseFromDecoded(1, 1, std.testing.allocator, invalid),
+    );
+    invalid = base;
+    invalid.responses_measurement_ear_frame = &.{
+        std.math.floatMax(f32),
+        -std.math.floatMax(f32),
+    };
+    const boundary = try databaseFromDecoded(
+        1,
+        1,
+        std.testing.allocator,
+        invalid,
+    );
+    try std.testing.expect(boundary.valid());
 
     var failing = std.testing.FailingAllocator.init(
         std.testing.allocator,
