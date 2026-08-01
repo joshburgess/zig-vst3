@@ -60,6 +60,11 @@ bool allowedWhenReadOnly(AccessibilityAction action) {
 
 }
 
+bool validUtf8(std::string_view text) {
+    uint32_t count = 0;
+    return utf8CharacterCount(text, count);
+}
+
 bool AccessibilityTextSelection::selected() const {
     return present && anchor != caret;
 }

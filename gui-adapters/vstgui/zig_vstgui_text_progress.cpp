@@ -143,6 +143,7 @@ bool EditableLabelControl::refresh() {
     const auto length = static_cast<std::size_t>(written);
     if (text[length] != 0 || std::find(text, text + length, '\0') != text + length) return false;
     const std::string next(text, length);
+    if (!validUtf8(next)) return false;
     if (accepted_text == next) return false;
     accepted_text = next;
     edit->setText(accepted_text.c_str());
@@ -209,8 +210,12 @@ bool EditableLabelControl::accessibilityAction(void* userdata, const Accessibili
 }
 
 bool EditableLabelControl::commit(const char* text) {
-    if (description.read_only != 0 || !text || !callbacks.store_editor_text ||
-        std::char_traits<char>::length(text) > description.maximum_bytes) {
+    if (description.read_only != 0 || !text || !callbacks.store_editor_text) {
+        showError(true);
+        return false;
+    }
+    const std::string_view next(text);
+    if (next.size() > description.maximum_bytes || !validUtf8(next)) {
         showError(true);
         return false;
     }

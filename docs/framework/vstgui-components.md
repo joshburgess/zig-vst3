@@ -499,7 +499,7 @@ Implement `loadGuiProgress` and return a `ProgressSnapshot`. Determinate values 
 
 Polling is bounded to 1–60 Hz while the editor is open. Unchanged determinate states do not repaint. Indeterminate state animates a bounded segment. Idle, running, complete, and failed states always expose explicit text, and failure does not rely on color alone. The accessibility node uses meter semantics and exposes a numeric range only for running determinate work.
 
-`EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and production IR loader use the same public declaration, callback, validation, rendering, lifecycle, and accessibility contracts. External text refresh requires an exact bounded byte count, a terminator at that boundary, and no embedded terminator. Malformed callback output preserves the accepted visual and accessibility text.
+`EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and production IR loader use the same public declaration, callback, validation, rendering, lifecycle, and accessibility contracts. External text refresh requires an exact bounded byte count, a terminator at that boundary, no embedded terminator, and complete UTF-8. Malformed callback output preserves the accepted visual and accessibility text. Editable commits reject malformed UTF-8 before invoking the storage callback.
 
 Parameter and XY-pad formatting callbacks use the same exact output contract. Malformed callback output falls back to bounded numeric text.
 

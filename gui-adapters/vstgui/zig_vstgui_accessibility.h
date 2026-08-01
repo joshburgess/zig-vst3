@@ -3,8 +3,11 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace ZigVstgui {
+
+bool validUtf8(std::string_view text);
 
 enum class AccessibilityRole {
     slider,

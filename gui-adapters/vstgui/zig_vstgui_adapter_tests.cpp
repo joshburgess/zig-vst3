@@ -183,6 +183,13 @@ int32_t loadEditorText(void* userdata, uint32_t, char* output, uint32_t capacity
         output[3] = 0;
         return 3;
     }
+    if (state->malformed_editor_text == 3) {
+        if (capacity < 3) return -1;
+        output[0] = static_cast<char>(0xc0);
+        output[1] = static_cast<char>(0x80);
+        output[2] = 0;
+        return 2;
+    }
     if (state->editor_text.size() >= capacity) return -1;
     std::copy(state->editor_text.begin(), state->editor_text.end(), output);
     output[state->editor_text.size()] = 0;
@@ -3603,6 +3610,15 @@ int testEditableLabelsAndProgress() {
             return 2;
         }
         state.reject_editor_text = false;
+        const char malformed_text[] = {static_cast<char>(0xc0), static_cast<char>(0x80), 0};
+        if (label.accessibilityNode().perform(
+                ZigVstgui::AccessibilityAction::set_value,
+                0.0,
+                malformed_text
+            ) || label.accessibilityNode().valueText() != "Bright Hall") {
+            VSTGUI::exit();
+            return 15;
+        }
         state.editor_text = "External Name";
         if (!label.refresh() || label.accessibilityNode().valueText() != "External Name" || label.refresh()) {
             VSTGUI::exit();
@@ -3617,6 +3633,11 @@ int testEditableLabelsAndProgress() {
         if (label.refresh() || label.accessibilityNode().valueText() != "External Name") {
             VSTGUI::exit();
             return 14;
+        }
+        state.malformed_editor_text = 3;
+        if (label.refresh() || label.accessibilityNode().valueText() != "External Name") {
+            VSTGUI::exit();
+            return 16;
         }
         state.malformed_editor_text = 0;
 
