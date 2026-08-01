@@ -193,6 +193,7 @@ constexpr const char* introspection_xml = R"xml(
     <signal name='PropertyChange'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
     <signal name='BoundsChanged'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
     <signal name='StateChanged'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
+    <signal name='TextChanged'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
   </interface>
 </node>
 )xml";
@@ -280,6 +281,7 @@ public:
         Impl* owner {nullptr};
         const AccessibilityNode* node {nullptr};
         Object* object {nullptr};
+        std::string previous_text;
     };
 
     ~Impl() {
@@ -1008,7 +1010,109 @@ private:
         );
     }
 
-    void nodeChanged(const Object& object, AccessibilityChange change) const {
+    struct TextDifference {
+        gint32 start {0};
+        gint32 removed_length {0};
+        gint32 inserted_length {0};
+        std::string removed;
+        std::string inserted;
+    };
+
+    static bool textDifference(
+        const std::string& before,
+        const std::string& after,
+        TextDifference& result
+    ) {
+        if (before == after ||
+            !g_utf8_validate(before.data(), before.size(), nullptr) ||
+            !g_utf8_validate(after.data(), after.size(), nullptr)) return false;
+
+        const char* before_first = before.data();
+        const char* after_first = after.data();
+        const char* before_end = before_first + before.size();
+        const char* after_end = after_first + after.size();
+        gint64 prefix_length = 0;
+        while (before_first < before_end && after_first < after_end &&
+               g_utf8_get_char(before_first) == g_utf8_get_char(after_first)) {
+            before_first = g_utf8_next_char(before_first);
+            after_first = g_utf8_next_char(after_first);
+            prefix_length += 1;
+        }
+
+        const char* before_last = before_end;
+        const char* after_last = after_end;
+        while (before_last > before_first && after_last > after_first) {
+            const char* before_previous = g_utf8_find_prev_char(
+                before.data(),
+                before_last
+            );
+            const char* after_previous = g_utf8_find_prev_char(
+                after.data(),
+                after_last
+            );
+            if (!before_previous || !after_previous ||
+                g_utf8_get_char(before_previous) !=
+                    g_utf8_get_char(after_previous)) break;
+            before_last = before_previous;
+            after_last = after_previous;
+        }
+
+        const gint64 removed_length = g_utf8_strlen(
+            before_first,
+            before_last - before_first
+        );
+        const gint64 inserted_length = g_utf8_strlen(
+            after_first,
+            after_last - after_first
+        );
+        if (prefix_length > G_MAXINT32 || removed_length > G_MAXINT32 ||
+            inserted_length > G_MAXINT32) return false;
+
+        result.start = static_cast<gint32>(prefix_length);
+        result.removed_length = static_cast<gint32>(removed_length);
+        result.inserted_length = static_cast<gint32>(inserted_length);
+        result.removed.assign(
+            before_first,
+            static_cast<std::size_t>(before_last - before_first)
+        );
+        result.inserted.assign(
+            after_first,
+            static_cast<std::size_t>(after_last - after_first)
+        );
+        return true;
+    }
+
+    void emitTextDifference(
+        const Object& object,
+        const std::string& before,
+        const std::string& after
+    ) const {
+        TextDifference difference;
+        if (!textDifference(before, after, difference)) return;
+        if (difference.removed_length > 0) {
+            emitObjectSignal(
+                object,
+                "TextChanged",
+                "delete",
+                difference.start,
+                difference.removed_length,
+                g_variant_new_string(difference.removed.c_str())
+            );
+        }
+        if (difference.inserted_length > 0) {
+            emitObjectSignal(
+                object,
+                "TextChanged",
+                "insert",
+                difference.start,
+                difference.inserted_length,
+                g_variant_new_string(difference.inserted.c_str())
+            );
+        }
+    }
+
+    void nodeChanged(Observer& observer, AccessibilityChange change) const {
+        const auto& object = *observer.object;
         const auto current = snapshot(object);
         switch (change) {
             case AccessibilityChange::role:
@@ -1033,6 +1137,13 @@ private:
                 );
                 break;
             case AccessibilityChange::value:
+                if (current.role == AtspiRole::entry)
+                    emitTextDifference(
+                        object,
+                        observer.previous_text,
+                        current.value_text
+                    );
+                observer.previous_text = current.value_text;
                 emitPropertyChange(
                     object,
                     "accessible-value",
@@ -1079,7 +1190,7 @@ private:
     ) {
         auto* observer = static_cast<Observer*>(userdata);
         if (observer && observer->owner && observer->object)
-            observer->owner->nodeChanged(*observer->object, change);
+            observer->owner->nodeChanged(*observer, change);
     }
 
     void installObservers() {
@@ -1089,6 +1200,7 @@ private:
             observer->owner = this;
             observer->node = entries[index].node;
             observer->object = objects[index + 1].get();
+            observer->previous_text = entries[index].node->valueText();
             observer->node->setObserver(observer.get(), accessibilityChanged);
             observers.push_back(std::move(observer));
         }

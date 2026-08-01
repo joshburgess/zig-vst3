@@ -85,7 +85,13 @@ struct Evidence {
     std::atomic<bool> property_event {false};
     std::atomic<bool> focus_event {false};
     std::atomic<bool> bounds_event {false};
+    std::atomic<bool> text_insert_event {false};
+    std::atomic<bool> text_delete_event {false};
+    std::atomic<bool> text_replacement_delete_event {false};
+    std::atomic<bool> text_replacement_insert_event {false};
+    std::atomic<unsigned int> text_event_count {0};
     std::atomic<unsigned int> event_count {0};
+    std::atomic<bool> inspection_complete {false};
 };
 
 class TestClipboard final : public ZigVstgui::AccessibilityClipboard {
@@ -218,6 +224,40 @@ void eventReceived(
     if (std::strcmp(signal_name, "BoundsChanged") == 0) {
         evidence->bounds_event.store(true, std::memory_order_release);
         evidence->event_count.fetch_add(1, std::memory_order_acq_rel);
+    }
+    if (std::strcmp(signal_name, "TextChanged") == 0 && detail) {
+        gint32 start = -1;
+        gint32 length = -1;
+        g_variant_get_child(parameters, 1, "i", &start);
+        g_variant_get_child(parameters, 2, "i", &length);
+        GVariant* boxed = g_variant_get_child_value(parameters, 3);
+        GVariant* value = g_variant_get_variant(boxed);
+        const char* text = g_variant_is_of_type(value, G_VARIANT_TYPE_STRING)
+            ? g_variant_get_string(value, nullptr)
+            : nullptr;
+        if (start == 1 && length == 1 && text) {
+            if (std::strcmp(detail, "insert") == 0 &&
+                std::strcmp(text, "🙂") == 0)
+                evidence->text_insert_event.store(true, std::memory_order_release);
+            if (std::strcmp(detail, "delete") == 0 &&
+                std::strcmp(text, "🙂") == 0)
+                evidence->text_delete_event.store(true, std::memory_order_release);
+            if (std::strcmp(detail, "delete") == 0 &&
+                std::strcmp(text, "é") == 0)
+                evidence->text_replacement_delete_event.store(
+                    true,
+                    std::memory_order_release
+                );
+            if (std::strcmp(detail, "insert") == 0 &&
+                std::strcmp(text, "ø") == 0)
+                evidence->text_replacement_insert_event.store(
+                    true,
+                    std::memory_order_release
+                );
+        }
+        evidence->text_event_count.fetch_add(1, std::memory_order_acq_rel);
+        g_variant_unref(value);
+        g_variant_unref(boxed);
     }
 }
 
@@ -1029,6 +1069,7 @@ void inspectApplication(
                 calls_before_hostile,
         std::memory_order_release
     );
+    evidence.inspection_complete.store(true, std::memory_order_release);
 }
 
 struct Service {
@@ -1309,6 +1350,14 @@ int runTest() {
     );
     const bool active = bridge.active();
     const std::size_t element_count = bridge.elementCount();
+    for (int attempt = 0; attempt < 400; ++attempt) {
+        if (service.evidence.inspection_complete.load(std::memory_order_acquire))
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    node.setValueText("A🙂éB");
+    node.setValueText("AéB");
+    node.setValueText("AøB");
     node.setName("Output gain field");
     node.setFocused(true);
     bridge.layoutChanged();
@@ -1316,6 +1365,15 @@ int runTest() {
         if (service.evidence.property_event.load(std::memory_order_acquire) &&
             service.evidence.focus_event.load(std::memory_order_acquire) &&
             service.evidence.bounds_event.load(std::memory_order_acquire) &&
+            service.evidence.text_insert_event.load(std::memory_order_acquire) &&
+            service.evidence.text_delete_event.load(std::memory_order_acquire) &&
+            service.evidence.text_replacement_delete_event.load(
+                std::memory_order_acquire
+            ) &&
+            service.evidence.text_replacement_insert_event.load(
+                std::memory_order_acquire
+            ) &&
+            service.evidence.text_event_count.load(std::memory_order_acquire) == 4 &&
             service.evidence.event_count.load(std::memory_order_acquire) == 3 &&
             service.evidence.cache_add_count.load(std::memory_order_acquire) == 2) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -1351,14 +1409,28 @@ int runTest() {
         service.evidence.cache_child_added.load(std::memory_order_acquire) &&
         service.evidence.cache_add_count.load(std::memory_order_acquire) == 2 &&
         service.evidence.hostile_inputs_rejected.load(std::memory_order_acquire) &&
+        service.evidence.inspection_complete.load(std::memory_order_acquire) &&
         service.evidence.property_event.load(std::memory_order_acquire) &&
         service.evidence.focus_event.load(std::memory_order_acquire) &&
-        service.evidence.bounds_event.load(std::memory_order_acquire);
+        service.evidence.bounds_event.load(std::memory_order_acquire) &&
+        service.evidence.text_insert_event.load(std::memory_order_acquire) &&
+        service.evidence.text_delete_event.load(std::memory_order_acquire) &&
+        service.evidence.text_replacement_delete_event.load(
+            std::memory_order_acquire
+        ) &&
+        service.evidence.text_replacement_insert_event.load(
+            std::memory_order_acquire
+        ) &&
+        service.evidence.text_event_count.load(std::memory_order_acquire) == 4;
     const auto events_before_close = service.evidence.event_count.load(
+        std::memory_order_acquire
+    );
+    const auto text_events_before_close = service.evidence.text_event_count.load(
         std::memory_order_acquire
     );
     bridge.close();
     node.setName("Detached node");
+    node.setValueText("Detached value");
     for (int attempt = 0; attempt < 100; ++attempt) {
         if (service.evidence.cache_remove_count.load(std::memory_order_acquire) == 2)
             break;
@@ -1368,6 +1440,8 @@ int runTest() {
         events_before_close == 3 &&
         service.evidence.event_count.load(std::memory_order_acquire) ==
             events_before_close &&
+        service.evidence.text_event_count.load(std::memory_order_acquire) ==
+            text_events_before_close &&
         service.evidence.cache_root_removed.load(std::memory_order_acquire) &&
         service.evidence.cache_child_removed.load(std::memory_order_acquire) &&
         service.evidence.cache_remove_count.load(std::memory_order_acquire) == 2;
@@ -1385,8 +1459,10 @@ int runTest() {
             "cache=%d cache-root-add=%d cache-child-add=%d "
             "cache-add-count=%u cache-root-remove=%d cache-child-remove=%d "
             "cache-remove-count=%u hostile-inputs=%d action-calls=%u "
-            "property-event=%d focus-event=%d "
-            "bounds-event=%d closed=%d\n",
+            "inspection=%d property-event=%d focus-event=%d "
+            "bounds-event=%d text-event-count=%u text-insert=%d "
+            "text-delete=%d replacement-delete=%d replacement-insert=%d "
+            "closed=%d\n",
             missing_bus_safe,
             missing_registry_safe,
             opened,
@@ -1424,9 +1500,19 @@ int runTest() {
             service.evidence.cache_remove_count.load(std::memory_order_acquire),
             service.evidence.hostile_inputs_rejected.load(std::memory_order_acquire),
             service.evidence.action_call_count.load(std::memory_order_acquire),
+            service.evidence.inspection_complete.load(std::memory_order_acquire),
             service.evidence.property_event.load(std::memory_order_acquire),
             service.evidence.focus_event.load(std::memory_order_acquire),
             service.evidence.bounds_event.load(std::memory_order_acquire),
+            service.evidence.text_event_count.load(std::memory_order_acquire),
+            service.evidence.text_insert_event.load(std::memory_order_acquire),
+            service.evidence.text_delete_event.load(std::memory_order_acquire),
+            service.evidence.text_replacement_delete_event.load(
+                std::memory_order_acquire
+            ),
+            service.evidence.text_replacement_insert_event.load(
+                std::memory_order_acquire
+            ),
             closed
         );
     }
