@@ -60,6 +60,7 @@ jobs:
             libgtk-3-dev \
             libgtkmm-3.0-dev \
             libx11-dev \
+            libxcb1-dev \
             libxcb-cursor-dev \
             libxcb-keysyms1-dev \
             libxcb-util-dev \
@@ -139,6 +140,7 @@ jobs:
             libgtk-3-dev \
             libgtkmm-3.0-dev \
             libx11-dev \
+            libxcb1-dev \
             libxcb-cursor-dev \
             libxcb-keysyms1-dev \
             libxcb-util-dev \
@@ -172,6 +174,7 @@ jobs:
             libgtk-3-dev \
             libgtkmm-3.0-dev \
             libx11-dev \
+            libxcb1-dev \
             libxcb-cursor-dev \
             libxcb-keysyms1-dev \
             libxcb-util-dev \
@@ -275,6 +278,7 @@ jobs:
             libgtk-3-dev \
             libgtkmm-3.0-dev \
             libx11-dev \
+            libxcb1-dev \
             libxcb-cursor-dev \
             libxcb-keysyms1-dev \
             libxcb-util-dev \
@@ -337,6 +341,7 @@ jobs:
             libgtk-3-dev \
             libgtkmm-3.0-dev \
             libx11-dev \
+            libxcb1-dev \
             libxcb-cursor-dev \
             libxcb-keysyms1-dev \
             libxcb-util-dev \
