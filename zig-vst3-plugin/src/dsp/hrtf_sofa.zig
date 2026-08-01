@@ -41,11 +41,10 @@ pub fn databaseFromDecoded(
     if (decoded.source_positions.len != position_count)
         return error.InvalidSofaPositionShape;
 
-    const response_count = std.math.mul(
-        usize,
+    const response_count = try responseValueCount(
         decoded.measurement_count,
-        2 * decoded.response_frame_count,
-    ) catch return error.InvalidSofaResponseShape;
+        decoded.response_frame_count,
+    );
     if (decoded.responses_measurement_ear_frame.len != response_count)
         return error.InvalidSofaResponseShape;
     const expanded_delay_count = std.math.mul(
@@ -161,6 +160,22 @@ fn sampleRate(value: f64) !u32 {
         value > 384_000.0 or @abs(value - @round(value)) > 0.000_001)
         return error.InvalidSofaSamplingRate;
     return @intFromFloat(value);
+}
+
+fn responseValueCount(
+    measurement_count: usize,
+    response_frame_count: usize,
+) !usize {
+    const values_per_measurement = std.math.mul(
+        usize,
+        response_frame_count,
+        2,
+    ) catch return error.InvalidSofaResponseShape;
+    return std.math.mul(
+        usize,
+        measurement_count,
+        values_per_measurement,
+    ) catch return error.InvalidSofaResponseShape;
 }
 
 fn terminatedPath(
@@ -863,6 +878,21 @@ test "decoded standard HRTF dataset normalizes spherical azimuth" {
     try std.testing.expectError(
         error.InvalidSofaPosition,
         databaseFromDecoded(1, 1, std.testing.allocator, invalid),
+    );
+}
+
+test "decoded standard HRTF response shape arithmetic is bounded" {
+    try std.testing.expectEqual(
+        @as(usize, 30),
+        try responseValueCount(3, 5),
+    );
+    try std.testing.expectError(
+        error.InvalidSofaResponseShape,
+        responseValueCount(1, std.math.maxInt(usize)),
+    );
+    try std.testing.expectError(
+        error.InvalidSofaResponseShape,
+        responseValueCount(std.math.maxInt(usize), 1),
     );
 }
 
