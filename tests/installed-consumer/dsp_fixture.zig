@@ -5956,7 +5956,7 @@ test "installed package renders bounded HRTF responses" {
             0.0, 0.0,
         },
     );
-    const Renderer = plugin.dsp.HrtfRenderer(8, 8);
+    const Renderer = plugin.dsp.HrtfRenderer(16, 8);
     var renderer = try Renderer.init(
         48_000,
         plugin.dsp.ConvolutionLatencyMode.zero,
@@ -5977,6 +5977,39 @@ test "installed package renders bounded HRTF responses" {
     try std.testing.expectApproxEqAbs(
         @as(f32, 0.5),
         output[1],
+        0.000_001,
+    );
+
+    const RoomComposer = plugin.dsp.HrtfRoomResponseComposer(16, 2);
+    var room_composer = RoomComposer{};
+    const room_path = plugin.dsp.HrtfRoomPath{
+        .direction = directions[0],
+        .gain = 0.5,
+        .additional_delay_samples = 0.5,
+    };
+    var room_response: [32]f32 = undefined;
+    const room_frames = try room_composer.compose(
+        database,
+        &.{room_path},
+        .delay_aligned,
+        &room_response,
+    );
+    try std.testing.expectEqual(@as(usize, 9), room_frames);
+    try renderer.prepareInterleavedResponse(
+        48_000,
+        room_response[0 .. room_frames * 2],
+        2,
+    );
+    try std.testing.expect(renderer.adoptPending());
+    const room_output = renderer.processSample(1.0);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.25),
+        room_output[0],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.125),
+        room_output[1],
         0.000_001,
     );
 

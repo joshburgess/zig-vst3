@@ -180,6 +180,8 @@ pub const AdmBinauralStereoGainTimeline =
     adm_binaural.StereoGainTimeline;
 pub const HrtfDatabase = hrtf.Database;
 pub const HrtfRenderer = hrtf.Renderer;
+pub const HrtfRoomPath = hrtf.RoomPath;
+pub const HrtfRoomResponseComposer = hrtf.RoomResponseComposer;
 pub const HrtfMotionRenderer = hrtf.MotionRenderer;
 pub const HrtfStreamingMotionRenderer = hrtf_stream.Renderer;
 pub const HrtfDirection = hrtf.Direction;

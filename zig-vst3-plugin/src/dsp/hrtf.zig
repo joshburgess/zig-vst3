@@ -499,6 +499,12 @@ pub const Interpolation = enum {
     spectral,
 };
 
+pub const RoomPath = struct {
+    direction: Direction,
+    gain: f64 = 1.0,
+    additional_delay_samples: f64 = 0.0,
+};
+
 pub fn Database(
     comptime maximum_measurements: usize,
     comptime maximum_frames: usize,
@@ -1016,6 +1022,171 @@ pub fn Database(
     };
 }
 
+pub fn RoomResponseComposer(
+    comptime maximum_frames: usize,
+    comptime maximum_paths: usize,
+) type {
+    if (maximum_frames == 0)
+        @compileError("HRTF room response requires frame capacity");
+    if (maximum_paths == 0)
+        @compileError("HRTF room response requires path capacity");
+
+    return struct {
+        const Self = @This();
+
+        path_response: [maximum_frames * 2]f32 = @splat(0.0),
+        accumulation: [maximum_frames * 2]f64 = @splat(0.0),
+
+        pub fn compose(
+            self: *Self,
+            database: anytype,
+            paths: []const RoomPath,
+            interpolation: Interpolation,
+            destination: []f32,
+        ) !usize {
+            if (!database.valid()) return error.InvalidHrtfDatabase;
+            if (database.frame_count > maximum_frames)
+                return error.HrtfFrameCapacityExceeded;
+            if (paths.len == 0 or paths.len > maximum_paths)
+                return error.InvalidHrtfRoomPathCount;
+
+            var maximum_delay: f64 = 0.0;
+            var staged_paths: [maximum_paths]RoomPath = undefined;
+            for (paths, 0..) |path, index| {
+                try validateDirection(path.direction);
+                if (!std.math.isFinite(path.gain))
+                    return error.InvalidHrtfRoomPathGain;
+                if (!std.math.isFinite(path.additional_delay_samples) or
+                    path.additional_delay_samples < 0.0 or
+                    path.additional_delay_samples >
+                        @as(f64, @floatFromInt(maximum_frames)))
+                {
+                    return error.InvalidHrtfRoomPathDelay;
+                }
+                maximum_delay = @max(
+                    maximum_delay,
+                    path.additional_delay_samples,
+                );
+                staged_paths[index] = path;
+            }
+            const delay_frames: usize =
+                @intFromFloat(@ceil(maximum_delay));
+            const frame_count = std.math.add(
+                usize,
+                database.frame_count,
+                delay_frames,
+            ) catch return error.HrtfFrameCapacityExceeded;
+            if (frame_count > maximum_frames)
+                return error.HrtfFrameCapacityExceeded;
+            const sample_count = std.math.mul(
+                usize,
+                frame_count,
+                2,
+            ) catch return error.HrtfFrameCapacityExceeded;
+            if (destination.len < sample_count)
+                return error.InvalidHrtfDestinationShape;
+            const used_destination = destination[0..sample_count];
+            if (memorySlicesOverlap(
+                f32,
+                used_destination,
+                f32,
+                &self.path_response,
+            ) or memorySlicesOverlap(
+                f32,
+                used_destination,
+                f64,
+                &self.accumulation,
+            )) return error.OverlappingHrtfRoomResponseStorage;
+
+            @memset(self.accumulation[0..sample_count], 0.0);
+            const database_samples = database.frame_count * 2;
+            for (staged_paths[0..paths.len]) |path| {
+                try database.interpolate(
+                    path.direction,
+                    interpolation,
+                    self.path_response[0..database_samples],
+                );
+                for (0..frame_count) |frame_index| {
+                    const source_position =
+                        @as(f64, @floatFromInt(frame_index)) -
+                        path.additional_delay_samples;
+                    for (0..2) |channel_index| {
+                        const sample = sampleInterleavedResponse(
+                            self.path_response[0..database_samples],
+                            database.frame_count,
+                            channel_index,
+                            source_position,
+                        );
+                        const index = frame_index * 2 + channel_index;
+                        const value = self.accumulation[index] +
+                            path.gain * sample;
+                        if (!std.math.isFinite(value))
+                            return error.InvalidHrtfRoomResponse;
+                        self.accumulation[index] = value;
+                    }
+                }
+            }
+
+            for (self.accumulation[0..sample_count], 0..) |value, index| {
+                if (value < -std.math.floatMax(f32) or
+                    value > std.math.floatMax(f32))
+                {
+                    return error.InvalidHrtfRoomResponse;
+                }
+                self.path_response[index] = @floatCast(value);
+            }
+            @memcpy(destination[0..sample_count], self.path_response[0..sample_count]);
+            return frame_count;
+        }
+    };
+}
+
+fn sampleInterleavedResponse(
+    samples: []const f32,
+    frame_count: usize,
+    channel_index: usize,
+    sample_position: f64,
+) f64 {
+    if (sample_position <= -1.0 or
+        sample_position >= @as(f64, @floatFromInt(frame_count)))
+    {
+        return 0.0;
+    }
+    if (sample_position < 0.0) {
+        return @as(f64, samples[channel_index]) *
+            (sample_position + 1.0);
+    }
+    const first: usize = @intFromFloat(@floor(sample_position));
+    const fraction = sample_position - @as(f64, @floatFromInt(first));
+    const first_value: f64 = samples[first * 2 + channel_index];
+    if (fraction == 0.0) return first_value;
+    const second_value: f64 = if (first + 1 < frame_count)
+        samples[(first + 1) * 2 + channel_index]
+    else
+        0.0;
+    return first_value + (second_value - first_value) * fraction;
+}
+
+fn memorySlicesOverlap(
+    comptime First: type,
+    first: []const First,
+    comptime Second: type,
+    second: []const Second,
+) bool {
+    if (first.len == 0 or second.len == 0) return false;
+    const first_bytes = std.math.mul(usize, first.len, @sizeOf(First)) catch
+        return true;
+    const second_bytes = std.math.mul(usize, second.len, @sizeOf(Second)) catch
+        return true;
+    const first_start = @intFromPtr(first.ptr);
+    const second_start = @intFromPtr(second.ptr);
+    const first_end = std.math.add(usize, first_start, first_bytes) catch
+        return true;
+    const second_end = std.math.add(usize, second_start, second_bytes) catch
+        return true;
+    return first_start < second_end and second_start < first_end;
+}
+
 fn delayValue(
     delays: []const f64,
     measurement_index: usize,
@@ -1075,18 +1246,39 @@ pub fn Renderer(
                 samples,
             );
 
+            try self.prepareInterleavedResponse(
+                database.sample_rate,
+                samples,
+                generation,
+            );
+        }
+
+        pub fn prepareInterleavedResponse(
+            self: *Self,
+            sample_rate: u32,
+            response: []const f32,
+            generation: u64,
+        ) !void {
+            if (sample_rate < 8_000 or sample_rate > 384_000)
+                return error.InvalidHrtfSampleRate;
+            if (response.len == 0 or response.len % 2 != 0)
+                return error.InvalidHrtfResponseShape;
+            const frame_count = response.len / 2;
+            if (frame_count > maximum_frames)
+                return error.HrtfFrameCapacityExceeded;
+
             var began = false;
             errdefer {
                 if (began) _ = self.convolver.cancel(generation);
             }
             try self.convolver.begin(.{
                 .generation = generation,
-                .sample_rate = database.sample_rate,
+                .sample_rate = sample_rate,
                 .channels = 2,
-                .frames = database.frame_count,
+                .frames = frame_count,
             });
             began = true;
-            try self.convolver.write(generation, 0, samples);
+            try self.convolver.write(generation, 0, response);
             try self.convolver.commit(generation);
         }
 
@@ -2112,6 +2304,223 @@ test "HRTF delay-aligned interpolation avoids arrival-time smearing" {
         aligned[4],
         0.000_001,
     );
+}
+
+test "HRTF room response composes bounded directional paths" {
+    const directions = [_]Direction{
+        .{ .azimuth_degrees = 0.0, .elevation_degrees = 0.0 },
+        .{ .azimuth_degrees = 90.0, .elevation_degrees = 0.0 },
+    };
+    const Db = Database(2, 1);
+    const database = try Db.init(
+        48_000,
+        &directions,
+        &.{ 1.0, 0.5, 0.25, 1.0 },
+    );
+    const Composer = RoomResponseComposer(4, 2);
+    var composer = Composer{};
+    const paths = [_]RoomPath{
+        .{ .direction = directions[0] },
+        .{
+            .direction = directions[1],
+            .gain = 0.5,
+            .additional_delay_samples = 1.5,
+        },
+    };
+    var response = [_]f32{99.0} ** 8;
+    const frame_count = try composer.compose(
+        database,
+        &paths,
+        .nearest,
+        &response,
+    );
+    try std.testing.expectEqual(@as(usize, 3), frame_count);
+    try std.testing.expectEqualDeep(
+        [_]f32{
+            1.0,    0.5,
+            0.0625, 0.25,
+            0.0625, 0.25,
+        },
+        response[0..6].*,
+    );
+    try std.testing.expectEqualDeep([_]f32{ 99.0, 99.0 }, response[6..8].*);
+
+    const cancellation_frames = try composer.compose(
+        database,
+        &.{
+            .{ .direction = directions[0] },
+            .{ .direction = directions[0], .gain = -1.0 },
+        },
+        .nearest,
+        &response,
+    );
+    try std.testing.expectEqual(@as(usize, 1), cancellation_frames);
+    try std.testing.expectEqualDeep([_]f32{ 0.0, 0.0 }, response[0..2].*);
+
+    var renderer = try Renderer(8, 8).init(48_000, .zero);
+    _ = try composer.compose(
+        database,
+        &paths,
+        .nearest,
+        &response,
+    );
+    try renderer.prepareInterleavedResponse(
+        48_000,
+        response[0 .. frame_count * 2],
+        1,
+    );
+    try std.testing.expect(renderer.adoptPending());
+    const rendered = [_][2]f32{
+        renderer.processSample(1.0),
+        renderer.processSample(0.0),
+        renderer.processSample(0.0),
+    };
+    for (rendered, 0..) |frame, index| {
+        try std.testing.expectApproxEqAbs(
+            response[index * 2],
+            frame[0],
+            0.000_001,
+        );
+        try std.testing.expectApproxEqAbs(
+            response[index * 2 + 1],
+            frame[1],
+            0.000_001,
+        );
+    }
+}
+
+test "HRTF room response rejects invalid policy transactionally" {
+    const direction = Direction{
+        .azimuth_degrees = 0.0,
+        .elevation_degrees = 0.0,
+    };
+    const Db = Database(1, 1);
+    const database = try Db.init(48_000, &.{direction}, &.{ 1.0, 1.0 });
+    const Composer = RoomResponseComposer(3, 2);
+    var composer = Composer{};
+    var destination = [_]f32{17.0} ** 6;
+
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathCount,
+        composer.compose(database, &.{}, .nearest, &destination),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathCount,
+        composer.compose(
+            database,
+            &.{ .{ .direction = direction }, .{ .direction = direction }, .{ .direction = direction } },
+            .nearest,
+            &destination,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathGain,
+        composer.compose(
+            database,
+            &.{.{ .direction = direction, .gain = std.math.inf(f64) }},
+            .nearest,
+            &destination,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathDelay,
+        composer.compose(
+            database,
+            &.{.{
+                .direction = direction,
+                .additional_delay_samples = -0.5,
+            }},
+            .nearest,
+            &destination,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfDirection,
+        composer.compose(
+            database,
+            &.{.{
+                .direction = .{
+                    .azimuth_degrees = std.math.nan(f64),
+                    .elevation_degrees = 0.0,
+                },
+            }},
+            .nearest,
+            &destination,
+        ),
+    );
+    try std.testing.expectError(
+        error.HrtfFrameCapacityExceeded,
+        composer.compose(
+            database,
+            &.{.{
+                .direction = direction,
+                .additional_delay_samples = 3.0,
+            }},
+            .nearest,
+            &destination,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfDestinationShape,
+        composer.compose(
+            database,
+            &.{.{ .direction = direction }},
+            .nearest,
+            destination[0..1],
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfRoomResponse,
+        composer.compose(
+            database,
+            &.{.{
+                .direction = direction,
+                .gain = std.math.floatMax(f64),
+            }},
+            .nearest,
+            &destination,
+        ),
+    );
+    try std.testing.expectEqualDeep([_]f32{17.0} ** 6, destination);
+
+    const frame_count = try composer.compose(
+        database,
+        &.{.{ .direction = direction }},
+        .nearest,
+        &destination,
+    );
+    try std.testing.expectEqual(@as(usize, 1), frame_count);
+    try std.testing.expectEqualDeep([_]f32{ 1.0, 1.0 }, destination[0..2].*);
+
+    const internal_before = composer.path_response;
+    try std.testing.expectError(
+        error.OverlappingHrtfRoomResponseStorage,
+        composer.compose(
+            database,
+            &.{.{ .direction = direction }},
+            .nearest,
+            composer.path_response[1..],
+        ),
+    );
+    try std.testing.expectEqualDeep(internal_before, composer.path_response);
+
+    var renderer = try Renderer(8, 8).init(48_000, .zero);
+    try std.testing.expectError(
+        error.InvalidHrtfResponseShape,
+        renderer.prepareInterleavedResponse(48_000, &.{1.0}, 1),
+    );
+    try std.testing.expectError(
+        error.NonFiniteSample,
+        renderer.prepareInterleavedResponse(
+            48_000,
+            &.{ std.math.nan(f32), 0.0 },
+            1,
+        ),
+    );
+    try std.testing.expect(renderer.activeGeneration() == null);
+    try renderer.prepareInterleavedResponse(48_000, &.{ 1.0, 1.0 }, 1);
+    try std.testing.expect(renderer.adoptPending());
+    try std.testing.expectEqual(@as(?u64, 1), renderer.activeGeneration());
 }
 
 test "HRTF renderer publishes and convolves a measured response" {
