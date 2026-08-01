@@ -262,6 +262,20 @@ pub fn Loader(
                 &self.api,
                 file_id,
                 nc_global,
+                "Conventions",
+                "SOFA",
+            );
+            try requireAttribute(
+                &self.api,
+                file_id,
+                nc_global,
+                "Version",
+                "2.1",
+            );
+            try requireAttribute(
+                &self.api,
+                file_id,
+                nc_global,
                 "SOFAConventions",
                 "SimpleFreeFieldHRIR",
             );
@@ -863,14 +877,8 @@ fn requireDefaultListenerGeometry(
         maximum_listener_values,
     );
     defer allocator.free(listener_up.values);
-    const listener_up_encoding = positionEncoding(
-        api,
-        file_id,
-        listener_up.variable_id,
-    ) catch return error.UnsupportedSofaListenerGeometry;
     if (listener_position_encoding != .cartesian_metres or
-        listener_view_encoding != .cartesian_metres or
-        listener_up_encoding != .cartesian_metres)
+        listener_view_encoding != .cartesian_metres)
         return error.UnsupportedSofaListenerGeometry;
     try requireDefaultVectors(
         listener_position,
