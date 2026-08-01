@@ -53,6 +53,35 @@ pub const MotionClock = struct {
         };
     }
 
+    pub fn initCalibrated(
+        sample_rate: u32,
+        first_tracker_timestamp: u64,
+        first_sample_position: u64,
+        second_tracker_timestamp: u64,
+        second_sample_position: u64,
+    ) !MotionClock {
+        if (second_tracker_timestamp <= first_tracker_timestamp or
+            second_sample_position <= first_sample_position)
+        {
+            return error.InvalidHrtfTrackerClockObservation;
+        }
+        const tracker_delta =
+            second_tracker_timestamp - first_tracker_timestamp;
+        const sample_delta =
+            second_sample_position - first_sample_position;
+        const numerator =
+            @as(u128, tracker_delta) * sample_rate + sample_delta / 2;
+        const ticks_wide = numerator / sample_delta;
+        if (ticks_wide == 0 or ticks_wide > std.math.maxInt(u64))
+            return error.InvalidHrtfTrackerClockRate;
+        return init(
+            sample_rate,
+            @intCast(ticks_wide),
+            second_tracker_timestamp,
+            second_sample_position,
+        );
+    }
+
     pub fn map(
         self: *MotionClock,
         tracker_timestamp: u64,
@@ -1182,6 +1211,57 @@ test "HRTF motion clock maps ordered tracker timestamps exactly" {
     try std.testing.expectEqual(
         @as(u64, 120_101),
         try clock.map(12_500_000_000),
+    );
+}
+
+test "HRTF motion clock calibrates an observed tracker rate" {
+    var clock = try MotionClock.initCalibrated(
+        48_000,
+        2_000_000_000,
+        96_000,
+        3_000_050_000,
+        144_000,
+    );
+    try std.testing.expectEqual(
+        @as(u64, 1_000_050_000),
+        clock.tracker_ticks_per_second,
+    );
+    try std.testing.expectEqual(
+        @as(u64, 144_000),
+        try clock.map(3_000_050_000),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 192_000),
+        try clock.map(4_000_100_000),
+    );
+
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerClockObservation,
+        MotionClock.initCalibrated(48_000, 4, 0, 4, 1),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerClockObservation,
+        MotionClock.initCalibrated(48_000, 4, 1, 5, 1),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerClockRate,
+        MotionClock.initCalibrated(
+            8_000,
+            0,
+            0,
+            1,
+            std.math.maxInt(u64),
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerClockRate,
+        MotionClock.initCalibrated(
+            384_000,
+            0,
+            0,
+            std.math.maxInt(u64),
+            1,
+        ),
     );
 }
 
