@@ -6273,6 +6273,15 @@ test "installed package renders bounded HRTF responses" {
             decoded,
         );
     try std.testing.expect(decoded_database.valid());
+    var decoded_into: plugin.dsp.HrtfDatabase(1, 1) = undefined;
+    try plugin.dsp.hrtf_sofa.databaseFromDecodedInto(
+        1,
+        1,
+        std.testing.allocator,
+        decoded,
+        &decoded_into,
+    );
+    try std.testing.expectEqualDeep(decoded_database, decoded_into);
 }
 
 test "installed package owns and decomposes runtime-shaped matrices" {

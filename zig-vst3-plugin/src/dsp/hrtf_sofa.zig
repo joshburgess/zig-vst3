@@ -23,6 +23,30 @@ pub fn databaseFromDecoded(
     allocator: std.mem.Allocator,
     decoded: DecodedDataset,
 ) !hrtf.Database(maximum_measurements, maximum_frames) {
+    var result: hrtf.Database(
+        maximum_measurements,
+        maximum_frames,
+    ) = undefined;
+    try databaseFromDecodedInto(
+        maximum_measurements,
+        maximum_frames,
+        allocator,
+        decoded,
+        &result,
+    );
+    return result;
+}
+
+pub fn databaseFromDecodedInto(
+    comptime maximum_measurements: usize,
+    comptime maximum_frames: usize,
+    allocator: std.mem.Allocator,
+    decoded: DecodedDataset,
+    destination: *hrtf.Database(
+        maximum_measurements,
+        maximum_frames,
+    ),
+) !void {
     if (decoded.measurement_count == 0 or
         decoded.measurement_count > maximum_measurements)
         return error.InvalidSofaMeasurementCount;
@@ -147,7 +171,8 @@ pub fn databaseFromDecoded(
     return hrtf.Database(
         maximum_measurements,
         maximum_frames,
-    ).initWithDelays(
+    ).initWithDelaysInto(
+        destination,
         first_rate,
         directions[0..decoded.measurement_count],
         interleaved,
@@ -247,6 +272,21 @@ pub fn Loader(
             allocator: std.mem.Allocator,
             path: []const u8,
         ) !DatabaseType {
+            var result: DatabaseType = undefined;
+            try self.loadFileInto(
+                allocator,
+                path,
+                &result,
+            );
+            return result;
+        }
+
+        pub fn loadFileInto(
+            self: *const Self,
+            allocator: std.mem.Allocator,
+            path: []const u8,
+            destination: *DatabaseType,
+        ) !void {
             const terminated_path = try terminatedPath(allocator, path);
             defer allocator.free(terminated_path);
 
@@ -265,12 +305,9 @@ pub fn Loader(
                 "Conventions",
                 "SOFA",
             );
-            try requireAttribute(
+            try requireContainerConventionVersions(
                 &self.api,
                 file_id,
-                nc_global,
-                "Version",
-                "2.1",
             );
             try requireAttribute(
                 &self.api,
@@ -293,14 +330,6 @@ pub fn Loader(
                 "RoomType",
                 "free field",
             );
-            try requireOneOfAttributes(
-                &self.api,
-                file_id,
-                nc_global,
-                "SOFAConventionsVersion",
-                &.{ "1.0", "1.1", "1.2" },
-            );
-
             const maximum_ir_values = responseValueCount(
                 maximum_measurements,
                 maximum_frames,
@@ -437,7 +466,7 @@ pub fn Loader(
             }
             defer if (delays.len != 0) allocator.free(delays);
 
-            return databaseFromDecoded(
+            return databaseFromDecodedInto(
                 maximum_measurements,
                 maximum_frames,
                 allocator,
@@ -450,6 +479,7 @@ pub fn Loader(
                     .responses_measurement_ear_frame = ir.values,
                     .delays_measurement_ear = delays,
                 },
+                destination,
             );
         }
     };
@@ -761,25 +791,42 @@ fn requireAttribute(
         return error.UnsupportedSofaConvention;
 }
 
-fn requireOneOfAttributes(
+fn requireContainerConventionVersions(
     api: *const Api,
     file_id: c_int,
-    variable_id: c_int,
-    name: [:0]const u8,
-    expected: []const []const u8,
 ) !void {
-    var buffer: [256]u8 = undefined;
-    const value = try attribute(
+    var container_buffer: [256]u8 = undefined;
+    const container_version = try attribute(
         api,
         file_id,
-        variable_id,
-        name,
-        &buffer,
+        nc_global,
+        "Version",
+        &container_buffer,
     );
-    for (expected) |candidate| {
-        if (std.mem.eql(u8, value, candidate)) return;
-    }
-    return error.UnsupportedSofaConvention;
+    var convention_buffer: [256]u8 = undefined;
+    const convention_version = try attribute(
+        api,
+        file_id,
+        nc_global,
+        "SOFAConventionsVersion",
+        &convention_buffer,
+    );
+    if (!supportedContainerConventionVersions(
+        container_version,
+        convention_version,
+    )) return error.UnsupportedSofaConvention;
+}
+
+fn supportedContainerConventionVersions(
+    container_version: []const u8,
+    convention_version: []const u8,
+) bool {
+    if (std.mem.eql(u8, container_version, "1.0"))
+        return std.mem.eql(u8, convention_version, "1.0");
+    if (!std.mem.eql(u8, container_version, "2.1")) return false;
+    return std.mem.eql(u8, convention_version, "1.0") or
+        std.mem.eql(u8, convention_version, "1.1") or
+        std.mem.eql(u8, convention_version, "1.2");
 }
 
 fn positionEncoding(
@@ -1307,6 +1354,16 @@ test "standard HRTF position attributes select supported encodings" {
     );
 }
 
+test "standard HRTF container and convention versions stay compatible" {
+    try std.testing.expect(supportedContainerConventionVersions("1.0", "1.0"));
+    try std.testing.expect(supportedContainerConventionVersions("2.1", "1.0"));
+    try std.testing.expect(supportedContainerConventionVersions("2.1", "1.1"));
+    try std.testing.expect(supportedContainerConventionVersions("2.1", "1.2"));
+    try std.testing.expect(!supportedContainerConventionVersions("1.0", "1.1"));
+    try std.testing.expect(!supportedContainerConventionVersions("2.0", "1.0"));
+    try std.testing.expect(!supportedContainerConventionVersions("2.1", "1.3"));
+}
+
 test "standard HRTF emitter geometry requires the default origin" {
     var values = [_]f64{ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
     var emitter = Variable{
@@ -1503,31 +1560,58 @@ test "standard HRTF loader rejects ambiguous paths" {
     try std.testing.expectEqualStrings("fixture.sofa", path);
 }
 
-test "standard HRTF loader reads an external public fixture" {
+test "standard HRTF loader reads a CC BY public fixture" {
     const path = std.testing.environ.getAlloc(
         std.testing.allocator,
-        "ZIG_VST3_SOFA_TEST_FILE",
+        "ZIG_VST3_VIKING_SOFA_TEST_FILE",
     ) catch |load_error| switch (load_error) {
         error.EnvironmentVariableMissing => return error.SkipZigTest,
         else => return load_error,
     };
     defer std.testing.allocator.free(path);
 
-    const PublicLoader = Loader(1_250, 260);
-    var loader =
-        PublicLoader.openDefault() catch return error.SkipZigTest;
+    const PublicLoader = Loader(1_513, 128);
+    var loader = try PublicLoader.openDefault();
     defer loader.deinit();
-    const database = try loader.loadFile(
+    const database = try std.testing.allocator.create(
+        hrtf.Database(1_513, 128),
+    );
+    defer std.testing.allocator.destroy(database);
+    try loader.loadFileInto(
         std.testing.allocator,
         path,
+        database,
     );
     try std.testing.expectEqual(
-        @as(usize, 1_250),
+        @as(usize, 1_513),
         database.measurement_count,
     );
     try std.testing.expectEqual(
-        @as(usize, 256),
+        @as(usize, 128),
         database.response_frame_count,
+    );
+    try std.testing.expectEqual(@as(u32, 48_000), database.sample_rate);
+    try std.testing.expectEqual(
+        hrtf.Direction{
+            .azimuth_degrees = 0.0,
+            .elevation_degrees = -45.0,
+        },
+        database.directions[0],
+    );
+    try std.testing.expectEqual(
+        hrtf.Direction{
+            .azimuth_degrees = -5.0,
+            .elevation_degrees = -45.0,
+        },
+        database.directions[1],
+    );
+    try std.testing.expectEqual(
+        @as(f32, @floatCast(-3.291246727869612e-05)),
+        database.responses[0][1][0],
+    );
+    try std.testing.expectEqual(
+        @as(f32, @floatCast(-4.532169016517203e-06)),
+        database.responses[0][1][1],
     );
     try std.testing.expect(database.valid());
 }

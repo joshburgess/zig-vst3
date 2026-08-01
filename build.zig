@@ -3797,6 +3797,21 @@ pub fn build(b: *std.Build) void {
     const resource_thread_sanitizer_step = b.step("test-resource-thread-sanitizer", "Run resource job and exchange tests with the thread sanitizer");
     resource_thread_sanitizer_step.dependOn(&b.addRunArtifact(resource_thread_sanitizer_tests).step);
 
+    const hrtf_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/hrtf_tests.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = optimize,
+        }),
+    });
+    const hrtf_test_step = b.step(
+        "test-hrtf",
+        "Run measured spatial rendering and dataset loader tests",
+    );
+    hrtf_test_step.dependOn(&b.addRunArtifact(hrtf_tests).step);
+
     const dsp_thread_sanitizer_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path(

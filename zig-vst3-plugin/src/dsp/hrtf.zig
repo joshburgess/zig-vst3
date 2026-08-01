@@ -923,7 +923,24 @@ pub fn Database(
             directions: []const Direction,
             interleaved_responses: []const f32,
         ) !Self {
-            return initWithDelays(
+            var result: Self = undefined;
+            try initInto(
+                &result,
+                sample_rate,
+                directions,
+                interleaved_responses,
+            );
+            return result;
+        }
+
+        pub fn initInto(
+            destination: *Self,
+            sample_rate: u32,
+            directions: []const Direction,
+            interleaved_responses: []const f32,
+        ) !void {
+            return initWithDelaysInto(
+                destination,
                 sample_rate,
                 directions,
                 interleaved_responses,
@@ -937,6 +954,24 @@ pub fn Database(
             interleaved_responses: []const f32,
             delays_samples: []const f64,
         ) !Self {
+            var result: Self = undefined;
+            try initWithDelaysInto(
+                &result,
+                sample_rate,
+                directions,
+                interleaved_responses,
+                delays_samples,
+            );
+            return result;
+        }
+
+        pub fn initWithDelaysInto(
+            destination: *Self,
+            sample_rate: u32,
+            directions: []const Direction,
+            interleaved_responses: []const f32,
+            delays_samples: []const f64,
+        ) !void {
             if (sample_rate < 8_000 or sample_rate > 384_000)
                 return error.InvalidHrtfSampleRate;
             if (directions.len == 0 or
@@ -960,6 +995,23 @@ pub fn Database(
                 delays_samples.len !=
                     directions.len * channel_count)
                 return error.InvalidHrtfDelayShape;
+            const destination_bytes = std.mem.asBytes(destination);
+            if (memorySlicesOverlap(
+                Direction,
+                directions,
+                u8,
+                destination_bytes,
+            ) or memorySlicesOverlap(
+                f32,
+                interleaved_responses,
+                u8,
+                destination_bytes,
+            ) or memorySlicesOverlap(
+                f64,
+                delays_samples,
+                u8,
+                destination_bytes,
+            )) return error.OverlappingHrtfDatabaseStorage;
 
             var maximum_delay: f64 = 0.0;
             for (0..directions.len) |measurement_index| {
@@ -987,24 +1039,41 @@ pub fn Database(
             if (frame_count > maximum_frames)
                 return error.HrtfFrameCapacityExceeded;
 
-            var result = Self{
+            for (directions, 0..) |direction, measurement_index| {
+                try validateDirection(direction);
+                const vector = directionVector(direction);
+                for (directions[0..measurement_index]) |previous| {
+                    if (sameDirection(vector, directionVector(previous)))
+                        return error.DuplicateHrtfDirection;
+                }
+                var has_energy = false;
+                for (0..response_frame_count) |frame_index| {
+                    for (0..channel_count) |channel_index| {
+                        const source_index =
+                            (measurement_index *
+                                response_frame_count +
+                                frame_index) *
+                            channel_count +
+                            channel_index;
+                        const sample = interleaved_responses[source_index];
+                        if (!std.math.isFinite(sample))
+                            return error.NonFiniteHrtfSample;
+                        if (sample != 0.0) has_energy = true;
+                    }
+                }
+                if (!has_energy) return error.EmptyHrtfResponse;
+            }
+
+            destination.* = Self{
                 .sample_rate = sample_rate,
                 .measurement_count = directions.len,
                 .frame_count = frame_count,
                 .response_frame_count = response_frame_count,
             };
             for (directions, 0..) |direction, measurement_index| {
-                try validateDirection(direction);
-                result.directions[measurement_index] = direction;
-                const vector = directionVector(direction);
-                for (directions[0..measurement_index]) |previous| {
-                    if (sameDirection(vector, directionVector(previous)))
-                        return error.DuplicateHrtfDirection;
-                }
-
-                var has_energy = false;
+                destination.directions[measurement_index] = direction;
                 for (0..channel_count) |channel_index| {
-                    result.delays_samples[measurement_index][channel_index] =
+                    destination.delays_samples[measurement_index][channel_index] =
                         delayValue(
                             delays_samples,
                             measurement_index,
@@ -1021,18 +1090,10 @@ pub fn Database(
                             channel_index;
                         const sample =
                             interleaved_responses[source_index];
-                        if (!std.math.isFinite(sample))
-                            return error.NonFiniteHrtfSample;
-                        if (sample != 0.0) has_energy = true;
-                        result.responses[measurement_index][frame_index][channel_index] = sample;
+                        destination.responses[measurement_index][frame_index][channel_index] = sample;
                     }
                 }
-                if (!has_energy)
-                    return error.EmptyHrtfResponse;
             }
-            if (!result.valid())
-                return error.InvalidHrtfDatabase;
-            return result;
         }
 
         pub fn interpolate(
@@ -4939,6 +5000,32 @@ test "HRTF database rejects malformed measurements transactionally" {
             &.{ -1.0, 0.0 },
         ),
     );
+
+    var retained = try Db.init(48_000, &one, &.{ 1.0, 1.0 });
+    const retained_before = retained;
+    try std.testing.expectError(
+        error.EmptyHrtfResponse,
+        Db.initInto(&retained, 48_000, &one, &.{ 0.0, 0.0 }),
+    );
+    try std.testing.expectEqualDeep(retained_before, retained);
+    try std.testing.expectError(
+        error.OverlappingHrtfDatabaseStorage,
+        Db.initInto(
+            &retained,
+            48_000,
+            retained.directions[0..1],
+            &.{ 0.5, 0.25 },
+        ),
+    );
+    try std.testing.expectEqualDeep(retained_before, retained);
+    try Db.initWithDelaysInto(
+        &retained,
+        48_000,
+        &one,
+        &.{ 0.5, 0.25 },
+        &.{ 0.0, 0.0 },
+    );
+    try std.testing.expectEqual(@as(f32, 0.5), retained.responses[0][0][0]);
 
     var database = try Db.init(48_000, &one, &.{ 1.0, 1.0 });
     database.responses[0][0][0] = std.math.nan(f32);
