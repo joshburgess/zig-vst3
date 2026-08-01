@@ -507,6 +507,18 @@ pub const RoomPath = struct {
 
 pub const maximum_first_order_room_paths: usize = 7;
 pub const maximum_second_order_room_paths: usize = 25;
+pub const maximum_supported_room_reflection_order: usize = 8;
+
+pub fn roomPathCapacityForOrder(comptime reflection_order: usize) usize {
+    if (reflection_order > maximum_supported_room_reflection_order) {
+        @compileError("HRTF room reflection order exceeds the supported limit");
+    }
+    var path_capacity: usize = 1;
+    for (1..reflection_order + 1) |order| {
+        path_capacity += 4 * order * order + 2;
+    }
+    return path_capacity;
+}
 
 pub const RoomSurfaceAbsorption = struct {
     minimum_x: f64 = 1.0,
@@ -550,33 +562,15 @@ pub const FirstOrderRoomPathPlan = struct {
         source_position: Position,
         head_pose: HeadPose,
     ) !FirstOrderRoomPathPlan {
-        try validateShoeboxRoom(room);
-        if (sample_rate < 8_000 or sample_rate > 384_000)
-            return error.InvalidHrtfSampleRate;
-        if (!std.math.isFinite(speed_of_sound_meters_per_second) or
-            speed_of_sound_meters_per_second <= 0.0)
-        {
-            return error.InvalidHrtfSpeedOfSound;
-        }
-        try validatePosition(source_position);
-        try validatePosition(head_pose.position);
-        if (!positionInsideRoom(room, source_position) or
-            !positionInsideRoom(room, head_pose.position))
-        {
-            return error.HrtfRoomPositionOutsideBounds;
-        }
-
-        const direct_distance = try distanceBetweenPositions(
+        const origin = try roomPlanOrigin(
+            room,
+            sample_rate,
+            speed_of_sound_meters_per_second,
             source_position,
-            head_pose.position,
+            head_pose,
         );
         var result = FirstOrderRoomPathPlan{};
-        result.path_storage[0] = .{
-            .direction = try directionFromPositions(
-                source_position,
-                head_pose,
-            ),
-        };
+        result.path_storage[0] = origin.direct_path;
         result.path_count = 1;
 
         const images = [6]Position{
@@ -618,7 +612,7 @@ pub const FirstOrderRoomPathPlan = struct {
             result.path_storage[result.path_count] = try roomPathFromImage(
                 image,
                 head_pose,
-                direct_distance,
+                origin.direct_distance,
                 reflection,
                 sample_rate,
                 speed_of_sound_meters_per_second,
@@ -710,6 +704,93 @@ pub const SecondOrderRoomPathPlan = struct {
         );
     }
 };
+
+pub fn ImageSourceRoomPathPlan(comptime reflection_order: usize) type {
+    const path_capacity = roomPathCapacityForOrder(reflection_order);
+    return struct {
+        const Self = @This();
+
+        pub const maximum_reflection_order = reflection_order;
+        pub const maximum_path_count = path_capacity;
+
+        path_storage: [path_capacity]RoomPath = @splat(.{
+            .direction = .{
+                .azimuth_degrees = 0.0,
+                .elevation_degrees = 0.0,
+            },
+        }),
+        path_count: usize = 0,
+
+        pub fn init(
+            room: ShoeboxRoom,
+            sample_rate: u32,
+            speed_of_sound_meters_per_second: f64,
+            source_position: Position,
+            head_pose: HeadPose,
+        ) !Self {
+            const origin = try roomPlanOrigin(
+                room,
+                sample_rate,
+                speed_of_sound_meters_per_second,
+                source_position,
+                head_pose,
+            );
+            var result = Self{};
+            result.path_storage[0] = origin.direct_path;
+            result.path_count = 1;
+            if (reflection_order == 0) return result;
+
+            const coordinate_count = 2 * reflection_order + 1;
+            const signed_order: i16 = @intCast(reflection_order);
+            for (0..coordinate_count) |x_offset| {
+                const x = @as(i16, @intCast(x_offset)) - signed_order;
+                for (0..coordinate_count) |y_offset| {
+                    const y = @as(i16, @intCast(y_offset)) - signed_order;
+                    for (0..coordinate_count) |z_offset| {
+                        const z = @as(i16, @intCast(z_offset)) - signed_order;
+                        const order = imageIndexMagnitude(x) +
+                            imageIndexMagnitude(y) +
+                            imageIndexMagnitude(z);
+                        if (order == 0 or order > reflection_order) continue;
+                        const indices = [3]i16{ x, y, z };
+                        const reflection = imageReflection(room, indices);
+                        if (reflection == 0.0) continue;
+                        const image = imagePosition(
+                            room,
+                            source_position,
+                            indices,
+                        );
+                        result.path_storage[result.path_count] =
+                            try roomPathFromImage(
+                                image,
+                                head_pose,
+                                origin.direct_distance,
+                                reflection,
+                                sample_rate,
+                                speed_of_sound_meters_per_second,
+                            );
+                        result.path_count += 1;
+                    }
+                }
+            }
+            if (!result.valid()) return error.InvalidHrtfRoomPathPlanState;
+            return result;
+        }
+
+        pub fn items(self: *const Self) ![]const RoomPath {
+            if (!self.valid()) return error.InvalidHrtfRoomPathPlanState;
+            return self.path_storage[0..self.path_count];
+        }
+
+        pub fn valid(self: *const Self) bool {
+            return roomPathPlanValid(
+                &self.path_storage,
+                self.path_count,
+                path_capacity,
+            );
+        }
+    };
+}
 
 pub fn Database(
     comptime maximum_measurements: usize,
@@ -1653,6 +1734,28 @@ pub fn MotionRenderer(
             );
         }
 
+        pub fn prepareImageSourceRoom(
+            self: *Self,
+            comptime reflection_order: usize,
+            database: anytype,
+            room: ShoeboxRoom,
+            speed_of_sound_meters_per_second: f64,
+            points: []const MotionPoint,
+            interpolation: Interpolation,
+            crossfade_samples: usize,
+        ) !void {
+            return self.preparePlannedRoom(
+                ImageSourceRoomPathPlan(reflection_order),
+                roomPathCapacityForOrder(reflection_order),
+                database,
+                room,
+                speed_of_sound_meters_per_second,
+                points,
+                interpolation,
+                crossfade_samples,
+            );
+        }
+
         fn preparePlannedRoom(
             self: *Self,
             comptime Plan: type,
@@ -1952,7 +2055,50 @@ fn validateShoeboxRoom(room: ShoeboxRoom) !void {
     }
 }
 
-const second_order_image_indices = [_][3]i8{
+const RoomPlanOrigin = struct {
+    direct_path: RoomPath,
+    direct_distance: f64,
+};
+
+fn roomPlanOrigin(
+    room: ShoeboxRoom,
+    sample_rate: u32,
+    speed_of_sound_meters_per_second: f64,
+    source_position: Position,
+    head_pose: HeadPose,
+) !RoomPlanOrigin {
+    try validateShoeboxRoom(room);
+    if (sample_rate < 8_000 or sample_rate > 384_000)
+        return error.InvalidHrtfSampleRate;
+    if (!std.math.isFinite(speed_of_sound_meters_per_second) or
+        speed_of_sound_meters_per_second <= 0.0)
+    {
+        return error.InvalidHrtfSpeedOfSound;
+    }
+    try validatePosition(source_position);
+    try validatePosition(head_pose.position);
+    if (!positionInsideRoom(room, source_position) or
+        !positionInsideRoom(room, head_pose.position))
+    {
+        return error.HrtfRoomPositionOutsideBounds;
+    }
+    const direct_distance = try distanceBetweenPositions(
+        source_position,
+        head_pose.position,
+    );
+    const direct_direction = try directionFromPositions(
+        source_position,
+        head_pose,
+    );
+    return .{
+        .direct_path = .{
+            .direction = direct_direction,
+        },
+        .direct_distance = direct_distance,
+    };
+}
+
+const second_order_image_indices = [_][3]i16{
     .{ -2, 0, 0 },
     .{ 2, 0, 0 },
     .{ 0, -2, 0 },
@@ -1976,7 +2122,7 @@ const second_order_image_indices = [_][3]i8{
 fn imagePosition(
     room: ShoeboxRoom,
     source: Position,
-    indices: [3]i8,
+    indices: [3]i16,
 ) Position {
     return .{
         .x = imageCoordinate(
@@ -2004,20 +2150,15 @@ fn imageCoordinate(
     minimum: f64,
     maximum: f64,
     source: f64,
-    index: i8,
+    index: i16,
 ) f64 {
     const length = maximum - minimum;
-    return switch (index) {
-        -2 => source - 2.0 * length,
-        -1 => 2.0 * minimum - source,
-        0 => source,
-        1 => 2.0 * maximum - source,
-        2 => source + 2.0 * length,
-        else => unreachable,
-    };
+    const index_value: f64 = @floatFromInt(index);
+    if (@mod(index, 2) == 0) return source + index_value * length;
+    return 2.0 * minimum + (index_value + 1.0) * length - source;
 }
 
-fn imageReflection(room: ShoeboxRoom, indices: [3]i8) f64 {
+fn imageReflection(room: ShoeboxRoom, indices: [3]i16) f64 {
     const absorption = room.absorption;
     return axisImageReflection(
         absorption.minimum_x,
@@ -2037,17 +2178,24 @@ fn imageReflection(room: ShoeboxRoom, indices: [3]i8) f64 {
 fn axisImageReflection(
     minimum_absorption: f64,
     maximum_absorption: f64,
-    index: i8,
+    index: i16,
 ) f64 {
     const minimum = @sqrt(1.0 - minimum_absorption);
     const maximum = @sqrt(1.0 - maximum_absorption);
-    return switch (index) {
-        -2, 2 => minimum * maximum,
-        -1 => minimum,
-        0 => 1.0,
-        1 => maximum,
-        else => unreachable,
-    };
+    const reflection_count = imageIndexMagnitude(index);
+    var result: f64 = 1.0;
+    for (0..reflection_count) |reflection_index| {
+        const minimum_surface = if (index < 0)
+            reflection_index % 2 == 0
+        else
+            reflection_index % 2 == 1;
+        result *= if (minimum_surface) minimum else maximum;
+    }
+    return result;
+}
+
+fn imageIndexMagnitude(index: i16) usize {
+    return @intCast(if (index < 0) -index else index);
 }
 
 fn roomPathFromImage(
@@ -3287,6 +3435,217 @@ test "HRTF second-order room plan multiplies surface reflections" {
     );
 }
 
+test "HRTF bounded image-source plan covers higher reflection orders" {
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        roomPathCapacityForOrder(0),
+    );
+    try std.testing.expectEqual(
+        maximum_first_order_room_paths,
+        roomPathCapacityForOrder(1),
+    );
+    try std.testing.expectEqual(
+        maximum_second_order_room_paths,
+        roomPathCapacityForOrder(2),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 63),
+        roomPathCapacityForOrder(3),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 833),
+        roomPathCapacityForOrder(maximum_supported_room_reflection_order),
+    );
+
+    const room = ShoeboxRoom{
+        .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        .maximum = .{ .x = 4.0, .y = 4.0, .z = 4.0 },
+        .absorption = .{
+            .minimum_x = 0.0,
+            .maximum_x = 0.0,
+            .minimum_y = 0.0,
+            .maximum_y = 0.0,
+            .minimum_z = 0.0,
+            .maximum_z = 0.0,
+        },
+    };
+    const source = Position{ .x = 1.0, .y = 2.0, .z = 2.0 };
+    const head = HeadPose{
+        .position = .{ .x = 2.0, .y = 2.0, .z = 2.0 },
+    };
+    const ThirdOrder = ImageSourceRoomPathPlan(3);
+    const plan = try ThirdOrder.init(
+        room,
+        48_000,
+        300.0,
+        source,
+        head,
+    );
+    const paths = try plan.items();
+    try std.testing.expectEqual(@as(usize, 63), paths.len);
+
+    var found_axial = false;
+    var found_two_axis = false;
+    var found_three_axis = false;
+    const two_axis_distance = @sqrt(@as(f64, 65.0));
+    const three_axis_distance = @sqrt(@as(f64, 57.0));
+    for (paths) |path| {
+        if (@abs(path.additional_delay_samples - 1_920.0) <= 1.0e-9 and
+            @abs(path.direction.azimuth_degrees) <= 1.0e-12 and
+            @abs(path.direction.elevation_degrees) <= 1.0e-12)
+        {
+            try std.testing.expectApproxEqAbs(
+                @as(f64, 1.0 / 13.0),
+                path.gain,
+                1.0e-12,
+            );
+            found_axial = true;
+        }
+        if (@abs(
+            path.additional_delay_samples -
+                (two_axis_distance - 1.0) * 160.0,
+        ) <= 1.0e-9 and
+            @abs(
+                path.direction.azimuth_degrees -
+                    29.744_881_296_942_22,
+            ) <= 1.0e-12 and
+            @abs(path.direction.elevation_degrees) <= 1.0e-12)
+        {
+            try std.testing.expectApproxEqAbs(
+                1.0 / two_axis_distance,
+                path.gain,
+                1.0e-12,
+            );
+            found_two_axis = true;
+        }
+        if (@abs(
+            path.additional_delay_samples -
+                (three_axis_distance - 1.0) * 160.0,
+        ) <= 1.0e-9 and
+            @abs(
+                path.direction.azimuth_degrees -
+                    38.659_808_254_090_095,
+            ) <= 1.0e-12)
+        {
+            try std.testing.expectApproxEqAbs(
+                1.0 / three_axis_distance,
+                path.gain,
+                1.0e-12,
+            );
+            found_three_axis = true;
+        }
+    }
+    try std.testing.expect(found_axial);
+    try std.testing.expect(found_two_axis);
+    try std.testing.expect(found_three_axis);
+
+    const EighthOrder = ImageSourceRoomPathPlan(8);
+    const full_eighth_order = try EighthOrder.init(
+        room,
+        48_000,
+        300.0,
+        source,
+        head,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 833),
+        (try full_eighth_order.items()).len,
+    );
+
+    const DirectOnly = ImageSourceRoomPathPlan(0);
+    const direct_only = try DirectOnly.init(
+        .{
+            .minimum = .{ .x = -1.0e154, .y = -1.0, .z = -1.0 },
+            .maximum = .{ .x = 1.0e154, .y = 1.0, .z = 1.0 },
+            .absorption = .{ .minimum_x = 0.0 },
+        },
+        48_000,
+        300.0,
+        .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        .{
+            .position = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
+        },
+    );
+    try std.testing.expectEqual(@as(usize, 1), (try direct_only.items()).len);
+    try std.testing.expectError(
+        error.InvalidHrtfRoomGeometry,
+        ImageSourceRoomPathPlan(1).init(
+            .{
+                .minimum = .{ .x = -1.0e154, .y = -1.0, .z = -1.0 },
+                .maximum = .{ .x = 1.0e154, .y = 1.0, .z = 1.0 },
+                .absorption = .{ .minimum_x = 0.0 },
+            },
+            48_000,
+            300.0,
+            .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+            .{
+                .position = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
+            },
+        ),
+    );
+    var absorbed = try EighthOrder.init(
+        .{
+            .minimum = room.minimum,
+            .maximum = room.maximum,
+        },
+        48_000,
+        300.0,
+        source,
+        head,
+    );
+    try std.testing.expectEqual(@as(usize, 1), (try absorbed.items()).len);
+    absorbed.path_count = EighthOrder.maximum_path_count + 1;
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathPlanState,
+        absorbed.items(),
+    );
+}
+
+test "HRTF higher-order room plan multiplies repeated surfaces" {
+    const ThirdOrder = ImageSourceRoomPathPlan(3);
+    const plan = try ThirdOrder.init(
+        .{
+            .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+            .maximum = .{ .x = 4.0, .y = 4.0, .z = 4.0 },
+            .absorption = .{
+                .minimum_x = 0.75,
+                .maximum_x = 0.36,
+            },
+        },
+        48_000,
+        300.0,
+        .{ .x = 1.0, .y = 2.0, .z = 2.0 },
+        .{
+            .position = .{ .x = 2.0, .y = 2.0, .z = 2.0 },
+        },
+    );
+    const paths = try plan.items();
+    try std.testing.expectEqual(@as(usize, 7), paths.len);
+
+    var found_minimum = false;
+    var found_maximum = false;
+    for (paths) |path| {
+        if (@abs(path.additional_delay_samples - 1_600.0) <= 1.0e-9) {
+            try std.testing.expectApproxEqAbs(
+                @as(f64, 0.2 / 11.0),
+                path.gain,
+                1.0e-12,
+            );
+            found_minimum = true;
+        }
+        if (@abs(path.additional_delay_samples - 1_920.0) <= 1.0e-9) {
+            try std.testing.expectApproxEqAbs(
+                @as(f64, 0.32 / 13.0),
+                path.gain,
+                1.0e-12,
+            );
+            found_maximum = true;
+        }
+    }
+    try std.testing.expect(found_minimum);
+    try std.testing.expect(found_maximum);
+}
+
 test "HRTF room response rejects invalid policy transactionally" {
     const direction = Direction{
         .azimuth_degrees = 0.0,
@@ -3741,6 +4100,40 @@ test "HRTF motion renderer prepares second-order room responses" {
     try std.testing.expectApproxEqAbs(expected, sum[0], 0.000_001);
     try std.testing.expectApproxEqAbs(expected, sum[1], 0.000_001);
     try std.testing.expectEqual(direction, renderer.currentDirection().?);
+
+    var higher_order = MotionRenderer(16, 1, 2){};
+    try higher_order.prepareImageSourceRoom(
+        3,
+        database,
+        room,
+        343.0,
+        &.{point},
+        .nearest,
+        2,
+    );
+    var higher_order_sum: [2]f32 = @splat(0.0);
+    for (0..9) |sample_index| {
+        const output = higher_order.processSample(
+            if (sample_index == 0) 1.0 else 0.0,
+        );
+        higher_order_sum[0] += output[0];
+        higher_order_sum[1] += output[1];
+    }
+    const higher_order_expected: f32 = @floatCast(
+        @as(f64, expected) +
+            0.125 * 0.006 / 0.062 +
+            0.125 * 0.006 / 0.058,
+    );
+    try std.testing.expectApproxEqAbs(
+        higher_order_expected,
+        higher_order_sum[0],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        higher_order_expected,
+        higher_order_sum[1],
+        0.000_001,
+    );
 }
 
 test "HRTF database rejects malformed measurements transactionally" {

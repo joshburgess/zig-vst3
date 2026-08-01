@@ -6005,6 +6005,14 @@ test "installed package renders bounded HRTF responses" {
         @as(usize, 25),
         plugin.dsp.maximum_second_order_hrtf_room_paths,
     );
+    try std.testing.expectEqual(
+        @as(usize, 8),
+        plugin.dsp.maximum_supported_hrtf_room_reflection_order,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 63),
+        plugin.dsp.hrtfRoomPathCapacityForOrder(3),
+    );
     const planned_room = plugin.dsp.HrtfShoeboxRoom{
         .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
         .maximum = .{ .x = 0.02, .y = 0.02, .z = 0.02 },
@@ -6059,6 +6067,34 @@ test "installed package renders bounded HRTF responses" {
         (try second_order_plan.items()).len >= planned_paths.len,
     );
     try room_moving.prepareSecondOrderRoom(
+        database,
+        planned_room,
+        343.0,
+        &.{.{
+            .sample_position = 0,
+            .source_position = .{ .x = 0.014, .y = 0.01, .z = 0.01 },
+            .head_pose = .{
+                .position = .{ .x = 0.01, .y = 0.01, .z = 0.01 },
+            },
+        }},
+        .nearest,
+        4,
+    );
+    const ThirdOrder = plugin.dsp.HrtfImageSourceRoomPathPlan(3);
+    const third_order_plan = try ThirdOrder.init(
+        planned_room,
+        48_000,
+        343.0,
+        .{ .x = 0.014, .y = 0.01, .z = 0.01 },
+        .{
+            .position = .{ .x = 0.01, .y = 0.01, .z = 0.01 },
+        },
+    );
+    try std.testing.expect(
+        (try third_order_plan.items()).len >= planned_paths.len,
+    );
+    try room_moving.prepareImageSourceRoom(
+        3,
         database,
         planned_room,
         343.0,

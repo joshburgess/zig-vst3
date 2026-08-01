@@ -185,10 +185,14 @@ pub const HrtfRoomSurfaceAbsorption = hrtf.RoomSurfaceAbsorption;
 pub const HrtfShoeboxRoom = hrtf.ShoeboxRoom;
 pub const HrtfFirstOrderRoomPathPlan = hrtf.FirstOrderRoomPathPlan;
 pub const HrtfSecondOrderRoomPathPlan = hrtf.SecondOrderRoomPathPlan;
+pub const HrtfImageSourceRoomPathPlan = hrtf.ImageSourceRoomPathPlan;
 pub const maximum_first_order_hrtf_room_paths =
     hrtf.maximum_first_order_room_paths;
 pub const maximum_second_order_hrtf_room_paths =
     hrtf.maximum_second_order_room_paths;
+pub const maximum_supported_hrtf_room_reflection_order =
+    hrtf.maximum_supported_room_reflection_order;
+pub const hrtfRoomPathCapacityForOrder = hrtf.roomPathCapacityForOrder;
 pub const HrtfRoomResponseComposer = hrtf.RoomResponseComposer;
 pub const HrtfMotionRenderer = hrtf.MotionRenderer;
 pub const HrtfStreamingMotionRenderer = hrtf_stream.Renderer;
