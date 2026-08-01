@@ -6630,6 +6630,170 @@ test "LV2 projects dynamic auxiliary bus connection state" {
     );
 }
 
+test "LV2 projects high-channel dynamic buses without truncation" {
+    const Probe = struct {
+        const Topology = plugin_api.BoundedDynamicAudioBusTopology(1);
+
+        pub const name = "LV2 High-Channel Dynamic Projection Probe";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const event_input = false;
+        pub const maximum_auxiliary_audio_buses = 1;
+        pub const audio_bus_topology = makeTopology();
+
+        observed_auxiliary_input_channels: [2]usize = @splat(0),
+        observed_auxiliary_output_channels: [2]usize = @splat(0),
+        process_count: usize = 0,
+
+        fn makeTopology() Topology {
+            const main = plugin_api.DynamicAudioBus.fixed(
+                .ambisonic_sixth_order,
+                true,
+            ) catch unreachable;
+            const auxiliary = plugin_api.DynamicAudioBus.fixed(
+                .surround_7_1_4,
+                false,
+            ) catch unreachable;
+            var topology = Topology.init(main, main) catch unreachable;
+            _ = topology.addAuxiliary(
+                .input,
+                auxiliary,
+            ) catch unreachable;
+            _ = topology.addAuxiliary(
+                .output,
+                auxiliary,
+            ) catch unreachable;
+            return topology;
+        }
+
+        pub fn process(
+            self: *@This(),
+            context: *process_api.BoundedProcessContext(
+                f32,
+                maximum_auxiliary_audio_buses,
+            ),
+        ) void {
+            if (self.process_count < 2) {
+                self.observed_auxiliary_input_channels[self.process_count] =
+                    context.sidechainInputChannelCount();
+                self.observed_auxiliary_output_channels[self.process_count] =
+                    context.auxiliaryOutputChannelCount();
+            }
+            self.process_count += 1;
+            for (0..49) |channel_index| {
+                const input = context.inputChannel(channel_index) orelse
+                    return;
+                const output = context.outputChannel(channel_index) orelse
+                    return;
+                @memcpy(output, input);
+            }
+            for (0..context.sidechainInputChannelCount()) |channel_index| {
+                const input = context.sidechainInputChannel(
+                    channel_index,
+                ) orelse return;
+                const output = context.auxiliaryOutputChannel(
+                    channel_index,
+                ) orelse return;
+                @memcpy(output, input);
+            }
+        }
+    };
+    const Adapter = CoreAdapter(
+        Probe,
+        "https://example.test/lv2-high-channel-dynamic-projection",
+        1,
+    );
+    try std.testing.expect(Adapter.dynamic_audio_topology_projected);
+    try std.testing.expectEqual(@as(usize, 61), Adapter.input_channels);
+    try std.testing.expectEqual(@as(usize, 61), Adapter.output_channels);
+    try std.testing.expectEqual(@as(usize, 123), Adapter.port_count);
+
+    const descriptor = &Adapter.descriptor;
+    const handle = descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-high-channel-dynamic-projection.lv2",
+        null,
+    ) orelse return error.InstantiateFailed;
+    defer descriptor.cleanup(handle);
+
+    var main_inputs: [49][1]f32 = undefined;
+    var main_outputs: [49][1]f32 = @splat(@splat(0.0));
+    for (&main_inputs, 0..) |*samples, channel_index| {
+        samples[0] = @floatFromInt(channel_index + 1);
+        descriptor.connect_port(handle, @intCast(channel_index), samples);
+    }
+    for (&main_outputs, 0..) |*samples, channel_index|
+        descriptor.connect_port(
+            handle,
+            @intCast(Adapter.audio_output_port_start + channel_index),
+            samples,
+        );
+    var latency: f32 = -1.0;
+    descriptor.connect_port(handle, Adapter.latency_output_port, &latency);
+
+    if (descriptor.activate) |activate| activate(handle);
+    descriptor.run(handle, 1);
+    const instance = Adapter.instanceFromHandle(handle) orelse
+        return error.MissingInstance;
+    try std.testing.expectEqual(
+        RunStatus.succeeded,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqualSlices(
+        [1]f32,
+        &main_inputs,
+        &main_outputs,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        instance.runtime.instance.plugin
+            .observed_auxiliary_input_channels[0],
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        instance.runtime.instance.plugin
+            .observed_auxiliary_output_channels[0],
+    );
+
+    var auxiliary_inputs: [12][1]f32 = undefined;
+    var auxiliary_outputs: [12][1]f32 = @splat(@splat(0.0));
+    for (&auxiliary_inputs, 0..) |*samples, channel_index| {
+        samples[0] = -@as(f32, @floatFromInt(channel_index + 1));
+        descriptor.connect_port(
+            handle,
+            @intCast(49 + channel_index),
+            samples,
+        );
+    }
+    for (&auxiliary_outputs, 0..) |*samples, channel_index|
+        descriptor.connect_port(
+            handle,
+            @intCast(Adapter.audio_output_port_start + 49 + channel_index),
+            samples,
+        );
+    descriptor.run(handle, 1);
+    try std.testing.expectEqual(
+        RunStatus.succeeded,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqualSlices(
+        [1]f32,
+        &auxiliary_inputs,
+        &auxiliary_outputs,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 12),
+        instance.runtime.instance.plugin
+            .observed_auxiliary_input_channels[1],
+    );
+    try std.testing.expectEqual(
+        @as(usize, 12),
+        instance.runtime.instance.plugin
+            .observed_auxiliary_output_channels[1],
+    );
+}
+
 test "LV2 worker supports immediate offline and bounded responses" {
     const Probe = struct {
         pub const name = "LV2 Worker Probe";

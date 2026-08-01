@@ -3296,6 +3296,31 @@ pub fn build(b: *std.Build) void {
         "test-lv2-dynamic-topology",
         "Run dynamic-topology LV2 host and cross-build tests",
     );
+    const lv2_core_unit_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3-plugin/src/lv2.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_lv2_core_unit_tests = b.addRunArtifact(lv2_core_unit_tests);
+    const lv2_metadata_unit_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/lv2_metadata.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_lv2_metadata_unit_tests =
+        b.addRunArtifact(lv2_metadata_unit_tests);
+    lv2_dynamic_topology_test_step.dependOn(
+        &run_lv2_core_unit_tests.step,
+    );
+    lv2_dynamic_topology_test_step.dependOn(
+        &run_lv2_metadata_unit_tests.step,
+    );
     lv2_dynamic_topology_test_step.dependOn(
         &dynamic_topology_lv2_entry_check.step,
     );
@@ -3339,6 +3364,8 @@ pub fn build(b: *std.Build) void {
     lv2_test_step.dependOn(
         &run_lv2_dynamic_topology_host_smoke.step,
     );
+    lv2_test_step.dependOn(&run_lv2_core_unit_tests.step);
+    lv2_test_step.dependOn(&run_lv2_metadata_unit_tests.step);
     lv2_test_step.dependOn(dynamic_topology_lv2_bundle_step);
     lv2_test_step.dependOn(&run_lv2_ui_host_smoke.step);
     lv2_test_step.dependOn(&run_lv2_abi_harness.step);

@@ -1586,6 +1586,108 @@ test "LV2 metadata groups main sidechain and auxiliary audio buses" {
     );
 }
 
+test "LV2 metadata preserves high-channel dynamic bus projection" {
+    const Probe = struct {
+        const Topology = plugin_api.BoundedDynamicAudioBusTopology(1);
+
+        pub const name = "High-Channel Bus Metadata Probe";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const maximum_auxiliary_audio_buses = 1;
+        pub const audio_bus_topology = makeTopology();
+
+        fn makeTopology() Topology {
+            const main = plugin_api.DynamicAudioBus.fixed(
+                .ambisonic_sixth_order,
+                true,
+            ) catch unreachable;
+            const auxiliary = plugin_api.DynamicAudioBus.fixed(
+                .surround_7_1_4,
+                false,
+            ) catch unreachable;
+            var topology = Topology.init(main, main) catch unreachable;
+            _ = topology.addAuxiliary(
+                .input,
+                auxiliary,
+            ) catch unreachable;
+            _ = topology.addAuxiliary(
+                .output,
+                auxiliary,
+            ) catch unreachable;
+            return topology;
+        }
+
+        pub fn process(
+            _: *@This(),
+            _: *process_api.BoundedProcessContext(
+                f32,
+                maximum_auxiliary_audio_buses,
+            ),
+        ) void {}
+    };
+    const Adapter = struct {
+        pub const input_channels = 61;
+        pub const output_channels = 61;
+        pub const audio_output_port_start = 61;
+        pub const event_input_port: ?usize = null;
+        pub const event_output_port: ?usize = null;
+        pub const control_input_port_start = 122;
+        pub const freewheeling_input_port: ?usize = null;
+        pub const latency_output_port = 122;
+        pub const worker_enabled = false;
+        pub const programs_enabled = false;
+        pub const portable_state_paths_enabled = false;
+        pub const state_make_path_required = false;
+        pub const patch_enabled = false;
+        pub const patch_readable = false;
+        pub const patch_writable = false;
+        pub const dynamic_audio_topology_projected = true;
+    };
+    const Generated = Generator(
+        Probe,
+        Adapter,
+        "https://example.test/high-channel-bus-metadata",
+        .{},
+    );
+
+    var bytes: [64 * 1024]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try Generated.writePlugin(&writer, .{});
+    const plugin = writer.buffered();
+    try std.testing.expectEqual(
+        @as(usize, 24),
+        std.mem.count(
+            u8,
+            plugin,
+            "lv2:portProperty lv2:connectionOptional",
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        std.mem.count(u8, plugin, "lv2:designation pg:ACN15"),
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "a pg:InputGroup , pg:AmbisonicGroup",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "a pg:OutputGroup , pg:DiscreteGroup",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, plugin, "lv2:index 121") != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, plugin, "lv2:index 122") != null,
+    );
+}
+
 test "LV2 metadata generator rejects malformed presets" {
     const Probe = struct {
         pub const name = "Metadata Probe";
