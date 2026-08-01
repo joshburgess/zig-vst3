@@ -14541,6 +14541,78 @@ test "VBRI seek lookup decodes every table entry width" {
     }
 }
 
+test "VBRI seek lookup matches generated segment tables" {
+    var random_state = std.Random.DefaultPrng.init(0x5642_5249_5345_454b);
+    const random = random_state.random();
+    for (0..256) |_| {
+        const entry_count = random.intRangeAtMost(usize, 1, 8);
+        const entry_bytes = random.intRangeAtMost(usize, 1, 4);
+        const frames_per_entry = random.intRangeAtMost(u16, 1, 8);
+        const scale = random.intRangeAtMost(u16, 1, 16);
+        const covered_frames =
+            entry_count * @as(usize, frames_per_entry);
+        const frame_count = random.intRangeAtMost(
+            usize,
+            1,
+            covered_frames,
+        );
+        var toc_storage: [32]u8 = @splat(0);
+        var segment_sizes: [8]u32 = @splat(0);
+        var stream_bytes: u32 = 0;
+        for (0..entry_count) |entry_index| {
+            const entry = random.intRangeAtMost(u32, 1, 127);
+            segment_sizes[entry_index] = entry * scale;
+            stream_bytes += segment_sizes[entry_index];
+            for (0..entry_bytes) |byte_index| {
+                const shift: u5 = @intCast(
+                    (entry_bytes - byte_index - 1) * 8,
+                );
+                toc_storage[entry_index * entry_bytes + byte_index] =
+                    @intCast(entry >> shift);
+            }
+        }
+        const vbri = Vbri{
+            .version = 1,
+            .delay = 0,
+            .quality = 0,
+            .stream_bytes = stream_bytes,
+            .frame_count = @intCast(frame_count),
+            .toc_entries = @intCast(entry_count),
+            .toc_scale = scale,
+            .entry_bytes = @intCast(entry_bytes),
+            .frames_per_entry = frames_per_entry,
+            .toc = toc_storage[0 .. entry_count * entry_bytes],
+        };
+        for (0..frame_count + 1) |target_frame| {
+            var expected: u32 = 0;
+            if (target_frame == frame_count) {
+                expected = stream_bytes;
+            } else {
+                const group =
+                    target_frame / @as(usize, frames_per_entry);
+                for (segment_sizes[0..group]) |segment_bytes| {
+                    expected += segment_bytes;
+                }
+                expected += segment_sizes[group] *
+                    @as(
+                        u32,
+                        @intCast(
+                            target_frame %
+                                @as(usize, frames_per_entry),
+                        ),
+                    ) /
+                    frames_per_entry;
+            }
+            try std.testing.expectEqual(
+                expected,
+                try vbri.approximateByteOffsetForFrame(
+                    @intCast(target_frame),
+                ),
+            );
+        }
+    }
+}
+
 test "encodes bounded VBRI metadata frames transactionally" {
     const header = try (EncoderConfig{
         .bitrate_kbps = 320,
