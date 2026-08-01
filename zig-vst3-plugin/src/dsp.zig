@@ -181,6 +181,11 @@ pub const AdmBinauralStereoGainTimeline =
 pub const HrtfDatabase = hrtf.Database;
 pub const HrtfRenderer = hrtf.Renderer;
 pub const HrtfRoomPath = hrtf.RoomPath;
+pub const HrtfRoomSurfaceAbsorption = hrtf.RoomSurfaceAbsorption;
+pub const HrtfShoeboxRoom = hrtf.ShoeboxRoom;
+pub const HrtfFirstOrderRoomPathPlan = hrtf.FirstOrderRoomPathPlan;
+pub const maximum_first_order_hrtf_room_paths =
+    hrtf.maximum_first_order_room_paths;
 pub const HrtfRoomResponseComposer = hrtf.RoomResponseComposer;
 pub const HrtfMotionRenderer = hrtf.MotionRenderer;
 pub const HrtfStreamingMotionRenderer = hrtf_stream.Renderer;

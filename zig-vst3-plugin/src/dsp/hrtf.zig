@@ -505,6 +505,175 @@ pub const RoomPath = struct {
     additional_delay_samples: f64 = 0.0,
 };
 
+pub const maximum_first_order_room_paths: usize = 7;
+
+pub const RoomSurfaceAbsorption = struct {
+    minimum_x: f64 = 1.0,
+    maximum_x: f64 = 1.0,
+    minimum_y: f64 = 1.0,
+    maximum_y: f64 = 1.0,
+    minimum_z: f64 = 1.0,
+    maximum_z: f64 = 1.0,
+
+    fn values(self: RoomSurfaceAbsorption) [6]f64 {
+        return .{
+            self.minimum_x,
+            self.maximum_x,
+            self.minimum_y,
+            self.maximum_y,
+            self.minimum_z,
+            self.maximum_z,
+        };
+    }
+};
+
+pub const ShoeboxRoom = struct {
+    minimum: Position,
+    maximum: Position,
+    absorption: RoomSurfaceAbsorption = .{},
+};
+
+pub const FirstOrderRoomPathPlan = struct {
+    path_storage: [maximum_first_order_room_paths]RoomPath = @splat(.{
+        .direction = .{
+            .azimuth_degrees = 0.0,
+            .elevation_degrees = 0.0,
+        },
+    }),
+    path_count: usize = 0,
+
+    pub fn init(
+        room: ShoeboxRoom,
+        sample_rate: u32,
+        speed_of_sound_meters_per_second: f64,
+        source_position: Position,
+        head_pose: HeadPose,
+    ) !FirstOrderRoomPathPlan {
+        try validateShoeboxRoom(room);
+        if (sample_rate < 8_000 or sample_rate > 384_000)
+            return error.InvalidHrtfSampleRate;
+        if (!std.math.isFinite(speed_of_sound_meters_per_second) or
+            speed_of_sound_meters_per_second <= 0.0)
+        {
+            return error.InvalidHrtfSpeedOfSound;
+        }
+        try validatePosition(source_position);
+        try validatePosition(head_pose.position);
+        if (!positionInsideRoom(room, source_position) or
+            !positionInsideRoom(room, head_pose.position))
+        {
+            return error.HrtfRoomPositionOutsideBounds;
+        }
+
+        const direct_distance = try distanceBetweenPositions(
+            source_position,
+            head_pose.position,
+        );
+        var result = FirstOrderRoomPathPlan{};
+        result.path_storage[0] = .{
+            .direction = try directionFromPositions(
+                source_position,
+                head_pose,
+            ),
+        };
+        result.path_count = 1;
+
+        const images = [6]Position{
+            .{
+                .x = 2.0 * room.minimum.x - source_position.x,
+                .y = source_position.y,
+                .z = source_position.z,
+            },
+            .{
+                .x = 2.0 * room.maximum.x - source_position.x,
+                .y = source_position.y,
+                .z = source_position.z,
+            },
+            .{
+                .x = source_position.x,
+                .y = 2.0 * room.minimum.y - source_position.y,
+                .z = source_position.z,
+            },
+            .{
+                .x = source_position.x,
+                .y = 2.0 * room.maximum.y - source_position.y,
+                .z = source_position.z,
+            },
+            .{
+                .x = source_position.x,
+                .y = source_position.y,
+                .z = 2.0 * room.minimum.z - source_position.z,
+            },
+            .{
+                .x = source_position.x,
+                .y = source_position.y,
+                .z = 2.0 * room.maximum.z - source_position.z,
+            },
+        };
+        const absorptions = room.absorption.values();
+        for (images, absorptions) |image, absorption| {
+            const reflection = @sqrt(1.0 - absorption);
+            if (reflection == 0.0) continue;
+            const reflected_distance = try distanceBetweenPositions(
+                image,
+                head_pose.position,
+            );
+            const gain = reflection * direct_distance / reflected_distance;
+            const delay =
+                (reflected_distance - direct_distance) *
+                @as(f64, @floatFromInt(sample_rate)) /
+                speed_of_sound_meters_per_second;
+            if (!std.math.isFinite(gain) or gain < 0.0 or gain > 1.0 or
+                !std.math.isFinite(delay) or delay < 0.0)
+            {
+                return error.InvalidHrtfRoomGeometry;
+            }
+            result.path_storage[result.path_count] = .{
+                .direction = try directionFromPositions(image, head_pose),
+                .gain = gain,
+                .additional_delay_samples = delay,
+            };
+            result.path_count += 1;
+        }
+        if (!result.valid()) return error.InvalidHrtfRoomPathPlanState;
+        return result;
+    }
+
+    pub fn items(self: *const FirstOrderRoomPathPlan) ![]const RoomPath {
+        if (!self.valid()) return error.InvalidHrtfRoomPathPlanState;
+        return self.path_storage[0..self.path_count];
+    }
+
+    pub fn valid(self: *const FirstOrderRoomPathPlan) bool {
+        if (self.path_count == 0 or
+            self.path_count > maximum_first_order_room_paths)
+        {
+            return false;
+        }
+        for (self.path_storage[0..self.path_count], 0..) |path, index| {
+            validateDirection(path.direction) catch return false;
+            if (!std.math.isFinite(path.gain) or
+                path.gain < 0.0 or path.gain > 1.0 or
+                !std.math.isFinite(path.additional_delay_samples) or
+                path.additional_delay_samples < 0.0)
+            {
+                return false;
+            }
+            if (index == 0 and
+                (path.gain != 1.0 or path.additional_delay_samples != 0.0))
+            {
+                return false;
+            }
+            if (index != 0 and
+                (path.gain <= 0.0 or path.additional_delay_samples <= 0.0))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
 pub fn Database(
     comptime maximum_measurements: usize,
     comptime maximum_frames: usize,
@@ -1579,6 +1748,52 @@ fn validatePosition(position: Position) !void {
         return error.InvalidHrtfPosition;
 }
 
+fn validateShoeboxRoom(room: ShoeboxRoom) !void {
+    try validatePosition(room.minimum);
+    try validatePosition(room.maximum);
+    if (room.minimum.x >= room.maximum.x or
+        room.minimum.y >= room.maximum.y or
+        room.minimum.z >= room.maximum.z or
+        !std.math.isFinite(room.maximum.x - room.minimum.x) or
+        !std.math.isFinite(room.maximum.y - room.minimum.y) or
+        !std.math.isFinite(room.maximum.z - room.minimum.z))
+    {
+        return error.InvalidHrtfRoomGeometry;
+    }
+    for (room.absorption.values()) |absorption| {
+        if (!std.math.isFinite(absorption) or
+            absorption < 0.0 or absorption > 1.0)
+        {
+            return error.InvalidHrtfRoomAbsorption;
+        }
+    }
+}
+
+fn positionInsideRoom(room: ShoeboxRoom, position: Position) bool {
+    return position.x > room.minimum.x and
+        position.x < room.maximum.x and
+        position.y > room.minimum.y and
+        position.y < room.maximum.y and
+        position.z > room.minimum.z and
+        position.z < room.maximum.z;
+}
+
+fn distanceBetweenPositions(first: Position, second: Position) !f64 {
+    const x = first.x - second.x;
+    const y = first.y - second.y;
+    const z = first.z - second.z;
+    const squared = x * x + y * y + z * z;
+    if (!std.math.isFinite(squared) or
+        squared <= direction_tolerance_squared)
+    {
+        return error.InvalidHrtfRoomGeometry;
+    }
+    const distance = @sqrt(squared);
+    if (!std.math.isFinite(distance))
+        return error.InvalidHrtfRoomGeometry;
+    return distance;
+}
+
 fn validateDirection(direction: Direction) !void {
     if (!std.math.isFinite(direction.azimuth_degrees) or
         direction.azimuth_degrees < -180.0 or
@@ -2387,6 +2602,227 @@ test "HRTF room response composes bounded directional paths" {
             0.000_001,
         );
     }
+}
+
+test "HRTF first-order room plan derives reflection gain and delay" {
+    const room = ShoeboxRoom{
+        .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        .maximum = .{ .x = 10.0, .y = 8.0, .z = 3.0 },
+        .absorption = .{ .maximum_x = 0.75 },
+    };
+    const plan = try FirstOrderRoomPathPlan.init(
+        room,
+        48_000,
+        300.0,
+        .{ .x = 7.0, .y = 4.0, .z = 1.5 },
+        .{
+            .position = .{ .x = 5.0, .y = 4.0, .z = 1.5 },
+        },
+    );
+    const paths = try plan.items();
+    try std.testing.expectEqual(@as(usize, 2), paths.len);
+    try std.testing.expectEqualDeep(
+        Direction{ .azimuth_degrees = 0.0, .elevation_degrees = 0.0 },
+        paths[0].direction,
+    );
+    try std.testing.expectEqual(@as(f64, 1.0), paths[0].gain);
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        paths[0].additional_delay_samples,
+    );
+    try std.testing.expectEqualDeep(paths[0].direction, paths[1].direction);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.125),
+        paths[1].gain,
+        1.0e-12,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 960.0),
+        paths[1].additional_delay_samples,
+        1.0e-9,
+    );
+
+    const Db = Database(1, 1);
+    const database = try Db.init(
+        48_000,
+        &.{paths[0].direction},
+        &.{ 1.0, 1.0 },
+    );
+    const Composer = RoomResponseComposer(1024, 7);
+    var composer = Composer{};
+    var response: [2048]f32 = @splat(99.0);
+    const frame_count = try composer.compose(
+        database,
+        paths,
+        .nearest,
+        &response,
+    );
+    try std.testing.expectEqual(@as(usize, 961), frame_count);
+    try std.testing.expectEqualDeep([_]f32{ 1.0, 1.0 }, response[0..2].*);
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.125, 0.125 },
+        response[1920..1922].*,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f32{ 99.0, 99.0 },
+        response[1922..1924].*,
+    );
+}
+
+test "HRTF first-order room plan covers surfaces and head rotation" {
+    const plan = try FirstOrderRoomPathPlan.init(
+        .{
+            .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+            .maximum = .{ .x = 10.0, .y = 8.0, .z = 3.0 },
+            .absorption = .{
+                .minimum_x = 0.0,
+                .maximum_x = 0.0,
+                .minimum_y = 0.0,
+                .maximum_y = 0.0,
+                .minimum_z = 0.0,
+                .maximum_z = 0.0,
+            },
+        },
+        48_000,
+        343.0,
+        .{ .x = 7.0, .y = 4.5, .z = 1.75 },
+        .{
+            .position = .{ .x = 5.0, .y = 4.0, .z = 1.5 },
+            .yaw_degrees = 90.0,
+        },
+    );
+    const paths = try plan.items();
+    try std.testing.expectEqual(
+        maximum_first_order_room_paths,
+        paths.len,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, -75.963_756_532_073_53),
+        paths[0].direction.azimuth_degrees,
+        1.0e-12,
+    );
+    const direct_distance = @sqrt(@as(f64, 4.3125));
+    const reflected_distances = [_]f64{
+        @sqrt(@as(f64, 144.3125)),
+        @sqrt(@as(f64, 64.3125)),
+        @sqrt(@as(f64, 76.3125)),
+        @sqrt(@as(f64, 60.3125)),
+        @sqrt(@as(f64, 14.8125)),
+        @sqrt(@as(f64, 11.8125)),
+    };
+    for (paths[1..], reflected_distances) |path, distance| {
+        try std.testing.expectApproxEqAbs(
+            direct_distance / distance,
+            path.gain,
+            1.0e-12,
+        );
+        try std.testing.expectApproxEqAbs(
+            (distance - direct_distance) * 48_000.0 / 343.0,
+            path.additional_delay_samples,
+            1.0e-9,
+        );
+    }
+}
+
+test "HRTF first-order room plan rejects invalid state and geometry" {
+    const room = ShoeboxRoom{
+        .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        .maximum = .{ .x = 10.0, .y = 8.0, .z = 3.0 },
+    };
+    const source = Position{ .x = 7.0, .y = 4.0, .z = 1.5 };
+    const head = HeadPose{
+        .position = .{ .x = 5.0, .y = 4.0, .z = 1.5 },
+    };
+    try std.testing.expectError(
+        error.InvalidHrtfRoomGeometry,
+        FirstOrderRoomPathPlan.init(
+            .{
+                .minimum = room.minimum,
+                .maximum = .{ .x = 0.0, .y = 8.0, .z = 3.0 },
+            },
+            48_000,
+            343.0,
+            source,
+            head,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfRoomAbsorption,
+        FirstOrderRoomPathPlan.init(
+            .{
+                .minimum = room.minimum,
+                .maximum = room.maximum,
+                .absorption = .{ .minimum_x = 1.01 },
+            },
+            48_000,
+            343.0,
+            source,
+            head,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfSpeedOfSound,
+        FirstOrderRoomPathPlan.init(
+            room,
+            48_000,
+            0.0,
+            source,
+            head,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfSampleRate,
+        FirstOrderRoomPathPlan.init(
+            room,
+            7_999,
+            343.0,
+            source,
+            head,
+        ),
+    );
+    try std.testing.expectError(
+        error.HrtfRoomPositionOutsideBounds,
+        FirstOrderRoomPathPlan.init(
+            room,
+            48_000,
+            343.0,
+            .{ .x = 10.0, .y = 4.0, .z = 1.5 },
+            head,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfRoomGeometry,
+        FirstOrderRoomPathPlan.init(
+            room,
+            48_000,
+            343.0,
+            head.position,
+            head,
+        ),
+    );
+
+    var malformed = try FirstOrderRoomPathPlan.init(
+        room,
+        48_000,
+        343.0,
+        source,
+        head,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        (try malformed.items()).len,
+    );
+    malformed.path_count = maximum_first_order_room_paths + 1;
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathPlanState,
+        malformed.items(),
+    );
+    malformed.path_count = 1;
+    malformed.path_storage[0].gain = std.math.nan(f64);
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathPlanState,
+        malformed.items(),
+    );
 }
 
 test "HRTF room response rejects invalid policy transactionally" {

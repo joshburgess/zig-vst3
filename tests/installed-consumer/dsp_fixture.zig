@@ -5997,6 +5997,32 @@ test "installed package renders bounded HRTF responses" {
 
     const RoomComposer = plugin.dsp.HrtfRoomResponseComposer(16, 2);
     var room_composer = RoomComposer{};
+    try std.testing.expectEqual(
+        @as(usize, 7),
+        plugin.dsp.maximum_first_order_hrtf_room_paths,
+    );
+    const room_plan = try plugin.dsp.HrtfFirstOrderRoomPathPlan.init(
+        plugin.dsp.HrtfShoeboxRoom{
+            .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+            .maximum = .{ .x = 0.02, .y = 0.02, .z = 0.02 },
+            .absorption = plugin.dsp.HrtfRoomSurfaceAbsorption{
+                .maximum_x = 0.75,
+            },
+        },
+        48_000,
+        343.0,
+        .{ .x = 0.014, .y = 0.01, .z = 0.01 },
+        .{
+            .position = .{ .x = 0.01, .y = 0.01, .z = 0.01 },
+        },
+    );
+    const planned_paths = try room_plan.items();
+    try std.testing.expectEqual(@as(usize, 2), planned_paths.len);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.125),
+        planned_paths[1].gain,
+        1.0e-12,
+    );
     const room_path = plugin.dsp.HrtfRoomPath{
         .direction = directions[0],
         .gain = 0.5,
