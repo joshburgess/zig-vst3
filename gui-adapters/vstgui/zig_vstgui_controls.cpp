@@ -11,7 +11,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
+#include <string_view>
 #include <utility>
 
 namespace ZigVstgui {
@@ -21,6 +23,7 @@ namespace {
 constexpr int32_t kParameterTag = 1;
 constexpr int32_t kValueTag = 2;
 constexpr int32_t kResizeTag = 3;
+constexpr std::size_t maximumParameterInputBytes = 255;
 
 constexpr uint32_t actionMask(AccessibilityAction action) {
     return static_cast<uint32_t>(action);
@@ -35,6 +38,16 @@ bool roundedCoordinate(double value, int32_t& result) {
     );
     result = static_cast<int32_t>(std::lround(bounded));
     return true;
+}
+
+bool validParameterInputText(const char* text) {
+    if (!text) return false;
+    const auto* terminator = static_cast<const char*>(
+        std::memchr(text, 0, maximumParameterInputBytes + 1)
+    );
+    return terminator && validUtf8(
+        std::string_view(text, static_cast<std::size_t>(terminator - text))
+    );
 }
 
 std::string humanizeEnumLabel(std::string label) {
@@ -541,7 +554,7 @@ void ParameterControl::build(
         return true;
     });
     value_edit->setStringToValueFunction([](VSTGUI::UTF8StringPtr text, float& value, VSTGUI::CTextEdit* edit) {
-        if (!text) return false;
+        if (!validParameterInputText(text)) return false;
         auto* control = static_cast<ParameterControl*>(edit->getListener());
         if (!control || !control->control_model.callbacks().parse_value) return false;
         const auto& callbacks = control->control_model.callbacks();
@@ -939,6 +952,7 @@ bool ParameterControl::performAccessibilityAction(
     if (request.action == AccessibilityAction::set_value) {
         double normalized = request.value;
         if (request.text) {
+            if (!validParameterInputText(request.text)) return false;
             const auto& callbacks = control_model.callbacks();
             if (!callbacks.parse_value || callbacks.parse_value(
                     callbacks.userdata,

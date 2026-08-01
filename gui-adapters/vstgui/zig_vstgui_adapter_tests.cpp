@@ -87,6 +87,7 @@ struct CallbackState {
     bool reject_editor_text {false};
     uint32_t malformed_editor_text {0};
     uint32_t malformed_format_value {0};
+    uint32_t parse_value_count {0};
     ZigVstguiProgressSnapshot progress_snapshot {};
     bool progress_available {false};
     uint32_t stored_scalar_ids[3] {};
@@ -200,6 +201,14 @@ int32_t loadProgress(void* userdata, uint32_t, ZigVstguiProgressSnapshot* output
     auto* state = static_cast<CallbackState*>(userdata);
     if (!state->progress_available || !output) return -1;
     *output = state->progress_snapshot;
+    return 0;
+}
+
+int32_t parseParameterValue(void* userdata, uint32_t, const char* text, double* output) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->parse_value_count += 1;
+    if (!text || !output) return -1;
+    *output = 0.75;
     return 0;
 }
 
@@ -734,6 +743,7 @@ int testRotaryKnob() {
     callbacks.perform_edit = performEdit;
     callbacks.end_edit = endEdit;
     callbacks.format_value = formatMalformedValue;
+    callbacks.parse_value = parseParameterValue;
     VSTGUI::init(nullptr);
     {
         ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
@@ -801,6 +811,46 @@ int testRotaryKnob() {
             control.clear();
             VSTGUI::exit();
             return 7;
+        }
+        auto* value_accessibility = control.valueAccessibility();
+        if (!value_accessibility) {
+            control.clear();
+            VSTGUI::exit();
+            return 8;
+        }
+        const uint32_t parse_count_before_accessibility = state.parse_value_count;
+        if (!value_accessibility->perform(
+                ZigVstgui::AccessibilityAction::set_value,
+                0.0,
+                "75%"
+            )) {
+            control.clear();
+            VSTGUI::exit();
+            return 9;
+        }
+        if (state.parse_value_count <= parse_count_before_accessibility ||
+            !closeEnough(control.model().acceptedValue(), 0.75)) {
+            control.clear();
+            VSTGUI::exit();
+            return 10;
+        }
+        const char malformed_value[] = {static_cast<char>(0xc0), static_cast<char>(0x80), 0};
+        std::array<char, 256> unterminated_value {};
+        unterminated_value.fill('1');
+        const uint32_t parse_count_after_valid_value = state.parse_value_count;
+        if (value_accessibility->perform(
+                ZigVstgui::AccessibilityAction::set_value,
+                0.0,
+                malformed_value
+            ) || value_accessibility->perform(
+                ZigVstgui::AccessibilityAction::set_value,
+                0.0,
+                unterminated_value.data()
+            ) || state.parse_value_count != parse_count_after_valid_value ||
+            !closeEnough(control.model().acceptedValue(), 0.75)) {
+            control.clear();
+            VSTGUI::exit();
+            return 11;
         }
         control.clear();
     }
