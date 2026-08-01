@@ -838,6 +838,7 @@ private:
     }
 
     static gint32 coordinate(double value) {
+        if (std::isnan(value)) return 0;
         if (value <= static_cast<double>(G_MININT32)) return G_MININT32;
         if (value >= static_cast<double>(G_MAXINT32)) return G_MAXINT32;
         return static_cast<gint32>(std::lround(value));
