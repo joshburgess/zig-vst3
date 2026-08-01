@@ -5645,6 +5645,68 @@ pub fn inferVorbisMissingPacketLargeBlock(
     return error.VorbisFollowingPacketBlockSizeUnavailable;
 }
 
+/// Resolves an ambiguous missing size from the following packet's exact granule.
+/// The retained tracker must already have an absolute PCM position.
+pub fn inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+    identification: VorbisIdentification,
+    previous_block_size: usize,
+    following: VorbisAudioPacketHeader,
+    granules: VorbisGranuleTracker,
+    following_granule_position: u64,
+    following_end: bool,
+) !bool {
+    const header_inference = inferVorbisMissingPacketLargeBlock(
+        identification,
+        following,
+    ) catch |err| switch (err) {
+        error.VorbisFollowingPacketBlockSizeUnavailable => null,
+        else => return err,
+    };
+    if (header_inference) |large_block| return large_block;
+    if (granules.ended)
+        return error.VorbisGranuleStreamAlreadyEnded;
+    if (following_end or following_granule_position == unknown_granule)
+        return error.VorbisFollowingGranuleUnavailable;
+    const position_offset = granules.position_offset orelse
+        return error.VorbisFollowingGranuleUnavailable;
+    if (previous_block_size != identification.small_block_size and
+        previous_block_size != identification.large_block_size)
+        return error.InvalidVorbisPreviousBlockSize;
+
+    const declared_end: i64 = @bitCast(following_granule_position);
+    const candidate_sizes = [_]u16{
+        identification.small_block_size,
+        identification.large_block_size,
+    };
+    for (candidate_sizes, 0..) |missing_block_size, candidate_index| {
+        const nominal_sample_count = std.math.add(
+            u64,
+            previous_block_size / 4,
+            missing_block_size / 2,
+        ) catch return error.VorbisGranulePositionOverflow;
+        const complete_sample_count = std.math.add(
+            u64,
+            nominal_sample_count,
+            following.block_size / 4,
+        ) catch return error.VorbisGranulePositionOverflow;
+        const decoded_after = std.math.add(
+            u64,
+            granules.decoded_samples,
+            complete_sample_count,
+        ) catch return error.VorbisGranulePositionOverflow;
+        if (decoded_after > std.math.maxInt(i64))
+            return error.VorbisGranulePositionOverflow;
+        const expected_end = std.math.add(
+            i64,
+            position_offset,
+            @intCast(decoded_after),
+        ) catch return error.VorbisGranulePositionOverflow;
+        if (declared_end == expected_end)
+            return candidate_index != 0;
+    }
+    return error.InvalidVorbisGranulePosition;
+}
+
 pub const VorbisPcmBlockAnalysisConfig = struct {
     transient_energy_ratio: f64 = 4,
     minimum_rms: f64 = 0.000_01,
@@ -9481,6 +9543,43 @@ pub fn VorbisPcmStreamDecoder(
                 windowed_scratch,
             );
         }
+
+        /// Uses the exact granule immediately after an ambiguous following packet.
+        pub fn concealMissingPacketUsingFollowingGranule(
+            self: *Self,
+            following: VorbisAudioPacketHeader,
+            following_granule_position: u64,
+            following_end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisPcmConcealmentResult {
+            if (self.ended)
+                return error.VorbisPcmStreamAlreadyEnded;
+            const previous_size =
+                self.overlap.channels[0].previousBlockSize();
+            for (self.overlap.channels[1..]) |channel| {
+                if (channel.previousBlockSize() != previous_size)
+                    return error.InvalidVorbisChannelOverlapState;
+            }
+            const large_block =
+                try inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+                    identification,
+                    previous_size,
+                    following,
+                    self.granules,
+                    following_granule_position,
+                    following_end,
+                );
+            return self.concealMissingPacket(
+                large_block,
+                unknown_granule,
+                false,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+        }
     };
 }
 
@@ -9663,6 +9762,43 @@ pub fn VorbisChainedPcmStreamDecoder(
                 large_block,
                 granule_position,
                 end,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+        }
+
+        /// Uses the exact granule immediately after an ambiguous following packet.
+        pub fn concealMissingPacketUsingFollowingGranule(
+            self: *Self,
+            following: VorbisAudioPacketHeader,
+            following_granule_position: u64,
+            following_end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisChainedPcmConcealmentResult {
+            if (!self.started)
+                return error.VorbisLogicalStreamNotStarted;
+            const previous_size =
+                self.stream.overlap.channels[0].previousBlockSize();
+            for (self.stream.overlap.channels[1..]) |channel| {
+                if (channel.previousBlockSize() != previous_size)
+                    return error.InvalidVorbisChannelOverlapState;
+            }
+            const large_block =
+                try inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+                    identification,
+                    previous_size,
+                    following,
+                    self.stream.granules,
+                    following_granule_position,
+                    following_end,
+                );
+            return self.concealMissingPacket(
+                large_block,
+                unknown_granule,
+                false,
                 identification,
                 outputs,
                 windowed_scratch,
@@ -15958,6 +16094,193 @@ test "Vorbis PCM concealment advances overlap and granules explicitly" {
         );
     try std.testing.expectEqual(@as(u16, 64), following_loss.block_size);
     try std.testing.expectEqual(@as(usize, 0), following_loss.sample_count);
+
+    const known_granules = VorbisGranuleTracker{
+        .decoded_samples = 32,
+        .position_offset = 0,
+    };
+    try std.testing.expect(
+        !try inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+            mixed_identification,
+            64,
+            following_small,
+            known_granules,
+            96,
+            false,
+        ),
+    );
+    try std.testing.expect(
+        try inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+            mixed_identification,
+            64,
+            following_small,
+            known_granules,
+            192,
+            false,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidVorbisGranulePosition,
+        inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+            mixed_identification,
+            64,
+            following_small,
+            known_granules,
+            100,
+            false,
+        ),
+    );
+    try std.testing.expectError(
+        error.VorbisFollowingGranuleUnavailable,
+        inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+            mixed_identification,
+            64,
+            following_small,
+            known_granules,
+            unknown_granule,
+            false,
+        ),
+    );
+    try std.testing.expectError(
+        error.VorbisFollowingGranuleUnavailable,
+        inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+            mixed_identification,
+            64,
+            following_small,
+            .{ .decoded_samples = 32 },
+            96,
+            false,
+        ),
+    );
+    try std.testing.expectError(
+        error.VorbisFollowingGranuleUnavailable,
+        inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+            mixed_identification,
+            64,
+            following_small,
+            known_granules,
+            96,
+            true,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidVorbisPreviousBlockSize,
+        inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+            mixed_identification,
+            128,
+            following_small,
+            known_granules,
+            96,
+            false,
+        ),
+    );
+    try std.testing.expectError(
+        error.VorbisGranulePositionOverflow,
+        inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+            mixed_identification,
+            64,
+            following_small,
+            .{
+                .decoded_samples = std.math.maxInt(i64),
+                .position_offset = 0,
+            },
+            96,
+            false,
+        ),
+    );
+
+    var granule_decoder =
+        VorbisPcmStreamDecoder(f32, 1, 64, 256).init();
+    _ = try granule_decoder.concealMissingPacket(
+        false,
+        unknown_granule,
+        false,
+        mixed_identification,
+        &empty_outputs,
+        &mixed_windowed,
+    );
+    var granule_output = [_]f32{99} ** 32;
+    const granule_outputs = [_][]f32{&granule_output};
+    _ = try granule_decoder.concealMissingPacket(
+        false,
+        32,
+        false,
+        mixed_identification,
+        &granule_outputs,
+        &mixed_windowed,
+    );
+    granule_output = [_]f32{99} ** 32;
+    const granule_before = granule_decoder;
+    try std.testing.expectError(
+        error.InvalidVorbisGranulePosition,
+        granule_decoder.concealMissingPacketUsingFollowingGranule(
+            following_small,
+            100,
+            false,
+            mixed_identification,
+            &granule_outputs,
+            &mixed_windowed,
+        ),
+    );
+    try std.testing.expectEqualDeep(granule_before, granule_decoder);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{99} ** 32),
+        &granule_output,
+    );
+    const granule_loss =
+        try granule_decoder.concealMissingPacketUsingFollowingGranule(
+            following_small,
+            96,
+            false,
+            mixed_identification,
+            &granule_outputs,
+            &mixed_windowed,
+        );
+    try std.testing.expectEqual(@as(u16, 64), granule_loss.block_size);
+    try std.testing.expectEqual(@as(usize, 32), granule_loss.sample_count);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0} ** 32),
+        &granule_output,
+    );
+
+    var granule_chained =
+        VorbisChainedPcmStreamDecoder(f32, 1, 64, 256).init();
+    try granule_chained.beginLogicalStream(mixed_identification);
+    _ = try granule_chained.concealMissingPacket(
+        false,
+        unknown_granule,
+        false,
+        mixed_identification,
+        &empty_outputs,
+        &mixed_windowed,
+    );
+    _ = try granule_chained.concealMissingPacket(
+        false,
+        32,
+        false,
+        mixed_identification,
+        &granule_outputs,
+        &mixed_windowed,
+    );
+    const chained_granule_loss =
+        try granule_chained.concealMissingPacketUsingFollowingGranule(
+            following_small,
+            96,
+            false,
+            mixed_identification,
+            &granule_outputs,
+            &mixed_windowed,
+        );
+    try std.testing.expectEqual(
+        @as(u16, 64),
+        chained_granule_loss.stream.block_size,
+    );
+    try std.testing.expectEqual(
+        @as(u64, 64),
+        chained_granule_loss.global_pcm_end,
+    );
 }
 
 test "Vorbis seeking handles packed packets and chained streams" {

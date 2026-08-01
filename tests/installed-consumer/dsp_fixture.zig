@@ -3113,6 +3113,22 @@ test "installed package exposes DSP blocks contexts and math primitives" {
             installed_following_header,
         ),
     );
+    var installed_mixed_identification = installed_identification;
+    installed_mixed_identification.large_block_size = 256;
+    try std.testing.expect(
+        !try plugin.dsp
+            .inferVorbisMissingPacketLargeBlockFromFollowingGranule(
+            installed_mixed_identification,
+            64,
+            installed_following_header,
+            .{
+                .decoded_samples = 32,
+                .position_offset = 0,
+            },
+            96,
+            false,
+        ),
+    );
 
     var installed_chained =
         plugin.dsp.VorbisChainedPcmStreamDecoder(

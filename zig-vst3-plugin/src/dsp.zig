@@ -814,6 +814,8 @@ pub const VorbisPcmConcealmentResult =
     ogg.VorbisPcmConcealmentResult;
 pub const inferVorbisMissingPacketLargeBlock =
     ogg.inferVorbisMissingPacketLargeBlock;
+pub const inferVorbisMissingPacketLargeBlockFromFollowingGranule =
+    ogg.inferVorbisMissingPacketLargeBlockFromFollowingGranule;
 pub const VorbisPcmStreamDecoder = ogg.VorbisPcmStreamDecoder;
 pub const VorbisPcmStreamResult = ogg.VorbisPcmStreamResult;
 pub const VorbisPcmStreamScratch = ogg.VorbisPcmStreamScratch;
