@@ -160,6 +160,26 @@ pub fn MotionPointQueue(comptime capacity: usize) type {
             return true;
         }
 
+        pub fn submitTracked(
+            self: *Self,
+            clock: *MotionClock,
+            tracker_timestamp: u64,
+            source_position: Position,
+            head_pose: HeadPose,
+        ) !bool {
+            var staged_clock = clock.*;
+            const sample_position =
+                try staged_clock.map(tracker_timestamp);
+            const accepted = try self.submit(.{
+                .sample_position = sample_position,
+                .source_position = source_position,
+                .head_pose = head_pose,
+            });
+            if (!accepted) return false;
+            clock.* = staged_clock;
+            return true;
+        }
+
         pub fn receive(self: *Self) !?MotionPoint {
             const read = self.read_index.load(.monotonic);
             const write = self.write_index.load(.acquire);
@@ -1289,6 +1309,65 @@ test "HRTF motion point queue validates and preserves tracker updates" {
         .source_position = first.source_position,
         .head_pose = first.head_pose,
     }));
+}
+
+test "HRTF tracked submission preserves the clock until queue publication" {
+    const Queue = MotionPointQueue(1);
+    var queue = Queue{};
+    var clock = try MotionClock.init(48_000, 1_000_000_000, 1_000, 10);
+    const source = Position{ .x = 1.0, .y = 0.0, .z = 0.0 };
+    const head = HeadPose{
+        .position = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+    };
+
+    try std.testing.expect(try queue.submitTracked(
+        &clock,
+        1_000,
+        source,
+        head,
+    ));
+    const retained_timestamp = clock.last_tracker_timestamp;
+    const retained_sample = clock.last_sample_position;
+    try std.testing.expect(!(try queue.submitTracked(
+        &clock,
+        21_834,
+        source,
+        head,
+    )));
+    try std.testing.expectEqual(
+        retained_timestamp,
+        clock.last_tracker_timestamp,
+    );
+    try std.testing.expectEqual(
+        retained_sample,
+        clock.last_sample_position,
+    );
+
+    _ = try queue.receive();
+    try std.testing.expect(try queue.submitTracked(
+        &clock,
+        21_834,
+        source,
+        head,
+    ));
+    const second = (try queue.receive()).?;
+    try std.testing.expectEqual(@as(u64, 11), second.sample_position);
+
+    var invalid_head = head;
+    invalid_head.position = source;
+    try std.testing.expectError(
+        error.InvalidHrtfSourcePosition,
+        queue.submitTracked(
+            &clock,
+            42_667,
+            source,
+            invalid_head,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 21_834),
+        clock.last_tracker_timestamp,
+    );
 }
 
 test "HRTF motion point queue contains cursor overflow" {

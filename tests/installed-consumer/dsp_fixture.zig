@@ -5905,10 +5905,13 @@ test "installed package renders bounded HRTF responses" {
         5_000_000_000,
         0,
     );
-    var tracked_point = points[0];
-    tracked_point.sample_position =
-        try motion_clock.map(5_000_000_000);
-    try std.testing.expect(try motion_queue.submit(tracked_point));
+    try std.testing.expect(try motion_queue.submitTracked(
+        &motion_clock,
+        5_000_000_000,
+        points[0].source_position,
+        points[0].head_pose,
+    ));
+    const tracked_point = points[0];
     try std.testing.expectEqual(
         tracked_point,
         (try motion_queue.receive()).?,
