@@ -248,7 +248,8 @@ void PianoControl::setFocusedView(VSTGUI::CView* view) {
 const AccessibilityNode& PianoControl::accessibilityNode() const { return keyboard_component.accessibility(); }
 
 int PianoControl::hitTest(const VSTGUI::CPoint& position) const {
-    if (!keyboard) return -1;
+    if (!keyboard || !std::isfinite(position.x) ||
+        !std::isfinite(position.y)) return -1;
     const auto bounds = keyboard->getViewSize();
     if (!bounds.pointInside(position)) return -1;
     const uint32_t first = description.first_note;

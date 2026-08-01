@@ -279,7 +279,8 @@ bool StepSequencerControl::enabled() const { return description.enabled != 0; }
 bool StepSequencerControl::editFailed() const { return edit_failed; }
 
 int StepSequencerControl::hitTest(const VSTGUI::CPoint& position) const {
-    if (!sequencer) return -1;
+    if (!sequencer || !std::isfinite(position.x) ||
+        !std::isfinite(position.y)) return -1;
     const auto bounds = sequencer->getViewSize();
     if (!bounds.pointInside(position)) return -1;
     const double gap = 4.0;

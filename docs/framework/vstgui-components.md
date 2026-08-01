@@ -20,6 +20,8 @@ Focused declarations live in:
 
 Descriptions and their referenced slices must remain alive until `createEditor` returns. Editor creation copies bounded declaration data into instance-owned storage. The returned view owns its native widget tree and retained telemetry sources until the host releases the view. File parsing, decoding, and other unbounded work belong on a controller-owned worker. Processor callbacks may publish bounded lock-free telemetry and adopt complete decoded generations, but must not allocate, lock, read files, log, call the host, or perform GUI work.
 
+Custom pointer-driven components reject non-finite native positions, wheel deltas, and zoom changes before hit testing or mutation. A malformed event remains unconsumed and preserves the active editor transaction, selection, viewport, menu, and preset state.
+
 ## Build a Parameter Editor
 
 Add a `createView` function to a reflected edit controller. This example uses the compact alternate presentation from Voice Mix:

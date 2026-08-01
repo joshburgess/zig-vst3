@@ -7,6 +7,7 @@
 #include "vstgui/lib/events.h"
 
 #include <algorithm>
+#include <cmath>
 #include <new>
 
 namespace ZigVstgui {
@@ -358,7 +359,9 @@ void ActionMenuView::draw(VSTGUI::CDrawContext* context) {
 }
 
 void ActionMenuView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
-    if (!open_state || !event.buttonState.isLeft()) return;
+    if (!open_state || !event.buttonState.isLeft() ||
+        !std::isfinite(event.mousePosition.x) ||
+        !std::isfinite(event.mousePosition.y)) return;
     if (!panel_bounds.pointInside(event.mousePosition)) {
         close(true);
         event.consumed = true;
@@ -381,7 +384,8 @@ void ActionMenuView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
 }
 
 void ActionMenuView::onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) {
-    if (!open_state) return;
+    if (!open_state || !std::isfinite(event.mousePosition.x) ||
+        !std::isfinite(event.mousePosition.y)) return;
     const auto row = rowAt(event.mousePosition.y);
     if (!row || !panel_bounds.pointInside(event.mousePosition) || !selectable(*row)) return;
     if (!selected || *selected != *row) {
@@ -395,7 +399,9 @@ void ActionMenuView::onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) {
 }
 
 void ActionMenuView::onMouseUpEvent(VSTGUI::MouseUpEvent& event) {
-    if (!open_state || !pressed_row) return;
+    if (!open_state || !pressed_row ||
+        !std::isfinite(event.mousePosition.x) ||
+        !std::isfinite(event.mousePosition.y)) return;
     const auto row = rowAt(event.mousePosition.y);
     const bool activate = row && panel_bounds.pointInside(event.mousePosition) &&
         *row == *pressed_row && selectable(*row);

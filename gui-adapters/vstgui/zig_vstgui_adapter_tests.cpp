@@ -2012,6 +2012,15 @@ int testGraphs() {
     const double offset_before_wheel = control.graphView()->viewportXOffset();
     control.graphView()->onMouseWheelEvent(pan_wheel);
     if (!pan_wheel.consumed || closeEnough(control.graphView()->viewportXOffset(), offset_before_wheel)) return 45;
+    const double offset_after_wheel = control.graphView()->viewportXOffset();
+    const double zoom_after_wheel = control.graphView()->viewportZoom();
+    VSTGUI::MouseWheelEvent invalid_wheel;
+    invalid_wheel.mousePosition = {std::nan(""), 70.0};
+    invalid_wheel.deltaY = std::numeric_limits<double>::infinity();
+    control.graphView()->onMouseWheelEvent(invalid_wheel);
+    if (invalid_wheel.consumed ||
+        !closeEnough(control.graphView()->viewportXOffset(), offset_after_wheel) ||
+        !closeEnough(control.graphView()->viewportZoom(), zoom_after_wheel)) return 71;
     VSTGUI::ZoomGestureEvent pinch;
     pinch.phase = VSTGUI::ZoomGestureEvent::Phase::Changed;
     pinch.mousePosition = {120.0, 70.0};
@@ -2019,6 +2028,14 @@ int testGraphs() {
     const double zoom_before_pinch = control.graphView()->viewportZoom();
     control.graphView()->onZoomGestureEvent(pinch);
     if (!pinch.consumed || control.graphView()->viewportZoom() <= zoom_before_pinch) return 46;
+    const double zoom_after_pinch = control.graphView()->viewportZoom();
+    VSTGUI::ZoomGestureEvent invalid_pinch;
+    invalid_pinch.phase = VSTGUI::ZoomGestureEvent::Phase::Changed;
+    invalid_pinch.mousePosition = {120.0, 70.0};
+    invalid_pinch.zoom = std::nan("");
+    control.graphView()->onZoomGestureEvent(invalid_pinch);
+    if (invalid_pinch.consumed ||
+        !closeEnough(control.graphView()->viewportZoom(), zoom_after_pinch)) return 72;
     if (control.running()) return 7;
     control.start();
     if (!control.running()) return 8;
@@ -2150,11 +2167,25 @@ int testGraphs() {
         &range_accessibility,
         viewport_callbacks
     );
+    VSTGUI::MouseDownEvent invalid_range_down(
+        VSTGUI::CPoint(std::nan(""), 50),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    range_graph.onMouseDownEvent(invalid_range_down);
+    if (invalid_range_down.consumed ||
+        !closeEnough(range_graph.rangeSelectionStart(), -0.5) ||
+        !closeEnough(range_graph.rangeSelectionEnd(), 0.5)) return 73;
     VSTGUI::MouseDownEvent range_down(
         VSTGUI::CPoint(100, 50),
         VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
     );
     range_graph.onMouseDownEvent(range_down);
+    VSTGUI::MouseMoveEvent invalid_range_move(
+        VSTGUI::CPoint(160, std::numeric_limits<double>::infinity()),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    range_graph.onMouseMoveEvent(invalid_range_move);
+    if (invalid_range_move.consumed) return 74;
     VSTGUI::MouseMoveEvent range_move(
         VSTGUI::CPoint(160, 50),
         VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
@@ -2520,6 +2551,17 @@ int testPresetBrowser() {
         VSTGUI::exit();
         return 2;
     }
+    VSTGUI::MouseDownEvent invalid_click(
+        VSTGUI::CPoint(40, std::nan("")),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    browser.browserView()->onMouseDownEvent(invalid_click);
+    if (invalid_click.consumed || browser.browserView()->selectedPreset() != 1 ||
+        state.preset_load_count != 0) {
+        browser.clear();
+        VSTGUI::exit();
+        return 8;
+    }
     VSTGUI::MouseDownEvent double_click(
         VSTGUI::CPoint(40, 66),
         VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
@@ -2669,6 +2711,18 @@ int testActionMenus() {
         return 6;
     }
     accessibility.perform(ZigVstgui::AccessibilityAction::press);
+    const uint32_t selected_before_invalid_pointer = control.menuView()->selectedItem();
+    VSTGUI::MouseDownEvent invalid_pointer(
+        VSTGUI::CPoint(std::nan(""), 75),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    control.menuView()->onMouseDownEvent(invalid_pointer);
+    if (invalid_pointer.consumed || !control.menuView()->isOpen() ||
+        control.menuView()->selectedItem() != selected_before_invalid_pointer) {
+        control.clear();
+        VSTGUI::exit();
+        return 21;
+    }
     if (!control.handleKey(0, Steinberg::KEY_END, 0) || control.menuView()->selectedItem() != 4 ||
         !control.handleKey(0, Steinberg::KEY_HOME, 0) || control.menuView()->selectedItem() != 1 ||
         !control.handleKey(0, Steinberg::KEY_TAB, 0)) {
@@ -3091,7 +3145,12 @@ int testPianoKeyboard() {
             return 5;
         }
         const int black = piano.hitTest(VSTGUI::CPoint(39.0, 40.0));
-        if (black < 48 || black >= 72) {
+        if (black < 48 || black >= 72 ||
+            piano.hitTest(VSTGUI::CPoint(std::nan(""), 40.0)) != -1 ||
+            piano.hitTest(VSTGUI::CPoint(
+                40.0,
+                std::numeric_limits<double>::infinity()
+            )) != -1) {
             VSTGUI::exit();
             return 6;
         }
@@ -3147,7 +3206,12 @@ int testStepSequencer() {
         second.build(container, styles);
         control.setBounds(VSTGUI::CRect(8, 8, 472, 28), VSTGUI::CRect(8, 28, 472, 92));
         if (!control.stepActive(0) || !control.stepActive(2) || control.stepActive(1) ||
-            control.playhead() != 3) {
+            control.playhead() != 3 ||
+            control.hitTest(VSTGUI::CPoint(std::nan(""), 50.0)) != -1 ||
+            control.hitTest(VSTGUI::CPoint(
+                50.0,
+                std::numeric_limits<double>::infinity()
+            )) != -1) {
             VSTGUI::exit();
             return 1;
         }

@@ -1364,6 +1364,8 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
 }
 
 void GraphView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
+    if (!std::isfinite(event.mousePosition.x) ||
+        !std::isfinite(event.mousePosition.y)) return;
     if (hasRangeSelection()) {
         if (!event.buttonState.isLeft() || range_dragging) return;
         if (getFrame()) getFrame()->setFocusView(this);
@@ -1435,6 +1437,8 @@ void GraphView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
 }
 
 void GraphView::onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) {
+    if (!std::isfinite(event.mousePosition.x) ||
+        !std::isfinite(event.mousePosition.y)) return;
     if (range_dragging) {
         const auto position = graphPoint(event.mousePosition);
         auto& selection = activeRangeSelection();
@@ -1490,7 +1494,9 @@ void GraphView::onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) {
 }
 
 void GraphView::onMouseWheelEvent(VSTGUI::MouseWheelEvent& event) {
-    if (!viewport.enabled()) return;
+    if (!viewport.enabled() || !std::isfinite(event.mousePosition.x) ||
+        !std::isfinite(event.mousePosition.y) ||
+        !std::isfinite(event.deltaX) || !std::isfinite(event.deltaY)) return;
     const auto bounds = getViewSize();
     const double anchor_x = (event.mousePosition.x - bounds.left) / std::max(1.0, bounds.getWidth());
     const double anchor_y = (bounds.bottom - event.mousePosition.y) / std::max(1.0, bounds.getHeight());
@@ -1512,7 +1518,10 @@ void GraphView::onMouseWheelEvent(VSTGUI::MouseWheelEvent& event) {
 }
 
 void GraphView::onZoomGestureEvent(VSTGUI::ZoomGestureEvent& event) {
-    if (!viewport.enabled() || event.phase == VSTGUI::ZoomGestureEvent::Phase::End) return;
+    if (!viewport.enabled() || event.phase == VSTGUI::ZoomGestureEvent::Phase::End ||
+        !std::isfinite(event.mousePosition.x) ||
+        !std::isfinite(event.mousePosition.y) ||
+        !std::isfinite(event.zoom)) return;
     const auto bounds = getViewSize();
     const double anchor_x = (event.mousePosition.x - bounds.left) / std::max(1.0, bounds.getWidth());
     const double anchor_y = (bounds.bottom - event.mousePosition.y) / std::max(1.0, bounds.getHeight());

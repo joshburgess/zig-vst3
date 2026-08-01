@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <utility>
 
@@ -288,7 +289,9 @@ void PresetBrowserView::draw(VSTGUI::CDrawContext* context) {
 }
 
 void PresetBrowserView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
-    if (!event.buttonState.isLeft()) return;
+    if (!event.buttonState.isLeft() ||
+        !std::isfinite(event.mousePosition.x) ||
+        !std::isfinite(event.mousePosition.y)) return;
     const auto visible = matches();
     const auto bounds = getViewSize();
     if (event.mousePosition.y < bounds.top + 30) return;
