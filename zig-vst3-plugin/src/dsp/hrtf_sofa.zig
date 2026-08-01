@@ -178,6 +178,17 @@ fn responseValueCount(
     ) catch return error.InvalidSofaResponseShape;
 }
 
+fn validateResponseShape(
+    shape: [4]usize,
+    maximum_measurements: usize,
+    maximum_frames: usize,
+) !void {
+    if (shape[0] > maximum_measurements)
+        return error.InvalidSofaMeasurementCount;
+    if (shape[2] > maximum_frames)
+        return error.InvalidSofaResponseShape;
+}
+
 fn terminatedPath(
     allocator: std.mem.Allocator,
     path: []const u8,
@@ -292,6 +303,17 @@ pub fn Loader(
             defer allocator.free(ir.values);
             if (ir.shape[1] != 2)
                 return error.UnsupportedSofaReceiverCount;
+            try validateResponseShape(
+                ir.shape,
+                maximum_measurements,
+                maximum_frames,
+            );
+
+            const position_value_count = std.math.mul(
+                usize,
+                ir.shape[0],
+                3,
+            ) catch return error.SofaDatasetTooLarge;
 
             const positions = try readVariable(
                 &self.api,
@@ -299,11 +321,7 @@ pub fn Loader(
                 file_id,
                 "SourcePosition",
                 2,
-                std.math.mul(
-                    usize,
-                    maximum_measurements,
-                    3,
-                ) catch return error.SofaDatasetTooLarge,
+                position_value_count,
             );
             defer allocator.free(positions.values);
             if (positions.shape[0] != ir.shape[0] or
@@ -333,7 +351,7 @@ pub fn Loader(
                 file_id,
                 "Data.SamplingRate",
                 null,
-                maximum_measurements,
+                ir.shape[0],
             );
             defer allocator.free(rates.values);
             if (!validSamplingRateVariable(rates, ir.shape[0]))
@@ -361,7 +379,7 @@ pub fn Loader(
                     null,
                     std.math.mul(
                         usize,
-                        maximum_measurements,
+                        ir.shape[0],
                         2,
                     ) catch return error.SofaDatasetTooLarge,
                 );
@@ -1097,6 +1115,18 @@ test "standard HRTF file variable sizes are bounded before allocation" {
     try std.testing.expectError(
         error.InvalidSofaVariableShape,
         boundedShapeValueCount(&.{ 3, 0, 4 }, 24),
+    );
+}
+
+test "standard HRTF response dimensions honor independent capacities" {
+    try validateResponseShape(.{ 3, 2, 4, 1 }, 3, 4);
+    try std.testing.expectError(
+        error.InvalidSofaMeasurementCount,
+        validateResponseShape(.{ 4, 2, 4, 1 }, 3, 4),
+    );
+    try std.testing.expectError(
+        error.InvalidSofaResponseShape,
+        validateResponseShape(.{ 3, 2, 5, 1 }, 3, 4),
     );
 }
 
