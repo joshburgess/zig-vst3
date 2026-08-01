@@ -276,12 +276,18 @@ pub fn Loader(
                 &.{ "1.0", "1.1", "1.2" },
             );
 
+            const maximum_ir_values = responseValueCount(
+                maximum_measurements,
+                maximum_frames,
+            ) catch return error.SofaDatasetTooLarge;
+
             const ir = try readVariable(
                 &self.api,
                 allocator,
                 file_id,
                 "Data.IR",
                 3,
+                maximum_ir_values,
             );
             defer allocator.free(ir.values);
             if (ir.shape[1] != 2)
@@ -293,6 +299,11 @@ pub fn Loader(
                 file_id,
                 "SourcePosition",
                 2,
+                std.math.mul(
+                    usize,
+                    maximum_measurements,
+                    3,
+                ) catch return error.SofaDatasetTooLarge,
             );
             defer allocator.free(positions.values);
             if (positions.shape[0] != ir.shape[0] or
@@ -316,6 +327,7 @@ pub fn Loader(
                 file_id,
                 "Data.SamplingRate",
                 null,
+                maximum_measurements,
             );
             defer allocator.free(rates.values);
             if (!validSamplingRateVariable(rates, ir.shape[0]))
@@ -341,6 +353,11 @@ pub fn Loader(
                     file_id,
                     delay_variable_id,
                     null,
+                    std.math.mul(
+                        usize,
+                        maximum_measurements,
+                        2,
+                    ) catch return error.SofaDatasetTooLarge,
                 );
                 delays = loaded.values;
                 if (!validDelayVariable(loaded, ir.shape[0])) {
@@ -542,6 +559,7 @@ fn readVariable(
     file_id: c_int,
     name: [:0]const u8,
     expected_rank: ?usize,
+    maximum_value_count: usize,
 ) !Variable {
     var variable_id: c_int = 0;
     try check(api.inquire_variable_id(
@@ -555,6 +573,7 @@ fn readVariable(
         file_id,
         variable_id,
         expected_rank,
+        maximum_value_count,
     );
 }
 
@@ -564,6 +583,7 @@ fn readVariableById(
     file_id: c_int,
     variable_id: c_int,
     expected_rank: ?usize,
+    maximum_value_count: usize,
 ) !Variable {
     var rank_c: c_int = 0;
     try check(api.inquire_variable_dimension_count(
@@ -588,19 +608,17 @@ fn readVariableById(
         ));
     }
     var shape: [4]usize = @splat(1);
-    var value_count: usize = 1;
     for (0..rank) |dimension_index| {
         try check(api.inquire_dimension_length(
             file_id,
             dimension_ids[dimension_index],
             &shape[dimension_index],
         ));
-        value_count = std.math.mul(
-            usize,
-            value_count,
-            shape[dimension_index],
-        ) catch return error.SofaDatasetTooLarge;
     }
+    const value_count = try boundedShapeValueCount(
+        shape[0..rank],
+        maximum_value_count,
+    );
     const values = try allocator.alloc(f64, value_count);
     errdefer allocator.free(values);
     try check(api.get_variable_double(
@@ -614,6 +632,24 @@ fn readVariableById(
         .shape = shape,
         .values = values,
     };
+}
+
+fn boundedShapeValueCount(
+    shape: []const usize,
+    maximum_value_count: usize,
+) !usize {
+    var value_count: usize = 1;
+    for (shape) |dimension| {
+        if (dimension == 0) return error.InvalidSofaVariableShape;
+        value_count = std.math.mul(
+            usize,
+            value_count,
+            dimension,
+        ) catch return error.SofaDatasetTooLarge;
+        if (value_count > maximum_value_count)
+            return error.SofaDatasetTooLarge;
+    }
+    return value_count;
 }
 
 fn requireAttribute(
@@ -706,12 +742,18 @@ fn requireDefaultListenerGeometry(
     file_id: c_int,
     measurement_count: usize,
 ) !void {
+    const maximum_listener_values = std.math.mul(
+        usize,
+        measurement_count,
+        3,
+    ) catch return error.SofaDatasetTooLarge;
     const listener_position = try readVariable(
         api,
         allocator,
         file_id,
         "ListenerPosition",
         2,
+        maximum_listener_values,
     );
     defer allocator.free(listener_position.values);
     const listener_position_encoding = positionEncoding(
@@ -725,6 +767,7 @@ fn requireDefaultListenerGeometry(
         file_id,
         "ListenerView",
         2,
+        maximum_listener_values,
     );
     defer allocator.free(listener_view.values);
     const listener_view_encoding = positionEncoding(
@@ -738,6 +781,7 @@ fn requireDefaultListenerGeometry(
         file_id,
         "ListenerUp",
         2,
+        maximum_listener_values,
     );
     defer allocator.free(listener_up.values);
     const listener_up_encoding = positionEncoding(
@@ -771,6 +815,11 @@ fn requireDefaultListenerGeometry(
         file_id,
         "ReceiverPosition",
         3,
+        std.math.mul(
+            usize,
+            measurement_count,
+            6,
+        ) catch return error.SofaDatasetTooLarge,
     );
     defer allocator.free(receivers.values);
     const receiver_encoding = positionEncoding(
@@ -974,6 +1023,25 @@ test "standard HRTF file variables require convention ranks" {
     variable.rank = 2;
     variable.shape = .{ 2, 3, 1, 1 };
     try std.testing.expect(!validDelayVariable(variable, 3));
+}
+
+test "standard HRTF file variable sizes are bounded before allocation" {
+    try std.testing.expectEqual(
+        @as(usize, 24),
+        try boundedShapeValueCount(&.{ 3, 2, 4 }, 24),
+    );
+    try std.testing.expectError(
+        error.SofaDatasetTooLarge,
+        boundedShapeValueCount(&.{ 3, 2, 4 }, 23),
+    );
+    try std.testing.expectError(
+        error.SofaDatasetTooLarge,
+        boundedShapeValueCount(&.{ std.math.maxInt(usize), 2 }, 24),
+    );
+    try std.testing.expectError(
+        error.InvalidSofaVariableShape,
+        boundedShapeValueCount(&.{ 3, 0, 4 }, 24),
+    );
 }
 
 test "standard HRTF position attributes select supported encodings" {
