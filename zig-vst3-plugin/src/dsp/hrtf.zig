@@ -197,15 +197,12 @@ pub fn MotionClockCalibrator(
             maximum_deviation_ppm: u32,
         ) !MotionClock {
             try self.validate();
-            if (sample_rate < 8_000 or sample_rate > 384_000)
-                return error.InvalidHrtfSampleRate;
+            try validateCalibrationPolicy(
+                sample_rate,
+                maximum_deviation_ppm,
+            );
             if (self.observation_count < 3)
                 return error.InsufficientHrtfTrackerClockObservations;
-            if (maximum_deviation_ppm == 0 or
-                maximum_deviation_ppm > 1_000_000)
-            {
-                return error.InvalidHrtfTrackerClockTolerance;
-            }
 
             var rates: [maximum_pair_count]u64 = undefined;
             var rate_count: usize = 0;
@@ -283,6 +280,30 @@ pub fn MotionClockCalibrator(
             );
         }
 
+        pub fn observeAndCalibrate(
+            self: *Self,
+            observation: MotionClockObservation,
+            sample_rate: u32,
+            maximum_deviation_ppm: u32,
+        ) !?MotionClock {
+            try validateCalibrationPolicy(
+                sample_rate,
+                maximum_deviation_ppm,
+            );
+            var staged = self.*;
+            try staged.observe(observation);
+            if (staged.observation_count < 3) {
+                self.* = staged;
+                return null;
+            }
+            const clock = try staged.calibrate(
+                sample_rate,
+                maximum_deviation_ppm,
+            );
+            self.* = staged;
+            return clock;
+        }
+
         pub fn reset(self: *Self) void {
             self.observation_count = 0;
         }
@@ -303,6 +324,19 @@ pub fn MotionClockCalibrator(
             }
         }
     };
+}
+
+fn validateCalibrationPolicy(
+    sample_rate: u32,
+    maximum_deviation_ppm: u32,
+) !void {
+    if (sample_rate < 8_000 or sample_rate > 384_000)
+        return error.InvalidHrtfSampleRate;
+    if (maximum_deviation_ppm == 0 or
+        maximum_deviation_ppm > 1_000_000)
+    {
+        return error.InvalidHrtfTrackerClockTolerance;
+    }
 }
 
 fn observedTrackerRate(
@@ -1500,6 +1534,57 @@ test "HRTF motion clock calibrator rejects a newest outlier" {
     try std.testing.expectError(
         error.UnstableHrtfTrackerClockObservations,
         calibrator.calibrate(48_000, 1_000),
+    );
+}
+
+test "HRTF motion clock calibrator admits observations transactionally" {
+    const Calibrator = MotionClockCalibrator(4);
+    var calibrator = Calibrator{};
+    try std.testing.expectEqual(
+        @as(?MotionClock, null),
+        try calibrator.observeAndCalibrate(
+            .{ .tracker_timestamp = 0, .sample_position = 0 },
+            48_000,
+            1_000,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(?MotionClock, null),
+        try calibrator.observeAndCalibrate(
+            .{ .tracker_timestamp = 100_000_000, .sample_position = 4_800 },
+            48_000,
+            1_000,
+        ),
+    );
+    const clock = (try calibrator.observeAndCalibrate(
+        .{ .tracker_timestamp = 200_000_000, .sample_position = 9_600 },
+        48_000,
+        1_000,
+    )).?;
+    try std.testing.expectEqual(
+        @as(u64, 1_000_000_000),
+        clock.tracker_ticks_per_second,
+    );
+
+    const retained = calibrator;
+    try std.testing.expectError(
+        error.UnstableHrtfTrackerClockObservations,
+        calibrator.observeAndCalibrate(
+            .{ .tracker_timestamp = 300_000_000, .sample_position = 14_448 },
+            48_000,
+            1_000,
+        ),
+    );
+    try std.testing.expectEqualDeep(retained, calibrator);
+
+    const next = (try calibrator.observeAndCalibrate(
+        .{ .tracker_timestamp = 300_000_000, .sample_position = 14_400 },
+        48_000,
+        1_000,
+    )).?;
+    try std.testing.expectEqual(
+        @as(u64, 300_000_000),
+        next.tracker_anchor,
     );
 }
 

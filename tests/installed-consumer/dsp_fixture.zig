@@ -5910,12 +5910,20 @@ test "installed package renders bounded HRTF responses" {
     var motion_queue = MotionQueue{};
     const ClockCalibrator = plugin.dsp.HrtfMotionClockCalibrator(3);
     var clock_calibrator = ClockCalibrator{};
+    var calibrated_clock: ?plugin.dsp.HrtfMotionClock = null;
     for ([_]plugin.dsp.HrtfMotionClockObservation{
         .{ .tracker_timestamp = 4_000_000_000, .sample_position = 0 },
         .{ .tracker_timestamp = 4_500_000_000, .sample_position = 24_000 },
         .{ .tracker_timestamp = 5_000_000_000, .sample_position = 48_000 },
-    }) |observation| try clock_calibrator.observe(observation);
-    var motion_clock = try clock_calibrator.calibrate(48_000, 100);
+    }) |observation| {
+        calibrated_clock = try clock_calibrator.observeAndCalibrate(
+            observation,
+            48_000,
+            100,
+        );
+    }
+    var motion_clock = calibrated_clock orelse
+        return error.MissingHrtfMotionClockCalibration;
     try std.testing.expect(try motion_queue.submitTracked(
         &motion_clock,
         5_000_000_000,
