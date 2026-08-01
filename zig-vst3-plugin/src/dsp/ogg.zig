@@ -15579,6 +15579,72 @@ test "Vorbis PCM concealment advances overlap and granules explicitly" {
         ),
     );
     try std.testing.expectEqualDeep(hostile_before, hostile);
+
+    var fading = VorbisPcmStreamDecoder(f32, 1, 64, 64).init();
+    const retained = [_]f32{1} ** 64;
+    _ = try fading.overlap.push(
+        &[_][]const f32{&retained},
+        &empty_outputs,
+    );
+    fading.audio_packet_count = 1;
+    var faded_output: [32]f32 = undefined;
+    const faded_outputs = [_][]f32{&faded_output};
+    _ = try fading.concealMissingPacket(
+        false,
+        32,
+        false,
+        identification,
+        &faded_outputs,
+        &windowed,
+    );
+    var faded_energy: f64 = 0;
+    for (faded_output) |sample| {
+        try std.testing.expect(std.math.isFinite(sample));
+        faded_energy += @as(f64, sample) * sample;
+    }
+    try std.testing.expect(faded_energy > 0);
+
+    const mixed_identification = VorbisIdentification{
+        .channel_count = 1,
+        .sample_rate = 48_000,
+        .bitrate_maximum = 0,
+        .bitrate_nominal = 64_000,
+        .bitrate_minimum = 0,
+        .small_block_size = 64,
+        .large_block_size = 256,
+    };
+    var mixed = VorbisPcmStreamDecoder(f32, 1, 64, 256).init();
+    var mixed_windowed: [256]f32 = undefined;
+    _ = try mixed.concealMissingPacket(
+        false,
+        unknown_granule,
+        false,
+        mixed_identification,
+        &empty_outputs,
+        &mixed_windowed,
+    );
+    var mixed_output: [80]f32 = undefined;
+    const mixed_outputs = [_][]f32{&mixed_output};
+    const mixed_large = try mixed.concealMissingPacket(
+        true,
+        80,
+        false,
+        mixed_identification,
+        &mixed_outputs,
+        &mixed_windowed,
+    );
+    try std.testing.expectEqual(@as(u16, 256), mixed_large.block_size);
+    try std.testing.expectEqual(@as(usize, 80), mixed_large.sample_count);
+    const mixed_small = try mixed.concealMissingPacket(
+        false,
+        160,
+        true,
+        mixed_identification,
+        &mixed_outputs,
+        &mixed_windowed,
+    );
+    try std.testing.expectEqual(@as(u16, 64), mixed_small.block_size);
+    try std.testing.expectEqual(@as(usize, 80), mixed_small.sample_count);
 }
 
 test "Vorbis seeking handles packed packets and chained streams" {
