@@ -3861,6 +3861,24 @@ int testEditableLabelsAndProgress() {
     if (zig_vstgui_editor_create_with_skin(
         &invalid_parameter, 1, callbacks, nullptr, 0, {}, {}
     )) return 18;
+    std::array<char, ZIG_VSTGUI_MAX_DECLARATION_TEXT_BYTES + 1> bounded_title {};
+    bounded_title.fill('a');
+    bounded_title.back() = 0;
+    auto bounded_parameter = parameter;
+    bounded_parameter.info.title = bounded_title.data();
+    editor = zig_vstgui_editor_create_with_skin(
+        &bounded_parameter, 1, callbacks, nullptr, 0, {}, {}
+    );
+    if (!editor) return 21;
+    zig_vstgui_editor_destroy(editor);
+    std::array<char, ZIG_VSTGUI_MAX_DECLARATION_TEXT_BYTES + 2> oversized_title {};
+    oversized_title.fill('a');
+    oversized_title.back() = 0;
+    invalid_parameter = parameter;
+    invalid_parameter.info.title = oversized_title.data();
+    if (zig_vstgui_editor_create_with_skin(
+        &invalid_parameter, 1, callbacks, nullptr, 0, {}, {}
+    )) return 22;
     ZigVstguiSkinDescription invalid_skin {};
     invalid_skin.editor_title = malformed_initial_text;
     if (zig_vstgui_editor_create_with_skin(

@@ -125,6 +125,7 @@ pub const ParameterValue = extern struct {
 };
 
 pub const max_parameters = 64;
+pub const max_declaration_text_bytes = 1024;
 pub const max_xy_pads = 8;
 pub const max_preset_browsers = 2;
 pub const max_presets = 64;

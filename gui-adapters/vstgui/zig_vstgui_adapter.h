@@ -112,6 +112,7 @@ typedef struct ZigVstguiParameterValue {
 } ZigVstguiParameterValue;
 
 enum { ZIG_VSTGUI_MAX_PARAMETERS = 64 };
+enum { ZIG_VSTGUI_MAX_DECLARATION_TEXT_BYTES = 1024 };
 
 typedef struct ZigVstguiXYPadDescription {
     const char* title;
