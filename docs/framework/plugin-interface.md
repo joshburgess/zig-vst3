@@ -198,7 +198,7 @@ Parametric EQ and Resonant Filter are the graph-only references. Their high-leve
 
 ## LV2 Core Adapter
 
-`plug.lv2.CoreAdapter(Plugin, plugin_uri, maximum_block_size)` exports a static f32 plugin declaration through the LV2 core ABI. `CoreAdapterWithParameters` accepts a configured compile-time parameter set. Null descriptor, bundle-path, and extension-data URI pointers are rejected at the exported boundary.
+`plug.lv2.CoreAdapter(Plugin, plugin_uri, maximum_block_size)` exports a fixed f32 port graph through the LV2 core ABI. Static declarations map directly. A dynamic audio-bus declaration maps its current bus set and selected layouts to the same fixed graph when each declared main bus is active. Its auxiliary ports carry `lv2:connectionOptional`. A complete null connection deactivates that bus for the next block, a complete connection activates it, and a partial multichannel connection rejects the block. The adapter exposes `dynamic_audio_topology_projected` so compile-time consumers can distinguish that projection. LV2 does not receive the declaration's alternate layouts or live insertion and removal behavior. `CoreAdapterWithParameters` accepts a configured compile-time parameter set. Null descriptor, bundle-path, and extension-data URI pointers are rejected at the exported boundary.
 
 Ports use deterministic declaration order:
 

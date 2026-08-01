@@ -1076,6 +1076,152 @@ test "installed core package runs an LV2 audio control descriptor" {
     );
 }
 
+test "installed core package projects a dynamic topology to LV2 ports" {
+    const Probe = struct {
+        const Topology =
+            core.plugin.BoundedDynamicAudioBusTopology(1);
+
+        pub const name = "Installed LV2 Topology Projection";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const event_input = false;
+        pub const maximum_auxiliary_audio_buses = 1;
+        pub const audio_bus_topology = makeTopology();
+
+        fn makeTopology() Topology {
+            var topology = Topology.init(
+                core.plugin.DynamicAudioBus.fixed(
+                    .mono,
+                    true,
+                ) catch unreachable,
+                core.plugin.DynamicAudioBus.fixed(
+                    .mono,
+                    true,
+                ) catch unreachable,
+            ) catch unreachable;
+            _ = topology.addAuxiliary(
+                .input,
+                core.plugin.DynamicAudioBus.fixed(
+                    .mono,
+                    true,
+                ) catch unreachable,
+            ) catch unreachable;
+            _ = topology.addAuxiliary(
+                .output,
+                core.plugin.DynamicAudioBus.fixed(
+                    .mono,
+                    true,
+                ) catch unreachable,
+            ) catch unreachable;
+            return topology;
+        }
+
+        pub fn process(
+            _: *@This(),
+            context: *core.process.BoundedProcessContext(
+                f32,
+                maximum_auxiliary_audio_buses,
+            ),
+        ) void {
+            const main_input = context.inputChannel(0) orelse return;
+            const main_output = context.outputChannel(0) orelse return;
+            @memcpy(main_output, main_input);
+            const auxiliary_input =
+                context.sidechainInputChannel(0) orelse return;
+            const auxiliary_output =
+                context.auxiliaryOutputChannel(0) orelse return;
+            @memcpy(auxiliary_output, auxiliary_input);
+        }
+    };
+    const Adapter = core.lv2.CoreAdapter(
+        Probe,
+        "https://example.test/installed-lv2-topology-projection",
+        2,
+    );
+    try std.testing.expect(Adapter.dynamic_audio_topology_projected);
+    try std.testing.expectEqual(@as(usize, 5), Adapter.port_count);
+
+    const descriptor = &Adapter.descriptor;
+    const handle = descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/installed-lv2-topology-projection.lv2",
+        null,
+    ) orelse return error.Lv2InstantiateFailed;
+    defer descriptor.cleanup(handle);
+
+    const main_input = [_]f32{ 0.25, -0.5 };
+    const auxiliary_input = [_]f32{ 0.75, -1.0 };
+    var main_output = [_]f32{0.0} ** 2;
+    var auxiliary_output = [_]f32{0.0} ** 2;
+    var latency: f32 = -1.0;
+    const ports = [_]*anyopaque{
+        @constCast(&main_input),
+        @constCast(&auxiliary_input),
+        &main_output,
+        &auxiliary_output,
+        &latency,
+    };
+    for (ports, 0..) |port, index|
+        descriptor.connect_port(handle, @intCast(index), port);
+    if (descriptor.activate) |activate| activate(handle);
+    descriptor.run(handle, 2);
+    const instance = Adapter.instanceFromHandle(handle) orelse
+        return error.MissingLv2Instance;
+    try std.testing.expectEqual(
+        core.lv2.RunStatus.succeeded,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqualSlices(f32, &main_input, &main_output);
+    try std.testing.expectEqualSlices(
+        f32,
+        &auxiliary_input,
+        &auxiliary_output,
+    );
+
+    descriptor.connect_port(handle, 1, null);
+    descriptor.connect_port(handle, 3, null);
+    main_output = @splat(0.0);
+    descriptor.run(handle, 2);
+    try std.testing.expectEqual(
+        core.lv2.RunStatus.succeeded,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqualSlices(f32, &main_input, &main_output);
+
+    const Generated = core.lv2.metadata.Generator(
+        Probe,
+        Adapter,
+        "https://example.test/installed-lv2-topology-projection",
+        .{},
+    );
+    var metadata_bytes: [8192]u8 = undefined;
+    var metadata_writer = std.Io.Writer.fixed(&metadata_bytes);
+    try Generated.writePlugin(&metadata_writer, .{});
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        std.mem.count(
+            u8,
+            metadata_writer.buffered(),
+            "lv2:portProperty lv2:connectionOptional",
+        ),
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            metadata_writer.buffered(),
+            "aux_1_input_group",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            metadata_writer.buffered(),
+            "aux_1_output_group",
+        ) != null,
+    );
+}
+
 test "installed core package compiles typed LV2 Patch declarations" {
     const Probe = struct {
         mode: i32 = 3,

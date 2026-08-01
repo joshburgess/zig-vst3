@@ -86,6 +86,9 @@ pub fn Generator(
         @hasDecl(Adapter, "patch_readable") and Adapter.patch_readable;
     const has_writable_patch =
         @hasDecl(Adapter, "patch_writable") and Adapter.patch_writable;
+    const projects_dynamic_audio_topology =
+        @hasDecl(Adapter, "dynamic_audio_topology_projected") and
+        Adapter.dynamic_audio_topology_projected;
     const Spec = plugin_api.PluginSpec(Plugin);
 
     return struct {
@@ -563,6 +566,11 @@ pub fn Generator(
             writer: *std.Io.Writer,
             location: AudioPortLocation,
         ) !void {
+            if (projects_dynamic_audio_topology and
+                location.bus_index != 0)
+                try writer.writeAll(
+                    " ;\n        lv2:portProperty lv2:connectionOptional",
+                );
             try writer.writeAll(" ;\n        pg:group <");
             try writeGroupUri(
                 writer,

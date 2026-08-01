@@ -996,8 +996,22 @@ pub fn CoreAdapterWithParameters(
         );
     if (!Spec.has_process32_hook)
         @compileError("LV2 core audio ports require f32 processing");
-    if (Spec.dynamic_audio_bus_topology != null)
-        @compileError("LV2 core ports require static audio buses");
+    const projects_dynamic_audio_topology =
+        Spec.dynamic_audio_bus_topology != null;
+    if (Spec.dynamic_audio_bus_topology) |topology| {
+        const snapshot = topology.snapshot() catch
+            @compileError("LV2 audio bus topology projection must be valid");
+        if (snapshot.input_count != 0 and
+            !snapshot.input_active[0])
+            @compileError(
+                "LV2 audio bus topology projection requires the main input bus to be active",
+            );
+        if (snapshot.output_count != 0 and
+            !snapshot.output_active[0])
+            @compileError(
+                "LV2 audio bus topology projection requires the main output bus to be active",
+            );
+    }
     const parameter_count = Spec.ParameterSet.count;
     const main_input_channel_count: usize =
         Spec.audio_input_layout.channelCount();
@@ -1007,6 +1021,10 @@ pub fn CoreAdapterWithParameters(
         totalLayoutChannels(Spec.audio_auxiliary_input_layouts);
     const auxiliary_output_channel_count =
         totalLayoutChannels(Spec.audio_auxiliary_output_layouts);
+    const auxiliary_input_bus_count =
+        Spec.audio_auxiliary_input_layouts.len;
+    const auxiliary_output_bus_count =
+        Spec.audio_auxiliary_output_layouts.len;
     const input_channel_count =
         main_input_channel_count + auxiliary_input_channel_count;
     const output_channel_count =
@@ -1024,6 +1042,17 @@ pub fn CoreAdapterWithParameters(
     if (input_channel_count > process_api.max_audio_channels or
         output_channel_count > process_api.max_audio_channels)
         @compileError("LV2 audio channel count exceeds ProcessContext capacity");
+
+    const InputChannelBinding = struct {
+        main_channel_count: usize,
+        auxiliary_channel_count: usize,
+        auxiliary_bus_channel_counts: [auxiliary_input_bus_count]usize,
+    };
+    const OutputChannelBinding = struct {
+        main_channel_count: usize,
+        auxiliary_channel_count: usize,
+        auxiliary_bus_channel_counts: [auxiliary_output_bus_count]usize,
+    };
 
     return struct {
         const Self = @This();
@@ -1058,6 +1087,8 @@ pub fn CoreAdapterWithParameters(
         pub const maximum_frames = maximum_block_size;
         pub const worker_enabled = has_worker;
         pub const port_resize_enabled = has_port_resize_binding;
+        pub const dynamic_audio_topology_projected =
+            projects_dynamic_audio_topology;
         pub const programs_enabled = has_programs;
         pub const portable_state_paths_enabled =
             has_lv2_component_state_paths;
@@ -2413,12 +2444,12 @@ pub fn CoreAdapterWithParameters(
             var auxiliary_inputs: [auxiliary_input_channel_count][]const f32 = undefined;
             var main_outputs: [main_output_channel_count][]f32 = undefined;
             var auxiliary_outputs: [auxiliary_output_channel_count][]f32 = undefined;
-            try self.bindInputChannels(
+            const input_binding = try self.bindInputChannels(
                 sample_count,
                 &main_inputs,
                 &auxiliary_inputs,
             );
-            try self.bindOutputChannels(
+            const output_binding = try self.bindOutputChannels(
                 sample_count,
                 &main_outputs,
                 &auxiliary_outputs,
@@ -2472,6 +2503,8 @@ pub fn CoreAdapterWithParameters(
                         &auxiliary_inputs,
                         &main_outputs,
                         &auxiliary_outputs,
+                        &input_binding,
+                        &output_binding,
                         if (controls_pending) &changes else &.{},
                         input_events[0..input.event_count],
                         &output_event_storage,
@@ -2513,6 +2546,8 @@ pub fn CoreAdapterWithParameters(
                     &auxiliary_inputs,
                     &main_outputs,
                     &auxiliary_outputs,
+                    &input_binding,
+                    &output_binding,
                     if (controls_pending) &changes else &.{},
                     input_events[0..input.event_count],
                     &output_event_storage,
@@ -2535,6 +2570,8 @@ pub fn CoreAdapterWithParameters(
             auxiliary_inputs: *const [auxiliary_input_channel_count][]const f32,
             main_outputs: *const [main_output_channel_count][]f32,
             auxiliary_outputs: *const [auxiliary_output_channel_count][]f32,
+            input_binding: *const InputChannelBinding,
+            output_binding: *const OutputChannelBinding,
             changes: []const process_api.ParameterChange,
             input_events: []const process_api.Event,
             output_events: *[maximum_event_count]process_api.Event,
@@ -2547,14 +2584,34 @@ pub fn CoreAdapterWithParameters(
             var segment_auxiliary_inputs: [auxiliary_input_channel_count][]const f32 = undefined;
             var segment_main_outputs: [main_output_channel_count][]f32 = undefined;
             var segment_auxiliary_outputs: [auxiliary_output_channel_count][]f32 = undefined;
-            for (main_inputs, 0..) |channel, index|
-                segment_main_inputs[index] = channel[start..end];
-            for (auxiliary_inputs, 0..) |channel, index|
-                segment_auxiliary_inputs[index] = channel[start..end];
-            for (main_outputs, 0..) |channel, index|
-                segment_main_outputs[index] = channel[start..end];
-            for (auxiliary_outputs, 0..) |channel, index|
-                segment_auxiliary_outputs[index] = channel[start..end];
+            if (comptime main_input_channel_count != 0) {
+                for (
+                    main_inputs[0..input_binding.main_channel_count],
+                    0..,
+                ) |channel, index|
+                    segment_main_inputs[index] = channel[start..end];
+            }
+            if (comptime auxiliary_input_channel_count != 0) {
+                for (
+                    auxiliary_inputs[0..input_binding.auxiliary_channel_count],
+                    0..,
+                ) |channel, index|
+                    segment_auxiliary_inputs[index] = channel[start..end];
+            }
+            if (comptime main_output_channel_count != 0) {
+                for (
+                    main_outputs[0..output_binding.main_channel_count],
+                    0..,
+                ) |channel, index|
+                    segment_main_outputs[index] = channel[start..end];
+            }
+            if (comptime auxiliary_output_channel_count != 0) {
+                for (
+                    auxiliary_outputs[0..output_binding.auxiliary_channel_count],
+                    0..,
+                ) |channel, index|
+                    segment_auxiliary_outputs[index] = channel[start..end];
+            }
 
             var segment_input_storage: [maximum_event_count]process_api.Event = undefined;
             var segment_input_count: usize = 0;
@@ -2578,12 +2635,12 @@ pub fn CoreAdapterWithParameters(
                 ).initWithOptions(.{
                     .sample_rate = self.sample_rate,
                     .process_mode = process_mode,
-                    .input_channels = &segment_main_inputs,
-                    .sidechain_input_channels = &segment_auxiliary_inputs,
-                    .auxiliary_input_bus_channel_counts = &auxiliary_input_bus_channel_counts,
-                    .output_channels = &segment_main_outputs,
-                    .auxiliary_output_channels = &segment_auxiliary_outputs,
-                    .auxiliary_output_bus_channel_counts = &auxiliary_output_bus_channel_counts,
+                    .input_channels = segment_main_inputs[0..input_binding.main_channel_count],
+                    .sidechain_input_channels = segment_auxiliary_inputs[0..input_binding.auxiliary_channel_count],
+                    .auxiliary_input_bus_channel_counts = &input_binding.auxiliary_bus_channel_counts,
+                    .output_channels = segment_main_outputs[0..output_binding.main_channel_count],
+                    .auxiliary_output_channels = segment_auxiliary_outputs[0..output_binding.auxiliary_channel_count],
+                    .auxiliary_output_bus_channel_counts = &output_binding.auxiliary_bus_channel_counts,
                     .attachments = .{
                         .parameter_changes = changes,
                         .events = segment_input_storage[0..segment_input_count],
@@ -3764,7 +3821,7 @@ pub fn CoreAdapterWithParameters(
             sample_count: usize,
             main: *[main_input_channel_count][]const f32,
             auxiliary: *[auxiliary_input_channel_count][]const f32,
-        ) !void {
+        ) !InputChannelBinding {
             for (0..main_input_channel_count) |index| {
                 const raw = self.ports[
                     audio_input_port_start + index
@@ -3775,18 +3832,47 @@ pub fn CoreAdapterWithParameters(
                     @ptrCast(@alignCast(raw));
                 main[index] = samples[0..sample_count];
             }
-            for (0..auxiliary_input_channel_count) |index| {
-                const raw = self.ports[
-                    audio_input_port_start +
-                        main_input_channel_count +
-                        index
-                ] orelse return error.UnconnectedPort;
-                if (@intFromPtr(raw) % @alignOf(f32) != 0)
-                    return error.InvalidContext;
-                const samples: [*]const f32 =
-                    @ptrCast(@alignCast(raw));
-                auxiliary[index] = samples[0..sample_count];
+            var result = InputChannelBinding{
+                .main_channel_count = main_input_channel_count,
+                .auxiliary_channel_count = 0,
+                .auxiliary_bus_channel_counts = auxiliary_input_bus_channel_counts,
+            };
+            var port_offset = audio_input_port_start +
+                main_input_channel_count;
+            for (
+                auxiliary_input_bus_channel_counts,
+                0..,
+            ) |channel_count, bus_index| {
+                var connected_count: usize = 0;
+                for (0..channel_count) |channel_index| {
+                    if (self.ports[port_offset + channel_index] != null)
+                        connected_count += 1;
+                }
+                if (projects_dynamic_audio_topology and
+                    connected_count == 0)
+                {
+                    result.auxiliary_bus_channel_counts[bus_index] = 0;
+                    port_offset += channel_count;
+                    continue;
+                }
+                if (connected_count != channel_count)
+                    return error.UnconnectedPort;
+                for (0..channel_count) |channel_index| {
+                    const raw = self.ports[
+                        port_offset + channel_index
+                    ] orelse return error.UnconnectedPort;
+                    if (@intFromPtr(raw) % @alignOf(f32) != 0)
+                        return error.InvalidContext;
+                    const samples: [*]const f32 =
+                        @ptrCast(@alignCast(raw));
+                    auxiliary[
+                        result.auxiliary_channel_count
+                    ] = samples[0..sample_count];
+                    result.auxiliary_channel_count += 1;
+                }
+                port_offset += channel_count;
             }
+            return result;
         }
 
         fn bindOutputChannels(
@@ -3794,7 +3880,7 @@ pub fn CoreAdapterWithParameters(
             sample_count: usize,
             main: *[main_output_channel_count][]f32,
             auxiliary: *[auxiliary_output_channel_count][]f32,
-        ) !void {
+        ) !OutputChannelBinding {
             for (0..main_output_channel_count) |index| {
                 const raw = self.ports[
                     audio_output_port_start + index
@@ -3804,17 +3890,47 @@ pub fn CoreAdapterWithParameters(
                 const samples: [*]f32 = @ptrCast(@alignCast(raw));
                 main[index] = samples[0..sample_count];
             }
-            for (0..auxiliary_output_channel_count) |index| {
-                const raw = self.ports[
-                    audio_output_port_start +
-                        main_output_channel_count +
-                        index
-                ] orelse return error.UnconnectedPort;
-                if (@intFromPtr(raw) % @alignOf(f32) != 0)
-                    return error.InvalidContext;
-                const samples: [*]f32 = @ptrCast(@alignCast(raw));
-                auxiliary[index] = samples[0..sample_count];
+            var result = OutputChannelBinding{
+                .main_channel_count = main_output_channel_count,
+                .auxiliary_channel_count = 0,
+                .auxiliary_bus_channel_counts = auxiliary_output_bus_channel_counts,
+            };
+            var port_offset = audio_output_port_start +
+                main_output_channel_count;
+            for (
+                auxiliary_output_bus_channel_counts,
+                0..,
+            ) |channel_count, bus_index| {
+                var connected_count: usize = 0;
+                for (0..channel_count) |channel_index| {
+                    if (self.ports[port_offset + channel_index] != null)
+                        connected_count += 1;
+                }
+                if (projects_dynamic_audio_topology and
+                    connected_count == 0)
+                {
+                    result.auxiliary_bus_channel_counts[bus_index] = 0;
+                    port_offset += channel_count;
+                    continue;
+                }
+                if (connected_count != channel_count)
+                    return error.UnconnectedPort;
+                for (0..channel_count) |channel_index| {
+                    const raw = self.ports[
+                        port_offset + channel_index
+                    ] orelse return error.UnconnectedPort;
+                    if (@intFromPtr(raw) % @alignOf(f32) != 0)
+                        return error.InvalidContext;
+                    const samples: [*]f32 =
+                        @ptrCast(@alignCast(raw));
+                    auxiliary[
+                        result.auxiliary_channel_count
+                    ] = samples[0..sample_count];
+                    result.auxiliary_channel_count += 1;
+                }
+                port_offset += channel_count;
             }
+            return result;
         }
 
         fn readControlChanges(
@@ -6315,6 +6431,202 @@ test "LV2 static ports carry selected auxiliary bus capacity" {
         @as(usize, 12),
         instance.runtime.instance.plugin
             .auxiliary_input_count,
+    );
+}
+
+test "LV2 projects dynamic auxiliary bus connection state" {
+    const Probe = struct {
+        const Topology = plugin_api.BoundedDynamicAudioBusTopology(2);
+
+        pub const name = "LV2 Dynamic Projection Probe";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const event_input = false;
+        pub const maximum_auxiliary_audio_buses = 2;
+        pub const audio_bus_topology = makeTopology();
+
+        observed_input_channels: [2]usize = @splat(0),
+        observed_output_channels: [2]usize = @splat(0),
+        process_count: usize = 0,
+
+        fn makeTopology() Topology {
+            const main_layouts = plugin_api.AudioBusLayoutSet.init(
+                &.{ .stereo, .surround_5_1 },
+            ) catch unreachable;
+            var topology = Topology.init(
+                plugin_api.DynamicAudioBus.init(
+                    .stereo,
+                    main_layouts,
+                    true,
+                ) catch unreachable,
+                plugin_api.DynamicAudioBus.fixed(
+                    .stereo,
+                    true,
+                ) catch unreachable,
+            ) catch unreachable;
+            _ = topology.addAuxiliary(
+                .input,
+                plugin_api.DynamicAudioBus.fixed(
+                    .stereo,
+                    false,
+                ) catch unreachable,
+            ) catch unreachable;
+            _ = topology.addAuxiliary(
+                .output,
+                plugin_api.DynamicAudioBus.fixed(
+                    .stereo,
+                    false,
+                ) catch unreachable,
+            ) catch unreachable;
+            return topology;
+        }
+
+        pub fn process(
+            self: *@This(),
+            context: *process_api.BoundedProcessContext(
+                f32,
+                maximum_auxiliary_audio_buses,
+            ),
+        ) void {
+            if (self.process_count < self.observed_input_channels.len) {
+                self.observed_input_channels[self.process_count] =
+                    context.sidechainInputChannelCount();
+                self.observed_output_channels[self.process_count] =
+                    context.auxiliaryOutputChannelCount();
+            }
+            self.process_count += 1;
+            for (0..2) |channel_index| {
+                const input = context.inputChannel(channel_index) orelse
+                    return;
+                const output = context.outputChannel(channel_index) orelse
+                    return;
+                @memcpy(output, input);
+            }
+            for (0..2) |channel_index| {
+                const auxiliary_input = context.sidechainInputChannel(
+                    channel_index,
+                ) orelse return;
+                const auxiliary_output = context.auxiliaryOutputChannel(
+                    channel_index,
+                ) orelse return;
+                @memcpy(auxiliary_output, auxiliary_input);
+            }
+        }
+    };
+    const Adapter = CoreAdapter(
+        Probe,
+        "https://example.test/lv2-dynamic-projection-probe",
+        2,
+    );
+    try std.testing.expect(Adapter.dynamic_audio_topology_projected);
+    try std.testing.expectEqual(@as(usize, 4), Adapter.input_channels);
+    try std.testing.expectEqual(@as(usize, 4), Adapter.output_channels);
+    try std.testing.expectEqual(@as(usize, 9), Adapter.port_count);
+
+    const descriptor = &Adapter.descriptor;
+    const handle = descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-dynamic-projection-probe.lv2",
+        null,
+    ) orelse return error.InstantiateFailed;
+    defer descriptor.cleanup(handle);
+
+    const input_left = [_]f32{ 0.25, -0.5 };
+    const input_right = [_]f32{ 0.75, -1.0 };
+    const auxiliary_input_left = [_]f32{ 0.125, -0.25 };
+    const auxiliary_input_right = [_]f32{ 0.375, -0.75 };
+    var output_left = [_]f32{0.0} ** 2;
+    var output_right = [_]f32{0.0} ** 2;
+    var auxiliary_output_left = [_]f32{0.0} ** 2;
+    var auxiliary_output_right = [_]f32{0.0} ** 2;
+    var latency: f32 = -1.0;
+    const ports = [_]*anyopaque{
+        @constCast(&input_left),
+        @constCast(&input_right),
+        @constCast(&auxiliary_input_left),
+        @constCast(&auxiliary_input_right),
+        &output_left,
+        &output_right,
+        &auxiliary_output_left,
+        &auxiliary_output_right,
+        &latency,
+    };
+    for (ports, 0..) |port, index|
+        descriptor.connect_port(handle, @intCast(index), port);
+
+    if (descriptor.activate) |activate| activate(handle);
+    descriptor.run(handle, 2);
+    const instance = Adapter.instanceFromHandle(handle) orelse
+        return error.MissingInstance;
+    try std.testing.expectEqual(
+        RunStatus.succeeded,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqualSlices(f32, &input_left, &output_left);
+    try std.testing.expectEqualSlices(f32, &input_right, &output_right);
+    try std.testing.expectEqualSlices(
+        f32,
+        &auxiliary_input_left,
+        &auxiliary_output_left,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        instance.runtime.instance.plugin.observed_input_channels[0],
+    );
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        instance.runtime.instance.plugin.observed_output_channels[0],
+    );
+    try std.testing.expectEqual(@as(f32, 0.0), latency);
+
+    descriptor.connect_port(handle, 2, null);
+    descriptor.connect_port(handle, 3, null);
+    descriptor.connect_port(handle, 6, null);
+    descriptor.connect_port(handle, 7, null);
+    output_left = @splat(0.0);
+    output_right = @splat(0.0);
+    descriptor.run(handle, 2);
+    try std.testing.expectEqual(
+        RunStatus.succeeded,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqualSlices(f32, &input_left, &output_left);
+    try std.testing.expectEqualSlices(f32, &input_right, &output_right);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        instance.runtime.instance.plugin.observed_input_channels[1],
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        instance.runtime.instance.plugin.observed_output_channels[1],
+    );
+
+    descriptor.connect_port(
+        handle,
+        2,
+        @constCast(&auxiliary_input_left),
+    );
+    output_left = @splat(1.0);
+    output_right = @splat(1.0);
+    descriptor.run(handle, 2);
+    try std.testing.expectEqual(
+        RunStatus.unconnected_port,
+        instance.last_run_status,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 0.0, 0.0 },
+        &output_left,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 0.0, 0.0 },
+        &output_right,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        instance.runtime.instance.plugin.process_count,
     );
 }
 
