@@ -303,6 +303,8 @@ pub fn Loader(
             defer allocator.free(ir.values);
             if (ir.shape[1] != 2)
                 return error.UnsupportedSofaReceiverCount;
+            if (!responseDimensionsAreDistinct(ir.dimension_ids))
+                return error.InvalidSofaResponseShape;
             try validateResponseShape(
                 ir.shape,
                 maximum_measurements,
@@ -325,19 +327,35 @@ pub fn Loader(
             );
             defer allocator.free(positions.values);
             if (positions.shape[0] != ir.shape[0] or
-                positions.shape[1] != 3)
+                positions.shape[1] != 3 or
+                !instanceOrMeasurementDimensionMatches(
+                    positions,
+                    0,
+                    ir.dimension_ids[0],
+                    ir.shape[0],
+                ) or
+                std.mem.indexOfScalar(
+                    c_int,
+                    ir.dimension_ids[0..3],
+                    positions.dimension_ids[1],
+                ) != null)
                 return error.InvalidSofaPositionShape;
             try requireDefaultListenerGeometry(
                 &self.api,
                 allocator,
                 file_id,
                 ir.shape[0],
+                ir.dimension_ids[0],
+                ir.dimension_ids[1],
+                positions.dimension_ids[1],
             );
             try requireDefaultEmitterGeometry(
                 &self.api,
                 allocator,
                 file_id,
                 ir.shape[0],
+                ir.dimension_ids[0],
+                positions.dimension_ids[1],
             );
             const position_encoding = try positionEncoding(
                 &self.api,
@@ -354,7 +372,13 @@ pub fn Loader(
                 ir.shape[0],
             );
             defer allocator.free(rates.values);
-            if (!validSamplingRateVariable(rates, ir.shape[0]))
+            if (!validSamplingRateVariable(rates, ir.shape[0]) or
+                !instanceOrMeasurementDimensionMatches(
+                    rates,
+                    0,
+                    ir.dimension_ids[0],
+                    ir.shape[0],
+                ))
                 return error.InvalidSofaSamplingRateShape;
             try requireAttribute(
                 &self.api,
@@ -384,7 +408,15 @@ pub fn Loader(
                     ) catch return error.SofaDatasetTooLarge,
                 );
                 delays = loaded.values;
-                if (!validDelayVariable(loaded, ir.shape[0])) {
+                if (!validDelayVariable(loaded, ir.shape[0]) or
+                    !instanceOrMeasurementDimensionMatches(
+                        loaded,
+                        0,
+                        ir.dimension_ids[0],
+                        ir.shape[0],
+                    ) or
+                    loaded.dimension_ids[1] != ir.dimension_ids[1])
+                {
                     allocator.free(delays);
                     return error.InvalidSofaDelayShape;
                 }
@@ -548,6 +580,7 @@ const Variable = struct {
     variable_id: c_int,
     rank: usize,
     shape: [4]usize,
+    dimension_ids: [4]c_int = @splat(0),
     values: []f64,
 };
 
@@ -654,6 +687,7 @@ fn readVariableById(
         .variable_id = variable_id,
         .rank = rank,
         .shape = shape,
+        .dimension_ids = dimension_ids,
         .values = values,
     };
 }
@@ -674,6 +708,24 @@ fn boundedShapeValueCount(
             return error.SofaDatasetTooLarge;
     }
     return value_count;
+}
+
+fn responseDimensionsAreDistinct(dimension_ids: [4]c_int) bool {
+    return dimension_ids[0] != dimension_ids[1] and
+        dimension_ids[0] != dimension_ids[2] and
+        dimension_ids[1] != dimension_ids[2];
+}
+
+fn instanceOrMeasurementDimensionMatches(
+    variable: Variable,
+    dimension_index: usize,
+    measurement_dimension_id: c_int,
+    measurement_count: usize,
+) bool {
+    return variable.shape[dimension_index] == 1 or
+        (variable.shape[dimension_index] == measurement_count and
+            variable.dimension_ids[dimension_index] ==
+                measurement_dimension_id);
 }
 
 fn requireAttribute(
@@ -765,6 +817,9 @@ fn requireDefaultListenerGeometry(
     allocator: std.mem.Allocator,
     file_id: c_int,
     measurement_count: usize,
+    measurement_dimension_id: c_int,
+    receiver_dimension_id: c_int,
+    coordinate_dimension_id: c_int,
 ) !void {
     const maximum_listener_values = std.math.mul(
         usize,
@@ -820,16 +875,22 @@ fn requireDefaultListenerGeometry(
     try requireDefaultVectors(
         listener_position,
         measurement_count,
+        measurement_dimension_id,
+        coordinate_dimension_id,
         .{ 0.0, 0.0, 0.0 },
     );
     try requireDefaultVectors(
         listener_view,
         measurement_count,
+        measurement_dimension_id,
+        coordinate_dimension_id,
         .{ 1.0, 0.0, 0.0 },
     );
     try requireDefaultVectors(
         listener_up,
         measurement_count,
+        measurement_dimension_id,
+        coordinate_dimension_id,
         .{ 0.0, 0.0, 1.0 },
     );
 
@@ -856,7 +917,15 @@ fn requireDefaultListenerGeometry(
     if (receivers.shape[0] != 2 or
         receivers.shape[1] != 3 or
         (receivers.shape[2] != 1 and
-            receivers.shape[2] != measurement_count))
+            receivers.shape[2] != measurement_count) or
+        receivers.dimension_ids[0] != receiver_dimension_id or
+        receivers.dimension_ids[1] != coordinate_dimension_id or
+        !instanceOrMeasurementDimensionMatches(
+            receivers,
+            2,
+            measurement_dimension_id,
+            measurement_count,
+        ))
         return error.UnsupportedSofaReceiverGeometry;
     const receiver_measurements = receivers.shape[2];
     for (0..receiver_measurements) |measurement_index| {
@@ -876,11 +945,20 @@ fn requireDefaultListenerGeometry(
 fn requireDefaultVectors(
     variable: Variable,
     measurement_count: usize,
+    measurement_dimension_id: c_int,
+    coordinate_dimension_id: c_int,
     expected: [3]f64,
 ) !void {
     if ((variable.shape[0] != 1 and
         variable.shape[0] != measurement_count) or
-        variable.shape[1] != 3)
+        variable.shape[1] != 3 or
+        !instanceOrMeasurementDimensionMatches(
+            variable,
+            0,
+            measurement_dimension_id,
+            measurement_count,
+        ) or
+        variable.dimension_ids[1] != coordinate_dimension_id)
         return error.UnsupportedSofaListenerGeometry;
     for (0..variable.shape[0]) |measurement_index| {
         for (0..3) |coordinate_index| {
@@ -898,6 +976,8 @@ fn requireDefaultEmitterGeometry(
     allocator: std.mem.Allocator,
     file_id: c_int,
     measurement_count: usize,
+    measurement_dimension_id: c_int,
+    coordinate_dimension_id: c_int,
 ) !void {
     const emitter = try readVariable(
         api,
@@ -919,17 +999,31 @@ fn requireDefaultEmitterGeometry(
     ) catch return error.UnsupportedSofaEmitterGeometry;
     if (encoding != .cartesian_metres)
         return error.UnsupportedSofaEmitterGeometry;
-    try requireDefaultEmitterVectors(emitter, measurement_count);
+    try requireDefaultEmitterVectors(
+        emitter,
+        measurement_count,
+        measurement_dimension_id,
+        coordinate_dimension_id,
+    );
 }
 
 fn requireDefaultEmitterVectors(
     variable: Variable,
     measurement_count: usize,
+    measurement_dimension_id: c_int,
+    coordinate_dimension_id: c_int,
 ) !void {
     if (variable.shape[0] != 1 or
         variable.shape[1] != 3 or
         (variable.shape[2] != 1 and
-            variable.shape[2] != measurement_count))
+            variable.shape[2] != measurement_count) or
+        variable.dimension_ids[1] != coordinate_dimension_id or
+        !instanceOrMeasurementDimensionMatches(
+            variable,
+            2,
+            measurement_dimension_id,
+            measurement_count,
+        ))
         return error.UnsupportedSofaEmitterGeometry;
     const emitter_measurements = variable.shape[2];
     for (0..emitter_measurements) |measurement_index| {
@@ -1130,6 +1224,41 @@ test "standard HRTF response dimensions honor independent capacities" {
     );
 }
 
+test "standard HRTF variables retain compatible dimensions" {
+    try std.testing.expect(responseDimensionsAreDistinct(.{ 10, 20, 30, 0 }));
+    try std.testing.expect(!responseDimensionsAreDistinct(.{ 10, 20, 10, 0 }));
+
+    var values: [3]f64 = @splat(0.0);
+    var variable = Variable{
+        .variable_id = 0,
+        .rank = 1,
+        .shape = .{ 3, 1, 1, 1 },
+        .dimension_ids = .{ 10, 0, 0, 0 },
+        .values = &values,
+    };
+    try std.testing.expect(instanceOrMeasurementDimensionMatches(
+        variable,
+        0,
+        10,
+        3,
+    ));
+    variable.dimension_ids[0] = 40;
+    try std.testing.expect(!instanceOrMeasurementDimensionMatches(
+        variable,
+        0,
+        10,
+        3,
+    ));
+    variable.shape[0] = 1;
+    variable.values = values[0..1];
+    try std.testing.expect(instanceOrMeasurementDimensionMatches(
+        variable,
+        0,
+        10,
+        3,
+    ));
+}
+
 test "standard HRTF position attributes select supported encodings" {
     try std.testing.expectEqual(
         PositionEncoding.cartesian_metres,
@@ -1158,25 +1287,38 @@ test "standard HRTF emitter geometry requires the default origin" {
         .variable_id = 0,
         .rank = 3,
         .shape = .{ 1, 3, 2, 1 },
+        .dimension_ids = .{ 30, 20, 10, 0 },
         .values = &values,
     };
-    try requireDefaultEmitterVectors(emitter, 2);
+    try requireDefaultEmitterVectors(emitter, 2, 10, 20);
 
+    emitter.dimension_ids[1] = 40;
+    try std.testing.expectError(
+        error.UnsupportedSofaEmitterGeometry,
+        requireDefaultEmitterVectors(emitter, 2, 10, 20),
+    );
+    emitter.dimension_ids[1] = 20;
+    emitter.dimension_ids[2] = 40;
+    try std.testing.expectError(
+        error.UnsupportedSofaEmitterGeometry,
+        requireDefaultEmitterVectors(emitter, 2, 10, 20),
+    );
+    emitter.dimension_ids[2] = 10;
     emitter.shape[0] = 2;
     try std.testing.expectError(
         error.UnsupportedSofaEmitterGeometry,
-        requireDefaultEmitterVectors(emitter, 2),
+        requireDefaultEmitterVectors(emitter, 2, 10, 20),
     );
     emitter.shape[0] = 1;
     values[3] = 0.01;
     try std.testing.expectError(
         error.UnsupportedSofaEmitterGeometry,
-        requireDefaultEmitterVectors(emitter, 2),
+        requireDefaultEmitterVectors(emitter, 2, 10, 20),
     );
     values[3] = std.math.nan(f64);
     try std.testing.expectError(
         error.UnsupportedSofaEmitterGeometry,
-        requireDefaultEmitterVectors(emitter, 2),
+        requireDefaultEmitterVectors(emitter, 2, 10, 20),
     );
 }
 
