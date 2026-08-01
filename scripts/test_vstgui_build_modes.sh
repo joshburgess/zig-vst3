@@ -54,6 +54,8 @@ expected_zig_commands=4
 if [ "$(uname -s)" = Linux ]; then
   expected_zig_commands=6
   grep -q -- 'zig_vstgui_accessibility_linux_clipboard.cpp' "$test_zig_log"
+  clipboard_system_include=$(pkg-config --variable=includedir xcb)
+  grep -q -- "-idirafter $clipboard_system_include" "$test_zig_log"
 fi
 test "$(wc -l < "$test_zig_log" | tr -d ' ')" = "$expected_zig_commands"
 grep -q -- '-target x86_64-windows-gnu' "$test_zig_log"

@@ -57,6 +57,11 @@ if [ "$mode" = test ]; then
 
   if [ "$(uname -s)" = Linux ]; then
     clipboard_cflags=$(pkg-config --cflags glib-2.0 xcb)
+    clipboard_system_include=$(pkg-config --variable=includedir xcb)
+    if [ -z "$clipboard_system_include" ]; then
+      printf 'xcb pkg-config metadata has no include directory\n' >&2
+      exit 1
+    fi
     env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
         ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
         zig c++ -target x86_64-linux-gnu -std=c++17 \
@@ -66,6 +71,7 @@ if [ "$mode" = test ]; then
         -I"$root/gui-adapters/vstgui" \
         -I"$root/.vst3-sdk/vst3sdk/vstgui4" \
         -I"$root/.vst3-sdk/vst3sdk" \
+        -idirafter "$clipboard_system_include" \
         $clipboard_cflags \
         -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_linux_clipboard.cpp" \
         -o /tmp/zig_vstgui_accessibility_linux_clipboard_x86_64.o
@@ -79,6 +85,7 @@ if [ "$mode" = test ]; then
         -I"$root/gui-adapters/vstgui" \
         -I"$root/.vst3-sdk/vst3sdk/vstgui4" \
         -I"$root/.vst3-sdk/vst3sdk" \
+        -idirafter "$clipboard_system_include" \
         $clipboard_cflags \
         -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_linux_clipboard.cpp" \
         -o /tmp/zig_vstgui_accessibility_linux_clipboard_aarch64.o
