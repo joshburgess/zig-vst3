@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <utility>
 
 namespace ZigVstgui {
@@ -23,6 +24,17 @@ constexpr int32_t kResizeTag = 3;
 
 constexpr uint32_t actionMask(AccessibilityAction action) {
     return static_cast<uint32_t>(action);
+}
+
+bool roundedCoordinate(double value, int32_t& result) {
+    if (!std::isfinite(value)) return false;
+    const double bounded = std::clamp(
+        value,
+        static_cast<double>(std::numeric_limits<int32_t>::min()),
+        static_cast<double>(std::numeric_limits<int32_t>::max())
+    );
+    result = static_cast<int32_t>(std::lround(bounded));
+    return true;
 }
 
 std::string humanizeEnumLabel(std::string label) {
@@ -992,10 +1004,11 @@ void ParameterControl::viewOnEvent(VSTGUI::CView* view, VSTGUI::Event& event) {
     if (event.type != VSTGUI::EventType::MouseDown) return;
     auto& mouse_event = VSTGUI::castMouseDownEvent(event);
     if (!mouse_event.buttonState.isRight()) return;
-    if (showContextMenu(
-            static_cast<int32_t>(std::lround(mouse_event.mousePosition.x)),
-            static_cast<int32_t>(std::lround(mouse_event.mousePosition.y))
-        )) event.consumed = true;
+    int32_t x = 0;
+    int32_t y = 0;
+    if (!roundedCoordinate(mouse_event.mousePosition.x, x) ||
+        !roundedCoordinate(mouse_event.mousePosition.y, y)) return;
+    if (showContextMenu(x, y)) event.consumed = true;
 }
 
 void ParameterControl::viewLostFocus(VSTGUI::CView* view) {
@@ -1070,7 +1083,9 @@ void ResizeHandle::draw(VSTGUI::CDrawContext* context) {
 }
 
 void ResizeHandle::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
-    if (!event.buttonState.isLeft()) return;
+    if (!event.buttonState.isLeft() ||
+        !std::isfinite(event.mousePosition.x) ||
+        !std::isfinite(event.mousePosition.y)) return;
     dragging = true;
     drag_origin = event.mousePosition;
     start_width = current_width;
@@ -1081,13 +1096,23 @@ void ResizeHandle::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
 
 void ResizeHandle::onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) {
     if (!dragging || !owner) return;
+    if (!std::isfinite(event.mousePosition.x) ||
+        !std::isfinite(event.mousePosition.y)) return;
+    const double requested_width =
+        static_cast<double>(start_width) +
+        event.mousePosition.x - drag_origin.x;
+    const double requested_height =
+        static_cast<double>(start_height) +
+        event.mousePosition.y - drag_origin.y;
+    if (!std::isfinite(requested_width) ||
+        !std::isfinite(requested_height)) return;
     const double width = std::clamp(
-        static_cast<double>(start_width) + event.mousePosition.x - drag_origin.x,
+        requested_width,
         320.0,
         1000.0
     );
     const double height = std::clamp(
-        static_cast<double>(start_height) + event.mousePosition.y - drag_origin.y,
+        requested_height,
         240.0,
         700.0
     );

@@ -585,7 +585,100 @@ int testParameterContextMenu() {
             VSTGUI::exit();
             return 4;
         }
+        VSTGUI::MouseDownEvent ordinary_menu(
+            VSTGUI::CPoint(12.4, 34.6),
+            VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Right)
+        );
+        control.viewOnEvent(control.focusView(), ordinary_menu);
+        if (!ordinary_menu.consumed || state.context_menu_count != 2 ||
+            state.context_x != 12 || state.context_y != 35) {
+            control.clear();
+            VSTGUI::exit();
+            return 5;
+        }
+        VSTGUI::MouseDownEvent invalid_menu(
+            VSTGUI::CPoint(std::nan(""), 20),
+            VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Right)
+        );
+        control.viewOnEvent(control.focusView(), invalid_menu);
+        if (invalid_menu.consumed || state.context_menu_count != 2) {
+            control.clear();
+            VSTGUI::exit();
+            return 6;
+        }
+        VSTGUI::MouseDownEvent bounded_menu(
+            VSTGUI::CPoint(
+                std::numeric_limits<double>::max(),
+                -std::numeric_limits<double>::max()
+            ),
+            VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Right)
+        );
+        control.viewOnEvent(control.focusView(), bounded_menu);
+        if (!bounded_menu.consumed || state.context_menu_count != 3 ||
+            state.context_x != std::numeric_limits<int32_t>::max() ||
+            state.context_y != std::numeric_limits<int32_t>::min()) {
+            control.clear();
+            VSTGUI::exit();
+            return 7;
+        }
         control.clear();
+
+        ZigVstgui::ResizeControl resize_control;
+        resize_control.setCallbacks({&state, requestResize});
+        ZigVstgui::ResizeHandle resize_handle(
+            VSTGUI::CRect(0, 0, 24, 24),
+            &resize_control,
+            styles
+        );
+        resize_handle.setCurrentSize(400, 300);
+        VSTGUI::MouseDownEvent resize_down(
+            VSTGUI::CPoint(10, 10),
+            VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+        );
+        resize_handle.onMouseDownEvent(resize_down);
+        VSTGUI::MouseMoveEvent invalid_resize_move(
+            VSTGUI::CPoint(std::nan(""), 20),
+            VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+        );
+        resize_handle.onMouseMoveEvent(invalid_resize_move);
+        if (!resize_down.consumed || invalid_resize_move.consumed ||
+            state.resize_count != 0) {
+            VSTGUI::exit();
+            return 8;
+        }
+        VSTGUI::MouseMoveEvent bounded_resize_move(
+            VSTGUI::CPoint(
+                std::numeric_limits<double>::max(),
+                -std::numeric_limits<double>::max()
+            ),
+            VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+        );
+        resize_handle.onMouseMoveEvent(bounded_resize_move);
+        if (!bounded_resize_move.consumed || state.resize_count != 1 ||
+            state.resize_width != 1000 || state.resize_height != 240) {
+            VSTGUI::exit();
+            return 9;
+        }
+        VSTGUI::MouseUpEvent resize_up(
+            VSTGUI::CPoint(10, 10),
+            VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+        );
+        resize_handle.onMouseUpEvent(resize_up);
+        VSTGUI::MouseDownEvent invalid_resize_down(
+            VSTGUI::CPoint(10, std::numeric_limits<double>::infinity()),
+            VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+        );
+        resize_handle.onMouseDownEvent(invalid_resize_down);
+        VSTGUI::MouseMoveEvent ignored_resize_move(
+            VSTGUI::CPoint(20, 20),
+            VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+        );
+        resize_handle.onMouseMoveEvent(ignored_resize_move);
+        if (!resize_up.consumed || invalid_resize_down.consumed ||
+            ignored_resize_move.consumed || state.resize_count != 1) {
+            VSTGUI::exit();
+            return 10;
+        }
     }
     VSTGUI::exit();
     return 0;
