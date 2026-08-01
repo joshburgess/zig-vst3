@@ -3728,6 +3728,14 @@ int testEditableLabelsAndProgress() {
         nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
         nullptr, 0, &invalid_editable, 1, &progress, 1, {}
     )) return 9;
+    const char malformed_initial_text[] = {static_cast<char>(0xc0), static_cast<char>(0x80), 0};
+    invalid_editable = editable;
+    invalid_editable.initial_text = malformed_initial_text;
+    if (zig_vstgui_editor_create_components(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        nullptr, 0, &invalid_editable, 1, &progress, 1, {}
+    )) return 17;
     auto invalid_progress = progress;
     invalid_progress.maximum_refresh_hz = 61;
     if (zig_vstgui_editor_create_components(

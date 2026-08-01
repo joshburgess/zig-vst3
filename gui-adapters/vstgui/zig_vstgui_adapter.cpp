@@ -461,6 +461,11 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         if (label.field_id == 0 || !label.label || label.label[0] == 0 ||
             !label.accessible_label || label.accessible_label[0] == 0 || !label.placeholder ||
             !label.error_text || label.error_text[0] == 0 || !label.initial_text ||
+            !ZigVstgui::validUtf8(label.label) ||
+            !ZigVstgui::validUtf8(label.accessible_label) ||
+            !ZigVstgui::validUtf8(label.placeholder) ||
+            !ZigVstgui::validUtf8(label.error_text) ||
+            !ZigVstgui::validUtf8(label.initial_text) ||
             label.maximum_bytes == 0 || label.maximum_bytes > 96 ||
             std::char_traits<char>::length(label.initial_text) > label.maximum_bytes ||
             (label.enabled != 0 && label.enabled != 1) ||
