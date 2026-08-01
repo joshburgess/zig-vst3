@@ -3581,10 +3581,23 @@ pub fn build(b: *std.Build) void {
     });
     const dsp_thread_sanitizer_step = b.step(
         "test-dsp-thread-sanitizer",
-        "Run realtime DSP publication tests with the thread sanitizer",
+        "Run realtime DSP publication and transport tests with the thread sanitizer",
     );
     dsp_thread_sanitizer_step.dependOn(
         &b.addRunArtifact(dsp_thread_sanitizer_tests).step,
+    );
+    const hrtf_thread_sanitizer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/hrtf_thread_sanitizer.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .Debug,
+            .sanitize_thread = true,
+        }),
+    });
+    dsp_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(hrtf_thread_sanitizer_tests).step,
     );
 
     const plugin_path_option = b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate");

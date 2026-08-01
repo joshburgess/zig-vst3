@@ -106,6 +106,9 @@ jobs:
           ZIG_VSTGUI_DIAGNOSTICS: 1
           VSTGUI_RUN_VISUAL_TESTS: OFF
         run: xvfb-run -a zig build test
+      - name: Test realtime DSP concurrency
+        if: runner.os == 'Linux'
+        run: zig build test-dsp-thread-sanitizer --summary all
       - name: Test
         if: runner.os == 'Windows'
         env:
