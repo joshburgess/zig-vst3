@@ -922,6 +922,22 @@ fn requireDefaultListenerGeometry(
     ) catch return error.UnsupportedSofaReceiverGeometry;
     if (receiver_encoding != .cartesian_metres)
         return error.UnsupportedSofaReceiverGeometry;
+    try requireStereoReceiverGeometry(
+        receivers,
+        measurement_count,
+        measurement_dimension_id,
+        receiver_dimension_id,
+        coordinate_dimension_id,
+    );
+}
+
+fn requireStereoReceiverGeometry(
+    receivers: Variable,
+    measurement_count: usize,
+    measurement_dimension_id: c_int,
+    receiver_dimension_id: c_int,
+    coordinate_dimension_id: c_int,
+) !void {
     if (receivers.shape[0] != 2 or
         receivers.shape[1] != 3 or
         (receivers.shape[2] != 1 and
@@ -935,6 +951,10 @@ fn requireDefaultListenerGeometry(
             measurement_count,
         ))
         return error.UnsupportedSofaReceiverGeometry;
+    for (receivers.values) |value| {
+        if (!std.math.isFinite(value))
+            return error.UnsupportedSofaReceiverGeometry;
+    }
     const receiver_measurements = receivers.shape[2];
     for (0..receiver_measurements) |measurement_index| {
         const left_y = receivers.values[
@@ -943,9 +963,7 @@ fn requireDefaultListenerGeometry(
         const right_y = receivers.values[
             4 * receiver_measurements + measurement_index
         ];
-        if (!std.math.isFinite(left_y) or
-            !std.math.isFinite(right_y) or
-            left_y <= 0.0 or right_y >= 0.0)
+        if (left_y <= 0.0 or right_y >= 0.0)
             return error.UnsupportedSofaReceiverGeometry;
     }
 }
@@ -1327,6 +1345,43 @@ test "standard HRTF emitter geometry requires the default origin" {
     try std.testing.expectError(
         error.UnsupportedSofaEmitterGeometry,
         requireDefaultEmitterVectors(emitter, 2, 10, 20),
+    );
+}
+
+test "standard HRTF receiver geometry is finite and ordered" {
+    var values = [_]f64{
+        0.0,   0.0,
+        0.09,  0.09,
+        0.0,   0.0,
+        0.0,   0.0,
+        -0.09, -0.09,
+        0.0,   0.0,
+    };
+    var receivers = Variable{
+        .variable_id = 0,
+        .rank = 3,
+        .shape = .{ 2, 3, 2, 1 },
+        .dimension_ids = .{ 20, 40, 10, 0 },
+        .values = &values,
+    };
+    try requireStereoReceiverGeometry(receivers, 2, 10, 20, 40);
+
+    values[0] = std.math.nan(f64);
+    try std.testing.expectError(
+        error.UnsupportedSofaReceiverGeometry,
+        requireStereoReceiverGeometry(receivers, 2, 10, 20, 40),
+    );
+    values[0] = 0.0;
+    values[8] = 0.09;
+    try std.testing.expectError(
+        error.UnsupportedSofaReceiverGeometry,
+        requireStereoReceiverGeometry(receivers, 2, 10, 20, 40),
+    );
+    values[8] = -0.09;
+    receivers.dimension_ids[1] = 30;
+    try std.testing.expectError(
+        error.UnsupportedSofaReceiverGeometry,
+        requireStereoReceiverGeometry(receivers, 2, 10, 20, 40),
     );
 }
 
