@@ -501,7 +501,7 @@ Polling is bounded to 1–60 Hz while the editor is open. Unchanged determinate 
 
 `EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and production IR loader use the same public declaration, callback, validation, rendering, lifecycle, and accessibility contracts. External text refresh requires an exact bounded byte count, a terminator at that boundary, no embedded terminator, and complete UTF-8. Malformed callback output preserves the accepted visual and accessibility text. Editable commits reject malformed UTF-8 before invoking the storage callback.
 
-Parameter and XY-pad formatting callbacks use the same exact output contract. Malformed callback output falls back to bounded numeric text. Exact-value input must terminate within 255 bytes and contain complete UTF-8 before the adapter invokes the parser callback.
+Parameter and XY-pad formatting callbacks use the same exact output contract and must return complete UTF-8. Malformed callback output falls back to bounded numeric text. Exact-value input must terminate within 255 bytes and contain complete UTF-8 before the adapter invokes the parser callback.
 
 ## Graph Viewports
 

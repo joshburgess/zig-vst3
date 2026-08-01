@@ -314,6 +314,13 @@ int32_t formatMalformedValue(void* userdata, uint32_t, double normalized, char* 
         output[3] = 0;
         return 3;
     }
+    if (state->malformed_format_value == 3) {
+        if (capacity < 3) return -1;
+        output[0] = static_cast<char>(0xc0);
+        output[1] = static_cast<char>(0x80);
+        output[2] = 0;
+        return 2;
+    }
     const int written = std::snprintf(output, capacity, "%.2f", normalized);
     return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
 }
@@ -812,11 +819,18 @@ int testRotaryKnob() {
             VSTGUI::exit();
             return 7;
         }
+        state.malformed_format_value = 3;
+        control.setValue(0.2);
+        if (control.primaryAccessibility().valueText() != "0.200") {
+            control.clear();
+            VSTGUI::exit();
+            return 8;
+        }
         auto* value_accessibility = control.valueAccessibility();
         if (!value_accessibility) {
             control.clear();
             VSTGUI::exit();
-            return 8;
+            return 9;
         }
         const uint32_t parse_count_before_accessibility = state.parse_value_count;
         if (!value_accessibility->perform(
@@ -826,13 +840,13 @@ int testRotaryKnob() {
             )) {
             control.clear();
             VSTGUI::exit();
-            return 9;
+            return 10;
         }
         if (state.parse_value_count <= parse_count_before_accessibility ||
             !closeEnough(control.model().acceptedValue(), 0.75)) {
             control.clear();
             VSTGUI::exit();
-            return 10;
+            return 11;
         }
         const char malformed_value[] = {static_cast<char>(0xc0), static_cast<char>(0x80), 0};
         std::array<char, 256> unterminated_value {};
@@ -850,7 +864,7 @@ int testRotaryKnob() {
             !closeEnough(control.model().acceptedValue(), 0.75)) {
             control.clear();
             VSTGUI::exit();
-            return 11;
+            return 12;
         }
         control.clear();
     }

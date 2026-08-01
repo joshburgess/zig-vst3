@@ -78,7 +78,8 @@ bool validCallbackTextOutput(const char* text, uint32_t capacity, int32_t writte
         return false;
     }
     const auto length = static_cast<std::size_t>(written);
-    return text[length] == 0 && std::find(text, text + length, '\0') == text + length;
+    return text[length] == 0 && std::find(text, text + length, '\0') == text + length &&
+        validUtf8(std::string_view(text, length));
 }
 
 double quantizeNormalized(double value, int32_t step_count) {
