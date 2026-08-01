@@ -52,7 +52,7 @@ public:
     FileDropStatus inspectPaths(const char* const* paths, uint32_t count);
     bool dispatchInspected(ZigVstguiFileImportEntryPoint entry_point = ZIG_VSTGUI_FILE_IMPORT_DROP);
     void cancelSelection();
-    void applyImportSnapshot(const ZigVstguiFileImportSnapshot& snapshot);
+    bool applyImportSnapshot(const ZigVstguiFileImportSnapshot& snapshot);
     FileDropStatus status() const;
     uint32_t inspectedCount() const;
     const std::string& inspectedPath(uint32_t index) const;

@@ -3417,12 +3417,26 @@ int testFileDrop() {
             VSTGUI::exit();
             return 9;
         }
+        auto malformed_snapshot = state.import_snapshot;
+        malformed_snapshot.progress = std::numeric_limits<double>::quiet_NaN();
+        if (view->applyImportSnapshot(malformed_snapshot) ||
+            control.accessibilityNode().valueText().find("42%") == std::string::npos) {
+            VSTGUI::exit();
+            return 10;
+        }
+        malformed_snapshot = state.import_snapshot;
+        malformed_snapshot.status = static_cast<ZigVstguiFileImportStatus>(10);
+        if (view->applyImportSnapshot(malformed_snapshot) ||
+            control.accessibilityNode().valueText().find("42%") == std::string::npos) {
+            VSTGUI::exit();
+            return 11;
+        }
         state.import_snapshot.status = ZIG_VSTGUI_FILE_IMPORT_FAILED;
         state.import_snapshot.failure = ZIG_VSTGUI_FILE_IMPORT_FAILURE_TRUNCATED;
         if (!control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press) ||
             state.import_command_count != 2 || state.import_command != ZIG_VSTGUI_FILE_IMPORT_RETRY) {
             VSTGUI::exit();
-            return 10;
+            return 12;
         }
         control.clear();
 
@@ -3435,7 +3449,7 @@ int testFileDrop() {
             disabled.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press) ||
             state.picker_launch_count != 3) {
             VSTGUI::exit();
-            return 11;
+            return 13;
         }
         disabled.clear();
     }

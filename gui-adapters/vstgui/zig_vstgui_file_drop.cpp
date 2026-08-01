@@ -37,6 +37,19 @@ std::string lower(std::string value) {
     return value;
 }
 
+bool validImportSnapshot(const ZigVstguiFileImportSnapshot& snapshot) {
+    return snapshot.status >= ZIG_VSTGUI_FILE_IMPORT_IDLE &&
+        snapshot.status <= ZIG_VSTGUI_FILE_IMPORT_FAILED &&
+        snapshot.failure >= ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE &&
+        snapshot.failure <= ZIG_VSTGUI_FILE_IMPORT_FAILURE_WORKER_UNAVAILABLE &&
+        snapshot.entry_point >= ZIG_VSTGUI_FILE_IMPORT_DROP &&
+        snapshot.entry_point <= ZIG_VSTGUI_FILE_IMPORT_PICKER &&
+        std::isfinite(snapshot.progress) &&
+        snapshot.progress >= 0.0 &&
+        snapshot.progress <= 1.0 &&
+        snapshot.preview_points <= ZIG_VSTGUI_MAX_GRAPH_POINTS;
+}
+
 }
 
 FileDropView::FileDropView(
@@ -182,11 +195,13 @@ void FileDropView::cancelSelection() {
     setStatus(FileDropStatus::idle);
 }
 
-void FileDropView::applyImportSnapshot(const ZigVstguiFileImportSnapshot& snapshot) {
+bool FileDropView::applyImportSnapshot(const ZigVstguiFileImportSnapshot& snapshot) {
+    if (!validImportSnapshot(snapshot)) return false;
     import_snapshot = snapshot;
     has_import_snapshot = true;
     syncAccessibility();
     invalid();
+    return true;
 }
 
 FileDropStatus FileDropView::status() const { return current_status; }
@@ -520,15 +535,10 @@ bool FileDropControl::refreshImportState() {
     if (!view || !callbacks.load_file_import) return false;
     ZigVstguiFileImportSnapshot next {};
     if (callbacks.load_file_import(callbacks.userdata, description.drop_id, &next) != 0 ||
-        next.status < ZIG_VSTGUI_FILE_IMPORT_IDLE || next.status > ZIG_VSTGUI_FILE_IMPORT_FAILED ||
-        next.failure < ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE ||
-        next.failure > ZIG_VSTGUI_FILE_IMPORT_FAILURE_WORKER_UNAVAILABLE ||
-        next.entry_point < ZIG_VSTGUI_FILE_IMPORT_DROP || next.entry_point > ZIG_VSTGUI_FILE_IMPORT_PICKER ||
-        !std::isfinite(next.progress) || next.progress < 0.0 || next.progress > 1.0 ||
-        next.preview_points > ZIG_VSTGUI_MAX_GRAPH_POINTS) return false;
+        !validImportSnapshot(next)) return false;
     import_snapshot = next;
     has_import_snapshot = true;
-    view->applyImportSnapshot(next);
+    if (!view->applyImportSnapshot(next)) return false;
     if (import_state_handler) import_state_handler(import_state_userdata, description.drop_id, next.status);
     if (next.status != ZIG_VSTGUI_FILE_IMPORT_VALIDATING &&
         next.status != ZIG_VSTGUI_FILE_IMPORT_IMPORTING) stopRefresh();

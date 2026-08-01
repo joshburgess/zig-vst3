@@ -423,6 +423,8 @@ Adapter boolean inputs use the C contract values 0 and 1. Other integers are rej
 
 `FileImporter` is supported. The component gallery, production channel strip, and production IR loader use the same public declaration, bounded path callback, picker fallback, keyboard interaction, accessibility semantics, and lifecycle contract. `FileDrop` remains a source-compatible alias. New code should use `FileImporter` and `EditorDescription.file_importers`.
 
+Import snapshots are validated before publication, including direct native-view updates. Invalid status, failure, entry-point, progress, or preview-count fields preserve the last valid visual and accessibility state.
+
 ### IR loader ownership reference
 
 The IR loader composes its importer, progress, waveform graph, viewport, range selection, metadata labels, and edit actions through the public `@import("zig-vst3").vstgui` authoring API. The controller owns the decoded importer and editable source buffers. File reading, WAV decoding, resampling, edits, and convolution preparation run outside the audio callback.
