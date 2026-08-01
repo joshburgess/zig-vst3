@@ -488,6 +488,7 @@ pub fn Loader(
 const nc_no_error: c_int = 0;
 const nc_nowrite: c_int = 0;
 const nc_global: c_int = -1;
+const nc_double: c_int = 6;
 
 const DynamicLibrary = if (builtin.os.tag == .windows)
     WindowsDynamicLibrary
@@ -550,6 +551,11 @@ const Api = struct {
         c_int,
         *c_int,
     ) callconv(.c) c_int,
+    inquire_variable_type: *const fn (
+        c_int,
+        c_int,
+        *c_int,
+    ) callconv(.c) c_int,
     inquire_variable_dimension_ids: *const fn (
         c_int,
         c_int,
@@ -595,6 +601,10 @@ const Api = struct {
             .inquire_variable_dimension_count = library.lookup(
                 @FieldType(Api, "inquire_variable_dimension_count"),
                 "nc_inq_varndims",
+            ) orelse return error.MissingSofaRuntimeSymbol,
+            .inquire_variable_type = library.lookup(
+                @FieldType(Api, "inquire_variable_type"),
+                "nc_inq_vartype",
             ) orelse return error.MissingSofaRuntimeSymbol,
             .inquire_variable_dimension_ids = library.lookup(
                 @FieldType(Api, "inquire_variable_dimension_ids"),
@@ -686,6 +696,15 @@ fn readVariableById(
     expected_rank: ?usize,
     maximum_value_count: usize,
 ) !Variable {
+    var variable_type: c_int = 0;
+    try check(api.inquire_variable_type(
+        file_id,
+        variable_id,
+        &variable_type,
+    ));
+    if (!supportedVariableType(variable_type))
+        return error.UnsupportedSofaVariableType;
+
     var rank_c: c_int = 0;
     try check(api.inquire_variable_dimension_count(
         file_id,
@@ -734,6 +753,10 @@ fn readVariableById(
         .dimension_ids = dimension_ids,
         .values = values,
     };
+}
+
+fn supportedVariableType(variable_type: c_int) bool {
+    return variable_type == nc_double;
 }
 
 fn boundedShapeValueCount(
@@ -1264,6 +1287,36 @@ test "standard HRTF file variables require convention ranks" {
     variable.rank = 2;
     variable.shape = .{ 2, 3, 1, 1 };
     try std.testing.expect(!validDelayVariable(variable, 3));
+}
+
+test "standard HRTF variables require double precision storage" {
+    try std.testing.expect(supportedVariableType(nc_double));
+    try std.testing.expect(!supportedVariableType(5));
+    try std.testing.expect(!supportedVariableType(9));
+
+    const Fake = struct {
+        fn inquire(
+            _: c_int,
+            _: c_int,
+            variable_type: *c_int,
+        ) callconv(.c) c_int {
+            variable_type.* = 5;
+            return nc_no_error;
+        }
+    };
+    var api: Api = undefined;
+    api.inquire_variable_type = Fake.inquire;
+    try std.testing.expectError(
+        error.UnsupportedSofaVariableType,
+        readVariableById(
+            &api,
+            std.testing.allocator,
+            0,
+            0,
+            null,
+            1,
+        ),
+    );
 }
 
 test "standard HRTF file variable sizes are bounded before allocation" {
