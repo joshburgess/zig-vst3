@@ -839,13 +839,19 @@ pub fn Database(
             channel_index: usize,
             sample_position: f64,
         ) f64 {
-            if (sample_position < 0.0 or
+            if (sample_position <= -1.0 or
                 sample_position >=
-                    @as(
-                        f64,
-                        @floatFromInt(self.response_frame_count),
-                    ))
+                    @as(f64, @floatFromInt(self.response_frame_count)))
+            {
                 return 0.0;
+            }
+            if (sample_position < 0.0) {
+                return @as(
+                    f64,
+                    self.responses[measurement_index][0][channel_index],
+                ) *
+                    (sample_position + 1.0);
+            }
             const first: usize = @intFromFloat(@floor(sample_position));
             const fraction =
                 sample_position -
@@ -977,11 +983,13 @@ pub fn Database(
                     const sample_position =
                         @as(f64, @floatFromInt(frame_index)) -
                         aligned_delay;
-                    var value: f64 = 0.0;
-                    if (sample_position >= 0.0 and
-                        sample_position <
+                    const value: f64 = if (sample_position <= -1.0 or
+                        sample_position >=
                             @as(f64, @floatFromInt(count)))
-                    {
+                        0.0
+                    else if (sample_position < 0.0)
+                        local_response[0] * (sample_position + 1.0)
+                    else value: {
                         const first: usize =
                             @intFromFloat(@floor(sample_position));
                         const fraction =
@@ -993,9 +1001,9 @@ pub fn Database(
                                 local_response[first + 1]
                             else
                                 0.0;
-                        value = first_value +
+                        break :value first_value +
                             (second_value - first_value) * fraction;
-                    }
+                    };
                     const converted: f32 = @floatCast(value);
                     if (!std.math.isFinite(converted))
                         return error.InvalidHrtfInterpolation;
@@ -2035,11 +2043,21 @@ test "HRTF database applies measured delays and reconstructs exact spectra" {
     try database.interpolate(directions[0], .nearest, &delayed);
     try std.testing.expectEqualDeep(
         [_]f32{
-            0.0,   0.0,
+            0.5,   0.25,
             0.625, 0.3125,
             0.125, 0.0625,
         },
         delayed,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 1.25),
+        delayed[0] + delayed[2] + delayed[4],
+        0.000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0.625),
+        delayed[1] + delayed[3] + delayed[5],
+        0.000_001,
     );
 
     var spectral: [6]f32 = undefined;
