@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -35,6 +36,7 @@ constexpr const char* second_child_path = "/org/a11y/atspi/accessible/control_1"
 constexpr const char* third_child_path = "/org/a11y/atspi/accessible/control_2";
 constexpr const char* fourth_child_path = "/org/a11y/atspi/accessible/control_3";
 constexpr const char* fifth_child_path = "/org/a11y/atspi/accessible/control_4";
+constexpr const char* sixth_child_path = "/org/a11y/atspi/accessible/control_5";
 constexpr int timeout_ms = 2000;
 
 class VstguiRuntime final {
@@ -84,6 +86,7 @@ struct Evidence {
     std::atomic<bool> tail_truncated_text_geometry {false};
     std::atomic<bool> head_truncated_text_geometry {false};
     std::atomic<bool> truncated_state_event {false};
+    std::atomic<bool> hostile_text_geometry {false};
     std::atomic<bool> text_selection_queries {false};
     std::atomic<bool> caret_set {false};
     std::atomic<bool> selection_added {false};
@@ -796,6 +799,41 @@ bool truncatedTextGeometryMatches(
         last_visible + 1,
         visible_text.c_str()
     );
+}
+
+bool fallbackTextGeometryMatches(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path
+) {
+    TextExtent extent;
+    if (!characterExtent(connection, application, path, 0, extent) ||
+        extent.x != 480 || extent.y != 70 || extent.width != 50 ||
+        extent.height != 40) return false;
+
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        "GetOffsetAtPoint",
+        g_variant_new("(iiu)", 505, 90, 1u),
+        G_VARIANT_TYPE("(i)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    gint32 offset = -1;
+    g_variant_get(result, "(i)", &offset);
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    return offset == 0;
 }
 
 void eventReceived(
@@ -1731,6 +1769,14 @@ void inspectApplication(
         ),
         std::memory_order_release
     );
+    evidence.hostile_text_geometry.store(
+        fallbackTextGeometryMatches(
+            connection,
+            child_bus.c_str(),
+            sixth_child_path
+        ),
+        std::memory_order_release
+    );
 
     error = nullptr;
     result = g_dbus_connection_call_sync(
@@ -1822,7 +1868,7 @@ void inspectApplication(
         GVariant* items = nullptr;
         g_variant_get(result, "(@a((so)(so)(so)iiassusau))", &items);
         evidence.cache_items.store(
-            g_variant_n_children(items) == 6,
+            g_variant_n_children(items) == 7,
             std::memory_order_release
         );
         g_variant_unref(items);
@@ -2442,6 +2488,19 @@ int runTest() {
     head_truncated_view->setTextInset(VSTGUI::CPoint(2, 2));
     head_truncated_view->setTextTruncateMode(VSTGUI::CTextLabel::kTruncateHead);
     frame->addView(head_truncated_view);
+    ZigVstgui::AccessibilityNode hostile_geometry_node;
+    hostile_geometry_node.setRole(ZigVstgui::AccessibilityRole::text_field);
+    hostile_geometry_node.setName("Hostile geometry fixture");
+    hostile_geometry_node.setValueText("XY");
+    hostile_geometry_node.setReadOnly(true);
+    auto* hostile_geometry_view = new VSTGUI::CTextLabel(
+        VSTGUI::CRect(480, 70, 580, 110),
+        "XY"
+    );
+    hostile_geometry_view->setTextRotation(
+        std::numeric_limits<double>::quiet_NaN()
+    );
+    frame->addView(hostile_geometry_view);
     ZigVstgui::NativeAccessibilityBridge bridge;
     auto clipboard = std::make_shared<TestClipboard>(service.evidence);
     const bool missing_bus_safe = !bridge.open(
@@ -2477,6 +2536,7 @@ int runTest() {
             {&rotated_node, rotated_view},
             {&tail_truncated_node, tail_truncated_view},
             {&head_truncated_node, head_truncated_view},
+            {&hostile_geometry_node, hostile_geometry_view},
         },
         clipboard
     );
@@ -2516,12 +2576,12 @@ int runTest() {
             service.evidence.truncated_state_event.load(std::memory_order_acquire) &&
             service.evidence.text_event_count.load(std::memory_order_acquire) == 4 &&
             service.evidence.event_count.load(std::memory_order_acquire) == 3 &&
-            service.evidence.cache_add_count.load(std::memory_order_acquire) == 6) break;
+            service.evidence.cache_add_count.load(std::memory_order_acquire) == 7) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     const bool published = missing_bus_safe && missing_registry_safe &&
         opened && active &&
-        element_count == 5 &&
+        element_count == 6 &&
         service.evidence.embedded.load(std::memory_order_acquire) &&
         service.evidence.id_set.load(std::memory_order_acquire) &&
         service.evidence.root_role.load(std::memory_order_acquire) &&
@@ -2545,6 +2605,7 @@ int runTest() {
             std::memory_order_acquire
         ) &&
         service.evidence.truncated_state_event.load(std::memory_order_acquire) &&
+        service.evidence.hostile_text_geometry.load(std::memory_order_acquire) &&
         service.evidence.text_selection_queries.load(std::memory_order_acquire) &&
         service.evidence.caret_set.load(std::memory_order_acquire) &&
         service.evidence.selection_added.load(std::memory_order_acquire) &&
@@ -2562,7 +2623,7 @@ int runTest() {
         service.evidence.cache_items.load(std::memory_order_acquire) &&
         service.evidence.cache_root_added.load(std::memory_order_acquire) &&
         service.evidence.cache_child_added.load(std::memory_order_acquire) &&
-        service.evidence.cache_add_count.load(std::memory_order_acquire) == 6 &&
+        service.evidence.cache_add_count.load(std::memory_order_acquire) == 7 &&
         service.evidence.hostile_inputs_rejected.load(std::memory_order_acquire) &&
         service.evidence.inspection_complete.load(std::memory_order_acquire) &&
         service.evidence.property_event.load(std::memory_order_acquire) &&
@@ -2598,7 +2659,7 @@ int runTest() {
     node.setValueText("Detached value");
     node.setTextSelection(0, 1);
     for (int attempt = 0; attempt < 100; ++attempt) {
-        if (service.evidence.cache_remove_count.load(std::memory_order_acquire) == 6)
+        if (service.evidence.cache_remove_count.load(std::memory_order_acquire) == 7)
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
@@ -2614,7 +2675,7 @@ int runTest() {
             selection_events_before_close &&
         service.evidence.cache_root_removed.load(std::memory_order_acquire) &&
         service.evidence.cache_child_removed.load(std::memory_order_acquire) &&
-        service.evidence.cache_remove_count.load(std::memory_order_acquire) == 6;
+        service.evidence.cache_remove_count.load(std::memory_order_acquire) == 7;
     if (!published || !closed) {
         std::fprintf(
             stderr,
@@ -2624,6 +2685,7 @@ int runTest() {
             "interfaces=%d bounds=%d action-count=%d action=%d "
             "value-read=%d value-set=%d text-interface=%d text-queries=%d "
             "text-boundaries=%d rotated-geometry=%d truncated-geometry=%d/%d/%d "
+            "hostile-geometry=%d "
             "selection-queries=%d caret-set=%d "
             "selection=%d/%d/%d "
             "editable=%d text-set=%d insert=%d "
@@ -2665,6 +2727,7 @@ int runTest() {
                 std::memory_order_acquire
             ),
             service.evidence.truncated_state_event.load(std::memory_order_acquire),
+            service.evidence.hostile_text_geometry.load(std::memory_order_acquire),
             service.evidence.text_selection_queries.load(std::memory_order_acquire),
             service.evidence.caret_set.load(std::memory_order_acquire),
             service.evidence.selection_added.load(std::memory_order_acquire),

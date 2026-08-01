@@ -969,6 +969,9 @@ private:
 
         const auto area = bounds(object, coordinate_type);
         const auto inset = display->getTextInset();
+        const double rotation = display->getTextRotation();
+        if (!std::isfinite(inset.x) || !std::isfinite(inset.y) ||
+            !std::isfinite(rotation)) return false;
         const double text_left = static_cast<double>(area.x) + inset.x;
         const double text_right = static_cast<double>(area.x) + area.width - inset.x;
         const double text_top = static_cast<double>(area.y) + inset.y;
@@ -986,6 +989,8 @@ private:
             case VSTGUI::kRightText:
                 layout.x = text_right - text_width;
                 break;
+            default:
+                return false;
         }
 
         const double cap_height = platform_font->getCapHeight();
@@ -1012,7 +1017,7 @@ private:
         }
         layout.transform = {};
         layout.transform.rotate(
-            display->getTextRotation(),
+            rotation,
             VSTGUI::CPoint(
                 (text_left + text_right) / 2.0,
                 (text_top + text_bottom) / 2.0
