@@ -150,13 +150,16 @@ uint32_t responsiveColumnCount(
     uint32_t item_count
 ) {
     if (item_count == 0) return 0;
+    if (!std::isfinite(available)) return available > 0.0 ? item_count : 1;
+    if (!std::isfinite(gap) || !std::isfinite(minimum_item)) return 1;
     const double safe_gap = std::max(0.0, gap);
     const double safe_minimum = std::max(1.0, minimum_item);
-    const auto fitting = static_cast<uint32_t>(std::max(
+    const double fitting = std::max(
         1.0,
         std::floor((std::max(0.0, available) + safe_gap) / (safe_minimum + safe_gap))
-    ));
-    return std::min(item_count, fitting);
+    );
+    if (fitting >= item_count) return item_count;
+    return static_cast<uint32_t>(fitting);
 }
 
 }

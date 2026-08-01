@@ -1273,6 +1273,11 @@ int testLayoutSolvers() {
     if (ZigVstgui::responsiveColumnCount(672.0, 8.0, 120.0, 5) != 5) return 13;
     if (ZigVstgui::responsiveColumnCount(10.0, 8.0, 120.0, 5) != 1) return 14;
     if (ZigVstgui::responsiveColumnCount(352.0, 8.0, 120.0, 0) != 0) return 15;
+    if (ZigVstgui::responsiveColumnCount(std::nan(""), 8.0, 120.0, 5) != 1 ||
+        ZigVstgui::responsiveColumnCount(std::numeric_limits<double>::infinity(), 8.0, 120.0, 5) != 5 ||
+        ZigVstgui::responsiveColumnCount(std::numeric_limits<double>::max(), 8.0, 120.0, 5) != 5 ||
+        ZigVstgui::responsiveColumnCount(352.0, std::numeric_limits<double>::infinity(), 120.0, 5) != 1 ||
+        ZigVstgui::responsiveColumnCount(352.0, 8.0, std::nan(""), 5) != 1) return 16;
     return 0;
 }
 
