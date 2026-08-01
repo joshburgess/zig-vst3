@@ -2696,6 +2696,33 @@ int testPresetBrowser() {
         VSTGUI::exit();
         return 6;
     }
+    const char accented_search[] = {static_cast<char>(0xc3), static_cast<char>(0xa9), 0};
+    if (!accessibility.perform(
+            ZigVstgui::AccessibilityAction::set_value,
+            0.0,
+            accented_search
+        ) || !browser.handleKey(0, Steinberg::KEY_BACK, 0) ||
+        !browser.browserView()->searchText().empty()) {
+        browser.clear();
+        VSTGUI::exit();
+        return 9;
+    }
+    const char malformed_search[] = {static_cast<char>(0xc0), static_cast<char>(0x80), 0};
+    std::array<char, 97> unterminated_search {};
+    unterminated_search.fill('a');
+    if (accessibility.perform(
+            ZigVstgui::AccessibilityAction::set_value,
+            0.0,
+            malformed_search
+        ) || accessibility.perform(
+            ZigVstgui::AccessibilityAction::set_value,
+            0.0,
+            unterminated_search.data()
+        ) || !browser.browserView()->searchText().empty()) {
+        browser.clear();
+        VSTGUI::exit();
+        return 10;
+    }
     state.reject_preset = true;
     if (!accessibility.perform(ZigVstgui::AccessibilityAction::press) ||
         browser.browserView()->statusText().find("retry") == std::string::npos) {

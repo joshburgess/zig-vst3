@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <string_view>
 #include <utility>
 
 namespace ZigVstgui {
@@ -217,7 +218,12 @@ bool PresetBrowserView::handleKey(uint16_t key, int16_t key_code, int16_t modifi
         return true;
     }
     if (key_code == Steinberg::KEY_BACK) {
-        if (!search.empty()) replaceSearch(search.substr(0, search.size() - 1));
+        if (!search.empty()) {
+            std::size_t start = search.size() - 1;
+            while (start > 0 &&
+                (static_cast<unsigned char>(search[start]) & 0xc0u) == 0x80u) --start;
+            replaceSearch(search.substr(0, start));
+        }
         return true;
     }
     if (key >= 32 && key <= 126 && search.size() < 96) {
@@ -336,10 +342,15 @@ bool PresetBrowserView::performAccessibilityAction(const AccessibilityActionRequ
         case AccessibilityAction::press: return activate();
         case AccessibilityAction::increment: return selectRelative(true);
         case AccessibilityAction::decrement: return selectRelative(false);
-        case AccessibilityAction::set_value:
-            if (!request.text || std::strlen(request.text) > 96) return false;
-            replaceSearch(request.text);
+        case AccessibilityAction::set_value: {
+            if (!request.text) return false;
+            const auto* terminator = static_cast<const char*>(std::memchr(request.text, 0, 97));
+            if (!terminator) return false;
+            const std::string_view text(request.text, static_cast<std::size_t>(terminator - request.text));
+            if (!validUtf8(text)) return false;
+            replaceSearch(std::string(text));
             return true;
+        }
         default: return false;
     }
 }
