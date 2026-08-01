@@ -3571,6 +3571,18 @@ pub fn encodeVbriFrame(
         metadata.entry_bytes;
     if (entry_count > std.math.maxInt(u16))
         return error.VbriEntryCountOverflow;
+    _ = try (Vbri{
+        .version = 1,
+        .delay = metadata.delay,
+        .quality = metadata.quality,
+        .stream_bytes = metadata.stream_bytes,
+        .frame_count = metadata.frame_count,
+        .toc_entries = @intCast(entry_count),
+        .toc_scale = metadata.toc_scale,
+        .entry_bytes = metadata.entry_bytes,
+        .frames_per_entry = metadata.frames_per_entry,
+        .toc = metadata.toc,
+    }).approximateByteOffsetForFrame(0);
     const metadata_offset: usize = 36;
     const metadata_bytes = std.math.add(
         usize,
@@ -9585,7 +9597,7 @@ fn parseVbri(frame: []const u8) !?Vbri {
     ) catch return error.VbriSizeOverflow;
     if (frame.len - (offset + 26) < toc_bytes)
         return error.TruncatedVbriToc;
-    return .{
+    const result = Vbri{
         .version = version,
         .delay = readU16(frame[offset + 6 .. offset + 8]),
         .quality = readU16(frame[offset + 8 .. offset + 10]),
@@ -9597,6 +9609,8 @@ fn parseVbri(frame: []const u8) !?Vbri {
         .frames_per_entry = frames_per_entry,
         .toc = frame[offset + 26 ..][0..toc_bytes],
     };
+    _ = try result.approximateByteOffsetForFrame(0);
+    return result;
 }
 
 fn leadingTagBytes(encoded: []const u8) !usize {
@@ -14478,6 +14492,25 @@ test "parses bounded VBRI header and table" {
         zero_entry.approximateByteOffsetForFrame(1),
     );
 
+    storage[offset + 28 ..][0..2].* = .{ 0, 0 };
+    try std.testing.expectError(
+        error.InvalidVbriTocEntry,
+        Frame.parse(storage[0..end], 0),
+    );
+    storage[offset + 28 ..][0..2].* = .{ 0, 6 };
+    storage[offset + 14 ..][0..4].* = .{ 0, 0, 0, 13 };
+    try std.testing.expectError(
+        error.IncompleteVbriFrameCoverage,
+        Frame.parse(storage[0..end], 0),
+    );
+    storage[offset + 14 ..][0..4].* = .{ 0, 0, 0, 10 };
+    storage[offset + 10 ..][0..4].* = .{ 0, 0, 0, 10 };
+    try std.testing.expectError(
+        error.InvalidVbriStreamBytes,
+        Frame.parse(storage[0..end], 0),
+    );
+    storage[offset + 10 ..][0..4].* = .{ 0, 0, 4, 0 };
+
     storage[offset + 23] = 5;
     try std.testing.expectError(
         error.InvalidVbriEntrySize,
@@ -14618,21 +14651,21 @@ test "encodes bounded VBRI metadata frames transactionally" {
         .bitrate_kbps = 320,
         .channel_mode = .stereo,
     }).header(false);
-    const toc = [_]u8{
-        0x01, 0x02, 0x03, 0x04,
-        0x05, 0x06, 0x07, 0x08,
-    };
+    const toc = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8 };
     var storage: [maximum_encoded_frame_bytes + 4]u8 =
         @splat(0xa5);
     for (1..5) |entry_bytes| {
-        const toc_bytes = toc[0 .. entry_bytes * 2];
+        var width_toc: [8]u8 = @splat(0);
+        width_toc[entry_bytes - 1] = 3;
+        width_toc[entry_bytes * 2 - 1] = 5;
+        const toc_bytes = width_toc[0 .. entry_bytes * 2];
         const encoded = try encodeVbriFrame(
             header,
             .{
                 .delay = 17,
                 .quality = 83,
-                .stream_bytes = 123_456,
-                .frame_count = 321,
+                .stream_bytes = 16,
+                .frame_count = 14,
                 .toc_scale = 2,
                 .entry_bytes = @intCast(entry_bytes),
                 .frames_per_entry = 7,
@@ -14656,11 +14689,11 @@ test "encodes bounded VBRI metadata frames transactionally" {
         try std.testing.expectEqual(@as(u16, 17), vbri.delay);
         try std.testing.expectEqual(@as(u16, 83), vbri.quality);
         try std.testing.expectEqual(
-            @as(u32, 123_456),
+            @as(u32, 16),
             vbri.stream_bytes,
         );
         try std.testing.expectEqual(
-            @as(u32, 321),
+            @as(u32, 14),
             vbri.frame_count,
         );
         try std.testing.expectEqual(
@@ -14686,8 +14719,8 @@ test "encodes bounded VBRI metadata frames transactionally" {
     const before = unchanged;
     const base = VbriEncoderMetadata{
         .quality = 1,
-        .stream_bytes = 2,
-        .frame_count = 3,
+        .stream_bytes = 3,
+        .frame_count = 2,
         .toc_scale = 1,
         .entry_bytes = 1,
         .frames_per_entry = 1,
@@ -14720,6 +14753,25 @@ test "encodes bounded VBRI metadata frames transactionally" {
     invalid.entry_bytes = 3;
     try std.testing.expectError(
         error.InvalidVbriTocSize,
+        encodeVbriFrame(header, invalid, &storage),
+    );
+    invalid = base;
+    invalid.frame_count = 3;
+    try std.testing.expectError(
+        error.IncompleteVbriFrameCoverage,
+        encodeVbriFrame(header, invalid, &storage),
+    );
+    invalid = base;
+    invalid.stream_bytes = 2;
+    try std.testing.expectError(
+        error.InvalidVbriStreamBytes,
+        encodeVbriFrame(header, invalid, &storage),
+    );
+    const zero_entry_toc = [_]u8{ 1, 0 };
+    invalid = base;
+    invalid.toc = &zero_entry_toc;
+    try std.testing.expectError(
+        error.InvalidVbriTocEntry,
         encodeVbriFrame(header, invalid, &storage),
     );
     var protected = header;
