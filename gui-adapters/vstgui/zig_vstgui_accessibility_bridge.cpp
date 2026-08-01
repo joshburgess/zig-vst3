@@ -14,6 +14,7 @@
 #endif
 
 #include <gio/gio.h>
+#include <pango/pango.h>
 
 #include <algorithm>
 #include <clocale>
@@ -1335,8 +1336,42 @@ private:
             end = count;
             return true;
         }
-        start = granularity == 0 ? offset : 0;
-        end = granularity == 0 ? offset + 1 : count;
+        if (granularity == 0) {
+            start = offset;
+            end = offset + 1;
+            return textSlice(text, start, end, result);
+        }
+        if (granularity >= 3) {
+            start = 0;
+            end = count;
+            return textSlice(text, start, end, result);
+        }
+        if (text.size() > G_MAXINT || count >= G_MAXINT) return false;
+        std::vector<PangoLogAttr> attributes(
+            static_cast<std::size_t>(count) + 1
+        );
+        pango_get_log_attrs(
+            text.c_str(),
+            static_cast<int>(text.size()),
+            -1,
+            pango_language_get_default(),
+            attributes.data(),
+            static_cast<int>(attributes.size())
+        );
+        const auto begins = [granularity](const PangoLogAttr& attribute) {
+            return granularity == 1
+                ? attribute.is_word_start != 0
+                : attribute.is_sentence_start != 0;
+        };
+        start = offset;
+        while (start > 0 && !begins(attributes[static_cast<std::size_t>(start)]))
+            start -= 1;
+        if (!begins(attributes[static_cast<std::size_t>(start)])) {
+            start = 0;
+        }
+        end = std::max(start + 1, offset + 1);
+        while (end < count &&
+               !begins(attributes[static_cast<std::size_t>(end)])) end += 1;
         return textSlice(text, start, end, result);
     }
 
@@ -1391,8 +1426,11 @@ private:
             gint32 offset = -1;
             guint32 granularity = 0;
             g_variant_get(parameters, "(iu)", &offset, &granularity);
-            if (g_strcmp0(method, "GetTextAtOffset") == 0 &&
-                granularity <= 6 && granularity > 4) granularity = 4;
+            if (g_strcmp0(method, "GetTextAtOffset") == 0) {
+                if (granularity == 1 || granularity == 2) granularity = 1;
+                else if (granularity == 3 || granularity == 4) granularity = 2;
+                else if (granularity == 5 || granularity == 6) granularity = 3;
+            }
             std::string result;
             gint32 start = 0;
             gint32 end = 0;

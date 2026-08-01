@@ -46,6 +46,7 @@ add_subdirectory("${VSTGUI_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/vstgui")
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
+    pkg_check_modules(PANGO_SEGMENTATION REQUIRED IMPORTED_TARGET pango)
     pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
     get_target_property(VSTGUI_LIBRARY_SOURCES vstgui SOURCES)
     list(
@@ -142,7 +143,7 @@ target_link_libraries(zig_vstgui_adapter PRIVATE vstgui)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(
         zig_vstgui_adapter
-        PRIVATE PkgConfig::GIO PkgConfig::XCB
+        PRIVATE PkgConfig::GIO PkgConfig::PANGO_SEGMENTATION PkgConfig::XCB
     )
 endif()
 if(APPLE AND (ZIG_VSTGUI_ENABLE_SANITIZERS OR ZIG_VSTGUI_ENABLE_THREAD_SANITIZER))

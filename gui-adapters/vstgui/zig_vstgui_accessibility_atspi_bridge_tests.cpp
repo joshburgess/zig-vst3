@@ -28,6 +28,7 @@ constexpr const char* cache_interface = "org.a11y.atspi.Cache";
 constexpr const char* cache_path = "/org/a11y/atspi/cache";
 constexpr const char* object_event_interface = "org.a11y.atspi.Event.Object";
 constexpr const char* first_child_path = "/org/a11y/atspi/accessible/control_0";
+constexpr const char* second_child_path = "/org/a11y/atspi/accessible/control_1";
 constexpr int timeout_ms = 2000;
 
 constexpr const char* service_xml = R"xml(
@@ -61,6 +62,7 @@ struct Evidence {
     std::atomic<bool> value_set {false};
     std::atomic<bool> text_interface {false};
     std::atomic<bool> text_queries {false};
+    std::atomic<bool> text_boundaries {false};
     std::atomic<bool> editable_interface {false};
     std::atomic<bool> text_set {false};
     std::atomic<bool> text_inserted {false};
@@ -582,6 +584,61 @@ void inspectApplication(
         if (error) g_error_free(error);
     }
 
+    bool text_boundaries = false;
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        second_child_path,
+        "org.a11y.atspi.Text",
+        "GetStringAtOffset",
+        g_variant_new("(iu)", 6, 1u),
+        G_VARIANT_TYPE("(sii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        const char* value = nullptr;
+        gint32 start = -1;
+        gint32 end = -1;
+        g_variant_get(result, "(&sii)", &value, &start, &end);
+        text_boundaries = value && std::strcmp(value, "au ") == 0 &&
+            start == 5 && end == 8;
+        g_variant_unref(result);
+    } else if (error) {
+        g_error_free(error);
+    }
+
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        second_child_path,
+        "org.a11y.atspi.Text",
+        "GetStringAtOffset",
+        g_variant_new("(iu)", 15, 2u),
+        G_VARIANT_TYPE("(sii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        const char* value = nullptr;
+        gint32 start = -1;
+        gint32 end = -1;
+        g_variant_get(result, "(&sii)", &value, &start, &end);
+        text_boundaries &= value && std::strcmp(value, "你好！ ") == 0 &&
+            start == 14 && end == 18;
+        g_variant_unref(result);
+    } else {
+        text_boundaries = false;
+        if (error) g_error_free(error);
+    }
+    evidence.text_boundaries.store(text_boundaries, std::memory_order_release);
+
     error = nullptr;
     result = g_dbus_connection_call_sync(
         connection,
@@ -776,7 +833,7 @@ void inspectApplication(
         GVariant* items = nullptr;
         g_variant_get(result, "(@a((so)(so)(so)iiassusau))", &items);
         evidence.cache_items.store(
-            g_variant_n_children(items) == 2,
+            g_variant_n_children(items) == 3,
             std::memory_order_release
         );
         g_variant_unref(items);
@@ -1307,6 +1364,11 @@ int runTest() {
             static_cast<uint32_t>(ZigVstgui::AccessibilityAction::press) |
             static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_value)
     );
+    ZigVstgui::AccessibilityNode boundary_node;
+    boundary_node.setRole(ZigVstgui::AccessibilityRole::text_field);
+    boundary_node.setName("Boundary fixture");
+    boundary_node.setValueText("Café au lait. 你好！ Next?");
+    boundary_node.setReadOnly(true);
     auto frame = VSTGUI::owned(new VSTGUI::CFrame(
         VSTGUI::CRect(0, 0, 640, 480),
         nullptr
@@ -1316,6 +1378,10 @@ int runTest() {
     );
     frame->addView(view);
     view->setWantsFocus(true);
+    auto* boundary_view = new VSTGUI::CView(
+        VSTGUI::CRect(10, 70, 210, 110)
+    );
+    frame->addView(boundary_view);
     ZigVstgui::NativeAccessibilityBridge bridge;
     auto clipboard = std::make_shared<TestClipboard>(service.evidence);
     const bool missing_bus_safe = !bridge.open(
@@ -1345,7 +1411,7 @@ int runTest() {
     }
     const bool opened = bridge.open(
         frame.get(),
-        {{&node, view}},
+        {{&node, view}, {&boundary_node, boundary_view}},
         clipboard
     );
     const bool active = bridge.active();
@@ -1375,12 +1441,12 @@ int runTest() {
             ) &&
             service.evidence.text_event_count.load(std::memory_order_acquire) == 4 &&
             service.evidence.event_count.load(std::memory_order_acquire) == 3 &&
-            service.evidence.cache_add_count.load(std::memory_order_acquire) == 2) break;
+            service.evidence.cache_add_count.load(std::memory_order_acquire) == 3) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     const bool published = missing_bus_safe && missing_registry_safe &&
         opened && active &&
-        element_count == 1 &&
+        element_count == 2 &&
         service.evidence.embedded.load(std::memory_order_acquire) &&
         service.evidence.id_set.load(std::memory_order_acquire) &&
         service.evidence.root_role.load(std::memory_order_acquire) &&
@@ -1395,6 +1461,7 @@ int runTest() {
         service.evidence.value_set.load(std::memory_order_acquire) &&
         service.evidence.text_interface.load(std::memory_order_acquire) &&
         service.evidence.text_queries.load(std::memory_order_acquire) &&
+        service.evidence.text_boundaries.load(std::memory_order_acquire) &&
         service.evidence.editable_interface.load(std::memory_order_acquire) &&
         service.evidence.text_set.load(std::memory_order_acquire) &&
         service.evidence.text_inserted.load(std::memory_order_acquire) &&
@@ -1407,7 +1474,7 @@ int runTest() {
         service.evidence.cache_items.load(std::memory_order_acquire) &&
         service.evidence.cache_root_added.load(std::memory_order_acquire) &&
         service.evidence.cache_child_added.load(std::memory_order_acquire) &&
-        service.evidence.cache_add_count.load(std::memory_order_acquire) == 2 &&
+        service.evidence.cache_add_count.load(std::memory_order_acquire) == 3 &&
         service.evidence.hostile_inputs_rejected.load(std::memory_order_acquire) &&
         service.evidence.inspection_complete.load(std::memory_order_acquire) &&
         service.evidence.property_event.load(std::memory_order_acquire) &&
@@ -1432,7 +1499,7 @@ int runTest() {
     node.setName("Detached node");
     node.setValueText("Detached value");
     for (int attempt = 0; attempt < 100; ++attempt) {
-        if (service.evidence.cache_remove_count.load(std::memory_order_acquire) == 2)
+        if (service.evidence.cache_remove_count.load(std::memory_order_acquire) == 3)
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
@@ -1444,7 +1511,7 @@ int runTest() {
             text_events_before_close &&
         service.evidence.cache_root_removed.load(std::memory_order_acquire) &&
         service.evidence.cache_child_removed.load(std::memory_order_acquire) &&
-        service.evidence.cache_remove_count.load(std::memory_order_acquire) == 2;
+        service.evidence.cache_remove_count.load(std::memory_order_acquire) == 3;
     if (!published || !closed) {
         std::fprintf(
             stderr,
@@ -1453,6 +1520,7 @@ int runTest() {
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
             "interfaces=%d bounds=%d action-count=%d action=%d "
             "value-read=%d value-set=%d text-interface=%d text-queries=%d "
+            "text-boundaries=%d "
             "editable=%d text-set=%d insert=%d "
             "delete=%d paste=%d ab-updates=%u clipboard-writes=%u clipboard-reads=%u "
             "clipboard-methods=%d "
@@ -1482,6 +1550,7 @@ int runTest() {
             service.evidence.value_set.load(std::memory_order_acquire),
             service.evidence.text_interface.load(std::memory_order_acquire),
             service.evidence.text_queries.load(std::memory_order_acquire),
+            service.evidence.text_boundaries.load(std::memory_order_acquire),
             service.evidence.editable_interface.load(std::memory_order_acquire),
             service.evidence.text_set.load(std::memory_order_acquire),
             service.evidence.text_inserted.load(std::memory_order_acquire),
