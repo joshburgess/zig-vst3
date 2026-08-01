@@ -2,9 +2,67 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <string_view>
 #include <utility>
 
 namespace ZigVstgui {
+
+namespace {
+
+bool utf8CharacterCount(std::string_view text, uint32_t& result) {
+    uint64_t count = 0;
+    std::size_t index = 0;
+    while (index < text.size()) {
+        const auto first = static_cast<unsigned char>(text[index]);
+        std::size_t width = 0;
+        if (first <= 0x7f) width = 1;
+        else if (first >= 0xc2 && first <= 0xdf) width = 2;
+        else if (first >= 0xe0 && first <= 0xef) width = 3;
+        else if (first >= 0xf0 && first <= 0xf4) width = 4;
+        else return false;
+        if (index + width > text.size()) return false;
+        for (std::size_t offset = 1; offset < width; ++offset) {
+            const auto continuation = static_cast<unsigned char>(text[index + offset]);
+            if (continuation < 0x80 || continuation > 0xbf) return false;
+        }
+        if (width == 3) {
+            const auto second = static_cast<unsigned char>(text[index + 1]);
+            if ((first == 0xe0 && second < 0xa0) ||
+                (first == 0xed && second > 0x9f)) return false;
+        }
+        if (width == 4) {
+            const auto second = static_cast<unsigned char>(text[index + 1]);
+            if ((first == 0xf0 && second < 0x90) ||
+                (first == 0xf4 && second > 0x8f)) return false;
+        }
+        index += width;
+        count += 1;
+        if (count > std::numeric_limits<uint32_t>::max()) return false;
+    }
+    result = static_cast<uint32_t>(count);
+    return true;
+}
+
+bool sameTextSelection(
+    const AccessibilityTextSelection& left,
+    const AccessibilityTextSelection& right
+) {
+    return left.present == right.present && left.anchor == right.anchor &&
+        left.caret == right.caret;
+}
+
+bool allowedWhenReadOnly(AccessibilityAction action) {
+    return action == AccessibilityAction::focus ||
+        action == AccessibilityAction::set_caret ||
+        action == AccessibilityAction::set_selection;
+}
+
+}
+
+bool AccessibilityTextSelection::selected() const {
+    return present && anchor != caret;
+}
 
 void AccessibilityNode::setObserver(void* userdata, AccessibilityChangeCallback callback) const {
     observer_userdata = userdata;
@@ -47,8 +105,23 @@ void AccessibilityNode::setDescription(std::string description) {
 
 void AccessibilityNode::setValueText(std::string value) {
     if (semantic_value == value) return;
+    const auto previous_selection = semantic_text_selection;
     semantic_value = std::move(value);
+    uint32_t count = 0;
+    if (!utf8CharacterCount(semantic_value, count)) {
+        semantic_text_selection = {};
+    } else if (semantic_text_selection.present) {
+        semantic_text_selection.anchor = std::min(semantic_text_selection.anchor, count);
+        semantic_text_selection.caret = std::min(semantic_text_selection.caret, count);
+    }
     notify(AccessibilityChange::value);
+    if (previous_selection.present != semantic_text_selection.present ||
+        previous_selection.caret != semantic_text_selection.caret)
+        notify(AccessibilityChange::text_caret);
+    if (previous_selection.selected() != semantic_text_selection.selected() ||
+        (semantic_text_selection.selected() &&
+            !sameTextSelection(previous_selection, semantic_text_selection)))
+        notify(AccessibilityChange::text_selection);
 }
 
 void AccessibilityNode::setRange(double minimum, double maximum, double current) {
@@ -108,6 +181,30 @@ void AccessibilityNode::setReadOnly(bool read_only) {
     notify(AccessibilityChange::state);
 }
 
+bool AccessibilityNode::setTextSelection(uint32_t anchor, uint32_t caret) {
+    uint32_t count = 0;
+    if (!utf8CharacterCount(semantic_value, count) || anchor > count || caret > count)
+        return false;
+    const AccessibilityTextSelection next {true, anchor, caret};
+    if (sameTextSelection(semantic_text_selection, next)) return true;
+    const auto previous = semantic_text_selection;
+    semantic_text_selection = next;
+    if (!previous.present || previous.caret != caret)
+        notify(AccessibilityChange::text_caret);
+    if (previous.selected() != next.selected() ||
+        (next.selected() && !sameTextSelection(previous, next)))
+        notify(AccessibilityChange::text_selection);
+    return true;
+}
+
+void AccessibilityNode::clearTextSelection() {
+    if (!semantic_text_selection.present) return;
+    const bool was_selected = semantic_text_selection.selected();
+    semantic_text_selection = {};
+    notify(AccessibilityChange::text_caret);
+    if (was_selected) notify(AccessibilityChange::text_selection);
+}
+
 AccessibilityRole AccessibilityNode::role() const {
     return semantic_role;
 }
@@ -132,6 +229,10 @@ const AccessibilityState& AccessibilityNode::state() const {
     return semantic_state;
 }
 
+const AccessibilityTextSelection& AccessibilityNode::textSelection() const {
+    return semantic_text_selection;
+}
+
 uint64_t AccessibilityNode::generation() const {
     return change_generation;
 }
@@ -141,8 +242,31 @@ bool AccessibilityNode::supports(AccessibilityAction action) const {
 }
 
 bool AccessibilityNode::perform(AccessibilityAction action, double value, const char* text) const {
-    if (!semantic_state.enabled || semantic_state.read_only || !supports(action) || !action_callback) return false;
+    if (!semantic_state.enabled ||
+        (semantic_state.read_only && !allowedWhenReadOnly(action)) ||
+        !supports(action) || !action_callback) return false;
     return action_callback(action_userdata, *this, {action, value, text});
+}
+
+bool AccessibilityNode::performTextSelection(
+    AccessibilityAction action,
+    uint32_t anchor,
+    uint32_t caret
+) const {
+    if (action != AccessibilityAction::set_caret &&
+        action != AccessibilityAction::set_selection) return false;
+    if (action == AccessibilityAction::set_caret && anchor != caret) return false;
+    uint32_t count = 0;
+    if (!utf8CharacterCount(semantic_value, count) || anchor > count || caret > count)
+        return false;
+    if (!semantic_state.enabled ||
+        (semantic_state.read_only && !allowedWhenReadOnly(action)) ||
+        !supports(action) || !action_callback) return false;
+    return action_callback(
+        action_userdata,
+        *this,
+        {action, 0.0, nullptr, anchor, caret}
+    );
 }
 
 void AccessibilityNode::notify(AccessibilityChange change) {

@@ -10,6 +10,8 @@ struct ActionState {
     ZigVstgui::AccessibilityAction last {ZigVstgui::AccessibilityAction::focus};
     double value {0.0};
     const char* text {nullptr};
+    uint32_t text_start {0};
+    uint32_t text_end {0};
 };
 
 bool perform(
@@ -22,6 +24,8 @@ bool perform(
     state->last = request.action;
     state->value = request.value;
     state->text = request.text;
+    state->text_start = request.text_start;
+    state->text_end = request.text_end;
     return true;
 }
 
@@ -106,19 +110,33 @@ int testTextAndReadOnlyState() {
     node.setActionHandler(
         &actions,
         perform,
-        static_cast<uint32_t>(AccessibilityAction::set_value)
+        static_cast<uint32_t>(AccessibilityAction::focus) |
+            static_cast<uint32_t>(AccessibilityAction::set_value) |
+            static_cast<uint32_t>(AccessibilityAction::set_caret) |
+            static_cast<uint32_t>(AccessibilityAction::set_selection)
     );
     auto snapshot = AtspiNodeAdapter(&node).snapshot(true, true, true);
     if (!snapshot.hasState(AtspiState::editable) ||
         !snapshot.hasState(AtspiState::single_line) ||
+        !snapshot.hasState(AtspiState::selectable_text) ||
         !snapshot.hasInterface(AtspiInterface::text) ||
         !snapshot.hasInterface(AtspiInterface::editable_text)) return 1;
     node.setReadOnly(true);
     snapshot = AtspiNodeAdapter(&node).snapshot(true, true, true);
     if (snapshot.hasState(AtspiState::editable) ||
         !snapshot.hasState(AtspiState::read_only) ||
+        !snapshot.hasState(AtspiState::selectable_text) ||
         !snapshot.hasInterface(AtspiInterface::text) ||
         snapshot.hasInterface(AtspiInterface::editable_text)) return 2;
+    node.setValueText("AéB");
+    if (!node.setTextSelection(1, 2)) return 3;
+    snapshot = AtspiNodeAdapter(&node).snapshot(true, true, true);
+    if (!snapshot.text_selection.present ||
+        snapshot.text_selection.anchor != 1 || snapshot.text_selection.caret != 2 ||
+        !node.performTextSelection(AccessibilityAction::set_caret, 2, 2) ||
+        actions.last != AccessibilityAction::set_caret ||
+        actions.text_start != 2 || actions.text_end != 2 ||
+        node.perform(AccessibilityAction::set_value, 0.0, "AB")) return 4;
     return 0;
 }
 
@@ -189,6 +207,8 @@ int testChangesAndInvalidAdapter() {
         AccessibilityChange::range,
         AccessibilityChange::state,
         AccessibilityChange::focus,
+        AccessibilityChange::text_caret,
+        AccessibilityChange::text_selection,
     };
     constexpr AtspiChange expected[] {
         AtspiChange::role,
@@ -198,6 +218,8 @@ int testChangesAndInvalidAdapter() {
         AtspiChange::range,
         AtspiChange::state,
         AtspiChange::focus,
+        AtspiChange::text_caret,
+        AtspiChange::text_selection,
     };
     for (std::size_t index = 0; index < std::size(source); ++index) {
         if (AtspiNodeAdapter::mapChange(source[index]) != expected[index]) return 1;

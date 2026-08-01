@@ -76,6 +76,12 @@ struct Evidence {
     std::atomic<bool> text_interface {false};
     std::atomic<bool> text_queries {false};
     std::atomic<bool> text_boundaries {false};
+    std::atomic<bool> text_selection_queries {false};
+    std::atomic<bool> caret_set {false};
+    std::atomic<bool> selection_added {false};
+    std::atomic<bool> selection_changed {false};
+    std::atomic<bool> selection_removed {false};
+    std::atomic<bool> reject_text_selection {false};
     std::atomic<bool> editable_interface {false};
     std::atomic<bool> text_set {false};
     std::atomic<bool> text_inserted {false};
@@ -105,8 +111,13 @@ struct Evidence {
     std::atomic<bool> text_replacement_delete_event {false};
     std::atomic<bool> text_replacement_insert_event {false};
     std::atomic<unsigned int> text_event_count {0};
+    std::atomic<bool> caret_event {false};
+    std::atomic<bool> selection_event {false};
+    std::atomic<unsigned int> caret_event_count {0};
+    std::atomic<unsigned int> selection_event_count {0};
     std::atomic<unsigned int> event_count {0};
     std::atomic<bool> inspection_complete {false};
+    ZigVstgui::AccessibilityNode* node {nullptr};
 };
 
 class TestClipboard final : public ZigVstgui::AccessibilityClipboard {
@@ -211,6 +222,131 @@ bool callRejected(GVariant* result, GError* error) {
     if (!error) return false;
     g_error_free(error);
     return true;
+}
+
+bool intPropertyMatches(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path,
+    const char* interface,
+    const char* property,
+    gint32 expected
+) {
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.freedesktop.DBus.Properties",
+        "Get",
+        g_variant_new("(ss)", interface, property),
+        G_VARIANT_TYPE("(v)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    GVariant* value = nullptr;
+    g_variant_get(result, "(v)", &value);
+    const bool matches = g_variant_is_of_type(value, G_VARIANT_TYPE_INT32) &&
+        g_variant_get_int32(value) == expected;
+    g_variant_unref(value);
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    return matches;
+}
+
+bool textBooleanMethod(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path,
+    const char* method,
+    GVariant* parameters,
+    bool expected
+) {
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        method,
+        parameters,
+        G_VARIANT_TYPE("(b)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    return booleanResult(result, error, expected);
+}
+
+bool textSelectionMatches(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path,
+    gint32 expected_start,
+    gint32 expected_end
+) {
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        "GetSelection",
+        g_variant_new("(i)", 0),
+        G_VARIANT_TYPE("(ii)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    gint32 start = -1;
+    gint32 end = -1;
+    g_variant_get(result, "(ii)", &start, &end);
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    return start == expected_start && end == expected_end;
+}
+
+bool textSelectionCountMatches(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path,
+    gint32 expected
+) {
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        "GetNSelections",
+        nullptr,
+        G_VARIANT_TYPE("(i)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    gint32 count = -1;
+    g_variant_get(result, "(i)", &count);
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    return count == expected;
 }
 
 bool textRangeMatches(
@@ -384,6 +520,17 @@ void eventReceived(
         g_variant_unref(value);
         g_variant_unref(boxed);
     }
+    if (std::strcmp(signal_name, "TextCaretMoved") == 0) {
+        gint32 offset = -1;
+        g_variant_get_child(parameters, 1, "i", &offset);
+        if (offset == 0 || offset == 2)
+            evidence->caret_event.store(true, std::memory_order_release);
+        evidence->caret_event_count.fetch_add(1, std::memory_order_acq_rel);
+    }
+    if (std::strcmp(signal_name, "TextSelectionChanged") == 0) {
+        evidence->selection_event.store(true, std::memory_order_release);
+        evidence->selection_event_count.fetch_add(1, std::memory_order_acq_rel);
+    }
 }
 
 void inspectApplication(
@@ -532,6 +679,128 @@ void inspectApplication(
     } else if (error) {
         g_error_free(error);
     }
+
+    bool selection_queries = intPropertyMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Text",
+        "CaretOffset",
+        1
+    );
+    selection_queries &= textSelectionCountMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        0
+    );
+    selection_queries &= textBooleanMethod(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "SetCaretOffset",
+        g_variant_new("(i)", 2),
+        true
+    );
+    selection_queries &= intPropertyMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Text",
+        "CaretOffset",
+        2
+    );
+    selection_queries &= textBooleanMethod(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "AddSelection",
+        g_variant_new("(ii)", 0, 2),
+        true
+    );
+    selection_queries &= textSelectionCountMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        1
+    ) && textSelectionMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        0,
+        2
+    );
+    selection_queries &= textBooleanMethod(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "AddSelection",
+        g_variant_new("(ii)", 1, 2),
+        false
+    );
+    selection_queries &= textBooleanMethod(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "SetSelection",
+        g_variant_new("(iii)", 0, 2, 0),
+        true
+    ) && textSelectionMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        0,
+        2
+    );
+    evidence.reject_text_selection.store(true, std::memory_order_release);
+    selection_queries &= textBooleanMethod(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "SetSelection",
+        g_variant_new("(iii)", 0, 1, 2),
+        false
+    ) && textSelectionMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        0,
+        2
+    );
+    evidence.reject_text_selection.store(false, std::memory_order_release);
+    selection_queries &= textBooleanMethod(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "RemoveSelection",
+        g_variant_new("(i)", 0),
+        true
+    );
+    selection_queries &= textSelectionCountMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        0
+    );
+    selection_queries &= textBooleanMethod(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "SetCaretOffset",
+        g_variant_new("(i)", 4),
+        false
+    ) && textBooleanMethod(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "SetSelection",
+        g_variant_new("(iii)", 0, 0, 1),
+        false
+    );
+    evidence.text_selection_queries.store(
+        selection_queries,
+        std::memory_order_release
+    );
 
     error = nullptr;
     result = g_dbus_connection_call_sync(
@@ -1645,6 +1914,26 @@ bool perform(
     auto* evidence = static_cast<Evidence*>(userdata);
     if (!evidence) return false;
     evidence->action_call_count.fetch_add(1, std::memory_order_acq_rel);
+    if (request.action == ZigVstgui::AccessibilityAction::set_caret ||
+        request.action == ZigVstgui::AccessibilityAction::set_selection) {
+        if (evidence->reject_text_selection.load(std::memory_order_acquire) ||
+            !evidence->node ||
+            !evidence->node->setTextSelection(request.text_start, request.text_end))
+            return false;
+        if (request.action == ZigVstgui::AccessibilityAction::set_caret &&
+            request.text_start == 2 && request.text_end == 2)
+            evidence->caret_set.store(true, std::memory_order_release);
+        if (request.action == ZigVstgui::AccessibilityAction::set_selection &&
+            request.text_start == 0 && request.text_end == 2)
+            evidence->selection_added.store(true, std::memory_order_release);
+        if (request.action == ZigVstgui::AccessibilityAction::set_selection &&
+            request.text_start == 2 && request.text_end == 0)
+            evidence->selection_changed.store(true, std::memory_order_release);
+        if (request.action == ZigVstgui::AccessibilityAction::set_selection &&
+            request.text_start == request.text_end)
+            evidence->selection_removed.store(true, std::memory_order_release);
+        return true;
+    }
     if (request.action == ZigVstgui::AccessibilityAction::press)
         evidence->action_performed.store(true, std::memory_order_release);
     if (request.action == ZigVstgui::AccessibilityAction::set_value &&
@@ -1678,13 +1967,21 @@ int runTest() {
     node.setName("Gain");
     node.setDescription("Output level");
     node.setValueText("AéB");
+    if (!node.setTextSelection(1, 1)) {
+        g_test_dbus_down(bus);
+        g_object_unref(bus);
+        return 1;
+    }
+    service.evidence.node = &node;
     node.setRange(0.0, 1.0, 0.5);
     node.setActionHandler(
         &service.evidence,
         perform,
-        static_cast<uint32_t>(ZigVstgui::AccessibilityAction::focus) |
+            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::focus) |
             static_cast<uint32_t>(ZigVstgui::AccessibilityAction::press) |
-            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_value)
+            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_value) |
+            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_caret) |
+            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_selection)
     );
     ZigVstgui::AccessibilityNode boundary_node;
     boundary_node.setRole(ZigVstgui::AccessibilityRole::text_field);
@@ -1746,6 +2043,9 @@ int runTest() {
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
+    node.setTextSelection(0, 2);
+    node.setTextSelection(2, 0);
+    node.setTextSelection(0, 0);
     node.setValueText("A🙂éB");
     node.setValueText("AéB");
     node.setValueText("AøB");
@@ -1764,6 +2064,10 @@ int runTest() {
             service.evidence.text_replacement_insert_event.load(
                 std::memory_order_acquire
             ) &&
+            service.evidence.caret_event.load(std::memory_order_acquire) &&
+            service.evidence.selection_event.load(std::memory_order_acquire) &&
+            service.evidence.caret_event_count.load(std::memory_order_acquire) == 2 &&
+            service.evidence.selection_event_count.load(std::memory_order_acquire) == 3 &&
             service.evidence.text_event_count.load(std::memory_order_acquire) == 4 &&
             service.evidence.event_count.load(std::memory_order_acquire) == 3 &&
             service.evidence.cache_add_count.load(std::memory_order_acquire) == 3) break;
@@ -1787,6 +2091,11 @@ int runTest() {
         service.evidence.text_interface.load(std::memory_order_acquire) &&
         service.evidence.text_queries.load(std::memory_order_acquire) &&
         service.evidence.text_boundaries.load(std::memory_order_acquire) &&
+        service.evidence.text_selection_queries.load(std::memory_order_acquire) &&
+        service.evidence.caret_set.load(std::memory_order_acquire) &&
+        service.evidence.selection_added.load(std::memory_order_acquire) &&
+        service.evidence.selection_changed.load(std::memory_order_acquire) &&
+        service.evidence.selection_removed.load(std::memory_order_acquire) &&
         service.evidence.editable_interface.load(std::memory_order_acquire) &&
         service.evidence.text_set.load(std::memory_order_acquire) &&
         service.evidence.text_inserted.load(std::memory_order_acquire) &&
@@ -1813,6 +2122,10 @@ int runTest() {
         service.evidence.text_replacement_insert_event.load(
             std::memory_order_acquire
         ) &&
+        service.evidence.caret_event.load(std::memory_order_acquire) &&
+        service.evidence.selection_event.load(std::memory_order_acquire) &&
+        service.evidence.caret_event_count.load(std::memory_order_acquire) == 2 &&
+        service.evidence.selection_event_count.load(std::memory_order_acquire) == 3 &&
         service.evidence.text_event_count.load(std::memory_order_acquire) == 4;
     const auto events_before_close = service.evidence.event_count.load(
         std::memory_order_acquire
@@ -1820,9 +2133,16 @@ int runTest() {
     const auto text_events_before_close = service.evidence.text_event_count.load(
         std::memory_order_acquire
     );
+    const auto caret_events_before_close = service.evidence.caret_event_count.load(
+        std::memory_order_acquire
+    );
+    const auto selection_events_before_close = service.evidence.selection_event_count.load(
+        std::memory_order_acquire
+    );
     bridge.close();
     node.setName("Detached node");
     node.setValueText("Detached value");
+    node.setTextSelection(0, 1);
     for (int attempt = 0; attempt < 100; ++attempt) {
         if (service.evidence.cache_remove_count.load(std::memory_order_acquire) == 3)
             break;
@@ -1834,6 +2154,10 @@ int runTest() {
             events_before_close &&
         service.evidence.text_event_count.load(std::memory_order_acquire) ==
             text_events_before_close &&
+        service.evidence.caret_event_count.load(std::memory_order_acquire) ==
+            caret_events_before_close &&
+        service.evidence.selection_event_count.load(std::memory_order_acquire) ==
+            selection_events_before_close &&
         service.evidence.cache_root_removed.load(std::memory_order_acquire) &&
         service.evidence.cache_child_removed.load(std::memory_order_acquire) &&
         service.evidence.cache_remove_count.load(std::memory_order_acquire) == 3;
@@ -1845,7 +2169,8 @@ int runTest() {
             "embedded=%d id=%d root-role=%d child=%d name=%d role=%d "
             "interfaces=%d bounds=%d action-count=%d action=%d "
             "value-read=%d value-set=%d text-interface=%d text-queries=%d "
-            "text-boundaries=%d "
+            "text-boundaries=%d selection-queries=%d caret-set=%d "
+            "selection=%d/%d/%d "
             "editable=%d text-set=%d insert=%d "
             "delete=%d paste=%d ab-updates=%u clipboard-writes=%u clipboard-reads=%u "
             "clipboard-methods=%d "
@@ -1855,6 +2180,7 @@ int runTest() {
             "inspection=%d property-event=%d focus-event=%d "
             "bounds-event=%d text-event-count=%u text-insert=%d "
             "text-delete=%d replacement-delete=%d replacement-insert=%d "
+            "caret-event=%d/%u selection-event=%d/%u "
             "closed=%d\n",
             missing_bus_safe,
             missing_registry_safe,
@@ -1876,6 +2202,11 @@ int runTest() {
             service.evidence.text_interface.load(std::memory_order_acquire),
             service.evidence.text_queries.load(std::memory_order_acquire),
             service.evidence.text_boundaries.load(std::memory_order_acquire),
+            service.evidence.text_selection_queries.load(std::memory_order_acquire),
+            service.evidence.caret_set.load(std::memory_order_acquire),
+            service.evidence.selection_added.load(std::memory_order_acquire),
+            service.evidence.selection_changed.load(std::memory_order_acquire),
+            service.evidence.selection_removed.load(std::memory_order_acquire),
             service.evidence.editable_interface.load(std::memory_order_acquire),
             service.evidence.text_set.load(std::memory_order_acquire),
             service.evidence.text_inserted.load(std::memory_order_acquire),
@@ -1907,6 +2238,10 @@ int runTest() {
             service.evidence.text_replacement_insert_event.load(
                 std::memory_order_acquire
             ),
+            service.evidence.caret_event.load(std::memory_order_acquire),
+            service.evidence.caret_event_count.load(std::memory_order_acquire),
+            service.evidence.selection_event.load(std::memory_order_acquire),
+            service.evidence.selection_event_count.load(std::memory_order_acquire),
             closed
         );
     }

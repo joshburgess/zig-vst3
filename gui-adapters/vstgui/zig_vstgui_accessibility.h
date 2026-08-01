@@ -25,6 +25,8 @@ enum class AccessibilityChange {
     range,
     state,
     focus,
+    text_caret,
+    text_selection,
 };
 
 enum class AccessibilityAction : uint32_t {
@@ -37,12 +39,16 @@ enum class AccessibilityAction : uint32_t {
     select_next = 1u << 6,
     add_point = 1u << 7,
     delete_selected = 1u << 8,
+    set_caret = 1u << 9,
+    set_selection = 1u << 10,
 };
 
 struct AccessibilityActionRequest {
     AccessibilityAction action {AccessibilityAction::focus};
     double value {0.0};
     const char* text {nullptr};
+    uint32_t text_start {0};
+    uint32_t text_end {0};
 };
 
 struct AccessibilityRange {
@@ -58,6 +64,14 @@ struct AccessibilityState {
     bool checked {false};
     bool selected {false};
     bool read_only {false};
+};
+
+struct AccessibilityTextSelection {
+    bool present {false};
+    uint32_t anchor {0};
+    uint32_t caret {0};
+
+    bool selected() const;
 };
 
 using AccessibilityChangeCallback = void (*)(void*, AccessibilityChange);
@@ -80,6 +94,8 @@ public:
     void setChecked(bool checked);
     void setSelected(bool selected);
     void setReadOnly(bool read_only);
+    bool setTextSelection(uint32_t anchor, uint32_t caret);
+    void clearTextSelection();
 
     AccessibilityRole role() const;
     const std::string& name() const;
@@ -87,9 +103,11 @@ public:
     const std::string& valueText() const;
     const AccessibilityRange& range() const;
     const AccessibilityState& state() const;
+    const AccessibilityTextSelection& textSelection() const;
     uint64_t generation() const;
     bool supports(AccessibilityAction action) const;
     bool perform(AccessibilityAction action, double value = 0.0, const char* text = nullptr) const;
+    bool performTextSelection(AccessibilityAction action, uint32_t anchor, uint32_t caret) const;
 
 private:
     void notify(AccessibilityChange change);
@@ -100,6 +118,7 @@ private:
     std::string semantic_value;
     AccessibilityRange semantic_range;
     AccessibilityState semantic_state;
+    AccessibilityTextSelection semantic_text_selection;
     mutable void* observer_userdata {nullptr};
     mutable AccessibilityChangeCallback observer_callback {nullptr};
     void* action_userdata {nullptr};

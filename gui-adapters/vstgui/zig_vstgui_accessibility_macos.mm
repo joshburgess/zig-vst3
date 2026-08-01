@@ -223,6 +223,8 @@ void accessibilityChanged(void* userdata, AccessibilityChange change) {
     auto* observer = static_cast<MacObserver*>(userdata);
     auto* element = observer ? observer->element : nil;
     if (!element) return;
+    if (change == AccessibilityChange::text_caret ||
+        change == AccessibilityChange::text_selection) return;
     NSString* notification = NSAccessibilityValueChangedNotification;
     if (change == AccessibilityChange::focus) notification = NSAccessibilityFocusedUIElementChangedNotification;
     if (change == AccessibilityChange::role || change == AccessibilityChange::name ||

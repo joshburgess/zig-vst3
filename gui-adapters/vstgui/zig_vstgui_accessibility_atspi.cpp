@@ -57,6 +57,8 @@ AtspiAction describeAction(AccessibilityAction action) {
             return {action, "delete-selected", "Delete the selected item"};
         case AccessibilityAction::focus:
         case AccessibilityAction::set_value:
+        case AccessibilityAction::set_caret:
+        case AccessibilityAction::set_selection:
             break;
     }
     return {};
@@ -92,6 +94,7 @@ AtspiSnapshot AtspiNodeAdapter::snapshot(
     result.description = node->description();
     result.value_text = node->valueText();
     result.range = node->range();
+    result.text_selection = node->textSelection();
     result.generation = node->generation();
     result.interfaces =
         interfaceMask(AtspiInterface::accessible) |
@@ -115,6 +118,9 @@ AtspiSnapshot AtspiNodeAdapter::snapshot(
         setState(result.states, AtspiState::checkable);
     if (node->role() == AccessibilityRole::text_field)
         setState(result.states, AtspiState::single_line);
+    if (node->role() == AccessibilityRole::text_field &&
+        node->supports(AccessibilityAction::set_selection))
+        setState(result.states, AtspiState::selectable_text);
 
     if (node->role() == AccessibilityRole::text_field)
         result.interfaces |= interfaceMask(AtspiInterface::text);
@@ -191,6 +197,8 @@ AtspiChange AtspiNodeAdapter::mapChange(AccessibilityChange change) {
         case AccessibilityChange::range: return AtspiChange::range;
         case AccessibilityChange::state: return AtspiChange::state;
         case AccessibilityChange::focus: return AtspiChange::focus;
+        case AccessibilityChange::text_caret: return AtspiChange::text_caret;
+        case AccessibilityChange::text_selection: return AtspiChange::text_selection;
     }
     return AtspiChange::state;
 }

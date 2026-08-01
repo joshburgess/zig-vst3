@@ -218,6 +218,8 @@ struct AccessibilityObserverState {
     ZigVstgui::AccessibilityAction last_action {ZigVstgui::AccessibilityAction::focus};
     double last_action_value {0.0};
     std::string last_action_text;
+    uint32_t last_text_start {0};
+    uint32_t last_text_end {0};
 };
 
 void accessibilityChanged(void* userdata, ZigVstgui::AccessibilityChange change) {
@@ -236,6 +238,8 @@ bool accessibilityAction(
     state->last_action = request.action;
     state->last_action_value = request.value;
     state->last_action_text = request.text ? request.text : "";
+    state->last_text_start = request.text_start;
+    state->last_text_end = request.text_end;
     return true;
 }
 
@@ -392,8 +396,11 @@ int testAccessibilityNode() {
     node.setActionHandler(
         &observer,
         accessibilityAction,
-        static_cast<uint32_t>(ZigVstgui::AccessibilityAction::press) |
-            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_value)
+        static_cast<uint32_t>(ZigVstgui::AccessibilityAction::focus) |
+            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::press) |
+            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_value) |
+            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_caret) |
+            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_selection)
     );
     node.setRole(ZigVstgui::AccessibilityRole::meter);
     node.setName("Output level");
@@ -415,6 +422,17 @@ int testAccessibilityNode() {
     const auto generation = node.generation();
     node.setValueText("-12 dB");
     if (node.generation() != generation) return 7;
+    if (!node.setTextSelection(1, 4) || !node.textSelection().selected() ||
+        node.textSelection().anchor != 1 || node.textSelection().caret != 4 ||
+        observer.last != ZigVstgui::AccessibilityChange::text_selection) return 16;
+    const auto selection_generation = node.generation();
+    if (!node.setTextSelection(1, 4) || node.generation() != selection_generation ||
+        node.setTextSelection(7, 7)) return 17;
+    node.setValueText("-");
+    if (node.textSelection().anchor != 1 || node.textSelection().caret != 1 ||
+        node.textSelection().selected() ||
+        observer.last != ZigVstgui::AccessibilityChange::text_selection) return 18;
+    node.setValueText("-12 dB");
     node.clearRange();
     if (node.range().present || observer.last != ZigVstgui::AccessibilityChange::range) return 8;
     node.setRange(0.0, 1.0, std::numeric_limits<double>::quiet_NaN());
@@ -423,12 +441,24 @@ int testAccessibilityNode() {
     if (node.range().present) return 15;
     if (node.perform(ZigVstgui::AccessibilityAction::press)) return 9;
     node.setEnabled(true);
+    if (!node.perform(ZigVstgui::AccessibilityAction::focus) ||
+        !node.performTextSelection(ZigVstgui::AccessibilityAction::set_selection, 1, 4) ||
+        node.performTextSelection(ZigVstgui::AccessibilityAction::set_caret, 1, 4) ||
+        node.performTextSelection(ZigVstgui::AccessibilityAction::set_selection, 1, 7) ||
+        node.perform(ZigVstgui::AccessibilityAction::set_value, 0.75, "75%")) return 19;
+    if (observer.action_count != 2 ||
+        observer.last_action != ZigVstgui::AccessibilityAction::set_selection ||
+        observer.last_text_start != 1 || observer.last_text_end != 4) return 20;
     node.setReadOnly(false);
     if (!node.supports(ZigVstgui::AccessibilityAction::press) ||
         node.supports(ZigVstgui::AccessibilityAction::increment)) return 10;
     if (!node.perform(ZigVstgui::AccessibilityAction::set_value, 0.75, "75%")) return 11;
-    if (observer.action_count != 1 || observer.last_action != ZigVstgui::AccessibilityAction::set_value ||
+    if (observer.action_count != 3 || observer.last_action != ZigVstgui::AccessibilityAction::set_value ||
         !closeEnough(observer.last_action_value, 0.75) || observer.last_action_text != "75%") return 12;
+    if (!node.setTextSelection(1, 2)) return 21;
+    node.setValueText(std::string("\xc0\x80", 2));
+    if (node.textSelection().present ||
+        observer.last != ZigVstgui::AccessibilityChange::text_selection) return 22;
     node.clearActionHandler();
     if (node.perform(ZigVstgui::AccessibilityAction::press)) return 13;
     return 0;

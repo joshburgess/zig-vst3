@@ -197,6 +197,8 @@ constexpr const char* introspection_xml = R"xml(
     <signal name='BoundsChanged'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
     <signal name='StateChanged'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
     <signal name='TextChanged'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
+    <signal name='TextCaretMoved'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
+    <signal name='TextSelectionChanged'><arg type='s'/><arg type='i'/><arg type='i'/><arg type='v'/><arg type='a{sv}'/></signal>
   </interface>
 </node>
 )xml";
@@ -1276,6 +1278,28 @@ private:
                     current.hasState(AtspiState::focused)
                 );
                 break;
+            case AccessibilityChange::text_caret:
+                emitObjectSignal(
+                    object,
+                    "TextCaretMoved",
+                    "",
+                    current.text_selection.present
+                        ? static_cast<gint32>(current.text_selection.caret)
+                        : -1,
+                    0,
+                    g_variant_new_int32(0)
+                );
+                break;
+            case AccessibilityChange::text_selection:
+                emitObjectSignal(
+                    object,
+                    "TextSelectionChanged",
+                    "",
+                    0,
+                    0,
+                    g_variant_new_int32(0)
+                );
+                break;
         }
     }
 
@@ -1580,7 +1604,9 @@ private:
         if (g_strcmp0(property, "CharacterCount") == 0)
             return g_variant_new_int32(textCharacterCount(current.value_text));
         if (g_strcmp0(property, "CaretOffset") == 0)
-            return g_variant_new_int32(-1);
+            return g_variant_new_int32(current.text_selection.present
+                ? static_cast<gint32>(current.text_selection.caret)
+                : -1);
         return nullptr;
     }
 
@@ -1678,11 +1704,74 @@ private:
             );
             return;
         }
-        if (g_strcmp0(method, "SetCaretOffset") == 0 ||
-            g_strcmp0(method, "AddSelection") == 0 ||
-            g_strcmp0(method, "RemoveSelection") == 0 ||
-            g_strcmp0(method, "SetSelection") == 0 ||
-            g_strcmp0(method, "ScrollSubstringTo") == 0 ||
+        if (g_strcmp0(method, "SetCaretOffset") == 0) {
+            gint32 offset = -1;
+            g_variant_get(parameters, "(i)", &offset);
+            const bool accepted = offset >= 0 && offset <= count &&
+                current_entry->node->performTextSelection(
+                    AccessibilityAction::set_caret,
+                    static_cast<uint32_t>(offset),
+                    static_cast<uint32_t>(offset)
+                );
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(b)", accepted)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "AddSelection") == 0) {
+            gint32 start = -1;
+            gint32 end = -1;
+            g_variant_get(parameters, "(ii)", &start, &end);
+            const bool accepted = start >= 0 && end >= 0 && start <= count &&
+                end <= count && start != end &&
+                !current.text_selection.selected() &&
+                current_entry->node->performTextSelection(
+                    AccessibilityAction::set_selection,
+                    static_cast<uint32_t>(start),
+                    static_cast<uint32_t>(end)
+                );
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(b)", accepted)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "RemoveSelection") == 0) {
+            gint32 selection = -1;
+            g_variant_get(parameters, "(i)", &selection);
+            const bool accepted = selection == 0 && current.text_selection.selected() &&
+                current_entry->node->performTextSelection(
+                    AccessibilityAction::set_selection,
+                    current.text_selection.caret,
+                    current.text_selection.caret
+                );
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(b)", accepted)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "SetSelection") == 0) {
+            gint32 selection = -1;
+            gint32 start = -1;
+            gint32 end = -1;
+            g_variant_get(parameters, "(iii)", &selection, &start, &end);
+            const bool accepted = selection == 0 &&
+                current.text_selection.selected() && start >= 0 && end >= 0 &&
+                start <= count && end <= count && start != end &&
+                current_entry->node->performTextSelection(
+                    AccessibilityAction::set_selection,
+                    static_cast<uint32_t>(start),
+                    static_cast<uint32_t>(end)
+                );
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(b)", accepted)
+            );
+            return;
+        }
+        if (g_strcmp0(method, "ScrollSubstringTo") == 0 ||
             g_strcmp0(method, "ScrollSubstringToPoint") == 0) {
             g_dbus_method_invocation_return_value(
                 invocation,
@@ -1822,14 +1911,35 @@ private:
             return;
         }
         if (g_strcmp0(method, "GetNSelections") == 0) {
-            g_dbus_method_invocation_return_value(invocation, g_variant_new("(i)", 0));
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new("(i)", current.text_selection.selected() ? 1 : 0)
+            );
             return;
         }
         if (g_strcmp0(method, "GetSelection") == 0) {
             gint32 selection = -1;
             g_variant_get(parameters, "(i)", &selection);
-            (void)selection;
-            returnError(invocation, "Accessibility text selection is unavailable");
+            if (selection != 0 || !current.text_selection.selected()) {
+                returnError(invocation, "Accessibility text selection is unavailable");
+                return;
+            }
+            const auto start = std::min(
+                current.text_selection.anchor,
+                current.text_selection.caret
+            );
+            const auto end = std::max(
+                current.text_selection.anchor,
+                current.text_selection.caret
+            );
+            g_dbus_method_invocation_return_value(
+                invocation,
+                g_variant_new(
+                    "(ii)",
+                    static_cast<gint32>(start),
+                    static_cast<gint32>(end)
+                )
+            );
             return;
         }
         if (g_strcmp0(method, "GetRangeExtents") == 0) {

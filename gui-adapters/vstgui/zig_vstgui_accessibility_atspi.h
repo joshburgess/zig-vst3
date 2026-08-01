@@ -33,6 +33,7 @@ enum class AtspiState : uint32_t {
     showing = 25,
     single_line = 26,
     visible = 30,
+    selectable_text = 38,
     checkable = 41,
     read_only = 43,
 };
@@ -54,6 +55,8 @@ enum class AtspiChange {
     range,
     state,
     focus,
+    text_caret,
+    text_selection,
 };
 
 struct AtspiAction {
@@ -68,6 +71,7 @@ struct AtspiSnapshot {
     std::string description;
     std::string value_text;
     AccessibilityRange range;
+    AccessibilityTextSelection text_selection;
     std::array<uint32_t, 2> states {};
     uint32_t interfaces {0};
     uint64_t generation {0};

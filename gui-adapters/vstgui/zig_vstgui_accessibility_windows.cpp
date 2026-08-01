@@ -433,6 +433,8 @@ HRESULT Provider::get_Value(BSTR* result) {
 void accessibilityChanged(void* userdata, AccessibilityChange change) {
     auto* observer = static_cast<Observer*>(userdata);
     if (!observer || !observer->provider) return;
+    if (change == AccessibilityChange::text_caret ||
+        change == AccessibilityChange::text_selection) return;
     PROPERTYID property = UIA_ValueValuePropertyId;
     if (change == AccessibilityChange::role) property = UIA_ControlTypePropertyId;
     if (change == AccessibilityChange::name) property = UIA_NamePropertyId;
