@@ -230,6 +230,9 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                 "$external_invalid_audio_packet" \
                 "Project decoder accepted a checksum-correct invalid Vorbis audio packet" \
                 "Vorbis FFmpeg invalid audio-packet rejection passed"
+            "$decode_probe" "$external_invalid_audio_packet" \
+                --recover-invalid-audio-packet
+            printf 'Vorbis FFmpeg invalid audio-packet concealment passed\n'
             if [ -n "$reference_probe" ]; then
                 if command -v oggdec >/dev/null 2>&1; then
                     compare_xiph_reference_pcm \

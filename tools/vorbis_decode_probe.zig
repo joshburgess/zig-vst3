@@ -16,18 +16,24 @@ pub fn main(init: std.process.Init) !void {
         std.mem.eql(u8, args[2], "--write-invalid-audio-packet");
     const require_comment = args.len == 5 and
         std.mem.eql(u8, args[2], "--require-comment");
+    const recover_invalid_audio_packet = args.len == 3 and
+        std.mem.eql(
+            u8,
+            args[2],
+            "--recover-invalid-audio-packet",
+        );
     if (args.len == 5 and !require_comment)
         return error.InvalidArguments;
-    const require_midpoint_seek = args.len == 3;
-    if (require_midpoint_seek and
-        !std.mem.eql(
+    const require_midpoint_seek = args.len == 3 and
+        std.mem.eql(
             u8,
             args[2],
             "--require-midpoint-seek",
-        ))
-    {
+        );
+    if (args.len == 3 and
+        !require_midpoint_seek and
+        !recover_invalid_audio_packet)
         return error.InvalidArguments;
-    }
     const compare_reference = args.len == 4 and
         !require_junk_resync and
         !write_invalid_audio_packet;
@@ -154,6 +160,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                recover_invalid_audio_packet,
                 reference,
             ),
             else => return error.UnsupportedVorbisChannelCount,
@@ -175,6 +182,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                recover_invalid_audio_packet,
                 reference,
             ),
             2 => try decodeStreams(
@@ -190,6 +198,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                recover_invalid_audio_packet,
                 reference,
             ),
             else => return error.UnsupportedVorbisChannelCount,
@@ -211,6 +220,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                recover_invalid_audio_packet,
                 reference,
             ),
             2 => try decodeStreams(
@@ -226,6 +236,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                recover_invalid_audio_packet,
                 reference,
             ),
             else => return error.UnsupportedVorbisChannelCount,
@@ -247,6 +258,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                recover_invalid_audio_packet,
                 reference,
             ),
             2 => try decodeStreams(
@@ -262,6 +274,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                recover_invalid_audio_packet,
                 reference,
             ),
             else => return error.UnsupportedVorbisChannelCount,
@@ -283,6 +296,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                recover_invalid_audio_packet,
                 reference,
             ),
             2 => try decodeStreams(
@@ -298,6 +312,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                recover_invalid_audio_packet,
                 reference,
             ),
             6 => try decodeStreams(
@@ -313,6 +328,7 @@ pub fn main(init: std.process.Init) !void {
                 file_packet_storage,
                 first_identification_packet,
                 require_midpoint_seek,
+                recover_invalid_audio_packet,
                 reference,
             ),
             else => return error.UnsupportedVorbisChannelCount,
@@ -626,8 +642,13 @@ fn decodeStreams(
     file_packet_storage: []u8,
     first_identification_packet: plug.dsp.OggPacket,
     require_midpoint_seek: bool,
+    recover_invalid_audio_packet: bool,
     reference: ?ReferencePcm,
 ) !void {
+    const PacketOutcome = union(enum) {
+        decoded: plug.dsp.VorbisChainedPcmStreamResult,
+        concealed: plug.dsp.VorbisChainedPcmConcealmentResult,
+    };
     var decoder = plug.dsp.VorbisChainedPcmStreamDecoder(
         f32,
         channel_count,
@@ -661,6 +682,8 @@ fn decodeStreams(
     var audio_packets: usize = 0;
     var sample_count: u64 = 0;
     var energy: f64 = 0.0;
+    var recovered_invalid_packet = false;
+    var decoded_after_recovery: u64 = 0;
     var comparison = ReferenceComparison.init(reference, true);
     while (next_identification_packet) |identification_packet| {
         if (!identification_packet.beginning)
@@ -712,68 +735,120 @@ fn decodeStreams(
                 try packets.next() orelse
                 return error.MissingVorbisEndOfStream;
             try requireLogicalStream(packet, logical_stream_index);
-            const decoded = try decoder.decode(
-                packet,
-                identification,
-                setup,
-                &outputs,
-                scratch,
-            );
-            if (decoded.stream.packet.floor_truncated)
-                return error.TruncatedVorbisFloorPacket;
-            if (decoded.global_pcm_start != sample_count)
+            const outcome: PacketOutcome = decode: {
+                const decoded = decoder.decode(
+                    packet,
+                    identification,
+                    setup,
+                    &outputs,
+                    scratch,
+                ) catch |err| {
+                    if (!recover_invalid_audio_packet or
+                        recovered_invalid_packet or
+                        err != error.InvalidVorbisAudioPacketType or
+                        packet.bytes.len == 0)
+                        return err;
+                    const repaired = try allocator.dupe(u8, packet.bytes);
+                    repaired[0] &= 0xfe;
+                    const header = try plug.dsp.parseVorbisAudioPacketHeader(
+                        repaired,
+                        identification,
+                        setup,
+                    );
+                    const concealed = try decoder.concealMissingPacket(
+                        header.large_block,
+                        packet.granule_position,
+                        packet.end,
+                        identification,
+                        &outputs,
+                        &windowed,
+                    );
+                    recovered_invalid_packet = true;
+                    break :decode .{ .concealed = concealed };
+                };
+                break :decode .{ .decoded = decoded };
+            };
+            const decoded_sample_count = switch (outcome) {
+                .decoded => |decoded| decoded.stream.sample_count,
+                .concealed => |concealed| concealed.stream.sample_count,
+            };
+            const decoded_global_start = switch (outcome) {
+                .decoded => |decoded| decoded.global_pcm_start,
+                .concealed => |concealed| concealed.global_pcm_start,
+            };
+            const decoded_global_end = switch (outcome) {
+                .decoded => |decoded| decoded.global_pcm_end,
+                .concealed => |concealed| concealed.global_pcm_end,
+            };
+            switch (outcome) {
+                .decoded => |decoded| {
+                    if (decoded.stream.packet.floor_truncated)
+                        return error.TruncatedVorbisFloorPacket;
+                    if (recovered_invalid_packet)
+                        decoded_after_recovery = std.math.add(
+                            u64,
+                            decoded_after_recovery,
+                            1,
+                        ) catch return error.VorbisAudioPacketCountOverflow;
+                    if (!recover_invalid_audio_packet) {
+                        const selected = try selectSeekSuffix(
+                            &sequential_seek,
+                            decoded.stream,
+                        );
+                        sequential_digest.update(
+                            outputs,
+                            selected.source_start,
+                            selected.sample_count,
+                        );
+                    }
+                },
+                .concealed => {},
+            }
+            if (decoded_global_start != sample_count)
                 return error.DiscontinuousVorbisPcmPosition;
-            const selected = try selectSeekSuffix(
-                &sequential_seek,
-                decoded.stream,
-            );
-            sequential_digest.update(
-                outputs,
-                selected.source_start,
-                selected.sample_count,
-            );
             stream_audio_packets += 1;
             audio_packets += 1;
             const expected_end = std.math.add(
                 u64,
                 sample_count,
-                @intCast(decoded.stream.sample_count),
+                @intCast(decoded_sample_count),
             ) catch return error.VorbisPcmPositionOverflow;
-            if (decoded.global_pcm_end != expected_end)
+            if (decoded_global_end != expected_end)
                 return error.DiscontinuousVorbisPcmPosition;
             sample_count = expected_end;
             for (outputs) |output| {
-                for (output[0..decoded.stream.sample_count]) |sample|
+                for (output[0..decoded_sample_count]) |sample|
                     energy += @as(f64, sample) * sample;
             }
-            try comparison.update(
-                outputs,
-                decoded.stream.sample_count,
-            );
+            if (!recover_invalid_audio_packet)
+                try comparison.update(outputs, decoded_sample_count);
             if (packet.end) break;
         }
         if (stream_audio_packets == 0)
             return error.EmptyVorbisLogicalStream;
-        if (!sequential_seek.reached or
-            sequential_digest.sample_count == 0)
+        if (!recover_invalid_audio_packet and
+            (!sequential_seek.reached or
+                sequential_digest.sample_count == 0))
         {
             return error.VorbisSeekTargetNotReached;
         }
-        try validateSeekParity(
-            channel_count,
-            small_block_size,
-            large_block_size,
-            io,
-            file,
-            page_storage,
-            file_packet_storage,
-            seek_index,
-            logical_stream_index,
-            seek_target,
-            identification,
-            setup,
-            sequential_digest.result(),
-        );
+        if (!recover_invalid_audio_packet) {
+            try validateSeekParity(
+                channel_count,
+                small_block_size,
+                large_block_size,
+                io,
+                file,
+                page_storage,
+                file_packet_storage,
+                seek_index,
+                logical_stream_index,
+                seek_target,
+                identification,
+                setup,
+                sequential_digest.result(),
+            );
+        }
         logical_stream_count = std.math.add(
             u32,
             logical_stream_count,
@@ -790,6 +865,11 @@ fn decodeStreams(
     }
     if (!std.math.isFinite(energy) or energy <= 0.0)
         return error.SilentVorbisStream;
+    if (recover_invalid_audio_packet and
+        (!recovered_invalid_packet or
+            decoded_after_recovery == 0 or
+            decoder.stream.concealed_packet_count != 1))
+        return error.VorbisInvalidPacketRecoveryIncomplete;
     try comparison.finish();
 }
 

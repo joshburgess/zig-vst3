@@ -3076,6 +3076,30 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         installed_pcm_range.sample_count,
     );
 
+    var installed_concealing_stream =
+        plugin.dsp.VorbisPcmStreamDecoder(f32, 1, 64, 64).init();
+    _ = try installed_concealing_stream.concealMissingPacket(
+        false,
+        std.math.maxInt(u64),
+        false,
+        installed_identification,
+        &installed_empty_outputs,
+        &installed_stream_windowed,
+    );
+    const installed_concealment: plugin.dsp.VorbisPcmConcealmentResult =
+        try installed_concealing_stream.concealMissingPacket(
+            false,
+            32,
+            true,
+            installed_identification,
+            &installed_stream_outputs,
+            &installed_stream_windowed,
+        );
+    try std.testing.expectEqual(
+        @as(u64, 2),
+        installed_concealment.concealed_packet_count,
+    );
+
     var installed_chained =
         plugin.dsp.VorbisChainedPcmStreamDecoder(
             f32,
@@ -3133,6 +3157,37 @@ test "installed package exposes DSP blocks contexts and math primitives" {
     try std.testing.expectEqual(
         @as(u64, 32),
         installed_chain_end.global_pcm_end,
+    );
+    var installed_chained_concealment =
+        plugin.dsp.VorbisChainedPcmStreamDecoder(
+            f32,
+            1,
+            64,
+            64,
+        ).init();
+    try installed_chained_concealment.beginLogicalStream(
+        installed_identification,
+    );
+    _ = try installed_chained_concealment.concealMissingPacket(
+        false,
+        std.math.maxInt(u64),
+        false,
+        installed_identification,
+        &installed_empty_outputs,
+        &installed_stream_windowed,
+    );
+    const installed_chained_loss: plugin.dsp.VorbisChainedPcmConcealmentResult =
+        try installed_chained_concealment.concealMissingPacket(
+            false,
+            32,
+            true,
+            installed_identification,
+            &installed_stream_outputs,
+            &installed_stream_windowed,
+        );
+    try std.testing.expectEqual(
+        @as(u64, 32),
+        installed_chained_loss.global_pcm_end,
     );
     try installed_chained.beginLogicalStream(installed_identification);
     try std.testing.expectEqual(

@@ -9047,8 +9047,23 @@ pub const VorbisPcmStreamResult = struct {
     pcm_end: ?i64,
 };
 
+pub const VorbisPcmConcealmentResult = struct {
+    block_size: u16,
+    sample_count: usize,
+    pcm_start: ?i64,
+    pcm_end: ?i64,
+    concealed_packet_count: u64,
+};
+
 pub const VorbisChainedPcmStreamResult = struct {
     stream: VorbisPcmStreamResult,
+    logical_stream_index: u64,
+    global_pcm_start: u64,
+    global_pcm_end: u64,
+};
+
+pub const VorbisChainedPcmConcealmentResult = struct {
+    stream: VorbisPcmConcealmentResult,
     logical_stream_index: u64,
     global_pcm_start: u64,
     global_pcm_end: u64,
@@ -9142,6 +9157,7 @@ pub fn VorbisPcmStreamDecoder(
         overlap: ChannelOverlap = .{},
         granules: VorbisGranuleTracker = .{},
         audio_packet_count: u64 = 0,
+        concealed_packet_count: u64 = 0,
         ended: bool = false,
 
         pub fn init() Self {
@@ -9152,6 +9168,7 @@ pub fn VorbisPcmStreamDecoder(
             self.overlap.reset();
             self.granules.reset();
             self.audio_packet_count = 0;
+            self.concealed_packet_count = 0;
             self.ended = false;
         }
 
@@ -9168,6 +9185,8 @@ pub fn VorbisPcmStreamDecoder(
                 return error.VorbisPcmStreamAlreadyEnded;
             if (self.audio_packet_count == std.math.maxInt(u64))
                 return error.VorbisAudioPacketCountOverflow;
+            if (self.concealed_packet_count > self.audio_packet_count)
+                return error.InvalidVorbisPcmStreamState;
             const header = try parseVorbisAudioPacketHeader(
                 packet.bytes,
                 identification,
@@ -9256,6 +9275,125 @@ pub fn VorbisPcmStreamDecoder(
                 .sample_count = granule_range.sample_count,
                 .pcm_start = granule_range.pcm_start,
                 .pcm_end = granule_range.pcm_end,
+            };
+        }
+
+        /// Inserts one silent block while retaining overlap and granule timing.
+        pub fn concealMissingPacket(
+            self: *Self,
+            large_block: bool,
+            granule_position: u64,
+            end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisPcmConcealmentResult {
+            if (self.ended)
+                return error.VorbisPcmStreamAlreadyEnded;
+            if (self.audio_packet_count == std.math.maxInt(u64) or
+                self.concealed_packet_count == std.math.maxInt(u64))
+                return error.VorbisAudioPacketCountOverflow;
+            if (self.concealed_packet_count > self.audio_packet_count)
+                return error.InvalidVorbisPcmStreamState;
+            if (identification.channel_count != channel_count or
+                identification.small_block_size != small_block_size or
+                identification.large_block_size != large_block_size)
+                return error.VorbisDecoderConfigurationMismatch;
+            if (identification.sample_rate == 0)
+                return error.InvalidVorbisSampleRate;
+            const block_size: u16 = if (large_block)
+                large_block_size
+            else
+                small_block_size;
+            const previous_size =
+                self.overlap.channels[0].previousBlockSize();
+            for (self.overlap.channels[1..]) |channel| {
+                if (channel.previousBlockSize() != previous_size)
+                    return error.InvalidVorbisChannelOverlapState;
+            }
+            const nominal_sample_count = if (previous_size == 0)
+                0
+            else
+                previous_size / 4 + block_size / 4;
+            if (end and nominal_sample_count == 0)
+                return error.VorbisStreamEndedBeforePcm;
+            if (outputs.len != channel_count)
+                return error.InvalidVorbisAudioOutput;
+            for (outputs) |output| {
+                if (output.len < nominal_sample_count)
+                    return error.VorbisOverlapOutputTooSmall;
+            }
+            const windowed_values = std.math.mul(
+                usize,
+                channel_count,
+                block_size,
+            ) catch return error.VorbisAudioPacketSizeOverflow;
+            if (windowed_scratch.len < windowed_values)
+                return error.VorbisPcmStreamScratchTooSmall;
+            const used_windowed = windowed_scratch[0..windowed_values];
+            for (outputs) |output| {
+                if (vorbisConstSlicesOverlap(
+                    Float,
+                    output,
+                    used_windowed,
+                )) return error.OverlappingVorbisPcmStreamScratch;
+            }
+            for (&self.overlap.channels) |*channel| {
+                if (vorbisConstSlicesOverlap(
+                    Float,
+                    &channel.previous,
+                    used_windowed,
+                ) or vorbisConstSlicesOverlap(
+                    Float,
+                    &channel.pending,
+                    used_windowed,
+                )) return error.OverlappingVorbisPcmStreamScratch;
+            }
+
+            var granule_trial = self.granules;
+            const granule_range: VorbisGranuleRange =
+                if (nominal_sample_count == 0)
+                    .{
+                        .source_start = 0,
+                        .sample_count = 0,
+                        .pcm_start = null,
+                        .pcm_end = null,
+                    }
+                else
+                    try granule_trial.trim(
+                        nominal_sample_count,
+                        granule_position,
+                        end,
+                    );
+            @memset(used_windowed, 0);
+            var windowed_channels: [channel_count][]const Float = undefined;
+            for (&windowed_channels, 0..) |*channel, index| {
+                channel.* = used_windowed[index * block_size ..][0..block_size];
+            }
+            _ = try self.overlap.push(
+                &windowed_channels,
+                outputs,
+            );
+            if (granule_range.source_start != 0) {
+                for (outputs) |output| {
+                    std.mem.copyForwards(
+                        Float,
+                        output[0..granule_range.sample_count],
+                        output[granule_range.source_start..][0..granule_range.sample_count],
+                    );
+                }
+            }
+
+            self.granules = granule_trial;
+            self.audio_packet_count += 1;
+            self.concealed_packet_count += 1;
+            self.ended = end;
+            return .{
+                .block_size = block_size,
+                .sample_count = granule_range.sample_count,
+                .pcm_start = granule_range.pcm_start,
+                .pcm_end = granule_range.pcm_end,
+                .concealed_packet_count = self.concealed_packet_count,
             };
         }
     };
@@ -9372,6 +9510,53 @@ pub fn VorbisChainedPcmStreamDecoder(
                 @as(u64, @intCast(decoded.sample_count));
             return .{
                 .stream = decoded,
+                .logical_stream_index = self.logical_stream_index,
+                .global_pcm_start = global_start,
+                .global_pcm_end = global_end,
+            };
+        }
+
+        pub fn concealMissingPacket(
+            self: *Self,
+            large_block: bool,
+            granule_position: u64,
+            end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisChainedPcmConcealmentResult {
+            if (!self.started)
+                return error.VorbisLogicalStreamNotStarted;
+            try validateIdentification(identification);
+            const sample_rate = self.sample_rate orelse
+                return error.VorbisLogicalStreamNotStarted;
+            if (identification.sample_rate != sample_rate)
+                return error.VorbisChainedSampleRateChanged;
+
+            const global_start = std.math.add(
+                u64,
+                self.completed_pcm,
+                self.current_stream_pcm,
+            ) catch return error.VorbisChainedPcmPositionOverflow;
+            _ = std.math.add(
+                u64,
+                global_start,
+                large_block_size / 2,
+            ) catch return error.VorbisChainedPcmPositionOverflow;
+            const concealed = try self.stream.concealMissingPacket(
+                large_block,
+                granule_position,
+                end,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+            const global_end = global_start +
+                @as(u64, @intCast(concealed.sample_count));
+            self.current_stream_pcm +=
+                @as(u64, @intCast(concealed.sample_count));
+            return .{
+                .stream = concealed,
                 .logical_stream_index = self.logical_stream_index,
                 .global_pcm_start = global_start,
                 .global_pcm_end = global_end,
@@ -15265,6 +15450,135 @@ test "Ogg Vorbis logical stream decodes to granule-trimmed PCM" {
         &([_]f32{0} ** 16),
         output[file_selected.source_start..][0..file_selected.sample_count],
     );
+}
+
+test "Vorbis PCM concealment advances overlap and granules explicitly" {
+    const identification = VorbisIdentification{
+        .channel_count = 1,
+        .sample_rate = 48_000,
+        .bitrate_maximum = 0,
+        .bitrate_nominal = 64_000,
+        .bitrate_minimum = 0,
+        .small_block_size = 64,
+        .large_block_size = 64,
+    };
+    var decoder = VorbisPcmStreamDecoder(f32, 1, 64, 64).init();
+    var windowed: [64]f32 = undefined;
+    var empty: [0]f32 = .{};
+    const empty_outputs = [_][]f32{&empty};
+    const primed = try decoder.concealMissingPacket(
+        false,
+        unknown_granule,
+        false,
+        identification,
+        &empty_outputs,
+        &windowed,
+    );
+    try std.testing.expectEqual(@as(usize, 0), primed.sample_count);
+    try std.testing.expectEqual(@as(u64, 1), primed.concealed_packet_count);
+    try std.testing.expectEqual(@as(u64, 1), decoder.audio_packet_count);
+
+    var output = [_]f32{99} ** 32;
+    const outputs = [_][]f32{&output};
+    const middle = try decoder.concealMissingPacket(
+        false,
+        32,
+        false,
+        identification,
+        &outputs,
+        &windowed,
+    );
+    try std.testing.expectEqual(@as(u16, 64), middle.block_size);
+    try std.testing.expectEqual(@as(usize, 32), middle.sample_count);
+    try std.testing.expectEqual(@as(?i64, 0), middle.pcm_start);
+    try std.testing.expectEqual(@as(?i64, 32), middle.pcm_end);
+    try std.testing.expectEqual(@as(u64, 2), middle.concealed_packet_count);
+    try std.testing.expectEqualSlices(f32, &([_]f32{0} ** 32), &output);
+
+    output = [_]f32{99} ** 32;
+    const ended = try decoder.concealMissingPacket(
+        false,
+        60,
+        true,
+        identification,
+        &outputs,
+        &windowed,
+    );
+    try std.testing.expectEqual(@as(usize, 28), ended.sample_count);
+    try std.testing.expectEqual(@as(?i64, 32), ended.pcm_start);
+    try std.testing.expectEqual(@as(?i64, 60), ended.pcm_end);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0} ** 28),
+        output[0..28],
+    );
+    try std.testing.expect(decoder.ended);
+    try std.testing.expectError(
+        error.VorbisPcmStreamAlreadyEnded,
+        decoder.concealMissingPacket(
+            false,
+            92,
+            true,
+            identification,
+            &outputs,
+            &windowed,
+        ),
+    );
+
+    decoder.reset();
+    const before_empty_end = decoder;
+    try std.testing.expectError(
+        error.VorbisStreamEndedBeforePcm,
+        decoder.concealMissingPacket(
+            false,
+            0,
+            true,
+            identification,
+            &empty_outputs,
+            &windowed,
+        ),
+    );
+    try std.testing.expectEqualDeep(before_empty_end, decoder);
+    _ = try decoder.concealMissingPacket(
+        false,
+        unknown_granule,
+        false,
+        identification,
+        &empty_outputs,
+        &windowed,
+    );
+    var aliased = [_]f32{7} ** 64;
+    const aliased_outputs = [_][]f32{aliased[0..32]};
+    const before_alias = decoder;
+    try std.testing.expectError(
+        error.OverlappingVorbisPcmStreamScratch,
+        decoder.concealMissingPacket(
+            false,
+            32,
+            false,
+            identification,
+            &aliased_outputs,
+            &aliased,
+        ),
+    );
+    try std.testing.expectEqualDeep(before_alias, decoder);
+    try std.testing.expectEqualSlices(f32, &([_]f32{7} ** 64), &aliased);
+
+    var hostile = decoder;
+    hostile.concealed_packet_count = hostile.audio_packet_count + 1;
+    const hostile_before = hostile;
+    try std.testing.expectError(
+        error.InvalidVorbisPcmStreamState,
+        hostile.concealMissingPacket(
+            false,
+            32,
+            false,
+            identification,
+            &outputs,
+            &windowed,
+        ),
+    );
+    try std.testing.expectEqualDeep(hostile_before, hostile);
 }
 
 test "Vorbis seeking handles packed packets and chained streams" {
@@ -24436,6 +24750,20 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
             },
         ),
     );
+    try std.testing.expectEqual(@as(u64, 0), chained.current_stream_pcm);
+    var recovering = chained;
+    const concealed = try recovering.concealMissingPacket(
+        false,
+        32,
+        false,
+        identification,
+        &stream_outputs,
+        &stream_windowed,
+    );
+    try std.testing.expectEqual(@as(u64, 0), concealed.global_pcm_start);
+    try std.testing.expectEqual(@as(u64, 32), concealed.global_pcm_end);
+    try std.testing.expectEqual(@as(u64, 1), concealed.stream.concealed_packet_count);
+    try std.testing.expectEqual(@as(u64, 32), recovering.current_stream_pcm);
     try std.testing.expectEqual(@as(u64, 0), chained.current_stream_pcm);
     const chained_middle = try chained.decode(
         .{

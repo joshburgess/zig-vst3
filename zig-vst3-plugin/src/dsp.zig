@@ -806,8 +806,12 @@ pub const VorbisPcmPacketSequenceConfig =
 pub const VorbisPcmSeekCursor = ogg.VorbisPcmSeekCursor;
 pub const VorbisChainedPcmStreamDecoder =
     ogg.VorbisChainedPcmStreamDecoder;
+pub const VorbisChainedPcmConcealmentResult =
+    ogg.VorbisChainedPcmConcealmentResult;
 pub const VorbisChainedPcmStreamResult =
     ogg.VorbisChainedPcmStreamResult;
+pub const VorbisPcmConcealmentResult =
+    ogg.VorbisPcmConcealmentResult;
 pub const VorbisPcmStreamDecoder = ogg.VorbisPcmStreamDecoder;
 pub const VorbisPcmStreamResult = ogg.VorbisPcmStreamResult;
 pub const VorbisPcmStreamScratch = ogg.VorbisPcmStreamScratch;
