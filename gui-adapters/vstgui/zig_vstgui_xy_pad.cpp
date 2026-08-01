@@ -426,13 +426,16 @@ bool XYPadControl::performAccessibilityAction(
 std::string XYPadControl::formattedValue(uint32_t axis, double normalized) const {
     char text[256] {};
     const auto& callbacks = control_model.callbacks();
-    if (callbacks.format_value && callbacks.format_value(
+    const int32_t written = callbacks.format_value
+        ? callbacks.format_value(
             callbacks.userdata,
             control_model.parameterId(axis),
             clampNormalized(normalized),
             text,
             sizeof(text)
-        ) >= 0) return text;
+        )
+        : -1;
+    if (validCallbackTextOutput(text, sizeof(text), written)) return text;
     std::snprintf(text, sizeof(text), "%.3f", clampNormalized(normalized));
     return text;
 }

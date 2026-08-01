@@ -22,6 +22,7 @@
 namespace ZigVstgui {
 
 double clampNormalized(double value);
+bool validCallbackTextOutput(const char* text, uint32_t capacity, int32_t written);
 
 class ParameterControlModel {
 public:

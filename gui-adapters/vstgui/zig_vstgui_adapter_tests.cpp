@@ -86,6 +86,7 @@ struct CallbackState {
     std::string editor_text {"Studio Plate"};
     bool reject_editor_text {false};
     uint32_t malformed_editor_text {0};
+    uint32_t malformed_format_value {0};
     ZigVstguiProgressSnapshot progress_snapshot {};
     bool progress_available {false};
     uint32_t stored_scalar_ids[3] {};
@@ -279,6 +280,25 @@ int32_t formatSegmentedValue(void*, uint32_t, double normalized, char* output, u
     const char* value = normalized < 1.0 / 6.0 ? "low_pass" :
         normalized < 0.5 ? "high_pass" : normalized < 5.0 / 6.0 ? "band_pass" : "notch";
     const int written = std::snprintf(output, capacity, "%s", value);
+    return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+}
+
+int32_t formatMalformedValue(void* userdata, uint32_t, double normalized, char* output, uint32_t capacity) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    if (!output || capacity == 0) return -1;
+    if (state->malformed_format_value == 1) {
+        std::fill(output, output + capacity, 'x');
+        return static_cast<int32_t>(capacity);
+    }
+    if (state->malformed_format_value == 2) {
+        if (capacity < 4) return -1;
+        output[0] = 'x';
+        output[1] = 0;
+        output[2] = 'y';
+        output[3] = 0;
+        return 3;
+    }
+    const int written = std::snprintf(output, capacity, "%.2f", normalized);
     return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
 }
 
@@ -706,6 +726,7 @@ int testRotaryKnob() {
     callbacks.begin_edit = beginEdit;
     callbacks.perform_edit = performEdit;
     callbacks.end_edit = endEdit;
+    callbacks.format_value = formatMalformedValue;
     VSTGUI::init(nullptr);
     {
         ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
@@ -723,7 +744,8 @@ int testRotaryKnob() {
         auto* knob = dynamic_cast<ZigVstgui::RotaryKnob*>(control.focusView());
         if (!knob || !knob->modulationValue() ||
             !closeEnough(*knob->modulationValue(), 0.75) ||
-            !closeEnough(knob->getDefaultValue(), 0.5)) {
+            !closeEnough(knob->getDefaultValue(), 0.5) ||
+            control.primaryAccessibility().valueText() != "0.50") {
             control.clear();
             VSTGUI::exit();
             return 1;
@@ -758,6 +780,20 @@ int testRotaryKnob() {
             control.clear();
             VSTGUI::exit();
             return 5;
+        }
+        state.malformed_format_value = 1;
+        control.setValue(0.4);
+        if (control.primaryAccessibility().valueText() != "0.400") {
+            control.clear();
+            VSTGUI::exit();
+            return 6;
+        }
+        state.malformed_format_value = 2;
+        control.setValue(0.3);
+        if (control.primaryAccessibility().valueText() != "0.300") {
+            control.clear();
+            VSTGUI::exit();
+            return 7;
         }
         control.clear();
     }
@@ -983,6 +1019,7 @@ int testMultiParameterAttachmentAndXYPad() {
     VSTGUI::init(nullptr);
     bool direct_keyboard_ok = false;
     {
+        callbacks.format_value = formatMalformedValue;
         ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
         auto xy_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 200, 160)));
         const ZigVstguiXYPadDescription direct_description {"Direct", 10, 20, "X", "Y"};
@@ -998,6 +1035,13 @@ int testMultiParameterAttachmentAndXYPad() {
             state.perform_count == direct_perform_before + 2 &&
             state.end_count == direct_end_before + 2 &&
             direct_control.model().acceptedValue(1) > 0.75;
+        state.malformed_format_value = 1;
+        direct_keyboard_ok = direct_keyboard_ok && direct_control.setParameter(10, 0.4) &&
+            direct_control.axisAccessibility(0).valueText() == "0.400";
+        state.malformed_format_value = 2;
+        direct_keyboard_ok = direct_keyboard_ok && direct_control.setParameter(20, 0.3) &&
+            direct_control.axisAccessibility(1).valueText() == "0.300";
+        state.malformed_format_value = 0;
         direct_control.clear();
     }
     VSTGUI::exit();

@@ -501,6 +501,8 @@ Polling is bounded to 1–60 Hz while the editor is open. Unchanged determinate 
 
 `EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and production IR loader use the same public declaration, callback, validation, rendering, lifecycle, and accessibility contracts. External text refresh requires an exact bounded byte count, a terminator at that boundary, and no embedded terminator. Malformed callback output preserves the accepted visual and accessibility text.
 
+Parameter and XY-pad formatting callbacks use the same exact output contract. Malformed callback output falls back to bounded numeric text.
+
 ## Graph Viewports
 
 Add a bounded viewport to any graph through its public declaration:

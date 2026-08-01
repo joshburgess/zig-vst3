@@ -60,6 +60,14 @@ double clampNormalized(double value) {
     return std::clamp(value, 0.0, 1.0);
 }
 
+bool validCallbackTextOutput(const char* text, uint32_t capacity, int32_t written) {
+    if (!text || capacity == 0 || written < 0 || static_cast<uint32_t>(written) >= capacity) {
+        return false;
+    }
+    const auto length = static_cast<std::size_t>(written);
+    return text[length] == 0 && std::find(text, text + length, '\0') == text + length;
+}
+
 double quantizeNormalized(double value, int32_t step_count) {
     const double clamped = clampNormalized(value);
     if (step_count <= 0) return clamped;
@@ -519,13 +527,15 @@ void ParameterControl::build(
         auto* control = static_cast<ParameterControl*>(display->getListener());
         if (control && control->control_model.callbacks().format_value) {
             const auto& callbacks = control->control_model.callbacks();
-            return callbacks.format_value(
+            text[0] = 0;
+            const int32_t written = callbacks.format_value(
                 callbacks.userdata,
                 control->control_model.parameterId(),
                 static_cast<double>(value),
                 text,
                 256
-            ) >= 0;
+            );
+            return validCallbackTextOutput(text, 256, written);
         }
         std::snprintf(text, 256, "%.3f", static_cast<double>(value));
         return true;
@@ -733,13 +743,16 @@ void ParameterControl::buildPrimaryControl(
 std::string ParameterControl::formattedValue(double normalized) const {
     char text[256] {};
     const auto& callbacks = control_model.callbacks();
-    if (callbacks.format_value && callbacks.format_value(
+    const int32_t written = callbacks.format_value
+        ? callbacks.format_value(
             callbacks.userdata,
             control_model.parameterId(),
             clampNormalized(normalized),
             text,
             sizeof(text)
-        ) >= 0) {
+        )
+        : -1;
+    if (validCallbackTextOutput(text, sizeof(text), written)) {
         if (control_kind == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN ||
             control_kind == ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM) {
             return humanizeEnumLabel(text);
