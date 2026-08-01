@@ -107,6 +107,12 @@ pub fn databaseFromDecoded(
         };
     }
 
+    for (decoded.responses_measurement_ear_frame) |value| {
+        if (!std.math.isFinite(value) or
+            @abs(value) > std.math.floatMax(f32))
+            return error.InvalidSofaResponse;
+    }
+
     const interleaved = try allocator.alloc(f32, response_count);
     defer allocator.free(interleaved);
     for (0..decoded.measurement_count) |measurement_index| {
@@ -116,18 +122,15 @@ pub fn databaseFromDecoded(
                     (measurement_index * 2 + ear_index) *
                     decoded.response_frame_count +
                     frame_index;
-                const value =
-                    decoded.responses_measurement_ear_frame[source_index];
-                if (!std.math.isFinite(value) or
-                    @abs(value) > std.math.floatMax(f32))
-                    return error.InvalidSofaResponse;
                 interleaved[
                     (measurement_index *
                         decoded.response_frame_count +
                         frame_index) *
                         2 +
                         ear_index
-                ] = @floatCast(value);
+                ] = @floatCast(
+                    decoded.responses_measurement_ear_frame[source_index],
+                );
             }
         }
     }
@@ -887,6 +890,14 @@ test "decoded standard HRTF dataset rejects inconsistent data" {
     try std.testing.expectError(
         error.InvalidSofaResponse,
         databaseFromDecoded(1, 1, std.testing.allocator, invalid),
+    );
+    var invalid_failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.InvalidSofaResponse,
+        databaseFromDecoded(1, 1, invalid_failing.allocator(), invalid),
     );
     invalid = base;
     invalid.responses_measurement_ear_frame = &.{
