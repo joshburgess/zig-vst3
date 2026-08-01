@@ -677,6 +677,13 @@ fn positionEncoding(
         "Units",
         &units_buffer,
     );
+    return positionEncodingFromAttributes(value, units);
+}
+
+fn positionEncodingFromAttributes(
+    value: []const u8,
+    units: []const u8,
+) !PositionEncoding {
     if (std.ascii.eqlIgnoreCase(value, "spherical")) {
         if (!std.ascii.eqlIgnoreCase(
             units,
@@ -707,6 +714,11 @@ fn requireDefaultListenerGeometry(
         2,
     );
     defer allocator.free(listener_position.values);
+    const listener_position_encoding = positionEncoding(
+        api,
+        file_id,
+        listener_position.variable_id,
+    ) catch return error.UnsupportedSofaListenerGeometry;
     const listener_view = try readVariable(
         api,
         allocator,
@@ -715,6 +727,11 @@ fn requireDefaultListenerGeometry(
         2,
     );
     defer allocator.free(listener_view.values);
+    const listener_view_encoding = positionEncoding(
+        api,
+        file_id,
+        listener_view.variable_id,
+    ) catch return error.UnsupportedSofaListenerGeometry;
     const listener_up = try readVariable(
         api,
         allocator,
@@ -723,6 +740,15 @@ fn requireDefaultListenerGeometry(
         2,
     );
     defer allocator.free(listener_up.values);
+    const listener_up_encoding = positionEncoding(
+        api,
+        file_id,
+        listener_up.variable_id,
+    ) catch return error.UnsupportedSofaListenerGeometry;
+    if (listener_position_encoding != .cartesian_metres or
+        listener_view_encoding != .cartesian_metres or
+        listener_up_encoding != .cartesian_metres)
+        return error.UnsupportedSofaListenerGeometry;
     try requireDefaultVectors(
         listener_position,
         measurement_count,
@@ -747,6 +773,13 @@ fn requireDefaultListenerGeometry(
         3,
     );
     defer allocator.free(receivers.values);
+    const receiver_encoding = positionEncoding(
+        api,
+        file_id,
+        receivers.variable_id,
+    ) catch return error.UnsupportedSofaReceiverGeometry;
+    if (receiver_encoding != .cartesian_metres)
+        return error.UnsupportedSofaReceiverGeometry;
     if (receivers.shape[0] != 2 or
         receivers.shape[1] != 3 or
         (receivers.shape[2] != 1 and
@@ -941,6 +974,28 @@ test "standard HRTF file variables require convention ranks" {
     variable.rank = 2;
     variable.shape = .{ 2, 3, 1, 1 };
     try std.testing.expect(!validDelayVariable(variable, 3));
+}
+
+test "standard HRTF position attributes select supported encodings" {
+    try std.testing.expectEqual(
+        PositionEncoding.cartesian_metres,
+        try positionEncodingFromAttributes("CaRtEsIaN", "MeTrE"),
+    );
+    try std.testing.expectEqual(
+        PositionEncoding.spherical_degrees,
+        try positionEncodingFromAttributes(
+            "SpHeRiCaL",
+            "DeGrEe, DeGrEe, MeTrE",
+        ),
+    );
+    try std.testing.expectError(
+        error.UnsupportedSofaPositionUnits,
+        positionEncodingFromAttributes("cartesian", "centimetre"),
+    );
+    try std.testing.expectError(
+        error.UnsupportedSofaPositionEncoding,
+        positionEncodingFromAttributes("geodetic", "metre"),
+    );
 }
 
 test "decoded standard HRTF dataset rejects inconsistent data" {
