@@ -168,6 +168,14 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(dsp, "HrtfMotionRenderer"));
     try std.testing.expect(@hasDecl(dsp, "HrtfRoomPath"));
     try std.testing.expect(@hasDecl(dsp, "HrtfRoomSurfaceAbsorption"));
+    try std.testing.expect(@hasDecl(
+        dsp,
+        "HrtfRoomSurfaceImpulseResponses",
+    ));
+    try std.testing.expect(@hasDecl(
+        dsp,
+        "HrtfRoomSurfaceImpulseResponseInput",
+    ));
     try std.testing.expect(@hasDecl(dsp, "HrtfShoeboxRoom"));
     try std.testing.expect(@hasDecl(dsp, "HrtfFirstOrderRoomPathPlan"));
     try std.testing.expect(@hasDecl(
@@ -175,6 +183,10 @@ test "zig-vst3-plugin re-exports core modules" {
         "maximum_first_order_hrtf_room_paths",
     ));
     try std.testing.expect(@hasDecl(dsp, "HrtfRoomResponseComposer"));
+    try std.testing.expect(@hasDecl(
+        dsp,
+        "HrtfFrequencyDependentRoomResponseComposer",
+    ));
     try std.testing.expect(@hasDecl(dsp, "HrtfStreamingMotionRenderer"));
     try std.testing.expect(@hasDecl(dsp, "HrtfMotionClock"));
     try std.testing.expect(@hasDecl(dsp, "HrtfMotionClockObservation"));

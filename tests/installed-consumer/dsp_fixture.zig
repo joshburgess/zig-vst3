@@ -6108,6 +6108,54 @@ test "installed package renders bounded HRTF responses" {
         .nearest,
         4,
     );
+    const SurfaceResponses =
+        plugin.dsp.HrtfRoomSurfaceImpulseResponses(2);
+    const delta = [_]f32{1.0};
+    const surface_responses = try SurfaceResponses.init(48_000, .{
+        .minimum_x = &delta,
+        .maximum_x = &.{ 0.5, 0.5 },
+        .minimum_y = &delta,
+        .maximum_y = &delta,
+        .minimum_z = &delta,
+        .maximum_z = &delta,
+    });
+    const material_plan = try plugin.dsp.HrtfImageSourceRoomPathPlan(1).init(
+        planned_room,
+        48_000,
+        343.0,
+        .{ .x = 0.014, .y = 0.01, .z = 0.01 },
+        .{
+            .position = .{ .x = 0.01, .y = 0.01, .z = 0.01 },
+        },
+    );
+    const MaterialComposer =
+        plugin.dsp.HrtfFrequencyDependentRoomResponseComposer(16, 1, 2);
+    var material_composer = MaterialComposer{};
+    var material_response: [32]f32 = undefined;
+    try std.testing.expect((try material_composer.compose(
+        database,
+        &material_plan,
+        &surface_responses,
+        .nearest,
+        &material_response,
+    )) > database.frame_count);
+    try room_moving.prepareFrequencyDependentImageSourceRoom(
+        1,
+        2,
+        database,
+        planned_room,
+        &surface_responses,
+        343.0,
+        &.{.{
+            .sample_position = 0,
+            .source_position = .{ .x = 0.014, .y = 0.01, .z = 0.01 },
+            .head_pose = .{
+                .position = .{ .x = 0.01, .y = 0.01, .z = 0.01 },
+            },
+        }},
+        .nearest,
+        4,
+    );
     const room_path = plugin.dsp.HrtfRoomPath{
         .direction = directions[0],
         .gain = 0.5,

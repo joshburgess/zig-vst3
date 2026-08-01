@@ -719,6 +719,8 @@ pub fn ImageSourceRoomPathPlan(comptime reflection_order: usize) type {
                 .elevation_degrees = 0.0,
             },
         }),
+        image_index_storage: [path_capacity][3]i16 =
+            @splat(.{ 0, 0, 0 }),
         path_count: usize = 0,
 
         pub fn init(
@@ -769,6 +771,8 @@ pub fn ImageSourceRoomPathPlan(comptime reflection_order: usize) type {
                                 sample_rate,
                                 speed_of_sound_meters_per_second,
                             );
+                        result.image_index_storage[result.path_count] =
+                            indices;
                         result.path_count += 1;
                     }
                 }
@@ -782,12 +786,104 @@ pub fn ImageSourceRoomPathPlan(comptime reflection_order: usize) type {
             return self.path_storage[0..self.path_count];
         }
 
+        pub fn imageIndices(self: *const Self) ![]const [3]i16 {
+            if (!self.valid()) return error.InvalidHrtfRoomPathPlanState;
+            return self.image_index_storage[0..self.path_count];
+        }
+
         pub fn valid(self: *const Self) bool {
-            return roomPathPlanValid(
+            if (!roomPathPlanValid(
                 &self.path_storage,
                 self.path_count,
                 path_capacity,
-            );
+            )) return false;
+            if (!std.meta.eql(
+                self.image_index_storage[0],
+                [3]i16{ 0, 0, 0 },
+            ))
+                return false;
+            for (self.image_index_storage[1..self.path_count]) |indices| {
+                const order = imageIndexMagnitude(indices[0]) +
+                    imageIndexMagnitude(indices[1]) +
+                    imageIndexMagnitude(indices[2]);
+                if (order == 0 or order > reflection_order) return false;
+            }
+            return true;
+        }
+    };
+}
+
+pub const RoomSurfaceImpulseResponseInput = struct {
+    minimum_x: []const f32,
+    maximum_x: []const f32,
+    minimum_y: []const f32,
+    maximum_y: []const f32,
+    minimum_z: []const f32,
+    maximum_z: []const f32,
+};
+
+pub fn RoomSurfaceImpulseResponses(comptime maximum_frames: usize) type {
+    if (maximum_frames == 0)
+        @compileError("HRTF room surface responses require frame capacity");
+
+    return struct {
+        const Self = @This();
+
+        response_storage: [6][maximum_frames]f32 =
+            @splat(@splat(0.0)),
+        frame_counts: [6]usize = @splat(0),
+        sample_rate: u32 = 0,
+
+        pub fn init(
+            sample_rate: u32,
+            input: RoomSurfaceImpulseResponseInput,
+        ) !Self {
+            if (sample_rate < 8_000 or sample_rate > 384_000)
+                return error.InvalidHrtfSampleRate;
+            const responses = [6][]const f32{
+                input.minimum_x,
+                input.maximum_x,
+                input.minimum_y,
+                input.maximum_y,
+                input.minimum_z,
+                input.maximum_z,
+            };
+            var result = Self{};
+            result.sample_rate = sample_rate;
+            for (responses, 0..) |surface_response, surface| {
+                if (surface_response.len == 0 or
+                    surface_response.len > maximum_frames)
+                    return error.InvalidHrtfRoomSurfaceResponse;
+                for (surface_response) |sample| {
+                    if (!std.math.isFinite(sample))
+                        return error.InvalidHrtfRoomSurfaceResponse;
+                }
+                @memcpy(
+                    result.response_storage[surface][0..surface_response.len],
+                    surface_response,
+                );
+                result.frame_counts[surface] = surface_response.len;
+            }
+            if (!result.valid())
+                return error.InvalidHrtfRoomSurfaceResponseState;
+            return result;
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.sample_rate < 8_000 or self.sample_rate > 384_000)
+                return false;
+            for (self.frame_counts, 0..) |frame_count, surface| {
+                if (frame_count == 0 or frame_count > maximum_frames)
+                    return false;
+                for (self.response_storage[surface][0..frame_count]) |sample| {
+                    if (!std.math.isFinite(sample)) return false;
+                }
+            }
+            return true;
+        }
+
+        fn response(self: *const Self, surface: usize) []const f32 {
+            return self.response_storage[surface][0..self.frame_counts[surface]];
         }
     };
 }
@@ -1428,6 +1524,258 @@ pub fn RoomResponseComposer(
     };
 }
 
+pub fn FrequencyDependentRoomResponseComposer(
+    comptime maximum_frames: usize,
+    comptime reflection_order: usize,
+    comptime maximum_surface_frames: usize,
+) type {
+    if (maximum_frames == 0)
+        @compileError("HRTF room response requires frame capacity");
+    if (maximum_surface_frames == 0)
+        @compileError("HRTF room surface responses require frame capacity");
+    const path_capacity = roomPathCapacityForOrder(reflection_order);
+    const maximum_filter_frames =
+        1 + reflection_order * (maximum_surface_frames - 1);
+    const Plan = ImageSourceRoomPathPlan(reflection_order);
+    const Materials = RoomSurfaceImpulseResponses(maximum_surface_frames);
+
+    return struct {
+        const Self = @This();
+
+        pub const maximum_path_count = path_capacity;
+        pub const maximum_material_response_frames = maximum_filter_frames;
+
+        path_response: [maximum_frames * 2]f32 = @splat(0.0),
+        accumulation: [maximum_frames * 2]f64 = @splat(0.0),
+        filter_first: [maximum_filter_frames]f64 = @splat(0.0),
+        filter_second: [maximum_filter_frames]f64 = @splat(0.0),
+
+        pub fn compose(
+            self: *Self,
+            database: anytype,
+            plan: *const Plan,
+            materials: *const Materials,
+            interpolation: Interpolation,
+            destination: []f32,
+        ) !usize {
+            if (!database.valid()) return error.InvalidHrtfDatabase;
+            if (!materials.valid())
+                return error.InvalidHrtfRoomSurfaceResponseState;
+            if (materials.sample_rate != database.sample_rate)
+                return error.HrtfRoomSurfaceSampleRateMismatch;
+            const paths = try plan.items();
+            const image_indices = try plan.imageIndices();
+            if (paths.len != image_indices.len or paths.len > path_capacity)
+                return error.InvalidHrtfRoomPathPlanState;
+            const material_samples = @as(
+                [*]const f32,
+                @ptrCast(&materials.response_storage),
+            )[0 .. 6 * maximum_surface_frames];
+            if (memorySlicesOverlap(
+                f32,
+                material_samples,
+                f32,
+                &self.path_response,
+            ) or memorySlicesOverlap(
+                f32,
+                material_samples,
+                f64,
+                &self.accumulation,
+            ) or memorySlicesOverlap(
+                f32,
+                material_samples,
+                f64,
+                &self.filter_first,
+            ) or memorySlicesOverlap(
+                f32,
+                material_samples,
+                f64,
+                &self.filter_second,
+            )) return error.OverlappingHrtfRoomResponseStorage;
+
+            var frame_count: usize = 0;
+            for (paths, image_indices) |path, indices| {
+                const filter_frames = try materialResponseFrameCount(
+                    reflection_order,
+                    materials,
+                    indices,
+                );
+                const delay_frames: usize =
+                    @intFromFloat(@ceil(path.additional_delay_samples));
+                const path_frames = std.math.add(
+                    usize,
+                    database.frame_count,
+                    filter_frames - 1,
+                ) catch return error.HrtfFrameCapacityExceeded;
+                const delayed_frames = std.math.add(
+                    usize,
+                    path_frames,
+                    delay_frames,
+                ) catch return error.HrtfFrameCapacityExceeded;
+                frame_count = @max(frame_count, delayed_frames);
+            }
+            if (frame_count == 0 or frame_count > maximum_frames)
+                return error.HrtfFrameCapacityExceeded;
+            const sample_count = std.math.mul(
+                usize,
+                frame_count,
+                2,
+            ) catch return error.HrtfFrameCapacityExceeded;
+            if (destination.len < sample_count)
+                return error.InvalidHrtfDestinationShape;
+            const used_destination = destination[0..sample_count];
+            if (memorySlicesOverlap(
+                f32,
+                used_destination,
+                f32,
+                &self.path_response,
+            ) or memorySlicesOverlap(
+                f32,
+                used_destination,
+                f64,
+                &self.accumulation,
+            ) or memorySlicesOverlap(
+                f32,
+                used_destination,
+                f64,
+                &self.filter_first,
+            ) or memorySlicesOverlap(
+                f32,
+                used_destination,
+                f64,
+                &self.filter_second,
+            ) or memorySlicesOverlap(
+                f32,
+                used_destination,
+                f32,
+                material_samples,
+            )) return error.OverlappingHrtfRoomResponseStorage;
+
+            @memset(self.accumulation[0..sample_count], 0.0);
+            const database_samples = database.frame_count * 2;
+            for (paths, image_indices) |path, indices| {
+                try database.interpolate(
+                    path.direction,
+                    interpolation,
+                    self.path_response[0..database_samples],
+                );
+                const filter = try self.buildMaterialResponse(
+                    materials,
+                    indices,
+                );
+                for (0..frame_count) |frame_index| {
+                    for (0..2) |channel_index| {
+                        var filtered: f64 = 0.0;
+                        for (filter, 0..) |coefficient, tap| {
+                            const source_position =
+                                @as(f64, @floatFromInt(frame_index)) -
+                                path.additional_delay_samples -
+                                @as(f64, @floatFromInt(tap));
+                            filtered += coefficient *
+                                sampleInterleavedResponse(
+                                    self.path_response[0..database_samples],
+                                    database.frame_count,
+                                    channel_index,
+                                    source_position,
+                                );
+                        }
+                        const index = frame_index * 2 + channel_index;
+                        const value = self.accumulation[index] +
+                            path.gain * filtered;
+                        if (!std.math.isFinite(value))
+                            return error.InvalidHrtfRoomResponse;
+                        self.accumulation[index] = value;
+                    }
+                }
+            }
+
+            for (self.accumulation[0..sample_count], 0..) |value, index| {
+                if (value < -std.math.floatMax(f32) or
+                    value > std.math.floatMax(f32))
+                {
+                    return error.InvalidHrtfRoomResponse;
+                }
+                self.path_response[index] = @floatCast(value);
+            }
+            @memcpy(used_destination, self.path_response[0..sample_count]);
+            return frame_count;
+        }
+
+        fn buildMaterialResponse(
+            self: *Self,
+            materials: *const Materials,
+            indices: [3]i16,
+        ) ![]const f64 {
+            @memset(&self.filter_first, 0.0);
+            self.filter_first[0] = 1.0;
+            var frame_count: usize = 1;
+            var first_is_current = true;
+            for (0..3) |axis| {
+                const reflection_count = imageIndexMagnitude(indices[axis]);
+                for (0..reflection_count) |reflection_index| {
+                    const surface = imageSurfaceIndex(
+                        axis,
+                        indices[axis],
+                        reflection_index,
+                    );
+                    const response = materials.response(surface);
+                    const next_count = frame_count + response.len - 1;
+                    const source = if (first_is_current)
+                        self.filter_first[0..frame_count]
+                    else
+                        self.filter_second[0..frame_count];
+                    const destination_filter = if (first_is_current)
+                        self.filter_second[0..next_count]
+                    else
+                        self.filter_first[0..next_count];
+                    @memset(destination_filter, 0.0);
+                    for (source, 0..) |source_sample, source_index| {
+                        for (response, 0..) |coefficient, response_index| {
+                            const index = source_index + response_index;
+                            const value = destination_filter[index] +
+                                source_sample * coefficient;
+                            if (!std.math.isFinite(value))
+                                return error.InvalidHrtfRoomSurfaceResponse;
+                            destination_filter[index] = value;
+                        }
+                    }
+                    frame_count = next_count;
+                    first_is_current = !first_is_current;
+                }
+            }
+            return if (first_is_current)
+                self.filter_first[0..frame_count]
+            else
+                self.filter_second[0..frame_count];
+        }
+    };
+}
+
+fn materialResponseFrameCount(
+    comptime reflection_order: usize,
+    materials: anytype,
+    indices: [3]i16,
+) !usize {
+    const order = imageIndexMagnitude(indices[0]) +
+        imageIndexMagnitude(indices[1]) +
+        imageIndexMagnitude(indices[2]);
+    if (order > reflection_order)
+        return error.InvalidHrtfRoomPathPlanState;
+    var frame_count: usize = 1;
+    for (0..3) |axis| {
+        const reflection_count = imageIndexMagnitude(indices[axis]);
+        for (0..reflection_count) |reflection_index| {
+            const surface = imageSurfaceIndex(
+                axis,
+                indices[axis],
+                reflection_index,
+            );
+            frame_count += materials.frame_counts[surface] - 1;
+        }
+    }
+    return frame_count;
+}
+
 fn sampleInterleavedResponse(
     samples: []const f32,
     frame_count: usize,
@@ -1753,6 +2101,71 @@ pub fn MotionRenderer(
                 points,
                 interpolation,
                 crossfade_samples,
+            );
+        }
+
+        pub fn prepareFrequencyDependentImageSourceRoom(
+            self: *Self,
+            comptime reflection_order: usize,
+            comptime maximum_surface_frames: usize,
+            database: anytype,
+            room: ShoeboxRoom,
+            materials: *const RoomSurfaceImpulseResponses(
+                maximum_surface_frames,
+            ),
+            speed_of_sound_meters_per_second: f64,
+            points: []const MotionPoint,
+            interpolation: Interpolation,
+            crossfade_samples: usize,
+        ) !void {
+            try validatePreparation(database, points, crossfade_samples);
+
+            const Plan = ImageSourceRoomPathPlan(reflection_order);
+            const Composer = FrequencyDependentRoomResponseComposer(
+                maximum_frames,
+                reflection_order,
+                maximum_surface_frames,
+            );
+            var composer = Composer{};
+            var staged_directions: [maximum_points]Direction =
+                @splat(.{
+                    .azimuth_degrees = 0.0,
+                    .elevation_degrees = 0.0,
+                });
+            var staged_filters: [maximum_points][maximum_frames][2]f32 =
+                @splat(@splat(@splat(0.0)));
+            var frame_count: usize = 0;
+            for (points, 0..) |point, point_index| {
+                const plan = try Plan.init(
+                    room,
+                    database.sample_rate,
+                    speed_of_sound_meters_per_second,
+                    point.source_position,
+                    point.head_pose,
+                );
+                const paths = try plan.items();
+                staged_directions[point_index] = paths[0].direction;
+                const destination = @as(
+                    [*]f32,
+                    @ptrCast(&staged_filters[point_index]),
+                )[0 .. maximum_frames * 2];
+                const composed_frames = try composer.compose(
+                    database,
+                    &plan,
+                    materials,
+                    interpolation,
+                    destination,
+                );
+                frame_count = @max(frame_count, composed_frames);
+            }
+
+            self.commitPreparation(
+                database.sample_rate,
+                frame_count,
+                points,
+                crossfade_samples,
+                &staged_directions,
+                &staged_filters,
             );
         }
 
@@ -2185,13 +2598,26 @@ fn axisImageReflection(
     const reflection_count = imageIndexMagnitude(index);
     var result: f64 = 1.0;
     for (0..reflection_count) |reflection_index| {
-        const minimum_surface = if (index < 0)
-            reflection_index % 2 == 0
-        else
-            reflection_index % 2 == 1;
+        const minimum_surface = imageSurfaceIndex(
+            0,
+            index,
+            reflection_index,
+        ) == 0;
         result *= if (minimum_surface) minimum else maximum;
     }
     return result;
+}
+
+fn imageSurfaceIndex(
+    axis: usize,
+    index: i16,
+    reflection_index: usize,
+) usize {
+    const minimum_surface = if (index < 0)
+        reflection_index % 2 == 0
+    else
+        reflection_index % 2 == 1;
+    return axis * 2 + @intFromBool(!minimum_surface);
 }
 
 fn imageIndexMagnitude(index: i16) usize {
@@ -3096,6 +3522,228 @@ test "HRTF room response composes bounded directional paths" {
     }
 }
 
+test "HRTF room response composes frequency-dependent surfaces" {
+    const direction = Direction{
+        .azimuth_degrees = 0.0,
+        .elevation_degrees = 0.0,
+    };
+    const Db = Database(1, 1);
+    const database = try Db.init(8_000, &.{direction}, &.{ 1.0, 1.0 });
+    const room = ShoeboxRoom{
+        .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        .maximum = .{ .x = 10.0, .y = 2.0, .z = 2.0 },
+        .absorption = .{ .maximum_x = 0.0 },
+    };
+    const Plan = ImageSourceRoomPathPlan(1);
+    const plan = try Plan.init(
+        room,
+        8_000,
+        8_000.0,
+        .{ .x = 7.0, .y = 1.0, .z = 1.0 },
+        .{ .position = .{ .x = 5.0, .y = 1.0, .z = 1.0 } },
+    );
+    try std.testing.expectEqual(@as(usize, 2), (try plan.items()).len);
+    try std.testing.expectEqualSlices(
+        [3]i16,
+        &.{ .{ 0, 0, 0 }, .{ 1, 0, 0 } },
+        try plan.imageIndices(),
+    );
+
+    const Materials = RoomSurfaceImpulseResponses(2);
+    const delta = [_]f32{1.0};
+    const materials = try Materials.init(8_000, .{
+        .minimum_x = &delta,
+        .maximum_x = &.{ 0.5, 0.5 },
+        .minimum_y = &delta,
+        .maximum_y = &delta,
+        .minimum_z = &delta,
+        .maximum_z = &delta,
+    });
+    const Composer = FrequencyDependentRoomResponseComposer(8, 1, 2);
+    var composer = Composer{};
+    var response = [_]f32{99.0} ** 18;
+    const frame_count = try composer.compose(
+        database,
+        &plan,
+        &materials,
+        .nearest,
+        &response,
+    );
+    try std.testing.expectEqual(@as(usize, 8), frame_count);
+    try std.testing.expectEqualDeep(
+        [_]f32{
+            1.0,   1.0,
+            0.0,   0.0,
+            0.0,   0.0,
+            0.0,   0.0,
+            0.0,   0.0,
+            0.0,   0.0,
+            0.125, 0.125,
+            0.125, 0.125,
+        },
+        response[0..16].*,
+    );
+    try std.testing.expectEqualDeep([_]f32{ 99.0, 99.0 }, response[16..18].*);
+
+    const response_before_failure = response;
+    const mismatched_materials = try Materials.init(16_000, .{
+        .minimum_x = &delta,
+        .maximum_x = &.{ 0.5, 0.5 },
+        .minimum_y = &delta,
+        .maximum_y = &delta,
+        .minimum_z = &delta,
+        .maximum_z = &delta,
+    });
+    try std.testing.expectError(
+        error.HrtfRoomSurfaceSampleRateMismatch,
+        composer.compose(
+            database,
+            &plan,
+            &mismatched_materials,
+            .nearest,
+            &response,
+        ),
+    );
+    try std.testing.expectEqual(response_before_failure, response);
+    try std.testing.expectError(
+        error.InvalidHrtfDestinationShape,
+        composer.compose(
+            database,
+            &plan,
+            &materials,
+            .nearest,
+            response[0..15],
+        ),
+    );
+    try std.testing.expectEqual(response_before_failure, response);
+    try std.testing.expectError(
+        error.OverlappingHrtfRoomResponseStorage,
+        composer.compose(
+            database,
+            &plan,
+            &materials,
+            .nearest,
+            composer.path_response[0..16],
+        ),
+    );
+    var too_small = FrequencyDependentRoomResponseComposer(7, 1, 2){};
+    try std.testing.expectError(
+        error.HrtfFrameCapacityExceeded,
+        too_small.compose(
+            database,
+            &plan,
+            &materials,
+            .nearest,
+            response[0..14],
+        ),
+    );
+    try std.testing.expectEqual(response_before_failure, response);
+}
+
+test "HRTF room materials follow repeated image surfaces transactionally" {
+    const Materials = RoomSurfaceImpulseResponses(2);
+    const delta = [_]f32{1.0};
+    var materials = try Materials.init(8_000, .{
+        .minimum_x = &.{ 1.0, 0.5 },
+        .maximum_x = &.{ 1.0, -0.25 },
+        .minimum_y = &delta,
+        .maximum_y = &delta,
+        .minimum_z = &delta,
+        .maximum_z = &delta,
+    });
+    try std.testing.expectError(
+        error.InvalidHrtfSampleRate,
+        Materials.init(7_999, .{
+            .minimum_x = &delta,
+            .maximum_x = &delta,
+            .minimum_y = &delta,
+            .maximum_y = &delta,
+            .minimum_z = &delta,
+            .maximum_z = &delta,
+        }),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfRoomSurfaceResponse,
+        Materials.init(8_000, .{
+            .minimum_x = &.{},
+            .maximum_x = &delta,
+            .minimum_y = &delta,
+            .maximum_y = &delta,
+            .minimum_z = &delta,
+            .maximum_z = &delta,
+        }),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfRoomSurfaceResponse,
+        Materials.init(8_000, .{
+            .minimum_x = &.{std.math.nan(f32)},
+            .maximum_x = &delta,
+            .minimum_y = &delta,
+            .maximum_y = &delta,
+            .minimum_z = &delta,
+            .maximum_z = &delta,
+        }),
+    );
+    const Composer = FrequencyDependentRoomResponseComposer(16, 3, 2);
+    var composer = Composer{};
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ 1.0, 0.0, -0.1875, 0.03125 },
+        try composer.buildMaterialResponse(&materials, .{ 3, 0, 0 }),
+    );
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ 1.0, 0.75, 0.0, -0.0625 },
+        try composer.buildMaterialResponse(&materials, .{ -3, 0, 0 }),
+    );
+    const axis_materials = try Materials.init(8_000, .{
+        .minimum_x = &.{0.2},
+        .maximum_x = &.{0.3},
+        .minimum_y = &.{0.4},
+        .maximum_y = &.{0.5},
+        .minimum_z = &.{0.6},
+        .maximum_z = &.{0.7},
+    });
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.084),
+        (try composer.buildMaterialResponse(
+            &axis_materials,
+            .{ 1, -1, 1 },
+        ))[0],
+        1.0e-8,
+    );
+
+    materials.frame_counts[0] = 0;
+    const direction = Direction{
+        .azimuth_degrees = 0.0,
+        .elevation_degrees = 0.0,
+    };
+    const Db = Database(1, 1);
+    const database = try Db.init(8_000, &.{direction}, &.{ 1.0, 1.0 });
+    const plan = try ImageSourceRoomPathPlan(3).init(
+        .{
+            .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+            .maximum = .{ .x = 10.0, .y = 2.0, .z = 2.0 },
+        },
+        8_000,
+        8_000.0,
+        .{ .x = 7.0, .y = 1.0, .z = 1.0 },
+        .{ .position = .{ .x = 5.0, .y = 1.0, .z = 1.0 } },
+    );
+    var response = [_]f32{99.0} ** 32;
+    try std.testing.expectError(
+        error.InvalidHrtfRoomSurfaceResponseState,
+        composer.compose(
+            database,
+            &plan,
+            &materials,
+            .nearest,
+            &response,
+        ),
+    );
+    try std.testing.expectEqual([_]f32{99.0} ** 32, response);
+}
+
 test "HRTF first-order room plan derives reflection gain and delay" {
     const room = ShoeboxRoom{
         .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
@@ -3598,6 +4246,12 @@ test "HRTF bounded image-source plan covers higher reflection orders" {
     try std.testing.expectError(
         error.InvalidHrtfRoomPathPlanState,
         absorbed.items(),
+    );
+    absorbed.path_count = 1;
+    absorbed.image_index_storage[0] = .{ 1, 0, 0 };
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathPlanState,
+        absorbed.imageIndices(),
     );
 }
 
@@ -4134,6 +4788,94 @@ test "HRTF motion renderer prepares second-order room responses" {
         higher_order_sum[1],
         0.000_001,
     );
+}
+
+test "HRTF motion renderer prepares frequency-dependent room responses" {
+    const direction = Direction{
+        .azimuth_degrees = 0.0,
+        .elevation_degrees = 0.0,
+    };
+    const database = try Database(1, 1).init(
+        8_000,
+        &.{direction},
+        &.{ 1.0, 1.0 },
+    );
+    const room = ShoeboxRoom{
+        .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        .maximum = .{ .x = 10.0, .y = 2.0, .z = 2.0 },
+        .absorption = .{ .maximum_x = 0.0 },
+    };
+    const delta = [_]f32{1.0};
+    var materials = try RoomSurfaceImpulseResponses(2).init(8_000, .{
+        .minimum_x = &delta,
+        .maximum_x = &.{ 0.5, 0.5 },
+        .minimum_y = &delta,
+        .maximum_y = &delta,
+        .minimum_z = &delta,
+        .maximum_z = &delta,
+    });
+    var renderer = MotionRenderer(8, 1, 2){};
+    try renderer.prepareFrequencyDependentImageSourceRoom(
+        1,
+        2,
+        database,
+        room,
+        &materials,
+        8_000.0,
+        &.{.{
+            .sample_position = 0,
+            .source_position = .{ .x = 7.0, .y = 1.0, .z = 1.0 },
+            .head_pose = .{
+                .position = .{ .x = 5.0, .y = 1.0, .z = 1.0 },
+            },
+        }},
+        .nearest,
+        2,
+    );
+
+    var rendered: [8][2]f32 = undefined;
+    for (&rendered, 0..) |*output, sample_index| {
+        output.* = renderer.processSample(
+            if (sample_index == 0) 1.0 else 0.0,
+        );
+    }
+    try std.testing.expectEqualDeep(
+        [_][2]f32{
+            .{ 1.0, 1.0 },
+            .{ 0.0, 0.0 },
+            .{ 0.0, 0.0 },
+            .{ 0.0, 0.0 },
+            .{ 0.0, 0.0 },
+            .{ 0.0, 0.0 },
+            .{ 0.125, 0.125 },
+            .{ 0.125, 0.125 },
+        },
+        rendered,
+    );
+
+    const retained_direction = renderer.currentDirection();
+    materials.frame_counts[1] = 0;
+    try std.testing.expectError(
+        error.InvalidHrtfRoomSurfaceResponseState,
+        renderer.prepareFrequencyDependentImageSourceRoom(
+            1,
+            2,
+            database,
+            room,
+            &materials,
+            8_000.0,
+            &.{.{
+                .sample_position = 0,
+                .source_position = .{ .x = 7.0, .y = 1.0, .z = 1.0 },
+                .head_pose = .{
+                    .position = .{ .x = 5.0, .y = 1.0, .z = 1.0 },
+                },
+            }},
+            .nearest,
+            2,
+        ),
+    );
+    try std.testing.expectEqual(retained_direction, renderer.currentDirection());
 }
 
 test "HRTF database rejects malformed measurements transactionally" {
