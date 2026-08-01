@@ -795,6 +795,123 @@ test "finite impulse-response resampler is exact and transactional" {
     );
 }
 
+fn verifyFiniteResponseRateMatrix(
+    comptime Sample: type,
+    tolerance: f128,
+) !void {
+    const input_frames: usize = 96;
+    const Resampler = FiniteImpulseResponseResampler(
+        Sample,
+        input_frames,
+        4_608,
+    );
+    const rate_pairs = [_][2]u32{
+        .{ 8_000, 384_000 },
+        .{ 384_000, 8_000 },
+        .{ 11_025, 192_000 },
+        .{ 192_000, 11_025 },
+        .{ 32_000, 44_100 },
+        .{ 44_100, 32_000 },
+        .{ 44_100, 48_000 },
+        .{ 48_000, 44_100 },
+        .{ 48_000, 96_000 },
+        .{ 96_000, 48_000 },
+        .{ 176_400, 384_000 },
+        .{ 384_000, 176_400 },
+        .{ 8_000, 8_000 },
+        .{ 384_000, 384_000 },
+    };
+    var filters: [5][input_frames]Sample = @splat(@splat(0.0));
+    filters[0][0] = 1.0;
+    filters[1][input_frames / 2] = 1.0;
+    filters[2][input_frames - 1] = 1.0;
+    for (0..input_frames / 2) |index| {
+        filters[3][index * 2] = 1.0;
+        filters[3][index * 2 + 1] = -1.0;
+    }
+    for (&filters[4], 0..) |*sample, index| {
+        const position: f64 = @floatFromInt(index);
+        sample.* = @floatCast(
+            @sin(position * 0.37) * @exp(-position / 20.0),
+        );
+    }
+
+    for (rate_pairs) |rates| {
+        const resampler = try Resampler.init(rates[0], rates[1]);
+        const output_frames = try resampler.outputFrameCount(input_frames);
+        const expected_frames =
+            (@as(u128, input_frames) * rates[1] + rates[0] / 2) /
+            rates[0];
+        try std.testing.expectEqual(
+            @as(usize, @intCast(expected_frames)),
+            output_frames,
+        );
+        for (filters, 0..) |filter, filter_index| {
+            var destination: [4_608]Sample = @splat(91.25);
+            try resampler.resample(
+                &filter,
+                destination[0..output_frames],
+            );
+            var source_sum: f128 = 0.0;
+            for (filter) |sample| source_sum += @floatCast(sample);
+            var destination_sum: f128 = 0.0;
+            for (destination[0..output_frames]) |sample| {
+                try std.testing.expect(std.math.isFinite(sample));
+                destination_sum += @floatCast(sample);
+            }
+            try std.testing.expectApproxEqAbs(
+                source_sum,
+                destination_sum,
+                tolerance,
+            );
+            for (destination[output_frames..]) |sample|
+                try std.testing.expectEqual(@as(Sample, 91.25), sample);
+
+            const ratio =
+                @as(f64, @floatFromInt(rates[1])) /
+                @as(f64, @floatFromInt(rates[0]));
+            if (filter_index == 1 and ratio >= 0.25 and ratio <= 4.0) {
+                var peak_index: usize = 0;
+                var peak_value: Sample = 0.0;
+                for (destination[0..output_frames], 0..) |sample, index| {
+                    if (@abs(sample) > peak_value) {
+                        peak_value = @abs(sample);
+                        peak_index = index;
+                    }
+                }
+                const expected_peak: usize = @intFromFloat(@round(
+                    @as(f64, @floatFromInt(input_frames / 2)) * ratio,
+                ));
+                try std.testing.expect(
+                    peak_index + 1 >= expected_peak and
+                        peak_index <= expected_peak + 1,
+                );
+            }
+        }
+    }
+}
+
+test "finite impulse-response resampler covers supported audio rate matrix" {
+    try verifyFiniteResponseRateMatrix(f64, 2.0e-11);
+    try verifyFiniteResponseRateMatrix(f32, 5.0e-5);
+
+    const Resampler = FiniteImpulseResponseResampler(f64, 3, 5);
+    const upsampler = try Resampler.init(32_000, 48_000);
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        try upsampler.outputFrameCount(1),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 5),
+        try upsampler.outputFrameCount(3),
+    );
+    const downsampler = try Resampler.init(48_000, 32_000);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        try downsampler.outputFrameCount(1),
+    );
+}
+
 test "streaming resampler reports and renders its causal impulse latency" {
     const Resampler = StreamingResampler(f64);
     var resampler = try Resampler.init(.{ .input_rate = 48_000, .output_rate = 48_000 });
