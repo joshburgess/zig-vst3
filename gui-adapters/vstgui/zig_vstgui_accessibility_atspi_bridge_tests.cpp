@@ -1,8 +1,10 @@
 #include "zig_vstgui_accessibility_bridge.h"
 
+#include "vstgui/lib/controls/ctextlabel.h"
 #include "vstgui/lib/cframe.h"
 #include "vstgui/lib/cview.h"
 #include "vstgui/lib/vstguibase.h"
+#include "vstgui/lib/vstguiinit.h"
 
 #include <gio/gio.h>
 
@@ -30,6 +32,17 @@ constexpr const char* object_event_interface = "org.a11y.atspi.Event.Object";
 constexpr const char* first_child_path = "/org/a11y/atspi/accessible/control_0";
 constexpr const char* second_child_path = "/org/a11y/atspi/accessible/control_1";
 constexpr int timeout_ms = 2000;
+
+class VstguiRuntime final {
+public:
+    VstguiRuntime() {
+        VSTGUI::init(nullptr);
+    }
+
+    ~VstguiRuntime() {
+        VSTGUI::exit();
+    }
+};
 
 constexpr const char* service_xml = R"xml(
 <node>
@@ -198,6 +211,75 @@ bool callRejected(GVariant* result, GError* error) {
     if (!error) return false;
     g_error_free(error);
     return true;
+}
+
+bool boundedRangeMatches(
+    GDBusConnection* connection,
+    const char* application,
+    const char* path,
+    gint32 x,
+    gint32 y,
+    gint32 width,
+    gint32 height,
+    guint32 x_clip,
+    guint32 y_clip,
+    gint32 expected_start,
+    gint32 expected_end,
+    const char* expected_text
+) {
+    GError* error = nullptr;
+    GVariant* result = g_dbus_connection_call_sync(
+        connection,
+        application,
+        path,
+        "org.a11y.atspi.Text",
+        "GetBoundedRanges",
+        g_variant_new(
+            "(iiiiuuu)",
+            x,
+            y,
+            width,
+            height,
+            1u,
+            x_clip,
+            y_clip
+        ),
+        G_VARIANT_TYPE("(a(iisv))"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (!result) {
+        if (error) g_error_free(error);
+        return false;
+    }
+    GVariant* ranges = nullptr;
+    g_variant_get(result, "(@a(iisv))", &ranges);
+    const auto count = g_variant_n_children(ranges);
+    bool matches = expected_start < 0 ? count == 0 : count == 1;
+    if (matches && expected_start >= 0) {
+        gint32 start = -1;
+        gint32 end = -1;
+        const char* text = nullptr;
+        GVariant* unused = nullptr;
+        g_variant_get_child(
+            ranges,
+            0,
+            "(ii&s@v)",
+            &start,
+            &end,
+            &text,
+            &unused
+        );
+        matches = start == expected_start && end == expected_end && text &&
+            expected_text && std::strcmp(text, expected_text) == 0;
+        g_variant_unref(unused);
+    }
+    g_variant_unref(ranges);
+    g_variant_unref(result);
+    if (error) g_error_free(error);
+    return matches;
 }
 
 void eventReceived(
@@ -690,6 +772,11 @@ void inspectApplication(
         if (error) g_error_free(error);
     }
 
+    gint32 character_x = 0;
+    gint32 character_y = 0;
+    gint32 character_width = 0;
+    gint32 character_height = 0;
+    bool character_geometry = false;
     error = nullptr;
     result = g_dbus_connection_call_sync(
         connection,
@@ -705,41 +792,164 @@ void inspectApplication(
         &error
     );
     if (result) {
-        gint32 x = 0;
-        gint32 y = 0;
-        gint32 width = 0;
-        gint32 height = 0;
-        g_variant_get(result, "(iiii)", &x, &y, &width, &height);
-        text_queries &= x == 43 && y == 20 && width == 33 && height == 40;
+        g_variant_get(
+            result,
+            "(iiii)",
+            &character_x,
+            &character_y,
+            &character_width,
+            &character_height
+        );
+        character_geometry = character_x > 14 && character_x < 43 &&
+            character_y >= 20 && character_y < 60 &&
+            character_width > 1 && character_width < 33 &&
+            character_height > 0 && character_height < 40;
+        text_queries &= character_geometry;
         g_variant_unref(result);
     } else {
         text_queries = false;
         if (error) g_error_free(error);
     }
 
+    bool range_geometry = false;
     error = nullptr;
     result = g_dbus_connection_call_sync(
         connection,
         child_bus.c_str(),
         path.c_str(),
         "org.a11y.atspi.Text",
-        "GetBoundedRanges",
-        g_variant_new("(iiiiuuu)", 0, 0, 200, 200, 1u, 0u, 0u),
-        G_VARIANT_TYPE("(a(iisv))"),
+        "GetRangeExtents",
+        g_variant_new("(iiu)", 0, 2, 1u),
+        G_VARIANT_TYPE("(iiii)"),
         G_DBUS_CALL_FLAGS_NONE,
         timeout_ms,
         nullptr,
         &error
     );
     if (result) {
-        GVariant* ranges = nullptr;
-        g_variant_get(result, "(@a(iisv))", &ranges);
-        text_queries &= g_variant_n_children(ranges) == 1;
-        g_variant_unref(ranges);
+        gint32 x = 0;
+        gint32 y = 0;
+        gint32 width = 0;
+        gint32 height = 0;
+        g_variant_get(result, "(iiii)", &x, &y, &width, &height);
+        range_geometry = x == 14 && y == character_y &&
+            x + width == character_x + character_width &&
+            height == character_height;
+        text_queries &= range_geometry;
         g_variant_unref(result);
     } else {
         text_queries = false;
         if (error) g_error_free(error);
+    }
+
+    bool point_geometry = false;
+    error = nullptr;
+    result = g_dbus_connection_call_sync(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        "org.a11y.atspi.Text",
+        "GetOffsetAtPoint",
+        g_variant_new(
+            "(iiu)",
+            character_x + character_width / 2,
+            character_y + character_height / 2,
+            1u
+        ),
+        G_VARIANT_TYPE("(i)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        timeout_ms,
+        nullptr,
+        &error
+    );
+    if (result) {
+        gint32 offset = -1;
+        g_variant_get(result, "(i)", &offset);
+        point_geometry = offset == 1;
+        text_queries &= point_geometry;
+        g_variant_unref(result);
+    } else {
+        text_queries = false;
+        if (error) g_error_free(error);
+    }
+
+    const bool bounded_complete = boundedRangeMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        character_x,
+        20,
+        character_width,
+        40,
+        3u,
+        0u,
+        1,
+        2,
+        "é"
+    );
+    const bool bounded_partial = boundedRangeMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        character_x + 1,
+        20,
+        character_width - 1,
+        40,
+        0u,
+        0u,
+        1,
+        2,
+        "é"
+    );
+    const bool bounded_minimum = boundedRangeMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        character_x + 1,
+        20,
+        character_width - 1,
+        40,
+        1u,
+        0u,
+        -1,
+        -1,
+        nullptr
+    );
+    const bool bounded_maximum = boundedRangeMatches(
+        connection,
+        child_bus.c_str(),
+        path.c_str(),
+        character_x,
+        20,
+        character_width - 1,
+        40,
+        2u,
+        0u,
+        -1,
+        -1,
+        nullptr
+    );
+    text_queries &= bounded_complete && bounded_partial && bounded_minimum &&
+        bounded_maximum;
+    if (!character_geometry || !range_geometry || !point_geometry ||
+        !bounded_complete || !bounded_partial || !bounded_minimum ||
+        !bounded_maximum) {
+        std::fprintf(
+            stderr,
+            "AT-SPI text geometry: character=%d range=%d point=%d "
+            "bounded=%d/%d/%d/%d rect=%d,%d %dx%d\n",
+            character_geometry,
+            range_geometry,
+            point_geometry,
+            bounded_complete,
+            bounded_partial,
+            bounded_minimum,
+            bounded_maximum,
+            character_x,
+            character_y,
+            character_width,
+            character_height
+        );
     }
     evidence.text_queries.store(text_queries, std::memory_order_release);
 
@@ -1347,6 +1557,7 @@ bool perform(
 }
 
 int runTest() {
+    VstguiRuntime runtime;
     g_setenv("ZIG_VSTGUI_DIAGNOSTICS", "1", true);
     GTestDBus* bus = g_test_dbus_new(G_TEST_DBUS_NONE);
     g_test_dbus_up(bus);
@@ -1373,9 +1584,12 @@ int runTest() {
         VSTGUI::CRect(0, 0, 640, 480),
         nullptr
     ));
-    auto* view = new VSTGUI::CView(
-        VSTGUI::CRect(10, 20, 110, 60)
+    auto* view = new VSTGUI::CTextLabel(
+        VSTGUI::CRect(10, 20, 110, 60),
+        "AéB"
     );
+    view->setHoriAlign(VSTGUI::kLeftText);
+    view->setTextInset(VSTGUI::CPoint(4, 2));
     frame->addView(view);
     view->setWantsFocus(true);
     auto* boundary_view = new VSTGUI::CView(

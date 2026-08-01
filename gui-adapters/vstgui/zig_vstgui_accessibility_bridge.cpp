@@ -7,6 +7,8 @@
 
 #include "zig_vstgui_accessibility_atspi.h"
 
+#include "vstgui/lib/controls/cparamdisplay.h"
+#include "vstgui/lib/platform/iplatformfont.h"
 #include "vstgui/lib/platform/iplatformframe.h"
 
 #if !defined(__linux__)
@@ -749,6 +751,13 @@ private:
         gint32 height {0};
     };
 
+    struct TextLayout {
+        double x {0.0};
+        double y {0.0};
+        double height {0.0};
+        std::vector<double> offsets;
+    };
+
     static gint32 coordinate(double value) {
         if (value <= static_cast<double>(G_MININT32)) return G_MININT32;
         if (value >= static_cast<double>(G_MAXINT32)) return G_MAXINT32;
@@ -776,6 +785,91 @@ private:
             coordinate(rectangle.getWidth()),
             coordinate(rectangle.getHeight()),
         };
+    }
+
+    bool measuredTextLayout(
+        const Object& object,
+        const std::string& text,
+        guint32 coordinate_type,
+        TextLayout& layout
+    ) const {
+        const auto* current = entry(object);
+        if (!current) return false;
+        const auto* display = dynamic_cast<const VSTGUI::CParamDisplay*>(
+            current->view
+        );
+        if (!display || display->getTextRotation() != 0.0) return false;
+        const auto* font = display->getFont();
+        if (!font) return false;
+        const auto platform_font = font->getPlatformFont();
+        if (!platform_font) return false;
+        const auto* painter = platform_font->getPainter();
+        if (!painter) return false;
+
+        const auto count = g_utf8_strlen(text.data(), text.size());
+        if (count < 0) return false;
+        layout.offsets.clear();
+        layout.offsets.reserve(static_cast<std::size_t>(count) + 1);
+        const char* cursor = text.data();
+        for (glong index = 0; index <= count; ++index) {
+            const auto byte_count = static_cast<std::size_t>(cursor - text.data());
+            VSTGUI::UTF8String prefix(text.substr(0, byte_count));
+            const double width = painter->getStringWidth(
+                nullptr,
+                prefix.getPlatformString(),
+                display->getAntialias()
+            );
+            if (!std::isfinite(width) || width < 0.0) return false;
+            if (!layout.offsets.empty() && width < layout.offsets.back())
+                return false;
+            layout.offsets.push_back(width);
+            if (index < count) cursor = g_utf8_next_char(cursor);
+        }
+
+        const auto area = bounds(object, coordinate_type);
+        const auto inset = display->getTextInset();
+        const double text_left = static_cast<double>(area.x) + inset.x;
+        const double text_right = static_cast<double>(area.x) + area.width - inset.x;
+        const double text_top = static_cast<double>(area.y) + inset.y;
+        const double text_bottom = static_cast<double>(area.y) + area.height - inset.y;
+        if (text_right < text_left || text_bottom < text_top) return false;
+
+        const double text_width = layout.offsets.back();
+        switch (display->getHoriAlign()) {
+            case VSTGUI::kLeftText:
+                layout.x = text_left;
+                break;
+            case VSTGUI::kCenterText:
+                layout.x = text_left + (text_right - text_left - text_width) / 2.0;
+                break;
+            case VSTGUI::kRightText:
+                layout.x = text_right - text_width;
+                break;
+        }
+
+        const double cap_height = platform_font->getCapHeight();
+        const double font_size = font->getSize();
+        double baseline = 0.0;
+        if (std::isfinite(cap_height) && cap_height > 0.0) {
+            baseline = text_bottom -
+                ((text_bottom - text_top) / 2.0 - cap_height / 2.0);
+        } else {
+            baseline = text_bottom -
+                ((text_bottom - text_top) / 2.0 - font_size / 2.0) - 1.0;
+        }
+        const double ascent = platform_font->getAscent();
+        const double descent = platform_font->getDescent();
+        if (std::isfinite(ascent) && std::isfinite(descent) &&
+            ascent >= 0.0 && descent >= 0.0 && ascent + descent > 0.0) {
+            layout.y = baseline - ascent;
+            layout.height = ascent + descent;
+        } else if (std::isfinite(font_size) && font_size > 0.0) {
+            layout.y = baseline - font_size;
+            layout.height = font_size;
+        } else {
+            return false;
+        }
+        return true;
     }
 
     static bool contains(const Bounds& bounds, gint32 x, gint32 y) {
@@ -1557,9 +1651,32 @@ private:
                 returnError(invocation, "Accessibility text offset is invalid");
                 return;
             }
+            TextLayout layout;
+            if (measuredTextLayout(object, text, coordinate_type, layout)) {
+                const gint32 first = coordinate(
+                    layout.x + layout.offsets[static_cast<std::size_t>(offset)]
+                );
+                const gint32 last = coordinate(
+                    layout.x + layout.offsets[static_cast<std::size_t>(offset + 1)]
+                );
+                const gint32 top = coordinate(layout.y);
+                const gint32 bottom = coordinate(layout.y + layout.height);
+                g_dbus_method_invocation_return_value(
+                    invocation,
+                    g_variant_new(
+                        "(iiii)",
+                        first,
+                        top,
+                        std::max<gint32>(0, last - first),
+                        std::max<gint32>(0, bottom - top)
+                    )
+                );
+                return;
+            }
             const auto area = bounds(object, coordinate_type);
             const gint64 first = static_cast<gint64>(area.width) * offset / count;
-            const gint64 last = static_cast<gint64>(area.width) * (offset + 1) / count;
+            const gint64 last =
+                static_cast<gint64>(area.width) * (offset + 1) / count;
             g_dbus_method_invocation_return_value(
                 invocation,
                 g_variant_new(
@@ -1580,7 +1697,25 @@ private:
             const auto area = bounds(object, coordinate_type);
             gint32 offset = -1;
             if (count == 0 && contains(area, x, y)) offset = 0;
-            if (count > 0 && contains(area, x, y) && area.width > 0) {
+            TextLayout layout;
+            if (count > 0 &&
+                measuredTextLayout(object, text, coordinate_type, layout)) {
+                const double point_x = x;
+                const double point_y = y;
+                if (point_y >= layout.y &&
+                    point_y < layout.y + layout.height) {
+                    for (gint32 index = 0; index < count; ++index) {
+                        const double first = layout.x +
+                            layout.offsets[static_cast<std::size_t>(index)];
+                        const double last = layout.x +
+                            layout.offsets[static_cast<std::size_t>(index + 1)];
+                        if (point_x >= first && point_x < last) {
+                            offset = index;
+                            break;
+                        }
+                    }
+                }
+            } else if (count > 0 && contains(area, x, y) && area.width > 0) {
                 const auto relative = static_cast<gint64>(x) - area.x;
                 offset = static_cast<gint32>(std::min<gint64>(
                     count - 1,
@@ -1612,6 +1747,28 @@ private:
             std::string ignored;
             if (!textSlice(text, start, end, ignored)) {
                 returnError(invocation, "Accessibility text range is invalid");
+                return;
+            }
+            TextLayout layout;
+            if (measuredTextLayout(object, text, coordinate_type, layout)) {
+                const gint32 first = coordinate(
+                    layout.x + layout.offsets[static_cast<std::size_t>(start)]
+                );
+                const gint32 last = coordinate(
+                    layout.x + layout.offsets[static_cast<std::size_t>(end)]
+                );
+                const gint32 top = coordinate(layout.y);
+                const gint32 bottom = coordinate(layout.y + layout.height);
+                g_dbus_method_invocation_return_value(
+                    invocation,
+                    g_variant_new(
+                        "(iiii)",
+                        first,
+                        top,
+                        std::max<gint32>(0, last - first),
+                        std::max<gint32>(0, bottom - top)
+                    )
+                );
                 return;
             }
             const auto area = bounds(object, coordinate_type);
@@ -1652,22 +1809,79 @@ private:
             );
             GVariantBuilder builder;
             g_variant_builder_init(&builder, G_VARIANT_TYPE("a(iisv)"));
-            const auto area = bounds(object, coordinate_type);
             const gint64 right = static_cast<gint64>(x) + width;
             const gint64 bottom = static_cast<gint64>(y) + height;
-            const gint64 area_right = static_cast<gint64>(area.x) + area.width;
-            const gint64 area_bottom = static_cast<gint64>(area.y) + area.height;
             if (width >= 0 && height >= 0 && x_clip <= 3 && y_clip <= 3 &&
-                count > 0 && x < area_right && right > area.x &&
-                y < area_bottom && bottom > area.y) {
-                g_variant_builder_add(
-                    &builder,
-                    "(iisv)",
-                    0,
-                    count,
-                    text.c_str(),
-                    g_variant_new_string("")
+                count > 0) {
+                const auto area = bounds(object, coordinate_type);
+                TextLayout layout;
+                const bool measured = measuredTextLayout(
+                    object,
+                    text,
+                    coordinate_type,
+                    layout
                 );
+                const auto edge = [&](gint32 offset) {
+                    if (measured) {
+                        return layout.x +
+                            layout.offsets[static_cast<std::size_t>(offset)];
+                    }
+                    return static_cast<double>(area.x) +
+                        static_cast<double>(area.width) * offset / count;
+                };
+                const double text_top = measured ? layout.y : area.y;
+                const double text_bottom = measured
+                    ? layout.y + layout.height
+                    : static_cast<double>(area.y) + area.height;
+                const auto retained = [](
+                    double minimum,
+                    double maximum,
+                    double region_minimum,
+                    double region_maximum,
+                    guint32 clip
+                ) {
+                    const bool intersects = minimum == maximum
+                        ? minimum >= region_minimum && minimum <= region_maximum
+                        : minimum < region_maximum && maximum > region_minimum;
+                    if (!intersects) return false;
+                    if ((clip & 1u) != 0 && minimum < region_minimum) return false;
+                    if ((clip & 2u) != 0 && maximum > region_maximum) return false;
+                    return true;
+                };
+                gint32 range_start = -1;
+                for (gint32 index = 0; index <= count; ++index) {
+                    bool include = false;
+                    if (index < count) {
+                        include = retained(
+                            edge(index),
+                            edge(index + 1),
+                            x,
+                            static_cast<double>(right),
+                            x_clip
+                        ) && retained(
+                            text_top,
+                            text_bottom,
+                            y,
+                            static_cast<double>(bottom),
+                            y_clip
+                        );
+                    }
+                    if (include && range_start < 0) range_start = index;
+                    if (!include && range_start >= 0) {
+                        std::string range_text;
+                        if (textSlice(text, range_start, index, range_text)) {
+                            g_variant_builder_add(
+                                &builder,
+                                "(iisv)",
+                                range_start,
+                                index,
+                                range_text.c_str(),
+                                g_variant_new_string("")
+                            );
+                        }
+                        range_start = -1;
+                    }
+                }
             }
             g_dbus_method_invocation_return_value(
                 invocation,
