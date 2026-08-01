@@ -163,6 +163,8 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(dsp, "DynamicMatrix"));
     try std.testing.expect(@hasDecl(dsp, "HrtfMotionRenderer"));
     try std.testing.expect(@hasDecl(dsp, "HrtfMotionClock"));
+    try std.testing.expect(@hasDecl(dsp, "HrtfMotionClockObservation"));
+    try std.testing.expect(@hasDecl(dsp, "HrtfMotionClockCalibrator"));
     try std.testing.expect(@hasDecl(dsp, "HrtfMotionPointQueue"));
     try std.testing.expect(@hasDecl(dsp, "HrtfSofaLoader"));
     try std.testing.expect(@hasDecl(dsp, "HrtfMotionPoint"));

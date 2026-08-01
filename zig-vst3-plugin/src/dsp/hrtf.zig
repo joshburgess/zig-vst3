@@ -60,23 +60,16 @@ pub const MotionClock = struct {
         second_tracker_timestamp: u64,
         second_sample_position: u64,
     ) !MotionClock {
-        if (second_tracker_timestamp <= first_tracker_timestamp or
-            second_sample_position <= first_sample_position)
-        {
-            return error.InvalidHrtfTrackerClockObservation;
-        }
-        const tracker_delta =
-            second_tracker_timestamp - first_tracker_timestamp;
-        const sample_delta =
-            second_sample_position - first_sample_position;
-        const numerator =
-            @as(u128, tracker_delta) * sample_rate + sample_delta / 2;
-        const ticks_wide = numerator / sample_delta;
-        if (ticks_wide == 0 or ticks_wide > std.math.maxInt(u64))
-            return error.InvalidHrtfTrackerClockRate;
+        const tracker_ticks_per_second = try observedTrackerRate(
+            sample_rate,
+            first_tracker_timestamp,
+            first_sample_position,
+            second_tracker_timestamp,
+            second_sample_position,
+        );
         return init(
             sample_rate,
-            @intCast(ticks_wide),
+            tracker_ticks_per_second,
             second_tracker_timestamp,
             second_sample_position,
         );
@@ -142,6 +135,212 @@ pub const MotionClock = struct {
         }
     }
 };
+
+pub const MotionClockObservation = struct {
+    tracker_timestamp: u64,
+    sample_position: u64,
+};
+
+/// Robust fixed-window calibration for synchronized clock observations.
+pub fn MotionClockCalibrator(
+    comptime maximum_observations: usize,
+) type {
+    if (maximum_observations < 3)
+        @compileError("HRTF clock calibration requires three observations");
+    if (maximum_observations > 64)
+        @compileError("HRTF clock calibration supports at most 64 observations");
+
+    return struct {
+        const Self = @This();
+        const maximum_pair_count =
+            maximum_observations * (maximum_observations - 1) / 2;
+
+        observations: [maximum_observations]MotionClockObservation =
+            undefined,
+        observation_count: usize = 0,
+
+        pub fn observe(
+            self: *Self,
+            observation: MotionClockObservation,
+        ) !void {
+            try self.validate();
+            if (self.observation_count != 0) {
+                const previous =
+                    self.observations[self.observation_count - 1];
+                if (observation.tracker_timestamp <=
+                    previous.tracker_timestamp or
+                    observation.sample_position <= previous.sample_position)
+                {
+                    return error.InvalidHrtfTrackerClockObservation;
+                }
+            }
+            if (self.observation_count == maximum_observations) {
+                std.mem.copyForwards(
+                    MotionClockObservation,
+                    self.observations[0 .. maximum_observations - 1],
+                    self.observations[1..maximum_observations],
+                );
+                self.observation_count -= 1;
+            }
+            self.observations[self.observation_count] = observation;
+            self.observation_count += 1;
+        }
+
+        pub fn count(self: *const Self) !usize {
+            try self.validate();
+            return self.observation_count;
+        }
+
+        pub fn calibrate(
+            self: *const Self,
+            sample_rate: u32,
+            maximum_deviation_ppm: u32,
+        ) !MotionClock {
+            try self.validate();
+            if (sample_rate < 8_000 or sample_rate > 384_000)
+                return error.InvalidHrtfSampleRate;
+            if (self.observation_count < 3)
+                return error.InsufficientHrtfTrackerClockObservations;
+            if (maximum_deviation_ppm == 0 or
+                maximum_deviation_ppm > 1_000_000)
+            {
+                return error.InvalidHrtfTrackerClockTolerance;
+            }
+
+            var rates: [maximum_pair_count]u64 = undefined;
+            var rate_count: usize = 0;
+            for (0..self.observation_count - 1) |first_index| {
+                const first = self.observations[first_index];
+                for (first_index + 1..self.observation_count) |
+                    second_index,
+                | {
+                    const second = self.observations[second_index];
+                    const rate = observedTrackerRate(
+                        sample_rate,
+                        first.tracker_timestamp,
+                        first.sample_position,
+                        second.tracker_timestamp,
+                        second.sample_position,
+                    ) catch continue;
+                    rates[rate_count] = rate;
+                    rate_count += 1;
+                }
+            }
+            if (rate_count < self.observation_count - 1)
+                return error.UnstableHrtfTrackerClockObservations;
+            std.mem.sort(
+                u64,
+                rates[0..rate_count],
+                {},
+                std.sort.asc(u64),
+            );
+            const median_rate = rates[rate_count / 2];
+
+            var inlier_interval_count: usize = 0;
+            for (1..self.observation_count) |index| {
+                const first = self.observations[index - 1];
+                const second = self.observations[index];
+                const interval_rate = observedTrackerRate(
+                    sample_rate,
+                    first.tracker_timestamp,
+                    first.sample_position,
+                    second.tracker_timestamp,
+                    second.sample_position,
+                ) catch continue;
+                if (rateWithinTolerance(
+                    interval_rate,
+                    median_rate,
+                    maximum_deviation_ppm,
+                )) inlier_interval_count += 1;
+            }
+            const interval_count = self.observation_count - 1;
+            const required_inliers = (interval_count + 1) / 2;
+            const penultimate =
+                self.observations[self.observation_count - 2];
+            const newest =
+                self.observations[self.observation_count - 1];
+            const newest_rate = observedTrackerRate(
+                sample_rate,
+                penultimate.tracker_timestamp,
+                penultimate.sample_position,
+                newest.tracker_timestamp,
+                newest.sample_position,
+            ) catch return error.UnstableHrtfTrackerClockObservations;
+            if (inlier_interval_count < required_inliers or
+                !rateWithinTolerance(
+                    newest_rate,
+                    median_rate,
+                    maximum_deviation_ppm,
+                ))
+            {
+                return error.UnstableHrtfTrackerClockObservations;
+            }
+            return MotionClock.init(
+                sample_rate,
+                median_rate,
+                newest.tracker_timestamp,
+                newest.sample_position,
+            );
+        }
+
+        pub fn reset(self: *Self) void {
+            self.observation_count = 0;
+        }
+
+        fn validate(self: *const Self) !void {
+            if (self.observation_count > maximum_observations)
+                return error.InvalidHrtfMotionClockCalibratorState;
+            if (self.observation_count < 2) return;
+            for (1..self.observation_count) |index| {
+                const previous = self.observations[index - 1];
+                const current = self.observations[index];
+                if (current.tracker_timestamp <=
+                    previous.tracker_timestamp or
+                    current.sample_position <= previous.sample_position)
+                {
+                    return error.InvalidHrtfMotionClockCalibratorState;
+                }
+            }
+        }
+    };
+}
+
+fn observedTrackerRate(
+    sample_rate: u32,
+    first_tracker_timestamp: u64,
+    first_sample_position: u64,
+    second_tracker_timestamp: u64,
+    second_sample_position: u64,
+) !u64 {
+    if (second_tracker_timestamp <= first_tracker_timestamp or
+        second_sample_position <= first_sample_position)
+    {
+        return error.InvalidHrtfTrackerClockObservation;
+    }
+    const tracker_delta =
+        second_tracker_timestamp - first_tracker_timestamp;
+    const sample_delta =
+        second_sample_position - first_sample_position;
+    const numerator =
+        @as(u128, tracker_delta) * sample_rate + sample_delta / 2;
+    const ticks_wide = numerator / sample_delta;
+    if (ticks_wide == 0 or ticks_wide > std.math.maxInt(u64))
+        return error.InvalidHrtfTrackerClockRate;
+    return @intCast(ticks_wide);
+}
+
+fn rateWithinTolerance(
+    candidate: u64,
+    reference: u64,
+    maximum_deviation_ppm: u32,
+) bool {
+    const difference = if (candidate > reference)
+        candidate - reference
+    else
+        reference - candidate;
+    return @as(u128, difference) * 1_000_000 <=
+        @as(u128, reference) * maximum_deviation_ppm;
+}
 
 /// Bounded single-producer, single-consumer transport for tracker updates.
 pub fn MotionPointQueue(comptime capacity: usize) type {
@@ -1262,6 +1461,132 @@ test "HRTF motion clock calibrates an observed tracker rate" {
             std.math.maxInt(u64),
             1,
         ),
+    );
+}
+
+test "HRTF motion clock calibrator filters an interior outlier" {
+    const Calibrator = MotionClockCalibrator(5);
+    var calibrator = Calibrator{};
+    for ([_]MotionClockObservation{
+        .{ .tracker_timestamp = 0, .sample_position = 0 },
+        .{ .tracker_timestamp = 100_000_000, .sample_position = 4_800 },
+        .{ .tracker_timestamp = 200_000_000, .sample_position = 9_648 },
+        .{ .tracker_timestamp = 300_000_000, .sample_position = 14_400 },
+        .{ .tracker_timestamp = 400_000_000, .sample_position = 19_200 },
+    }) |observation| try calibrator.observe(observation);
+
+    var clock = try calibrator.calibrate(48_000, 1_000);
+    try std.testing.expectEqual(
+        @as(u64, 1_000_000_000),
+        clock.tracker_ticks_per_second,
+    );
+    try std.testing.expectEqual(
+        @as(u64, 24_000),
+        try clock.map(500_000_000),
+    );
+}
+
+test "HRTF motion clock calibrator rejects a newest outlier" {
+    const Calibrator = MotionClockCalibrator(5);
+    var calibrator = Calibrator{};
+    for ([_]MotionClockObservation{
+        .{ .tracker_timestamp = 0, .sample_position = 0 },
+        .{ .tracker_timestamp = 100_000_000, .sample_position = 4_800 },
+        .{ .tracker_timestamp = 200_000_000, .sample_position = 9_600 },
+        .{ .tracker_timestamp = 300_000_000, .sample_position = 14_400 },
+        .{ .tracker_timestamp = 400_000_000, .sample_position = 19_248 },
+    }) |observation| try calibrator.observe(observation);
+
+    try std.testing.expectError(
+        error.UnstableHrtfTrackerClockObservations,
+        calibrator.calibrate(48_000, 1_000),
+    );
+}
+
+test "HRTF motion clock calibrator rolls its bounded window" {
+    const Calibrator = MotionClockCalibrator(4);
+    var calibrator = Calibrator{};
+    for (0..5) |index| {
+        try calibrator.observe(.{
+            .tracker_timestamp = index * 100_000_000,
+            .sample_position = index * 4_800,
+        });
+    }
+    try std.testing.expectEqual(@as(usize, 4), try calibrator.count());
+    const clock = try calibrator.calibrate(48_000, 100);
+    try std.testing.expectEqual(
+        @as(u64, 400_000_000),
+        clock.tracker_anchor,
+    );
+    try std.testing.expectEqual(@as(u64, 19_200), clock.sample_anchor);
+
+    calibrator.reset();
+    try std.testing.expectEqual(@as(usize, 0), try calibrator.count());
+    try std.testing.expectError(
+        error.InsufficientHrtfTrackerClockObservations,
+        calibrator.calibrate(48_000, 100),
+    );
+}
+
+test "HRTF motion clock calibrator contains invalid state" {
+    const Calibrator = MotionClockCalibrator(3);
+    var calibrator = Calibrator{};
+    try calibrator.observe(.{
+        .tracker_timestamp = 10,
+        .sample_position = 20,
+    });
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerClockObservation,
+        calibrator.observe(.{
+            .tracker_timestamp = 10,
+            .sample_position = 21,
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 1), try calibrator.count());
+    try calibrator.observe(.{
+        .tracker_timestamp = 20,
+        .sample_position = 40,
+    });
+    try calibrator.observe(.{
+        .tracker_timestamp = 30,
+        .sample_position = 60,
+    });
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerClockTolerance,
+        calibrator.calibrate(48_000, 0),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfTrackerClockTolerance,
+        calibrator.calibrate(48_000, 1_000_001),
+    );
+    try std.testing.expectError(
+        error.InvalidHrtfSampleRate,
+        calibrator.calibrate(7_999, 100),
+    );
+
+    var corrupt_count = calibrator;
+    corrupt_count.observation_count = 4;
+    try std.testing.expectError(
+        error.InvalidHrtfMotionClockCalibratorState,
+        corrupt_count.count(),
+    );
+
+    var corrupt_order = Calibrator{};
+    corrupt_order.observations[0] = .{
+        .tracker_timestamp = 2,
+        .sample_position = 1,
+    };
+    corrupt_order.observations[1] = .{
+        .tracker_timestamp = 1,
+        .sample_position = 2,
+    };
+    corrupt_order.observation_count = 2;
+    try std.testing.expectError(
+        error.InvalidHrtfMotionClockCalibratorState,
+        corrupt_order.observe(.{
+            .tracker_timestamp = 3,
+            .sample_position = 3,
+        }),
     );
 }
 
