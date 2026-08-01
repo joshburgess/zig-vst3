@@ -2150,6 +2150,7 @@ test "installed package exposes DSP blocks contexts and math primitives" {
                     .target_bitrate = 48_000,
                     .reservoir_capacity_bits = 1_024,
                 },
+                .adaptive_rate = .{},
             },
             false,
         );
@@ -2219,6 +2220,18 @@ test "installed package exposes DSP blocks contexts and math primitives" {
             installed_identification.sample_rate,
             installed_frame.pcm_advance,
         );
+    const installed_adaptive_policy =
+        plugin.dsp.VorbisAdaptiveRatePolicyConfig{};
+    const installed_adaptive_decision: plugin.dsp.VorbisAdaptiveRateDecision =
+        try plugin.dsp.adaptVorbisPacketBitBudget(
+            installed_budget,
+            installed_classification,
+            installed_reservoir.config,
+            installed_adaptive_policy,
+        );
+    try std.testing.expect(
+        installed_adaptive_decision.budget.target_bits >= 1,
+    );
     var installed_residue_bit_budgets: [1]u32 = undefined;
     const installed_bit_allocation: plugin.dsp.VorbisResidueBitAllocation =
         try plugin.dsp.allocateVorbisResidueBitBudgets(

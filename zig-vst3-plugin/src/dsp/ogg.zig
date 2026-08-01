@@ -6297,12 +6297,155 @@ pub const VorbisRateControlConfig = struct {
     correction_window_packets: u8 = 4,
 };
 
+pub const VorbisAdaptiveRatePolicyConfig = struct {
+    quiet_rms: f64 = 0.000_1,
+    full_activity_rms: f64 = 0.25,
+    full_transient_ratio: f64 = 8,
+    full_crest_factor: f64 = 6,
+    transient_weight: f64 = 0.4,
+    crest_weight: f64 = 0.2,
+    minimum_target_scale: f64 = 0.6,
+    maximum_target_scale: f64 = 1.4,
+};
+
+pub const VorbisAdaptiveRateDecision = struct {
+    budget: VorbisPacketBitBudget,
+    activity: f64,
+    transient: f64,
+    crest: f64,
+    complexity: f64,
+    target_scale: f64,
+};
+
 pub const VorbisPacketBitBudget = struct {
     packet_index: u64,
     nominal_bits: u32,
     target_bits: u32,
     reservoir_balance_before: i64,
 };
+
+pub fn adaptVorbisPacketBitBudget(
+    budget: VorbisPacketBitBudget,
+    classification: VorbisPcmBlockClassification,
+    rate_control: VorbisRateControlConfig,
+    policy: VorbisAdaptiveRatePolicyConfig,
+) !VorbisAdaptiveRateDecision {
+    try validateVorbisRateControlConfig(rate_control);
+    try validateVorbisAdaptiveRatePolicyConfig(policy);
+    if (budget.nominal_bits == 0 or
+        budget.target_bits < rate_control.minimum_packet_bits or
+        budget.target_bits > rate_control.maximum_packet_bits or
+        budget.reservoir_balance_before <
+            -@as(i64, rate_control.reservoir_capacity_bits) or
+        budget.reservoir_balance_before >
+            @as(i64, rate_control.reservoir_capacity_bits))
+        return error.InvalidVorbisPacketBitBudget;
+    const analysis = classification.analysis;
+    if (!std.math.isFinite(analysis.peak) or analysis.peak < 0 or
+        !std.math.isFinite(analysis.rms) or analysis.rms < 0 or
+        analysis.rms > analysis.peak or
+        !std.math.isFinite(analysis.maximum_energy_ratio) or
+        analysis.maximum_energy_ratio < 1 or
+        !std.math.isFinite(classification.cross_block_energy_ratio) or
+        classification.cross_block_energy_ratio < 1)
+        return error.InvalidVorbisBlockAnalysis;
+
+    const activity = std.math.clamp(
+        (analysis.rms - policy.quiet_rms) /
+            (policy.full_activity_rms - policy.quiet_rms),
+        0,
+        1,
+    );
+    const transient = std.math.clamp(
+        @log2(@max(
+            analysis.maximum_energy_ratio,
+            classification.cross_block_energy_ratio,
+        )) /
+            @log2(policy.full_transient_ratio),
+        0,
+        1,
+    );
+    const crest_factor = if (analysis.rms == 0)
+        @as(f64, 1)
+    else
+        analysis.peak / analysis.rms;
+    const crest = std.math.clamp(
+        (crest_factor - 1) / (policy.full_crest_factor - 1),
+        0,
+        1,
+    );
+    const activity_weight =
+        1 - policy.transient_weight - policy.crest_weight;
+    const complexity = std.math.clamp(
+        activity * activity_weight +
+            transient * policy.transient_weight +
+            crest * policy.crest_weight,
+        0,
+        1,
+    );
+    const target_scale = if (complexity <= 0.5)
+        policy.minimum_target_scale +
+            complexity * 2 *
+                (1 - policy.minimum_target_scale)
+    else
+        1 + (complexity - 0.5) * 2 *
+            (policy.maximum_target_scale - 1);
+    const exact_target =
+        @as(f128, @floatFromInt(budget.target_bits)) *
+        @as(f128, target_scale);
+    if (!std.math.isFinite(exact_target) or exact_target < 0 or
+        exact_target > std.math.maxInt(u64))
+        return error.VorbisAdaptiveRateTargetOverflow;
+    const rounded_target: u64 = @intFromFloat(@floor(
+        exact_target + 0.5,
+    ));
+
+    const reservoir_center =
+        @as(i128, budget.reservoir_balance_before) +
+        @as(i128, budget.nominal_bits);
+    const reservoir_capacity: i128 =
+        rate_control.reservoir_capacity_bits;
+    const safe_minimum_i128 = @max(
+        reservoir_center - reservoir_capacity,
+        1,
+    );
+    const safe_maximum_i128 =
+        reservoir_center + reservoir_capacity;
+    if (safe_maximum_i128 < 1)
+        return error.InvalidVorbisPacketBitBudget;
+    const safe_minimum: u64 = @intCast(@min(
+        safe_minimum_i128,
+        std.math.maxInt(u64),
+    ));
+    const safe_maximum: u64 = @intCast(@min(
+        safe_maximum_i128,
+        std.math.maxInt(u64),
+    ));
+    const minimum = @max(
+        @as(u64, rate_control.minimum_packet_bits),
+        safe_minimum,
+    );
+    const maximum = @min(
+        @as(u64, rate_control.maximum_packet_bits),
+        safe_maximum,
+    );
+    if (minimum > maximum)
+        return error.VorbisAdaptiveRateRangeUnavailable;
+    var adjusted = budget;
+    adjusted.target_bits = @intCast(std.math.clamp(
+        rounded_target,
+        minimum,
+        maximum,
+    ));
+    return .{
+        .budget = adjusted,
+        .activity = activity,
+        .transient = transient,
+        .crest = crest,
+        .complexity = complexity,
+        .target_scale = target_scale,
+    };
+}
 
 pub const VorbisRateCommit = struct {
     packet_index: u64,
@@ -6889,6 +7032,31 @@ fn validateVorbisRateControlConfig(
         return error.InvalidVorbisRateControlConfig;
 }
 
+fn validateVorbisAdaptiveRatePolicyConfig(
+    config: VorbisAdaptiveRatePolicyConfig,
+) !void {
+    if (!std.math.isFinite(config.quiet_rms) or
+        config.quiet_rms < 0 or
+        !std.math.isFinite(config.full_activity_rms) or
+        config.full_activity_rms <= config.quiet_rms or
+        !std.math.isFinite(config.full_transient_ratio) or
+        config.full_transient_ratio <= 1 or
+        !std.math.isFinite(config.full_crest_factor) or
+        config.full_crest_factor <= 1 or
+        !std.math.isFinite(config.transient_weight) or
+        config.transient_weight < 0 or
+        !std.math.isFinite(config.crest_weight) or
+        config.crest_weight < 0 or
+        config.transient_weight + config.crest_weight > 1 or
+        !std.math.isFinite(config.minimum_target_scale) or
+        config.minimum_target_scale <= 0 or
+        config.minimum_target_scale > 1 or
+        !std.math.isFinite(config.maximum_target_scale) or
+        config.maximum_target_scale < 1 or
+        config.maximum_target_scale > 8)
+        return error.InvalidVorbisAdaptiveRatePolicyConfig;
+}
+
 fn validateVorbisPcmBlockClassifierConfig(
     config: VorbisPcmBlockClassifierConfig,
 ) !void {
@@ -7208,6 +7376,7 @@ pub const VorbisPcmPacketSequenceConfig = struct {
     mapping_number: u8 = 0,
     classifier: VorbisPcmBlockClassifierConfig = .{},
     rate_control: VorbisRateControlConfig,
+    adaptive_rate: ?VorbisAdaptiveRatePolicyConfig = null,
 };
 
 pub const VorbisPcmPacketPlan = struct {
@@ -7245,6 +7414,9 @@ pub const VorbisPcmPacketSequence = struct {
         try validateVorbisPcmBlockClassifierConfig(
             config.classifier,
         );
+        if (config.adaptive_rate) |adaptive_rate| {
+            try validateVorbisAdaptiveRatePolicyConfig(adaptive_rate);
+        }
         return .{
             .config = config,
             .lookahead = .init(previous_large_block),
@@ -7305,10 +7477,19 @@ pub const VorbisPcmPacketSequence = struct {
             vorbisPcmBlockDecision(classification),
         );
         var reservoir_pending = self.reservoir;
-        const budget = try reservoir_pending.plan(
+        var budget = try reservoir_pending.plan(
             identification.sample_rate,
             frame.pcm_advance,
         );
+        if (self.config.adaptive_rate) |adaptive_rate| {
+            budget = (try adaptVorbisPacketBitBudget(
+                budget,
+                classification,
+                self.config.rate_control,
+                adaptive_rate,
+            )).budget;
+            reservoir_pending.pending = budget;
+        }
         const granule_position =
             try vorbisPcmFrameGranule(frame);
         if (granule_position < self.granule_position)
@@ -7454,6 +7635,9 @@ pub const VorbisPcmPacketSequence = struct {
         try validateVorbisRateControlConfig(
             self.config.rate_control,
         );
+        if (self.config.adaptive_rate) |adaptive_rate| {
+            try validateVorbisAdaptiveRatePolicyConfig(adaptive_rate);
+        }
         if (!std.meta.eql(
             self.reservoir.config,
             self.config.rate_control,
@@ -21228,6 +21412,217 @@ test "Vorbis bit reservoir budgets and commits packet rates" {
     );
 }
 
+test "Vorbis adaptive rate policy shifts bounded packet targets" {
+    const rate_control = VorbisRateControlConfig{
+        .target_bitrate = 96_000,
+        .reservoir_capacity_bits = 500,
+        .minimum_packet_bits = 100,
+        .maximum_packet_bits = 2_000,
+    };
+    const budget = VorbisPacketBitBudget{
+        .packet_index = 7,
+        .nominal_bits = 1_000,
+        .target_bits = 1_000,
+        .reservoir_balance_before = 0,
+    };
+    const quiet = try adaptVorbisPacketBitBudget(
+        budget,
+        .{
+            .analysis = .{
+                .recommended_large_block = true,
+                .peak = 0,
+                .rms = 0,
+                .maximum_energy_ratio = 1,
+                .transient_segment = null,
+            },
+            .recommended_large_block = true,
+            .cross_block_energy_ratio = 1,
+            .short_blocks_remaining = 0,
+        },
+        rate_control,
+        .{},
+    );
+    try std.testing.expectEqual(@as(u32, 600), quiet.budget.target_bits);
+    try std.testing.expectEqual(@as(f64, 0), quiet.complexity);
+    try std.testing.expectEqual(@as(f64, 0.6), quiet.target_scale);
+
+    const complex = try adaptVorbisPacketBitBudget(
+        budget,
+        .{
+            .analysis = .{
+                .recommended_large_block = false,
+                .peak = 1.5,
+                .rms = 0.25,
+                .maximum_energy_ratio = 8,
+                .transient_segment = 1,
+            },
+            .recommended_large_block = false,
+            .cross_block_energy_ratio = 8,
+            .short_blocks_remaining = 2,
+        },
+        rate_control,
+        .{},
+    );
+    try std.testing.expectEqual(@as(u32, 1_400), complex.budget.target_bits);
+    try std.testing.expectEqual(@as(f64, 1), complex.activity);
+    try std.testing.expectEqual(@as(f64, 1), complex.transient);
+    try std.testing.expectEqual(@as(f64, 1), complex.crest);
+    try std.testing.expectEqual(@as(f64, 1), complex.complexity);
+    try std.testing.expectEqual(@as(f64, 1.4), complex.target_scale);
+
+    const constrained = try adaptVorbisPacketBitBudget(
+        .{
+            .packet_index = 8,
+            .nominal_bits = 100,
+            .target_bits = 100,
+            .reservoir_balance_before = -90,
+        },
+        complexAnalysisForVorbisRateTest(),
+        .{
+            .target_bitrate = 48_000,
+            .reservoir_capacity_bits = 100,
+            .maximum_packet_bits = 1_000,
+        },
+        .{},
+    );
+    try std.testing.expectEqual(@as(u32, 110), constrained.budget.target_bits);
+
+    try std.testing.expectError(
+        error.InvalidVorbisAdaptiveRatePolicyConfig,
+        adaptVorbisPacketBitBudget(
+            budget,
+            complexAnalysisForVorbisRateTest(),
+            rate_control,
+            .{ .transient_weight = 0.8, .crest_weight = 0.3 },
+        ),
+    );
+    var invalid_classification = complexAnalysisForVorbisRateTest();
+    invalid_classification.analysis.rms = 2;
+    try std.testing.expectError(
+        error.InvalidVorbisBlockAnalysis,
+        adaptVorbisPacketBitBudget(
+            budget,
+            invalid_classification,
+            rate_control,
+            .{},
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidVorbisPacketBitBudget,
+        adaptVorbisPacketBitBudget(
+            .{
+                .packet_index = 9,
+                .nominal_bits = 1_000,
+                .target_bits = 99,
+                .reservoir_balance_before = 0,
+            },
+            complexAnalysisForVorbisRateTest(),
+            rate_control,
+            .{},
+        ),
+    );
+    try std.testing.expectError(
+        error.VorbisAdaptiveRateRangeUnavailable,
+        adaptVorbisPacketBitBudget(
+            .{
+                .packet_index = 10,
+                .nominal_bits = 100,
+                .target_bits = 1_000,
+                .reservoir_balance_before = -90,
+            },
+            complexAnalysisForVorbisRateTest(),
+            .{
+                .target_bitrate = 48_000,
+                .reservoir_capacity_bits = 100,
+                .minimum_packet_bits = 1_000,
+                .maximum_packet_bits = 2_000,
+            },
+            .{},
+        ),
+    );
+}
+
+test "Vorbis adaptive rate targets are monotonic across activity and transients" {
+    const rate_control = VorbisRateControlConfig{
+        .target_bitrate = 128_000,
+        .reservoir_capacity_bits = 2_000,
+        .minimum_packet_bits = 100,
+        .maximum_packet_bits = 4_000,
+    };
+    const budget = VorbisPacketBitBudget{
+        .packet_index = 11,
+        .nominal_bits = 2_000,
+        .target_bits = 2_000,
+        .reservoir_balance_before = 0,
+    };
+    var prior_activity_target: u32 = 0;
+    for (0..17) |activity_index| {
+        const activity =
+            @as(f64, @floatFromInt(activity_index)) / 16;
+        const rms = 0.000_1 + activity * (0.25 - 0.000_1);
+        var prior_transient_target: u32 = 0;
+        for (0..17) |transient_index| {
+            const transient =
+                @as(f64, @floatFromInt(transient_index)) / 16;
+            const ratio = std.math.pow(f64, 8, transient);
+            const decision = try adaptVorbisPacketBitBudget(
+                budget,
+                .{
+                    .analysis = .{
+                        .recommended_large_block = transient == 0,
+                        .peak = rms,
+                        .rms = rms,
+                        .maximum_energy_ratio = ratio,
+                        .transient_segment = if (transient == 0)
+                            null
+                        else
+                            1,
+                    },
+                    .recommended_large_block = transient == 0,
+                    .cross_block_energy_ratio = ratio,
+                    .short_blocks_remaining = 0,
+                },
+                rate_control,
+                .{},
+            );
+            try std.testing.expect(
+                decision.budget.target_bits >= prior_transient_target,
+            );
+            try std.testing.expect(
+                decision.budget.target_bits >=
+                    rate_control.minimum_packet_bits,
+            );
+            try std.testing.expect(
+                decision.budget.target_bits <=
+                    rate_control.maximum_packet_bits,
+            );
+            prior_transient_target = decision.budget.target_bits;
+            if (transient_index == 0) {
+                try std.testing.expect(
+                    decision.budget.target_bits >=
+                        prior_activity_target,
+                );
+                prior_activity_target = decision.budget.target_bits;
+            }
+        }
+    }
+}
+
+fn complexAnalysisForVorbisRateTest() VorbisPcmBlockClassification {
+    return .{
+        .analysis = .{
+            .recommended_large_block = false,
+            .peak = 1.5,
+            .rms = 0.25,
+            .maximum_energy_ratio = 8,
+            .transient_segment = 1,
+        },
+        .recommended_large_block = false,
+        .cross_block_energy_ratio = 8,
+        .short_blocks_remaining = 2,
+    };
+}
+
 test "Vorbis PCM block analysis selects steady and transient blocks" {
     try testVorbisPcmBlockAnalysis(f32);
     try testVorbisPcmBlockAnalysis(f64);
@@ -21888,7 +22283,15 @@ fn testVorbisPcmPacketSequence(comptime Float: type) !void {
             .reservoir_capacity_bits = 2_048,
             .maximum_packet_bits = 2_048,
         },
+        .adaptive_rate = .{},
     };
+    var invalid_config = config;
+    invalid_config.adaptive_rate.?.full_activity_rms =
+        invalid_config.adaptive_rate.?.quiet_rms;
+    try std.testing.expectError(
+        error.InvalidVorbisAdaptiveRatePolicyConfig,
+        VorbisPcmPacketSequence.init(invalid_config, true),
+    );
     var sequence = try VorbisPcmPacketSequence.init(config, true);
     const steady = [_]Float{0.1} ** 256;
     const primed = try sequence.prime(
@@ -21916,6 +22319,11 @@ fn testVorbisPcmPacketSequence(comptime Float: type) !void {
     try std.testing.expectEqual(@as(u64, 0), plan.granule_position);
     try std.testing.expect(!plan.end);
     try std.testing.expectEqual(@as(u64, 0), plan.budget.packet_index);
+    try std.testing.expectEqual(@as(u32, 99), plan.budget.target_bits);
+    try std.testing.expectEqualDeep(
+        plan.budget,
+        plan.reservoir_pending.pending.?,
+    );
     try std.testing.expect(
         !plan.classification.?.recommended_large_block,
     );

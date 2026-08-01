@@ -604,6 +604,8 @@ pub const analyzeVorbisPsychoacoustics =
     ogg.analyzeVorbisPsychoacoustics;
 pub const allocateVorbisResidueBitBudgets =
     ogg.allocateVorbisResidueBitBudgets;
+pub const adaptVorbisPacketBitBudget =
+    ogg.adaptVorbisPacketBitBudget;
 pub const applyVorbisFloor = ogg.applyVorbisFloor;
 pub const buildVorbisFileSeekIndex = ogg.buildVorbisFileSeekIndex;
 pub const buildVorbisSeekIndex = ogg.buildVorbisSeekIndex;
@@ -813,6 +815,10 @@ pub const VorbisPsychoacousticAnalysis =
     ogg.VorbisPsychoacousticAnalysis;
 pub const VorbisPsychoacousticConfig =
     ogg.VorbisPsychoacousticConfig;
+pub const VorbisAdaptiveRateDecision =
+    ogg.VorbisAdaptiveRateDecision;
+pub const VorbisAdaptiveRatePolicyConfig =
+    ogg.VorbisAdaptiveRatePolicyConfig;
 pub const VorbisRateCommit = ogg.VorbisRateCommit;
 pub const VorbisRateControlConfig = ogg.VorbisRateControlConfig;
 pub const VorbisRateDistortion = ogg.VorbisRateDistortion;
