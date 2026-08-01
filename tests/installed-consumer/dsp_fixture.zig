@@ -3099,6 +3099,20 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         @as(u64, 2),
         installed_concealment.concealed_packet_count,
     );
+    const installed_following_header = plugin.dsp.VorbisAudioPacketHeader{
+        .mode_number = 0,
+        .large_block = false,
+        .previous_window_flag = null,
+        .next_window_flag = null,
+        .block_size = 64,
+        .payload_bit_offset = 1,
+    };
+    try std.testing.expect(
+        !try plugin.dsp.inferVorbisMissingPacketLargeBlock(
+            installed_identification,
+            installed_following_header,
+        ),
+    );
 
     var installed_chained =
         plugin.dsp.VorbisChainedPcmStreamDecoder(
