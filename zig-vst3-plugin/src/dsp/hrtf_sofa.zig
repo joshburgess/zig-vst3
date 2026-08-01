@@ -315,6 +315,12 @@ pub fn Loader(
                 file_id,
                 ir.shape[0],
             );
+            try requireDefaultEmitterGeometry(
+                &self.api,
+                allocator,
+                file_id,
+                ir.shape[0],
+            );
             const position_encoding = try positionEncoding(
                 &self.api,
                 file_id,
@@ -869,6 +875,56 @@ fn requireDefaultVectors(
     }
 }
 
+fn requireDefaultEmitterGeometry(
+    api: *const Api,
+    allocator: std.mem.Allocator,
+    file_id: c_int,
+    measurement_count: usize,
+) !void {
+    const emitter = try readVariable(
+        api,
+        allocator,
+        file_id,
+        "EmitterPosition",
+        3,
+        std.math.mul(
+            usize,
+            measurement_count,
+            3,
+        ) catch return error.SofaDatasetTooLarge,
+    );
+    defer allocator.free(emitter.values);
+    const encoding = positionEncoding(
+        api,
+        file_id,
+        emitter.variable_id,
+    ) catch return error.UnsupportedSofaEmitterGeometry;
+    if (encoding != .cartesian_metres)
+        return error.UnsupportedSofaEmitterGeometry;
+    try requireDefaultEmitterVectors(emitter, measurement_count);
+}
+
+fn requireDefaultEmitterVectors(
+    variable: Variable,
+    measurement_count: usize,
+) !void {
+    if (variable.shape[0] != 1 or
+        variable.shape[1] != 3 or
+        (variable.shape[2] != 1 and
+            variable.shape[2] != measurement_count))
+        return error.UnsupportedSofaEmitterGeometry;
+    const emitter_measurements = variable.shape[2];
+    for (0..emitter_measurements) |measurement_index| {
+        for (0..3) |coordinate_index| {
+            const value = variable.values[
+                coordinate_index * emitter_measurements + measurement_index
+            ];
+            if (!std.math.isFinite(value) or @abs(value) > 1.0e-9)
+                return error.UnsupportedSofaEmitterGeometry;
+        }
+    }
+}
+
 fn attribute(
     api: *const Api,
     file_id: c_int,
@@ -1063,6 +1119,34 @@ test "standard HRTF position attributes select supported encodings" {
     try std.testing.expectError(
         error.UnsupportedSofaPositionEncoding,
         positionEncodingFromAttributes("geodetic", "metre"),
+    );
+}
+
+test "standard HRTF emitter geometry requires the default origin" {
+    var values = [_]f64{ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+    var emitter = Variable{
+        .variable_id = 0,
+        .rank = 3,
+        .shape = .{ 1, 3, 2, 1 },
+        .values = &values,
+    };
+    try requireDefaultEmitterVectors(emitter, 2);
+
+    emitter.shape[0] = 2;
+    try std.testing.expectError(
+        error.UnsupportedSofaEmitterGeometry,
+        requireDefaultEmitterVectors(emitter, 2),
+    );
+    emitter.shape[0] = 1;
+    values[3] = 0.01;
+    try std.testing.expectError(
+        error.UnsupportedSofaEmitterGeometry,
+        requireDefaultEmitterVectors(emitter, 2),
+    );
+    values[3] = std.math.nan(f64);
+    try std.testing.expectError(
+        error.UnsupportedSofaEmitterGeometry,
+        requireDefaultEmitterVectors(emitter, 2),
     );
 }
 
