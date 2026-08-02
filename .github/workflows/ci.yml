@@ -90,9 +90,11 @@ jobs:
       - name: Fetch pinned VST3 SDK
         shell: bash
         run: scripts/fetch_sdk.sh
-      - name: Fetch CC BY HRTF fixture
+      - name: Fetch CC BY HRTF fixtures
         if: runner.os == 'Linux'
-        run: scripts/fetch_hrtf_sofa_fixture.sh "$RUNNER_TEMP/viking-subj-A.sofa"
+        run: |
+          scripts/fetch_hrtf_sofa_fixture.sh "$RUNNER_TEMP/viking-subj-A.sofa"
+          scripts/fetch_hutubs_hrtf_sofa_fixture.sh "$RUNNER_TEMP/hutubs-pp1-measured.sofa"
       - name: Test Windows UMP bridge
         if: runner.os == 'Windows'
         run: zig build test-winump -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
@@ -108,6 +110,7 @@ jobs:
       - name: Test
         if: runner.os == 'Linux'
         env:
+          ZIG_VST3_HUTUBS_SOFA_TEST_FILE: ${{ runner.temp }}/hutubs-pp1-measured.sofa
           ZIG_VST3_VIKING_SOFA_TEST_FILE: ${{ runner.temp }}/viking-subj-A.sofa
           ZIG_VSTGUI_DIAGNOSTICS: 1
           VSTGUI_RUN_VISUAL_TESTS: OFF

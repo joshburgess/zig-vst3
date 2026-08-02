@@ -1751,8 +1751,8 @@ test "standard HRTF loader reads a CC BY public fixture" {
         &interpolated_response,
     );
     const interpolated_landmark = [2]f32{
-        @floatCast(-1.5554327187593181e-05),
-        @floatCast(1.1508772282509495e-05),
+        @floatCast(-1.559319374694078e-05),
+        @floatCast(1.1734604178882786e-05),
     };
     try std.testing.expectApproxEqAbs(
         interpolated_landmark[0],
@@ -1764,6 +1764,83 @@ test "standard HRTF loader reads a CC BY public fixture" {
         interpolated_response[3],
         render_tolerance,
     );
+
+    var delay_aligned_response: [128 * 2]f32 = undefined;
+    try database.interpolate(
+        interpolated_direction,
+        .delay_aligned,
+        &delay_aligned_response,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &interpolated_response,
+        &delay_aligned_response,
+    );
+
+    var spectral_response: [128 * 2]f32 = undefined;
+    try database.interpolate(
+        interpolated_direction,
+        .spectral,
+        &spectral_response,
+    );
+    const spectral_landmarks = [_]struct {
+        frame: usize,
+        left: f32,
+        right: f32,
+    }{
+        .{
+            .frame = 0,
+            .left = @floatCast(-0.00014641554476879407),
+            .right = @floatCast(-9.148596076930889e-05),
+        },
+        .{
+            .frame = 1,
+            .left = @floatCast(0.00015262090927269274),
+            .right = @floatCast(0.00024302195280927777),
+        },
+        .{
+            .frame = 2,
+            .left = @floatCast(8.613873591142176e-06),
+            .right = @floatCast(-0.00025036630872719747),
+        },
+        .{
+            .frame = 3,
+            .left = @floatCast(-5.0358229486740674e-05),
+            .right = @floatCast(-6.403247162809e-05),
+        },
+        .{
+            .frame = 20,
+            .left = @floatCast(-0.03704562866046532),
+            .right = @floatCast(-0.054655135276875204),
+        },
+        .{
+            .frame = 50,
+            .left = @floatCast(0.0006635550719462254),
+            .right = @floatCast(-0.0055680119137851555),
+        },
+        .{
+            .frame = 100,
+            .left = @floatCast(-0.000767226936593954),
+            .right = @floatCast(-0.003674241841979325),
+        },
+        .{
+            .frame = 127,
+            .left = @floatCast(1.8607992171651274e-05),
+            .right = @floatCast(-2.2031422763795755e-05),
+        },
+    };
+    for (spectral_landmarks) |expected| {
+        try std.testing.expectApproxEqAbs(
+            expected.left,
+            spectral_response[expected.frame * 2],
+            render_tolerance,
+        );
+        try std.testing.expectApproxEqAbs(
+            expected.right,
+            spectral_response[expected.frame * 2 + 1],
+            render_tolerance,
+        );
+    }
 
     var interpolation_renderer = try ReferenceRenderer.init(
         48_000,
@@ -1788,4 +1865,60 @@ test "standard HRTF loader reads a CC BY public fixture" {
         interpolated_output[1],
         render_tolerance,
     );
+}
+
+test "standard HRTF loader reads an independent CC BY fixture" {
+    const path = std.testing.environ.getAlloc(
+        std.testing.allocator,
+        "ZIG_VST3_HUTUBS_SOFA_TEST_FILE",
+    ) catch |load_error| switch (load_error) {
+        error.EnvironmentVariableMissing => return error.SkipZigTest,
+        else => return load_error,
+    };
+    defer std.testing.allocator.free(path);
+
+    const PublicLoader = Loader(440, 256);
+    var loader = try PublicLoader.openDefault();
+    defer loader.deinit();
+    const database = try std.testing.allocator.create(
+        hrtf.Database(440, 256),
+    );
+    defer std.testing.allocator.destroy(database);
+    try loader.loadFileInto(
+        std.testing.allocator,
+        path,
+        database,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 440),
+        database.measurement_count,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 256),
+        database.response_frame_count,
+    );
+    try std.testing.expectEqual(@as(u32, 44_100), database.sample_rate);
+    try std.testing.expectEqual(
+        hrtf.Direction{
+            .azimuth_degrees = 0.0,
+            .elevation_degrees = 90.0,
+        },
+        database.directions[0],
+    );
+    try std.testing.expectEqual(
+        hrtf.Direction{
+            .azimuth_degrees = 0.0,
+            .elevation_degrees = 80.0,
+        },
+        database.directions[1],
+    );
+    try std.testing.expectEqual(
+        @as(f32, @floatCast(1.492182190074992e-06)),
+        database.responses[0][1][0],
+    );
+    try std.testing.expectEqual(
+        @as(f32, @floatCast(-5.014584512366679e-06)),
+        database.responses[0][1][1],
+    );
+    try std.testing.expect(database.valid());
 }
