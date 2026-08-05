@@ -37,7 +37,7 @@ pub fn DryWetMixer(
         config: Config,
         history: [history_capacity]Sample = @splat(0.0),
         write_index: usize = 0,
-        pending_dry: [maximum_frames]Sample = undefined,
+        pending_dry: [maximum_frames]Sample = @splat(0.0),
         pending_count: usize = 0,
 
         pub fn init(config: Config) !Self {
@@ -53,6 +53,7 @@ pub fn DryWetMixer(
 
         pub fn reset(self: *Self) void {
             self.history = @splat(0.0);
+            self.pending_dry = @splat(0.0);
             self.write_index = 0;
             self.pending_count = 0;
         }
@@ -98,6 +99,7 @@ pub fn DryWetMixer(
                     dry_sample * gains.dry +
                     wet_sample.* * gains.wet;
             }
+            @memset(self.pending_dry[0..self.pending_count], 0.0);
             self.pending_count = 0;
         }
 
@@ -216,6 +218,10 @@ test "dry wet mixer compensates integer and fractional latency" {
         .wet_latency_samples = 2.0,
         .rule = .linear,
     });
+    try std.testing.expectEqual(
+        @as([8]f64, @splat(0.0)),
+        mixer.pending_dry,
+    );
     try mixer.pushDry(&.{ 1.0, 0.0, 0.0, 0.0 });
     var wet: [4]f64 = @splat(0.0);
     try mixer.mixWet(&wet);
@@ -224,6 +230,10 @@ test "dry wet mixer compensates integer and fractional latency" {
         &.{ 0.0, 0.0, 1.0, 0.0 },
         &wet,
     );
+    try std.testing.expectEqual(
+        @as([8]f64, @splat(0.0)),
+        mixer.pending_dry,
+    );
 
     try mixer.configure(.{
         .wet = 0.0,
@@ -231,6 +241,10 @@ test "dry wet mixer compensates integer and fractional latency" {
         .rule = .linear,
     });
     mixer.reset();
+    try std.testing.expectEqual(
+        @as([8]f64, @splat(0.0)),
+        mixer.pending_dry,
+    );
     try mixer.pushDry(&.{ 1.0, 0.0, 0.0 });
     var fractional: [3]f64 = @splat(0.0);
     try mixer.mixWet(&fractional);

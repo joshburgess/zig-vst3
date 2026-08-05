@@ -70,7 +70,14 @@ pub fn Gain(comptime Sample: type) type {
                     self.current_gain = self.target_gain;
                     self.step = 0.0;
                 } else {
-                    self.current_gain += self.step;
+                    const next_gain = self.current_gain + self.step;
+                    if (!gainValid(next_gain)) {
+                        self.current_gain = self.target_gain;
+                        self.step = 0.0;
+                        self.remaining = 0;
+                    } else {
+                        self.current_gain = next_gain;
+                    }
                 }
             }
             const output = accepted * self.current_gain;
@@ -165,6 +172,14 @@ test "gain accepts decibels and contains hostile state" {
     gain.step = std.math.nan(f64);
     try std.testing.expectEqual(@as(f64, 0.25), gain.processSample(0.25));
     try std.testing.expect(gain.valid());
+
+    gain.current_gain = 1.0;
+    gain.target_gain = 0.5;
+    gain.step = 64.0;
+    gain.remaining = 2;
+    try std.testing.expectEqual(@as(f64, 0.5), gain.processSample(1.0));
+    try std.testing.expect(gain.valid());
+    try std.testing.expectEqual(@as(usize, 0), gain.remaining);
 }
 
 test "bias processes blocks and rejects invalid values" {

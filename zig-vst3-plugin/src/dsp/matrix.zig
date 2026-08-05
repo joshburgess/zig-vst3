@@ -284,6 +284,7 @@ pub fn Matrix(
 ///
 /// Construction and arithmetic allocate through the caller's allocator.
 /// Realtime code should prepare these values before entering the audio thread.
+/// Teardown is repeatable. Operations reject closed or malformed values.
 pub fn DynamicMatrix(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
         @compileError("DynamicMatrix supports f32 and f64 elements");
@@ -664,7 +665,9 @@ pub fn DynamicMatrix(comptime Sample: type) type {
                 workspace.len != self.rows)
                 return error.DynamicMatrixShapeMismatch;
             if (slicesOverlap(Sample, vector, workspace) or
-                slicesOverlap(Sample, destination, workspace))
+                slicesOverlap(Sample, destination, workspace) or
+                slicesOverlap(Sample, self.values, workspace) or
+                slicesOverlap(Sample, self.values, destination))
                 return error.DynamicMatrixAliasedBuffers;
             for (vector) |value| {
                 if (!std.math.isFinite(value))
@@ -802,6 +805,7 @@ pub fn DynamicMatrix(comptime Sample: type) type {
 }
 
 /// Owns a reusable partial-pivot LU factorization of a dynamic square matrix.
+/// Teardown is repeatable. Operations reject closed or malformed values.
 pub fn DynamicLuDecomposition(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
         @compileError(
@@ -817,6 +821,7 @@ pub fn DynamicLuDecomposition(comptime Sample: type) type {
         factors: []Sample,
         permutation: []usize,
         odd_swaps: bool,
+        matrix_scale: Sample,
         pivot_tolerance: Sample,
 
         pub fn init(
@@ -919,6 +924,7 @@ pub fn DynamicLuDecomposition(comptime Sample: type) type {
                 .factors = factors,
                 .permutation = permutation,
                 .odd_swaps = odd_swaps,
+                .matrix_scale = matrix_scale,
                 .pivot_tolerance = pivot_tolerance,
             };
             if (!result.valid())
@@ -935,6 +941,7 @@ pub fn DynamicLuDecomposition(comptime Sample: type) type {
             self.factors = &.{};
             self.permutation = &.{};
             self.odd_swaps = false;
+            self.matrix_scale = 0.0;
             self.pivot_tolerance = 0.0;
         }
 
@@ -955,7 +962,12 @@ pub fn DynamicLuDecomposition(comptime Sample: type) type {
                 right_hand_side,
                 workspace,
             ) or
-                slicesOverlap(Sample, destination, workspace))
+                slicesOverlap(Sample, destination, workspace) or
+                anySlicesOverlap(
+                    Sample,
+                    &.{ destination, workspace },
+                    &.{self.factors},
+                ))
                 return error.DynamicMatrixAliasedBuffers;
             for (right_hand_side) |value| {
                 if (!std.math.isFinite(value))
@@ -1096,25 +1108,37 @@ pub fn DynamicLuDecomposition(comptime Sample: type) type {
         }
 
         pub fn valid(self: *const Self) bool {
-            if (self.dimensions == 0 or
-                self.factors.len !=
-                    checkedDynamicElementCount(
-                        self.dimensions,
-                        self.dimensions,
-                    ) catch return false or
-                        self.permutation.len != self.dimensions or
-                        !std.math.isFinite(self.pivot_tolerance) or
-                        self.pivot_tolerance < 0.0)
+            if (self.dimensions == 0) return false;
+            const factor_count = checkedDynamicElementCount(
+                self.dimensions,
+                self.dimensions,
+            ) catch return false;
+            if (self.factors.len != factor_count or
+                self.permutation.len != self.dimensions or
+                !std.math.isFinite(self.matrix_scale) or
+                self.matrix_scale <= 0.0 or
+                !std.math.isFinite(self.pivot_tolerance) or
+                self.pivot_tolerance < 0.0)
+                return false;
+            const expected_pivot_tolerance =
+                self.matrix_scale *
+                std.math.floatEps(Sample) *
+                @as(Sample, @floatFromInt(self.dimensions));
+            if (!std.math.isFinite(expected_pivot_tolerance) or
+                self.pivot_tolerance != expected_pivot_tolerance)
                 return false;
             for (self.factors) |value| {
                 if (!std.math.isFinite(value)) return false;
             }
+            var permutation_odd = false;
             for (0..self.dimensions) |row| {
                 const source = self.permutation[row];
                 if (source >= self.dimensions) return false;
                 for (0..row) |previous| {
                     if (self.permutation[previous] == source)
                         return false;
+                    if (self.permutation[previous] > source)
+                        permutation_odd = !permutation_odd;
                 }
                 if (@abs(
                     self.factors[
@@ -1123,12 +1147,14 @@ pub fn DynamicLuDecomposition(comptime Sample: type) type {
                 ) <= self.pivot_tolerance)
                     return false;
             }
+            if (self.odd_swaps != permutation_odd) return false;
             return true;
         }
     };
 }
 
 /// Owns a reusable Householder QR factorization of a tall dynamic matrix.
+/// Teardown is repeatable. Operations reject closed or malformed values.
 pub fn DynamicQrDecomposition(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
         @compileError(
@@ -1144,6 +1170,7 @@ pub fn DynamicQrDecomposition(comptime Sample: type) type {
         columns: usize,
         factors: []Sample,
         tau: []Sample,
+        matrix_scale: Sample,
         rank_tolerance: Sample,
 
         pub fn init(
@@ -1247,6 +1274,7 @@ pub fn DynamicQrDecomposition(comptime Sample: type) type {
                 .columns = matrix.columns,
                 .factors = factors,
                 .tau = tau,
+                .matrix_scale = matrix_scale,
                 .rank_tolerance = rank_tolerance,
             };
             if (!result.valid())
@@ -1263,6 +1291,7 @@ pub fn DynamicQrDecomposition(comptime Sample: type) type {
             self.columns = 0;
             self.factors = &.{};
             self.tau = &.{};
+            self.matrix_scale = 0.0;
             self.rank_tolerance = 0.0;
         }
 
@@ -1278,7 +1307,12 @@ pub fn DynamicQrDecomposition(comptime Sample: type) type {
                 destination.len != self.columns or
                 workspace.len != self.rows)
                 return error.DynamicMatrixShapeMismatch;
-            if (slicesOverlap(Sample, destination, workspace))
+            if (slicesOverlap(Sample, destination, workspace) or
+                anySlicesOverlap(
+                    Sample,
+                    &.{ destination, workspace },
+                    &.{ self.factors, self.tau },
+                ))
                 return error.DynamicMatrixAliasedBuffers;
             for (right_hand_side) |value| {
                 if (!std.math.isFinite(value))
@@ -1387,15 +1421,25 @@ pub fn DynamicQrDecomposition(comptime Sample: type) type {
         pub fn valid(self: *const Self) bool {
             if (self.rows == 0 or
                 self.columns == 0 or
-                self.rows < self.columns or
-                self.factors.len !=
-                    checkedDynamicElementCount(
-                        self.rows,
-                        self.columns,
-                    ) catch return false or
-                        self.tau.len != self.columns or
-                        !std.math.isFinite(self.rank_tolerance) or
-                        self.rank_tolerance < 0.0)
+                self.rows < self.columns)
+                return false;
+            const factor_count = checkedDynamicElementCount(
+                self.rows,
+                self.columns,
+            ) catch return false;
+            if (self.factors.len != factor_count or
+                self.tau.len != self.columns or
+                !std.math.isFinite(self.matrix_scale) or
+                self.matrix_scale <= 0.0 or
+                !std.math.isFinite(self.rank_tolerance) or
+                self.rank_tolerance < 0.0)
+                return false;
+            const expected_rank_tolerance =
+                self.matrix_scale *
+                std.math.floatEps(Sample) *
+                @as(Sample, @floatFromInt(self.rows));
+            if (!std.math.isFinite(expected_rank_tolerance) or
+                self.rank_tolerance != expected_rank_tolerance)
                 return false;
             for (self.factors) |value| {
                 if (!std.math.isFinite(value)) return false;
@@ -1409,6 +1453,44 @@ pub fn DynamicQrDecomposition(comptime Sample: type) type {
                             column * self.columns + column
                         ],
                     ) <= self.rank_tolerance)
+                    return false;
+
+                var reflector_scale: Sample = 1.0;
+                var reflector_sum: Sample = 1.0;
+                for (column + 1..self.rows) |row| {
+                    const magnitude = @abs(
+                        self.factors[
+                            row * self.columns + column
+                        ],
+                    );
+                    if (magnitude == 0.0) continue;
+                    if (reflector_scale < magnitude) {
+                        const ratio = reflector_scale / magnitude;
+                        reflector_sum =
+                            1.0 + reflector_sum * ratio * ratio;
+                        reflector_scale = magnitude;
+                    } else {
+                        const ratio = magnitude / reflector_scale;
+                        reflector_sum += ratio * ratio;
+                    }
+                    if (!std.math.isFinite(reflector_sum))
+                        return false;
+                }
+                const inverse_scale = 1.0 / reflector_scale;
+                const expected_tau =
+                    2.0 * inverse_scale * inverse_scale /
+                    reflector_sum;
+                const reflector_length: Sample = @floatFromInt(
+                    self.rows - column,
+                );
+                const tolerance =
+                    std.math.floatEps(Sample) *
+                    32.0 * reflector_length *
+                    @max(@as(Sample, 1.0), expected_tau);
+                if (!std.math.isFinite(expected_tau) or
+                    expected_tau <= 0.0 or
+                    !std.math.isFinite(tolerance) or
+                    @abs(self.tau[column] - expected_tau) > tolerance)
                     return false;
             }
             return true;
@@ -1464,6 +1546,7 @@ pub fn DynamicQrDecomposition(comptime Sample: type) type {
 }
 
 /// Owns a reusable compact one-sided Jacobi SVD of a dynamic matrix.
+/// Teardown is repeatable. Operations reject closed or malformed values.
 pub fn DynamicSvdDecomposition(comptime Sample: type) type {
     if (Sample != f32 and Sample != f64)
         @compileError(
@@ -1490,7 +1573,9 @@ pub fn DynamicSvdDecomposition(comptime Sample: type) type {
         right: []Sample,
         rank: usize,
         sweeps: usize,
+        maximum_sweeps: usize,
         converged: bool,
+        convergence_tolerance: Sample,
         relative_rank_tolerance: Sample,
 
         pub fn init(
@@ -1528,6 +1613,7 @@ pub fn DynamicSvdDecomposition(comptime Sample: type) type {
                 options,
                 relative_rank_tolerance,
             );
+            defer tall.deinit();
             const result = Self{
                 .allocator = allocator,
                 .rows = matrix.rows,
@@ -1538,15 +1624,16 @@ pub fn DynamicSvdDecomposition(comptime Sample: type) type {
                 .right = tall.left,
                 .rank = tall.rank,
                 .sweeps = tall.sweeps,
+                .maximum_sweeps = tall.maximum_sweeps,
                 .converged = tall.converged,
+                .convergence_tolerance = tall.convergence_tolerance,
                 .relative_rank_tolerance = tall.relative_rank_tolerance,
             };
+            if (!result.valid())
+                return error.InvalidDynamicSvdDecomposition;
             tall.left = &.{};
             tall.singular_values = &.{};
             tall.right = &.{};
-            tall.deinit();
-            if (!result.valid())
-                return error.InvalidDynamicSvdDecomposition;
             return result;
         }
 
@@ -1565,7 +1652,9 @@ pub fn DynamicSvdDecomposition(comptime Sample: type) type {
             self.right = &.{};
             self.rank = 0;
             self.sweeps = 0;
+            self.maximum_sweeps = 0;
             self.converged = false;
+            self.convergence_tolerance = 0.0;
             self.relative_rank_tolerance = 0.0;
         }
 
@@ -1608,6 +1697,19 @@ pub fn DynamicSvdDecomposition(comptime Sample: type) type {
                     Sample,
                     right_hand_side,
                     solution_workspace,
+                ) or
+                anySlicesOverlap(
+                    Sample,
+                    &.{
+                        destination,
+                        projection_workspace,
+                        solution_workspace,
+                    },
+                    &.{
+                        self.left,
+                        self.singular_values,
+                        self.right,
+                    },
                 ))
                 return error.DynamicMatrixAliasedBuffers;
             for (right_hand_side) |value| {
@@ -1769,24 +1871,33 @@ pub fn DynamicSvdDecomposition(comptime Sample: type) type {
         pub fn valid(self: *const Self) bool {
             if (self.rows == 0 or
                 self.columns == 0 or
-                self.dimensions != @min(self.rows, self.columns) or
-                self.left.len !=
-                    checkedDynamicElementCount(
-                        self.rows,
-                        self.dimensions,
-                    ) catch return false or
-                        self.singular_values.len != self.dimensions or
-                        self.right.len !=
-                            checkedDynamicElementCount(
-                                self.columns,
-                                self.dimensions,
-                            ) catch return false or
-                                self.rank > self.dimensions or
-                                !std.math.isFinite(
-                                    self.relative_rank_tolerance,
-                                ) or
-                                self.relative_rank_tolerance < 0.0 or
-                                self.relative_rank_tolerance >= 1.0)
+                self.dimensions != @min(self.rows, self.columns))
+                return false;
+            const left_count = checkedDynamicElementCount(
+                self.rows,
+                self.dimensions,
+            ) catch return false;
+            const right_count = checkedDynamicElementCount(
+                self.columns,
+                self.dimensions,
+            ) catch return false;
+            if (self.left.len != left_count or
+                self.singular_values.len != self.dimensions or
+                self.right.len != right_count or
+                self.rank > self.dimensions or
+                self.maximum_sweeps == 0 or
+                self.sweeps == 0 or
+                self.sweeps > self.maximum_sweeps or
+                (!self.converged and
+                    self.sweeps != self.maximum_sweeps) or
+                !std.math.isFinite(self.convergence_tolerance) or
+                self.convergence_tolerance <= 0.0 or
+                self.convergence_tolerance >= 1.0 or
+                !std.math.isFinite(
+                    self.relative_rank_tolerance,
+                ) or
+                self.relative_rank_tolerance < 0.0 or
+                self.relative_rank_tolerance >= 1.0)
                 return false;
             var previous = std.math.inf(Sample);
             for (self.singular_values, 0..) |value, index| {
@@ -1805,6 +1916,83 @@ pub fn DynamicSvdDecomposition(comptime Sample: type) type {
             }
             for (self.right) |value| {
                 if (!std.math.isFinite(value)) return false;
+            }
+            const basis_tolerance = @min(
+                @as(Sample, 0.01),
+                std.math.floatEps(Sample) *
+                    128.0 *
+                    @as(
+                        Sample,
+                        @floatFromInt(@max(self.rows, self.columns)),
+                    ),
+            );
+            for (0..self.dimensions) |column| {
+                const left_magnitude = dynamicColumnMagnitude(
+                    Sample,
+                    self.left,
+                    self.rows,
+                    self.dimensions,
+                    column,
+                ) catch return false;
+                const right_magnitude = dynamicColumnMagnitude(
+                    Sample,
+                    self.right,
+                    self.columns,
+                    self.dimensions,
+                    column,
+                ) catch return false;
+                const singular = self.singular_values[column];
+                const expected_left: Sample = if (self.rows < self.columns or singular != 0.0) 1.0 else 0.0;
+                const expected_right: Sample = if (self.rows >= self.columns or singular != 0.0) 1.0 else 0.0;
+                if (@abs(left_magnitude - expected_left) >
+                    basis_tolerance or
+                    @abs(right_magnitude - expected_right) >
+                        basis_tolerance)
+                    return false;
+            }
+            for (0..self.dimensions) |first| {
+                for (first + 1..self.dimensions) |second| {
+                    const left_active = self.rows < self.columns or
+                        second < self.rank;
+                    const right_active = self.rows >= self.columns or
+                        second < self.rank;
+                    if (left_active and
+                        (self.rows < self.columns or self.converged))
+                    {
+                        const dot = dynamicColumnDot(
+                            Sample,
+                            self.left,
+                            self.rows,
+                            self.dimensions,
+                            first,
+                            second,
+                        ) catch return false;
+                        const tolerance = basis_tolerance +
+                            if (self.rows < self.columns)
+                                basis_tolerance
+                            else
+                                self.convergence_tolerance;
+                        if (@abs(dot) > tolerance) return false;
+                    }
+                    if (right_active and
+                        (self.rows >= self.columns or self.converged))
+                    {
+                        const dot = dynamicColumnDot(
+                            Sample,
+                            self.right,
+                            self.columns,
+                            self.dimensions,
+                            first,
+                            second,
+                        ) catch return false;
+                        const tolerance = basis_tolerance +
+                            if (self.rows >= self.columns)
+                                basis_tolerance
+                            else
+                                self.convergence_tolerance;
+                        if (@abs(dot) > tolerance) return false;
+                    }
+                }
             }
             return true;
         }
@@ -1987,8 +2175,6 @@ pub fn DynamicSvdDecomposition(comptime Sample: type) type {
                 if (value > rank_threshold) rank += 1;
             }
             const right = right_matrix.values;
-            right_matrix.values = &.{};
-            right_matrix.deinit();
             const result = Self{
                 .allocator = allocator,
                 .rows = matrix.rows,
@@ -1999,11 +2185,15 @@ pub fn DynamicSvdDecomposition(comptime Sample: type) type {
                 .right = right,
                 .rank = rank,
                 .sweeps = sweeps,
+                .maximum_sweeps = options.maximum_sweeps,
                 .converged = converged,
+                .convergence_tolerance = options.convergence_tolerance,
                 .relative_rank_tolerance = relative_rank_tolerance,
             };
             if (!result.valid())
                 return error.InvalidDynamicSvdDecomposition;
+            right_matrix.values = &.{};
+            right_matrix.deinit();
             return result;
         }
 
@@ -2040,6 +2230,24 @@ fn checkedDynamicElementCount(
     ) catch error.DynamicMatrixDimensionsOverflow;
 }
 
+fn dynamicColumnDot(
+    comptime Sample: type,
+    values: []const Sample,
+    rows: usize,
+    columns: usize,
+    first: usize,
+    second: usize,
+) !Sample {
+    var result: Sample = 0.0;
+    for (0..rows) |row| {
+        result += values[row * columns + first] *
+            values[row * columns + second];
+        if (!std.math.isFinite(result))
+            return error.MatrixNonFiniteValue;
+    }
+    return result;
+}
+
 fn slicesOverlap(
     comptime Element: type,
     first: []const Element,
@@ -2047,12 +2255,42 @@ fn slicesOverlap(
 ) bool {
     if (first.len == 0 or second.len == 0) return false;
     const first_start = @intFromPtr(first.ptr);
-    const first_end =
-        first_start + first.len * @sizeOf(Element);
+    const first_bytes = std.math.mul(
+        usize,
+        first.len,
+        @sizeOf(Element),
+    ) catch return true;
+    const first_end = std.math.add(
+        usize,
+        first_start,
+        first_bytes,
+    ) catch return true;
     const second_start = @intFromPtr(second.ptr);
-    const second_end =
-        second_start + second.len * @sizeOf(Element);
+    const second_bytes = std.math.mul(
+        usize,
+        second.len,
+        @sizeOf(Element),
+    ) catch return true;
+    const second_end = std.math.add(
+        usize,
+        second_start,
+        second_bytes,
+    ) catch return true;
     return first_start < second_end and second_start < first_end;
+}
+
+fn anySlicesOverlap(
+    comptime Element: type,
+    first: []const []const Element,
+    second: []const []const Element,
+) bool {
+    for (first) |first_slice| {
+        for (second) |second_slice| {
+            if (slicesOverlap(Element, first_slice, second_slice))
+                return true;
+        }
+    }
+    return false;
 }
 
 fn dynamicColumnMagnitude(
@@ -2151,7 +2389,9 @@ pub fn SvdDecomposition(
         right: [columns][dimensions]Sample,
         rank: usize,
         sweeps: usize,
+        maximum_sweeps: usize,
         converged: bool,
+        convergence_tolerance: Sample,
         relative_rank_tolerance: Sample,
 
         pub fn init(matrix: Source, options: Options) !Self {
@@ -2185,7 +2425,9 @@ pub fn SvdDecomposition(
                     .right = transposed.left,
                     .rank = transposed.rank,
                     .sweeps = transposed.sweeps,
+                    .maximum_sweeps = transposed.maximum_sweeps,
                     .converged = transposed.converged,
+                    .convergence_tolerance = transposed.convergence_tolerance,
                     .relative_rank_tolerance = transposed.relative_rank_tolerance,
                 };
                 if (!result.valid())
@@ -2317,7 +2559,9 @@ pub fn SvdDecomposition(
                 .right = right,
                 .rank = rank,
                 .sweeps = sweeps,
+                .maximum_sweeps = options.maximum_sweeps,
                 .converged = converged,
+                .convergence_tolerance = options.convergence_tolerance,
                 .relative_rank_tolerance = options.relative_rank_tolerance,
             };
             if (!result.valid()) return error.InvalidSvdDecomposition;
@@ -2425,6 +2669,14 @@ pub fn SvdDecomposition(
 
         pub fn valid(self: Self) bool {
             if (self.rank > dimensions or
+                self.maximum_sweeps == 0 or
+                self.sweeps == 0 or
+                self.sweeps > self.maximum_sweeps or
+                (!self.converged and
+                    self.sweeps != self.maximum_sweeps) or
+                !std.math.isFinite(self.convergence_tolerance) or
+                self.convergence_tolerance <= 0.0 or
+                self.convergence_tolerance >= 1.0 or
                 !std.math.isFinite(self.relative_rank_tolerance) or
                 self.relative_rank_tolerance < 0.0 or
                 self.relative_rank_tolerance >= 1.0)
@@ -2451,7 +2703,117 @@ pub fn SvdDecomposition(
                     if (!std.math.isFinite(value)) return false;
                 }
             }
+            const basis_tolerance = @min(
+                @as(Sample, 0.01),
+                std.math.floatEps(Sample) *
+                    128.0 *
+                    @as(
+                        Sample,
+                        @floatFromInt(@max(rows, columns)),
+                    ),
+            );
+            for (0..dimensions) |column| {
+                const left_magnitude = basisColumnMagnitude(
+                    rows,
+                    self.left,
+                    column,
+                ) catch return false;
+                const right_magnitude = basisColumnMagnitude(
+                    columns,
+                    self.right,
+                    column,
+                ) catch return false;
+                const singular = self.singular_values[column];
+                const expected_left: Sample = if (rows < columns or singular != 0.0) 1.0 else 0.0;
+                const expected_right: Sample = if (rows >= columns or singular != 0.0) 1.0 else 0.0;
+                if (@abs(left_magnitude - expected_left) >
+                    basis_tolerance or
+                    @abs(right_magnitude - expected_right) >
+                        basis_tolerance)
+                    return false;
+            }
+            for (0..dimensions) |first| {
+                for (first + 1..dimensions) |second| {
+                    const left_active = rows < columns or
+                        second < self.rank;
+                    const right_active = rows >= columns or
+                        second < self.rank;
+                    if (left_active and
+                        (rows < columns or self.converged))
+                    {
+                        const dot = basisColumnDot(
+                            rows,
+                            self.left,
+                            first,
+                            second,
+                        ) catch return false;
+                        const tolerance = basis_tolerance +
+                            if (rows < columns)
+                                basis_tolerance
+                            else
+                                self.convergence_tolerance;
+                        if (@abs(dot) > tolerance) return false;
+                    }
+                    if (right_active and
+                        (rows >= columns or self.converged))
+                    {
+                        const dot = basisColumnDot(
+                            columns,
+                            self.right,
+                            first,
+                            second,
+                        ) catch return false;
+                        const tolerance = basis_tolerance +
+                            if (rows >= columns)
+                                basis_tolerance
+                            else
+                                self.convergence_tolerance;
+                        if (@abs(dot) > tolerance) return false;
+                    }
+                }
+            }
             return true;
+        }
+
+        fn basisColumnDot(
+            comptime basis_rows: usize,
+            values: [basis_rows][dimensions]Sample,
+            first: usize,
+            second: usize,
+        ) !Sample {
+            var result: Sample = 0.0;
+            for (0..basis_rows) |row| {
+                result += values[row][first] * values[row][second];
+                if (!std.math.isFinite(result))
+                    return error.MatrixNonFiniteValue;
+            }
+            return result;
+        }
+
+        fn basisColumnMagnitude(
+            comptime basis_rows: usize,
+            values: [basis_rows][dimensions]Sample,
+            column: usize,
+        ) !Sample {
+            var scale: Sample = 0.0;
+            var sum: Sample = 1.0;
+            for (0..basis_rows) |row| {
+                const magnitude = @abs(values[row][column]);
+                if (magnitude == 0.0) continue;
+                if (scale < magnitude) {
+                    const ratio = scale / magnitude;
+                    sum = 1.0 + sum * ratio * ratio;
+                    scale = magnitude;
+                } else {
+                    const ratio = magnitude / scale;
+                    sum += ratio * ratio;
+                }
+            }
+            if (scale == 0.0) return 0.0;
+            const result = scale * @sqrt(sum);
+            if (!std.math.isFinite(result))
+                return error.MatrixNonFiniteValue;
+            return result;
         }
 
         fn columnMagnitude(
@@ -2534,6 +2896,7 @@ pub fn QrDecomposition(
 
         factors: [rows][columns]Sample,
         tau: [columns]Sample,
+        matrix_scale: Sample,
         rank_tolerance: Sample,
 
         pub fn init(matrix: Source) !Self {
@@ -2541,6 +2904,7 @@ pub fn QrDecomposition(
             var result = Self{
                 .factors = matrix.values,
                 .tau = @splat(0.0),
+                .matrix_scale = 0.0,
                 .rank_tolerance = 0.0,
             };
             var matrix_scale: Sample = 0.0;
@@ -2551,6 +2915,7 @@ pub fn QrDecomposition(
             const rank_tolerance = matrix_scale *
                 std.math.floatEps(Sample) *
                 @as(Sample, @floatFromInt(rows));
+            result.matrix_scale = matrix_scale;
             result.rank_tolerance = rank_tolerance;
 
             for (0..columns) |column| {
@@ -2670,8 +3035,17 @@ pub fn QrDecomposition(
         }
 
         pub fn valid(self: Self) bool {
-            if (!std.math.isFinite(self.rank_tolerance) or
+            if (!std.math.isFinite(self.matrix_scale) or
+                self.matrix_scale <= 0.0 or
+                !std.math.isFinite(self.rank_tolerance) or
                 self.rank_tolerance < 0.0)
+                return false;
+            const expected_rank_tolerance =
+                self.matrix_scale *
+                std.math.floatEps(Sample) *
+                @as(Sample, @floatFromInt(rows));
+            if (!std.math.isFinite(expected_rank_tolerance) or
+                self.rank_tolerance != expected_rank_tolerance)
                 return false;
             for (0..columns) |column| {
                 if (!std.math.isFinite(self.tau[column]) or
@@ -2682,6 +3056,42 @@ pub fn QrDecomposition(
                     ) or
                     @abs(self.factors[column][column]) <=
                         self.rank_tolerance)
+                    return false;
+
+                var reflector_scale: Sample = 1.0;
+                var reflector_sum: Sample = 1.0;
+                for (column + 1..rows) |row| {
+                    const magnitude = @abs(
+                        self.factors[row][column],
+                    );
+                    if (magnitude == 0.0) continue;
+                    if (reflector_scale < magnitude) {
+                        const ratio = reflector_scale / magnitude;
+                        reflector_sum =
+                            1.0 + reflector_sum * ratio * ratio;
+                        reflector_scale = magnitude;
+                    } else {
+                        const ratio = magnitude / reflector_scale;
+                        reflector_sum += ratio * ratio;
+                    }
+                    if (!std.math.isFinite(reflector_sum))
+                        return false;
+                }
+                const inverse_scale = 1.0 / reflector_scale;
+                const expected_tau =
+                    2.0 * inverse_scale * inverse_scale /
+                    reflector_sum;
+                const reflector_length: Sample = @floatFromInt(
+                    rows - column,
+                );
+                const tolerance =
+                    std.math.floatEps(Sample) *
+                    32.0 * reflector_length *
+                    @max(@as(Sample, 1.0), expected_tau);
+                if (!std.math.isFinite(expected_tau) or
+                    expected_tau <= 0.0 or
+                    !std.math.isFinite(tolerance) or
+                    @abs(self.tau[column] - expected_tau) > tolerance)
                     return false;
             }
             for (self.factors) |row| {
@@ -2753,6 +3163,8 @@ pub fn LuDecomposition(
         factors: [dimensions][dimensions]Sample,
         permutation: [dimensions]usize,
         odd_swaps: bool,
+        matrix_scale: Sample,
+        pivot_tolerance: Sample,
 
         pub fn init(matrix: Square) !Self {
             if (!matrix.valid()) return error.InvalidMatrix;
@@ -2760,9 +3172,25 @@ pub fn LuDecomposition(
                 .factors = matrix.values,
                 .permutation = undefined,
                 .odd_swaps = false,
+                .matrix_scale = 0.0,
+                .pivot_tolerance = 0.0,
             };
             for (0..dimensions) |index|
                 result.permutation[index] = index;
+            var matrix_scale: Sample = 0.0;
+            for (matrix.values) |row| {
+                for (row) |value|
+                    matrix_scale = @max(matrix_scale, @abs(value));
+            }
+            if (matrix_scale == 0.0) return error.SingularMatrix;
+            const pivot_tolerance =
+                matrix_scale *
+                std.math.floatEps(Sample) *
+                @as(Sample, @floatFromInt(dimensions));
+            if (!std.math.isFinite(pivot_tolerance))
+                return error.MatrixNonFiniteValue;
+            result.matrix_scale = matrix_scale;
+            result.pivot_tolerance = pivot_tolerance;
 
             for (0..dimensions) |pivot_column| {
                 var pivot_row = pivot_column;
@@ -2777,7 +3205,7 @@ pub fn LuDecomposition(
                     }
                 }
                 if (!std.math.isFinite(pivot_magnitude) or
-                    pivot_magnitude <= std.math.floatEps(Sample))
+                    pivot_magnitude <= pivot_tolerance)
                     return error.SingularMatrix;
                 if (pivot_row != pivot_column) {
                     std.mem.swap(
@@ -2902,12 +3330,29 @@ pub fn LuDecomposition(
         }
 
         pub fn valid(self: Self) bool {
+            if (!std.math.isFinite(self.matrix_scale) or
+                self.matrix_scale <= 0.0 or
+                !std.math.isFinite(self.pivot_tolerance) or
+                self.pivot_tolerance < 0.0)
+                return false;
+            const expected_pivot_tolerance =
+                self.matrix_scale *
+                std.math.floatEps(Sample) *
+                @as(Sample, @floatFromInt(dimensions));
+            if (!std.math.isFinite(expected_pivot_tolerance) or
+                self.pivot_tolerance != expected_pivot_tolerance)
+                return false;
             var seen: [dimensions]bool = @splat(false);
+            var permutation_odd = false;
             for (0..dimensions) |row| {
                 const source = self.permutation[row];
                 if (source >= dimensions or seen[source])
                     return false;
                 seen[source] = true;
+                for (0..row) |previous| {
+                    if (self.permutation[previous] > source)
+                        permutation_odd = !permutation_odd;
+                }
                 for (0..dimensions) |column| {
                     if (!std.math.isFinite(
                         self.factors[row][column],
@@ -2915,9 +3360,10 @@ pub fn LuDecomposition(
                         return false;
                 }
                 if (@abs(self.factors[row][row]) <=
-                    std.math.floatEps(Sample))
+                    self.pivot_tolerance)
                     return false;
             }
+            if (self.odd_swaps != permutation_odd) return false;
             return true;
         }
     };
@@ -3108,11 +3554,56 @@ test "LU decomposition contains corrupted retained state" {
         .{ 1.0, 2.0 },
     });
     var decomposition = try coefficients.decompose();
+    decomposition.odd_swaps = !decomposition.odd_swaps;
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidMatrixDecomposition,
+        decomposition.determinant(),
+    );
+    decomposition.odd_swaps = !decomposition.odd_swaps;
+    try std.testing.expect(decomposition.valid());
+    const retained_matrix_scale = decomposition.matrix_scale;
+    decomposition.matrix_scale *= 2.0;
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidMatrixDecomposition,
+        decomposition.determinant(),
+    );
+    decomposition.matrix_scale = retained_matrix_scale;
+    try std.testing.expect(decomposition.valid());
+    const retained_pivot_tolerance = decomposition.pivot_tolerance;
+    decomposition.pivot_tolerance *= 2.0;
+    try std.testing.expect(!decomposition.valid());
+    decomposition.pivot_tolerance = retained_pivot_tolerance;
+    try std.testing.expect(decomposition.valid());
     decomposition.permutation[1] = decomposition.permutation[0];
     try std.testing.expect(!decomposition.valid());
     try std.testing.expectError(
         error.InvalidMatrixDecomposition,
         decomposition.solve(.{ 1.0, 1.0 }),
+    );
+}
+
+test "LU decomposition scales its pivot threshold to tiny systems" {
+    const M = Matrix(f64, 2, 2);
+    const source = try M.init(.{
+        .{ 1.0e-200, 0.0 },
+        .{ 0.0, 2.0e-200 },
+    });
+    const decomposition = try source.decompose();
+    const solution = try decomposition.solve(.{
+        3.0e-200,
+        -8.0e-200,
+    });
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 3.0),
+        solution[0],
+        0.000_000_000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, -4.0),
+        solution[1],
+        0.000_000_000_001,
     );
 }
 
@@ -3188,6 +3679,29 @@ test "QR decomposition rejects rank loss and corrupted state" {
         .{ 0.0, 1.0 },
         .{ 1.0, 1.0 },
     })).decomposeQr();
+    const retained_tau = decomposition.tau[0];
+    decomposition.tau[0] *= 0.5;
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidMatrixDecomposition,
+        decomposition.solveLeastSquares(.{ 1.0, 2.0, 3.0 }),
+    );
+    decomposition.tau[0] = retained_tau;
+    try std.testing.expect(decomposition.valid());
+    const retained_matrix_scale = decomposition.matrix_scale;
+    decomposition.matrix_scale *= 2.0;
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidMatrixDecomposition,
+        decomposition.solveLeastSquares(.{ 1.0, 2.0, 3.0 }),
+    );
+    decomposition.matrix_scale = retained_matrix_scale;
+    try std.testing.expect(decomposition.valid());
+    const retained_rank_tolerance = decomposition.rank_tolerance;
+    decomposition.rank_tolerance *= 2.0;
+    try std.testing.expect(!decomposition.valid());
+    decomposition.rank_tolerance = retained_rank_tolerance;
+    try std.testing.expect(decomposition.valid());
     decomposition.tau[0] = std.math.nan(f32);
     try std.testing.expectError(
         error.InvalidMatrixDecomposition,
@@ -3212,8 +3726,7 @@ test "QR decomposition rejects rank loss and corrupted state" {
         0.000_000_000_001,
     );
 
-    var overflow = try Tiny.identity().decomposeQr();
-    overflow.factors[1][0] = std.math.floatMax(f64);
+    const overflow = try Tiny.identity().decomposeQr();
     try std.testing.expectError(
         error.MatrixNonFiniteValue,
         overflow.solveLeastSquares(.{
@@ -3299,7 +3812,7 @@ test "SVD reports convergence and contains corrupted state" {
         .{ 4.0, 5.0, 6.0 },
         .{ 7.0, 8.0, 10.0 },
     });
-    const limited = try source.decomposeSvd(.{
+    var limited = try source.decomposeSvd(.{
         .maximum_sweeps = 1,
     });
     try std.testing.expect(!limited.converged);
@@ -3307,8 +3820,55 @@ test "SVD reports convergence and contains corrupted state" {
         error.SvdDidNotConverge,
         limited.solveLeastSquares(.{ 1.0, 2.0, 3.0 }),
     );
+    const retained_limited_maximum_sweeps = limited.maximum_sweeps;
+    limited.maximum_sweeps += 1;
+    try std.testing.expect(!limited.valid());
+    try std.testing.expectError(
+        error.InvalidSvdDecomposition,
+        limited.solveLeastSquares(.{ 1.0, 2.0, 3.0 }),
+    );
+    limited.maximum_sweeps = retained_limited_maximum_sweeps;
+    try std.testing.expect(limited.valid());
 
     var corrupted = try source.decomposeSvd(.{});
+    const retained_maximum_sweeps = corrupted.maximum_sweeps;
+    corrupted.maximum_sweeps = 0;
+    try std.testing.expect(!corrupted.valid());
+    try std.testing.expectError(
+        error.InvalidSvdDecomposition,
+        corrupted.conditionNumber(),
+    );
+    corrupted.maximum_sweeps = retained_maximum_sweeps;
+    try std.testing.expect(corrupted.valid());
+    const retained_right_column = [_]f64{
+        corrupted.right[0][0],
+        corrupted.right[1][0],
+        corrupted.right[2][0],
+    };
+    for (0..3) |row| corrupted.right[row][0] *= 0.5;
+    try std.testing.expect(!corrupted.valid());
+    try std.testing.expectError(
+        error.InvalidSvdDecomposition,
+        corrupted.solveLeastSquares(.{ 1.0, 2.0, 3.0 }),
+    );
+    for (0..3) |row|
+        corrupted.right[row][0] = retained_right_column[row];
+    try std.testing.expect(corrupted.valid());
+    const retained_second_right_column = [_]f64{
+        corrupted.right[0][1],
+        corrupted.right[1][1],
+        corrupted.right[2][1],
+    };
+    for (0..3) |row|
+        corrupted.right[row][1] = corrupted.right[row][0];
+    try std.testing.expect(!corrupted.valid());
+    try std.testing.expectError(
+        error.InvalidSvdDecomposition,
+        corrupted.pseudoinverse(),
+    );
+    for (0..3) |row|
+        corrupted.right[row][1] = retained_second_right_column[row];
+    try std.testing.expect(corrupted.valid());
     corrupted.rank = 4;
     try std.testing.expectError(
         error.InvalidSvdDecomposition,
@@ -3388,12 +3948,18 @@ test "SVD reconstructs dense matrices and reports conditioning" {
         }
     }
 
-    const zero = try Matrix(f32, 3, 2).zero().decomposeSvd(.{});
+    var zero = try Matrix(f32, 3, 2).zero().decomposeSvd(.{});
     try std.testing.expect(zero.converged);
     try std.testing.expectEqual(@as(usize, 0), zero.rank);
     try std.testing.expectEqualDeep(
         Matrix(f32, 2, 3).zero().values,
         (try zero.pseudoinverse()).values,
+    );
+    zero.left[0][0] = 0.5;
+    try std.testing.expect(!zero.valid());
+    try std.testing.expectError(
+        error.InvalidSvdDecomposition,
+        zero.reconstruct(),
     );
 }
 
@@ -3796,6 +4362,27 @@ test "dynamic matrix vector multiplication is transactional" {
             &destination,
         ),
     );
+    const retained_values = matrix.values[0..6].*;
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        matrix.multiplyVectorInto(
+            &.{ 1.0, 2.0, 3.0 },
+            matrix.values[0..2],
+            &workspace,
+        ),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        matrix.multiplyVectorInto(
+            &.{ 1.0, 2.0, 3.0 },
+            &destination,
+            matrix.values[0..2],
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        retained_values,
+        matrix.values[0..6].*,
+    );
     try std.testing.expectEqualDeep(
         [_]f64{ 7.0, 8.0 },
         destination,
@@ -3877,6 +4464,80 @@ test "dynamic matrices reject shapes overflow and hostile state" {
     try std.testing.expect(!released.valid());
 }
 
+test "dynamic owners reject retained shape corruption after repeatable close" {
+    const D = DynamicMatrix(f64);
+    var source = try D.fromSlice(
+        std.testing.allocator,
+        2,
+        2,
+        &.{ 3.0, 1.0, 1.0, 2.0 },
+    );
+    defer source.deinit();
+    var lu = try source.decomposeLu(std.testing.allocator);
+    defer lu.deinit();
+    var qr = try source.decomposeQr(std.testing.allocator);
+    defer qr.deinit();
+    var svd = try source.decomposeSvd(std.testing.allocator, .{});
+    defer svd.deinit();
+
+    source.rows = std.math.maxInt(usize);
+    try std.testing.expect(!source.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicMatrix,
+        source.clone(std.testing.allocator),
+    );
+    source.rows = 2;
+
+    lu.dimensions = std.math.maxInt(usize);
+    try std.testing.expect(!lu.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicLuDecomposition,
+        lu.determinant(),
+    );
+    lu.dimensions = 2;
+
+    qr.rows = std.math.maxInt(usize);
+    try std.testing.expect(!qr.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicQrDecomposition,
+        qr.upper(std.testing.allocator),
+    );
+    qr.rows = 2;
+
+    svd.rows = std.math.maxInt(usize);
+    try std.testing.expect(!svd.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicSvdDecomposition,
+        svd.conditionNumber(),
+    );
+    svd.rows = 2;
+
+    source.deinit();
+    source.deinit();
+    try std.testing.expectError(
+        error.InvalidDynamicMatrix,
+        source.clone(std.testing.allocator),
+    );
+    lu.deinit();
+    lu.deinit();
+    try std.testing.expectError(
+        error.InvalidDynamicLuDecomposition,
+        lu.determinant(),
+    );
+    qr.deinit();
+    qr.deinit();
+    try std.testing.expectError(
+        error.InvalidDynamicQrDecomposition,
+        qr.upper(std.testing.allocator),
+    );
+    svd.deinit();
+    svd.deinit();
+    try std.testing.expectError(
+        error.InvalidDynamicSvdDecomposition,
+        svd.conditionNumber(),
+    );
+}
+
 test "dynamic LU solves reusable vector and matrix systems" {
     const D = DynamicMatrix(f64);
     var coefficients = try D.fromSlice(
@@ -3951,6 +4612,81 @@ test "dynamic LU solves reusable vector and matrix systems" {
     );
 }
 
+test "dynamic decompositions solve tiny systems" {
+    const D = DynamicMatrix(f64);
+    var square = try D.fromSlice(
+        std.testing.allocator,
+        2,
+        2,
+        &.{ 1.0e-200, 0.0, 0.0, 2.0e-200 },
+    );
+    defer square.deinit();
+    var lu = try square.decomposeLu(std.testing.allocator);
+    defer lu.deinit();
+    const lu_solution = try lu.solve(
+        std.testing.allocator,
+        &.{ 3.0e-200, -8.0e-200 },
+    );
+    defer std.testing.allocator.free(lu_solution);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 3.0),
+        lu_solution[0],
+        0.000_000_000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, -4.0),
+        lu_solution[1],
+        0.000_000_000_001,
+    );
+
+    var tall = try D.fromSlice(
+        std.testing.allocator,
+        3,
+        2,
+        &.{
+            1.0e-200, 0.0,
+            0.0,      2.0e-200,
+            1.0e-200, 2.0e-200,
+        },
+    );
+    defer tall.deinit();
+    var qr = try tall.decomposeQr(std.testing.allocator);
+    defer qr.deinit();
+    const qr_solution = try qr.solveLeastSquares(
+        std.testing.allocator,
+        &.{ 3.0e-200, -8.0e-200, -5.0e-200 },
+    );
+    defer std.testing.allocator.free(qr_solution);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 3.0),
+        qr_solution[0],
+        0.000_000_000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, -4.0),
+        qr_solution[1],
+        0.000_000_000_001,
+    );
+
+    var svd = try tall.decomposeSvd(std.testing.allocator, .{});
+    defer svd.deinit();
+    const svd_solution = try svd.solveLeastSquares(
+        std.testing.allocator,
+        &.{ 3.0e-200, -8.0e-200, -5.0e-200 },
+    );
+    defer std.testing.allocator.free(svd_solution);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 3.0),
+        svd_solution[0],
+        0.000_000_000_001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, -4.0),
+        svd_solution[1],
+        0.000_000_000_001,
+    );
+}
+
 test "dynamic LU rejects singular shapes aliases and hostile state" {
     const D = DynamicMatrix(f32);
     var rectangular = try D.init(std.testing.allocator, 2, 3);
@@ -3992,6 +4728,28 @@ test "dynamic LU rejects singular shapes aliases and hostile state" {
             &aliased,
         ),
     );
+    decomposition.odd_swaps = !decomposition.odd_swaps;
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicLuDecomposition,
+        decomposition.determinant(),
+    );
+    decomposition.odd_swaps = !decomposition.odd_swaps;
+    try std.testing.expect(decomposition.valid());
+    const retained_matrix_scale = decomposition.matrix_scale;
+    decomposition.matrix_scale *= 2.0;
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicLuDecomposition,
+        decomposition.determinant(),
+    );
+    decomposition.matrix_scale = retained_matrix_scale;
+    try std.testing.expect(decomposition.valid());
+    const retained_pivot_tolerance = decomposition.pivot_tolerance;
+    decomposition.pivot_tolerance *= 2.0;
+    try std.testing.expect(!decomposition.valid());
+    decomposition.pivot_tolerance = retained_pivot_tolerance;
+    try std.testing.expect(decomposition.valid());
     decomposition.permutation[1] = decomposition.permutation[0];
     try std.testing.expect(!decomposition.valid());
     try std.testing.expectError(
@@ -4081,6 +4839,57 @@ test "dynamic QR rejects wide rank deficient and corrupted inputs" {
         std.testing.allocator,
     );
     defer decomposition.deinit();
+    const retained_tau = decomposition.tau[0];
+    decomposition.tau[0] *= 0.5;
+    var finite_destination = [_]f32{ -17.0, 23.0 };
+    var finite_workspace = [_]f32{ 31.0, -37.0, 41.0 };
+    const expected_destination = finite_destination;
+    const expected_workspace = finite_workspace;
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicQrDecomposition,
+        decomposition.solveLeastSquaresInto(
+            &.{ 1.0, 2.0, 3.0 },
+            &finite_destination,
+            &finite_workspace,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        expected_destination,
+        finite_destination,
+    );
+    try std.testing.expectEqualDeep(
+        expected_workspace,
+        finite_workspace,
+    );
+    decomposition.tau[0] = retained_tau;
+    try std.testing.expect(decomposition.valid());
+    const retained_matrix_scale = decomposition.matrix_scale;
+    decomposition.matrix_scale *= 2.0;
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicQrDecomposition,
+        decomposition.solveLeastSquaresInto(
+            &.{ 1.0, 2.0, 3.0 },
+            &finite_destination,
+            &finite_workspace,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        expected_destination,
+        finite_destination,
+    );
+    try std.testing.expectEqualDeep(
+        expected_workspace,
+        finite_workspace,
+    );
+    decomposition.matrix_scale = retained_matrix_scale;
+    try std.testing.expect(decomposition.valid());
+    const retained_rank_tolerance = decomposition.rank_tolerance;
+    decomposition.rank_tolerance *= 2.0;
+    try std.testing.expect(!decomposition.valid());
+    decomposition.rank_tolerance = retained_rank_tolerance;
+    try std.testing.expect(decomposition.valid());
     decomposition.tau[0] = std.math.nan(f32);
     var destination: [2]f32 = undefined;
     var workspace: [3]f32 = undefined;
@@ -4254,6 +5063,15 @@ test "dynamic SVD handles rank loss convergence and hostile state" {
         error.SvdDidNotConverge,
         limited.conditionNumber(),
     );
+    const retained_limited_maximum_sweeps = limited.maximum_sweeps;
+    limited.maximum_sweeps += 1;
+    try std.testing.expect(!limited.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicSvdDecomposition,
+        limited.conditionNumber(),
+    );
+    limited.maximum_sweeps = retained_limited_maximum_sweeps;
+    try std.testing.expect(limited.valid());
     try std.testing.expectError(
         error.InvalidSvdTolerance,
         limited_source.decomposeSvd(
@@ -4261,6 +5079,63 @@ test "dynamic SVD handles rank loss convergence and hostile state" {
             .{ .convergence_tolerance = 0.0 },
         ),
     );
+
+    const retained_maximum_sweeps = decomposition.maximum_sweeps;
+    decomposition.maximum_sweeps = 0;
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicSvdDecomposition,
+        decomposition.conditionNumber(),
+    );
+    decomposition.maximum_sweeps = retained_maximum_sweeps;
+    try std.testing.expect(decomposition.valid());
+
+    const retained_right_column = [_]f32{
+        decomposition.right[0],
+        decomposition.right[2],
+    };
+    decomposition.right[0] *= 0.5;
+    decomposition.right[2] *= 0.5;
+    var destination = [_]f32{ 43.0, -47.0 };
+    var projection_workspace = [_]f32{ 53.0, -59.0 };
+    var solution_workspace = [_]f32{ 61.0, -67.0 };
+    const expected_destination = destination;
+    const expected_projection = projection_workspace;
+    const expected_solution = solution_workspace;
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicSvdDecomposition,
+        decomposition.solveLeastSquaresInto(
+            &.{ 1.0, 2.0, 3.0 },
+            &destination,
+            &projection_workspace,
+            &solution_workspace,
+        ),
+    );
+    try std.testing.expectEqualDeep(expected_destination, destination);
+    try std.testing.expectEqualDeep(
+        expected_projection,
+        projection_workspace,
+    );
+    try std.testing.expectEqualDeep(expected_solution, solution_workspace);
+    decomposition.right[0] = retained_right_column[0];
+    decomposition.right[2] = retained_right_column[1];
+    try std.testing.expect(decomposition.valid());
+
+    const retained_second_right_column = [_]f32{
+        decomposition.right[1],
+        decomposition.right[3],
+    };
+    decomposition.right[1] = decomposition.right[0];
+    decomposition.right[3] = decomposition.right[2];
+    try std.testing.expect(!decomposition.valid());
+    try std.testing.expectError(
+        error.InvalidDynamicSvdDecomposition,
+        decomposition.conditionNumber(),
+    );
+    decomposition.right[1] = retained_second_right_column[0];
+    decomposition.right[3] = retained_second_right_column[1];
+    try std.testing.expect(decomposition.valid());
 
     decomposition.rank = 3;
     try std.testing.expect(!decomposition.valid());
@@ -4374,6 +5249,20 @@ test "dynamic matrix allocation failures release every owner" {
     );
 }
 
+test "dynamic matrix overlap checks contain hostile address spans" {
+    const aligned_maximum = std.math.maxInt(usize) -
+        (@alignOf(f64) - 1);
+    const hostile_pointer: [*]const f64 =
+        @ptrFromInt(aligned_maximum);
+    const hostile = hostile_pointer[0..2];
+    var ordinary = [_]f64{ 1.0, 2.0 };
+    try std.testing.expect(slicesOverlap(
+        f64,
+        hostile,
+        &ordinary,
+    ));
+}
+
 test "dynamic decomposition allocation failures leave no ownership" {
     const D = DynamicMatrix(f64);
     var source = try D.fromSlice(
@@ -4439,7 +5328,6 @@ test "dynamic caller-buffer solve failures preserve destinations" {
 
     var qr = try identity.decomposeQr(std.testing.allocator);
     defer qr.deinit();
-    qr.factors[2] = std.math.floatMax(f64);
     var qr_destination = [_]f64{ 9.0, 10.0 };
     var qr_workspace: [2]f64 = undefined;
     try std.testing.expectError(
@@ -4455,19 +5343,25 @@ test "dynamic caller-buffer solve failures preserve destinations" {
         qr_destination,
     );
 
-    var svd = try identity.decomposeSvd(
+    var svd_source = try D.fromSlice(
+        std.testing.allocator,
+        2,
+        2,
+        &.{ 1.0, 1.0, 1.0, -1.0 },
+    );
+    defer svd_source.deinit();
+    var svd = try svd_source.decomposeSvd(
         std.testing.allocator,
         .{},
     );
     defer svd.deinit();
-    svd.right[0] = std.math.floatMax(f64);
     var svd_destination = [_]f64{ 11.0, 12.0 };
     var projection_workspace: [2]f64 = undefined;
     var solution_workspace: [2]f64 = undefined;
     try std.testing.expectError(
         error.MatrixNonFiniteValue,
         svd.solveLeastSquaresInto(
-            &.{ std.math.floatMax(f64), 1.0 },
+            &.{ std.math.floatMax(f64), std.math.floatMax(f64) },
             &svd_destination,
             &projection_workspace,
             &solution_workspace,
@@ -4477,4 +5371,108 @@ test "dynamic caller-buffer solve failures preserve destinations" {
         [_]f64{ 11.0, 12.0 },
         svd_destination,
     );
+}
+
+test "dynamic caller-buffer solves preserve decomposition ownership" {
+    const D = DynamicMatrix(f64);
+    var source = try D.fromSlice(
+        std.testing.allocator,
+        2,
+        2,
+        &.{ 3.0, 1.0, 1.0, 2.0 },
+    );
+    defer source.deinit();
+
+    var lu = try source.decomposeLu(std.testing.allocator);
+    defer lu.deinit();
+    const lu_factors = lu.factors[0..4].*;
+    var lu_destination: [2]f64 = undefined;
+    var lu_workspace: [2]f64 = undefined;
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        lu.solveInto(
+            &.{ 7.0, 5.0 },
+            lu.factors[0..2],
+            &lu_workspace,
+        ),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        lu.solveInto(
+            &.{ 7.0, 5.0 },
+            &lu_destination,
+            lu.factors[0..2],
+        ),
+    );
+    try std.testing.expectEqualDeep(lu_factors, lu.factors[0..4].*);
+    try std.testing.expect(lu.valid());
+
+    var qr = try source.decomposeQr(std.testing.allocator);
+    defer qr.deinit();
+    const qr_factors = qr.factors[0..4].*;
+    const qr_tau = qr.tau[0..2].*;
+    var qr_destination: [2]f64 = undefined;
+    var qr_workspace: [2]f64 = undefined;
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        qr.solveLeastSquaresInto(
+            &.{ 7.0, 5.0 },
+            qr.tau,
+            &qr_workspace,
+        ),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        qr.solveLeastSquaresInto(
+            &.{ 7.0, 5.0 },
+            &qr_destination,
+            qr.factors[0..2],
+        ),
+    );
+    try std.testing.expectEqualDeep(qr_factors, qr.factors[0..4].*);
+    try std.testing.expectEqualDeep(qr_tau, qr.tau[0..2].*);
+    try std.testing.expect(qr.valid());
+
+    var svd = try source.decomposeSvd(std.testing.allocator, .{});
+    defer svd.deinit();
+    const svd_left = svd.left[0..4].*;
+    const singular_values = svd.singular_values[0..2].*;
+    const svd_right = svd.right[0..4].*;
+    var svd_destination: [2]f64 = undefined;
+    var projection_workspace: [2]f64 = undefined;
+    var solution_workspace: [2]f64 = undefined;
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        svd.solveLeastSquaresInto(
+            &.{ 7.0, 5.0 },
+            svd.left[0..2],
+            &projection_workspace,
+            &solution_workspace,
+        ),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        svd.solveLeastSquaresInto(
+            &.{ 7.0, 5.0 },
+            &svd_destination,
+            svd.singular_values,
+            &solution_workspace,
+        ),
+    );
+    try std.testing.expectError(
+        error.DynamicMatrixAliasedBuffers,
+        svd.solveLeastSquaresInto(
+            &.{ 7.0, 5.0 },
+            &svd_destination,
+            &projection_workspace,
+            svd.right[0..2],
+        ),
+    );
+    try std.testing.expectEqualDeep(svd_left, svd.left[0..4].*);
+    try std.testing.expectEqualDeep(
+        singular_values,
+        svd.singular_values[0..2].*,
+    );
+    try std.testing.expectEqualDeep(svd_right, svd.right[0..4].*);
+    try std.testing.expect(svd.valid());
 }

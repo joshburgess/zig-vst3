@@ -62,9 +62,10 @@ pub fn Publisher(comptime State: type) type {
             const slot_index = selected orelse
                 return error.RealtimeSnapshotUnavailable;
             const slot = &self.slots[slot_index];
-            const generation = self.next_generation;
-            self.next_generation +%= 1;
-            if (self.next_generation == 0) self.next_generation = 1;
+            const generation = self.nextUniqueGeneration() catch |err| {
+                slot.readers.store(0, .release);
+                return err;
+            };
 
             slot.value = value;
             slot.generation = generation;
@@ -102,6 +103,28 @@ pub fn Publisher(comptime State: type) type {
             fallback: Snapshot,
         ) Snapshot {
             return self.tryRead() orelse fallback;
+        }
+
+        fn nextUniqueGeneration(self: *Self) !u64 {
+            var candidate = self.next_generation;
+            for (0..slot_count + 1) |_| {
+                if (candidate == 0) candidate = 1;
+                var collision = false;
+                for (self.slots) |slot| {
+                    if (slot.generation == candidate) {
+                        collision = true;
+                        break;
+                    }
+                }
+                if (!collision) {
+                    self.next_generation = candidate +% 1;
+                    if (self.next_generation == 0)
+                        self.next_generation = 1;
+                    return candidate;
+                }
+                candidate +%= 1;
+            }
+            return error.InvalidRealtimeSnapshotPublisher;
         }
     };
 }
@@ -180,16 +203,20 @@ pub fn ReferencePublisher(
                 self.publisher = null;
                 if (self.slot >= capacity) return;
                 const slot = &owner.slots[self.slot];
-                const current = slot.references.load(.acquire);
-                if (current == 0 or current == writer_locked or
-                    slot.generation != self.retained_generation)
-                {
-                    return;
+                var current = slot.references.load(.acquire);
+                while (true) {
+                    if (current == 0 or current == writer_locked or
+                        slot.generation != self.retained_generation)
+                    {
+                        return;
+                    }
+                    current = slot.references.cmpxchgWeak(
+                        current,
+                        current - 1,
+                        .release,
+                        .acquire,
+                    ) orelse return;
                 }
-                const previous = slot.references.fetchSub(1, .release);
-                std.debug.assert(
-                    previous > 0 and previous != writer_locked,
-                );
             }
         };
 
@@ -217,7 +244,7 @@ pub fn ReferencePublisher(
                 if (slot.references.load(.acquire) != writer_locked)
                     return error.InvalidRealtimeReferenceWriter;
 
-                const generation = owner.nextUniqueGeneration();
+                const generation = try owner.nextUniqueGeneration();
                 slot.generation = generation;
                 slot.references.store(0, .release);
                 owner.active_slot.store(self.slot, .release);
@@ -345,7 +372,7 @@ pub fn ReferencePublisher(
             };
         }
 
-        fn nextUniqueGeneration(self: *Self) u64 {
+        fn nextUniqueGeneration(self: *Self) !u64 {
             var candidate = self.next_generation;
             for (0..capacity + 1) |_| {
                 if (candidate == 0) candidate = 1;
@@ -364,7 +391,7 @@ pub fn ReferencePublisher(
                 }
                 candidate +%= 1;
             }
-            unreachable;
+            return error.InvalidRealtimeReferencePublisher;
         }
     };
 }
@@ -450,6 +477,21 @@ test "realtime snapshot publisher rejects hostile active state" {
         error.InvalidRealtimeSnapshotPublisher,
         publisher.publish(2),
     );
+}
+
+test "realtime snapshot publisher skips zero generation" {
+    var publisher = Publisher(u32).init(1);
+    publisher.next_generation = 0;
+    try std.testing.expectEqual(@as(u64, 1), try publisher.publish(2));
+    try std.testing.expectEqual(@as(u64, 2), publisher.next_generation);
+
+    publisher.next_generation = std.math.maxInt(u64);
+    try std.testing.expectEqual(
+        std.math.maxInt(u64),
+        try publisher.publish(3),
+    );
+    try std.testing.expectEqual(@as(u64, 1), publisher.next_generation);
+    try std.testing.expectEqual(@as(u64, 2), try publisher.publish(4));
 }
 
 test "realtime references pin generations and reclaim released slots" {
@@ -644,6 +686,58 @@ test "stale realtime reference copy cannot access a reused slot" {
     var current = publisher.tryAcquire().?;
     defer current.release();
     try std.testing.expectEqual(@as(u64, 30), current.value().?.*);
+}
+
+test "concurrent malformed reference copies cannot underflow a slot" {
+    const SharedPublisher = ReferencePublisher(u64, 3);
+    const Shared = struct {
+        publisher: SharedPublisher = SharedPublisher.init(7),
+        handles: [2]SharedPublisher.Handle = undefined,
+        round: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
+        completed: std.atomic.Value(u8) = std.atomic.Value(u8).init(0),
+
+        fn releaseCopies(shared: *@This(), index: usize) void {
+            var observed_round: u32 = 0;
+            while (true) {
+                const current_round = shared.round.load(.acquire);
+                if (current_round == std.math.maxInt(u32)) return;
+                if (current_round == observed_round) {
+                    std.Thread.yield() catch {};
+                    continue;
+                }
+                shared.handles[index].release();
+                observed_round = current_round;
+                _ = shared.completed.fetchAdd(1, .release);
+            }
+        }
+    };
+
+    var shared = Shared{};
+    const first = try std.Thread.spawn(
+        .{},
+        Shared.releaseCopies,
+        .{ &shared, 0 },
+    );
+    const second = try std.Thread.spawn(
+        .{},
+        Shared.releaseCopies,
+        .{ &shared, 1 },
+    );
+    for (1..4_097) |round| {
+        const handle = shared.publisher.tryAcquire().?;
+        shared.handles = .{ handle, handle };
+        shared.completed.store(0, .release);
+        shared.round.store(@intCast(round), .release);
+        while (shared.completed.load(.acquire) != 2)
+            std.Thread.yield() catch {};
+        try std.testing.expectEqual(
+            @as(u32, 0),
+            shared.publisher.slots[0].references.load(.acquire),
+        );
+    }
+    shared.round.store(std.math.maxInt(u32), .release);
+    first.join();
+    second.join();
 }
 
 test "realtime reference publisher rejects hostile active state" {

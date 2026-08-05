@@ -24,13 +24,18 @@ pub fn LookupTable(comptime Sample: type, comptime point_count: usize) type {
                 maximum <= minimum)
                 return error.InvalidLookupTableRange;
 
+            const span = maximum - minimum;
             var points: [point_count]Sample = undefined;
             const denominator: Sample = @floatFromInt(point_count - 1);
+            const scale = denominator / span;
+            if (!std.math.isFinite(span) or span <= 0.0 or
+                !std.math.isFinite(scale) or scale <= 0.0)
+                return error.InvalidLookupTableRange;
             for (&points, 0..) |*point, index| {
                 const proportion =
                     @as(Sample, @floatFromInt(index)) / denominator;
                 point.* = function(
-                    minimum + (maximum - minimum) * proportion,
+                    minimum + span * proportion,
                 );
                 if (!std.math.isFinite(point.*))
                     return error.InvalidLookupTableValue;
@@ -38,7 +43,7 @@ pub fn LookupTable(comptime Sample: type, comptime point_count: usize) type {
             return .{
                 .minimum = minimum,
                 .maximum = maximum,
-                .scale = denominator / (maximum - minimum),
+                .scale = scale,
                 .points = points,
             };
         }
@@ -56,6 +61,8 @@ pub fn LookupTable(comptime Sample: type, comptime point_count: usize) type {
                 self.maximum,
             );
             const position = (clamped - self.minimum) * self.scale;
+            if (!std.math.isFinite(position) or position < 0.0)
+                return accepted;
             const lower: usize = @intFromFloat(@floor(position));
             if (lower >= point_count - 1) {
                 const endpoint = self.points[point_count - 1];
@@ -98,7 +105,10 @@ pub fn LookupTable(comptime Sample: type, comptime point_count: usize) type {
             const expected_scale =
                 @as(Sample, @floatFromInt(point_count - 1)) /
                 (self.maximum - self.minimum);
-            if (self.scale != expected_scale) return false;
+            if (!std.math.isFinite(expected_scale) or
+                expected_scale <= 0.0 or
+                self.scale != expected_scale)
+                return false;
             return true;
         }
     };
@@ -110,6 +120,10 @@ fn sine(value: f64) f64 {
 
 fn square(value: f32) f32 {
     return value * value;
+}
+
+fn constantOne(_: f32) f32 {
+    return 1.0;
 }
 
 test "lookup table interpolates functions and includes both endpoints" {
@@ -155,6 +169,14 @@ test "lookup table rejects invalid construction and contains hostile state" {
         error.InvalidLookupTableRange,
         Table.init(1.0, 1.0, square),
     );
+    try std.testing.expectError(
+        error.InvalidLookupTableRange,
+        Table.init(
+            -std.math.floatMax(f32),
+            std.math.floatMax(f32),
+            constantOne,
+        ),
+    );
     var table = try Table.init(-1.0, 1.0, square);
     table.points[3] = std.math.nan(f32);
     try std.testing.expectEqual(@as(f32, -0.14), table.processSample(-0.14));
@@ -163,5 +185,11 @@ test "lookup table rejects invalid construction and contains hostile state" {
     try std.testing.expectEqual(
         @as(f32, 0.0),
         table.processSample(std.math.nan(f32)),
+    );
+    table = try Table.init(-1.0, 1.0, square);
+    table.scale = 0.0;
+    try std.testing.expectEqual(
+        @as(f32, 0.5),
+        table.processSample(0.5),
     );
 }

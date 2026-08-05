@@ -148,14 +148,19 @@ pub const RateSmoother = struct {
     }
 
     pub fn next(self: *RateSmoother) f64 {
+        if (!self.valid()) return self.repair();
         const current = self.current_hz;
         if (self.remaining_samples > 0) {
             self.remaining_samples -= 1;
             if (self.remaining_samples == 0) {
-                self.current_hz = self.target_hz;
-                self.step_hz = 0.0;
+                self.settle();
             } else {
-                self.current_hz += self.step_hz;
+                const next_rate = self.current_hz + self.step_hz;
+                if (!rateValid(self.sample_rate, next_rate)) {
+                    self.settle();
+                } else {
+                    self.current_hz = next_rate;
+                }
             }
         }
         return current;
@@ -167,6 +172,26 @@ pub const RateSmoother = struct {
         return std.math.isFinite(self.step_hz) and
             self.remaining_samples <=
                 @as(usize, @intFromFloat(self.sample_rate * 60.0));
+    }
+
+    fn settle(self: *RateSmoother) void {
+        self.current_hz = self.target_hz;
+        self.step_hz = 0.0;
+        self.remaining_samples = 0;
+    }
+
+    fn repair(self: *RateSmoother) f64 {
+        self.* = .{
+            .sample_rate = 48_000.0,
+            .current_hz = 0.0,
+            .target_hz = 0.0,
+        };
+        return self.current_hz;
+    }
+
+    fn rateValid(sample_rate: f64, rate_hz: f64) bool {
+        validateRate(sample_rate, rate_hz) catch return false;
+        return true;
     }
 
     fn validateRate(sample_rate: f64, rate_hz: f64) !void {
@@ -232,6 +257,21 @@ test "tempo and smoothing failures preserve valid state" {
         rate.setTarget(48_000.0, 2.0, -1.0),
     );
     try std.testing.expectEqualDeep(before, rate);
+}
+
+test "rate smoothing contains hostile retained arithmetic" {
+    var smoother = try RateSmoother.init(48_000.0, 20.0);
+    smoother.target_hz = 10.0;
+    smoother.step_hz = 20.0;
+    smoother.remaining_samples = 2;
+    try std.testing.expectEqual(@as(f64, 20.0), smoother.next());
+    try std.testing.expectEqual(@as(f64, 10.0), smoother.current_hz);
+    try std.testing.expectEqual(@as(usize, 0), smoother.remaining_samples);
+    try std.testing.expect(smoother.valid());
+
+    smoother.step_hz = std.math.nan(f64);
+    try std.testing.expectEqual(@as(f64, 0.0), smoother.next());
+    try std.testing.expect(smoother.valid());
 }
 
 test "host transport follows tempo and musical phase" {

@@ -37,7 +37,15 @@ pub fn encodeValidated(
     if (Sample != f32 and Sample != f64)
         @compileError("PCM encoding supports f32 and f64 input");
     const bytes_per_sample = byteCount(encoding);
-    std.debug.assert(destination.len == samples.len * bytes_per_sample);
+    const required = std.math.mul(
+        usize,
+        samples.len,
+        bytes_per_sample,
+    ) catch return;
+    if (destination.len != required) return;
+    for (samples) |sample| {
+        if (!std.math.isFinite(sample)) return;
+    }
 
     var offset: usize = 0;
     for (samples) |sample| {
@@ -120,7 +128,7 @@ pub fn decode(
     encoding: Encoding,
     endian: Endian,
 ) f64 {
-    std.debug.assert(bytes.len == byteCount(encoding));
+    if (bytes.len != byteCount(encoding)) return 0.0;
     return switch (encoding) {
         .pcm_i16 => @as(f64, @floatFromInt(@as(i16, @bitCast(
             std.mem.readInt(u16, bytes[0..2], endian),
@@ -158,6 +166,8 @@ pub fn encodeDithered(
 ) !void {
     if (Sample != f32 and Sample != f64)
         @compileError("dithered PCM encoding supports f32 and f64 input");
+    try dither.validate();
+    const channel_count = dither.channelCount();
     const bytes_per_sample = try byteCountForBits(dither.bitsPerSample());
     const required = std.math.mul(
         usize,
@@ -166,7 +176,7 @@ pub fn encodeDithered(
     ) catch return error.PcmSizeOverflow;
     if (destination.len != required)
         return error.PcmBufferLengthMismatch;
-    if (samples.len % dither.channelCount() != 0)
+    if (samples.len % channel_count != 0)
         return error.IncompleteDitherFrame;
     for (samples) |sample| {
         if (!std.math.isFinite(sample))
@@ -177,7 +187,7 @@ pub fn encodeDithered(
     for (samples, 0..) |sample, index| {
         const encoded = try dither.quantize(
             @floatCast(sample),
-            index % dither.channelCount(),
+            index % channel_count,
         );
         writeSigned(
             destination[offset..][0..bytes_per_sample],
@@ -219,17 +229,19 @@ pub fn writeDitheredWithOperations(
     endian: Endian,
     dither: *pcm_dither.PcmDither,
 ) !void {
+    try dither.validate();
+    const channel_count = dither.channelCount();
     const bytes_per_sample = try byteCountForBits(dither.bitsPerSample());
     const frame_bytes = std.math.mul(
         usize,
         bytes_per_sample,
-        dither.channelCount(),
+        channel_count,
     ) catch return error.PcmSizeOverflow;
     var staging: [4_096]u8 = undefined;
     const frames_per_chunk = staging.len / frame_bytes;
     if (frames_per_chunk == 0)
         return error.PcmFrameTooLarge;
-    const samples_per_chunk = frames_per_chunk * dither.channelCount();
+    const samples_per_chunk = frames_per_chunk * channel_count;
 
     var sample_offset: usize = 0;
     var file_offset = initial_offset;
@@ -300,8 +312,48 @@ fn writeSigned(
             bits,
             if (endian == .little) .little else .big,
         ),
-        else => unreachable,
+        else => return,
     }
+}
+
+test "direct PCM conversion contains invalid internal preconditions" {
+    var invalid_destination = [_]u8{0xaa};
+    writeSigned(&invalid_destination, 1, .little);
+    try std.testing.expectEqual([_]u8{0xaa}, invalid_destination);
+
+    var short_destination = [_]u8{0xaa} ** 3;
+    const short_before = short_destination;
+    encodeValidated(
+        f32,
+        &short_destination,
+        &.{ 0.0, 1.0 },
+        .pcm_i16,
+        .little,
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &short_before,
+        &short_destination,
+    );
+
+    var nonfinite_destination = [_]u8{0xbb} ** 2;
+    const nonfinite_before = nonfinite_destination;
+    encodeValidated(
+        f32,
+        &nonfinite_destination,
+        &.{std.math.nan(f32)},
+        .pcm_i16,
+        .little,
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &nonfinite_before,
+        &nonfinite_destination,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        decode(&.{0}, .pcm_i16, .little),
+    );
 }
 
 test "direct PCM encoding and decoding cover formats and byte orders" {

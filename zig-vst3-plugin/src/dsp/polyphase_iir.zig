@@ -69,10 +69,12 @@ pub fn Design(comptime Sample: type) type {
         stopband_attenuation_db: Sample = 0.0,
 
         pub fn directSectionCount(self: Self) usize {
+            if (self.section_count > maximum_sections) return 0;
             return (self.section_count + 1) / 2;
         }
 
         pub fn delayedSectionCount(self: Self) usize {
+            if (self.section_count > maximum_sections) return 0;
             return self.section_count / 2;
         }
 
@@ -80,7 +82,12 @@ pub fn Design(comptime Sample: type) type {
             self: Self,
             section_index: usize,
         ) ?Sample {
-            const index = section_index * 2;
+            if (self.section_count > maximum_sections) return null;
+            const index = std.math.mul(
+                usize,
+                section_index,
+                2,
+            ) catch return null;
             if (index >= self.section_count) return null;
             return self.alpha[index];
         }
@@ -89,7 +96,13 @@ pub fn Design(comptime Sample: type) type {
             self: Self,
             section_index: usize,
         ) ?Sample {
-            const index = section_index * 2 + 1;
+            if (self.section_count > maximum_sections) return null;
+            const doubled = std.math.mul(
+                usize,
+                section_index,
+                2,
+            ) catch return null;
+            const index = std.math.add(usize, doubled, 1) catch return null;
             if (index >= self.section_count) return null;
             return self.alpha[index];
         }
@@ -750,6 +763,26 @@ test "polyphase all-pass validation is transactional and hostile-safe" {
         original_design,
         filter.design,
     );
+
+    invalid_design = original_design;
+    invalid_design.section_count = std.math.maxInt(usize);
+    try std.testing.expect(!invalid_design.valid());
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        invalid_design.directSectionCount(),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        invalid_design.delayedSectionCount(),
+    );
+    try std.testing.expect(invalid_design.directAlpha(0) == null);
+    try std.testing.expect(invalid_design.delayedAlpha(0) == null);
+    try std.testing.expect(original_design.directAlpha(
+        std.math.maxInt(usize),
+    ) == null);
+    try std.testing.expect(original_design.delayedAlpha(
+        std.math.maxInt(usize),
+    ) == null);
     try std.testing.expectError(
         error.NonFinitePolyphaseAllpassInput,
         filter.processSample(std.math.nan(f64)),

@@ -84,6 +84,7 @@ pub fn MultichannelOversampler(
             self: *Self,
             index: usize,
         ) !*ChannelProcessor {
+            if (!self.valid()) return error.InvalidOversamplerState;
             if (index >= self.channel_count)
                 return error.OversamplingChannelOutOfRange;
             return &self.processors[index];
@@ -198,4 +199,15 @@ test "multichannel oversampling validates the complete shape before mutation" {
         processor.upsample(&.{left[0..]}),
     );
     try std.testing.expect(processor.valid());
+
+    processor.channel_count = std.math.maxInt(usize);
+    try std.testing.expect(!processor.valid());
+    try std.testing.expectError(
+        error.InvalidOversamplerState,
+        processor.channel(0),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        processor.channel_count,
+    );
 }

@@ -24,11 +24,13 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
         }
 
         pub fn channel(self: *const Self, index: usize) ![]Sample {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             if (index >= self.channel_count) return error.AudioBlockChannelOutOfRange;
             return self.channels[index];
         }
 
         pub fn subBlock(self: *const Self, offset: usize, count: usize) !Self {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             if (offset > self.frame_count or count > self.frame_count - offset)
                 return error.AudioBlockFrameRangeOutOfBounds;
             var channels: [maximum_channels][]Sample = undefined;
@@ -46,6 +48,7 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
             offset: usize,
             count: usize,
         ) !Self {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             if (offset > self.channel_count or count > self.channel_count - offset)
                 return error.AudioBlockChannelRangeOutOfBounds;
             if (count == 0) return error.AudioBlockRequiresChannels;
@@ -59,6 +62,11 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
         }
 
         pub fn asConst(self: *const Self) ConstAudioBlock(Sample, maximum_channels) {
+            if (!self.valid()) return .{
+                .channels = undefined,
+                .channel_count = 0,
+                .frame_count = 0,
+            };
             var channels: [maximum_channels][]const Sample = undefined;
             for (0..self.channel_count) |index| channels[index] = self.channels[index];
             return .{
@@ -69,17 +77,20 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
         }
 
         pub fn clear(self: *Self) void {
+            if (!self.valid()) return;
             for (0..self.channel_count) |index|
                 @memset(self.channels[index], 0.0);
         }
 
         pub fn fill(self: *Self, value: Sample) !void {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             if (!std.math.isFinite(value)) return error.AudioBlockNonFiniteValue;
             for (0..self.channel_count) |index|
                 @memset(self.channels[index], value);
         }
 
         pub fn multiply(self: *Self, gain: Sample) !void {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             if (!std.math.isFinite(gain)) return error.AudioBlockNonFiniteValue;
             for (0..self.channel_count) |channel_index| {
                 for (self.channels[channel_index]) |sample| {
@@ -98,9 +109,7 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
             self: *Self,
             source: ConstAudioBlock(Sample, maximum_channels),
         ) !void {
-            if (self.channel_count != source.channel_count or
-                self.frame_count != source.frame_count)
-                return error.AudioBlockShapeMismatch;
+            try validateMatchingShape(self, source);
             for (0..self.channel_count) |index|
                 @memcpy(self.channels[index], source.channels[index]);
         }
@@ -216,6 +225,8 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
 const BinaryOperation = enum { sum, product };
 
 fn validateMatchingShape(destination: anytype, source: anytype) !void {
+    if (!destination.valid() or !source.valid())
+        return error.InvalidAudioBlockState;
     if (destination.channel_count != source.channel_count or
         destination.frame_count != source.frame_count)
         return error.AudioBlockShapeMismatch;
@@ -252,11 +263,13 @@ pub fn ConstAudioBlock(
         }
 
         pub fn channel(self: *const Self, index: usize) ![]const Sample {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             if (index >= self.channel_count) return error.AudioBlockChannelOutOfRange;
             return self.channels[index];
         }
 
         pub fn subBlock(self: *const Self, offset: usize, count: usize) !Self {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             if (offset > self.frame_count or count > self.frame_count - offset)
                 return error.AudioBlockFrameRangeOutOfBounds;
             var channels: [maximum_channels][]const Sample = undefined;
@@ -270,6 +283,7 @@ pub fn ConstAudioBlock(
         }
 
         pub fn minimum(self: *const Self) !Sample {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             if (self.frame_count == 0) return error.AudioBlockRequiresFrames;
             var result = std.math.floatMax(Sample);
             for (0..self.channel_count) |channel_index| {
@@ -283,6 +297,7 @@ pub fn ConstAudioBlock(
         }
 
         pub fn maximum(self: *const Self) !Sample {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             if (self.frame_count == 0) return error.AudioBlockRequiresFrames;
             var result = -std.math.floatMax(Sample);
             for (0..self.channel_count) |channel_index| {
@@ -296,6 +311,7 @@ pub fn ConstAudioBlock(
         }
 
         pub fn peakMagnitude(self: *const Self) !Sample {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             var result: Sample = 0.0;
             for (0..self.channel_count) |channel_index| {
                 for (self.channels[channel_index]) |sample| {
@@ -308,6 +324,7 @@ pub fn ConstAudioBlock(
         }
 
         pub fn sumSquares(self: *const Self) !Sample {
+            if (!self.valid()) return error.InvalidAudioBlockState;
             var result: Sample = 0.0;
             for (0..self.channel_count) |channel_index| {
                 for (self.channels[channel_index]) |sample| {
@@ -405,6 +422,79 @@ test "audio block construction and ranges reject invalid shapes" {
     try std.testing.expectError(
         error.AudioBlockChannelOutOfRange,
         block.channel(1),
+    );
+}
+
+test "audio block methods contain malformed retained channel counts" {
+    var samples = [_]f32{ 0.25, 0.5 };
+    var block = try AudioBlock(f32, 1).init(&.{samples[0..]});
+    const source = try ConstAudioBlock(f32, 1).init(&.{samples[0..]});
+    block.channel_count = std.math.maxInt(usize);
+    try std.testing.expect(!block.valid());
+    try std.testing.expectError(error.InvalidAudioBlockState, block.channel(0));
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        block.subBlock(0, 1),
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        block.subsetChannels(0, 1),
+    );
+    try std.testing.expectError(error.InvalidAudioBlockState, block.fill(1.0));
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        block.multiply(2.0),
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        block.copyFrom(source),
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        block.addFrom(source),
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        block.replaceWithSum(source, source),
+    );
+    block.clear();
+    try std.testing.expectEqualSlices(f32, &.{ 0.25, 0.5 }, &samples);
+    try std.testing.expect(!block.asConst().valid());
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        block.channel_count,
+    );
+
+    var const_block = source;
+    const_block.channel_count = std.math.maxInt(usize);
+    try std.testing.expect(!const_block.valid());
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        const_block.channel(0),
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        const_block.subBlock(0, 1),
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        const_block.minimum(),
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        const_block.maximum(),
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        const_block.peakMagnitude(),
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        const_block.sumSquares(),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        const_block.channel_count,
     );
 }
 

@@ -20,7 +20,8 @@ pub const Cascade = struct {
     order: usize = 0,
 
     pub fn active(self: *const Cascade) []const biquad.Coefficients {
-        return self.sections[0..@min(self.section_count, maximum_sections)];
+        if (!self.valid()) return &.{};
+        return self.sections[0..self.section_count];
     }
 
     pub fn magnitude(
@@ -33,9 +34,16 @@ pub const Cascade = struct {
     }
 
     pub fn valid(self: *const Cascade) bool {
-        return self.order >= 1 and
-            self.order <= maximum_sections * 2 and
-            self.section_count == (self.order + 1) / 2;
+        if (self.order < 1 or
+            self.order > maximum_sections * 2 or
+            self.section_count != (self.order + 1) / 2)
+        {
+            return false;
+        }
+        for (self.sections[0..self.section_count]) |section| {
+            if (!section.valid()) return false;
+        }
+        return true;
     }
 };
 
@@ -439,6 +447,24 @@ test "order-aware Butterworth design supports high-pass and rejects bounds" {
         error.InvalidButterworthDesign,
         FilterDesign.lowPassOrder(17, 48_000.0, 1_000.0),
     );
+}
+
+test "Butterworth cascade view rejects malformed retained state" {
+    var cascade = try Designer(f64).lowPassOrder(
+        3,
+        48_000.0,
+        1_000.0,
+    );
+    try std.testing.expectEqual(@as(usize, 2), cascade.active().len);
+
+    cascade.section_count = std.math.maxInt(usize);
+    try std.testing.expect(!cascade.valid());
+    try std.testing.expectEqual(@as(usize, 0), cascade.active().len);
+
+    cascade.section_count = 2;
+    cascade.sections[0].b0 = std.math.nan(f64);
+    try std.testing.expect(!cascade.valid());
+    try std.testing.expectEqual(@as(usize, 0), cascade.active().len);
 }
 
 test "Butterworth specifications derive low-pass order and cutoff" {

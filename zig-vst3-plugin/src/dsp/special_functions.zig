@@ -212,6 +212,11 @@ pub const JacobiFunction = enum {
     dc,
 };
 
+pub const JacobiInverseBranch = struct {
+    period_index: i32 = 0,
+    reflected: bool = false,
+};
+
 /// Evaluates the real Jacobi elliptic functions for parameter m in [0, 1].
 pub fn jacobiElliptic(
     argument: anytype,
@@ -408,6 +413,104 @@ pub fn complexJacobiElliptic(
     });
 }
 
+/// Evaluates the branch reached from u = 0 along the straight segment to u.
+/// A pole on that continuation path or exhausted bounded refinement is an error.
+pub fn complexParameterJacobiElliptic(
+    argument: anytype,
+    parameter: @TypeOf(argument),
+) !ComplexJacobiValues(@TypeOf(argument.re)) {
+    const Sample = @TypeOf(argument.re);
+    if (Sample != f32 and Sample != f64)
+        @compileError(
+            "complexParameterJacobiElliptic supports f32 and f64 values",
+        );
+    const Complex = std.math.complex.Complex(Sample);
+    if (@TypeOf(argument) != Complex)
+        @compileError(
+            "argument and parameter must be std.math.complex.Complex(Sample)",
+        );
+    if (!complexFinite(argument) or !complexFinite(parameter))
+        return error.InvalidComplexJacobiParameterArgument;
+    if (parameter.im == 0.0 and
+        parameter.re >= 0.0 and parameter.re <= 1.0)
+    {
+        return complexJacobiElliptic(argument, parameter.re);
+    }
+
+    var coarse_steps: usize = 8;
+    var coarse = try integrateComplexParameterJacobi(
+        Sample,
+        argument,
+        parameter,
+        coarse_steps,
+    );
+    while (coarse_steps < 16_384) {
+        const fine_steps = coarse_steps * 2;
+        const fine = try integrateComplexParameterJacobi(
+            Sample,
+            argument,
+            parameter,
+            fine_steps,
+        );
+        const difference = maximumComplexJacobiDifference(coarse, fine);
+        const scale = @max(maximumComplexJacobiMagnitude(fine), 1.0);
+        if (!std.math.isFinite(difference) or !std.math.isFinite(scale))
+            return error.ComplexJacobiParameterBranchSingularity;
+        const tolerance = 64.0 * std.math.floatEps(Sample) * scale;
+        if (difference <= tolerance) {
+            const result = extrapolateComplexJacobi(coarse, fine);
+            if (!complexFinite(result.sn) or
+                !complexFinite(result.cn) or
+                !complexFinite(result.dn))
+                return error.InvalidComplexJacobiParameterResult;
+            const one = Complex.init(1.0, 0.0);
+            const identity_tolerance =
+                1_024.0 * std.math.floatEps(Sample) * scale;
+            const circular_residual = result.sn.mul(result.sn)
+                .add(result.cn.mul(result.cn)).sub(one);
+            const parameter_residual = result.dn.mul(result.dn)
+                .add(parameter.mul(result.sn.mul(result.sn))).sub(one);
+            if (!complexFinite(circular_residual) or
+                !complexFinite(parameter_residual) or
+                complexMagnitude(circular_residual) > identity_tolerance or
+                complexMagnitude(parameter_residual) > identity_tolerance)
+                return error.ComplexJacobiParameterConvergenceFailure;
+            return result;
+        }
+        coarse = fine;
+        coarse_steps = fine_steps;
+    }
+    return error.ComplexJacobiParameterConvergenceFailure;
+}
+
+pub fn complexParameterJacobiEllipticFunction(
+    argument: anytype,
+    parameter: @TypeOf(argument),
+    function: JacobiFunction,
+) !@TypeOf(argument) {
+    const Sample = @TypeOf(argument.re);
+    const Complex = std.math.complex.Complex(Sample);
+    const values = try complexParameterJacobiElliptic(
+        argument,
+        parameter,
+    );
+    const one = Complex.init(1.0, 0.0);
+    return switch (function) {
+        .sn => values.sn,
+        .cn => values.cn,
+        .dn => values.dn,
+        .ns => checkedComplexJacobiRatio(Sample, one, values.sn),
+        .nc => checkedComplexJacobiRatio(Sample, one, values.cn),
+        .nd => checkedComplexJacobiRatio(Sample, one, values.dn),
+        .sc => checkedComplexJacobiRatio(Sample, values.sn, values.cn),
+        .sd => checkedComplexJacobiRatio(Sample, values.sn, values.dn),
+        .cs => checkedComplexJacobiRatio(Sample, values.cn, values.sn),
+        .cd => checkedComplexJacobiRatio(Sample, values.cn, values.dn),
+        .ds => checkedComplexJacobiRatio(Sample, values.dn, values.sn),
+        .dc => checkedComplexJacobiRatio(Sample, values.dn, values.cn),
+    };
+}
+
 /// Evaluate one of the twelve complex Jacobi functions for real parameter m.
 pub fn complexJacobiEllipticFunction(
     argument: anytype,
@@ -569,10 +672,151 @@ fn complexSquaredMagnitude(value: anytype) @TypeOf(value.re) {
     return value.re * value.re + value.im * value.im;
 }
 
+fn complexMagnitude(value: anytype) @TypeOf(value.re) {
+    return std.math.hypot(value.re, value.im);
+}
+
 fn complexScale(value: anytype, scalar: @TypeOf(value.re)) @TypeOf(value) {
     return .{
         .re = value.re * scalar,
         .im = value.im * scalar,
+    };
+}
+
+fn integrateComplexParameterJacobi(
+    comptime Sample: type,
+    argument: std.math.complex.Complex(Sample),
+    parameter: std.math.complex.Complex(Sample),
+    steps: usize,
+) !ComplexJacobiValues(Sample) {
+    const Complex = std.math.complex.Complex(Sample);
+    var state = ComplexJacobiValues(Sample){
+        .sn = Complex.init(0.0, 0.0),
+        .cn = Complex.init(1.0, 0.0),
+        .dn = Complex.init(1.0, 0.0),
+    };
+    const step = 1.0 / @as(Sample, @floatFromInt(steps));
+    for (0..steps) |_| {
+        const first = complexJacobiOdeDerivative(
+            Sample,
+            state,
+            argument,
+            parameter,
+        );
+        const second = complexJacobiOdeDerivative(
+            Sample,
+            addComplexJacobiScaled(state, first, step * 0.5),
+            argument,
+            parameter,
+        );
+        const third = complexJacobiOdeDerivative(
+            Sample,
+            addComplexJacobiScaled(state, second, step * 0.5),
+            argument,
+            parameter,
+        );
+        const fourth = complexJacobiOdeDerivative(
+            Sample,
+            addComplexJacobiScaled(state, third, step),
+            argument,
+            parameter,
+        );
+        state = advanceComplexJacobiRungeKutta(
+            state,
+            first,
+            second,
+            third,
+            fourth,
+            step,
+        );
+        if (!complexFinite(state.sn) or
+            !complexFinite(state.cn) or
+            !complexFinite(state.dn))
+            return error.ComplexJacobiParameterBranchSingularity;
+    }
+    return state;
+}
+
+fn complexJacobiOdeDerivative(
+    comptime Sample: type,
+    state: ComplexJacobiValues(Sample),
+    argument: std.math.complex.Complex(Sample),
+    parameter: std.math.complex.Complex(Sample),
+) ComplexJacobiValues(Sample) {
+    return .{
+        .sn = argument.mul(state.cn.mul(state.dn)),
+        .cn = complexScale(
+            argument.mul(state.sn.mul(state.dn)),
+            -1.0,
+        ),
+        .dn = complexScale(
+            argument.mul(parameter.mul(state.sn.mul(state.cn))),
+            -1.0,
+        ),
+    };
+}
+
+fn addComplexJacobiScaled(
+    base: anytype,
+    increment: @TypeOf(base),
+    scale: @TypeOf(base.sn.re),
+) @TypeOf(base) {
+    return .{
+        .sn = base.sn.add(complexScale(increment.sn, scale)),
+        .cn = base.cn.add(complexScale(increment.cn, scale)),
+        .dn = base.dn.add(complexScale(increment.dn, scale)),
+    };
+}
+
+fn advanceComplexJacobiRungeKutta(
+    base: anytype,
+    first: @TypeOf(base),
+    second: @TypeOf(base),
+    third: @TypeOf(base),
+    fourth: @TypeOf(base),
+    step: @TypeOf(base.sn.re),
+) @TypeOf(base) {
+    const scale = step / 6.0;
+    return .{
+        .sn = base.sn.add(complexScale(
+            first.sn.add(complexScale(second.sn, 2.0))
+                .add(complexScale(third.sn, 2.0)).add(fourth.sn),
+            scale,
+        )),
+        .cn = base.cn.add(complexScale(
+            first.cn.add(complexScale(second.cn, 2.0))
+                .add(complexScale(third.cn, 2.0)).add(fourth.cn),
+            scale,
+        )),
+        .dn = base.dn.add(complexScale(
+            first.dn.add(complexScale(second.dn, 2.0))
+                .add(complexScale(third.dn, 2.0)).add(fourth.dn),
+            scale,
+        )),
+    };
+}
+
+fn maximumComplexJacobiDifference(first: anytype, second: @TypeOf(first)) @TypeOf(first.sn.re) {
+    return @max(
+        complexMagnitude(first.sn.sub(second.sn)),
+        complexMagnitude(first.cn.sub(second.cn)),
+        complexMagnitude(first.dn.sub(second.dn)),
+    );
+}
+
+fn maximumComplexJacobiMagnitude(values: anytype) @TypeOf(values.sn.re) {
+    return @max(
+        complexMagnitude(values.sn),
+        complexMagnitude(values.cn),
+        complexMagnitude(values.dn),
+    );
+}
+
+fn extrapolateComplexJacobi(coarse: anytype, fine: @TypeOf(coarse)) @TypeOf(coarse) {
+    return .{
+        .sn = fine.sn.add(complexScale(fine.sn.sub(coarse.sn), 1.0 / 15.0)),
+        .cn = fine.cn.add(complexScale(fine.cn.sub(coarse.cn), 1.0 / 15.0)),
+        .dn = fine.dn.add(complexScale(fine.dn.sub(coarse.dn), 1.0 / 15.0)),
     };
 }
 
@@ -666,6 +910,84 @@ pub fn inverseJacobiDn(
         std.math.asin(@sqrt(sine_squared)),
         parameter,
     );
+}
+
+/// Return a real branch of inverse sn.
+///
+/// Each period contributes the roots `4 n K + u` and
+/// `4 n K + 2 K - u`, where `u` is the principal inverse.
+pub fn inverseJacobiSnBranch(
+    value: anytype,
+    parameter: @TypeOf(value),
+    branch: JacobiInverseBranch,
+) !@TypeOf(value) {
+    const Sample = @TypeOf(value);
+    const principal = try inverseJacobiSn(value, parameter);
+    if (parameter == 1.0) {
+        if (branch.period_index != 0 or branch.reflected)
+            return error.DegenerateJacobiInverseBranch;
+        return principal;
+    }
+    const quarter_period =
+        completeEllipticKFromParameter(Sample, parameter);
+    const period_shift =
+        4.0 * quarter_period *
+        @as(Sample, @floatFromInt(branch.period_index));
+    const local = if (branch.reflected)
+        2.0 * quarter_period - principal
+    else
+        principal;
+    return checkedInverseJacobiBranchResult(period_shift + local);
+}
+
+/// Return a real branch of inverse cn.
+///
+/// Each period contributes the roots `4 n K + u` and `4 n K - u`.
+pub fn inverseJacobiCnBranch(
+    value: anytype,
+    parameter: @TypeOf(value),
+    branch: JacobiInverseBranch,
+) !@TypeOf(value) {
+    const Sample = @TypeOf(value);
+    const principal = try inverseJacobiCn(value, parameter);
+    if (parameter == 1.0 and branch.period_index != 0)
+        return error.DegenerateJacobiInverseBranch;
+    const local = if (branch.reflected) -principal else principal;
+    if (parameter == 1.0) return local;
+    const quarter_period =
+        completeEllipticKFromParameter(Sample, parameter);
+    const period_shift =
+        4.0 * quarter_period *
+        @as(Sample, @floatFromInt(branch.period_index));
+    return checkedInverseJacobiBranchResult(period_shift + local);
+}
+
+/// Return a real branch of inverse dn.
+///
+/// Each period contributes the roots `2 n K + u` and `2 n K - u`.
+pub fn inverseJacobiDnBranch(
+    value: anytype,
+    parameter: @TypeOf(value),
+    branch: JacobiInverseBranch,
+) !@TypeOf(value) {
+    const Sample = @TypeOf(value);
+    const principal = try inverseJacobiDn(value, parameter);
+    if (parameter == 1.0 and branch.period_index != 0)
+        return error.DegenerateJacobiInverseBranch;
+    const local = if (branch.reflected) -principal else principal;
+    if (parameter == 1.0) return local;
+    const quarter_period =
+        completeEllipticKFromParameter(Sample, parameter);
+    const period_shift =
+        2.0 * quarter_period *
+        @as(Sample, @floatFromInt(branch.period_index));
+    return checkedInverseJacobiBranchResult(period_shift + local);
+}
+
+fn checkedInverseJacobiBranchResult(value: anytype) !@TypeOf(value) {
+    if (!std.math.isFinite(value))
+        return error.InvalidInverseJacobiResult;
+    return value;
 }
 
 fn validateInverseJacobiInput(
@@ -1159,6 +1481,230 @@ test "complex Jacobi elliptic functions match independent ODE vectors" {
     }
 }
 
+test "complex-parameter Jacobi functions match independent ODE vectors" {
+    const Complex = std.math.complex.Complex(f64);
+    const Reference = struct {
+        argument: Complex,
+        parameter: Complex,
+        values: ComplexJacobiValues(f64),
+    };
+    const references = [_]Reference{
+        .{
+            .argument = Complex.init(0.7, -0.35),
+            .parameter = Complex.init(0.25, 0.2),
+            .values = .{
+                .sn = Complex.init(
+                    0.665_339_136_284_985_9,
+                    -0.266_281_894_820_936_6,
+                ),
+                .cn = Complex.init(
+                    0.821_430_805_362_076_1,
+                    0.215_681_911_065_412_6,
+                ),
+                .dn = Complex.init(
+                    0.914_467_549_274_894,
+                    0.007_780_406_867_867_052,
+                ),
+            },
+        },
+        .{
+            .argument = Complex.init(-1.1, 0.45),
+            .parameter = Complex.init(0.6, -0.3),
+            .values = .{
+                .sn = Complex.init(
+                    -0.922_083_590_625_726_9,
+                    0.144_899_298_432_499_3,
+                ),
+                .cn = Complex.init(
+                    0.493_900_702_934_968_85,
+                    0.270_518_475_847_122_9,
+                ),
+                .dn = Complex.init(
+                    0.804_527_059_369_794_7,
+                    0.254_251_125_622_993_23,
+                ),
+            },
+        },
+        .{
+            .argument = Complex.init(0.2, 0.8),
+            .parameter = Complex.init(-0.4, 0.25),
+            .values = .{
+                .sn = Complex.init(
+                    0.201_093_309_928_522_03,
+                    0.862_589_397_423_541,
+                ),
+                .cn = Complex.init(
+                    1.311_908_593_931_351,
+                    -0.132_220_306_993_599_3,
+                ),
+                .dn = Complex.init(
+                    0.913_745_493_720_091_3,
+                    0.172_189_222_877_025_12,
+                ),
+            },
+        },
+        .{
+            .argument = Complex.init(1.35, -0.2),
+            .parameter = Complex.init(1.2, 0.15),
+            .values = .{
+                .sn = Complex.init(
+                    0.847_794_932_626_524_7,
+                    -0.062_811_720_141_308_56,
+                ),
+                .cn = Complex.init(
+                    0.542_962_180_783_963_5,
+                    0.098_075_814_356_845_26,
+                ),
+                .dn = Complex.init(
+                    0.356_489_505_248_061_94,
+                    0.028_867_412_176_018_976,
+                ),
+            },
+        },
+    };
+    for (references) |reference| {
+        const actual = try complexParameterJacobiElliptic(
+            reference.argument,
+            reference.parameter,
+        );
+        try expectComplexApproxEq(reference.values.sn, actual.sn, 2.0e-12);
+        try expectComplexApproxEq(reference.values.cn, actual.cn, 2.0e-12);
+        try expectComplexApproxEq(reference.values.dn, actual.dn, 2.0e-12);
+    }
+}
+
+test "complex-parameter Jacobi functions retain real paths and identities" {
+    const Complex = std.math.complex.Complex(f64);
+    const argument = Complex.init(0.65, -0.4);
+    for ([_]f64{ 0.0, 0.2, 0.5, 0.9, 1.0 }) |parameter| {
+        const expected = try complexJacobiElliptic(argument, parameter);
+        const actual = try complexParameterJacobiElliptic(
+            argument,
+            Complex.init(parameter, 0.0),
+        );
+        try std.testing.expectEqualDeep(expected, actual);
+    }
+
+    const parameter = Complex.init(0.35, -0.2);
+    const values = try complexParameterJacobiElliptic(
+        argument,
+        parameter,
+    );
+    const one = Complex.init(1.0, 0.0);
+    try expectComplexApproxEq(
+        one,
+        values.sn.mul(values.sn).add(values.cn.mul(values.cn)),
+        2.0e-13,
+    );
+    try expectComplexApproxEq(
+        one,
+        values.dn.mul(values.dn)
+            .add(parameter.mul(values.sn.mul(values.sn))),
+        2.0e-13,
+    );
+    const conjugate = try complexParameterJacobiElliptic(
+        argument.conjugate(),
+        parameter.conjugate(),
+    );
+    try expectComplexApproxEq(values.sn.conjugate(), conjugate.sn, 3.0e-13);
+    try expectComplexApproxEq(values.cn.conjugate(), conjugate.cn, 3.0e-13);
+    try expectComplexApproxEq(values.dn.conjugate(), conjugate.dn, 3.0e-13);
+}
+
+test "complex-parameter Jacobi selector covers quotients and poles" {
+    const Complex = std.math.complex.Complex(f64);
+    const argument = Complex.init(0.7, -0.35);
+    const parameter = Complex.init(0.25, 0.2);
+    const values = try complexParameterJacobiElliptic(
+        argument,
+        parameter,
+    );
+    const one = Complex.init(1.0, 0.0);
+    const expected = [_]Complex{
+        values.sn,
+        values.cn,
+        values.dn,
+        one.div(values.sn),
+        one.div(values.cn),
+        one.div(values.dn),
+        values.sn.div(values.cn),
+        values.sn.div(values.dn),
+        values.cn.div(values.sn),
+        values.cn.div(values.dn),
+        values.dn.div(values.sn),
+        values.dn.div(values.cn),
+    };
+    inline for (std.meta.fields(JacobiFunction), 0..) |field, index| {
+        const function: JacobiFunction = @enumFromInt(field.value);
+        try expectComplexApproxEq(
+            expected[index],
+            try complexParameterJacobiEllipticFunction(
+                argument,
+                parameter,
+                function,
+            ),
+            2.0e-13,
+        );
+    }
+
+    inline for (.{ JacobiFunction.ns, .cs, .ds }) |function| {
+        try std.testing.expectError(
+            error.ComplexJacobiPole,
+            complexParameterJacobiEllipticFunction(
+                Complex.init(0.0, 0.0),
+                parameter,
+                function,
+            ),
+        );
+    }
+}
+
+test "complex-parameter Jacobi functions contain invalid and f32 inputs" {
+    const Complex32 = std.math.complex.Complex(f32);
+    const single = try complexParameterJacobiElliptic(
+        Complex32.init(0.7, -0.35),
+        Complex32.init(0.25, 0.2),
+    );
+    try expectComplexApproxEq(
+        Complex32.init(0.665_339_1, -0.266_281_9),
+        single.sn,
+        3.0e-5,
+    );
+    try expectComplexApproxEq(
+        Complex32.init(0.821_430_8, 0.215_681_91),
+        single.cn,
+        3.0e-5,
+    );
+    try expectComplexApproxEq(
+        Complex32.init(0.914_467_6, 0.007_780_407),
+        single.dn,
+        3.0e-5,
+    );
+
+    const Complex64 = std.math.complex.Complex(f64);
+    try std.testing.expectError(
+        error.InvalidComplexJacobiParameterArgument,
+        complexParameterJacobiElliptic(
+            Complex64.init(std.math.nan(f64), 0.0),
+            Complex64.init(0.25, 0.2),
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidComplexJacobiParameterArgument,
+        complexParameterJacobiElliptic(
+            Complex64.init(0.5, 0.0),
+            Complex64.init(0.25, std.math.inf(f64)),
+        ),
+    );
+    try std.testing.expectError(
+        error.ComplexJacobiParameterBranchSingularity,
+        complexParameterJacobiElliptic(
+            Complex64.init(std.math.floatMax(f64), 1.0),
+            Complex64.init(0.25, 0.2),
+        ),
+    );
+}
+
 test "complex Jacobi cd and inverse sn match independent ODE vectors" {
     const Complex = std.math.complex.Complex(f64);
     const first_argument = Complex.init(0.25, 0.5);
@@ -1508,6 +2054,142 @@ test "principal inverse Jacobi functions round trip densely" {
             }
         }
     }
+}
+
+test "inverse Jacobi branch selection covers real periodic roots" {
+    const parameter: f64 = 0.5;
+    const quarter_period =
+        completeEllipticKFromParameter(f64, parameter);
+
+    const sn_principal =
+        try inverseJacobiSn(@as(f64, 0.35), parameter);
+    const sn_periodic = try inverseJacobiSnBranch(
+        @as(f64, 0.35),
+        parameter,
+        .{ .period_index = 2 },
+    );
+    const sn_reflected = try inverseJacobiSnBranch(
+        @as(f64, 0.35),
+        parameter,
+        .{ .period_index = -1, .reflected = true },
+    );
+    try std.testing.expectApproxEqAbs(
+        8.0 * quarter_period + sn_principal,
+        sn_periodic,
+        2.0e-14,
+    );
+    try std.testing.expectApproxEqAbs(
+        -2.0 * quarter_period - sn_principal,
+        sn_reflected,
+        2.0e-14,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.35),
+        (try jacobiElliptic(sn_periodic, parameter)).sn,
+        2.0e-14,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.35),
+        (try jacobiElliptic(sn_reflected, parameter)).sn,
+        2.0e-14,
+    );
+
+    const cn_principal =
+        try inverseJacobiCn(@as(f64, -0.35), parameter);
+    const cn_periodic = try inverseJacobiCnBranch(
+        @as(f64, -0.35),
+        parameter,
+        .{ .period_index = 1, .reflected = true },
+    );
+    try std.testing.expectApproxEqAbs(
+        4.0 * quarter_period - cn_principal,
+        cn_periodic,
+        2.0e-14,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, -0.35),
+        (try jacobiElliptic(cn_periodic, parameter)).cn,
+        2.0e-14,
+    );
+
+    const dn_principal =
+        try inverseJacobiDn(@as(f64, 0.85), parameter);
+    const dn_periodic = try inverseJacobiDnBranch(
+        @as(f64, 0.85),
+        parameter,
+        .{ .period_index = -2, .reflected = true },
+    );
+    try std.testing.expectApproxEqAbs(
+        -4.0 * quarter_period - dn_principal,
+        dn_periodic,
+        2.0e-14,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.85),
+        (try jacobiElliptic(dn_periodic, parameter)).dn,
+        2.0e-14,
+    );
+}
+
+test "inverse Jacobi branches contain degenerate real periods" {
+    try std.testing.expectError(
+        error.DegenerateJacobiInverseBranch,
+        inverseJacobiSnBranch(
+            @as(f64, 0.5),
+            1.0,
+            .{ .reflected = true },
+        ),
+    );
+    try std.testing.expectError(
+        error.DegenerateJacobiInverseBranch,
+        inverseJacobiCnBranch(
+            @as(f64, 0.5),
+            1.0,
+            .{ .period_index = 1 },
+        ),
+    );
+    try std.testing.expectError(
+        error.DegenerateJacobiInverseBranch,
+        inverseJacobiDnBranch(
+            @as(f64, 0.5),
+            1.0,
+            .{ .period_index = -1 },
+        ),
+    );
+
+    const reflected_cn = try inverseJacobiCnBranch(
+        @as(f64, 0.5),
+        1.0,
+        .{ .reflected = true },
+    );
+    const reflected_dn = try inverseJacobiDnBranch(
+        @as(f64, 0.5),
+        1.0,
+        .{ .reflected = true },
+    );
+    try std.testing.expect(reflected_cn < 0.0);
+    try std.testing.expect(reflected_dn < 0.0);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.5),
+        (try jacobiElliptic(reflected_cn, 1.0)).cn,
+        2.0e-14,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.5),
+        (try jacobiElliptic(reflected_dn, 1.0)).dn,
+        2.0e-14,
+    );
+
+    const f32_branch = try inverseJacobiSnBranch(
+        @as(f32, -0.25),
+        0.75,
+        .{ .period_index = 1, .reflected = true },
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f32, -0.25),
+        (try jacobiElliptic(f32_branch, 0.75)).sn,
+        0.000_002,
+    );
 }
 
 fn expectComplexApproxEq(

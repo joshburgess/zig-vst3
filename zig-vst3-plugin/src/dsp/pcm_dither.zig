@@ -41,12 +41,25 @@ pub const PcmDither = struct {
         @memset(&self.quantization_error, 0.0);
     }
 
+    pub fn validate(self: *const PcmDither) !void {
+        try validateConfig(self.config);
+        for (self.quantization_error[0..self.config.channel_count]) |value| {
+            if (!std.math.isFinite(value) or value < -1.0 or value > 1.0)
+                return error.InvalidDitherErrorState;
+        }
+    }
+
+    pub fn valid(self: *const PcmDither) bool {
+        self.validate() catch return false;
+        return true;
+    }
+
     pub fn channelCount(self: *const PcmDither) usize {
-        return self.config.channel_count;
+        return if (self.valid()) self.config.channel_count else 0;
     }
 
     pub fn bitsPerSample(self: *const PcmDither) u6 {
-        return self.config.bits_per_sample;
+        return if (self.valid()) self.config.bits_per_sample else 0;
     }
 
     pub fn quantize(
@@ -54,8 +67,13 @@ pub const PcmDither = struct {
         sample: f64,
         channel: usize,
     ) !i32 {
+        try validateConfig(self.config);
         if (channel >= self.config.channel_count)
             return error.InvalidDitherChannel;
+        const previous_error = self.quantization_error[channel];
+        if (!std.math.isFinite(previous_error) or
+            previous_error < -1.0 or previous_error > 1.0)
+            return error.InvalidDitherErrorState;
         if (!std.math.isFinite(sample))
             return error.InvalidDitherSample;
 
@@ -63,15 +81,15 @@ pub const PcmDither = struct {
         const minimum = -scale;
         const maximum = scale - 1.0;
         const feedback = switch (self.config.mode) {
-            .noise_shaped => self.quantization_error[channel] *
-                self.config.noise_shape,
+            .noise_shaped => previous_error * self.config.noise_shape,
             .none, .tpdf => 0.0,
         };
         const noise = switch (self.config.mode) {
             .none => 0.0,
             .tpdf, .noise_shaped => self.nextTpdfLsb(channel),
         };
-        const shaped = sample * scale + feedback + noise;
+        const accepted = std.math.clamp(sample, -1.0, 1.0);
+        const shaped = accepted * scale + feedback + noise;
         const quantized = std.math.clamp(@round(shaped), minimum, maximum);
         if (self.config.mode == .noise_shaped) {
             self.quantization_error[channel] =
@@ -85,6 +103,7 @@ pub const PcmDither = struct {
         samples: []const f64,
         destination: []i32,
     ) !void {
+        try self.validate();
         if (samples.len != destination.len)
             return error.MismatchedDitherBufferLength;
         if (samples.len % self.config.channel_count != 0)
@@ -263,5 +282,93 @@ test "noise-shaped PCM error remains bounded across long input" {
         try std.testing.expect(
             @abs(dither.quantization_error[0]) <= 1.0,
         );
+    }
+}
+
+test "PCM dither rejects malformed retained state without mutation" {
+    const config = Config{
+        .channel_count = 1,
+        .bits_per_sample = 16,
+        .mode = .none,
+    };
+    var dither = try PcmDither.init(config);
+    const initial_random_state = dither.random_state;
+    const initial_error = dither.quantization_error;
+    var destination = [_]i32{123};
+
+    dither.config.channel_count = 0;
+    try std.testing.expect(!dither.valid());
+    try std.testing.expectEqual(@as(usize, 0), dither.channelCount());
+    try std.testing.expectEqual(@as(u6, 0), dither.bitsPerSample());
+    try std.testing.expectError(
+        error.InvalidDitherChannelCount,
+        dither.quantize(0.0, 0),
+    );
+    try std.testing.expectError(
+        error.InvalidDitherChannelCount,
+        dither.quantizeInterleaved(&.{0.0}, &destination),
+    );
+    try std.testing.expectEqual(@as(i32, 123), destination[0]);
+    try std.testing.expectEqual(initial_random_state, dither.random_state);
+    try std.testing.expectEqual(initial_error, dither.quantization_error);
+
+    dither.config = config;
+    dither.config.channel_count = maximum_channels + 1;
+    try std.testing.expectError(
+        error.InvalidDitherChannelCount,
+        dither.validate(),
+    );
+
+    dither.config = config;
+    dither.config.bits_per_sample = 1;
+    try std.testing.expectError(
+        error.InvalidDitherBitDepth,
+        dither.validate(),
+    );
+
+    dither.config = config;
+    dither.quantization_error[0] = std.math.nan(f64);
+    try std.testing.expectError(
+        error.InvalidDitherErrorState,
+        dither.validate(),
+    );
+}
+
+test "PCM dither saturates extreme finite samples" {
+    var dither = try PcmDither.init(.{
+        .channel_count = 1,
+        .bits_per_sample = 32,
+        .mode = .none,
+    });
+    try std.testing.expectEqual(
+        std.math.maxInt(i32),
+        try dither.quantize(std.math.floatMax(f64), 0),
+    );
+    try std.testing.expectEqual(
+        std.math.minInt(i32),
+        try dither.quantize(-std.math.floatMax(f64), 0),
+    );
+}
+
+test "PCM dither contains deterministic floating-point bit patterns" {
+    var dither = try PcmDither.init(.{
+        .channel_count = 1,
+        .bits_per_sample = 16,
+        .mode = .none,
+    });
+    for (0..4_096) |index| {
+        const bits = @as(u64, @intCast(index)) *%
+            0x9e37_79b9_7f4a_7c15;
+        const sample: f64 = @bitCast(bits);
+        if (!std.math.isFinite(sample)) {
+            try std.testing.expectError(
+                error.InvalidDitherSample,
+                dither.quantize(sample, 0),
+            );
+            continue;
+        }
+        const quantized = try dither.quantize(sample, 0);
+        try std.testing.expect(quantized >= -32_768);
+        try std.testing.expect(quantized <= 32_767);
     }
 }

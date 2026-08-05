@@ -62,12 +62,10 @@ pub fn LogRampedValue(comptime Sample: type) type {
             }
             if (self.remaining == 0) return self.current_value;
             self.remaining -= 1;
-            if (self.remaining == 0) {
-                self.current_value = self.target_value;
-                self.ratio = 1.0;
-            } else {
-                self.current_value *= self.ratio;
-            }
+            if (self.remaining == 0) return self.settle();
+            const next_value = self.current_value * self.ratio;
+            if (!valueValid(next_value)) return self.settle();
+            self.current_value = next_value;
             return self.current_value;
         }
 
@@ -75,18 +73,15 @@ pub fn LogRampedValue(comptime Sample: type) type {
             const advanced = @min(count, self.remaining);
             if (advanced == 0) return self.nextWithoutAdvance();
             if (!self.valid()) return self.next();
-            if (advanced == self.remaining) {
-                self.current_value = self.target_value;
-                self.ratio = 1.0;
-                self.remaining = 0;
-            } else {
-                self.current_value *= std.math.pow(
-                    Sample,
-                    self.ratio,
-                    @floatFromInt(advanced),
-                );
-                self.remaining -= advanced;
-            }
+            if (advanced == self.remaining) return self.settle();
+            const next_value = self.current_value * std.math.pow(
+                Sample,
+                self.ratio,
+                @floatFromInt(advanced),
+            );
+            if (!valueValid(next_value)) return self.settle();
+            self.current_value = next_value;
+            self.remaining -= advanced;
             return self.current_value;
         }
 
@@ -111,6 +106,13 @@ pub fn LogRampedValue(comptime Sample: type) type {
 
         fn nextWithoutAdvance(self: *const Self) Sample {
             return if (self.valid()) self.current_value else 1.0;
+        }
+
+        fn settle(self: *Self) Sample {
+            self.current_value = self.target_value;
+            self.ratio = 1.0;
+            self.remaining = 0;
+            return self.current_value;
         }
 
         fn validateValue(value: Sample) !void {
@@ -159,4 +161,24 @@ test "log ramp rejects invalid values and repairs hostile state" {
     ramp.ratio = std.math.nan(f32);
     try std.testing.expectEqual(@as(f32, 1.0), ramp.next());
     try std.testing.expect(ramp.valid());
+
+    ramp = try LogRampedValue(f32).init(std.math.floatMax(f32));
+    ramp.ratio = 2.0;
+    ramp.remaining = 2;
+    try std.testing.expectEqual(
+        std.math.floatMax(f32),
+        ramp.next(),
+    );
+    try std.testing.expect(ramp.valid());
+    try std.testing.expect(!ramp.smoothing());
+
+    ramp = try LogRampedValue(f32).init(1.0);
+    ramp.ratio = std.math.floatMin(f32);
+    ramp.remaining = 3;
+    try std.testing.expectEqual(
+        @as(f32, 1.0),
+        ramp.skip(2),
+    );
+    try std.testing.expect(ramp.valid());
+    try std.testing.expect(!ramp.smoothing());
 }

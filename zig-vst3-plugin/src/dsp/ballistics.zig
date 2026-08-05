@@ -44,10 +44,13 @@ pub fn BallisticsFilter(comptime Sample: type) type {
         pub fn reset(self: *Self, value: Sample) !void {
             if (!std.math.isFinite(value) or value < 0.0)
                 return error.InvalidBallisticsResetValue;
-            self.envelope = switch (self.config.mode) {
+            const envelope = switch (self.config.mode) {
                 .peak => value,
                 .rms => value * value,
             };
+            if (!std.math.isFinite(envelope))
+                return error.InvalidBallisticsResetValue;
+            self.envelope = envelope;
         }
 
         pub fn processSample(self: *Self, input: Sample) Sample {
@@ -210,4 +213,12 @@ test "ballistics configuration is transactional and hostile state resets" {
     filter.envelope = std.math.nan(f32);
     try std.testing.expectEqual(@as(f32, 0.0), filter.processSample(1.0));
     try std.testing.expect(filter.valid());
+
+    filter.config.mode = .rms;
+    const before_reset = filter.envelope;
+    try std.testing.expectError(
+        error.InvalidBallisticsResetValue,
+        filter.reset(std.math.floatMax(f32)),
+    );
+    try std.testing.expectEqual(before_reset, filter.envelope);
 }

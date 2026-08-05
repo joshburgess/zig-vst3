@@ -93,9 +93,16 @@ pub fn Compressor(comptime Sample: type) type {
                 self.reset();
                 return @floatCast(finite_input);
             }
-            return @floatCast(
-                finite_input * self.advanceGain(@abs(finite_input)),
-            );
+            const output =
+                finite_input * self.advanceGain(@abs(finite_input));
+            const converted: Sample = @floatCast(output);
+            if (!std.math.isFinite(output) or
+                !std.math.isFinite(converted))
+            {
+                self.reset();
+                return 0.0;
+            }
+            return converted;
         }
 
         pub fn processLinkedFrame(
@@ -134,6 +141,21 @@ pub fn Compressor(comptime Sample: type) type {
                 return;
             }
             const gain = self.advanceGain(level);
+            for (samples) |sample| {
+                const finite: f64 = if (std.math.isFinite(sample))
+                    @floatCast(sample)
+                else
+                    0.0;
+                const output = finite * gain;
+                const converted: Sample = @floatCast(output);
+                if (!std.math.isFinite(output) or
+                    !std.math.isFinite(converted))
+                {
+                    self.reset();
+                    @memset(samples, 0.0);
+                    return;
+                }
+            }
             for (samples) |*sample| {
                 const finite: f64 = if (std.math.isFinite(sample.*))
                     @floatCast(sample.*)
@@ -175,7 +197,11 @@ pub fn Compressor(comptime Sample: type) type {
         }
 
         pub fn gainReductionDb(self: *const Self) f64 {
-            return self.gain_reduction_db;
+            return if (std.math.isFinite(self.gain_reduction_db) and
+                self.gain_reduction_db <= 0.0)
+                self.gain_reduction_db
+            else
+                0.0;
         }
 
         pub fn linearGain(self: *const Self) f64 {
@@ -318,7 +344,11 @@ pub fn NoiseGate(comptime Sample: type) type {
         }
 
         pub fn gainReductionDb(self: *const Self) f64 {
-            return self.gain_reduction_db;
+            return if (std.math.isFinite(self.gain_reduction_db) and
+                self.gain_reduction_db <= 0.0)
+                self.gain_reduction_db
+            else
+                0.0;
         }
 
         pub fn valid(self: *const Self) bool {
@@ -430,6 +460,10 @@ pub fn Limiter(comptime Sample: type) type {
         }
 
         pub fn gainReductionDb(self: *const Self) f64 {
+            if (!std.math.isFinite(self.gain) or
+                self.gain < 0.0 or
+                self.gain > 1.0)
+                return 0.0;
             return if (self.gain > 0.0)
                 20.0 * std.math.log10(self.gain)
             else
@@ -525,7 +559,12 @@ pub fn LookaheadLimiter(
         }
 
         pub fn latencySamples(self: *const Self) usize {
-            return self.lookahead_samples;
+            self.config.validate() catch return 0;
+            const expected = lookaheadSamples(self.config) catch return 0;
+            return if (expected == self.lookahead_samples)
+                self.lookahead_samples
+            else
+                0;
         }
 
         pub fn processSample(self: *Self, input: Sample) Sample {
@@ -543,8 +582,13 @@ pub fn LookaheadLimiter(
             if (self.filled < window) return 0.0;
 
             var peak: f64 = 0.0;
-            for (self.delay[0..window]) |sample|
+            for (self.delay[0..window]) |sample| {
+                if (!std.math.isFinite(sample)) {
+                    self.reset();
+                    return 0.0;
+                }
                 peak = @max(peak, @abs(@as(f64, @floatCast(sample))));
+            }
             const required_gain = if (peak > self.ceiling)
                 self.ceiling / peak
             else
@@ -564,6 +608,10 @@ pub fn LookaheadLimiter(
         }
 
         pub fn gainReductionDb(self: *const Self) f64 {
+            if (!std.math.isFinite(self.gain) or
+                self.gain < 0.0 or
+                self.gain > 1.0)
+                return 0.0;
             return if (self.gain > 0.0)
                 20.0 * std.math.log10(self.gain)
             else
@@ -578,6 +626,7 @@ pub fn LookaheadLimiter(
                 self.lookahead_samples <= maximum_lookahead_samples and
                 self.write_index <= self.lookahead_samples and
                 self.filled <= self.lookahead_samples + 1 and
+                self.delayStateValid() and
                 std.math.isFinite(self.ceiling) and
                 self.ceiling > 0.0 and
                 self.ceiling <= 1.0 and
@@ -585,6 +634,14 @@ pub fn LookaheadLimiter(
                 std.math.isFinite(self.gain) and
                 self.gain > 0.0 and
                 self.gain <= 1.0;
+        }
+
+        fn delayStateValid(self: *const Self) bool {
+            const window = self.lookahead_samples + 1;
+            if (self.filled < window)
+                return self.write_index == self.filled;
+            const next_output = (self.write_index + 1) % window;
+            return std.math.isFinite(self.delay[next_output]);
         }
 
         fn lookaheadSamples(
@@ -663,7 +720,12 @@ pub fn LookaheadCompressor(
         }
 
         pub fn latencySamples(self: *const Self) usize {
-            return self.lookahead_samples;
+            self.config.validate() catch return 0;
+            const expected = lookaheadSamples(self.config) catch return 0;
+            return if (expected == self.lookahead_samples)
+                self.lookahead_samples
+            else
+                0;
         }
 
         pub fn processSample(self: *Self, input: Sample) Sample {
@@ -682,11 +744,14 @@ pub fn LookaheadCompressor(
             const output: f64 =
                 @as(f64, @floatCast(delayed)) *
                 self.detector.linearGain();
-            if (!std.math.isFinite(output)) {
+            const converted: Sample = @floatCast(output);
+            if (!std.math.isFinite(output) or
+                !std.math.isFinite(converted))
+            {
                 self.reset();
                 return 0.0;
             }
-            return @floatCast(output);
+            return converted;
         }
 
         pub fn process(self: *Self, samples: []Sample) void {
@@ -703,11 +768,20 @@ pub fn LookaheadCompressor(
             return expected == self.lookahead_samples and
                 self.write_index <= self.lookahead_samples and
                 self.filled <= self.lookahead_samples + 1 and
+                self.delayStateValid() and
                 self.detector.valid() and
                 std.meta.eql(
                     self.detector.config,
                     self.config.compressor,
                 );
+        }
+
+        fn delayStateValid(self: *const Self) bool {
+            const window = self.lookahead_samples + 1;
+            if (self.filled < window)
+                return self.write_index == self.filled;
+            const next_output = (self.write_index + 1) % window;
+            return std.math.isFinite(self.delay[next_output]);
         }
 
         fn lookaheadSamples(
@@ -821,6 +895,59 @@ test "linked compressor applies one detector gain to every channel" {
     try std.testing.expect(compressor.valid());
 }
 
+test "compressor contains makeup gain output overflow" {
+    inline for (.{ f32, f64 }) |Sample| {
+        var compressor = try Compressor(Sample).init(.{
+            .sample_rate = 48_000.0,
+            .threshold_db = 24.0,
+            .ratio = 1.0,
+            .attack_ms = 0.01,
+            .release_ms = 0.01,
+            .makeup_db = 60.0,
+        });
+        try std.testing.expectEqual(
+            @as(Sample, 0.0),
+            compressor.processSample(std.math.floatMax(Sample)),
+        );
+        try std.testing.expect(compressor.valid());
+
+        var frame = [2]Sample{
+            std.math.floatMax(Sample),
+            std.math.floatMax(Sample) / 2.0,
+        };
+        try compressor.processLinkedFrame(&frame);
+        try std.testing.expectEqualSlices(
+            Sample,
+            &.{ 0.0, 0.0 },
+            &frame,
+        );
+        try std.testing.expect(compressor.valid());
+
+        compressor.gain_reduction_db = std.math.nan(f64);
+        try std.testing.expectEqual(
+            @as(f64, 0.0),
+            compressor.gainReductionDb(),
+        );
+    }
+
+    var lookahead = try LookaheadCompressor(f32, 2).init(.{
+        .compressor = .{
+            .sample_rate = 48_000.0,
+            .threshold_db = 24.0,
+            .ratio = 1.0,
+            .attack_ms = 0.01,
+            .release_ms = 0.01,
+            .makeup_db = 60.0,
+        },
+        .lookahead_ms = 0.0,
+    });
+    try std.testing.expectEqual(
+        @as(f32, 0.0),
+        lookahead.processSample(std.math.floatMax(f32)),
+    );
+    try std.testing.expect(lookahead.valid());
+}
+
 test "noise gate applies its downward expansion curve" {
     var gate = try NoiseGate(f64).init(.{
         .sample_rate = 48_000.0,
@@ -859,6 +986,11 @@ test "noise gate rejects invalid configuration and hostile state" {
         gate.processSample(0.5),
     );
     try std.testing.expect(gate.valid());
+    gate.gain_reduction_db = std.math.nan(f64);
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        gate.gainReductionDb(),
+    );
 }
 
 test "limiter enforces its peak ceiling and releases" {
@@ -896,6 +1028,7 @@ test "limiter rejects invalid configuration and non-finite input" {
         limiter.processSample(std.math.nan(f32)),
     );
     limiter.gain = std.math.inf(f64);
+    try std.testing.expectEqual(@as(f64, 0.0), limiter.gainReductionDb());
     try std.testing.expectEqual(
         @as(f32, 0.5),
         limiter.processSample(0.5),
@@ -1015,6 +1148,45 @@ test "lookahead limiter is partition independent and rejects capacity" {
     );
 }
 
+test "lookahead limiter contains corrupt retained delay state" {
+    const Processor = LookaheadLimiter(f32, 8);
+    const config = LookaheadLimiterConfig{
+        .sample_rate = 1_000.0,
+        .lookahead_ms = 3.0,
+    };
+
+    var cursor = try Processor.init(config);
+    _ = cursor.processSample(0.1);
+    cursor.write_index = 0;
+    try std.testing.expect(!cursor.valid());
+    try std.testing.expectEqual(@as(f32, 0.25), cursor.processSample(0.25));
+    try std.testing.expect(cursor.valid());
+
+    cursor.gain = std.math.inf(f64);
+    try std.testing.expectEqual(@as(f64, 0.0), cursor.gainReductionDb());
+
+    cursor.lookahead_samples = std.math.maxInt(usize);
+    try std.testing.expectEqual(@as(usize, 0), cursor.latencySamples());
+
+    var next_output = try Processor.init(config);
+    for (0..4) |_| _ = next_output.processSample(0.1);
+    const read_index = (next_output.write_index + 1) % 4;
+    next_output.delay[read_index] = std.math.nan(f32);
+    try std.testing.expect(!next_output.valid());
+    try std.testing.expectEqual(
+        @as(f32, 0.25),
+        next_output.processSample(0.25),
+    );
+    try std.testing.expect(next_output.valid());
+
+    var peak_scan = try Processor.init(config);
+    for (0..4) |_| _ = peak_scan.processSample(0.1);
+    peak_scan.delay[(peak_scan.write_index + 2) % 4] = std.math.nan(f32);
+    try std.testing.expect(peak_scan.valid());
+    try std.testing.expectEqual(@as(f32, 0.0), peak_scan.processSample(0.25));
+    try std.testing.expect(peak_scan.valid());
+}
+
 test "lookahead compressor anticipates a future transient" {
     const Processor = LookaheadCompressor(f64, 16);
     var processor = try Processor.init(.{
@@ -1075,4 +1247,30 @@ test "lookahead compressor is partition independent and transactional" {
         split.processSample(0.25),
     );
     try std.testing.expect(split.valid());
+}
+
+test "lookahead compressor contains corrupt retained delay state" {
+    const Processor = LookaheadCompressor(f32, 8);
+    const config = LookaheadCompressorConfig{
+        .compressor = .{ .sample_rate = 1_000.0 },
+        .lookahead_ms = 3.0,
+    };
+
+    var cursor = try Processor.init(config);
+    _ = cursor.processSample(0.1);
+    cursor.write_index = 0;
+    try std.testing.expect(!cursor.valid());
+    try std.testing.expectEqual(@as(f32, 0.25), cursor.processSample(0.25));
+    try std.testing.expect(cursor.valid());
+
+    cursor.lookahead_samples = std.math.maxInt(usize);
+    try std.testing.expectEqual(@as(usize, 0), cursor.latencySamples());
+
+    var delayed = try Processor.init(config);
+    for (0..4) |_| _ = delayed.processSample(0.1);
+    const read_index = (delayed.write_index + 1) % 4;
+    delayed.delay[read_index] = std.math.nan(f32);
+    try std.testing.expect(!delayed.valid());
+    try std.testing.expectEqual(@as(f32, 0.25), delayed.processSample(0.25));
+    try std.testing.expect(delayed.valid());
 }

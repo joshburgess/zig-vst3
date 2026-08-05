@@ -74,29 +74,33 @@ pub const Linear = struct {
     }
 
     pub fn next(self: *Linear) f64 {
+        if (!self.valid()) return self.repair();
         const value = self.current;
         if (self.remaining_samples > 0) {
             self.remaining_samples -= 1;
             if (self.remaining_samples == 0) {
-                self.current = self.target;
-                self.step = 0.0;
+                _ = self.settle();
             } else {
-                self.current += self.step;
+                const next_value = self.current + self.step;
+                if (!self.valueInRange(next_value)) {
+                    _ = self.settle();
+                } else {
+                    self.current = next_value;
+                }
             }
         }
         return value;
     }
 
     pub fn skip(self: *Linear, sample_count: usize) f64 {
+        if (!self.valid()) return self.repair();
         const count = @min(sample_count, self.remaining_samples);
-        if (count == self.remaining_samples) {
-            self.current = self.target;
-            self.step = 0.0;
-            self.remaining_samples = 0;
-        } else {
-            self.current += self.step * @as(f64, @floatFromInt(count));
-            self.remaining_samples -= count;
-        }
+        if (count == self.remaining_samples) return self.settle();
+        const next_value = self.current +
+            self.step * @as(f64, @floatFromInt(count));
+        if (!self.valueInRange(next_value)) return self.settle();
+        self.current = next_value;
+        self.remaining_samples -= count;
         return self.current;
     }
 
@@ -115,6 +119,30 @@ pub const Linear = struct {
         const maximum_remaining: usize =
             @intFromFloat(self.sample_rate * 60.0);
         return self.remaining_samples <= maximum_remaining;
+    }
+
+    fn valueInRange(self: *const Linear, value: f64) bool {
+        return std.math.isFinite(value) and
+            value >= self.minimum and
+            value <= self.maximum;
+    }
+
+    fn settle(self: *Linear) f64 {
+        self.current = self.target;
+        self.step = 0.0;
+        self.remaining_samples = 0;
+        return self.current;
+    }
+
+    fn repair(self: *Linear) f64 {
+        self.* = .{
+            .sample_rate = 48_000.0,
+            .minimum = 0.0,
+            .maximum = 0.0,
+            .current = 0.0,
+            .target = 0.0,
+        };
+        return self.current;
     }
 
     fn validate(
@@ -214,33 +242,36 @@ pub const Multiplicative = struct {
     }
 
     pub fn next(self: *Multiplicative) f64 {
+        if (!self.valid()) return self.repair();
         const value = self.current;
         if (self.remaining_samples > 0) {
             self.remaining_samples -= 1;
             if (self.remaining_samples == 0) {
-                self.current = self.target;
-                self.multiplier = 1.0;
+                _ = self.settle();
             } else {
-                self.current *= self.multiplier;
+                const next_value = self.current * self.multiplier;
+                if (!self.valueInRange(next_value)) {
+                    _ = self.settle();
+                } else {
+                    self.current = next_value;
+                }
             }
         }
         return value;
     }
 
     pub fn skip(self: *Multiplicative, sample_count: usize) f64 {
+        if (!self.valid()) return self.repair();
         const count = @min(sample_count, self.remaining_samples);
-        if (count == self.remaining_samples) {
-            self.current = self.target;
-            self.multiplier = 1.0;
-            self.remaining_samples = 0;
-        } else {
-            self.current *= std.math.pow(
-                f64,
-                self.multiplier,
-                @as(f64, @floatFromInt(count)),
-            );
-            self.remaining_samples -= count;
-        }
+        if (count == self.remaining_samples) return self.settle();
+        const next_value = self.current * std.math.pow(
+            f64,
+            self.multiplier,
+            @as(f64, @floatFromInt(count)),
+        );
+        if (!self.valueInRange(next_value)) return self.settle();
+        self.current = next_value;
+        self.remaining_samples -= count;
         return self.current;
     }
 
@@ -260,6 +291,33 @@ pub const Multiplicative = struct {
         const maximum_remaining: usize =
             @intFromFloat(self.sample_rate * 60.0);
         return self.remaining_samples <= maximum_remaining;
+    }
+
+    fn valueInRange(
+        self: *const Multiplicative,
+        value: f64,
+    ) bool {
+        return std.math.isFinite(value) and
+            value >= self.minimum and
+            value <= self.maximum;
+    }
+
+    fn settle(self: *Multiplicative) f64 {
+        self.current = self.target;
+        self.multiplier = 1.0;
+        self.remaining_samples = 0;
+        return self.current;
+    }
+
+    fn repair(self: *Multiplicative) f64 {
+        self.* = .{
+            .sample_rate = 48_000.0,
+            .minimum = 1.0,
+            .maximum = 1.0,
+            .current = 1.0,
+            .target = 1.0,
+        };
+        return self.current;
     }
 
     fn validate(
@@ -305,6 +363,29 @@ test "linear smoother rejects bad targets transactionally" {
     try std.testing.expectEqualDeep(before, value);
 }
 
+test "linear smoother contains hostile retained arithmetic" {
+    var stepped = try Linear.init(
+        48_000.0,
+        std.math.floatMax(f64),
+        -std.math.floatMax(f64),
+        std.math.floatMax(f64),
+    );
+    stepped.target = std.math.floatMax(f64);
+    stepped.step = std.math.floatMax(f64);
+    stepped.remaining_samples = 2;
+    try std.testing.expectEqual(
+        std.math.floatMax(f64),
+        stepped.next(),
+    );
+    try std.testing.expect(stepped.valid());
+    try std.testing.expectEqual(@as(usize, 0), stepped.remaining_samples);
+
+    var malformed = stepped;
+    malformed.current = std.math.nan(f64);
+    try std.testing.expectEqual(@as(f64, 0.0), malformed.skip(1));
+    try std.testing.expect(malformed.valid());
+}
+
 test "multiplicative smoother reaches its exact target across partitions" {
     var whole = try Multiplicative.init(1_000.0, 100.0, 20.0, 20_000.0);
     try whole.setTarget(1_000.0, 1_600.0, 0.004);
@@ -347,4 +428,65 @@ test "multiplicative smoother retargets and rejects zero transactionally" {
         error.InvalidSmoothedValue,
         Multiplicative.init(48_000.0, 1.0, 0.0, 2.0),
     );
+}
+
+test "multiplicative smoother contains hostile retained arithmetic" {
+    var multiplied = try Multiplicative.init(
+        48_000.0,
+        std.math.floatMax(f64),
+        1.0,
+        std.math.floatMax(f64),
+    );
+    multiplied.target = std.math.floatMax(f64);
+    multiplied.multiplier = 2.0;
+    multiplied.remaining_samples = 3;
+    try std.testing.expectEqual(
+        std.math.floatMax(f64),
+        multiplied.skip(1),
+    );
+    try std.testing.expect(multiplied.valid());
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        multiplied.remaining_samples,
+    );
+
+    var malformed = multiplied;
+    malformed.multiplier = std.math.nan(f64);
+    try std.testing.expectEqual(@as(f64, 1.0), malformed.next());
+    try std.testing.expect(malformed.valid());
+}
+
+test "smoothed values contain generated retained arithmetic state" {
+    for (0..4_096) |index| {
+        const bits = @as(u64, index) *%
+            0x9e37_79b9_7f4a_7c15 +%
+            0xd1b5_4a32_d192_ed03;
+        const generated: f64 = @bitCast(bits);
+
+        var linear = try Linear.init(
+            48_000.0,
+            1.0,
+            -std.math.floatMax(f64),
+            std.math.floatMax(f64),
+        );
+        linear.target = 2.0;
+        linear.step = generated;
+        linear.remaining_samples = 2;
+        try std.testing.expect(std.math.isFinite(linear.next()));
+        try std.testing.expect(linear.valid());
+
+        var multiplicative = try Multiplicative.init(
+            48_000.0,
+            1.0,
+            std.math.floatMin(f64),
+            std.math.floatMax(f64),
+        );
+        multiplicative.target = 2.0;
+        multiplicative.multiplier = generated;
+        multiplicative.remaining_samples = 2;
+        try std.testing.expect(
+            std.math.isFinite(multiplicative.next()),
+        );
+        try std.testing.expect(multiplicative.valid());
+    }
 }

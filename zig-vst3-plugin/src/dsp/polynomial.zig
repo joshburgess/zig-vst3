@@ -21,13 +21,23 @@ pub fn Polynomial(comptime Sample: type, comptime capacity: usize) type {
                 default_root_maximum_iterations,
         };
         pub const RootResult = struct {
-            values: [capacity - 1]Complex = undefined,
+            values: [capacity - 1]Complex =
+                @splat(.{ .re = 0.0, .im = 0.0 }),
             count: usize = 0,
             iterations: usize = 0,
             converged: bool = true,
 
             pub fn slice(self: *const RootResult) []const Complex {
+                if (!self.valid()) return &.{};
                 return self.values[0..self.count];
+            }
+
+            pub fn valid(self: *const RootResult) bool {
+                if (self.count > self.values.len) return false;
+                for (self.values[0..self.count]) |value| {
+                    if (!finiteComplex(value)) return false;
+                }
+                return true;
             }
         };
         pub const DivisionResult = struct {
@@ -1266,6 +1276,13 @@ test "polynomial finds real and conjugate complex roots" {
         roots.values[2].im,
         1.0e-10,
     );
+    try std.testing.expectEqual(@as(f64, 0.0), roots.values[3].re);
+    try std.testing.expectEqual(@as(f64, 0.0), roots.values[3].im);
+
+    var malformed = roots;
+    malformed.count = std.math.maxInt(usize);
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectEqual(@as(usize, 0), malformed.slice().len);
 }
 
 test "polynomial roots handle constants linear terms and trailing zeros" {
@@ -1274,6 +1291,10 @@ test "polynomial roots handle constants linear terms and trailing zeros" {
     const no_roots = try constant.findRoots(.{});
     try std.testing.expect(no_roots.converged);
     try std.testing.expectEqual(@as(usize, 0), no_roots.count);
+    for (no_roots.values) |root| {
+        try std.testing.expectEqual(@as(f32, 0.0), root.re);
+        try std.testing.expectEqual(@as(f32, 0.0), root.im);
+    }
 
     const linear = try P.init(&.{ 6.0, 3.0, 0.0 });
     const one_root = try linear.findRoots(.{});

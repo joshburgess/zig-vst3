@@ -428,6 +428,7 @@ pub fn MultichannelOversampler(
             self: *Self,
             index: usize,
         ) !*ChannelProcessor {
+            if (!self.valid()) return error.InvalidOversamplerState;
             if (index >= self.channel_count)
                 return error.OversamplingChannelOutOfRange;
             return &self.processors[index];
@@ -744,6 +745,8 @@ fn designFirHalfBand(
     );
     if (!std.math.isFinite(estimated_order))
         return error.InvalidMixedOversamplingConfig;
+    if (estimated_order > equiripple.maximum_taps)
+        return error.FirOversamplingCapacityExceeded;
     var tap_count: usize = @max(
         7,
         @as(usize, @intFromFloat(@max(estimated_order, 2.0))) + 1,
@@ -1054,6 +1057,15 @@ test "mixed oversampling dummy stages and reconfiguration are transactional" {
             .{},
         ),
     );
+    try std.testing.expectError(
+        error.FirOversamplingCapacityExceeded,
+        processor.reconfigure(
+            &.{.{ .fir_equiripple = .{
+                .up = .{ .normalized_transition_width = 1.0e-300 },
+            } }},
+            .{},
+        ),
+    );
     try std.testing.expectEqual(
         @as(usize, 2),
         try processor.oversamplingFactor(),
@@ -1200,6 +1212,17 @@ test "mixed multichannel oversampling isolates channels transactionally" {
     );
     try std.testing.expectEqual([_]f64{123.0} ** 16, output_left);
     try std.testing.expectEqual([_]f64{456.0} ** 16, output_right);
+
+    processor.channel_count = std.math.maxInt(usize);
+    try std.testing.expect(!processor.valid());
+    try std.testing.expectError(
+        error.InvalidOversamplerState,
+        processor.channel(0),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        processor.channel_count,
+    );
 }
 
 test "mixed FIR arithmetic failure resets the complete pending block" {

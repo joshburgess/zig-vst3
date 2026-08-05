@@ -29,7 +29,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
         host_rate: f64 = 0.0,
         model_rate: f64 = 0.0,
         latency_samples: u32 = 0,
-        pending_model: [maximum_pending_model_frames]Sample = undefined,
+        pending_model: [maximum_pending_model_frames]Sample = @splat(0.0),
         pending_model_count: usize = 0,
         configured: bool = false,
 
@@ -61,6 +61,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
             self.host_rate = config.host_rate;
             self.model_rate = config.model_rate;
             self.latency_samples = @intFromFloat(latency);
+            self.pending_model = @splat(0.0);
             self.pending_model_count = 0;
             self.configured = true;
         }
@@ -68,6 +69,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
         pub fn reset(self: *Self) void {
             self.to_model.reset();
             self.to_host.reset();
+            self.pending_model = @splat(0.0);
             self.pending_model_count = 0;
         }
 
@@ -100,14 +102,14 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
                 error.NotConfigured => return error.NotConfigured,
                 error.InvalidState => return error.InvalidState,
                 error.StreamTooLong => return error.StreamTooLong,
-                error.Draining => unreachable,
+                error.Draining => return error.InvalidState,
             };
             if (result.consumed != input.len) return error.InsufficientModelCapacity;
             const remainder = self.to_model.process(&.{}, model_output[result.produced..]) catch |err| switch (err) {
                 error.NotConfigured => return error.NotConfigured,
                 error.InvalidState => return error.InvalidState,
                 error.StreamTooLong => return error.StreamTooLong,
-                error.Draining => unreachable,
+                error.Draining => return error.InvalidState,
             };
             return result.produced + remainder.produced;
         }
@@ -123,11 +125,12 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
             if (!self.validState()) return error.InvalidState;
             var produced: usize = 0;
             if (self.pending_model_count > 0) {
+                const previous_pending_count = self.pending_model_count;
                 const pending_result = self.to_host.process(self.pending_model[0..self.pending_model_count], host_output) catch |err| switch (err) {
                     error.NotConfigured => return error.NotConfigured,
                     error.InvalidState => return error.InvalidState,
                     error.StreamTooLong => return error.StreamTooLong,
-                    error.Draining => unreachable,
+                    error.Draining => return error.InvalidState,
                 };
                 produced += pending_result.produced;
                 self.pending_model_count -= pending_result.consumed;
@@ -138,13 +141,17 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
                         self.pending_model[pending_result.consumed .. pending_result.consumed + self.pending_model_count],
                     );
                 }
+                @memset(
+                    self.pending_model[self.pending_model_count..previous_pending_count],
+                    0.0,
+                );
             }
 
             const result = self.to_host.process(model_input, host_output[produced..]) catch |err| switch (err) {
                 error.NotConfigured => return error.NotConfigured,
                 error.InvalidState => return error.InvalidState,
                 error.StreamTooLong => return error.StreamTooLong,
-                error.Draining => unreachable,
+                error.Draining => return error.InvalidState,
             };
             produced += result.produced;
             const remaining = model_input.len - result.consumed;
@@ -160,7 +167,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
                     error.NotConfigured => return error.NotConfigured,
                     error.InvalidState => return error.InvalidState,
                     error.StreamTooLong => return error.StreamTooLong,
-                    error.Draining => unreachable,
+                    error.Draining => return error.InvalidState,
                 };
                 produced += ready.produced;
             }
@@ -294,15 +301,27 @@ test "fixed-rate pipeline rejects malformed pending state and reconfiguration cl
     const Pipeline = FixedRatePipeline(f64);
     const config = Config{ .host_rate = 48_000, .model_rate = 48_000 };
     var pipeline = try Pipeline.init(config);
+    try std.testing.expectEqual(
+        @as([maximum_pending_model_frames]f64, @splat(0.0)),
+        pipeline.pending_model,
+    );
     pipeline.pending_model_count = maximum_pending_model_frames + 1;
     try std.testing.expectError(error.InvalidState, pipeline.convertOutput(&.{}, &.{}));
 
     pipeline.reset();
     try std.testing.expectEqual(@as(usize, 0), pipeline.pending_model_count);
+    try std.testing.expectEqual(
+        @as([maximum_pending_model_frames]f64, @splat(0.0)),
+        pipeline.pending_model,
+    );
     pipeline.pending_model[0] = 0.25;
     pipeline.pending_model_count = 1;
     try pipeline.configure(config);
     try std.testing.expectEqual(@as(usize, 0), pipeline.pending_model_count);
+    try std.testing.expectEqual(
+        @as([maximum_pending_model_frames]f64, @splat(0.0)),
+        pipeline.pending_model,
+    );
 }
 
 test "fixed-rate pipeline rejects malformed public configuration state" {

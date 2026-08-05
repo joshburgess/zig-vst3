@@ -148,6 +148,7 @@ pub fn MultichannelOversampler(
             self: *Self,
             index: usize,
         ) !*ChannelProcessor {
+            if (!self.valid()) return error.InvalidOversamplerState;
             if (index >= self.channel_count)
                 return error.OversamplingChannelOutOfRange;
             return &self.processors[index];
@@ -364,6 +365,7 @@ pub fn RuntimeMultichannelOversampler(
             self: *Self,
             index: usize,
         ) !*ChannelProcessor {
+            if (!self.valid()) return error.InvalidOversamplerState;
             if (index >= self.channel_count)
                 return error.OversamplingChannelOutOfRange;
             return &self.processors[index];
@@ -567,6 +569,17 @@ test "multichannel polyphase IIR channel changes are bounded" {
         processor.channel(4),
     );
     try std.testing.expect((try processor.latencySamples()) > 0.0);
+
+    processor.channel_count = std.math.maxInt(usize);
+    try std.testing.expect(!processor.valid());
+    try std.testing.expectError(
+        error.InvalidOversamplerState,
+        processor.channel(0),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        processor.channel_count,
+    );
 }
 
 test "runtime multichannel stages match fixed-factor processing" {
@@ -668,5 +681,16 @@ test "runtime multichannel reconfiguration is block transactional" {
     try std.testing.expectEqual(
         @as(usize, 8),
         try runtime.oversamplingFactor(),
+    );
+
+    runtime.channel_count = std.math.maxInt(usize);
+    try std.testing.expect(!runtime.valid());
+    try std.testing.expectError(
+        error.InvalidOversamplerState,
+        runtime.channel(0),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        runtime.channel_count,
     );
 }

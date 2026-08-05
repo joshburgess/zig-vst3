@@ -279,7 +279,7 @@ pub fn StreamingResampler(comptime Sample: type) type {
                 output_count,
                 self.rate_correction_ppm,
             ) catch |err| switch (err) {
-                error.InvalidRateCorrection => unreachable,
+                error.InvalidRateCorrection => return error.InvalidState,
                 else => |forwarded| return forwarded,
             };
         }
