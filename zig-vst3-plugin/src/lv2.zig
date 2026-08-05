@@ -26,6 +26,10 @@ pub const state_make_path_uri =
     "http://lv2plug.in/ns/ext/state#makePath";
 pub const state_free_path_uri =
     "http://lv2plug.in/ns/ext/state#freePath";
+pub const state_changed_uri =
+    "http://lv2plug.in/ns/ext/state#StateChanged";
+pub const state_thread_safe_restore_uri =
+    "http://lv2plug.in/ns/ext/state#threadSafeRestore";
 pub const worker_interface_uri =
     "http://lv2plug.in/ns/ext/worker#interface";
 pub const worker_schedule_uri =
@@ -86,6 +90,8 @@ pub const patch_move_uri =
     "http://lv2plug.in/ns/ext/patch#Move";
 pub const patch_add_uri =
     "http://lv2plug.in/ns/ext/patch#add";
+pub const patch_accept_uri =
+    "http://lv2plug.in/ns/ext/patch#accept";
 pub const patch_remove_uri =
     "http://lv2plug.in/ns/ext/patch#remove";
 pub const patch_body_uri =
@@ -96,6 +102,8 @@ pub const patch_destination_uri =
     "http://lv2plug.in/ns/ext/patch#destination";
 pub const patch_property_uri =
     "http://lv2plug.in/ns/ext/patch#property";
+pub const patch_request_uri =
+    "http://lv2plug.in/ns/ext/patch#request";
 pub const patch_sequence_number_uri =
     "http://lv2plug.in/ns/ext/patch#sequenceNumber";
 pub const patch_subject_uri =
@@ -132,6 +140,16 @@ pub const buffer_sequence_size_uri =
     "http://lv2plug.in/ns/ext/buf-size#sequenceSize";
 pub const resize_port_resize_uri =
     "http://lv2plug.in/ns/ext/resize-port#resize";
+pub const log_log_uri =
+    "http://lv2plug.in/ns/ext/log#log";
+pub const log_error_uri =
+    "http://lv2plug.in/ns/ext/log#Error";
+pub const log_warning_uri =
+    "http://lv2plug.in/ns/ext/log#Warning";
+pub const log_note_uri =
+    "http://lv2plug.in/ns/ext/log#Note";
+pub const log_trace_uri =
+    "http://lv2plug.in/ns/ext/log#Trace";
 pub const Handle = ?*anyopaque;
 
 pub const Feature = extern struct {
@@ -166,6 +184,8 @@ pub const UridUnmapFunction = *const fn (
     urid: Urid,
 ) callconv(.c) ?[*:0]const u8;
 
+pub const maximum_unmapped_uri_bytes: usize = 4096;
+
 pub const UridUnmapSink = struct {
     handle: ?*anyopaque,
     unmap_uri: UridUnmapFunction,
@@ -173,8 +193,15 @@ pub const UridUnmapSink = struct {
     pub fn unmap(
         self: *const UridUnmapSink,
         urid: Urid,
-    ) ?[*:0]const u8 {
-        return self.unmap_uri(self.handle, urid);
+    ) ?[]const u8 {
+        const uri = self.unmap_uri(self.handle, urid) orelse
+            return null;
+        const length = boundedCStringLength(
+            uri,
+            maximum_unmapped_uri_bytes,
+        ) orelse return null;
+        if (length == 0) return null;
+        return uri[0..length];
     }
 };
 
@@ -321,6 +348,23 @@ pub const PatchGraphRequest = struct {
     operation: PatchGraphOperation,
     context: ?Urid = null,
     sequence_number: ?i32 = null,
+    request: ?PatchRequestReference = null,
+};
+
+/// Identifies a non-anonymous incoming Patch request for the current run.
+pub const PatchRequestReference = struct {
+    atom_type: Urid,
+    id: u32,
+    object_type: Urid,
+};
+
+/// General resource-description query passed to readLv2PatchGraph.
+pub const PatchGraphGetRequest = struct {
+    subject: ?Urid = null,
+    accept: ?Urid = null,
+    context: ?Urid = null,
+    sequence_number: ?i32 = null,
+    request: ?PatchRequestReference = null,
 };
 
 pub const OptionsContext = enum(c_int) {
@@ -361,6 +405,7 @@ pub const WorkerStatus = enum(c_int) {
     success = 0,
     unknown = 1,
     no_space = 2,
+    _,
 };
 
 pub const WorkerRespondHandle = ?*anyopaque;
@@ -385,6 +430,7 @@ pub const ResizePortStatus = enum(c_int) {
     success = 0,
     unknown = 1,
     no_space = 2,
+    _,
 };
 
 pub const ResizePortFunction = *const fn (
@@ -396,6 +442,55 @@ pub const ResizePortFunction = *const fn (
 pub const ResizePortFeature = extern struct {
     data: ?*anyopaque,
     resize: ?ResizePortFunction,
+};
+
+pub const LogPrintfFunction = *const fn (
+    handle: ?*anyopaque,
+    type: Urid,
+    format: [*:0]const u8,
+    ...,
+) callconv(.c) c_int;
+
+pub const LogFeature = extern struct {
+    handle: ?*anyopaque,
+    printf: ?LogPrintfFunction,
+    vprintf: ?*const anyopaque,
+};
+
+pub const NonRealtimeLogLevel = enum {
+    error_message,
+    warning,
+    note,
+};
+
+/// This sink is valid for the plugin instance lifetime. Only trace messages
+/// may be sent from a realtime context.
+pub const LogSink = struct {
+    context: *anyopaque,
+    write_non_realtime: *const fn (
+        context: *anyopaque,
+        level: NonRealtimeLogLevel,
+        message: [:0]const u8,
+    ) ?c_int,
+    write_trace: *const fn (
+        context: *anyopaque,
+        message: [:0]const u8,
+    ) ?c_int,
+
+    pub fn writeNonRealtime(
+        self: *LogSink,
+        level: NonRealtimeLogLevel,
+        message: [:0]const u8,
+    ) ?c_int {
+        return self.write_non_realtime(self.context, level, message);
+    }
+
+    pub fn trace(
+        self: *LogSink,
+        message: [:0]const u8,
+    ) ?c_int {
+        return self.write_trace(self.context, message);
+    }
 };
 
 const CheckedWorkerSchedule = struct {
@@ -493,6 +588,17 @@ pub const PortResizeSink = struct {
     }
 };
 
+/// This sink is valid for the plugin instance lifetime. Notifications from
+/// any thread are coalesced and emitted on the next successful audio block.
+pub const StateChangedSink = struct {
+    context: *anyopaque,
+    notify_state_changed: *const fn (context: *anyopaque) void,
+
+    pub fn notify(self: *StateChangedSink) void {
+        self.notify_state_changed(self.context);
+    }
+};
+
 pub const StateHandle = ?*anyopaque;
 
 pub const StateStatus = enum(c_int) {
@@ -503,11 +609,13 @@ pub const StateStatus = enum(c_int) {
     no_feature = 4,
     no_property = 5,
     no_space = 6,
+    _,
 };
 
 pub const state_is_pod: u32 = 1 << 0;
 pub const state_is_portable: u32 = 1 << 1;
 pub const state_is_native: u32 = 1 << 2;
+pub const maximum_state_path_bytes: usize = 4096;
 
 pub const StateStoreFunction = *const fn (
     handle: StateHandle,
@@ -585,22 +693,29 @@ pub const StateFreePathSink = struct {
     free_path: StateFreePathFunction,
 };
 
-/// Host-owned path returned by an LV2 State feature. Call `deinit` once
-/// before the enclosing state callback returns.
+/// Host-owned path returned by an LV2 State feature. Call `deinit` before
+/// the enclosing state callback returns. Later calls are no-ops.
 pub const OwnedStatePath = struct {
-    pointer: [*:0]u8,
+    pointer: ?[*:0]u8,
+    length: usize,
     free_path: StateFreePathSink,
 
     pub fn bytes(self: OwnedStatePath) []const u8 {
-        return std.mem.span(self.pointer);
+        const pointer = self.pointer orelse return &.{};
+        if (self.length == 0 or
+            self.length > maximum_state_path_bytes)
+            return &.{};
+        return pointer[0..self.length];
     }
 
     pub fn deinit(self: *OwnedStatePath) void {
+        const pointer = self.pointer orelse return;
         self.free_path.free_path(
             self.free_path.handle,
-            self.pointer,
+            pointer,
         );
-        self.* = undefined;
+        self.pointer = null;
+        self.length = 0;
     }
 };
 
@@ -614,7 +729,8 @@ pub const StatePathFeatures = struct {
         self: StatePathFeatures,
         path: [:0]const u8,
     ) !OwnedStatePath {
-        if (path.len == 0) return error.InvalidStatePath;
+        if (path.len == 0 or path.len > maximum_state_path_bytes)
+            return error.InvalidStatePath;
         const mapped = self.map_path.abstract_path(
             self.map_path.handle,
             path.ptr,
@@ -626,7 +742,8 @@ pub const StatePathFeatures = struct {
         self: StatePathFeatures,
         path: [:0]const u8,
     ) !OwnedStatePath {
-        if (path.len == 0) return error.InvalidStatePath;
+        if (path.len == 0 or path.len > maximum_state_path_bytes)
+            return error.InvalidStatePath;
         const resolved = self.map_path.absolute_path(
             self.map_path.handle,
             path.ptr,
@@ -638,7 +755,8 @@ pub const StatePathFeatures = struct {
         self: StatePathFeatures,
         path: [:0]const u8,
     ) !OwnedStatePath {
-        if (path.len == 0) return error.InvalidStatePath;
+        if (path.len == 0 or path.len > maximum_state_path_bytes)
+            return error.InvalidStatePath;
         const make_path = self.make_path orelse
             return error.StateMakePathUnavailable;
         const created = make_path.path(
@@ -652,7 +770,17 @@ pub const StatePathFeatures = struct {
         self: StatePathFeatures,
         path: [*:0]u8,
     ) !OwnedStatePath {
-        if (std.mem.span(path).len == 0) {
+        const length = boundedCStringLength(
+            path,
+            maximum_state_path_bytes,
+        ) orelse {
+            self.free_path.free_path(
+                self.free_path.handle,
+                path,
+            );
+            return error.InvalidStatePath;
+        };
+        if (length == 0) {
             self.free_path.free_path(
                 self.free_path.handle,
                 path,
@@ -661,6 +789,7 @@ pub const StatePathFeatures = struct {
         }
         return .{
             .pointer = path,
+            .length = length,
             .free_path = self.free_path,
         };
     }
@@ -763,6 +892,15 @@ pub fn CoreAdapterWithParameters(
 
     const Runtime = plugin_api.ProcessorRuntime(Plugin);
     const Spec = plugin_api.PluginSpec(Plugin);
+    const child_uri_separator = if (std.mem.indexOfScalar(
+        u8,
+        plugin_uri,
+        '#',
+    ) == null) "#" else "/";
+    const parameter_state_uri =
+        plugin_uri ++ child_uri_separator ++ "parameterState";
+    const component_state_uri =
+        plugin_uri ++ child_uri_separator ++ "componentState";
     const program_count = totalProgramCount(Spec.unit_config);
     const maximum_program_name_length =
         maximumProgramNameLength(Spec.unit_config);
@@ -898,6 +1036,13 @@ pub fn CoreAdapterWithParameters(
         Plugin.lv2_patch_graph_operations
     else
         false;
+    const has_patch_graph_queries = if (@hasDecl(
+        Plugin,
+        "lv2_patch_graph_queries",
+    ))
+        Plugin.lv2_patch_graph_queries
+    else
+        false;
     const declares_patch_graph_handler = @hasDecl(
         Plugin,
         "applyLv2PatchGraphRequest",
@@ -906,8 +1051,17 @@ pub fn CoreAdapterWithParameters(
         @compileError(
             "LV2 Patch graph operations require lv2_patch_graph_operations and applyLv2PatchGraphRequest",
         );
+    const declares_patch_graph_reader = @hasDecl(
+        Plugin,
+        "readLv2PatchGraph",
+    );
+    if (has_patch_graph_queries != declares_patch_graph_reader)
+        @compileError(
+            "LV2 Patch graph queries require lv2_patch_graph_queries and readLv2PatchGraph",
+        );
     const has_patch_messages =
-        has_patch_properties or has_patch_graph_operations;
+        has_patch_properties or has_patch_graph_operations or
+        has_patch_graph_queries;
     const declares_patch_reader = @hasDecl(
         Plugin,
         "readLv2PatchProperty",
@@ -925,7 +1079,8 @@ pub fn CoreAdapterWithParameters(
             "Writable LV2 Patch properties require writeLv2PatchProperty",
         );
     const needs_patch_responses =
-        has_readable_patch_properties or has_patch_graph_operations;
+        has_readable_patch_properties or has_patch_graph_operations or
+        has_patch_graph_queries;
     const patch_response_capacity = if (needs_patch_responses and
         @hasDecl(Plugin, "lv2_patch_response_capacity"))
         Plugin.lv2_patch_response_capacity
@@ -961,6 +1116,14 @@ pub fn CoreAdapterWithParameters(
         Plugin,
         "bindLv2PortResize",
     );
+    const has_log_binding = @hasDecl(
+        Plugin,
+        "bindLv2Log",
+    );
+    const has_state_changed_binding = @hasDecl(
+        Plugin,
+        "bindLv2StateChanged",
+    );
     const has_worker =
         declares_worker_request_size and
         declares_worker_response_size and
@@ -976,6 +1139,51 @@ pub fn CoreAdapterWithParameters(
         @compileError(
             "LV2 worker support requires request and response sizes, binding, work, and response declarations",
         );
+    const has_thread_safe_restore =
+        @hasDecl(Plugin, "lv2_thread_safe_restore") and
+        Plugin.lv2_thread_safe_restore;
+    const declares_thread_safe_stage = @hasDecl(
+        Plugin,
+        "stageLv2ThreadSafeComponentRestore",
+    );
+    const declares_thread_safe_apply = @hasDecl(
+        Plugin,
+        "applyLv2ThreadSafeComponentRestore",
+    );
+    const declares_thread_safe_component_size = @hasDecl(
+        Plugin,
+        "lv2_thread_safe_restore_maximum_component_size",
+    );
+    if (has_thread_safe_restore and has_lv2_component_state_paths and
+        (!declares_thread_safe_stage or
+            !declares_thread_safe_apply or
+            !declares_thread_safe_component_size))
+        @compileError(
+            "Path-aware thread-safe LV2 restore requires stage, apply, and maximum staged component size declarations",
+        );
+    if ((!has_thread_safe_restore or
+        !has_lv2_component_state_paths) and
+        (declares_thread_safe_stage or
+            declares_thread_safe_apply or
+            declares_thread_safe_component_size))
+        @compileError(
+            "Thread-safe LV2 component staging declarations require path-aware thread-safe restore",
+        );
+    const thread_safe_component_capacity =
+        if (!has_thread_safe_restore or !has_component_state)
+            0
+        else if (has_lv2_component_state_paths)
+            Plugin.lv2_thread_safe_restore_maximum_component_size
+        else
+            component_state_maximum_encoded_size;
+    if (has_thread_safe_restore and has_component_state and
+        (thread_safe_component_capacity == 0 or
+            thread_safe_component_capacity > 64 * 1024))
+        @compileError(
+            "LV2 thread-safe staged component state must fit 1 through 64 KiB",
+        );
+    const exposes_worker_interface = has_worker or
+        has_thread_safe_restore;
     const worker_maximum_request_size =
         if (has_worker)
             Plugin.lv2_worker_maximum_request_size
@@ -1035,6 +1243,10 @@ pub fn CoreAdapterWithParameters(
         @compileError("LV2 Patch messages require an event input");
     if (needs_patch_responses and !has_event_output)
         @compileError("LV2 Patch responses require an event output");
+    if (has_state_changed_binding and !has_event_output)
+        @compileError(
+            "LV2 StateChanged notifications require an event output",
+        );
     const event_port_count =
         @as(usize, @intFromBool(has_event_input)) +
         @as(usize, @intFromBool(has_event_output));
@@ -1052,6 +1264,13 @@ pub fn CoreAdapterWithParameters(
         main_channel_count: usize,
         auxiliary_channel_count: usize,
         auxiliary_bus_channel_counts: [auxiliary_output_bus_count]usize,
+    };
+    const ThreadSafeRestorePhase = enum(u8) {
+        idle,
+        filling,
+        scheduled,
+        response_pending,
+        applying,
     };
 
     return struct {
@@ -1085,8 +1304,12 @@ pub fn CoreAdapterWithParameters(
             @intFromBool(has_freewheeling);
         pub const port_count = latency_output_port + 1;
         pub const maximum_frames = maximum_block_size;
-        pub const worker_enabled = has_worker;
+        pub const worker_enabled = exposes_worker_interface;
+        pub const component_state_enabled = has_component_state;
+        pub const thread_safe_restore_enabled = has_thread_safe_restore;
         pub const port_resize_enabled = has_port_resize_binding;
+        pub const log_enabled = has_log_binding;
+        pub const state_changed_enabled = has_state_changed_binding;
         pub const dynamic_audio_topology_projected =
             projects_dynamic_audio_topology;
         pub const programs_enabled = has_programs;
@@ -1099,6 +1322,7 @@ pub fn CoreAdapterWithParameters(
         pub const patch_enabled = has_patch_messages;
         pub const patch_readable = has_readable_patch_properties;
         pub const patch_writable = has_writable_patch_properties;
+        pub const patch_graph_query_enabled = has_patch_graph_queries;
         pub const input_channels = input_channel_count;
         pub const output_channels = output_channel_count;
         pub const parameters = parameter_count;
@@ -1118,6 +1342,7 @@ pub fn CoreAdapterWithParameters(
         midi_event_type: Urid = 0,
         atom_blank_type: Urid = 0,
         atom_object_type: Urid = 0,
+        state_changed_type: Urid = 0,
         atom_bool_type: Urid = 0,
         atom_float_type: Urid = 0,
         atom_double_type: Urid = 0,
@@ -1137,12 +1362,14 @@ pub fn CoreAdapterWithParameters(
         patch_delete_type: Urid = 0,
         patch_copy_type: Urid = 0,
         patch_move_type: Urid = 0,
+        patch_accept_key: Urid = 0,
         patch_add_key: Urid = 0,
         patch_remove_key: Urid = 0,
         patch_body_key: Urid = 0,
         patch_context_key: Urid = 0,
         patch_destination_key: Urid = 0,
         patch_property_key: Urid = 0,
+        patch_request_key: Urid = 0,
         patch_sequence_number_key: Urid = 0,
         patch_subject_key: Urid = 0,
         patch_value_key: Urid = 0,
@@ -1170,10 +1397,33 @@ pub fn CoreAdapterWithParameters(
         configured_sequence_size_value: i32 = 0,
         sequence_size_configured: bool = false,
         worker_schedule: ?CheckedWorkerSchedule = null,
-        worker_schedule_sink: WorkerScheduleSink = undefined,
+        worker_schedule_sink: ?WorkerScheduleSink = null,
         resize_port: ?ResizePortFeature = null,
-        resize_port_sink: PortResizeSink = undefined,
-        urid_unmap_sink: UridUnmapSink = undefined,
+        resize_port_sink: ?PortResizeSink = null,
+        log_feature: ?LogFeature = null,
+        log_sink: ?LogSink = null,
+        log_error_type: Urid = 0,
+        log_warning_type: Urid = 0,
+        log_note_type: Urid = 0,
+        log_trace_type: Urid = 0,
+        state_changed_sink: ?StateChangedSink = null,
+        state_changed_generation: std.atomic.Value(u64) =
+            std.atomic.Value(u64).init(0),
+        emitted_state_changed_generation: u64 = 0,
+        thread_safe_restore_phase: std.atomic.Value(ThreadSafeRestorePhase) =
+            std.atomic.Value(ThreadSafeRestorePhase).init(.idle),
+        thread_safe_parameter_present: bool = false,
+        thread_safe_parameter_state: [
+            if (has_thread_safe_restore)
+                Spec.encoded_parameter_state_size
+            else
+                0
+        ]u8 = @splat(0),
+        thread_safe_component_present: bool = false,
+        thread_safe_component_size: usize = 0,
+        thread_safe_component_state: [thread_safe_component_capacity]u8 =
+            @splat(0),
+        urid_unmap_sink: ?UridUnmapSink = null,
         inside_run: bool = false,
         transport: ?process_api.Transport = null,
         transport_speed: f64 = 0.0,
@@ -1183,7 +1433,7 @@ pub fn CoreAdapterWithParameters(
         bar_beat: ?f64 = null,
         beat: ?f64 = null,
         last_run_status: RunStatus = .ready,
-        program_descriptor: ProgramDescriptor = undefined,
+        program_descriptor: ?ProgramDescriptor = null,
         program_name: [maximum_program_name_length + 1]u8 = @splat(0),
         program_overrides: [parameter_count]?f64 = @splat(null),
         program_control_baselines: [parameter_count]?f32 = @splat(null),
@@ -1227,20 +1477,20 @@ pub fn CoreAdapterWithParameters(
         pub fn portKind(index: usize) ?PortKind {
             if (index < audio_output_port_start)
                 return .audio_input;
-            if (index < control_input_port_start)
-                return if (event_input_port != null and
-                    index == event_input_port.?)
-                    .event_input
-                else if (event_output_port != null and
-                    index == event_output_port.?)
-                    .event_output
-                else
-                    .audio_output;
+            if (index < control_input_port_start) {
+                if (event_input_port) |port| {
+                    if (index == port) return .event_input;
+                }
+                if (event_output_port) |port| {
+                    if (index == port) return .event_output;
+                }
+                return .audio_output;
+            }
             if (index < control_input_port_start + parameter_count)
                 return .control_input;
-            if (freewheeling_input_port != null and
-                index == freewheeling_input_port.?)
-                return .freewheeling_input;
+            if (freewheeling_input_port) |port| {
+                if (index == port) return .freewheeling_input;
+            }
             if (index == latency_output_port)
                 return .latency_output;
             return null;
@@ -1283,6 +1533,19 @@ pub fn CoreAdapterWithParameters(
             _ = raw_descriptor orelse return null;
             _ = raw_bundle_path orelse return null;
             if (!common.isPositiveFinite(sample_rate)) return null;
+            if (features == null) return null;
+            if (!featureListValid(features)) return null;
+            if (featureUriCount(features, urid_map_uri) > 1 or
+                featureUriCount(features, options_options_uri) > 1 or
+                (requires_lv2_urid_unmap and
+                    featureUriCount(features, urid_unmap_uri) != 1) or
+                (has_worker and
+                    featureUriCount(features, worker_schedule_uri) > 1) or
+                (has_port_resize_binding and
+                    featureUriCount(features, resize_port_resize_uri) > 1) or
+                (has_log_binding and
+                    featureUriCount(features, log_log_uri) > 1))
+                return null;
             const allocator = std.heap.page_allocator;
             const self = allocator.create(Self) catch return null;
             self.* = .{
@@ -1313,9 +1576,8 @@ pub fn CoreAdapterWithParameters(
                         return null;
                     },
                 };
-                self.runtime.instance.plugin.bindLv2UridUnmap(
-                    &self.urid_unmap_sink,
-                );
+                if (self.urid_unmap_sink) |*sink|
+                    self.runtime.instance.plugin.bindLv2UridUnmap(sink);
             }
             if (comptime has_worker) {
                 if (featureWithUri(
@@ -1344,9 +1606,8 @@ pub fn CoreAdapterWithParameters(
                     .maximum_size = worker_maximum_request_size,
                     .schedule_work = scheduleWorker,
                 };
-                self.runtime.instance.plugin.bindLv2WorkerSchedule(
-                    &self.worker_schedule_sink,
-                );
+                if (self.worker_schedule_sink) |*sink|
+                    self.runtime.instance.plugin.bindLv2WorkerSchedule(sink);
             }
             if (comptime has_port_resize_binding) {
                 if (featureStruct(
@@ -1367,9 +1628,37 @@ pub fn CoreAdapterWithParameters(
                     .context = self,
                     .resize_output = requestPortResize,
                 };
-                self.runtime.instance.plugin.bindLv2PortResize(
-                    &self.resize_port_sink,
-                );
+                if (self.resize_port_sink) |*sink|
+                    self.runtime.instance.plugin.bindLv2PortResize(sink);
+            }
+            if (comptime has_log_binding) {
+                if (featureWithUri(features, log_log_uri)) |feature| {
+                    const raw_log = featureValue(
+                        LogFeature,
+                        feature,
+                    ) orelse {
+                        self.runtime.deinit();
+                        allocator.destroy(self);
+                        return null;
+                    };
+                    self.log_feature = .{
+                        .handle = raw_log.handle,
+                        .printf = raw_log.printf orelse {
+                            self.runtime.deinit();
+                            allocator.destroy(self);
+                            return null;
+                        },
+                        .vprintf = raw_log.vprintf,
+                    };
+                }
+            }
+            if (comptime has_state_changed_binding) {
+                self.state_changed_sink = .{
+                    .context = self,
+                    .notify_state_changed = notifyStateChanged,
+                };
+                if (self.state_changed_sink) |*sink|
+                    self.runtime.instance.plugin.bindLv2StateChanged(sink);
             }
             if (featureWithUri(features, urid_map_uri)) |map_feature| {
                 const raw_map = featureValue(
@@ -1390,12 +1679,12 @@ pub fn CoreAdapterWithParameters(
                 };
                 self.state_key = map.map(
                     map.handle,
-                    plugin_uri ++ "#parameterState",
+                    parameter_state_uri,
                 );
                 if (comptime has_component_state) {
                     self.component_state_key = map.map(
                         map.handle,
-                        plugin_uri ++ "#componentState",
+                        component_state_uri,
                     );
                 }
                 self.state_type = map.map(
@@ -1416,6 +1705,30 @@ pub fn CoreAdapterWithParameters(
                 );
                 self.atom_blank_type = map.map(map.handle, atom_blank_uri);
                 self.atom_object_type = map.map(map.handle, atom_object_uri);
+                if (comptime has_state_changed_binding) {
+                    self.state_changed_type = map.map(
+                        map.handle,
+                        state_changed_uri,
+                    );
+                }
+                if (comptime has_log_binding) {
+                    self.log_error_type = map.map(
+                        map.handle,
+                        log_error_uri,
+                    );
+                    self.log_warning_type = map.map(
+                        map.handle,
+                        log_warning_uri,
+                    );
+                    self.log_note_type = map.map(
+                        map.handle,
+                        log_note_uri,
+                    );
+                    self.log_trace_type = map.map(
+                        map.handle,
+                        log_trace_uri,
+                    );
+                }
                 if (comptime has_patch_messages) {
                     self.atom_bool_type = map.map(
                         map.handle,
@@ -1477,6 +1790,10 @@ pub fn CoreAdapterWithParameters(
                         map.handle,
                         patch_move_uri,
                     );
+                    self.patch_accept_key = map.map(
+                        map.handle,
+                        patch_accept_uri,
+                    );
                     self.patch_add_key = map.map(
                         map.handle,
                         patch_add_uri,
@@ -1500,6 +1817,10 @@ pub fn CoreAdapterWithParameters(
                     self.patch_property_key = map.map(
                         map.handle,
                         patch_property_uri,
+                    );
+                    self.patch_request_key = map.map(
+                        map.handle,
+                        patch_request_uri,
                     );
                     self.patch_sequence_number_key = map.map(
                         map.handle,
@@ -1583,6 +1904,13 @@ pub fn CoreAdapterWithParameters(
                     self.midi_event_type == 0 or
                     self.atom_blank_type == 0 or
                     self.atom_object_type == 0 or
+                    (has_state_changed_binding and
+                        self.state_changed_type == 0) or
+                    (has_log_binding and
+                        (self.log_error_type == 0 or
+                            self.log_warning_type == 0 or
+                            self.log_note_type == 0 or
+                            self.log_trace_type == 0)) or
                     (has_patch_messages and
                         (self.atom_bool_type == 0 or
                             self.atom_path_type == 0 or
@@ -1599,12 +1927,14 @@ pub fn CoreAdapterWithParameters(
                             self.patch_delete_type == 0 or
                             self.patch_copy_type == 0 or
                             self.patch_move_type == 0 or
+                            self.patch_accept_key == 0 or
                             self.patch_add_key == 0 or
                             self.patch_remove_key == 0 or
                             self.patch_body_key == 0 or
                             self.patch_context_key == 0 or
                             self.patch_destination_key == 0 or
                             self.patch_property_key == 0 or
+                            self.patch_request_key == 0 or
                             self.patch_sequence_number_key == 0 or
                             self.patch_subject_key == 0 or
                             self.patch_value_key == 0 or
@@ -1655,6 +1985,22 @@ pub fn CoreAdapterWithParameters(
                         allocator.destroy(self);
                         return null;
                     };
+                }
+            }
+            if (comptime has_log_binding) {
+                self.log_sink = .{
+                    .context = self,
+                    .write_non_realtime = writeNonRealtimeLog,
+                    .write_trace = writeTraceLog,
+                };
+                if (self.log_sink) |*sink|
+                    self.runtime.instance.plugin.bindLv2Log(sink);
+            }
+            if (comptime has_state_changed_binding) {
+                if (self.state_changed_type == 0) {
+                    self.runtime.deinit();
+                    allocator.destroy(self);
+                    return null;
                 }
             }
             self.runtime.prepare(.{
@@ -1735,29 +2081,17 @@ pub fn CoreAdapterWithParameters(
             raw_uri: ?[*:0]const u8,
         ) callconv(.c) ?*const anyopaque {
             const URI = raw_uri orelse return null;
-            if (std.mem.eql(
-                u8,
-                std.mem.span(URI),
-                state_interface_uri,
-            )) return &state_interface;
-            if (std.mem.eql(
-                u8,
-                std.mem.span(URI),
-                options_interface_uri,
-            )) return &options_interface;
-            if (comptime has_worker) {
-                if (std.mem.eql(
-                    u8,
-                    std.mem.span(URI),
-                    worker_interface_uri,
-                )) return &worker_interface;
+            if (cStringEquals(URI, state_interface_uri))
+                return &state_interface;
+            if (cStringEquals(URI, options_interface_uri))
+                return &options_interface;
+            if (comptime exposes_worker_interface) {
+                if (cStringEquals(URI, worker_interface_uri))
+                    return &worker_interface;
             }
             if (comptime has_programs) {
-                if (std.mem.eql(
-                    u8,
-                    std.mem.span(URI),
-                    programs_interface_uri,
-                )) return &programs_interface;
+                if (cStringEquals(URI, programs_interface_uri))
+                    return &programs_interface;
             }
             return null;
         }
@@ -1784,7 +2118,9 @@ pub fn CoreAdapterWithParameters(
                     .program = @intCast(remaining),
                     .name = self.program_name[0..item.name.len :0].ptr,
                 };
-                return &self.program_descriptor;
+                if (self.program_descriptor) |*selected_program|
+                    return selected_program;
+                return null;
             }
             return null;
         }
@@ -1860,15 +2196,18 @@ pub fn CoreAdapterWithParameters(
         ) WorkerStatus {
             const self: *Self = @ptrCast(@alignCast(context));
             if (!self.inside_run) return .unknown;
+            if (comptime has_thread_safe_restore) {
+                if (data.len == 0) return .unknown;
+            }
             const schedule = self.worker_schedule orelse
                 return .unknown;
             const raw: ?*const anyopaque =
                 if (data.len == 0) null else data.ptr;
-            return schedule.schedule_work(
+            return normalizeWorkerStatus(schedule.schedule_work(
                 schedule.handle,
                 @intCast(data.len),
                 raw,
-            );
+            ));
         }
 
         fn requestPortResize(
@@ -1886,11 +2225,51 @@ pub fn CoreAdapterWithParameters(
             }
             const resize_port = self.resize_port orelse return .unknown;
             const resize = resize_port.resize orelse return .unknown;
-            return resize(
+            return normalizeResizePortStatus(resize(
                 resize_port.data,
                 @intCast(port_index),
                 size,
-            );
+            ));
+        }
+
+        fn writeNonRealtimeLog(
+            context: *anyopaque,
+            level: NonRealtimeLogLevel,
+            message: [:0]const u8,
+        ) ?c_int {
+            const self: *Self = @ptrCast(@alignCast(context));
+            const log_type = switch (level) {
+                .error_message => self.log_error_type,
+                .warning => self.log_warning_type,
+                .note => self.log_note_type,
+            };
+            return self.writeLog(log_type, message);
+        }
+
+        fn writeTraceLog(
+            context: *anyopaque,
+            message: [:0]const u8,
+        ) ?c_int {
+            const self: *Self = @ptrCast(@alignCast(context));
+            return self.writeLog(self.log_trace_type, message);
+        }
+
+        fn writeLog(
+            self: *Self,
+            log_type: Urid,
+            message: [:0]const u8,
+        ) ?c_int {
+            if (log_type == 0 or
+                std.mem.indexOfScalar(u8, message, 0) != null)
+                return null;
+            const log = self.log_feature orelse return null;
+            const write = log.printf orelse return null;
+            return write(log.handle, log_type, "%s", message.ptr);
+        }
+
+        fn notifyStateChanged(context: *anyopaque) void {
+            const self: *Self = @ptrCast(@alignCast(context));
+            _ = self.state_changed_generation.fetchAdd(1, .release);
         }
 
         fn runWorker(
@@ -1903,6 +2282,16 @@ pub fn CoreAdapterWithParameters(
             const self = instanceFromHandle(instance) orelse
                 return .unknown;
             const respond = raw_respond orelse return .unknown;
+            if (comptime has_thread_safe_restore) {
+                if (size == 0) {
+                    if (data != null) return .unknown;
+                    return self.runThreadSafeRestoreWorker(
+                        respond,
+                        handle,
+                    );
+                }
+            }
+            if (comptime !has_worker) return .unknown;
             const request = workerBytes(
                 size,
                 data,
@@ -1915,7 +2304,10 @@ pub fn CoreAdapterWithParameters(
             var response = WorkerResponseSink{
                 .context = &response_context,
                 .maximum_size = worker_maximum_response_size,
-                .respond_work = sendWorkerResponse,
+                .respond_work = if (has_thread_safe_restore)
+                    sendNonemptyWorkerResponse
+                else
+                    sendWorkerResponse,
             };
             self.runtime.instance.plugin.runLv2Worker(
                 request,
@@ -1931,6 +2323,13 @@ pub fn CoreAdapterWithParameters(
         ) callconv(.c) WorkerStatus {
             const self = instanceFromHandle(instance) orelse
                 return .unknown;
+            if (comptime has_thread_safe_restore) {
+                if (size == 0) {
+                    if (body != null) return .unknown;
+                    return self.applyThreadSafeRestore();
+                }
+            }
+            if (comptime !has_worker) return .unknown;
             const response = workerBytes(
                 size,
                 body,
@@ -1962,6 +2361,7 @@ pub fn CoreAdapterWithParameters(
             const self = instanceFromHandle(instance) orelse
                 return .unknown;
             const store = raw_store orelse return .unknown;
+            if (!featureListValid(features)) return .no_feature;
             if (self.state_key == 0 or self.state_type == 0)
                 return .no_feature;
             const path_features: ?StatePathFeatures =
@@ -1983,9 +2383,11 @@ pub fn CoreAdapterWithParameters(
                 var component_writer =
                     std.Io.Writer.fixed(&component_bytes);
                 if (comptime has_lv2_component_state_paths) {
+                    const paths = path_features orelse
+                        return .no_feature;
                     self.runtime.instance.plugin.writeLv2ComponentState(
                         &component_writer,
-                        path_features.?,
+                        paths,
                     ) catch return .unknown;
                 } else {
                     self.runtime.instance.plugin.writeComponentState(
@@ -1993,26 +2395,27 @@ pub fn CoreAdapterWithParameters(
                     ) catch return .unknown;
                 }
                 component_size = component_writer.end;
+                if (component_size == 0) return .bad_type;
             }
-            const parameter_status = store(
+            const parameter_status = normalizeStateStatus(store(
                 handle,
                 self.state_key,
                 &bytes,
                 writer.end,
                 self.state_type,
                 state_is_pod | state_is_portable,
-            );
+            ));
             if (parameter_status != .success)
                 return parameter_status;
             if (comptime has_component_state) {
-                return store(
+                return normalizeStateStatus(store(
                     handle,
                     self.component_state_key,
                     &component_bytes,
                     component_size,
                     self.state_type,
                     state_is_pod | state_is_portable,
-                );
+                ));
             }
             return .success;
         }
@@ -2021,9 +2424,40 @@ pub fn CoreAdapterWithParameters(
             instance: Handle,
             raw_retrieve: ?StateRetrieveFunction,
             handle: StateHandle,
-            _: u32,
+            flags: u32,
             features: ?[*:null]const ?*const Feature,
         ) callconv(.c) StateStatus {
+            if (!featureListValid(features)) return .no_feature;
+            if (comptime has_thread_safe_restore) {
+                if (featureWithUri(
+                    features,
+                    worker_schedule_uri,
+                ) != null) {
+                    const self = instanceFromHandle(instance) orelse
+                        return .unknown;
+                    return self.scheduleThreadSafeRestore(
+                        raw_retrieve,
+                        handle,
+                        features,
+                    );
+                }
+            }
+            return restoreStateSynchronously(
+                instance,
+                raw_retrieve,
+                handle,
+                flags,
+                features,
+            );
+        }
+
+        fn restoreStateSynchronously(
+            instance: Handle,
+            raw_retrieve: ?StateRetrieveFunction,
+            handle: StateHandle,
+            _: u32,
+            features: ?[*:null]const ?*const Feature,
+        ) StateStatus {
             const self = instanceFromHandle(instance) orelse
                 return .unknown;
             const retrieve = raw_retrieve orelse return .unknown;
@@ -2051,7 +2485,7 @@ pub fn CoreAdapterWithParameters(
             if (parameter_raw != null) {
                 if (parameter_type != self.state_type)
                     return .bad_type;
-                if (parameter_flags & state_is_pod == 0)
+                if (!portablePodStateFlags(parameter_flags))
                     return .bad_flags;
                 if (parameter_size !=
                     Spec.encoded_parameter_state_size)
@@ -2073,9 +2507,9 @@ pub fn CoreAdapterWithParameters(
                 if (component_raw != null) {
                     if (component_type != self.state_type)
                         return .bad_type;
-                    if (component_flags & state_is_pod == 0)
+                    if (!portablePodStateFlags(component_flags))
                         return .bad_flags;
-                    if (component_size >
+                    if (component_size == 0 or component_size >
                         component_state_maximum_encoded_size)
                         return .bad_type;
                 }
@@ -2106,10 +2540,12 @@ pub fn CoreAdapterWithParameters(
                         data[0..component_size],
                     );
                     const restored = if (comptime has_lv2_component_state_paths) blk: {
+                        const paths = path_features orelse
+                            return .no_feature;
                         self.runtime.instance.plugin
                             .readLv2ComponentState(
                             &reader,
-                            path_features.?,
+                            paths,
                         ) catch break :blk false;
                         break :blk true;
                     } else blk: {
@@ -2129,6 +2565,264 @@ pub fn CoreAdapterWithParameters(
                             &previous_parameter_bytes,
                         )) return .unknown;
                         return .bad_type;
+                    }
+                    if (comptime @hasDecl(
+                        Plugin,
+                        "afterComponentStateRestore",
+                    )) {
+                        self.runtime.instance.plugin
+                            .afterComponentStateRestore();
+                    }
+                }
+            }
+            self.clearProgramOverrides();
+            return .success;
+        }
+
+        fn scheduleThreadSafeRestore(
+            self: *Self,
+            raw_retrieve: ?StateRetrieveFunction,
+            handle: StateHandle,
+            features: ?[*:null]const ?*const Feature,
+        ) StateStatus {
+            const retrieve = raw_retrieve orelse return .unknown;
+            if (self.state_key == 0 or self.state_type == 0)
+                return .no_feature;
+            if (featureUriCount(features, worker_schedule_uri) != 1)
+                return .no_feature;
+            const schedule_feature = featureWithUri(
+                features,
+                worker_schedule_uri,
+            ) orelse return .no_feature;
+            const raw_schedule = featureValue(
+                WorkerSchedule,
+                schedule_feature,
+            ) orelse return .no_feature;
+            const schedule_work = raw_schedule.schedule_work orelse
+                return .no_feature;
+            const path_features: ?StatePathFeatures =
+                if (comptime has_lv2_component_state_paths)
+                    statePathFeatures(
+                        features,
+                        requires_lv2_state_make_path,
+                    ) orelse
+                        return .no_feature
+                else
+                    null;
+            if (self.thread_safe_restore_phase.cmpxchgStrong(
+                .idle,
+                .filling,
+                .acq_rel,
+                .acquire,
+            ) != null) return .no_space;
+            self.clearThreadSafeRestoreStaging();
+
+            const staged = self.stageThreadSafeRestore(
+                retrieve,
+                handle,
+                path_features,
+            );
+            if (staged != .success) {
+                self.clearThreadSafeRestoreStaging();
+                self.thread_safe_restore_phase.store(.idle, .release);
+                return staged;
+            }
+            self.thread_safe_restore_phase.store(.scheduled, .release);
+            const worker_status = normalizeWorkerStatus(schedule_work(
+                raw_schedule.handle,
+                0,
+                null,
+            ));
+            if (worker_status != .success) {
+                if (self.thread_safe_restore_phase.cmpxchgStrong(
+                    .scheduled,
+                    .filling,
+                    .acq_rel,
+                    .acquire,
+                ) == null) {
+                    self.clearThreadSafeRestoreStaging();
+                    self.thread_safe_restore_phase.store(.idle, .release);
+                }
+                return stateStatusForWorkerStatus(worker_status);
+            }
+            return .success;
+        }
+
+        fn clearThreadSafeRestoreStaging(self: *Self) void {
+            self.thread_safe_parameter_present = false;
+            @memset(&self.thread_safe_parameter_state, 0);
+            self.thread_safe_component_present = false;
+            self.thread_safe_component_size = 0;
+            @memset(&self.thread_safe_component_state, 0);
+        }
+
+        fn stageThreadSafeRestore(
+            self: *Self,
+            retrieve: StateRetrieveFunction,
+            handle: StateHandle,
+            path_features: ?StatePathFeatures,
+        ) StateStatus {
+            var parameter_size: usize = 0;
+            var parameter_type: Urid = 0;
+            var parameter_flags: u32 = 0;
+            const parameter_raw = retrieve(
+                handle,
+                self.state_key,
+                &parameter_size,
+                &parameter_type,
+                &parameter_flags,
+            );
+            if (parameter_raw != null) {
+                if (parameter_type != self.state_type)
+                    return .bad_type;
+                if (!portablePodStateFlags(parameter_flags))
+                    return .bad_flags;
+                if (parameter_size !=
+                    Spec.encoded_parameter_state_size)
+                    return .bad_type;
+            }
+
+            var component_size: usize = 0;
+            var component_type: Urid = 0;
+            var component_flags: u32 = 0;
+            const component_raw: ?*const anyopaque =
+                if (comptime has_component_state)
+                    retrieve(
+                        handle,
+                        self.component_state_key,
+                        &component_size,
+                        &component_type,
+                        &component_flags,
+                    )
+                else
+                    null;
+            if (component_raw != null) {
+                if (component_type != self.state_type)
+                    return .bad_type;
+                if (!portablePodStateFlags(component_flags))
+                    return .bad_flags;
+                if (component_size == 0 or component_size >
+                    component_state_maximum_encoded_size)
+                    return .bad_type;
+            }
+
+            self.thread_safe_parameter_present = parameter_raw != null;
+            if (parameter_raw) |raw| {
+                const source: [*]const u8 = @ptrCast(raw);
+                @memcpy(
+                    self.thread_safe_parameter_state[0..parameter_size],
+                    source[0..parameter_size],
+                );
+            }
+            self.thread_safe_component_present = component_raw != null;
+            self.thread_safe_component_size = 0;
+            if (component_raw) |raw| {
+                const source: [*]const u8 = @ptrCast(raw);
+                if (comptime has_lv2_component_state_paths) {
+                    const paths = path_features orelse
+                        return .no_feature;
+                    var reader = std.Io.Reader.fixed(
+                        source[0..component_size],
+                    );
+                    var writer = std.Io.Writer.fixed(
+                        &self.thread_safe_component_state,
+                    );
+                    Plugin.stageLv2ThreadSafeComponentRestore(
+                        &reader,
+                        paths,
+                        &writer,
+                    ) catch return .bad_type;
+                    if (reader.seek != reader.end or writer.end == 0)
+                        return .bad_type;
+                    self.thread_safe_component_size = writer.end;
+                } else {
+                    @memcpy(
+                        self.thread_safe_component_state[0..component_size],
+                        source[0..component_size],
+                    );
+                    self.thread_safe_component_size = component_size;
+                }
+            }
+            return .success;
+        }
+
+        fn runThreadSafeRestoreWorker(
+            self: *Self,
+            respond: WorkerRespondFunction,
+            handle: WorkerRespondHandle,
+        ) WorkerStatus {
+            if (self.thread_safe_restore_phase.cmpxchgStrong(
+                .scheduled,
+                .response_pending,
+                .acq_rel,
+                .acquire,
+            ) != null) return .unknown;
+            const status = respond(handle, 0, null);
+            if (status != .success) {
+                if (self.thread_safe_restore_phase.cmpxchgStrong(
+                    .response_pending,
+                    .applying,
+                    .acq_rel,
+                    .acquire,
+                ) == null) {
+                    self.clearThreadSafeRestoreStaging();
+                    self.thread_safe_restore_phase.store(.idle, .release);
+                }
+            }
+            return status;
+        }
+
+        fn applyThreadSafeRestore(self: *Self) WorkerStatus {
+            if (self.thread_safe_restore_phase.cmpxchgStrong(
+                .response_pending,
+                .applying,
+                .acq_rel,
+                .acquire,
+            ) != null) return .unknown;
+            defer {
+                self.clearThreadSafeRestoreStaging();
+                self.thread_safe_restore_phase.store(.idle, .release);
+            }
+
+            var previous_parameter_bytes: [Spec.encoded_parameter_state_size]u8 = undefined;
+            var previous_writer =
+                std.Io.Writer.fixed(&previous_parameter_bytes);
+            self.runtime.writeParameterState(&previous_writer) catch
+                return .unknown;
+
+            if (self.thread_safe_parameter_present) {
+                var reader = std.Io.Reader.fixed(
+                    &self.thread_safe_parameter_state,
+                );
+                self.runtime.readParameterStateExclusive(&reader) catch
+                    return .unknown;
+            } else {
+                self.runtime.instance.resetParametersToDefaults();
+                self.runtime.instance.afterStateRestore();
+            }
+
+            if (comptime has_component_state) {
+                if (self.thread_safe_component_present) {
+                    var reader = std.Io.Reader.fixed(
+                        self.thread_safe_component_state[0..self.thread_safe_component_size],
+                    );
+                    const applied = if (comptime has_lv2_component_state_paths) blk: {
+                        self.runtime.instance.plugin
+                            .applyLv2ThreadSafeComponentRestore(
+                            &reader,
+                        ) catch break :blk false;
+                        break :blk true;
+                    } else blk: {
+                        self.runtime.instance.plugin.readComponentState(
+                            &reader,
+                        ) catch break :blk false;
+                        break :blk true;
+                    };
+                    if (!applied or reader.seek != reader.end) {
+                        if (!self.restoreParameterSnapshot(
+                            &previous_parameter_bytes,
+                        )) return .unknown;
+                        return .unknown;
                     }
                     if (comptime @hasDecl(
                         Plugin,
@@ -2168,7 +2862,7 @@ pub fn CoreAdapterWithParameters(
             var status = options_status_success;
             var terminated = false;
             for (0..256) |index| {
-                const option = &options[index];
+                const option = options[index];
                 if (option.key == 0 and option.value == null) {
                     terminated = true;
                     break;
@@ -2186,6 +2880,24 @@ pub fn CoreAdapterWithParameters(
                     status |= options_status_bad_value;
                     continue;
                 }
+                if (option.key == self.minimum_block_length_key or
+                    option.key == self.maximum_block_length_key or
+                    option.key == self.nominal_block_length_key)
+                    continue;
+                if (event_port_count != 0 and
+                    option.key == self.sequence_size_key)
+                {
+                    if (!self.sequence_size_configured)
+                        status |= options_status_unknown;
+                    continue;
+                }
+                status |= options_status_bad_key;
+            }
+            if (!terminated) status |= options_status_unknown;
+            if (status != options_status_success) return status;
+            for (0..256) |index| {
+                const option = &options[index];
+                if (option.key == 0 and option.value == null) break;
                 const value: *const i32 =
                     if (option.key == self.minimum_block_length_key)
                         &self.configured_minimum_frames
@@ -2193,24 +2905,13 @@ pub fn CoreAdapterWithParameters(
                         &self.configured_maximum_value
                     else if (option.key == self.nominal_block_length_key)
                         &self.configured_nominal_frames
-                    else if (event_port_count != 0 and
-                    option.key == self.sequence_size_key)
-                        if (self.sequence_size_configured)
-                            &self.configured_sequence_size_value
-                        else {
-                            status |= options_status_unknown;
-                            continue;
-                        }
-                    else {
-                        status |= options_status_bad_key;
-                        continue;
-                    };
+                    else
+                        &self.configured_sequence_size_value;
                 option.size = @sizeOf(i32);
                 option.type = self.atom_int_type;
                 option.value = value;
             }
-            if (!terminated) status |= options_status_unknown;
-            return status;
+            return options_status_success;
         }
 
         fn setOptions(
@@ -2560,9 +3261,39 @@ pub fn CoreAdapterWithParameters(
                 );
                 try self.advanceTransport(sample_count - frame_cursor);
             }
-            try self.writeOutputEvents(
+            var observed_state_changed_generation =
+                self.emitted_state_changed_generation;
+            var state_changed_body: AtomObjectBody = undefined;
+            if (comptime has_state_changed_binding) {
+                observed_state_changed_generation =
+                    self.state_changed_generation.load(.acquire);
+                if (observed_state_changed_generation !=
+                    self.emitted_state_changed_generation)
+                {
+                    if (output_event_count >= output_event_storage.len)
+                        return error.EventStorageFull;
+                    state_changed_body = .{
+                        .id = 0,
+                        .otype = self.state_changed_type,
+                    };
+                    output_event_storage[output_event_count] =
+                        process_api.Event.dataEvent(
+                            sample_count - 1,
+                            self.atom_object_type,
+                            std.mem.asBytes(&state_changed_body),
+                        );
+                    output_event_count += 1;
+                }
+            }
+            const output_events_written = try self.writeOutputEvents(
                 output_event_storage[0..output_event_count],
             );
+            if (comptime has_state_changed_binding) {
+                if (output_events_written) {
+                    self.emitted_state_changed_generation =
+                        observed_state_changed_generation;
+                }
+            }
             self.last_run_status = .succeeded;
         }
 
@@ -2639,6 +3370,7 @@ pub fn CoreAdapterWithParameters(
                 ).initWithOptions(.{
                     .sample_rate = self.sample_rate,
                     .process_mode = process_mode,
+                    .frame_count = frame_count,
                     .input_channels = segment_main_inputs[0..input_binding.main_channel_count],
                     .sidechain_input_channels = segment_auxiliary_inputs[0..input_binding.auxiliary_channel_count],
                     .auxiliary_input_bus_channel_counts = &input_binding.auxiliary_bus_channel_counts,
@@ -2751,6 +3483,7 @@ pub fn CoreAdapterWithParameters(
                         position_count += 1;
                     } else if (try self.readPatchRequest(
                         @intCast(event.time.frames),
+                        event.body.type,
                         bytes[offset + @sizeOf(AtomEvent) .. offset + @sizeOf(AtomEvent) + payload_size],
                     )) |request| {
                         if (patch_count >= patch_storage.len)
@@ -2830,6 +3563,7 @@ pub fn CoreAdapterWithParameters(
         fn readPatchRequest(
             self: *const Self,
             sample_offset: usize,
+            atom_type: Urid,
             payload: []const u8,
         ) !?TimedPatchRequest {
             if (comptime !has_patch_messages) return null;
@@ -2837,6 +3571,15 @@ pub fn CoreAdapterWithParameters(
                 return error.InvalidPatch;
             const object: *align(1) const AtomObjectBody =
                 @ptrCast(payload.ptr);
+            const request_reference: ?PatchRequestReference =
+                if (object.id == 0)
+                    null
+                else
+                    .{
+                        .atom_type = atom_type,
+                        .id = object.id,
+                        .object_type = object.otype,
+                    };
             const kind: PatchRequestKind =
                 if (object.otype == self.patch_get_type)
                     .get
@@ -2866,6 +3609,7 @@ pub fn CoreAdapterWithParameters(
             var graph_subject_count: usize = 0;
             var destination: ?Urid = null;
             var context: ?Urid = null;
+            var accept: ?Urid = null;
             var raw_value: ?RawPatchValue = null;
             var body: ?RawPatchValue = null;
             var add: ?RawPatchValue = null;
@@ -2892,6 +3636,12 @@ pub fn CoreAdapterWithParameters(
                     if (property_urid != null)
                         return error.InvalidPatch;
                     property_urid = try self.readPatchUrid(
+                        property.value.type,
+                        value,
+                    );
+                } else if (property.key == self.patch_accept_key) {
+                    if (accept != null) return error.InvalidPatch;
+                    accept = try self.readPatchUrid(
                         property.value.type,
                         value,
                     );
@@ -2964,7 +3714,8 @@ pub fn CoreAdapterWithParameters(
             }
             if (kind != .get and kind != .set) {
                 if (comptime !has_patch_graph_operations) return null;
-                if (property_urid != null or raw_value != null)
+                if (property_urid != null or raw_value != null or
+                    accept != null)
                     return error.InvalidPatch;
                 if (graph_subject_count == 0)
                     return error.InvalidPatch;
@@ -2972,6 +3723,7 @@ pub fn CoreAdapterWithParameters(
                     .sample_offset = sample_offset,
                     .kind = kind,
                     .sequence_number = sequence_number,
+                    .request = request_reference,
                     .graph_subjects = graph_subjects,
                     .graph_subject_count = graph_subject_count,
                     .destination = destination,
@@ -3005,25 +3757,51 @@ pub fn CoreAdapterWithParameters(
                             add != null or remove != null)
                             return error.InvalidPatch;
                     },
-                    .get, .set => unreachable,
+                    .get, .set => return error.InvalidPatch,
                 }
                 return request;
             }
+            if (kind == .get and property_urid == null) {
+                if (comptime !has_patch_graph_queries) return null;
+                if (raw_value != null or body != null or add != null or
+                    remove != null or destination != null)
+                {
+                    return error.InvalidPatch;
+                }
+                return .{
+                    .sample_offset = sample_offset,
+                    .kind = .get,
+                    .sequence_number = sequence_number,
+                    .request = request_reference,
+                    .subject = subject,
+                    .context = context,
+                    .accept = accept,
+                    .graph_query = true,
+                };
+            }
             if (body != null or add != null or remove != null or
-                destination != null or context != null)
+                destination != null or context != null or accept != null)
                 return error.InvalidPatch;
             const property_id = property_urid orelse
                 return error.InvalidPatch;
             const property_index = self.patchPropertyIndex(property_id);
-            if (!subject_matches or property_index == null)
+            if (!subject_matches)
                 return .{
                     .sample_offset = sample_offset,
                     .kind = kind,
                     .property_index = null,
                     .sequence_number = sequence_number,
+                    .request = request_reference,
                     .subject = subject,
                 };
-            const index = property_index.?;
+            const index = property_index orelse return .{
+                .sample_offset = sample_offset,
+                .kind = kind,
+                .property_index = null,
+                .sequence_number = sequence_number,
+                .request = request_reference,
+                .subject = subject,
+            };
             return switch (kind) {
                 .get => blk: {
                     if (raw_value != null) return error.InvalidPatch;
@@ -3032,6 +3810,7 @@ pub fn CoreAdapterWithParameters(
                         .kind = .get,
                         .property_index = index,
                         .sequence_number = sequence_number,
+                        .request = request_reference,
                         .subject = subject,
                     };
                 },
@@ -3044,6 +3823,7 @@ pub fn CoreAdapterWithParameters(
                         raw_value orelse return error.InvalidPatch,
                     ),
                     .sequence_number = sequence_number,
+                    .request = request_reference,
                     .subject = subject,
                 },
                 .put,
@@ -3235,14 +4015,73 @@ pub fn CoreAdapterWithParameters(
                         .applyLv2PatchGraphRequest(graph_request) catch {
                         succeeded = false;
                     };
-                    if (request.sequence_number == null or
-                        request.sequence_number == 0)
-                        return;
+                    if (!patchResponseRequested(
+                        request.request,
+                        request.sequence_number,
+                    )) return;
                     const payload = try self.appendPatchGraphResponse(
                         response_storage,
                         response_size,
-                        request.sequence_number.?,
+                        request.context,
+                        request.request,
+                        request.sequence_number,
                         succeeded,
+                    );
+                    if (output_event_count.* >= output_events.len)
+                        return error.EventStorageFull;
+                    output_events[output_event_count.*] =
+                        process_api.Event.dataEvent(
+                            request.sample_offset,
+                            self.atom_object_type,
+                            payload,
+                        );
+                    output_event_count.* += 1;
+                }
+                return;
+            }
+            if (request.graph_query) {
+                if (comptime has_patch_graph_queries) {
+                    const query = PatchGraphGetRequest{
+                        .subject = request.subject,
+                        .accept = request.accept,
+                        .context = request.context,
+                        .sequence_number = request.sequence_number,
+                        .request = request.request,
+                    };
+                    const body = self.runtime.instance.plugin
+                        .readLv2PatchGraph(query) catch {
+                        if (!patchResponseRequested(
+                            request.request,
+                            request.sequence_number,
+                        )) return;
+                        const payload = try self.appendPatchGraphResponse(
+                            response_storage,
+                            response_size,
+                            request.context,
+                            request.request,
+                            request.sequence_number,
+                            false,
+                        );
+                        if (output_event_count.* >= output_events.len)
+                            return error.EventStorageFull;
+                        output_events[output_event_count.*] =
+                            process_api.Event.dataEvent(
+                                request.sample_offset,
+                                self.atom_object_type,
+                                payload,
+                            );
+                        output_event_count.* += 1;
+                        return;
+                    };
+                    if (request.sequence_number == 0) return;
+                    const payload = try self.appendPatchGraphPutResponse(
+                        response_storage,
+                        response_size,
+                        request.subject,
+                        request.context,
+                        request.request,
+                        request.sequence_number,
+                        body,
                     );
                     if (output_event_count.* >= output_events.len)
                         return error.EventStorageFull;
@@ -3285,6 +4124,7 @@ pub fn CoreAdapterWithParameters(
                             response_size,
                             property_index,
                             request.sequence_number,
+                            request.request,
                             request.subject,
                             value,
                         );
@@ -3299,7 +4139,7 @@ pub fn CoreAdapterWithParameters(
                         output_event_count.* += 1;
                     }
                 },
-                .put, .insert, .patch, .delete, .copy, .move => unreachable,
+                .put, .insert, .patch, .delete, .copy, .move => return error.InvalidPatch,
             }
         }
 
@@ -3307,7 +4147,9 @@ pub fn CoreAdapterWithParameters(
             self: *const Self,
             storage: *[patch_response_capacity]u8,
             used: *usize,
-            sequence_number: i32,
+            context: ?Urid,
+            request: ?PatchRequestReference,
+            sequence_number: ?i32,
             succeeded: bool,
         ) ![]const u8 {
             const start = alignAtomSize(used.*) orelse
@@ -3326,12 +4168,92 @@ pub fn CoreAdapterWithParameters(
                     self.patch_error_type,
             };
             var cursor = start + @sizeOf(AtomObjectBody);
+            if (context) |item| {
+                try appendPatchAtomProperty(
+                    storage,
+                    &cursor,
+                    self.patch_context_key,
+                    self.atom_urid_type,
+                    std.mem.asBytes(&item),
+                );
+            }
+            try self.appendPatchRequestReference(
+                storage,
+                &cursor,
+                request,
+            );
+            if (sequence_number) |number| {
+                try appendPatchAtomProperty(
+                    storage,
+                    &cursor,
+                    self.patch_sequence_number_key,
+                    self.atom_int_type,
+                    std.mem.asBytes(&number),
+                );
+            }
+            used.* = cursor;
+            return storage[start..cursor];
+        }
+
+        fn appendPatchGraphPutResponse(
+            self: *const Self,
+            storage: *[patch_response_capacity]u8,
+            used: *usize,
+            subject: ?Urid,
+            context: ?Urid,
+            request: ?PatchRequestReference,
+            sequence_number: ?i32,
+            body: PatchAtomValue,
+        ) ![]const u8 {
+            if (body.atom_type == 0) return error.InvalidPatchValue;
+            const start = alignAtomSize(used.*) orelse
+                return error.EventStorageFull;
+            if (start > storage.len or
+                @sizeOf(AtomObjectBody) > storage.len - start)
+                return error.EventStorageFull;
+            @memset(storage[used.*..start], 0);
+            const object: *align(1) AtomObjectBody =
+                @ptrCast(storage[start..].ptr);
+            object.* = .{ .id = 0, .otype = self.patch_put_type };
+            var cursor = start + @sizeOf(AtomObjectBody);
+            if (subject) |item| {
+                try appendPatchAtomProperty(
+                    storage,
+                    &cursor,
+                    self.patch_subject_key,
+                    self.atom_urid_type,
+                    std.mem.asBytes(&item),
+                );
+            }
+            if (context) |item| {
+                try appendPatchAtomProperty(
+                    storage,
+                    &cursor,
+                    self.patch_context_key,
+                    self.atom_urid_type,
+                    std.mem.asBytes(&item),
+                );
+            }
+            try self.appendPatchRequestReference(
+                storage,
+                &cursor,
+                request,
+            );
+            if (sequence_number) |number| {
+                try appendPatchAtomProperty(
+                    storage,
+                    &cursor,
+                    self.patch_sequence_number_key,
+                    self.atom_int_type,
+                    std.mem.asBytes(&number),
+                );
+            }
             try appendPatchAtomProperty(
                 storage,
                 &cursor,
-                self.patch_sequence_number_key,
-                self.atom_int_type,
-                std.mem.asBytes(&sequence_number),
+                self.patch_body_key,
+                body.atom_type,
+                body.body,
             );
             used.* = cursor;
             return storage[start..cursor];
@@ -3343,6 +4265,7 @@ pub fn CoreAdapterWithParameters(
             used: *usize,
             property_index: usize,
             sequence_number: ?i32,
+            request: ?PatchRequestReference,
             subject: ?Urid,
             value: PatchValue,
         ) ![]const u8 {
@@ -3374,6 +4297,11 @@ pub fn CoreAdapterWithParameters(
                 self.atom_urid_type,
                 std.mem.asBytes(&property_urid),
             );
+            try self.appendPatchRequestReference(
+                storage,
+                &cursor,
+                request,
+            );
             if (sequence_number) |number| {
                 try appendPatchAtomProperty(
                     storage,
@@ -3390,6 +4318,30 @@ pub fn CoreAdapterWithParameters(
             );
             used.* = cursor;
             return storage[start..cursor];
+        }
+
+        fn appendPatchRequestReference(
+            self: *const Self,
+            storage: *[patch_response_capacity]u8,
+            cursor: *usize,
+            request: ?PatchRequestReference,
+        ) !void {
+            const reference = request orelse return;
+            if (reference.id == 0 or reference.object_type == 0 or
+                (reference.atom_type != self.atom_object_type and
+                    reference.atom_type != self.atom_blank_type))
+                return error.InvalidPatch;
+            const object = AtomObjectBody{
+                .id = reference.id,
+                .otype = reference.object_type,
+            };
+            try appendPatchAtomProperty(
+                storage,
+                cursor,
+                self.patch_request_key,
+                reference.atom_type,
+                std.mem.asBytes(&object),
+            );
         }
 
         fn appendPatchValueProperty(
@@ -3729,9 +4681,9 @@ pub fn CoreAdapterWithParameters(
         fn writeOutputEvents(
             self: *const Self,
             events: []const process_api.Event,
-        ) !void {
-            const port = event_output_port orelse return;
-            const raw = self.ports[port] orelse return;
+        ) !bool {
+            const port = event_output_port orelse return false;
+            const raw = self.ports[port] orelse return false;
             const sequence: *align(1) AtomSequence = @ptrCast(raw);
             const capacity: usize = sequence.atom.size;
             if (capacity < @sizeOf(AtomSequenceBody))
@@ -3779,6 +4731,7 @@ pub fn CoreAdapterWithParameters(
                 }
             }
             sequence.atom.size = @intCast(offset);
+            return true;
         }
 
         fn appendOutputAtomEvent(
@@ -4064,19 +5017,65 @@ fn featureWithUri(
     features: ?[*:null]const ?*const Feature,
     wanted_uri: []const u8,
 ) ?*const Feature {
+    if (!featureListValid(features)) return null;
     const list = features orelse return null;
-    if (@intFromPtr(list) % @alignOf(?*const Feature) != 0)
-        return null;
     for (0..256) |index| {
         const feature = list[index] orelse return null;
         if (@intFromPtr(feature) % @alignOf(Feature) != 0)
             continue;
         const uri = feature.URI orelse continue;
-        if (std.mem.eql(
-            u8,
-            std.mem.span(uri),
-            wanted_uri,
-        )) return feature;
+        if (cStringEquals(uri, wanted_uri)) return feature;
+    }
+    return null;
+}
+
+fn featureUriCount(
+    features: ?[*:null]const ?*const Feature,
+    wanted_uri: []const u8,
+) usize {
+    if (!featureListValid(features)) return 0;
+    const list = features orelse return 0;
+    var count: usize = 0;
+    for (0..256) |index| {
+        const feature = list[index] orelse return count;
+        if (@intFromPtr(feature) % @alignOf(Feature) != 0)
+            continue;
+        const uri = feature.URI orelse continue;
+        if (cStringEquals(uri, wanted_uri))
+            count += 1;
+    }
+    return count;
+}
+
+fn featureListValid(
+    features: ?[*:null]const ?*const Feature,
+) bool {
+    const list = features orelse return true;
+    if (@intFromPtr(list) % @alignOf(?*const Feature) != 0)
+        return false;
+    for (0..256) |index| {
+        const feature = list[index] orelse return true;
+        if (@intFromPtr(feature) % @alignOf(Feature) != 0)
+            return false;
+        if (feature.URI == null) return false;
+    }
+    return false;
+}
+
+fn cStringEquals(value: [*:0]const u8, expected: []const u8) bool {
+    for (expected, 0..) |byte, index| {
+        const actual = value[index];
+        if (actual == 0 or actual != byte) return false;
+    }
+    return value[expected.len] == 0;
+}
+
+fn boundedCStringLength(
+    value: [*:0]const u8,
+    maximum_length: usize,
+) ?usize {
+    for (0..maximum_length + 1) |index| {
+        if (value[index] == 0) return index;
     }
     return null;
 }
@@ -4094,6 +5093,15 @@ fn statePathFeatures(
     features: ?[*:null]const ?*const Feature,
     require_make_path: bool,
 ) ?StatePathFeatures {
+    const make_path_count = featureUriCount(
+        features,
+        state_make_path_uri,
+    );
+    if (featureUriCount(features, state_map_path_uri) != 1 or
+        featureUriCount(features, state_free_path_uri) != 1 or
+        make_path_count > 1 or
+        (require_make_path and make_path_count != 1))
+        return null;
     const raw_map_path = featureStruct(
         StateMapPath,
         features,
@@ -4159,8 +5167,18 @@ test "LV2 feature lookup validates host pointer alignment" {
         std.mem.asBytes(&records[0]),
         std.mem.asBytes(&misaligned_address),
     );
+    try std.testing.expect(!featureListValid(records[0..].ptr));
     try std.testing.expect(
-        featureWithUri(records[0..].ptr, urid_map_uri) == &wanted,
+        featureWithUri(records[0..].ptr, urid_map_uri) == null,
+    );
+    const missing_uri = Feature{ .URI = null, .data = null };
+    const missing_uri_list = [_:null]?*const Feature{
+        &missing_uri,
+        &wanted,
+    };
+    try std.testing.expect(!featureListValid(&missing_uri_list));
+    try std.testing.expect(
+        featureWithUri(&missing_uri_list, urid_map_uri) == null,
     );
 
     var storage: [@sizeOf(?*const Feature) * 2 + 1]u8 align(@alignOf(?*const Feature)) = @splat(0);
@@ -4173,6 +5191,28 @@ test "LV2 feature lookup validates host pointer alignment" {
     try std.testing.expect(
         featureWithUri(misaligned_list, urid_map_uri) == null,
     );
+
+    var unterminated: [256]?*const Feature = @splat(&wanted);
+    const unterminated_list: ?[*:null]const ?*const Feature =
+        @ptrCast(&unterminated);
+    try std.testing.expect(!featureListValid(unterminated_list));
+    try std.testing.expect(
+        featureWithUri(unterminated_list, urid_map_uri) == null,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        featureUriCount(unterminated_list, urid_map_uri),
+    );
+}
+
+test "LV2 URI comparison stops at the expected boundary" {
+    try std.testing.expect(cStringEquals(urid_map_uri, urid_map_uri));
+    try std.testing.expect(!cStringEquals("http:\x00ignored", urid_map_uri));
+    try std.testing.expect(!cStringEquals(
+        "http://lv2plug.in/ns/ext/urid#map/hostile-tail",
+        urid_map_uri,
+    ));
+    try std.testing.expect(cStringEquals("", ""));
 }
 
 fn layoutChannelCounts(
@@ -4290,16 +5330,30 @@ const TimedPatchRequest = struct {
     property_index: ?usize = null,
     value: ?PatchValue = null,
     sequence_number: ?i32 = null,
+    request: ?PatchRequestReference = null,
     subject: ?Urid = null,
     graph_subjects: [maximum_patch_graph_subject_count]Urid =
         [_]Urid{0} ** maximum_patch_graph_subject_count,
     graph_subject_count: usize = 0,
     destination: ?Urid = null,
     context: ?Urid = null,
+    accept: ?Urid = null,
+    graph_query: bool = false,
     body: ?RawPatchValue = null,
     add: ?RawPatchValue = null,
     remove: ?RawPatchValue = null,
 };
+
+fn patchResponseRequested(
+    request: ?PatchRequestReference,
+    sequence_number: ?i32,
+) bool {
+    if (sequence_number) |number| {
+        if (number == 0) return false;
+        return true;
+    }
+    return request != null;
+}
 
 fn patchGraphRequest(request: *const TimedPatchRequest) !PatchGraphRequest {
     if (request.graph_subject_count == 0 or
@@ -4312,22 +5366,22 @@ fn patchGraphRequest(request: *const TimedPatchRequest) !PatchGraphRequest {
         .operation = switch (request.kind) {
             .put => .{ .put = .{
                 .subject = subject,
-                .body = patchAtomValue(
+                .body = try patchAtomValue(
                     request.body orelse return error.InvalidPatch,
                 ),
             } },
             .insert => .{ .insert = .{
                 .subject = subject,
-                .body = patchAtomValue(
+                .body = try patchAtomValue(
                     request.body orelse return error.InvalidPatch,
                 ),
             } },
             .patch => .{ .patch = .{
                 .subject = subject,
-                .add = patchAtomValue(
+                .add = try patchAtomValue(
                     request.add orelse return error.InvalidPatch,
                 ),
-                .remove = patchAtomValue(
+                .remove = try patchAtomValue(
                     request.remove orelse return error.InvalidPatch,
                 ),
             } },
@@ -4346,10 +5400,12 @@ fn patchGraphRequest(request: *const TimedPatchRequest) !PatchGraphRequest {
         },
         .context = request.context,
         .sequence_number = request.sequence_number,
+        .request = request.request,
     };
 }
 
-fn patchAtomValue(raw: RawPatchValue) PatchAtomValue {
+fn patchAtomValue(raw: RawPatchValue) !PatchAtomValue {
+    if (raw.atom_type == 0) return error.InvalidPatch;
     return .{
         .atom_type = raw.atom_type,
         .body = raw.body,
@@ -4457,11 +5513,19 @@ fn sendWorkerResponse(
         @ptrCast(@alignCast(context));
     const raw: ?*const anyopaque =
         if (data.len == 0) null else data.ptr;
-    return response.respond(
+    return normalizeWorkerStatus(response.respond(
         response.handle,
         @intCast(data.len),
         raw,
-    );
+    ));
+}
+
+fn sendNonemptyWorkerResponse(
+    context: *anyopaque,
+    data: []const u8,
+) WorkerStatus {
+    if (data.len == 0) return .unknown;
+    return sendWorkerResponse(context, data);
 }
 
 fn workerBytes(
@@ -4478,6 +5542,51 @@ fn workerBytes(
 
 fn workerStatusForBytesError(err: anyerror) WorkerStatus {
     return if (err == error.WorkerNoSpace) .no_space else .unknown;
+}
+
+fn normalizeWorkerStatus(status: WorkerStatus) WorkerStatus {
+    return switch (status) {
+        .success => .success,
+        .no_space => .no_space,
+        .unknown => .unknown,
+        else => .unknown,
+    };
+}
+
+fn normalizeResizePortStatus(status: ResizePortStatus) ResizePortStatus {
+    return switch (status) {
+        .success => .success,
+        .no_space => .no_space,
+        .unknown => .unknown,
+        else => .unknown,
+    };
+}
+
+fn normalizeStateStatus(status: StateStatus) StateStatus {
+    return switch (status) {
+        .success => .success,
+        .bad_type => .bad_type,
+        .bad_flags => .bad_flags,
+        .no_feature => .no_feature,
+        .no_property => .no_property,
+        .no_space => .no_space,
+        .unknown => .unknown,
+        else => .unknown,
+    };
+}
+
+fn stateStatusForWorkerStatus(status: WorkerStatus) StateStatus {
+    return switch (status) {
+        .success => .success,
+        .no_space => .no_space,
+        .unknown => .unknown,
+        else => .unknown,
+    };
+}
+
+fn portablePodStateFlags(flags: u32) bool {
+    const required = state_is_pod | state_is_portable;
+    return flags & required == required;
 }
 
 fn approximatelyEqual(a: f64, b: f64) bool {
@@ -4554,6 +5663,11 @@ const TestStateHost = struct {
             return 127;
         if (std.mem.eql(u8, uri, buffer_sequence_size_uri))
             return 131;
+        if (std.mem.eql(u8, uri, state_changed_uri)) return 137;
+        if (std.mem.eql(u8, uri, log_error_uri)) return 139;
+        if (std.mem.eql(u8, uri, log_warning_uri)) return 149;
+        if (std.mem.eql(u8, uri, log_note_uri)) return 151;
+        if (std.mem.eql(u8, uri, log_trace_uri)) return 157;
         if (std.mem.endsWith(u8, uri, "#parameterState")) return 17;
         if (std.mem.endsWith(u8, uri, "#componentState")) return 19;
         return 0;
@@ -4637,6 +5751,45 @@ const TestSequenceBuffer = extern struct {
         return result;
     }
 };
+
+fn prepareTestEventOutput(buffer: *TestSequenceBuffer) void {
+    buffer.* = std.mem.zeroes(TestSequenceBuffer);
+    buffer.sequence.atom = .{
+        .size = @sizeOf(AtomSequenceBody) + buffer.storage.len,
+        .type = 23,
+    };
+}
+
+fn expectStateChangedSequence(
+    buffer: *const TestSequenceBuffer,
+    expected_frame: i64,
+) !void {
+    const event_size = std.mem.alignForward(
+        usize,
+        @sizeOf(AtomEvent) + @sizeOf(AtomObjectBody),
+        8,
+    );
+    try std.testing.expectEqual(
+        @as(u32, @intCast(@sizeOf(AtomSequenceBody) + event_size)),
+        buffer.sequence.atom.size,
+    );
+    try std.testing.expectEqual(@as(Urid, 29), buffer.sequence.atom.type);
+    const bytes: [*]const u8 = @ptrCast(&buffer.sequence.body);
+    const event: *align(1) const AtomEvent = @ptrCast(
+        bytes + @sizeOf(AtomSequenceBody),
+    );
+    try std.testing.expectEqual(expected_frame, event.time.frames);
+    try std.testing.expectEqual(@as(Urid, 43), event.body.type);
+    try std.testing.expectEqual(
+        @as(u32, @sizeOf(AtomObjectBody)),
+        event.body.size,
+    );
+    const object: *align(1) const AtomObjectBody = @ptrCast(
+        bytes + @sizeOf(AtomSequenceBody) + @sizeOf(AtomEvent),
+    );
+    try std.testing.expectEqual(@as(u32, 0), object.id);
+    try std.testing.expectEqual(@as(Urid, 137), object.otype);
+}
 
 const TestTimeBuilder = struct {
     buffer: *TestSequenceBuffer,
@@ -4757,6 +5910,251 @@ test "LV2 core ABI has C pointer layout" {
         pointer_size * 2,
         @sizeOf(ResizePortFeature),
     );
+    try std.testing.expectEqual(
+        pointer_size * 3,
+        @sizeOf(LogFeature),
+    );
+}
+
+test "LV2 host logging binds typed and format-safe messages" {
+    const Probe = struct {
+        pub const name = "LV2 Log Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout = .none;
+        pub const audio_output_layout: plugin_api.AudioBusLayout = .none;
+        pub const Params = struct {};
+
+        log: ?*LogSink = null,
+        trace_result: ?c_int = null,
+
+        pub fn bindLv2Log(self: *@This(), log: *LogSink) void {
+            self.log = log;
+        }
+
+        pub fn process(
+            self: *@This(),
+            _: *process_api.ProcessContext(f32),
+        ) void {
+            const log = self.log orelse return;
+            self.trace_result = log.trace("process 100% complete");
+        }
+    };
+    const Adapter = CoreAdapter(
+        Probe,
+        "https://example.test/lv2-log",
+        8,
+    );
+    const Host = struct {
+        calls: usize = 0,
+        last_type: Urid = 0,
+
+        fn write(
+            raw: ?*anyopaque,
+            log_type: Urid,
+            format: [*:0]const u8,
+        ) callconv(.c) c_int {
+            const self: *@This() = @ptrCast(
+                @alignCast(raw orelse return -1),
+            );
+            if (!std.mem.eql(u8, std.mem.span(format), "%s")) return -2;
+            self.calls += 1;
+            self.last_type = log_type;
+            return switch (log_type) {
+                149 => 12,
+                157 => 21,
+                else => 0,
+            };
+        }
+    };
+
+    try std.testing.expect(Adapter.log_enabled);
+    var host = Host{};
+    var map = UridMap{ .handle = null, .map = TestStateHost.map };
+    var log = LogFeature{
+        .handle = &host,
+        .printf = @ptrCast(&Host.write),
+        .vprintf = null,
+    };
+    const map_feature = Feature{ .URI = urid_map_uri, .data = &map };
+    var log_feature = Feature{ .URI = log_log_uri, .data = &log };
+    const features = [_:null]?*const Feature{
+        &map_feature,
+        &log_feature,
+    };
+    const descriptor = &Adapter.descriptor;
+    const handle = descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-log.lv2",
+        features[0..].ptr,
+    ) orelse return error.InstantiateFailed;
+    defer descriptor.cleanup(handle);
+    const instance = Adapter.instanceFromHandle(handle) orelse
+        return error.MissingInstance;
+    try std.testing.expect(instance.log_sink != null);
+    try std.testing.expect(instance.worker_schedule_sink == null);
+    try std.testing.expect(instance.resize_port_sink == null);
+    try std.testing.expect(instance.state_changed_sink == null);
+    try std.testing.expect(instance.urid_unmap_sink == null);
+    try std.testing.expect(instance.program_descriptor == null);
+    const sink = instance.runtime.instance.plugin.log orelse
+        return error.MissingLogBinding;
+    try std.testing.expectEqual(
+        @as(?c_int, 12),
+        sink.writeNonRealtime(.warning, "host warning"),
+    );
+    try std.testing.expectEqual(@as(Urid, 149), host.last_type);
+    try std.testing.expect(
+        sink.writeNonRealtime(.error_message, "bad\x00message") == null,
+    );
+    try std.testing.expectEqual(@as(usize, 1), host.calls);
+
+    var latency: f32 = -1;
+    descriptor.connect_port(handle, Adapter.latency_output_port, &latency);
+    if (descriptor.activate) |activate| activate(handle);
+    descriptor.run(handle, 8);
+    try std.testing.expectEqual(@as(?c_int, 21), instance.runtime.instance.plugin.trace_result);
+    try std.testing.expectEqual(@as(Urid, 157), host.last_type);
+
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-log-null-feature-list.lv2",
+            null,
+        ) == null,
+    );
+    const empty_features = [_:null]?*const Feature{};
+    const unavailable_handle = descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-log-unavailable.lv2",
+        &empty_features,
+    ) orelse return error.InstantiateFailed;
+    defer descriptor.cleanup(unavailable_handle);
+    const unavailable_instance =
+        Adapter.instanceFromHandle(unavailable_handle) orelse
+        return error.MissingInstance;
+    const unavailable_sink = unavailable_instance.runtime.instance.plugin.log orelse
+        return error.MissingLogBinding;
+    try std.testing.expect(
+        unavailable_sink.writeNonRealtime(.note, "ignored") == null,
+    );
+    try std.testing.expect(unavailable_sink.trace("ignored") == null);
+
+    log.printf = null;
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-log-malformed.lv2",
+            features[0..].ptr,
+        ) == null,
+    );
+    log.printf = @ptrCast(&Host.write);
+    log_feature.data = null;
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-log-null-data.lv2",
+            features[0..].ptr,
+        ) == null,
+    );
+    var misaligned_log_storage: [@sizeOf(LogFeature) + 1]u8 align(@alignOf(LogFeature)) =
+        undefined;
+    log_feature.data = @ptrCast(&misaligned_log_storage[1]);
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-log-misaligned.lv2",
+            features[0..].ptr,
+        ) == null,
+    );
+    log_feature.data = &log;
+    const duplicate_log_feature = Feature{
+        .URI = log_log_uri,
+        .data = &log,
+    };
+    const duplicate_features = [_:null]?*const Feature{
+        &map_feature,
+        &log_feature,
+        &duplicate_log_feature,
+    };
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-log-duplicate.lv2",
+            duplicate_features[0..].ptr,
+        ) == null,
+    );
+    const duplicate_map_feature = Feature{
+        .URI = urid_map_uri,
+        .data = &map,
+    };
+    const duplicate_map_features = [_:null]?*const Feature{
+        &map_feature,
+        &duplicate_map_feature,
+        &log_feature,
+    };
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-log-duplicate-map.lv2",
+            duplicate_map_features[0..].ptr,
+        ) == null,
+    );
+    const empty_options = [_]OptionsOption{.{}};
+    const first_options_feature = Feature{
+        .URI = options_options_uri,
+        .data = @constCast(&empty_options),
+    };
+    const second_options_feature = Feature{
+        .URI = options_options_uri,
+        .data = @constCast(&empty_options),
+    };
+    const duplicate_option_features = [_:null]?*const Feature{
+        &map_feature,
+        &log_feature,
+        &first_options_feature,
+        &second_options_feature,
+    };
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-log-duplicate-options.lv2",
+            duplicate_option_features[0..].ptr,
+        ) == null,
+    );
+    var unterminated_features: [256]?*const Feature =
+        @splat(&map_feature);
+    const unterminated_list: ?[*:null]const ?*const Feature =
+        @ptrCast(&unterminated_features);
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-log-unterminated-features.lv2",
+            unterminated_list,
+        ) == null,
+    );
+    const missing_uri_feature = Feature{ .URI = null, .data = null };
+    const missing_uri_features = [_:null]?*const Feature{
+        &missing_uri_feature,
+        &map_feature,
+    };
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-log-missing-feature-uri.lv2",
+            &missing_uri_features,
+        ) == null,
+    );
 }
 
 test "LV2 output port resize binding is optional and process-scoped" {
@@ -4800,6 +6198,7 @@ test "LV2 output port resize binding is optional and process-scoped" {
         calls: usize = 0,
         port_index: u32 = std.math.maxInt(u32),
         size: usize = 0,
+        status: ResizePortStatus = .success,
 
         fn resize(
             raw: ?*anyopaque,
@@ -4812,7 +6211,7 @@ test "LV2 output port resize binding is optional and process-scoped" {
             self.calls += 1;
             self.port_index = port_index;
             self.size = size;
-            return .success;
+            return self.status;
         }
     };
     var host = Host{};
@@ -4875,12 +6274,19 @@ test "LV2 output port resize binding is optional and process-scoped" {
         &([_]f32{0.25} ** output.len),
         &output,
     );
+    host.status = @enumFromInt(99);
+    descriptor.run(handle, output.len);
+    try std.testing.expectEqual(
+        ResizePortStatus.unknown,
+        instance.runtime.instance.plugin.output_status,
+    );
 
+    const empty_features = [_:null]?*const Feature{};
     const no_feature_handle = descriptor.instantiate(
         descriptor,
         48_000.0,
         "/tmp/lv2-port-resize-optional.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(no_feature_handle);
     var optional_output = [_]f32{0.0} ** 8;
@@ -4916,6 +6322,190 @@ test "LV2 output port resize binding is optional and process-scoped" {
     );
 }
 
+test "LV2 state change notifications coalesce and survive outside run" {
+    const Probe = struct {
+        pub const name = "LV2 State Changed Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout = .none;
+        pub const audio_output_layout: plugin_api.AudioBusLayout = .none;
+        pub const event_output = true;
+        pub const Params = struct {};
+
+        state_changed: ?*StateChangedSink = null,
+        notified_during_process: bool = false,
+
+        pub fn bindLv2StateChanged(
+            self: *@This(),
+            state_changed: *StateChangedSink,
+        ) void {
+            self.state_changed = state_changed;
+        }
+
+        pub fn process(
+            self: *@This(),
+            _: *process_api.ProcessContext(f32),
+        ) void {
+            if (self.notified_during_process) return;
+            self.notified_during_process = true;
+            const state_changed = self.state_changed orelse return;
+            state_changed.notify();
+            state_changed.notify();
+        }
+    };
+    const Adapter = CoreAdapter(
+        Probe,
+        "https://example.test/lv2-state-changed",
+        8,
+    );
+    var map = UridMap{ .handle = null, .map = TestStateHost.map };
+    var map_feature = Feature{ .URI = urid_map_uri, .data = &map };
+    const features = [_:null]?*const Feature{&map_feature};
+    const descriptor = &Adapter.descriptor;
+    try std.testing.expect(
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-state-changed-missing-map.lv2",
+            &[_:null]?*const Feature{},
+        ) == null,
+    );
+    const handle = descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-state-changed.lv2",
+        features[0..].ptr,
+    ) orelse return error.InstantiateFailed;
+    defer descriptor.cleanup(handle);
+    const instance = Adapter.instanceFromHandle(handle) orelse
+        return error.MissingInstance;
+    try std.testing.expect(Adapter.state_changed_enabled);
+
+    var event_output = std.mem.zeroes(TestSequenceBuffer);
+    var latency: f32 = -1.0;
+    descriptor.connect_port(handle, Adapter.latency_output_port, &latency);
+    if (descriptor.activate) |activate| activate(handle);
+
+    descriptor.run(handle, 8);
+    try std.testing.expectEqual(RunStatus.succeeded, instance.last_run_status);
+    try std.testing.expectEqual(
+        @as(u64, 2),
+        instance.state_changed_generation.load(.acquire),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 0),
+        instance.emitted_state_changed_generation,
+    );
+    prepareTestEventOutput(&event_output);
+    descriptor.connect_port(
+        handle,
+        Adapter.event_output_port orelse
+            return error.MissingEventOutput,
+        &event_output,
+    );
+    descriptor.run(handle, 8);
+    try std.testing.expectEqual(RunStatus.succeeded, instance.last_run_status);
+    try std.testing.expectEqual(
+        instance.state_changed_generation.load(.acquire),
+        instance.emitted_state_changed_generation,
+    );
+    try expectStateChangedSequence(&event_output, 7);
+
+    prepareTestEventOutput(&event_output);
+    descriptor.run(handle, 8);
+    try std.testing.expectEqual(
+        @as(u32, @sizeOf(AtomSequenceBody)),
+        event_output.sequence.atom.size,
+    );
+
+    const state_changed = instance.runtime.instance.plugin.state_changed orelse
+        return error.MissingStateChangedBinding;
+    const Notifier = struct {
+        fn run(sink: *StateChangedSink) void {
+            for (0..1024) |_| sink.notify();
+        }
+    };
+    var first_notifier = try std.Thread.spawn(
+        .{},
+        Notifier.run,
+        .{state_changed},
+    );
+    var first_notifier_joined = false;
+    defer if (!first_notifier_joined) first_notifier.join();
+    var second_notifier = try std.Thread.spawn(
+        .{},
+        Notifier.run,
+        .{state_changed},
+    );
+    first_notifier.join();
+    first_notifier_joined = true;
+    second_notifier.join();
+    prepareTestEventOutput(&event_output);
+    descriptor.run(handle, 8);
+    try expectStateChangedSequence(&event_output, 7);
+}
+
+test "LV2 state keys extend fragment-bearing plugin URIs" {
+    const Probe = struct {
+        pub const name = "LV2 Fragment URI Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout = .none;
+        pub const audio_output_layout: plugin_api.AudioBusLayout = .none;
+        pub const Params = struct {};
+
+        pub fn process(
+            _: *@This(),
+            _: *process_api.ProcessContext(f32),
+        ) void {}
+    };
+    const Adapter = CoreAdapter(
+        Probe,
+        "https://example.test/lv2-fragment#plugin",
+        16,
+    );
+    const Host = struct {
+        saw_parameter_state: bool = false,
+        saw_double_fragment: bool = false,
+
+        fn map(
+            handle: ?*anyopaque,
+            uri: [*:0]const u8,
+        ) callconv(.c) Urid {
+            const self: *@This() = @ptrCast(
+                @alignCast(handle orelse return 0),
+            );
+            const bytes = std.mem.span(uri);
+            if (std.mem.eql(
+                u8,
+                bytes,
+                "https://example.test/lv2-fragment#plugin/parameterState",
+            )) self.saw_parameter_state = true;
+            if (std.mem.indexOf(u8, bytes, "#plugin#") != null)
+                self.saw_double_fragment = true;
+            return 1;
+        }
+    };
+    var host = Host{};
+    var map = UridMap{
+        .handle = &host,
+        .map = Host.map,
+    };
+    const feature = Feature{
+        .URI = urid_map_uri,
+        .data = &map,
+    };
+    const features = [_:null]?*const Feature{&feature};
+    const descriptor = &Adapter.descriptor;
+    const handle = descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-fragment.lv2/",
+        features[0..].ptr,
+    ) orelse return error.InstantiateFailed;
+    defer descriptor.cleanup(handle);
+    try std.testing.expect(host.saw_parameter_state);
+    try std.testing.expect(!host.saw_double_fragment);
+}
+
 test "LV2 URID unmap opt-in binds stable host reverse mappings" {
     const Probe = struct {
         pub const name = "LV2 URID Unmap Probe";
@@ -4945,18 +6535,35 @@ test "LV2 URID unmap opt-in binds stable host reverse mappings" {
         16,
     );
     const Host = struct {
+        storage: [maximum_unmapped_uri_bytes + 2]u8 = @splat(0),
+
         fn unmap(
-            _: ?*anyopaque,
+            handle: ?*anyopaque,
             urid: Urid,
         ) callconv(.c) ?[*:0]const u8 {
+            const self: *@This() = @ptrCast(
+                @alignCast(handle orelse return null),
+            );
             return switch (urid) {
                 23 => "https://example.test/known-type",
+                25 => "",
+                26 => blk: {
+                    @memset(&self.storage, 'x');
+                    self.storage[maximum_unmapped_uri_bytes + 1] = 0;
+                    break :blk self.storage[0 .. maximum_unmapped_uri_bytes + 1 :0].ptr;
+                },
+                27 => blk: {
+                    @memset(&self.storage, 'x');
+                    self.storage[maximum_unmapped_uri_bytes] = 0;
+                    break :blk self.storage[0..maximum_unmapped_uri_bytes :0].ptr;
+                },
                 else => null,
             };
         }
     };
+    var host = Host{};
     var unmap = UridUnmap{
-        .handle = null,
+        .handle = &host,
         .unmap = Host.unmap,
     };
     var feature = Feature{
@@ -4983,11 +6590,16 @@ test "LV2 URID unmap opt-in binds stable host reverse mappings" {
         return error.MissingKnownUri;
     try std.testing.expectEqualStrings(
         "https://example.test/known-type",
-        std.mem.span(known),
+        known,
     );
+    try std.testing.expect(bound.unmap(24) == null);
+    try std.testing.expect(bound.unmap(25) == null);
+    try std.testing.expect(bound.unmap(26) == null);
+    const maximum_uri = bound.unmap(27) orelse
+        return error.MissingMaximumUri;
     try std.testing.expectEqual(
-        @as(?[*:0]const u8, null),
-        bound.unmap(24),
+        maximum_unmapped_uri_bytes,
+        maximum_uri.len,
     );
 }
 
@@ -5023,7 +6635,7 @@ test "LV2 URID unmap opt-in rejects missing and malformed features" {
             descriptor,
             48_000.0,
             "/tmp/lv2-urid-unmap-validation.lv2",
-            null,
+            &[_:null]?*const Feature{},
         ),
     );
 
@@ -5076,6 +6688,34 @@ test "LV2 URID unmap opt-in rejects missing and malformed features" {
             48_000.0,
             "/tmp/lv2-urid-unmap-validation.lv2",
             null_callback_features[0..].ptr,
+        ),
+    );
+    var valid_unmap = UridUnmap{
+        .handle = null,
+        .unmap = struct {
+            fn unmap(
+                _: ?*anyopaque,
+                _: Urid,
+            ) callconv(.c) ?[*:0]const u8 {
+                return null;
+            }
+        }.unmap,
+    };
+    const valid_feature = Feature{
+        .URI = urid_unmap_uri,
+        .data = &valid_unmap,
+    };
+    const duplicate_features = [_:null]?*const Feature{
+        &valid_feature,
+        &valid_feature,
+    };
+    try std.testing.expectEqual(
+        @as(Handle, null),
+        descriptor.instantiate(
+            descriptor,
+            48_000.0,
+            "/tmp/lv2-urid-unmap-validation.lv2",
+            duplicate_features[0..].ptr,
         ),
     );
 }
@@ -5164,16 +6804,21 @@ test "LV2 Programs enumerates banks and holds selections until host control chan
     ) orelse return error.MissingProgramsInterface;
     const programs: *const ProgramsInterface =
         @ptrCast(@alignCast(raw_interface));
+    const empty_features = [_:null]?*const Feature{};
     const handle = Adapter.descriptor.instantiate(
         &Adapter.descriptor,
         48_000.0,
         "/tmp/lv2-programs-probe.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer Adapter.descriptor.cleanup(handle);
+    const instance = Adapter.instanceFromHandle(handle) orelse
+        return error.InvalidHandle;
+    try std.testing.expect(instance.program_descriptor == null);
 
     const first = programs.get_program(handle, 0) orelse
         return error.MissingProgram;
+    try std.testing.expect(instance.program_descriptor != null);
     try std.testing.expectEqual(@as(u32, 11), first.bank);
     try std.testing.expectEqual(@as(u32, 0), first.program);
     try std.testing.expectEqualStrings("Init", std.mem.span(first.name));
@@ -5193,8 +6838,6 @@ test "LV2 Programs enumerates banks and holds selections until host control chan
     try std.testing.expect(programs.get_program(misaligned, 0) == null);
     programs.select_program(misaligned, 0, 0);
 
-    const instance = Adapter.instanceFromHandle(handle) orelse
-        return error.InvalidHandle;
     const input = [_]f32{ 1.0, -1.0 };
     var output = [_]f32{0.0} ** 2;
     var gain: f32 = 1.0;
@@ -5545,6 +7188,29 @@ test "LV2 instantiation options constrain block length" {
         options_status_bad_subject,
         runtime_options.get(handle, &unsupported_subject_query),
     );
+    var mixed_query = [_]OptionsOption{
+        .{ .key = 113 },
+        .{ .key = 999 },
+        .{},
+    };
+    try std.testing.expectEqual(
+        options_status_bad_key,
+        runtime_options.get(handle, &mixed_query),
+    );
+    try std.testing.expectEqual(@as(u32, 0), mixed_query[0].size);
+    try std.testing.expectEqual(@as(Urid, 0), mixed_query[0].type);
+    try std.testing.expect(mixed_query[0].value == null);
+    var unterminated_queries: [256]OptionsOption =
+        @splat(.{ .key = 113 });
+    try std.testing.expectEqual(
+        options_status_unknown,
+        runtime_options.get(handle, &unterminated_queries),
+    );
+    try std.testing.expectEqual(@as(u32, 0), unterminated_queries[0].size);
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        unterminated_queries[unterminated_queries.len - 1].size,
+    );
 
     const expanded_maximum: i32 = 3;
     const expanded_nominal: i32 = 3;
@@ -5760,9 +7426,13 @@ test "LV2 instantiation options constrain block length" {
 
 test "LV2 state path features own mapped resolved and generated paths" {
     const Host = struct {
-        storage: [128]u8 = @splat(0),
+        storage: [maximum_state_path_bytes + 2]u8 = @splat(0),
         free_count: usize = 0,
+        abstract_path_count: usize = 0,
         return_empty: bool = false,
+        return_maximum: bool = false,
+        return_oversized: bool = false,
+        accept_maximum_input: bool = false,
 
         fn abstractPath(
             handle: StateHandle,
@@ -5771,11 +7441,26 @@ test "LV2 state path features own mapped resolved and generated paths" {
             const self: *@This() = @ptrCast(
                 @alignCast(handle orelse return null),
             );
+            self.abstract_path_count += 1;
+            if (self.accept_maximum_input) {
+                self.accept_maximum_input = false;
+                return self.publish("resource/maximum-input");
+            }
             if (!std.mem.eql(
                 u8,
                 std.mem.span(path),
                 "/samples/source.wav",
             )) return null;
+            if (self.return_oversized) {
+                @memset(&self.storage, 'x');
+                self.storage[maximum_state_path_bytes + 1] = 0;
+                return self.storage[0 .. maximum_state_path_bytes + 1 :0].ptr;
+            }
+            if (self.return_maximum) {
+                @memset(&self.storage, 'x');
+                self.storage[maximum_state_path_bytes] = 0;
+                return self.storage[0..maximum_state_path_bytes :0].ptr;
+            }
             return self.publish(if (self.return_empty)
                 ""
             else
@@ -5868,6 +7553,33 @@ test "LV2 state path features own mapped resolved and generated paths" {
         features[0..].ptr,
         true,
     ) orelse return error.MissingStatePathFeatures;
+    const duplicate_map_features = [_:null]?*const Feature{
+        &map_feature,
+        &map_feature,
+        &make_feature,
+        &free_feature,
+    };
+    try std.testing.expect(
+        statePathFeatures(duplicate_map_features[0..].ptr, true) == null,
+    );
+    const duplicate_make_features = [_:null]?*const Feature{
+        &map_feature,
+        &make_feature,
+        &make_feature,
+        &free_feature,
+    };
+    try std.testing.expect(
+        statePathFeatures(duplicate_make_features[0..].ptr, true) == null,
+    );
+    const duplicate_free_features = [_:null]?*const Feature{
+        &map_feature,
+        &make_feature,
+        &free_feature,
+        &free_feature,
+    };
+    try std.testing.expect(
+        statePathFeatures(duplicate_free_features[0..].ptr, true) == null,
+    );
 
     var mapped = try paths.mapAbsolute("/samples/source.wav");
     try std.testing.expectEqualStrings(
@@ -5875,6 +7587,9 @@ test "LV2 state path features own mapped resolved and generated paths" {
         mapped.bytes(),
     );
     mapped.deinit();
+    try std.testing.expectEqual(@as(usize, 0), mapped.bytes().len);
+    mapped.deinit();
+    try std.testing.expectEqual(@as(usize, 1), host.free_count);
     var resolved = try paths.resolveAbstract("resource/source.wav");
     try std.testing.expectEqualStrings(
         "/restored/source.wav",
@@ -5907,6 +7622,49 @@ test "LV2 state path features own mapped resolved and generated paths" {
         paths.mapAbsolute("/samples/source.wav"),
     );
     try std.testing.expectEqual(@as(usize, 4), host.free_count);
+    host.return_empty = false;
+    host.return_oversized = true;
+    try std.testing.expectError(
+        error.InvalidStatePath,
+        paths.mapAbsolute("/samples/source.wav"),
+    );
+    try std.testing.expectEqual(@as(usize, 5), host.free_count);
+    host.return_oversized = false;
+    host.return_maximum = true;
+    var maximum_result = try paths.mapAbsolute("/samples/source.wav");
+    try std.testing.expectEqual(
+        maximum_state_path_bytes,
+        maximum_result.bytes().len,
+    );
+    maximum_result.deinit();
+    try std.testing.expectEqual(@as(usize, 6), host.free_count);
+    host.return_maximum = false;
+    var maximum_input: [maximum_state_path_bytes + 1]u8 = @splat('x');
+    maximum_input[maximum_state_path_bytes] = 0;
+    host.accept_maximum_input = true;
+    var mapped_maximum_input = try paths.mapAbsolute(
+        maximum_input[0..maximum_state_path_bytes :0],
+    );
+    try std.testing.expectEqualStrings(
+        "resource/maximum-input",
+        mapped_maximum_input.bytes(),
+    );
+    mapped_maximum_input.deinit();
+    try std.testing.expectEqual(@as(usize, 7), host.free_count);
+    var oversized_input: [maximum_state_path_bytes + 2]u8 = @splat('x');
+    oversized_input[maximum_state_path_bytes + 1] = 0;
+    const oversized_path =
+        oversized_input[0 .. maximum_state_path_bytes + 1 :0];
+    const abstract_path_count = host.abstract_path_count;
+    try std.testing.expectError(
+        error.InvalidStatePath,
+        paths.mapAbsolute(oversized_path),
+    );
+    try std.testing.expectEqual(
+        abstract_path_count,
+        host.abstract_path_count,
+    );
+    try std.testing.expectEqual(@as(usize, 7), host.free_count);
 
     map_path.abstract_path = null;
     try std.testing.expect(
@@ -5934,6 +7692,7 @@ test "LV2 state interface saves restores validates and resets parameters" {
         component_value: u32 = 7,
         pending_component_value: u32 = 7,
         component_restore_count: usize = 0,
+        write_empty_component_state: bool = false,
 
         pub const name = "LV2 State Probe";
         pub const vendor = "zig-vst3";
@@ -5978,6 +7737,7 @@ test "LV2 state interface saves restores validates and resets parameters" {
             self: *const @This(),
             writer: anytype,
         ) !void {
+            if (self.write_empty_component_state) return;
             try writer.writeByte(0xa5);
             try writer.writeInt(
                 u32,
@@ -6022,6 +7782,8 @@ test "LV2 state interface saves restores validates and resets parameters" {
         features[0..].ptr,
     ) orelse return error.InstantiateFailed;
     defer Adapter.descriptor.cleanup(handle);
+    const instance = Adapter.instanceFromHandle(handle) orelse
+        return error.MissingInstance;
 
     const raw_interface = Adapter.descriptor.extension_data(
         state_interface_uri,
@@ -6034,6 +7796,53 @@ test "LV2 state interface saves restores validates and resets parameters" {
     const programs: *const ProgramsInterface =
         @ptrCast(@alignCast(raw_programs));
     var host = TestStateHost{};
+    var unterminated_state_features: [256]?*const Feature =
+        @splat(&map_feature);
+    const unterminated_state_list: ?[*:null]const ?*const Feature =
+        @ptrCast(&unterminated_state_features);
+    try std.testing.expectEqual(
+        StateStatus.no_feature,
+        state.save(
+            handle,
+            TestStateHost.store,
+            &host,
+            0,
+            unterminated_state_list,
+        ),
+    );
+    try std.testing.expectEqual(
+        StateStatus.no_feature,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &host,
+            0,
+            unterminated_state_list,
+        ),
+    );
+    const missing_uri_feature = Feature{ .URI = null, .data = null };
+    const missing_uri_features =
+        [_:null]?*const Feature{&missing_uri_feature};
+    try std.testing.expectEqual(
+        StateStatus.no_feature,
+        state.save(
+            handle,
+            TestStateHost.store,
+            &host,
+            0,
+            &missing_uri_features,
+        ),
+    );
+    try std.testing.expectEqual(
+        StateStatus.no_feature,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &host,
+            0,
+            &missing_uri_features,
+        ),
+    );
     const input = [_]f32{ 0.25, -0.5 };
     var output = [_]f32{0.0} ** 2;
     var gain: f32 = 1.75;
@@ -6080,11 +7889,29 @@ test "LV2 state interface saves restores validates and resets parameters" {
         state.save(handle, TestStateHost.store, &host, 0, null),
     );
     host.component_store_status = .success;
+    host.store_status = @enumFromInt(99);
+    try std.testing.expectEqual(
+        StateStatus.unknown,
+        state.save(handle, TestStateHost.store, &host, 0, null),
+    );
+    host.store_status = .success;
+    host.present = false;
+    host.component_present = false;
+    instance.runtime.instance.plugin.write_empty_component_state = true;
+    try std.testing.expectEqual(
+        StateStatus.bad_type,
+        state.save(handle, TestStateHost.store, &host, 0, null),
+    );
+    try std.testing.expect(!host.present);
+    try std.testing.expect(!host.component_present);
+    instance.runtime.instance.plugin.write_empty_component_state = false;
+    try std.testing.expectEqual(
+        StateStatus.success,
+        state.save(handle, TestStateHost.store, &host, 0, null),
+    );
 
     gain = 0.25;
     Adapter.descriptor.run(handle, 2);
-    const instance = Adapter.instanceFromHandle(handle) orelse
-        return error.MissingInstance;
     instance.runtime.instance.plugin.component_value = 99;
     instance.runtime.instance.plugin.pending_component_value = 99;
     try std.testing.expectEqual(
@@ -6146,6 +7973,55 @@ test "LV2 state interface saves restores validates and resets parameters" {
     );
 
     host.value_type = 23;
+    host.flags = state_is_pod;
+    try std.testing.expectEqual(
+        StateStatus.bad_flags,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &host,
+            0,
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(?f64, 1.75),
+        instance.runtime.instance.loadParameterPlainIndex(0),
+    );
+    host.flags = state_is_pod | state_is_portable;
+    host.component_flags = state_is_pod;
+    try std.testing.expectEqual(
+        StateStatus.bad_flags,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &host,
+            0,
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(?f64, 1.75),
+        instance.runtime.instance.loadParameterPlainIndex(0),
+    );
+    host.component_flags = state_is_pod | state_is_portable;
+    host.component_size = 0;
+    try std.testing.expectEqual(
+        StateStatus.bad_type,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &host,
+            0,
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(?f64, 1.75),
+        instance.runtime.instance.loadParameterPlainIndex(0),
+    );
+    host.component_size = 5;
+
     gain = 0.25;
     Adapter.descriptor.run(handle, 2);
     instance.runtime.instance.plugin.component_value = 99;
@@ -6237,6 +8113,377 @@ test "LV2 state interface saves restores validates and resets parameters" {
     );
 }
 
+test "LV2 thread-safe restore stages state through Worker" {
+    const Probe = struct {
+        mode: u32 = 7,
+        pending_mode: u32 = 7,
+
+        pub const name = "LV2 Thread-Safe Restore Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout = .mono;
+        pub const audio_output_layout: plugin_api.AudioBusLayout = .mono;
+        pub const lv2_thread_safe_restore = true;
+        pub const component_state_maximum_encoded_size = 5;
+        pub const Params = struct {
+            gain: @import("parameters.zig").FloatParam = .{
+                .id = 0,
+                .name = "Gain",
+                .min = 0.0,
+                .max = 2.0,
+                .default = 1.0,
+            },
+        };
+
+        pub fn processWithParameterView(
+            _: *@This(),
+            context: *process_api.ProcessContext(f32),
+            view: @import("parameters.zig").ParameterView(Params),
+        ) void {
+            const input = context.inputChannel(0) orelse return;
+            const output = context.outputChannel(0) orelse return;
+            const gain: f32 = @floatCast(view.load("gain"));
+            for (input, output) |sample, *destination|
+                destination.* = sample * gain;
+        }
+
+        pub fn writeComponentState(
+            self: *const @This(),
+            writer: anytype,
+        ) !void {
+            try writer.writeByte(0xa5);
+            try writer.writeInt(u32, self.mode, .little);
+        }
+
+        pub fn readComponentState(
+            self: *@This(),
+            reader: anytype,
+        ) !void {
+            if (try reader.takeByte() != 0xa5)
+                return error.InvalidComponentState;
+            self.pending_mode = try reader.takeInt(u32, .little);
+        }
+
+        pub fn afterComponentStateRestore(self: *@This()) void {
+            self.mode = self.pending_mode;
+        }
+    };
+    const Adapter = CoreAdapter(
+        Probe,
+        "https://example.test/lv2-thread-safe-restore",
+        2,
+    );
+    try std.testing.expect(Adapter.thread_safe_restore_enabled);
+    try std.testing.expect(Adapter.worker_enabled);
+    try std.testing.expect(Adapter.worker_interface.end_run == null);
+
+    var urid_map = UridMap{
+        .handle = null,
+        .map = TestStateHost.map,
+    };
+    var map_feature = Feature{
+        .URI = urid_map_uri,
+        .data = &urid_map,
+    };
+    const instantiate_features = [_:null]?*const Feature{&map_feature};
+    const handle = Adapter.descriptor.instantiate(
+        &Adapter.descriptor,
+        48_000.0,
+        "/tmp/lv2-thread-safe-restore.lv2",
+        instantiate_features[0..].ptr,
+    ) orelse return error.InstantiateFailed;
+    defer Adapter.descriptor.cleanup(handle);
+    const instance = Adapter.instanceFromHandle(handle) orelse
+        return error.MissingInstance;
+    for (instance.thread_safe_parameter_state) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (instance.thread_safe_component_state) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    const raw_state = Adapter.descriptor.extension_data(
+        state_interface_uri,
+    ) orelse return error.MissingStateInterface;
+    const state: *const StateInterface =
+        @ptrCast(@alignCast(raw_state));
+    const raw_worker = Adapter.descriptor.extension_data(
+        worker_interface_uri,
+    ) orelse return error.MissingWorkerInterface;
+    const worker: *const WorkerInterface =
+        @ptrCast(@alignCast(raw_worker));
+
+    const Host = struct {
+        worker: *const WorkerInterface,
+        instance: Handle,
+        schedule_status: WorkerStatus = .success,
+        scheduled: bool = false,
+        response_pending: bool = false,
+        schedule_count: usize = 0,
+        response_count: usize = 0,
+
+        fn schedule(
+            context: ?*anyopaque,
+            size: u32,
+            data: ?*const anyopaque,
+        ) callconv(.c) WorkerStatus {
+            const self: *@This() = @ptrCast(
+                @alignCast(context orelse return .unknown),
+            );
+            if (size != 0 or data != null or self.scheduled)
+                return .unknown;
+            if (self.schedule_status != .success)
+                return self.schedule_status;
+            self.scheduled = true;
+            self.schedule_count += 1;
+            return .success;
+        }
+
+        fn respond(
+            context: WorkerRespondHandle,
+            size: u32,
+            data: ?*const anyopaque,
+        ) callconv(.c) WorkerStatus {
+            const self: *@This() = @ptrCast(
+                @alignCast(context orelse return .unknown),
+            );
+            if (size != 0 or data != null or self.response_pending)
+                return .unknown;
+            self.response_pending = true;
+            self.response_count += 1;
+            return .success;
+        }
+
+        fn runWork(self: *@This()) WorkerStatus {
+            if (!self.scheduled) return .unknown;
+            self.scheduled = false;
+            return self.worker.work(
+                self.instance,
+                respond,
+                self,
+                0,
+                null,
+            );
+        }
+
+        fn deliver(self: *@This()) WorkerStatus {
+            if (!self.response_pending) return .unknown;
+            const status = self.worker.work_response(
+                self.instance,
+                0,
+                null,
+            );
+            if (status == .success) self.response_pending = false;
+            return status;
+        }
+    };
+    var host = Host{
+        .worker = worker,
+        .instance = handle,
+    };
+    var schedule = WorkerSchedule{
+        .handle = &host,
+        .schedule_work = Host.schedule,
+    };
+    var schedule_feature = Feature{
+        .URI = worker_schedule_uri,
+        .data = &schedule,
+    };
+    const restore_features = [_:null]?*const Feature{&schedule_feature};
+
+    const input = [_]f32{ 0.25, -0.5 };
+    var output = [_]f32{0.0} ** input.len;
+    var gain: f32 = 1.75;
+    var latency: f32 = -1.0;
+    Adapter.descriptor.connect_port(
+        handle,
+        Adapter.audio_input_port_start,
+        @constCast(&input),
+    );
+    Adapter.descriptor.connect_port(
+        handle,
+        Adapter.audio_output_port_start,
+        &output,
+    );
+    Adapter.descriptor.connect_port(
+        handle,
+        Adapter.control_input_port_start,
+        &gain,
+    );
+    Adapter.descriptor.connect_port(
+        handle,
+        Adapter.latency_output_port,
+        &latency,
+    );
+    if (Adapter.descriptor.activate) |activate| activate(handle);
+    Adapter.descriptor.run(handle, input.len);
+    var saved = TestStateHost{};
+    try std.testing.expectEqual(
+        StateStatus.success,
+        state.save(handle, TestStateHost.store, &saved, 0, null),
+    );
+
+    const duplicate_restore_features = [_:null]?*const Feature{
+        &schedule_feature,
+        &schedule_feature,
+    };
+    try std.testing.expectEqual(
+        StateStatus.no_feature,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &saved,
+            0,
+            duplicate_restore_features[0..].ptr,
+        ),
+    );
+    try std.testing.expectEqual(@as(usize, 0), host.schedule_count);
+
+    gain = 0.25;
+    Adapter.descriptor.run(handle, input.len);
+    instance.runtime.instance.plugin.mode = 9;
+    try std.testing.expectEqual(
+        @as(?f64, 0.25),
+        instance.runtime.instance.loadParameterPlainIndex(0),
+    );
+    try std.testing.expectEqual(
+        StateStatus.success,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &saved,
+            0,
+            restore_features[0..].ptr,
+        ),
+    );
+    try std.testing.expectEqual(
+        StateStatus.no_space,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &saved,
+            0,
+            restore_features[0..].ptr,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(?f64, 0.25),
+        instance.runtime.instance.loadParameterPlainIndex(0),
+    );
+    try std.testing.expectEqual(WorkerStatus.success, host.runWork());
+    try std.testing.expectEqual(
+        @as(?f64, 0.25),
+        instance.runtime.instance.loadParameterPlainIndex(0),
+    );
+    try std.testing.expectEqual(WorkerStatus.success, host.deliver());
+    try std.testing.expectEqual(
+        @as(?f64, 1.75),
+        instance.runtime.instance.loadParameterPlainIndex(0),
+    );
+    try std.testing.expectEqual(
+        @as(u32, 7),
+        instance.runtime.instance.plugin.mode,
+    );
+    try std.testing.expect(!instance.thread_safe_parameter_present);
+    try std.testing.expect(!instance.thread_safe_component_present);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        instance.thread_safe_component_size,
+    );
+    for (instance.thread_safe_parameter_state) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (instance.thread_safe_component_state) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    try std.testing.expectEqual(WorkerStatus.unknown, host.deliver());
+    try std.testing.expectEqual(@as(usize, 1), host.schedule_count);
+    try std.testing.expectEqual(@as(usize, 1), host.response_count);
+
+    gain = 0.5;
+    Adapter.descriptor.run(handle, input.len);
+    instance.runtime.instance.plugin.mode = 11;
+    saved.component_bytes[0] = 0;
+    try std.testing.expectEqual(
+        StateStatus.success,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &saved,
+            0,
+            restore_features[0..].ptr,
+        ),
+    );
+    try std.testing.expectEqual(WorkerStatus.success, host.runWork());
+    try std.testing.expectEqual(WorkerStatus.unknown, host.deliver());
+    host.response_pending = false;
+    try std.testing.expectEqual(
+        @as(?f64, 0.5),
+        instance.runtime.instance.loadParameterPlainIndex(0),
+    );
+    try std.testing.expectEqual(
+        @as(u32, 11),
+        instance.runtime.instance.plugin.mode,
+    );
+    try std.testing.expect(!instance.thread_safe_parameter_present);
+    try std.testing.expect(!instance.thread_safe_component_present);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        instance.thread_safe_component_size,
+    );
+    for (instance.thread_safe_parameter_state) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (instance.thread_safe_component_state) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    saved.component_bytes[0] = 0xa5;
+    host.schedule_status = .no_space;
+    try std.testing.expectEqual(
+        StateStatus.no_space,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &saved,
+            0,
+            restore_features[0..].ptr,
+        ),
+    );
+    try std.testing.expect(!instance.thread_safe_parameter_present);
+    try std.testing.expect(!instance.thread_safe_component_present);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        instance.thread_safe_component_size,
+    );
+    for (instance.thread_safe_parameter_state) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (instance.thread_safe_component_state) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    host.schedule_status = .success;
+    schedule.schedule_work = null;
+    try std.testing.expectEqual(
+        StateStatus.no_feature,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &saved,
+            0,
+            restore_features[0..].ptr,
+        ),
+    );
+    schedule.schedule_work = Host.schedule;
+    try std.testing.expectEqual(
+        StateStatus.success,
+        state.restore(
+            handle,
+            TestStateHost.retrieve,
+            &saved,
+            0,
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(?f64, 1.75),
+        instance.runtime.instance.loadParameterPlainIndex(0),
+    );
+    try std.testing.expectEqual(
+        WorkerStatus.unknown,
+        worker.work(handle, Host.respond, &host, 1, "x".ptr),
+    );
+}
+
 test "LV2 host fixture drives audio control buses latency and lifecycle" {
     const Probe = struct {
         pub const name = "LV2 Probe";
@@ -6295,11 +8542,12 @@ test "LV2 host fixture drives audio control buses latency and lifecycle" {
     const descriptor = Adapter.descriptorAt(0) orelse
         return error.MissingDescriptor;
     try std.testing.expect(Adapter.descriptorAt(1) == null);
+    const empty_features = [_:null]?*const Feature{};
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
         "/tmp/lv2-probe.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(handle);
 
@@ -6395,11 +8643,12 @@ test "LV2 static ports carry selected auxiliary bus capacity" {
     );
     const descriptor = Adapter.descriptorAt(0) orelse
         return error.MissingDescriptor;
+    const empty_features = [_:null]?*const Feature{};
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
         "/tmp/lv2-large-bus-probe.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(handle);
     var input_samples: [1 + Probe.maximum_auxiliary_audio_buses][1]f32 =
@@ -6522,11 +8771,12 @@ test "LV2 projects dynamic auxiliary bus connection state" {
     try std.testing.expectEqual(@as(usize, 9), Adapter.port_count);
 
     const descriptor = &Adapter.descriptor;
+    const empty_features = [_:null]?*const Feature{};
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
         "/tmp/lv2-dynamic-projection-probe.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(handle);
 
@@ -6707,11 +8957,12 @@ test "LV2 projects high-channel dynamic buses without truncation" {
     try std.testing.expectEqual(@as(usize, 123), Adapter.port_count);
 
     const descriptor = &Adapter.descriptor;
+    const empty_features = [_:null]?*const Feature{};
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
         "/tmp/lv2-high-channel-dynamic-projection.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(handle);
 
@@ -6875,6 +9126,7 @@ test "LV2 worker supports immediate offline and bounded responses" {
         instance: Handle = null,
         work_count: usize = 0,
         response_count: usize = 0,
+        schedule_status: WorkerStatus = .success,
 
         fn schedule(
             context: ?*anyopaque,
@@ -6885,6 +9137,8 @@ test "LV2 worker supports immediate offline and bounded responses" {
                 @alignCast(context orelse return .unknown),
             );
             self.work_count += 1;
+            if (self.schedule_status != .success)
+                return self.schedule_status;
             return self.interface.work(
                 self.instance,
                 respond,
@@ -7009,6 +9263,14 @@ test "LV2 worker supports immediate offline and bounded responses" {
         &([_]f32{100.0} ** input.len),
         &output,
     );
+    host.schedule_status = @enumFromInt(99);
+    plugin.requested = false;
+    Adapter.descriptor.run(handle, input.len);
+    try std.testing.expectEqual(
+        WorkerStatus.unknown,
+        plugin.schedule_status,
+    );
+    host.schedule_status = .success;
     try std.testing.expectEqual(
         WorkerStatus.unknown,
         plugin.schedule.?.schedule("late"),
@@ -7052,11 +9314,12 @@ test "LV2 worker supports immediate offline and bounded responses" {
         ),
     );
 
+    const empty_features = [_:null]?*const Feature{};
     const no_feature_handle = Adapter.descriptor.instantiate(
         &Adapter.descriptor,
         48_000.0,
         "/tmp/lv2-worker-without-feature.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer Adapter.descriptor.cleanup(no_feature_handle);
     var no_feature_output = [_]f32{1.0} ** input.len;
@@ -7698,11 +9961,12 @@ test "LV2 freewheeling control switches process mode at block boundaries" {
     );
 
     const descriptor = &Adapter.descriptor;
+    const empty_features = [_:null]?*const Feature{};
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
         "/tmp/lv2-freewheeling-probe.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(handle);
     const input = [_]f32{ 0.25, -0.5 };
@@ -7840,11 +10104,12 @@ test "LV2 run failures clear connected outputs and remain bounded" {
         2,
     );
     const descriptor = &Adapter.descriptor;
+    const empty_features = [_:null]?*const Feature{};
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
         "/tmp/lv2-failure-probe.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(handle);
     var output = [_]f32{ 1.0, 1.0, 1.0 };
@@ -8003,11 +10268,12 @@ test "LV2 zero-frame run updates control outputs without audio ports" {
         16,
     );
     var latency: f32 = 0.0;
+    const empty_features = [_:null]?*const Feature{};
     const handle = Adapter.descriptor.instantiate(
         &Adapter.descriptor,
         44_100.0,
         "/tmp/lv2-zero-probe.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer Adapter.descriptor.cleanup(handle);
     Adapter.descriptor.connect_port(

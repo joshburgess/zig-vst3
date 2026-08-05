@@ -9,6 +9,7 @@ const PatchIds = struct {
     sequence: core.lv2.Urid,
     chunk: core.lv2.Urid,
     object: core.lv2.Urid,
+    blank: core.lv2.Urid,
     int: core.lv2.Urid,
     path: core.lv2.Urid,
     urid: core.lv2.Urid,
@@ -22,12 +23,14 @@ const PatchIds = struct {
     delete: core.lv2.Urid,
     copy: core.lv2.Urid,
     move: core.lv2.Urid,
+    accept: core.lv2.Urid,
     add: core.lv2.Urid,
     remove: core.lv2.Urid,
     body: core.lv2.Urid,
     context: core.lv2.Urid,
     destination: core.lv2.Urid,
     property: core.lv2.Urid,
+    request: core.lv2.Urid,
     sequence_number: core.lv2.Urid,
     subject: core.lv2.Urid,
     value: core.lv2.Urid,
@@ -38,6 +41,7 @@ const PatchIds = struct {
     graph_subject_two: core.lv2.Urid,
     graph_destination: core.lv2.Urid,
     graph_context: core.lv2.Urid,
+    state_changed: core.lv2.Urid,
 };
 
 const PatchSequence = extern struct {
@@ -167,6 +171,18 @@ const PatchBuilder = struct {
         );
     }
 
+    fn identify(
+        self: *PatchBuilder,
+        atom_type: core.lv2.Urid,
+        id: u32,
+    ) void {
+        self.event.body.type = atom_type;
+        const bytes: [*]u8 = @ptrCast(&self.buffer.sequence.body);
+        const object: *align(1) core.lv2.AtomObjectBody =
+            @ptrCast(bytes + self.payload_start);
+        object.id = id;
+    }
+
     fn finish(self: *PatchBuilder) void {
         const payload_size = self.cursor - self.payload_start;
         self.event.body.size = @intCast(payload_size);
@@ -174,10 +190,60 @@ const PatchBuilder = struct {
     }
 };
 
+fn readPatchRequestReference(
+    atom_type: core.lv2.Urid,
+    body: []const u8,
+    ids: PatchIds,
+) !core.lv2.PatchRequestReference {
+    if ((atom_type != ids.object and atom_type != ids.blank) or
+        body.len != @sizeOf(core.lv2.AtomObjectBody))
+        return error.InvalidPatchRequestReference;
+    const object: *align(1) const core.lv2.AtomObjectBody =
+        @ptrCast(body.ptr);
+    if (object.id == 0 or object.otype == 0)
+        return error.InvalidPatchRequestReference;
+    return .{
+        .atom_type = atom_type,
+        .id = object.id,
+        .object_type = object.otype,
+    };
+}
+
+fn readStateChanged(
+    buffer: *const PatchSequence,
+    ids: PatchIds,
+) !i64 {
+    const event_size = std.mem.alignForward(
+        usize,
+        @sizeOf(core.lv2.AtomEvent) +
+            @sizeOf(core.lv2.AtomObjectBody),
+        8,
+    );
+    if (buffer.sequence.atom.type != ids.sequence or
+        buffer.sequence.atom.size !=
+            @sizeOf(core.lv2.AtomSequenceBody) + event_size)
+        return error.InvalidStateChangedEvent;
+    const bytes: [*]const u8 = @ptrCast(&buffer.sequence.body);
+    const event: *align(1) const core.lv2.AtomEvent = @ptrCast(
+        bytes + @sizeOf(core.lv2.AtomSequenceBody),
+    );
+    if (event.body.type != ids.object or
+        event.body.size != @sizeOf(core.lv2.AtomObjectBody))
+        return error.InvalidStateChangedEvent;
+    const object: *align(1) const core.lv2.AtomObjectBody = @ptrCast(
+        bytes + @sizeOf(core.lv2.AtomSequenceBody) +
+            @sizeOf(core.lv2.AtomEvent),
+    );
+    if (object.id != 0 or object.otype != ids.state_changed)
+        return error.InvalidStateChangedEvent;
+    return event.time.frames;
+}
+
 const PatchResponse = struct {
     frame_offset: i64,
     property: core.lv2.Urid,
     sequence_number: ?i32,
+    request: ?core.lv2.PatchRequestReference,
     subject: ?core.lv2.Urid,
     value_type: core.lv2.Urid,
     value: []const u8,
@@ -208,6 +274,7 @@ fn readPatchResponse(
     if (object.otype != ids.set) return error.InvalidPatchResponse;
     var property_urid: ?core.lv2.Urid = null;
     var sequence_number: ?i32 = null;
+    var request: ?core.lv2.PatchRequestReference = null;
     var subject: ?core.lv2.Urid = null;
     var value_type: ?core.lv2.Urid = null;
     var value: []const u8 = &.{};
@@ -249,6 +316,13 @@ fn readPatchResponse(
                 *align(1) const i32,
                 @ptrCast(body.ptr),
             ).*;
+        } else if (property.key == ids.request) {
+            if (request != null) return error.InvalidPatchResponse;
+            request = try readPatchRequestReference(
+                property.value.type,
+                body,
+                ids,
+            );
         } else if (property.key == ids.subject) {
             if (subject != null or
                 property.value.type != ids.urid or
@@ -270,6 +344,7 @@ fn readPatchResponse(
         .property = property_urid orelse
             return error.InvalidPatchResponse,
         .sequence_number = sequence_number,
+        .request = request,
         .subject = subject,
         .value_type = value_type orelse
             return error.InvalidPatchResponse,
@@ -277,10 +352,120 @@ fn readPatchResponse(
     };
 }
 
+const PatchGraphPutResponse = struct {
+    frame_offset: i64,
+    subject: ?core.lv2.Urid,
+    context: ?core.lv2.Urid,
+    sequence_number: ?i32,
+    request: ?core.lv2.PatchRequestReference,
+    body_type: core.lv2.Urid,
+    body: []const u8,
+};
+
+fn readPatchGraphPutResponse(
+    buffer: *const PatchSequence,
+    ids: PatchIds,
+) !PatchGraphPutResponse {
+    if (buffer.sequence.atom.type != ids.sequence or
+        buffer.sequence.atom.size < @sizeOf(core.lv2.AtomSequenceBody) +
+            @sizeOf(core.lv2.AtomEvent) +
+            @sizeOf(core.lv2.AtomObjectBody))
+        return error.InvalidPatchGraphPutResponse;
+    const bytes: [*]const u8 = @ptrCast(&buffer.sequence.body);
+    const event_offset = @sizeOf(core.lv2.AtomSequenceBody);
+    const event: *const core.lv2.AtomEvent = @ptrCast(
+        @alignCast(bytes + event_offset),
+    );
+    if (event.body.type != ids.object)
+        return error.InvalidPatchGraphPutResponse;
+    const payload_start = event_offset + @sizeOf(core.lv2.AtomEvent);
+    const payload_size: usize = event.body.size;
+    if (payload_start + payload_size > buffer.sequence.atom.size)
+        return error.InvalidPatchGraphPutResponse;
+    const object: *align(1) const core.lv2.AtomObjectBody =
+        @ptrCast(bytes + payload_start);
+    if (object.otype != ids.put)
+        return error.InvalidPatchGraphPutResponse;
+
+    var subject: ?core.lv2.Urid = null;
+    var context: ?core.lv2.Urid = null;
+    var sequence_number: ?i32 = null;
+    var request: ?core.lv2.PatchRequestReference = null;
+    var body_type: ?core.lv2.Urid = null;
+    var body: []const u8 = &.{};
+    var cursor: usize = payload_start + @sizeOf(core.lv2.AtomObjectBody);
+    const payload_end = payload_start + payload_size;
+    while (cursor < payload_end) {
+        if (payload_end - cursor < @sizeOf(core.lv2.AtomPropertyBody))
+            return error.InvalidPatchGraphPutResponse;
+        const property: *align(1) const core.lv2.AtomPropertyBody =
+            @ptrCast(bytes + cursor);
+        const raw_size = @sizeOf(core.lv2.AtomPropertyBody) +
+            property.value.size;
+        const padded_size = std.mem.alignForward(usize, raw_size, 8);
+        if (padded_size > payload_end - cursor)
+            return error.InvalidPatchGraphPutResponse;
+        const value = bytes[cursor +
+            @sizeOf(core.lv2.AtomPropertyBody) .. cursor + raw_size];
+        if (property.key == ids.subject) {
+            if (subject != null or property.value.type != ids.urid or
+                value.len != @sizeOf(core.lv2.Urid))
+                return error.InvalidPatchGraphPutResponse;
+            subject = @as(
+                *align(1) const core.lv2.Urid,
+                @ptrCast(value.ptr),
+            ).*;
+        } else if (property.key == ids.context) {
+            if (context != null or property.value.type != ids.urid or
+                value.len != @sizeOf(core.lv2.Urid))
+                return error.InvalidPatchGraphPutResponse;
+            context = @as(
+                *align(1) const core.lv2.Urid,
+                @ptrCast(value.ptr),
+            ).*;
+        } else if (property.key == ids.sequence_number) {
+            if (sequence_number != null or
+                property.value.type != ids.int or
+                value.len != @sizeOf(i32))
+                return error.InvalidPatchGraphPutResponse;
+            sequence_number = @as(
+                *align(1) const i32,
+                @ptrCast(value.ptr),
+            ).*;
+        } else if (property.key == ids.request) {
+            if (request != null)
+                return error.InvalidPatchGraphPutResponse;
+            request = try readPatchRequestReference(
+                property.value.type,
+                value,
+                ids,
+            );
+        } else if (property.key == ids.body) {
+            if (body_type != null or property.value.type == 0)
+                return error.InvalidPatchGraphPutResponse;
+            body_type = property.value.type;
+            body = value;
+        }
+        cursor += padded_size;
+    }
+    return .{
+        .frame_offset = event.time.frames,
+        .subject = subject,
+        .context = context,
+        .sequence_number = sequence_number,
+        .request = request,
+        .body_type = body_type orelse
+            return error.InvalidPatchGraphPutResponse,
+        .body = body,
+    };
+}
+
 const PatchGraphResponse = struct {
     frame_offset: i64,
     response_type: core.lv2.Urid,
-    sequence_number: i32,
+    context: ?core.lv2.Urid,
+    sequence_number: ?i32,
+    request: ?core.lv2.PatchRequestReference,
 };
 
 fn readPatchGraphResponse(
@@ -309,6 +494,8 @@ fn readPatchGraphResponse(
         object.otype != ids.graph_error)
         return error.InvalidPatchGraphResponse;
     var sequence_number: ?i32 = null;
+    var context: ?core.lv2.Urid = null;
+    var request: ?core.lv2.PatchRequestReference = null;
     var cursor: usize =
         payload_start + @sizeOf(core.lv2.AtomObjectBody);
     const payload_end = payload_start + payload_size;
@@ -338,14 +525,31 @@ fn readPatchGraphResponse(
                 *align(1) const i32,
                 @ptrCast(body.ptr),
             ).*;
+        } else if (property.key == ids.context) {
+            if (context != null or property.value.type != ids.urid or
+                body.len != @sizeOf(core.lv2.Urid))
+                return error.InvalidPatchGraphResponse;
+            context = @as(
+                *align(1) const core.lv2.Urid,
+                @ptrCast(body.ptr),
+            ).*;
+        } else if (property.key == ids.request) {
+            if (request != null)
+                return error.InvalidPatchGraphResponse;
+            request = try readPatchRequestReference(
+                property.value.type,
+                body,
+                ids,
+            );
         }
         cursor += padded_size;
     }
     return .{
         .frame_offset = event.time.frames,
         .response_type = object.otype,
-        .sequence_number = sequence_number orelse
-            return error.InvalidPatchGraphResponse,
+        .context = context,
+        .sequence_number = sequence_number,
+        .request = request,
     };
 }
 
@@ -367,7 +571,8 @@ fn runPatchGraphRequest(
     const response = try readPatchGraphResponse(event_output, ids);
     if (response.frame_offset != 0 or
         response.response_type != response_type or
-        response.sequence_number != sequence_number)
+        response.sequence_number != sequence_number or
+        response.request != null)
         return error.InvalidPatchGraphResponse;
     const mode: f32 = @floatFromInt(expected_mode);
     try std.testing.expectEqualSlices(
@@ -708,6 +913,23 @@ const ResizePortHost = struct {
     }
 };
 
+const LogCapture = extern struct {
+    call_count: u32 = 0,
+    last_type: core.lv2.Urid = 0,
+    result: c_int = 28,
+    format_size: usize = 0,
+    message_size: usize = 0,
+    format: [16]u8 = @splat(0),
+    message: [128]u8 = @splat(0),
+};
+
+extern fn zig_lv2_log_capture_printf(
+    raw_capture: ?*anyopaque,
+    log_type: core.lv2.Urid,
+    format: [*:0]const u8,
+    ...,
+) callconv(.c) c_int;
+
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(
         init.arena.allocator(),
@@ -731,6 +953,7 @@ pub fn main(init: std.process.Init) !void {
         .sequence = StateHost.map(null, core.lv2.atom_sequence_uri),
         .chunk = StateHost.map(null, core.lv2.atom_chunk_uri),
         .object = StateHost.map(null, core.lv2.atom_object_uri),
+        .blank = StateHost.map(null, core.lv2.atom_blank_uri),
         .int = StateHost.map(null, core.lv2.atom_int_uri),
         .path = StateHost.map(null, core.lv2.atom_path_uri),
         .urid = StateHost.map(null, core.lv2.atom_urid_uri),
@@ -744,6 +967,7 @@ pub fn main(init: std.process.Init) !void {
         .delete = StateHost.map(null, core.lv2.patch_delete_uri),
         .copy = StateHost.map(null, core.lv2.patch_copy_uri),
         .move = StateHost.map(null, core.lv2.patch_move_uri),
+        .accept = StateHost.map(null, core.lv2.patch_accept_uri),
         .add = StateHost.map(null, core.lv2.patch_add_uri),
         .remove = StateHost.map(null, core.lv2.patch_remove_uri),
         .body = StateHost.map(null, core.lv2.patch_body_uri),
@@ -753,6 +977,7 @@ pub fn main(init: std.process.Init) !void {
             core.lv2.patch_destination_uri,
         ),
         .property = StateHost.map(null, core.lv2.patch_property_uri),
+        .request = StateHost.map(null, core.lv2.patch_request_uri),
         .sequence_number = StateHost.map(
             null,
             core.lv2.patch_sequence_number_uri,
@@ -786,6 +1011,10 @@ pub fn main(init: std.process.Init) !void {
         .graph_context = StateHost.map(
             null,
             "https://zig-vst3.dev/tests/lv2-component-state#graph-context",
+        ),
+        .state_changed = StateHost.map(
+            null,
+            core.lv2.state_changed_uri,
         ),
     };
     var map_feature = core.lv2.Feature{
@@ -841,6 +1070,13 @@ pub fn main(init: std.process.Init) !void {
         .URI = core.lv2.worker_schedule_uri,
         .data = &worker_schedule,
     };
+    const thread_safe_state_features =
+        [_:null]?*const core.lv2.Feature{
+            &state_map_feature,
+            &state_free_feature,
+            &state_make_feature,
+            &worker_feature,
+        };
     var resize_port_host = ResizePortHost{};
     var resize_port = core.lv2.ResizePortFeature{
         .data = &resize_port_host,
@@ -849,6 +1085,16 @@ pub fn main(init: std.process.Init) !void {
     var resize_port_feature = core.lv2.Feature{
         .URI = core.lv2.resize_port_resize_uri,
         .data = &resize_port,
+    };
+    var log_capture = LogCapture{};
+    var log = core.lv2.LogFeature{
+        .handle = &log_capture,
+        .printf = zig_lv2_log_capture_printf,
+        .vprintf = null,
+    };
+    var log_feature = core.lv2.Feature{
+        .URI = core.lv2.log_log_uri,
+        .data = &log,
     };
     var null_worker_schedule = core.lv2.WorkerSchedule{
         .handle = null,
@@ -875,11 +1121,53 @@ pub fn main(init: std.process.Init) !void {
         &worker_feature,
         &null_resize_port_feature,
     };
+    var null_log = core.lv2.LogFeature{
+        .handle = null,
+        .printf = null,
+        .vprintf = null,
+    };
+    const null_log_feature = core.lv2.Feature{
+        .URI = core.lv2.log_log_uri,
+        .data = &null_log,
+    };
+    const null_log_features = [_:null]?*const core.lv2.Feature{
+        &map_feature,
+        &worker_feature,
+        &null_log_feature,
+    };
     const features = [_:null]?*const core.lv2.Feature{
         &map_feature,
         &worker_feature,
         &resize_port_feature,
+        &log_feature,
     };
+    const duplicate_map_features = [_:null]?*const core.lv2.Feature{
+        &map_feature,
+        &map_feature,
+    };
+    const duplicate_worker_features = [_:null]?*const core.lv2.Feature{
+        &map_feature,
+        &worker_feature,
+        &worker_feature,
+    };
+    const duplicate_resize_features = [_:null]?*const core.lv2.Feature{
+        &map_feature,
+        &worker_feature,
+        &resize_port_feature,
+        &resize_port_feature,
+    };
+    const duplicate_log_features = [_:null]?*const core.lv2.Feature{
+        &map_feature,
+        &worker_feature,
+        &log_feature,
+        &log_feature,
+    };
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-component-state.lv2",
+        null,
+    ) != null) return error.NullFeatureListAccepted;
     if (descriptor.instantiate(
         descriptor,
         48_000.0,
@@ -892,6 +1180,60 @@ pub fn main(init: std.process.Init) !void {
         "/tmp/lv2-component-state.lv2",
         null_resize_port_features[0..].ptr,
     ) != null) return error.NullResizePortCallbackAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-component-state.lv2",
+        null_log_features[0..].ptr,
+    ) != null) return error.NullLogCallbackAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-component-state.lv2",
+        duplicate_map_features[0..].ptr,
+    ) != null) return error.DuplicateUridMapAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-component-state.lv2",
+        duplicate_worker_features[0..].ptr,
+    ) != null) return error.DuplicateWorkerFeatureAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-component-state.lv2",
+        duplicate_resize_features[0..].ptr,
+    ) != null) return error.DuplicateResizeFeatureAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-component-state.lv2",
+        duplicate_log_features[0..].ptr,
+    ) != null) return error.DuplicateLogFeatureAccepted;
+    var unterminated_features: [256]?*const core.lv2.Feature =
+        @splat(&map_feature);
+    const unterminated_list: ?[*:null]const ?*const core.lv2.Feature =
+        @ptrCast(&unterminated_features);
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-component-state.lv2",
+        unterminated_list,
+    ) != null) return error.UnterminatedFeatureListAccepted;
+    const missing_uri_feature = core.lv2.Feature{
+        .URI = null,
+        .data = null,
+    };
+    const missing_uri_features = [_:null]?*const core.lv2.Feature{
+        &missing_uri_feature,
+        &map_feature,
+    };
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-component-state.lv2",
+        &missing_uri_features,
+    ) != null) return error.MissingFeatureUriAccepted;
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
@@ -933,6 +1275,17 @@ pub fn main(init: std.process.Init) !void {
         resize_port_host.port_index != 3 or
         resize_port_host.size != 4096)
         return error.PortResizeRequestMismatch;
+    if (log_capture.call_count != 1 or
+        log_capture.last_type != StateHost.map(null, core.lv2.log_trace_uri) or
+        log_capture.format_size != 2 or
+        !std.mem.eql(u8, log_capture.format[0..2], "%s") or
+        log_capture.message_size != "component-state process 100%".len or
+        !std.mem.eql(
+            u8,
+            log_capture.message[0..log_capture.message_size],
+            "component-state process 100%",
+        ))
+        return error.LogMessageMismatch;
     if (!worker_host.request_pending or worker_host.work_count != 0)
         return error.WorkerWasNotScheduled;
     if (worker_host.response_count != 0)
@@ -988,6 +1341,9 @@ pub fn main(init: std.process.Init) !void {
         &[_]f32{ 10.375, 9.25 },
         &output,
     );
+    if (try readStateChanged(&event_output, patch_ids) !=
+        input.len - 1)
+        return error.InvalidStateChangedFrame;
     if (end_run(handle) != .success)
         return error.WorkerEndRunFailed;
 
@@ -1026,7 +1382,7 @@ pub fn main(init: std.process.Init) !void {
     if (end_run(handle) != .success)
         return error.WorkerEndRunFailed;
 
-    var graph_sequence: i32 = 101;
+    var graph_sequence: i32 = 100;
     patch = PatchBuilder.init(
         &event_input,
         patch_ids,
@@ -1063,6 +1419,215 @@ pub fn main(init: std.process.Init) !void {
         patch_ids,
         graph_sequence,
         patch_ids.ack,
+        21,
+    );
+
+    graph_sequence += 1;
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.get,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    try patch.append(
+        patch_ids.accept,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.put),
+    );
+    try patch.append(
+        patch_ids.context,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_context),
+    );
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&graph_sequence),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    const graph_get_response = try readPatchGraphPutResponse(
+        &event_output,
+        patch_ids,
+    );
+    if (graph_get_response.frame_offset != 0 or
+        graph_get_response.subject != patch_ids.graph_subject or
+        graph_get_response.context != patch_ids.graph_context or
+        graph_get_response.sequence_number != graph_sequence or
+        graph_get_response.request != null or
+        graph_get_response.body_type != patch_ids.int or
+        graph_get_response.body.len != @sizeOf(u32) or
+        @as(
+            *align(1) const i32,
+            @ptrCast(graph_get_response.body.ptr),
+        ).* != 21)
+    {
+        return error.InvalidPatchGraphPutResponse;
+    }
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.get,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    try patch.append(
+        patch_ids.accept,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.put),
+    );
+    try patch.append(
+        patch_ids.context,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_context),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    const uncorrelated_graph_response = try readPatchGraphPutResponse(
+        &event_output,
+        patch_ids,
+    );
+    if (uncorrelated_graph_response.subject !=
+        patch_ids.graph_subject or
+        uncorrelated_graph_response.context !=
+            patch_ids.graph_context or
+        uncorrelated_graph_response.sequence_number != null or
+        uncorrelated_graph_response.request != null or
+        uncorrelated_graph_response.body_type != patch_ids.int or
+        uncorrelated_graph_response.body.len != @sizeOf(i32) or
+        @as(
+            *align(1) const i32,
+            @ptrCast(uncorrelated_graph_response.body.ptr),
+        ).* != 21)
+    {
+        return error.InvalidUncorrelatedPatchGraphPutResponse;
+    }
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.get,
+    );
+    const blank_request_id: u32 = 73;
+    patch.identify(patch_ids.blank, blank_request_id);
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    try patch.append(
+        patch_ids.accept,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.put),
+    );
+    try patch.append(
+        patch_ids.context,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_context),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    const identified_graph_response = try readPatchGraphPutResponse(
+        &event_output,
+        patch_ids,
+    );
+    const graph_request = identified_graph_response.request orelse
+        return error.MissingPatchGraphRequestReference;
+    if (identified_graph_response.sequence_number != null or
+        identified_graph_response.context != patch_ids.graph_context or
+        graph_request.atom_type != patch_ids.blank or
+        graph_request.id != blank_request_id or
+        graph_request.object_type != patch_ids.get)
+        return error.InvalidPatchGraphRequestReference;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.get,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    try patch.append(
+        patch_ids.accept,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.put),
+    );
+    try patch.append(
+        patch_ids.context,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_context),
+    );
+    const zero_graph_sequence: i32 = 0;
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&zero_graph_sequence),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 24.375, 23.25 },
+        &output,
+    );
+    if (event_output.sequence.atom.size !=
+        @sizeOf(core.lv2.AtomSequenceBody))
+        return error.ZeroSequenceProducedPatchGraphPutResponse;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    graph_sequence += 1;
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.get,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    try patch.append(
+        patch_ids.context,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_context),
+    );
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&graph_sequence),
+    );
+    try runPatchGraphRequest(
+        descriptor,
+        handle,
+        end_run,
+        &output,
+        &event_output,
+        patch_ids,
+        graph_sequence,
+        patch_ids.graph_error,
         21,
     );
 
@@ -1255,6 +1820,53 @@ pub fn main(init: std.process.Init) !void {
         0,
         patch_ids.insert,
     );
+    const graph_mutation_request_id = patch_ids.graph_destination;
+    patch.identify(patch_ids.object, graph_mutation_request_id);
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    const request_only_mode: i32 = 28;
+    try patch.append(
+        patch_ids.body,
+        patch_ids.int,
+        std.mem.asBytes(&request_only_mode),
+    );
+    try patch.append(
+        patch_ids.context,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_context),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    const identified_graph_ack = try readPatchGraphResponse(
+        &event_output,
+        patch_ids,
+    );
+    const mutation_request = identified_graph_ack.request orelse
+        return error.MissingPatchGraphMutationRequestReference;
+    if (identified_graph_ack.response_type != patch_ids.ack or
+        identified_graph_ack.context != patch_ids.graph_context or
+        identified_graph_ack.sequence_number != null or
+        mutation_request.atom_type != patch_ids.object or
+        mutation_request.id != graph_mutation_request_id or
+        mutation_request.object_type != patch_ids.insert)
+        return error.InvalidPatchGraphMutationRequestReference;
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 31.375, 30.25 },
+        &output,
+    );
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.insert,
+    );
     try patch.append(
         patch_ids.subject,
         patch_ids.urid,
@@ -1324,6 +1936,33 @@ pub fn main(init: std.process.Init) !void {
         patch_ids.graph_error,
         28,
     );
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.put,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.graph_subject),
+    );
+    try patch.append(
+        patch_ids.body,
+        0,
+        std.mem.asBytes(&put_mode),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0.0} ** input.len),
+        &output,
+    );
+    if (event_output.sequence.atom.size !=
+        @sizeOf(core.lv2.AtomSequenceBody))
+        return error.ZeroTypePatchGraphProducedOutput;
 
     patch = PatchBuilder.init(
         &event_input,
@@ -1442,6 +2081,8 @@ pub fn main(init: std.process.Init) !void {
         0,
         patch_ids.get,
     );
+    const named_request_id = patch_ids.graph_destination;
+    patch.identify(patch_ids.object, named_request_id);
     try patch.append(
         patch_ids.property,
         patch_ids.urid,
@@ -1455,6 +2096,7 @@ pub fn main(init: std.process.Init) !void {
     );
     if (path_response.property != patch_ids.resource or
         path_response.sequence_number != null or
+        path_response.request == null or
         path_response.value_type != patch_ids.path or
         path_response.value.len == 0 or
         path_response.value[path_response.value.len - 1] != 0 or
@@ -1464,6 +2106,12 @@ pub fn main(init: std.process.Init) !void {
             "/restored/original.wav",
         ))
         return error.InvalidPathPatchResponse;
+    const path_request = path_response.request orelse
+        return error.MissingPathPatchRequestReference;
+    if (path_request.atom_type != patch_ids.object or
+        path_request.id != named_request_id or
+        path_request.object_type != patch_ids.get)
+        return error.InvalidPathPatchRequestReference;
     if (end_run(handle) != .success)
         return error.WorkerEndRunFailed;
 
@@ -1892,6 +2540,124 @@ pub fn main(init: std.process.Init) !void {
     state_map_path.handle = &state_host;
     state_free_path.handle = &state_host;
     state_make_path.handle = &state_host;
+
+    var thread_safe_saved = StateHost{};
+    if (state.save(
+        handle,
+        StateHost.store,
+        &thread_safe_saved,
+        0,
+        state_features[0..].ptr,
+    ) != .success) return error.StateSaveFailed;
+    gain = 0.25;
+    if (descriptor.activate) |activate| activate(handle);
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    var before_thread_safe_restore = StateHost{};
+    if (state.save(
+        handle,
+        StateHost.store,
+        &before_thread_safe_restore,
+        0,
+        state_features[0..].ptr,
+    ) != .success) return error.StateSaveFailed;
+    if (std.mem.eql(
+        u8,
+        thread_safe_saved.parameter_bytes[0..thread_safe_saved.parameter_size],
+        before_thread_safe_restore.parameter_bytes[0..before_thread_safe_restore.parameter_size],
+    )) return error.ThreadSafeRestoreFixtureDidNotMutateState;
+
+    worker_host.respond_entered.store(false, .release);
+    worker_host.allow_response.store(false, .release);
+    worker_host.work_finished.store(false, .release);
+    worker_host.work_status = .unknown;
+    state_host.fail_path_mapping = true;
+    if (state.restore(
+        handle,
+        StateHost.retrieve,
+        &thread_safe_saved,
+        0,
+        thread_safe_state_features[0..].ptr,
+    ) != .bad_type) return error.ThreadSafePathFailureAccepted;
+    if (worker_host.request_pending)
+        return error.FailedThreadSafeRestoreWasScheduled;
+    state_host.fail_path_mapping = false;
+    if (state.restore(
+        handle,
+        StateHost.retrieve,
+        &thread_safe_saved,
+        0,
+        thread_safe_state_features[0..].ptr,
+    ) != .success) return error.ThreadSafeStateRestoreWasNotScheduled;
+    if (!worker_host.request_pending or worker_host.request_size != 0)
+        return error.ThreadSafeStateRestoreRequestMismatch;
+    if (state.restore(
+        handle,
+        StateHost.retrieve,
+        &thread_safe_saved,
+        0,
+        thread_safe_state_features[0..].ptr,
+    ) != .no_space) return error.ConcurrentThreadSafeRestoreAccepted;
+    var staged_but_unapplied = StateHost{};
+    if (state.save(
+        handle,
+        StateHost.store,
+        &staged_but_unapplied,
+        0,
+        state_features[0..].ptr,
+    ) != .success) return error.StateSaveFailed;
+    if (!std.mem.eql(
+        u8,
+        before_thread_safe_restore.parameter_bytes[0..before_thread_safe_restore.parameter_size],
+        staged_but_unapplied.parameter_bytes[0..staged_but_unapplied.parameter_size],
+    )) return error.ThreadSafeRestoreAppliedBeforeWorkerResponse;
+
+    var restore_worker_thread = try std.Thread.spawn(
+        .{},
+        WorkerHost.runWork,
+        .{&worker_host},
+    );
+    var restore_worker_joined = false;
+    defer if (!restore_worker_joined) {
+        worker_host.allow_response.store(true, .release);
+        restore_worker_thread.join();
+    };
+    if (!worker_host.waitForResponse()) {
+        restore_worker_thread.join();
+        restore_worker_joined = true;
+        return error.ThreadSafeRestoreWorkerDidNotRespond;
+    }
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    worker_host.allow_response.store(true, .release);
+    restore_worker_thread.join();
+    restore_worker_joined = true;
+    if (worker_host.work_status != .success or
+        !worker_host.response_pending or
+        worker_host.response_size != 0)
+        return error.ThreadSafeRestoreWorkerFailed;
+    if (worker_host.deliverResponse() != .success)
+        return error.ThreadSafeRestoreResponseFailed;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+    if (descriptor.deactivate) |deactivate| deactivate(handle);
+    var after_thread_safe_restore = StateHost{};
+    if (state.save(
+        handle,
+        StateHost.store,
+        &after_thread_safe_restore,
+        0,
+        state_features[0..].ptr,
+    ) != .success) return error.StateSaveFailed;
+    if (!std.mem.eql(
+        u8,
+        thread_safe_saved.parameter_bytes[0..thread_safe_saved.parameter_size],
+        after_thread_safe_restore.parameter_bytes[0..after_thread_safe_restore.parameter_size],
+    ) or !std.mem.eql(
+        u8,
+        thread_safe_saved.component_bytes[0..thread_safe_saved.component_size],
+        after_thread_safe_restore.component_bytes[0..after_thread_safe_restore.component_size],
+    )) return error.ThreadSafeRestoreRoundTripMismatch;
 
     gain = 0.25;
     if (descriptor.activate) |activate| activate(handle);

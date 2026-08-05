@@ -14,10 +14,31 @@ pub const FactoryPreset = struct {
     values: []const PresetValue,
 };
 
+pub const UiResizeBehavior = enum {
+    resizable,
+    programmatic_only,
+    fixed,
+};
+
+pub const UiPortProtocol = enum {
+    float,
+    peak,
+    event,
+};
+
+pub const UiPortNotification = struct {
+    port_symbol: []const u8,
+    protocol: UiPortProtocol,
+    notify_type_uri: ?[]const u8 = null,
+};
+
 pub const UiMetadata = struct {
     uri: []const u8,
     binary_name: []const u8,
     class_uri: []const u8,
+    resize_behavior: UiResizeBehavior = .resizable,
+    event_input_messages: bool = false,
+    port_notifications: []const UiPortNotification = &.{},
 };
 
 pub const MaintainerMetadata = struct {
@@ -80,12 +101,28 @@ pub fn Generator(
     const has_port_resize =
         @hasDecl(Adapter, "port_resize_enabled") and
         Adapter.port_resize_enabled;
+    const has_log =
+        @hasDecl(Adapter, "log_enabled") and Adapter.log_enabled;
     const has_patch =
         @hasDecl(Adapter, "patch_enabled") and Adapter.patch_enabled;
+    const has_state_changed =
+        @hasDecl(Adapter, "state_changed_enabled") and
+        Adapter.state_changed_enabled;
+    const has_thread_safe_restore =
+        @hasDecl(Adapter, "thread_safe_restore_enabled") and
+        Adapter.thread_safe_restore_enabled;
+    const has_component_state =
+        @hasDecl(Adapter, "component_state_enabled") and
+        Adapter.component_state_enabled;
     const has_readable_patch =
         @hasDecl(Adapter, "patch_readable") and Adapter.patch_readable;
     const has_writable_patch =
         @hasDecl(Adapter, "patch_writable") and Adapter.patch_writable;
+    const child_uri_separator: u8 = if (std.mem.indexOfScalar(
+        u8,
+        plugin_uri,
+        '#',
+    ) == null) '#' else '/';
     const projects_dynamic_audio_topology =
         @hasDecl(Adapter, "dynamic_audio_topology_projected") and
         Adapter.dynamic_audio_topology_projected;
@@ -146,6 +183,7 @@ pub fn Generator(
                     "@prefix doap: <http://usefulinc.com/ns/doap#> .\n" ++
                     "@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n" ++
                     "@prefix lv2:  <http://lv2plug.in/ns/lv2core#> .\n" ++
+                    "@prefix log:  <http://lv2plug.in/ns/ext/log#> .\n" ++
                     "@prefix midi: <http://lv2plug.in/ns/ext/midi#> .\n" ++
                     "@prefix opts: <http://lv2plug.in/ns/ext/options#> .\n" ++
                     "@prefix patch: <http://lv2plug.in/ns/ext/patch#> .\n" ++
@@ -193,8 +231,12 @@ pub fn Generator(
                 try writer.writeAll(" , lv2:isLive");
             if (Adapter.worker_enabled)
                 try writer.writeAll(" , work:schedule");
+            if (has_thread_safe_restore)
+                try writer.writeAll(" , state:threadSafeRestore");
             if (has_port_resize)
                 try writer.writeAll(" , rsz:resize");
+            if (has_log)
+                try writer.writeAll(" , log:log");
             try writer.writeAll(
                 " ;\n    lv2:requiredFeature urid:map",
             );
@@ -249,12 +291,34 @@ pub fn Generator(
                 try writer.writeAll("> ;\n    lv2:binary <");
                 try writer.writeAll(ui.binary_name);
                 try writer.writeAll(
-                    "> ;\n" ++
-                        "    lv2:requiredFeature ui:parent ;\n" ++
-                        "    lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch , opts:options , urid:map ;\n" ++
-                        "    opts:supportedOption ui:scaleFactor ;\n" ++
-                        "    lv2:extensionData ui:idleInterface , ui:resize , ui:showInterface , opts:interface",
+                    "> ;\n",
                 );
+                try writeUiPortNotifications(writer, ui);
+                try writer.writeAll(
+                    "    lv2:requiredFeature ui:parent ;\n" ++
+                        "    lv2:optionalFeature ui:idleInterface",
+                );
+                switch (ui.resize_behavior) {
+                    .resizable => try writer.writeAll(" , ui:resize"),
+                    .programmatic_only => try writer.writeAll(
+                        " , ui:resize , ui:noUserResize",
+                    ),
+                    .fixed => try writer.writeAll(" , ui:fixedSize"),
+                }
+                try writer.writeAll(
+                    " , ui:touch , ui:requestValue , ui:portMap , ui:portSubscribe , ui:peakProtocol",
+                );
+                if (uiUsesEventTransfer(ui))
+                    try writer.writeAll(" , atom:eventTransfer");
+                try writer.writeAll(
+                    " , opts:options , urid:map ;\n" ++
+                        "    opts:supportedOption ui:scaleFactor , ui:updateRate , ui:windowTitle ,\n" ++
+                        "                         ui:backgroundColor , ui:foregroundColor ;\n" ++
+                        "    lv2:extensionData ui:idleInterface",
+                );
+                if (ui.resize_behavior != .fixed)
+                    try writer.writeAll(" , ui:resize");
+                try writer.writeAll(" , ui:showInterface , opts:interface");
                 if (has_programs)
                     try writer.writeAll(" , pgm:UIInterface");
                 try writer.writeAll(" .\n");
@@ -384,14 +448,22 @@ pub fn Generator(
                 try writeFixedIndexedPort(
                     writer,
                     index,
-                    if (has_patch) "events_output" else "midi_output",
-                    if (has_patch) "Events Output" else "MIDI Output",
+                    if (has_patch or has_state_changed)
+                        "events_output"
+                    else
+                        "midi_output",
+                    if (has_patch or has_state_changed)
+                        "Events Output"
+                    else
+                        "MIDI Output",
                 );
                 try writer.writeAll(
                     " ;\n        atom:bufferType atom:Sequence ;\n" ++
                         "        atom:supports midi:MidiEvent",
                 );
                 if (has_patch) try writer.writeAll(" , patch:Message");
+                if (has_state_changed)
+                    try writer.writeAll(" , state:StateChanged");
                 try writer.writeByte('\n');
             }
             const set = ParameterSet.init(initial_parameters);
@@ -476,6 +548,9 @@ pub fn Generator(
                     !validUri(project.license_uri) or
                     !validUri(project.maintainer.homepage_uri))
                     return error.InvalidLv2MetadataUri;
+                if (std.mem.eql(u8, project.uri, plugin_uri) or
+                    generatedChildUri(metadata, project.uri))
+                    return error.DuplicateLv2ResourceUri;
                 if (!validMailtoUri(project.maintainer.email_uri))
                     return error.InvalidLv2MaintainerEmail;
                 if (!validText(project.name) or
@@ -486,8 +561,62 @@ pub fn Generator(
                 if (!validUri(ui.uri) or !validUri(ui.class_uri) or
                     std.mem.eql(u8, ui.uri, plugin_uri))
                     return error.InvalidLv2UiUri;
+                if (generatedChildUri(metadata, ui.uri))
+                    return error.DuplicateLv2ResourceUri;
+                if (metadata.project) |project| {
+                    if (std.mem.eql(u8, ui.uri, project.uri))
+                        return error.DuplicateLv2ResourceUri;
+                }
                 if (!validFileName(ui.binary_name))
                     return error.InvalidLv2UiBinaryName;
+                if (ui.event_input_messages and
+                    Adapter.event_input_port == null)
+                    return error.InvalidLv2UiPortNotification;
+                for (
+                    ui.port_notifications,
+                    0..,
+                ) |notification, notification_index| {
+                    if (!validSymbol(notification.port_symbol))
+                        return error.InvalidLv2PortSymbol;
+                    const known = switch (notification.protocol) {
+                        .float => controlPortSymbol(
+                            notification.port_symbol,
+                        ),
+                        .peak => audioPortSymbol(
+                            notification.port_symbol,
+                        ),
+                        .event => eventOutputPortSymbol(
+                            notification.port_symbol,
+                        ),
+                    };
+                    if (!known)
+                        return error.InvalidLv2UiPortNotification;
+                    switch (notification.protocol) {
+                        .float, .peak => if (notification.notify_type_uri != null)
+                            return error.InvalidLv2UiPortNotification,
+                        .event => {
+                            const notify_type_uri =
+                                notification.notify_type_uri orelse
+                                return error.InvalidLv2UiPortNotification;
+                            if (!validUri(notify_type_uri))
+                                return error.InvalidLv2MetadataUri;
+                        },
+                    }
+                    for (ui.port_notifications[0..notification_index]) |previous| {
+                        if (!std.mem.eql(
+                            u8,
+                            previous.port_symbol,
+                            notification.port_symbol,
+                        )) continue;
+                        if (notification.protocol != .event or
+                            previous.protocol != .event or
+                            std.mem.eql(
+                                u8,
+                                previous.notify_type_uri orelse "",
+                                notification.notify_type_uri orelse "",
+                            )) return error.DuplicateLv2UiPortNotification;
+                    }
+                }
             }
             const set = ParameterSet.init(initial_parameters);
             try set.validate();
@@ -503,6 +632,8 @@ pub fn Generator(
             for (metadata.presets, 0..) |preset, preset_index| {
                 if (!validSlug(preset.slug))
                     return error.InvalidLv2PresetSlug;
+                if (reservedGeneratedChildSuffix(preset.slug))
+                    return error.DuplicateLv2ResourceUri;
                 if (!validText(preset.label))
                     return error.InvalidLv2MetadataText;
                 for (metadata.presets[0..preset_index]) |previous| {
@@ -541,6 +672,45 @@ pub fn Generator(
                     }
                 }
             }
+        }
+
+        fn generatedChildUri(metadata: Metadata, uri: []const u8) bool {
+            const suffix = childUriSuffix(uri) orelse return false;
+            if (reservedGeneratedChildSuffix(suffix)) return true;
+            for (metadata.presets) |preset| {
+                if (std.mem.eql(u8, suffix, preset.slug)) return true;
+            }
+            return false;
+        }
+
+        fn childUriSuffix(uri: []const u8) ?[]const u8 {
+            if (!std.mem.startsWith(u8, uri, plugin_uri) or
+                uri.len <= plugin_uri.len or
+                uri[plugin_uri.len] != child_uri_separator)
+                return null;
+            return uri[plugin_uri.len + 1 ..];
+        }
+
+        fn reservedGeneratedChildSuffix(suffix: []const u8) bool {
+            if (std.mem.eql(u8, suffix, "parameterState") or
+                (has_component_state and
+                    std.mem.eql(u8, suffix, "componentState")))
+                return true;
+            if (Spec.audio_input_layout.hasBus() and
+                groupSymbolEquals(suffix, .input, 0))
+                return true;
+            for (Spec.audio_auxiliary_input_layouts, 0..) |_, index| {
+                if (groupSymbolEquals(suffix, .input, index + 1))
+                    return true;
+            }
+            if (Spec.audio_output_layout.hasBus() and
+                groupSymbolEquals(suffix, .output, 0))
+                return true;
+            for (Spec.audio_auxiliary_output_layouts, 0..) |_, index| {
+                if (groupSymbolEquals(suffix, .output, index + 1))
+                    return true;
+            }
+            return false;
         }
 
         fn writePatchPropertyList(
@@ -668,7 +838,7 @@ pub fn Generator(
             bus_index: usize,
         ) !void {
             try writer.writeAll(plugin_uri);
-            try writer.writeByte('#');
+            try writer.writeByte(child_uri_separator);
             try writeGroupSymbolBody(writer, direction, bus_index);
         }
 
@@ -761,6 +931,46 @@ pub fn Generator(
             return null;
         }
 
+        fn audioPortSymbol(symbol: []const u8) bool {
+            for (0..Adapter.input_channels) |index| {
+                if (audioSymbolEquals(
+                    symbol,
+                    "input",
+                    index,
+                    Adapter.input_channels,
+                )) return true;
+            }
+            for (0..Adapter.output_channels) |index| {
+                if (audioSymbolEquals(
+                    symbol,
+                    "output",
+                    index,
+                    Adapter.output_channels,
+                )) return true;
+            }
+            return false;
+        }
+
+        fn controlPortSymbol(symbol: []const u8) bool {
+            if (parameterIndex(symbol) != null or
+                std.mem.eql(u8, symbol, "latency"))
+                return true;
+            return Adapter.freewheeling_input_port != null and
+                std.mem.eql(u8, symbol, "freewheeling");
+        }
+
+        fn eventOutputPortSymbol(symbol: []const u8) bool {
+            if (Adapter.event_output_port == null) return false;
+            return std.mem.eql(
+                u8,
+                symbol,
+                if (has_patch or has_state_changed)
+                    "events_output"
+                else
+                    "midi_output",
+            );
+        }
+
         fn reservedPortSymbol(symbol: []const u8) bool {
             if (std.mem.eql(u8, symbol, "latency"))
                 return true;
@@ -825,10 +1035,50 @@ pub fn Generator(
             slug: []const u8,
         ) !void {
             try writer.writeAll(plugin_uri);
-            try writer.writeByte('#');
+            try writer.writeByte(child_uri_separator);
             try writer.writeAll(slug);
         }
+
+        fn writeUiPortNotifications(
+            writer: *std.Io.Writer,
+            ui: UiMetadata,
+        ) !void {
+            for (ui.port_notifications, 0..) |notification, index| {
+                try writer.writeAll(
+                    if (index == 0)
+                        "    ui:portNotification [\n"
+                    else
+                        "    ] , [\n",
+                );
+                try writer.writeAll("        ui:plugin <");
+                try writer.writeAll(plugin_uri);
+                try writer.writeAll("> ;\n        lv2:symbol ");
+                try writeTurtleString(writer, notification.port_symbol);
+                try writer.writeAll(" ;\n        ui:protocol ");
+                switch (notification.protocol) {
+                    .float => try writer.writeAll("ui:floatProtocol"),
+                    .peak => try writer.writeAll("ui:peakProtocol"),
+                    .event => try writer.writeAll("atom:eventTransfer"),
+                }
+                if (notification.notify_type_uri) |notify_type_uri| {
+                    try writer.writeAll(" ;\n        ui:notifyType <");
+                    try writer.writeAll(notify_type_uri);
+                    try writer.writeByte('>');
+                }
+                try writer.writeByte('\n');
+            }
+            if (ui.port_notifications.len != 0)
+                try writer.writeAll("    ] ;\n");
+        }
     };
+}
+
+fn uiUsesEventTransfer(ui: UiMetadata) bool {
+    if (ui.event_input_messages) return true;
+    for (ui.port_notifications) |notification| {
+        if (notification.protocol == .event) return true;
+    }
+    return false;
 }
 
 fn groupClass(layout: plugin_api.AudioBusLayout) []const u8 {
@@ -1091,10 +1341,29 @@ fn groupSymbolEquals(
 fn validUri(value: []const u8) bool {
     const colon = std.mem.indexOfScalar(u8, value, ':') orelse return false;
     if (colon == 0) return false;
-    for (value) |byte| {
-        if (byte <= 0x20 or byte >= 0x7f or
-            byte == '<' or byte == '>' or byte == '"' or byte == '\\')
+    if (!std.ascii.isAlphabetic(value[0])) return false;
+    for (value[1..colon]) |byte| {
+        if (!std.ascii.isAlphanumeric(byte) and
+            byte != '+' and byte != '-' and byte != '.')
             return false;
+    }
+    var index: usize = 0;
+    while (index < value.len) {
+        const byte = value[index];
+        if (byte <= 0x20 or byte >= 0x7f or
+            byte == '<' or byte == '>' or byte == '"' or byte == '\\' or
+            byte == '{' or byte == '}' or byte == '|' or byte == '^' or
+            byte == '`')
+            return false;
+        if (byte == '%') {
+            if (value.len - index < 3 or
+                !std.ascii.isHex(value[index + 1]) or
+                !std.ascii.isHex(value[index + 2]))
+                return false;
+            index += 3;
+            continue;
+        }
+        index += 1;
     }
     return true;
 }
@@ -1164,6 +1433,7 @@ test "LV2 metadata publishes graph-only Patch event support" {
         pub const patch_enabled = true;
         pub const patch_readable = false;
         pub const patch_writable = false;
+        pub const state_changed_enabled = true;
     };
     const Generated = Generator(
         Probe,
@@ -1177,6 +1447,9 @@ test "LV2 metadata publishes graph-only Patch event support" {
     const output = writer.buffered();
     try std.testing.expect(
         std.mem.count(u8, output, "patch:Message") == 2,
+    );
+    try std.testing.expect(
+        std.mem.count(u8, output, "state:StateChanged") == 1,
     );
     try std.testing.expect(
         std.mem.indexOf(u8, output, "patch:readable") == null,
@@ -1199,12 +1472,37 @@ fn validSlug(value: []const u8) bool {
 fn validText(value: []const u8) bool {
     if (value.len == 0 or !std.unicode.utf8ValidateSlice(value))
         return false;
-    for (value) |byte| {
+    for (value, 0..) |byte, index| {
         if (byte < 0x20 and
             byte != '\n' and byte != '\r' and byte != '\t')
             return false;
+        if (byte == 0x7f or
+            (byte == 0xc2 and index + 1 < value.len and
+                value[index + 1] >= 0x80 and
+                value[index + 1] <= 0x9f))
+            return false;
     }
     return true;
+}
+
+test "LV2 metadata rejects malformed URI schemes and controls" {
+    try std.testing.expect(validUri("https://example.test/plugin"));
+    try std.testing.expect(validUri("urn:example:plugin"));
+    try std.testing.expect(validUri("scheme+extension:value"));
+    try std.testing.expect(!validUri("1https://example.test/plugin"));
+    try std.testing.expect(!validUri("bad_scheme:value"));
+    try std.testing.expect(!validUri("scheme with space:value"));
+    try std.testing.expect(validUri("https://example.test/a%20b"));
+    try std.testing.expect(!validUri("https://example.test/a%2"));
+    try std.testing.expect(!validUri("https://example.test/a%zz"));
+    try std.testing.expect(!validUri("https://example.test/{bad}"));
+    try std.testing.expect(!validUri("https://example.test/a|b"));
+    try std.testing.expect(!validUri("https://example.test/a^b"));
+    try std.testing.expect(!validUri("https://example.test/a`b"));
+    try std.testing.expect(validText("Metadata \xe2\x99\xab"));
+    try std.testing.expect(!validText("metadata\x7f"));
+    try std.testing.expect(!validText("metadata\xc2\x80"));
+    try std.testing.expect(!validText("metadata\xc2\x9f"));
 }
 
 test "LV2 metadata generator writes ports workers and presets" {
@@ -1249,7 +1547,9 @@ test "LV2 metadata generator writes ports workers and presets" {
         pub const freewheeling_input_port: ?usize = 5;
         pub const latency_output_port = 6;
         pub const worker_enabled = true;
+        pub const thread_safe_restore_enabled = true;
         pub const port_resize_enabled = true;
+        pub const log_enabled = true;
         pub const programs_enabled = true;
         pub const portable_state_paths_enabled = true;
         pub const state_make_path_required = true;
@@ -1291,6 +1591,10 @@ test "LV2 metadata generator writes ports workers and presets" {
             .uri = "https://example.test/metadata#ui",
             .binary_name = "probe_ui.so",
             .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+            .port_notifications = &.{
+                .{ .port_symbol = "gain", .protocol = .float },
+                .{ .port_symbol = "output_2", .protocol = .peak },
+            },
         },
     };
     var bytes: [8192]u8 = undefined;
@@ -1314,7 +1618,13 @@ test "LV2 metadata generator writes ports workers and presets" {
         std.mem.indexOf(u8, plugin, "work:schedule") != null,
     );
     try std.testing.expect(
+        std.mem.indexOf(u8, plugin, "state:threadSafeRestore") != null,
+    );
+    try std.testing.expect(
         std.mem.indexOf(u8, plugin, "rsz:resize") != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, plugin, "log:log") != null,
     );
     try std.testing.expect(
         std.mem.indexOf(u8, plugin, "pgm:Interface") != null,
@@ -1443,14 +1753,15 @@ test "LV2 metadata generator writes ports workers and presets" {
         std.mem.indexOf(
             u8,
             plugin,
-            "lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch , opts:options , urid:map",
+            "lv2:optionalFeature ui:idleInterface , ui:resize , ui:touch , ui:requestValue , ui:portMap , ui:portSubscribe , ui:peakProtocol , opts:options , urid:map",
         ) != null,
     );
     try std.testing.expect(
         std.mem.indexOf(
             u8,
             plugin,
-            "opts:supportedOption ui:scaleFactor",
+            "opts:supportedOption ui:scaleFactor , ui:updateRate , ui:windowTitle ,\n" ++
+                "                         ui:backgroundColor , ui:foregroundColor",
         ) != null,
     );
     try std.testing.expect(
@@ -1462,6 +1773,74 @@ test "LV2 metadata generator writes ports workers and presets" {
     );
     try std.testing.expect(
         std.mem.indexOf(u8, plugin, "pgm:UIInterface") != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "ui:portNotification [\n" ++
+                "        ui:plugin <https://example.test/metadata> ;\n" ++
+                "        lv2:symbol \"gain\" ;\n" ++
+                "        ui:protocol ui:floatProtocol\n" ++
+                "    ] , [\n" ++
+                "        ui:plugin <https://example.test/metadata> ;\n" ++
+                "        lv2:symbol \"output_2\" ;\n" ++
+                "        ui:protocol ui:peakProtocol\n" ++
+                "    ] ;",
+        ) != null,
+    );
+    const fixed_ui_metadata = Metadata{
+        .ui = .{
+            .uri = "https://example.test/metadata#fixed-ui",
+            .binary_name = "fixed_ui.so",
+            .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+            .resize_behavior = .fixed,
+        },
+    };
+    writer = std.Io.Writer.fixed(&bytes);
+    try Generated.writePlugin(&writer, fixed_ui_metadata);
+    const fixed_ui = writer.buffered();
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            fixed_ui,
+            "lv2:optionalFeature ui:idleInterface , ui:fixedSize , ui:touch",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, fixed_ui, "ui:noUserResize") == null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, fixed_ui, "ui:resize") == null,
+    );
+
+    const programmatic_ui_metadata = Metadata{
+        .ui = .{
+            .uri = "https://example.test/metadata#programmatic-ui",
+            .binary_name = "programmatic_ui.so",
+            .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+            .resize_behavior = .programmatic_only,
+        },
+    };
+    writer = std.Io.Writer.fixed(&bytes);
+    try Generated.writePlugin(&writer, programmatic_ui_metadata);
+    const programmatic_ui = writer.buffered();
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            programmatic_ui,
+            "ui:resize , ui:noUserResize",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            programmatic_ui,
+            "lv2:extensionData ui:idleInterface , ui:resize",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, programmatic_ui, "ui:fixedSize") == null,
     );
     try std.testing.expect(
         std.mem.indexOf(
@@ -1483,6 +1862,207 @@ test "LV2 metadata generator writes ports workers and presets" {
     const preset_text = writer.buffered();
     try std.testing.expect(
         std.mem.indexOf(u8, preset_text, "pset:value 1") != null,
+    );
+
+    const FragmentGenerated = Generator(
+        Probe,
+        Adapter,
+        "https://example.test/metadata#plugin",
+        .{},
+    );
+    const fragment_metadata = Metadata{
+        .presets = &presets,
+        .ui = .{
+            .uri = "https://example.test/metadata#plugin/ui",
+            .binary_name = "probe_ui.so",
+            .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+        },
+    };
+    writer = std.Io.Writer.fixed(&bytes);
+    try FragmentGenerated.writeManifest(
+        &writer,
+        "probe.so",
+        fragment_metadata,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            writer.buffered(),
+            "<https://example.test/metadata#plugin/unity>",
+        ) != null,
+    );
+    writer = std.Io.Writer.fixed(&bytes);
+    try FragmentGenerated.writePlugin(&writer, fragment_metadata);
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            writer.buffered(),
+            "<https://example.test/metadata#plugin/main_input_group>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, writer.buffered(), "#plugin#") == null,
+    );
+    writer = std.Io.Writer.fixed(&bytes);
+    try FragmentGenerated.writePresets(&writer, fragment_metadata);
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            writer.buffered(),
+            "<https://example.test/metadata#plugin/unity>",
+        ) != null,
+    );
+}
+
+test "LV2 metadata publishes typed event notifications" {
+    const Probe = struct {
+        pub const name = "Event Notification Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin_api.AudioBusLayout = .mono;
+        pub const audio_output_layout: plugin_api.AudioBusLayout = .mono;
+        pub const Params = struct {};
+        pub fn process(
+            _: *@This(),
+            _: *process_api.ProcessContext(f32),
+        ) void {}
+    };
+    const Adapter = struct {
+        pub const input_channels = 1;
+        pub const output_channels = 1;
+        pub const audio_output_port_start = 1;
+        pub const event_input_port: ?usize = 2;
+        pub const event_output_port: ?usize = 3;
+        pub const control_input_port_start = 4;
+        pub const freewheeling_input_port: ?usize = null;
+        pub const latency_output_port = 4;
+        pub const worker_enabled = false;
+    };
+    const Generated = Generator(
+        Probe,
+        Adapter,
+        "https://example.test/event-notification",
+        .{},
+    );
+    const ui = UiMetadata{
+        .uri = "https://example.test/event-notification#ui",
+        .binary_name = "event-notification-ui.so",
+        .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+        .event_input_messages = true,
+        .port_notifications = &.{
+            .{
+                .port_symbol = "midi_output",
+                .protocol = .event,
+                .notify_type_uri = "https://example.test/messages#status",
+            },
+            .{
+                .port_symbol = "midi_output",
+                .protocol = .event,
+                .notify_type_uri = "https://example.test/messages#meter",
+            },
+        },
+    };
+    var bytes: [8192]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try Generated.writePlugin(&writer, .{ .ui = ui });
+    const plugin = writer.buffered();
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        std.mem.count(u8, plugin, "ui:protocol atom:eventTransfer"),
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "ui:notifyType <https://example.test/messages#status>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "ui:notifyType <https://example.test/messages#meter>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "ui:peakProtocol , atom:eventTransfer , opts:options",
+        ) != null,
+    );
+
+    writer = std.Io.Writer.fixed(&bytes);
+    try Generated.writePlugin(&writer, .{ .ui = .{
+        .uri = "https://example.test/event-notification#outbound-ui",
+        .binary_name = "event-notification-ui.so",
+        .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+        .event_input_messages = true,
+    } });
+    const outbound_only = writer.buffered();
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            outbound_only,
+            "ui:peakProtocol , atom:eventTransfer , opts:options",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, outbound_only, "ui:portNotification") == null,
+    );
+
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2UiPortNotification,
+        Generated.writePlugin(&writer, .{ .ui = .{
+            .uri = ui.uri,
+            .binary_name = ui.binary_name,
+            .class_uri = ui.class_uri,
+            .port_notifications = &.{.{
+                .port_symbol = "midi_output",
+                .protocol = .event,
+            }},
+        } }),
+    );
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2MetadataUri,
+        Generated.writePlugin(&writer, .{ .ui = .{
+            .uri = ui.uri,
+            .binary_name = ui.binary_name,
+            .class_uri = ui.class_uri,
+            .port_notifications = &.{.{
+                .port_symbol = "midi_output",
+                .protocol = .event,
+                .notify_type_uri = "not a URI",
+            }},
+        } }),
+    );
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2UiPortNotification,
+        Generated.writePlugin(&writer, .{ .ui = .{
+            .uri = ui.uri,
+            .binary_name = ui.binary_name,
+            .class_uri = ui.class_uri,
+            .port_notifications = &.{.{
+                .port_symbol = "audio_in",
+                .protocol = .peak,
+                .notify_type_uri = "https://example.test/messages#status",
+            }},
+        } }),
+    );
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.DuplicateLv2UiPortNotification,
+        Generated.writePlugin(&writer, .{ .ui = .{
+            .uri = ui.uri,
+            .binary_name = ui.binary_name,
+            .class_uri = ui.class_uri,
+            .port_notifications = &.{
+                ui.port_notifications[0],
+                ui.port_notifications[0],
+            },
+        } }),
     );
 }
 
@@ -1766,6 +2346,129 @@ test "LV2 metadata generator rejects malformed presets" {
     );
     writer = std.Io.Writer.fixed(&bytes);
     try std.testing.expectError(
+        error.InvalidLv2UiPortNotification,
+        Generated.writePlugin(&writer, .{
+            .ui = .{
+                .uri = "https://example.test/metadata#ui",
+                .binary_name = "probe-ui.so",
+                .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+                .event_input_messages = true,
+            },
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2UiPortNotification,
+        Generated.writePlugin(&writer, .{
+            .ui = .{
+                .uri = "https://example.test/metadata#ui",
+                .binary_name = "probe-ui.so",
+                .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+                .port_notifications = &.{.{
+                    .port_symbol = "gain",
+                    .protocol = .peak,
+                }},
+            },
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2PortSymbol,
+        Generated.writePlugin(&writer, .{
+            .ui = .{
+                .uri = "https://example.test/metadata#ui",
+                .binary_name = "probe-ui.so",
+                .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+                .port_notifications = &.{.{
+                    .port_symbol = "bad-symbol",
+                    .protocol = .float,
+                }},
+            },
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2UiPortNotification,
+        Generated.writePlugin(&writer, .{
+            .ui = .{
+                .uri = "https://example.test/metadata#ui",
+                .binary_name = "probe-ui.so",
+                .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+                .port_notifications = &.{.{
+                    .port_symbol = "missing",
+                    .protocol = .float,
+                }},
+            },
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.DuplicateLv2UiPortNotification,
+        Generated.writePlugin(&writer, .{
+            .ui = .{
+                .uri = "https://example.test/metadata#ui",
+                .binary_name = "probe-ui.so",
+                .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+                .port_notifications = &.{
+                    .{ .port_symbol = "input", .protocol = .peak },
+                    .{ .port_symbol = "input", .protocol = .peak },
+                },
+            },
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.DuplicateLv2ResourceUri,
+        Generated.writePlugin(&writer, .{
+            .ui = .{
+                .uri = "https://example.test/metadata#main_input_group",
+                .binary_name = "probe-ui.so",
+                .class_uri = "http://lv2plug.in/ns/extensions/ui#X11UI",
+            },
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.DuplicateLv2ResourceUri,
+        Generated.writePresets(&writer, .{
+            .presets = &.{.{
+                .slug = "parameterState",
+                .label = "State collision",
+                .values = &.{},
+            }},
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.DuplicateLv2ResourceUri,
+        Generated.writePlugin(&writer, .{
+            .project = .{
+                .uri = "https://example.test/metadata#unity",
+                .name = "Metadata Project",
+                .license_uri = "https://example.test/license",
+                .maintainer = .{
+                    .name = "Project Maintainer",
+                    .email_uri = "mailto:maintainer@example.test",
+                    .homepage_uri = "https://example.test/maintainer",
+                },
+            },
+            .presets = &.{.{
+                .slug = "unity",
+                .label = "Unity",
+                .values = &.{},
+            }},
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
         error.InvalidLv2MaintainerEmail,
         Generated.writePlugin(&writer, .{
             .project = .{
@@ -1794,6 +2497,54 @@ test "LV2 metadata generator rejects malformed presets" {
                     .homepage_uri = "https://example.test/maintainer",
                 },
             },
+        }),
+    );
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2MetadataUri,
+        Generated.writePlugin(&writer, .{
+            .class_uri = "https://example.test/class/{invalid}",
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2MetadataUri,
+        Generated.writePlugin(&writer, .{
+            .project = .{
+                .uri = "https://example.test/project/%zz",
+                .name = "Metadata Project",
+                .license_uri = "https://example.test/license",
+                .maintainer = .{
+                    .name = "Project Maintainer",
+                    .email_uri = "mailto:maintainer@example.test",
+                    .homepage_uri = "https://example.test/maintainer",
+                },
+            },
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 0), writer.buffered().len);
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2MetadataUri,
+        Generated.writePlugin(&writer, .{
+            .project = .{
+                .uri = "1https://example.test/project",
+                .name = "Metadata Project",
+                .license_uri = "https://example.test/license",
+                .maintainer = .{
+                    .name = "Project Maintainer",
+                    .email_uri = "mailto:maintainer@example.test",
+                    .homepage_uri = "https://example.test/maintainer",
+                },
+            },
+        }),
+    );
+    writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidLv2MetadataText,
+        Generated.writePlugin(&writer, .{
+            .description = "metadata\xc2\x80control",
         }),
     );
 

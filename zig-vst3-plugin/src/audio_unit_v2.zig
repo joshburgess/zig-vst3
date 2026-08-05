@@ -141,6 +141,25 @@ pub const AudioUnitPropertyListenerProc = *const fn (
     element: AudioUnitElement,
 ) callconv(.c) void;
 
+fn noopAudioUnitPropertyListener(
+    _: ?*anyopaque,
+    _: AudioComponentInstance,
+    _: AudioUnitPropertyID,
+    _: AudioUnitScope,
+    _: AudioUnitElement,
+) callconv(.c) void {}
+
+fn noopAuRenderNotification(
+    _: ?*anyopaque,
+    _: ?*AudioUnitRenderActionFlags,
+    _: ?*const AudioTimeStamp,
+    _: u32,
+    _: u32,
+    _: *AudioBufferList,
+) callconv(.c) OSStatus {
+    return status.success;
+}
+
 pub const AURenderCallbackStruct = extern struct {
     input: ?AURenderCallback,
     reference: ?*anyopaque,
@@ -306,6 +325,15 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
             procedure: AURenderCallback,
             user_data: ?*anyopaque,
         };
+        const empty_property_listener = PropertyListener{
+            .property_id = 0,
+            .procedure = noopAudioUnitPropertyListener,
+            .user_data = null,
+        };
+        const empty_render_notification = RenderNotification{
+            .procedure = noopAuRenderNotification,
+            .user_data = null,
+        };
 
         interface: AudioComponentPlugInInterface = .{
             .open = open,
@@ -315,13 +343,20 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
         },
         adapter: *Adapter,
         component_instance: ?AudioComponentInstance = null,
-        property_listeners: [maximum_property_listeners]PropertyListener = undefined,
+        property_listeners: [maximum_property_listeners]PropertyListener =
+            @splat(empty_property_listener),
         property_listener_count: usize = 0,
-        render_notifications: [maximum_render_notifications]RenderNotification = undefined,
+        render_notifications: [maximum_render_notifications]RenderNotification =
+            @splat(empty_render_notification),
         render_notification_count: usize = 0,
 
         pub fn init(adapter: *Adapter) Self {
             return .{ .adapter = adapter };
+        }
+
+        pub fn valid(self: *const Self) bool {
+            return self.property_listener_count <= maximum_property_listeners and
+                self.render_notification_count <= maximum_render_notifications;
         }
 
         pub fn asInterface(
@@ -358,7 +393,9 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
                 return status.cannot_do_in_current_context;
             };
             self.component_instance = null;
+            @memset(&self.property_listeners, empty_property_listener);
             self.property_listener_count = 0;
+            @memset(&self.render_notifications, empty_render_notification);
             self.render_notification_count = 0;
             if (@hasDecl(Adapter, "closeComponent"))
                 self.adapter.closeComponent();
@@ -493,7 +530,10 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
         ) callconv(.c) OSStatus {
             if (!supports_properties)
                 return status.invalid_property;
-            const info = fromOpaque(pointer).adapter.propertyInfo(
+            const self = fromOpaque(pointer);
+            if (!self.valid())
+                return status.cannot_do_in_current_context;
+            const info = self.adapter.propertyInfo(
                 property_id,
                 property_scope,
                 element,
@@ -506,13 +546,13 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
                 return status.invalid_property_value;
             const source =
                 @as([*]const u8, @ptrCast(data))[0..input_size];
-            fromOpaque(pointer).adapter.setProperty(
+            self.adapter.setProperty(
                 property_id,
                 property_scope,
                 element,
                 source,
             ) catch |err| return propertyStatus(err);
-            fromOpaque(pointer).notifyPropertyListeners(
+            self.notifyPropertyListeners(
                 property_id,
                 property_scope,
                 element,
@@ -527,6 +567,8 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
             user_data: ?*anyopaque,
         ) callconv(.c) OSStatus {
             const self = fromOpaque(pointer);
+            if (!self.valid())
+                return status.cannot_do_in_current_context;
             for (self.property_listeners[0..self.property_listener_count]) |entry| {
                 if (entry.property_id == property_id and
                     entry.procedure == procedure and
@@ -551,6 +593,8 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
             procedure: AudioUnitPropertyListenerProc,
         ) callconv(.c) OSStatus {
             const self = fromOpaque(pointer);
+            if (!self.valid())
+                return status.cannot_do_in_current_context;
             var index: usize = self.property_listener_count;
             while (index > 0) {
                 index -= 1;
@@ -569,6 +613,8 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
             user_data: ?*anyopaque,
         ) callconv(.c) OSStatus {
             const self = fromOpaque(pointer);
+            if (!self.valid())
+                return status.cannot_do_in_current_context;
             var index: usize = self.property_listener_count;
             while (index > 0) {
                 index -= 1;
@@ -586,6 +632,8 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
             if (index != self.property_listener_count)
                 self.property_listeners[index] =
                     self.property_listeners[self.property_listener_count];
+            self.property_listeners[self.property_listener_count] =
+                empty_property_listener;
         }
 
         fn notifyPropertyListeners(
@@ -594,6 +642,7 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
             property_scope: AudioUnitScope,
             element: AudioUnitElement,
         ) void {
+            if (!self.valid()) return;
             const instance = self.component_instance orelse return;
             var listeners: [maximum_property_listeners]PropertyListener = undefined;
             var listener_count: usize = 0;
@@ -711,6 +760,8 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
             if (!supports_render)
                 return status.invalid_property;
             const self = fromOpaque(pointer);
+            if (!self.valid())
+                return status.cannot_do_in_current_context;
             if (self.component_instance == null)
                 return status.uninitialized;
             var local_action_flags: AudioUnitRenderActionFlags = 0;
@@ -758,6 +809,8 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
             user_data: ?*anyopaque,
         ) callconv(.c) OSStatus {
             const self = fromOpaque(pointer);
+            if (!self.valid())
+                return status.cannot_do_in_current_context;
             for (self.render_notifications[0..self.render_notification_count]) |entry| {
                 if (entry.procedure == procedure and
                     entry.user_data == user_data)
@@ -780,6 +833,8 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
             user_data: ?*anyopaque,
         ) callconv(.c) OSStatus {
             const self = fromOpaque(pointer);
+            if (!self.valid())
+                return status.cannot_do_in_current_context;
             var index: usize = self.render_notification_count;
             while (index > 0) {
                 index -= 1;
@@ -801,6 +856,8 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
                     self.render_notifications[
                         self.render_notification_count
                     ];
+            self.render_notifications[self.render_notification_count] =
+                empty_render_notification;
         }
 
         fn notifyRender(
@@ -812,6 +869,7 @@ pub fn ComponentDispatch(comptime Adapter: type) type {
             frame_count: u32,
             data: *AudioBufferList,
         ) void {
+            if (!self.valid()) return;
             var notifications: [maximum_render_notifications]RenderNotification =
                 undefined;
             const count = self.render_notification_count;
@@ -1121,17 +1179,34 @@ pub fn RenderPropertyAdapterWithClassInfo(
         output_cache_f64: [total_output_channels][Adapter.maximum_frames]f64 =
             undefined,
         cached_block: ?BlockKey = null,
-        parameter_events: [maximum_parameter_events]process_api.ParameterChange = undefined,
-        parameter_event_sequences: [maximum_parameter_events]usize = undefined,
+        parameter_events: [maximum_parameter_events]process_api.ParameterChange =
+            @splat(.{}),
+        parameter_event_sequences: [maximum_parameter_events]usize = @splat(0),
         parameter_event_count: usize = 0,
-        parameter_ramps: [maximum_parameter_events]process_api.ParameterRamp = undefined,
+        parameter_ramps: [maximum_parameter_events]process_api.ParameterRamp =
+            @splat(.{}),
         parameter_ramp_count: usize = 0,
         scheduled_parameter_event_count: usize = 0,
-        state_storage: [Adapter.maximum_state_bytes]u8 = undefined,
+        state_storage: [Adapter.maximum_state_bytes]u8 = @splat(0),
         close_callback: ?*const fn (*Self) callconv(.c) void = null,
 
         pub fn init(render_adapter: *Adapter) Self {
             return .{ .render_adapter = render_adapter };
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.parameter_event_count > maximum_parameter_events or
+                self.parameter_ramp_count > maximum_parameter_events or
+                self.scheduled_parameter_event_count > maximum_parameter_events)
+            {
+                return false;
+            }
+            const retained_count = std.math.add(
+                usize,
+                self.parameter_event_count,
+                self.parameter_ramp_count,
+            ) catch return false;
+            return retained_count == self.scheduled_parameter_event_count;
         }
 
         pub fn initialize(self: *Self) !void {
@@ -1199,6 +1274,8 @@ pub fn RenderPropertyAdapterWithClassInfo(
                 return error.InvalidPropertyValue;
             switch (property_id) {
                 property.class_info => {
+                    @memset(&self.state_storage, 0);
+                    defer @memset(&self.state_storage, 0);
                     const state_bytes = try self.render_adapter.writeState(
                         &self.state_storage,
                     );
@@ -1345,12 +1422,29 @@ pub fn RenderPropertyAdapterWithClassInfo(
             self: *Self,
             events: []const AudioUnitParameterEvent,
         ) !void {
+            if (!self.valid()) return error.InvalidAudioUnitParameterEventState;
             if (events.len >
                 maximum_parameter_events -
                     self.scheduled_parameter_event_count)
                 return error.ParameterEventCapacityExceeded;
             var change_count = self.parameter_event_count;
             var ramp_count = self.parameter_ramp_count;
+            const initial_change_count = change_count;
+            const initial_ramp_count = ramp_count;
+            errdefer {
+                @memset(
+                    self.parameter_events[initial_change_count..change_count],
+                    .{},
+                );
+                @memset(
+                    self.parameter_event_sequences[initial_change_count..change_count],
+                    0,
+                );
+                @memset(
+                    self.parameter_ramps[initial_ramp_count..ramp_count],
+                    .{},
+                );
+            }
             for (events, 0..) |event, index| {
                 const sequence =
                     self.scheduled_parameter_event_count + index;
@@ -1394,6 +1488,7 @@ pub fn RenderPropertyAdapterWithClassInfo(
             value: AudioUnitParameterValue,
             buffer_offset_frames: u32,
         ) !void {
+            if (!self.valid()) return error.InvalidAudioUnitParameterEventState;
             if (self.scheduled_parameter_event_count ==
                 maximum_parameter_events)
                 return error.ParameterEventCapacityExceeded;
@@ -1514,6 +1609,8 @@ pub fn RenderPropertyAdapterWithClassInfo(
                 return error.InvalidPropertyValue;
             switch (property_id) {
                 property.class_info => {
+                    @memset(&self.state_storage, 0);
+                    defer @memset(&self.state_storage, 0);
                     const class_info = std.mem.bytesToValue(
                         ?*const anyopaque,
                         source[0..@sizeOf(?*const anyopaque)],
@@ -1812,6 +1909,9 @@ pub fn RenderPropertyAdapterWithClassInfo(
         }
 
         fn clearParameterEvents(self: *Self) void {
+            @memset(&self.parameter_events, .{});
+            @memset(&self.parameter_event_sequences, 0);
+            @memset(&self.parameter_ramps, .{});
             self.parameter_event_count = 0;
             self.parameter_ramp_count = 0;
             self.scheduled_parameter_event_count = 0;
@@ -1898,9 +1998,13 @@ pub fn RenderPropertyAdapterWithClassInfo(
             frame_count: u32,
             data: *AudioBufferList,
         ) !void {
-            const needs_processing = block_key == null or
-                self.cached_block == null or
-                !std.meta.eql(self.cached_block.?, block_key.?);
+            const needs_processing = if (block_key) |current_block|
+                if (self.cached_block) |cached|
+                    !std.meta.eql(cached, current_block)
+                else
+                    true
+            else
+                true;
             if (needs_processing) {
                 self.cached_block = null;
                 try self.processBlock(
@@ -1926,6 +2030,7 @@ pub fn RenderPropertyAdapterWithClassInfo(
             timestamp: ?*const AudioTimeStamp,
             frame_count: u32,
         ) !void {
+            if (!self.valid()) return error.InvalidAudioUnitParameterEventState;
             const parameter_changes =
                 self.parameter_events[0..self.parameter_event_count];
             const parameter_change_sequences =
@@ -2389,6 +2494,12 @@ test "AUv2 lifecycle dispatch checks open state, scope, and element" {
 
     var probe = Probe{};
     var dispatch = Dispatch.init(&probe);
+    try std.testing.expect(dispatch.valid());
+    for (dispatch.property_listeners) |entry|
+        try std.testing.expectEqualDeep(
+            Dispatch.empty_property_listener,
+            entry,
+        );
     const interface = dispatch.asInterface();
     const opaque_interface: *anyopaque = @ptrCast(interface);
     const instance: AudioComponentInstance = @ptrFromInt(1);
@@ -2926,10 +3037,46 @@ test "AUv2 property listeners preserve callback tuples and removals" {
         ),
     );
     try std.testing.expectEqual(@as(usize, 2), second.calls);
+    try std.testing.expectEqual(@as(usize, 0), dispatch.property_listener_count);
+    for (dispatch.property_listeners) |entry|
+        try std.testing.expectEqualDeep(
+            Dispatch.empty_property_listener,
+            entry,
+        );
+
+    dispatch.property_listener_count = std.math.maxInt(usize);
+    try std.testing.expect(!dispatch.valid());
+    try std.testing.expectEqual(
+        status.cannot_do_in_current_context,
+        add(
+            opaque_interface,
+            property.maximum_frames_per_slice,
+            ListenerState.callback,
+            &first,
+        ),
+    );
+    try std.testing.expectEqual(
+        status.cannot_do_in_current_context,
+        set(
+            opaque_interface,
+            property.maximum_frames_per_slice,
+            scope.global,
+            0,
+            &replacement,
+            @sizeOf(u32),
+        ),
+    );
+    try std.testing.expectEqual(@as(u32, 1024), probe.value);
     try std.testing.expectEqual(
         status.success,
         interface.close(opaque_interface),
     );
+    try std.testing.expect(dispatch.valid());
+    for (dispatch.property_listeners) |entry|
+        try std.testing.expectEqualDeep(
+            Dispatch.empty_property_listener,
+            entry,
+        );
 }
 
 test "AUv2 render notifications bracket success and failure" {
@@ -2993,6 +3140,12 @@ test "AUv2 render notifications bracket success and failure" {
 
     var probe = Probe{};
     var dispatch = Dispatch.init(&probe);
+    try std.testing.expect(dispatch.valid());
+    for (dispatch.render_notifications) |entry|
+        try std.testing.expectEqualDeep(
+            Dispatch.empty_render_notification,
+            entry,
+        );
     const interface = dispatch.asInterface();
     const opaque_interface: *anyopaque = @ptrCast(interface);
     try std.testing.expectEqual(
@@ -3117,10 +3270,45 @@ test "AUv2 render notifications bracket success and failure" {
     );
     try std.testing.expectEqual(@as(usize, 4), notification.calls);
     try std.testing.expectEqual(@as(usize, 3), probe.renders);
+    try std.testing.expectEqual(@as(usize, 0), dispatch.render_notification_count);
+    for (dispatch.render_notifications) |entry|
+        try std.testing.expectEqualDeep(
+            Dispatch.empty_render_notification,
+            entry,
+        );
+
+    dispatch.render_notification_count = std.math.maxInt(usize);
+    try std.testing.expect(!dispatch.valid());
+    try std.testing.expectEqual(
+        status.cannot_do_in_current_context,
+        add(
+            opaque_interface,
+            NotificationState.callback,
+            &notification,
+        ),
+    );
+    try std.testing.expectEqual(
+        status.cannot_do_in_current_context,
+        render(
+            opaque_interface,
+            null,
+            null,
+            0,
+            0,
+            &buffers,
+        ),
+    );
+    try std.testing.expectEqual(@as(usize, 3), probe.renders);
     try std.testing.expectEqual(
         status.success,
         interface.close(opaque_interface),
     );
+    try std.testing.expect(dispatch.valid());
+    for (dispatch.render_notifications) |entry|
+        try std.testing.expectEqualDeep(
+            Dispatch.empty_render_notification,
+            entry,
+        );
 }
 
 test "AUv2 parameter properties and immediate selectors use plain values" {
@@ -3195,6 +3383,13 @@ test "AUv2 parameter properties and immediate selectors use plain values" {
     );
     defer render_adapter.deinit();
     var properties = Properties.init(&render_adapter);
+    try std.testing.expect(properties.valid());
+    for (properties.parameter_events) |event|
+        try std.testing.expectEqualDeep(process_api.ParameterChange{}, event);
+    for (properties.parameter_event_sequences) |sequence|
+        try std.testing.expectEqual(@as(usize, 0), sequence);
+    for (properties.parameter_ramps) |ramp|
+        try std.testing.expectEqualDeep(process_api.ParameterRamp{}, ramp);
     var dispatch = Dispatch.init(&properties);
     const interface = dispatch.asInterface();
     const opaque_interface: *anyopaque = @ptrCast(interface);
@@ -3494,6 +3689,19 @@ test "AUv2 parameter properties and immediate selectors use plain values" {
         @as(usize, 1),
         properties.parameter_ramp_count,
     );
+    try std.testing.expectEqualDeep(
+        process_api.ParameterRamp{},
+        properties.parameter_ramps[1],
+    );
+    try std.testing.expect(properties.valid());
+    properties.scheduled_parameter_event_count = std.math.maxInt(usize);
+    try std.testing.expect(!properties.valid());
+    try std.testing.expectError(
+        error.InvalidAudioUnitParameterEventState,
+        properties.scheduleParameters(&.{immediate_event}),
+    );
+    properties.scheduled_parameter_event_count = 3;
+    try std.testing.expect(properties.valid());
     try std.testing.expectEqual(
         status.property_not_writable,
         set_parameter(
@@ -3505,6 +3713,14 @@ test "AUv2 parameter properties and immediate selectors use plain values" {
             0,
         ),
     );
+    properties.clearParameterEvents();
+    try std.testing.expect(properties.valid());
+    for (properties.parameter_events) |event|
+        try std.testing.expectEqualDeep(process_api.ParameterChange{}, event);
+    for (properties.parameter_event_sequences) |sequence|
+        try std.testing.expectEqual(@as(usize, 0), sequence);
+    for (properties.parameter_ramps) |ramp|
+        try std.testing.expectEqualDeep(process_api.ParameterRamp{}, ramp);
 }
 
 test "AUv2 render properties negotiate buses precision rate and block size" {
@@ -4319,6 +4535,8 @@ test "AUv2 class info round trips parameter state transactionally" {
     );
     defer adapter.deinit();
     var properties = Properties.init(&adapter);
+    for (properties.state_storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
 
     const info = try properties.propertyInfo(
         property.class_info,
@@ -4339,6 +4557,8 @@ test "AUv2 class info round trips parameter state transactionally" {
         0,
         &class_info_bytes,
     );
+    for (properties.state_storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     try properties.setParameter(7, scope.global, 0, 0.25, 0);
     try properties.setProperty(
         property.class_info,
@@ -4346,6 +4566,8 @@ test "AUv2 class info round trips parameter state transactionally" {
         0,
         &class_info_bytes,
     );
+    for (properties.state_storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     try std.testing.expectApproxEqAbs(
         @as(AudioUnitParameterValue, 1.5),
         try properties.getParameter(7, scope.global, 0),
@@ -4363,6 +4585,8 @@ test "AUv2 class info round trips parameter state transactionally" {
             &class_info_bytes,
         ),
     );
+    for (properties.state_storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     try std.testing.expectApproxEqAbs(
         @as(AudioUnitParameterValue, 1.5),
         try properties.getParameter(7, scope.global, 0),

@@ -274,19 +274,25 @@ pub fn main(init: std.process.Init) !void {
         .URI = core.lv2.options_options_uri,
         .data = @constCast(&options),
     };
+    const features = [_:null]?*const core.lv2.Feature{
+        &map_feature,
+        &options_feature,
+    };
     const null_uri_feature = core.lv2.Feature{
         .URI = null,
         .data = null,
     };
-    var features = [_:null]?*const core.lv2.Feature{
-        null,
+    const null_uri_features = [_:null]?*const core.lv2.Feature{
         &null_uri_feature,
         &map_feature,
-        &options_feature,
+    };
+    var misaligned_record_features = [_:null]?*const core.lv2.Feature{
+        null,
+        &map_feature,
     };
     const misaligned_feature_address: usize = 1;
     @memcpy(
-        std.mem.asBytes(&features[0]),
+        std.mem.asBytes(&misaligned_record_features[0]),
         std.mem.asBytes(&misaligned_feature_address),
     );
     if (descriptor.instantiate(
@@ -307,6 +313,18 @@ pub fn main(init: std.process.Init) !void {
         null,
         features[0..].ptr,
     ) != null) return error.NullBundlePathAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/zig_vst3_mono_gain.lv2",
+        &null_uri_features,
+    ) != null) return error.MissingFeatureUriAccepted;
+    if (descriptor.instantiate(
+        descriptor,
+        48_000.0,
+        "/tmp/zig_vst3_mono_gain.lv2",
+        &misaligned_record_features,
+    ) != null) return error.MisalignedFeatureRecordAccepted;
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
@@ -317,6 +335,9 @@ pub fn main(init: std.process.Init) !void {
 
     if (descriptor.extension_data(null) != null)
         return error.NullExtensionUriAccepted;
+    if (descriptor.extension_data(
+        "http://lv2plug.in/ns/ext/options#interface/hostile-tail",
+    ) != null) return error.ExtensionUriPrefixAccepted;
     const raw_options = descriptor.extension_data(
         core.lv2.options_interface_uri,
     ) orelse return error.MissingOptionsInterface;
@@ -369,6 +390,28 @@ pub fn main(init: std.process.Init) !void {
     ).*;
     if (initial_sequence_size != 1024)
         return error.InvalidSequenceSizeOption;
+    var mixed_option_query = [_]core.lv2.OptionsOption{
+        .{ .key = 113 },
+        .{ .key = 999 },
+        .{},
+    };
+    if (runtime_options.get(handle, &mixed_option_query) !=
+        core.lv2.options_status_bad_key)
+        return error.MixedOptionsQueryStatusMismatch;
+    if (mixed_option_query[0].size != 0 or
+        mixed_option_query[0].type != 0 or
+        mixed_option_query[0].value != null)
+        return error.MixedOptionsQueryPartiallyWritten;
+    var unterminated_option_queries: [256]core.lv2.OptionsOption =
+        @splat(.{ .key = 113 });
+    if (runtime_options.get(handle, &unterminated_option_queries) !=
+        core.lv2.options_status_unknown)
+        return error.UnterminatedOptionsQueryStatusMismatch;
+    if (unterminated_option_queries[0].size != 0 or
+        unterminated_option_queries[
+            unterminated_option_queries.len - 1
+        ].size != 0)
+        return error.UnterminatedOptionsQueryPartiallyWritten;
 
     const reduced_maximum: i32 = 3;
     const reduced_nominal: i32 = 3;

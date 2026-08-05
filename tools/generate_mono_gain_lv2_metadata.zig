@@ -23,6 +23,12 @@ const presets = [_]core.lv2.metadata.FactoryPreset{
     },
 };
 
+const ui_port_notifications = [_]core.lv2.metadata.UiPortNotification{
+    .{ .port_symbol = "gain", .protocol = .float },
+    .{ .port_symbol = "input", .protocol = .peak },
+    .{ .port_symbol = "output", .protocol = .peak },
+};
+
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     if (args.len != 6) return error.InvalidArguments;
@@ -38,6 +44,7 @@ pub fn main(init: std.process.Init) !void {
                 .linux => "http://lv2plug.in/ns/extensions/ui#X11UI",
                 else => return error.UnsupportedUiPlatform,
             },
+            .port_notifications = &ui_port_notifications,
         };
     const metadata = core.lv2.metadata.Metadata{
         .class_uri = "http://lv2plug.in/ns/lv2core#AmplifierPlugin",

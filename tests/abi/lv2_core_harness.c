@@ -1,4 +1,5 @@
 #include <stddef.h>
+#include <stdarg.h>
 #include <stdint.h>
 
 typedef void* LV2_Handle;
@@ -70,6 +71,47 @@ typedef struct {
 	int (*touch)(LV2UI_Handle, uint32_t, _Bool);
 } LV2UI_Touch;
 
+typedef enum {
+	LV2UI_REQUEST_VALUE_SUCCESS = 0,
+	LV2UI_REQUEST_VALUE_BUSY = 1,
+	LV2UI_REQUEST_VALUE_ERR_UNKNOWN = 2,
+	LV2UI_REQUEST_VALUE_ERR_UNSUPPORTED = 3
+} LV2UI_Request_Value_Status;
+
+typedef struct {
+	LV2UI_Handle handle;
+	LV2UI_Request_Value_Status (*request)(
+		LV2UI_Handle,
+		LV2_URID,
+		LV2_URID,
+		const LV2_Feature* const*);
+} LV2UI_Request_Value;
+
+typedef struct {
+	LV2UI_Handle handle;
+	uint32_t (*port_index)(LV2UI_Handle, const char*);
+} LV2UI_Port_Map;
+
+typedef struct {
+	LV2UI_Handle handle;
+	uint32_t (*subscribe)(
+		LV2UI_Handle,
+		uint32_t,
+		LV2_URID,
+		const LV2_Feature* const*);
+	uint32_t (*unsubscribe)(
+		LV2UI_Handle,
+		uint32_t,
+		LV2_URID,
+		const LV2_Feature* const*);
+} LV2UI_Port_Subscribe;
+
+typedef struct {
+	uint32_t period_start;
+	uint32_t period_size;
+	float peak;
+} LV2UI_Peak_Data;
+
 typedef struct {
 	void* handle;
 	LV2_URID (*map)(void*, const char*);
@@ -79,6 +121,12 @@ typedef struct {
 	void* handle;
 	const char* (*unmap)(void*, LV2_URID);
 } LV2_URID_Unmap;
+
+typedef struct {
+	void* handle;
+	int (*printf)(void*, LV2_URID, const char*, ...);
+	int (*vprintf)(void*, LV2_URID, const char*, va_list);
+} LV2_Log_Log;
 
 typedef enum {
 	LV2_RESIZE_PORT_SUCCESS = 0,
@@ -450,6 +498,36 @@ int main(void)
 		_Alignof(LV2_Resize_Port_Resize),
 		offsetof(LV2_Resize_Port_Resize, data),
 		offsetof(LV2_Resize_Port_Resize, resize),
+		sizeof(LV2_Log_Log),
+		_Alignof(LV2_Log_Log),
+		offsetof(LV2_Log_Log, handle),
+		offsetof(LV2_Log_Log, printf),
+		offsetof(LV2_Log_Log, vprintf),
+		sizeof(LV2UI_Request_Value_Status),
+		LV2UI_REQUEST_VALUE_ERR_UNSUPPORTED,
+		sizeof(LV2UI_Request_Value),
+		_Alignof(LV2UI_Request_Value),
+		offsetof(LV2UI_Request_Value, handle),
+		offsetof(LV2UI_Request_Value, request),
+		sizeof(LV2UI_Port_Map),
+		_Alignof(LV2UI_Port_Map),
+		offsetof(LV2UI_Port_Map, handle),
+		offsetof(LV2UI_Port_Map, port_index),
+		sizeof(LV2UI_Port_Subscribe),
+		_Alignof(LV2UI_Port_Subscribe),
+		offsetof(LV2UI_Port_Subscribe, handle),
+		offsetof(LV2UI_Port_Subscribe, subscribe),
+		offsetof(LV2UI_Port_Subscribe, unsubscribe),
+		sizeof(LV2UI_Peak_Data),
+		_Alignof(LV2UI_Peak_Data),
+		offsetof(LV2UI_Peak_Data, period_start),
+		offsetof(LV2UI_Peak_Data, period_size),
+		offsetof(LV2UI_Peak_Data, peak),
+		UINT32_MAX,
+		sizeof(LV2_Atom),
+		_Alignof(LV2_Atom),
+		offsetof(LV2_Atom, size),
+		offsetof(LV2_Atom, type),
 	};
 	const size_t count = sizeof(expected) / sizeof(expected[0]);
 	for (size_t index = 0; index < count; ++index) {

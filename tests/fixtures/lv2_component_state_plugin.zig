@@ -6,10 +6,13 @@ const ComponentStateProbe = struct {
     pending_mode: u32 = 7,
     worker_schedule: ?*core.lv2.WorkerScheduleSink = null,
     port_resize: ?*core.lv2.PortResizeSink = null,
+    state_changed: ?*core.lv2.StateChangedSink = null,
+    log: ?*core.lv2.LogSink = null,
     worker_requested: bool = false,
     port_resize_requested: bool = false,
     worker_value: u32 = 0,
     worker_end_run_count: usize = 0,
+    trace_sent: bool = false,
     resource_path: [128]u8 = undefined,
     resource_path_length: usize = 0,
     pending_resource_path: [128]u8 = undefined,
@@ -18,6 +21,7 @@ const ComponentStateProbe = struct {
     generated_path_length: usize = 0,
     pending_generated_path: [128]u8 = undefined,
     pending_generated_path_length: usize = 0,
+    graph_atom_type: core.lv2.Urid = 0,
 
     pub const name = "LV2 Component State Probe";
     pub const vendor = "zig-vst3";
@@ -27,8 +31,11 @@ const ComponentStateProbe = struct {
     pub const event_output = true;
     pub const component_state_maximum_encoded_size = 265;
     pub const lv2_state_requires_make_path = true;
+    pub const lv2_thread_safe_restore = true;
+    pub const lv2_thread_safe_restore_maximum_component_size = 265;
     pub const lv2_patch_response_capacity = 1024;
     pub const lv2_patch_graph_operations = true;
+    pub const lv2_patch_graph_queries = true;
     pub const lv2_patch_properties = &[_]core.lv2.PatchProperty{
         .{
             .uri = "https://zig-vst3.dev/tests/lv2-component-state#mode",
@@ -72,6 +79,11 @@ const ComponentStateProbe = struct {
             if (self.port_resize) |resize|
                 _ = resize.resizeOutput(3, 4096);
         }
+        if (!self.trace_sent) {
+            self.trace_sent = true;
+            if (self.log) |log|
+                _ = log.trace("component-state process 100%");
+        }
         const input = context.inputChannel(0) orelse return;
         const output = context.outputChannel(0) orelse return;
         const gain: f32 = @floatCast(parameters.load("gain"));
@@ -92,6 +104,20 @@ const ComponentStateProbe = struct {
         resize: *core.lv2.PortResizeSink,
     ) void {
         self.port_resize = resize;
+    }
+
+    pub fn bindLv2StateChanged(
+        self: *@This(),
+        state_changed: *core.lv2.StateChangedSink,
+    ) void {
+        self.state_changed = state_changed;
+    }
+
+    pub fn bindLv2Log(
+        self: *@This(),
+        log: *core.lv2.LogSink,
+    ) void {
+        self.log = log;
     }
 
     pub fn runLv2Worker(
@@ -120,6 +146,10 @@ const ComponentStateProbe = struct {
             *align(1) const u32,
             @ptrCast(response.ptr),
         ).*;
+        if (self.state_changed) |state_changed| {
+            state_changed.notify();
+            state_changed.notify();
+        }
     }
 
     pub fn endLv2WorkerRun(self: *@This()) !void {
@@ -172,12 +202,14 @@ const ComponentStateProbe = struct {
         self: *@This(),
         request: core.lv2.PatchGraphRequest,
     ) !void {
+        try validateRequestReference(request.request);
         self.mode = switch (request.operation) {
             .put => |operation| blk: {
                 if (operation.subject == 0 or
                     request.context == null or
                     request.sequence_number == null)
                     return error.InvalidPatchGraphRequest;
+                self.graph_atom_type = operation.body.atom_type;
                 break :blk try graphInt(operation.body);
             },
             .insert => |operation| blk: {
@@ -213,6 +245,22 @@ const ComponentStateProbe = struct {
         };
     }
 
+    pub fn readLv2PatchGraph(
+        self: *const @This(),
+        request: core.lv2.PatchGraphGetRequest,
+    ) !core.lv2.PatchAtomValue {
+        try validateRequestReference(request.request);
+        if (request.subject == null or request.context == null)
+            return error.InvalidPatchGraphRequest;
+        _ = request.accept orelse return error.MissingPatchAcceptType;
+        if (self.graph_atom_type == 0)
+            return error.MissingPatchGraphBodyType;
+        return .{
+            .atom_type = self.graph_atom_type,
+            .body = std.mem.asBytes(&self.mode),
+        };
+    }
+
     fn graphInt(value: core.lv2.PatchAtomValue) !u32 {
         if (value.atom_type == 0 or
             value.body.len != @sizeOf(i32))
@@ -223,6 +271,16 @@ const ComponentStateProbe = struct {
         ).*;
         if (result < 0) return error.InvalidPatchGraphRequest;
         return @intCast(result);
+    }
+
+    fn validateRequestReference(
+        request: ?core.lv2.PatchRequestReference,
+    ) !void {
+        if (request) |reference| {
+            if (reference.atom_type == 0 or reference.id == 0 or
+                reference.object_type == 0)
+                return error.InvalidPatchRequestReference;
+        }
     }
 
     pub fn writeComponentState(
@@ -293,9 +351,28 @@ const ComponentStateProbe = struct {
         reader: anytype,
         paths: core.lv2.StatePathFeatures,
     ) !void {
+        var staged_bytes: [lv2_thread_safe_restore_maximum_component_size]u8 =
+            undefined;
+        var writer = std.Io.Writer.fixed(&staged_bytes);
+        try stageLv2ThreadSafeComponentRestore(
+            reader,
+            paths,
+            &writer,
+        );
+        var staged = std.Io.Reader.fixed(writer.buffered());
+        try self.applyLv2ThreadSafeComponentRestore(&staged);
+        if (staged.seek != staged.end)
+            return error.InvalidComponentState;
+    }
+
+    pub fn stageLv2ThreadSafeComponentRestore(
+        reader: anytype,
+        paths: core.lv2.StatePathFeatures,
+        writer: anytype,
+    ) !void {
         if (try reader.takeByte() != 0xa5)
             return error.InvalidComponentState;
-        self.pending_mode = try reader.takeInt(u32, .little);
+        const mode = try reader.takeInt(u32, .little);
         const mapped_length = try reader.takeInt(u16, .little);
         if (mapped_length == 0 or mapped_length > 128)
             return error.InvalidStatePath;
@@ -306,13 +383,8 @@ const ComponentStateProbe = struct {
         );
         defer resolved.deinit();
         const resolved_bytes = resolved.bytes();
-        if (resolved_bytes.len > self.pending_resource_path.len)
+        if (resolved_bytes.len > 128)
             return error.StatePathTooLong;
-        @memcpy(
-            self.pending_resource_path[0..resolved_bytes.len],
-            resolved_bytes,
-        );
-        self.pending_resource_path_length = resolved_bytes.len;
         const generated_length = try reader.takeInt(u16, .little);
         if (generated_length == 0 or generated_length > 128)
             return error.InvalidStatePath;
@@ -323,15 +395,47 @@ const ComponentStateProbe = struct {
         );
         defer resolved_generated.deinit();
         const resolved_generated_bytes = resolved_generated.bytes();
-        if (resolved_generated_bytes.len >
-            self.pending_generated_path.len)
+        if (resolved_generated_bytes.len > 128)
             return error.StatePathTooLong;
-        @memcpy(
-            self.pending_generated_path[0..resolved_generated_bytes.len],
-            resolved_generated_bytes,
+        try writer.writeByte(0xa5);
+        try writer.writeInt(u32, mode, .little);
+        try writer.writeInt(
+            u16,
+            @intCast(resolved_bytes.len),
+            .little,
         );
-        self.pending_generated_path_length =
-            resolved_generated_bytes.len;
+        try writer.writeAll(resolved_bytes);
+        try writer.writeInt(
+            u16,
+            @intCast(resolved_generated_bytes.len),
+            .little,
+        );
+        try writer.writeAll(resolved_generated_bytes);
+    }
+
+    pub fn applyLv2ThreadSafeComponentRestore(
+        self: *@This(),
+        reader: anytype,
+    ) !void {
+        if (try reader.takeByte() != 0xa5)
+            return error.InvalidComponentState;
+        self.pending_mode = try reader.takeInt(u32, .little);
+        const resource_length = try reader.takeInt(u16, .little);
+        if (resource_length == 0 or
+            resource_length > self.pending_resource_path.len)
+            return error.InvalidStatePath;
+        try reader.readSliceAll(
+            self.pending_resource_path[0..resource_length],
+        );
+        self.pending_resource_path_length = resource_length;
+        const generated_length = try reader.takeInt(u16, .little);
+        if (generated_length == 0 or
+            generated_length > self.pending_generated_path.len)
+            return error.InvalidStatePath;
+        try reader.readSliceAll(
+            self.pending_generated_path[0..generated_length],
+        );
+        self.pending_generated_path_length = generated_length;
     }
 
     pub fn afterComponentStateRestore(self: *@This()) void {

@@ -51,10 +51,32 @@ fi
 parent=$(dirname "$bundle")
 mkdir -p "$parent"
 staging=$(mktemp -d "$parent/.lv2-bundle.XXXXXX")
+backup=
 cleanup() {
-    rm -rf "$staging"
+    if [ -n "$staging" ]; then
+        rm -rf "$staging"
+    fi
+    if [ -n "$backup" ]; then
+        if [ -e "$bundle" ] || [ -L "$bundle" ]; then
+            rm -rf "$backup"
+        elif ! mv "$backup" "$bundle"; then
+            printf 'failed to restore prior LV2 bundle: %s\n' "$bundle" >&2
+        fi
+    fi
 }
-trap cleanup EXIT HUP INT TERM
+on_hup() {
+    exit 129
+}
+on_int() {
+    exit 130
+}
+on_term() {
+    exit 143
+}
+trap cleanup EXIT
+trap on_hup HUP
+trap on_int INT
+trap on_term TERM
 
 cp "$library" "$staging/$binary_name"
 if [ -n "$ui_library" ]; then
@@ -67,6 +89,15 @@ fi
     "$staging/presets.ttl" \
     "$ui_binary_name"
 
-rm -rf "$bundle"
+if [ -e "$bundle" ] || [ -L "$bundle" ]; then
+    backup=$(mktemp -d "$parent/.lv2-bundle-backup.XXXXXX")
+    rmdir "$backup"
+    mv "$bundle" "$backup"
+fi
 mv "$staging" "$bundle"
+staging=
+if [ -n "$backup" ]; then
+    rm -rf "$backup"
+    backup=
+fi
 trap - EXIT HUP INT TERM

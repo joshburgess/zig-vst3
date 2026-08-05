@@ -63,6 +63,12 @@ grep -Fq 'ui:ui <https://zig-vst3.dev/plugins/mono-gain#vstgui-ui>' \
     "$ui_bundle/plugin.ttl"
 grep -Fq 'lv2:binary <mono_gain_ui.so>' "$ui_bundle/manifest.ttl"
 grep -Fq 'lv2:requiredFeature ui:parent' "$ui_bundle/plugin.ttl"
+grep -Fq 'ui:portNotification [' "$ui_bundle/plugin.ttl"
+grep -Fq 'lv2:symbol "gain"' "$ui_bundle/plugin.ttl"
+grep -Fq 'ui:protocol ui:floatProtocol' "$ui_bundle/plugin.ttl"
+grep -Fq 'lv2:symbol "input"' "$ui_bundle/plugin.ttl"
+grep -Fq 'lv2:symbol "output"' "$ui_bundle/plugin.ttl"
+test "$(grep -Fc 'ui:protocol ui:peakProtocol' "$ui_bundle/plugin.ttl")" -eq 2
 
 printf 'preserve\n' > "$bundle/existing-marker"
 failing_generator="$root/failing-generator"
@@ -77,6 +83,57 @@ if scripts/bundle_lv2.sh \
     exit 1
 fi
 test -f "$bundle/existing-marker"
+
+interrupted_generator="$root/interrupted-generator"
+printf '%s\n' \
+    '#!/bin/sh' \
+    "kill -TERM \"\$PPID\"" \
+    'exit 9' \
+    >"$interrupted_generator"
+chmod +x "$interrupted_generator"
+if scripts/bundle_lv2.sh \
+    "$library" \
+    "$bundle" \
+    "$interrupted_generator" \
+    >/dev/null 2>&1; then
+    printf 'bundle script accepted interrupted metadata generation\n' >&2
+    exit 1
+fi
+test -f "$bundle/existing-marker"
+test "$(find "$root" -maxdepth 1 -name '.lv2-bundle.*' -type d | \
+    wc -l | tr -d ' ')" -eq 0
+
+fake_tools="$root/fake-tools"
+mkdir -p "$fake_tools"
+real_mv=$(command -v mv)
+cat >"$fake_tools/mv" <<SCRIPT
+#!/bin/sh
+set -eu
+count=0
+if [ -f "\$LV2_MV_COUNT" ]; then
+    count=\$(cat "\$LV2_MV_COUNT")
+fi
+count=\$((count + 1))
+printf '%s\n' "\$count" >"\$LV2_MV_COUNT"
+if [ "\$count" -eq 2 ]; then
+    exit 9
+fi
+exec "$real_mv" "\$@"
+SCRIPT
+chmod +x "$fake_tools/mv"
+if LV2_MV_COUNT="$root/mv-count" PATH="$fake_tools:$PATH" \
+    scripts/bundle_lv2.sh \
+        "$library" \
+        "$bundle" \
+        "$metadata_generator" \
+        >/dev/null 2>&1; then
+    printf 'bundle script accepted failed final publication\n' >&2
+    exit 1
+fi
+test -f "$bundle/existing-marker"
+test "$(find "$root" -maxdepth 1 \
+    \( -name '.lv2-bundle.*' -o -name '.lv2-bundle-backup.*' \) \
+    -type d | wc -l | tr -d ' ')" -eq 0
 
 if scripts/bundle_lv2.sh \
     "$library" \

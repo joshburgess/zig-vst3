@@ -20,6 +20,24 @@ const VstguiBackend = vst3.vstgui_lv2_backend.Backend(.{
         .kind = .decibel_slider,
         .tooltip = "Adjust the output gain.",
     }},
+    .peak_sources = &.{
+        .{ .port_symbol = "input", .source_id = 1, .delivery = .static },
+        .{ .port_symbol = "output", .source_id = 2, .delivery = .static },
+    },
+    .meters = &.{
+        .{
+            .title = "Input",
+            .kind = .peak,
+            .first_source_id = 1,
+            .second_source_id = 0,
+        },
+        .{
+            .title = "Output",
+            .kind = .peak,
+            .first_source_id = 2,
+            .second_source_id = 0,
+        },
+    },
     .initial_size = .{ .width = 400, .height = 300 },
     .resize_policy = .{
         .resizable = .{

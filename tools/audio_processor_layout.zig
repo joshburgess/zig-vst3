@@ -218,7 +218,9 @@ fn eventListSelf(self: *anyopaque) *MockEventList {
     return @ptrCast(@alignCast(self));
 }
 
-fn eventListQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.c) base.tresult {
+fn eventListQueryInterface(_: *anyopaque, _: [*c]const @import("zig-vst3").tuid.TUID, obj_raw: [*c]?*anyopaque) callconv(.c) base.tresult {
+    if (obj_raw == null) return base.kInvalidArgument;
+    const obj: *?*anyopaque = @ptrCast(obj_raw);
     obj.* = null;
     return base.kNoInterface;
 }
@@ -235,13 +237,16 @@ fn eventListGetEventCount(_: *anyopaque) callconv(.c) base.int32 {
     return 3;
 }
 
-fn eventListGetEvent(self: *anyopaque, index: base.int32, event: *events.Event) callconv(.c) base.tresult {
+fn eventListGetEvent(self: *anyopaque, index: base.int32, event_raw: [*c]events.Event) callconv(.c) base.tresult {
+    if (event_raw == null) return base.kInvalidArgument;
+    const event: *events.Event = @ptrCast(event_raw);
     if (index == 1) return base.kResultFalse;
     event.* = eventListSelf(self).event_storage[@intCast(index)];
     return base.kResultOk;
 }
 
-fn eventListAddEvent(_: *anyopaque, _: *events.Event) callconv(.c) base.tresult {
+fn eventListAddEvent(_: *anyopaque, event: [*c]events.Event) callconv(.c) base.tresult {
+    if (event == null) return base.kInvalidArgument;
     return base.kResultFalse;
 }
 
@@ -273,7 +278,9 @@ fn paramQueueSelf(self: *anyopaque) *MockParamValueQueue {
     return @ptrCast(@alignCast(self));
 }
 
-fn paramQueueQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.c) base.tresult {
+fn paramQueueQueryInterface(_: *anyopaque, _: [*c]const @import("zig-vst3").tuid.TUID, obj_raw: [*c]?*anyopaque) callconv(.c) base.tresult {
+    if (obj_raw == null) return base.kInvalidArgument;
+    const obj: *?*anyopaque = @ptrCast(obj_raw);
     obj.* = null;
     return base.kNoInterface;
 }
@@ -294,7 +301,11 @@ fn paramQueueGetPointCount(_: *anyopaque) callconv(.c) base.int32 {
     return 3;
 }
 
-fn paramQueueGetPoint(self: *anyopaque, index: base.int32, sample_offset: *base.int32, value: *vsttypes.ParamValue) callconv(.c) base.tresult {
+fn paramQueueGetPoint(self: *anyopaque, index: base.int32, sample_offset_raw: [*c]base.int32, value_raw: [*c]vsttypes.ParamValue) callconv(.c) base.tresult {
+    if (sample_offset_raw == null or value_raw == null)
+        return base.kInvalidArgument;
+    const sample_offset: *base.int32 = @ptrCast(sample_offset_raw);
+    const value: *vsttypes.ParamValue = @ptrCast(value_raw);
     if (index == 1) return base.kResultFalse;
     const queue = paramQueueSelf(self);
     sample_offset.* = queue.sample_offsets[@intCast(index)];
@@ -302,7 +313,8 @@ fn paramQueueGetPoint(self: *anyopaque, index: base.int32, sample_offset: *base.
     return base.kResultOk;
 }
 
-fn paramQueueAddPoint(_: *anyopaque, _: base.int32, _: vsttypes.ParamValue, _: *base.int32) callconv(.c) base.tresult {
+fn paramQueueAddPoint(_: *anyopaque, _: base.int32, _: vsttypes.ParamValue, index: [*c]base.int32) callconv(.c) base.tresult {
+    if (index == null) return base.kInvalidArgument;
     return base.kResultFalse;
 }
 
@@ -334,7 +346,9 @@ fn parameterChangesSelf(self: *anyopaque) *MockParameterChanges {
     return @ptrCast(@alignCast(self));
 }
 
-fn parameterChangesQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.c) base.tresult {
+fn parameterChangesQueryInterface(_: *anyopaque, _: [*c]const @import("zig-vst3").tuid.TUID, obj_raw: [*c]?*anyopaque) callconv(.c) base.tresult {
+    if (obj_raw == null) return base.kInvalidArgument;
+    const obj: *?*anyopaque = @ptrCast(obj_raw);
     obj.* = null;
     return base.kNoInterface;
 }
@@ -357,6 +371,7 @@ fn parameterChangesGetParameterData(self: *anyopaque, index: base.int32) callcon
     return &changes.queues[if (index == 0) 0 else 1].iface;
 }
 
-fn parameterChangesAddParameterData(_: *anyopaque, _: *const vsttypes.ParamID, _: *base.int32) callconv(.c) ?*parameter_changes.IParamValueQueue {
+fn parameterChangesAddParameterData(_: *anyopaque, id: [*c]const vsttypes.ParamID, index: [*c]base.int32) callconv(.c) ?*parameter_changes.IParamValueQueue {
+    if (id == null or index == null) return null;
     return null;
 }

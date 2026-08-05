@@ -27,11 +27,12 @@ pub fn main(init: std.process.Init) !void {
         "https://zig-vst3.dev/tests/lv2-dynamic-topology",
     )) return error.InvalidPluginUri;
 
+    const empty_features = [_:null]?*const core.lv2.Feature{};
     const handle = descriptor.instantiate(
         descriptor,
         48_000.0,
         "/tmp/lv2-dynamic-topology.lv2",
-        null,
+        &empty_features,
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(handle);
 
