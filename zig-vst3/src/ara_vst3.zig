@@ -42,8 +42,8 @@ pub const all_roles: RoleFlags =
 pub const IMainFactoryVTable = extern struct {
     queryInterface: *const fn (
         *anyopaque,
-        *const tuid.TUID,
-        *?*anyopaque,
+        [*c]const tuid.TUID,
+        [*c]?*anyopaque,
     ) callconv(.c) types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) types.uint32,
     release: *const fn (*anyopaque) callconv(.c) types.uint32,
@@ -59,8 +59,8 @@ pub const IMainFactory = extern struct {
 pub const IPlugInEntryPointVTable = extern struct {
     queryInterface: *const fn (
         *anyopaque,
-        *const tuid.TUID,
-        *?*anyopaque,
+        [*c]const tuid.TUID,
+        [*c]?*anyopaque,
     ) callconv(.c) types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) types.uint32,
     release: *const fn (*anyopaque) callconv(.c) types.uint32,
@@ -80,8 +80,8 @@ pub const IPlugInEntryPoint = extern struct {
 pub const IPlugInEntryPoint2VTable = extern struct {
     queryInterface: *const fn (
         *anyopaque,
-        *const tuid.TUID,
-        *?*anyopaque,
+        [*c]const tuid.TUID,
+        [*c]?*anyopaque,
     ) callconv(.c) types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) types.uint32,
     release: *const fn (*anyopaque) callconv(.c) types.uint32,
@@ -101,8 +101,8 @@ pub const DelegatedIdentity = struct {
     context: *anyopaque,
     query: *const fn (
         *anyopaque,
-        *const tuid.TUID,
-        *?*anyopaque,
+        [*c]const tuid.TUID,
+        [*c]?*anyopaque,
     ) callconv(.c) types.tresult,
     add_ref: *const fn (
         *anyopaque,
@@ -140,8 +140,8 @@ pub const MainFactory = extern struct {
 
     fn query(
         ptr: *anyopaque,
-        requested_iid: *const tuid.TUID,
-        out: *?*anyopaque,
+        requested_iid: [*c]const tuid.TUID,
+        out: [*c]?*anyopaque,
     ) callconv(.c) types.tresult {
         const entries = [_]interface_map.Entry{
             .{ .iid = &funknown.iid, .ptr = ptr },
@@ -244,8 +244,8 @@ pub fn PlugInEntryPoint(comptime Config: type) type {
         fn queryCanonical(
             self: *Self,
             add_ref_ptr: *anyopaque,
-            requested_iid: *const tuid.TUID,
-            out: *?*anyopaque,
+            requested_iid: [*c]const tuid.TUID,
+            out: [*c]?*anyopaque,
         ) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.entry },
@@ -263,8 +263,8 @@ pub fn PlugInEntryPoint(comptime Config: type) type {
 
         fn entryQuery(
             ptr: *anyopaque,
-            requested_iid: *const tuid.TUID,
-            out: *?*anyopaque,
+            requested_iid: [*c]const tuid.TUID,
+            out: [*c]?*anyopaque,
         ) callconv(.c) types.tresult {
             const self = ownerFromEntry(ptr);
             if (self.delegated_identity) |identity|
@@ -282,8 +282,8 @@ pub fn PlugInEntryPoint(comptime Config: type) type {
 
         fn entry2Query(
             ptr: *anyopaque,
-            requested_iid: *const tuid.TUID,
-            out: *?*anyopaque,
+            requested_iid: [*c]const tuid.TUID,
+            out: [*c]?*anyopaque,
         ) callconv(.c) types.tresult {
             const self = ownerFromEntry2(ptr);
             if (self.delegated_identity) |identity|
@@ -512,9 +512,15 @@ test "ARA VST3 entry point can delegate canonical COM identity" {
 
         fn query(
             context: *anyopaque,
-            requested_iid: *const tuid.TUID,
-            out: *?*anyopaque,
+            requested_iid_raw: [*c]const tuid.TUID,
+            out_raw: [*c]?*anyopaque,
         ) callconv(.c) types.tresult {
+            const arguments = funknown.queryArguments(
+                requested_iid_raw,
+                out_raw,
+            ) orelse return types.kInvalidArgument;
+            const requested_iid = arguments.requested_iid;
+            const out = arguments.out;
             if (!std.mem.eql(
                 u8,
                 requested_iid[0..tuid.byte_count],

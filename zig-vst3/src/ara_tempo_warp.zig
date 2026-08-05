@@ -41,6 +41,11 @@ pub fn Builder(
 
     const Description =
         ControllerType.PlaybackRegionRenderDescription;
+    const empty_description: Description = std.mem.zeroes(Description);
+    const empty_warp_point = ara_playback_renderer.TempoWarpPoint{
+        .playback_time = 0.0,
+        .modification_time = 0.0,
+    };
     const SourceId = @FieldType(Description, "audio_source");
 
     return struct {
@@ -48,9 +53,9 @@ pub fn Builder(
 
         const Entry = struct {
             occupied: bool = false,
-            description: Description = undefined,
+            description: Description = empty_description,
             points: [limits.warp_points]ara_playback_renderer.TempoWarpPoint =
-                undefined,
+                @splat(empty_warp_point),
             point_count: usize = 0,
         };
 
@@ -232,13 +237,16 @@ pub fn Builder(
             const entry = try self.entryFor(
                 description.playback_region,
             );
-            entry.occupied = true;
-            entry.description = description.*;
-            entry.point_count = point_count;
+            var prepared = Entry{
+                .occupied = true,
+                .description = description.*,
+                .point_count = point_count,
+            };
             @memcpy(
-                entry.points[0..point_count],
+                prepared.points[0..point_count],
                 self.warp_scratch[0..point_count],
             );
+            entry.* = prepared;
             return point_count;
         }
 
@@ -601,6 +609,20 @@ test "ARA tempo warp builder publishes exact bounded nonlinear plans" {
         .{ .timePosition = 2.0, .quarterPosition = 4.0 },
     };
     var builder = try TempoBuilder.init(.{});
+    try std.testing.expect(!builder.entries[0].occupied);
+    try std.testing.expectEqualDeep(
+        std.mem.zeroes(TestDescription),
+        builder.entries[0].description,
+    );
+    for (builder.entries[0].points) |point| {
+        try std.testing.expectEqualDeep(
+            ara_playback_renderer.TempoWarpPoint{
+                .playback_time = 0.0,
+                .modification_time = 0.0,
+            },
+            point,
+        );
+    }
     const description = testDescription();
     try std.testing.expectEqual(
         @as(usize, 4),
@@ -654,6 +676,41 @@ test "ARA tempo warp builder publishes exact bounded nonlinear plans" {
         },
         output[3],
     );
+    for (builder.entries[0].points[4..]) |point| {
+        try std.testing.expectEqualDeep(
+            ara_playback_renderer.TempoWarpPoint{
+                .playback_time = 0.0,
+                .modification_time = 0.0,
+            },
+            point,
+        );
+    }
+
+    const linear_modification = [_]raw.ARAContentTempoEntry{
+        .{ .timePosition = 0.0, .quarterPosition = 0.0 },
+        .{ .timePosition = 2.0, .quarterPosition = 4.0 },
+    };
+    const linear_context = [_]raw.ARAContentTempoEntry{
+        .{ .timePosition = 0.0, .quarterPosition = 0.0 },
+        .{ .timePosition = 2.0, .quarterPosition = 4.0 },
+    };
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        try builder.prepareRegionFromMaps(
+            &description,
+            &linear_modification,
+            &linear_context,
+        ),
+    );
+    for (builder.entries[0].points[2..]) |point| {
+        try std.testing.expectEqualDeep(
+            ara_playback_renderer.TempoWarpPoint{
+                .playback_time = 0.0,
+                .modification_time = 0.0,
+            },
+            point,
+        );
+    }
 
     var stale = description;
     stale.model_revision += 1;
@@ -674,6 +731,19 @@ test "ARA tempo warp builder publishes exact bounded nonlinear plans" {
             &output,
         ),
     );
+    try std.testing.expectEqualDeep(
+        std.mem.zeroes(TestDescription),
+        builder.entries[0].description,
+    );
+    for (builder.entries[0].points) |point| {
+        try std.testing.expectEqualDeep(
+            ara_playback_renderer.TempoWarpPoint{
+                .playback_time = 0.0,
+                .modification_time = 0.0,
+            },
+            point,
+        );
+    }
 }
 
 test "ARA tempo warp builder rejects malformed and incompatible maps" {

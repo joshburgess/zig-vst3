@@ -310,7 +310,7 @@ pub fn Processor(
                 .hann,
                 true,
                 .none,
-            ) catch unreachable;
+            ) catch @compileError("invalid spectral transform window declaration");
             for (&values) |*value| value.* = @sqrt(@max(0, value.*));
             return values;
         }
@@ -328,6 +328,7 @@ pub fn PreparedSource(
 ) type {
     const Description = ControllerType.PlaybackRegionRenderDescription;
     const SourceId = @FieldType(Description, "audio_source");
+    const empty_source_id: SourceId = std.mem.zeroes(SourceId);
     const Engine = Processor(
         Sample,
         fft_size,
@@ -337,7 +338,7 @@ pub fn PreparedSource(
     );
     const State = struct {
         valid: bool = false,
-        source_id: SourceId = undefined,
+        source_id: SourceId = empty_source_id,
         sample_rate: f64 = 0,
         channel_count: usize = 0,
         frame_count: usize = 0,
@@ -486,8 +487,8 @@ pub fn PreparedSource(
             defer handle.release();
             const state = handle.value() orelse
                 return error.SourceUnavailable;
-            if (!state.valid or !std.meta.eql(state.source_id, source_id) or
-                buffers.len != state.channel_count)
+            if (!stateValid(state) or
+                !std.meta.eql(state.source_id, source_id))
                 return error.SourceUnavailable;
             return readState(state, sample_position, buffers);
         }
@@ -516,7 +517,7 @@ pub fn PreparedSource(
             if (handle) |*acquired| {
                 defer acquired.release();
                 if (acquired.value()) |state| {
-                    if (state.valid and
+                    if (stateValid(state) and
                         std.meta.eql(state.source_id, source_id))
                         return readState(
                             state,
@@ -540,6 +541,8 @@ pub fn PreparedSource(
             sample_position: i64,
             buffers: []const []Sample,
         ) anyerror!void {
+            if (!stateValid(state))
+                return error.SourceUnavailable;
             if (sample_position < 0 or
                 buffers.len != state.channel_count)
                 return error.InvalidAudioBuffer;
@@ -548,9 +551,17 @@ pub fn PreparedSource(
             if (start > state.frame_count or
                 count > state.frame_count - start)
                 return error.InvalidAudioBuffer;
-            for (buffers, 0..) |buffer, channel| {
+            for (buffers) |buffer| {
                 if (buffer.len != count)
                     return error.InvalidAudioBuffer;
+            }
+            for (buffers, 0..) |buffer, index| {
+                for (buffers[index + 1 ..]) |other| {
+                    if (Engine.slicesOverlap(buffer, other))
+                        return error.InvalidAudioBuffer;
+                }
+            }
+            for (buffers, 0..) |buffer, channel| {
                 @memcpy(
                     buffer,
                     state.samples[channel][start..][0..count],
@@ -562,19 +573,29 @@ pub fn PreparedSource(
             state: *const State,
             description: *const Description,
         ) bool {
-            return state.valid and
+            const channel_count = std.math.cast(
+                usize,
+                description.source_channel_count,
+            ) orelse return false;
+            const frame_count = std.math.cast(
+                usize,
+                description.source_sample_count,
+            ) orelse return false;
+            return stateValid(state) and
                 std.meta.eql(state.source_id, description.audio_source) and
                 state.sample_rate == description.source_sample_rate and
-                description.source_channel_count > 0 and
-                state.channel_count ==
-                    @as(usize, @intCast(
-                        description.source_channel_count,
-                    )) and
-                description.source_sample_count > 0 and
-                state.frame_count ==
-                    @as(usize, @intCast(
-                        description.source_sample_count,
-                    ));
+                state.channel_count == channel_count and
+                state.frame_count == frame_count;
+        }
+
+        fn stateValid(state: *const State) bool {
+            return state.valid and
+                std.math.isFinite(state.sample_rate) and
+                state.sample_rate > 0.0 and
+                state.channel_count > 0 and
+                state.channel_count <= maximum_channels and
+                state.frame_count > 0 and
+                state.frame_count <= maximum_frames;
         }
     };
 }
@@ -785,7 +806,7 @@ test "ARA prepared spectral source publishes and invalidates generations" {
         f32,
         16,
         4,
-        1,
+        2,
         64,
         3,
     );
@@ -814,6 +835,13 @@ test "ARA prepared spectral source publishes and invalidates generations" {
         .source_sample_count = upstream.samples.len,
     };
     var prepared = Prepared{};
+    for (prepared.publisher.slots) |slot| {
+        try std.testing.expect(!slot.value.valid);
+        try std.testing.expectEqualDeep(
+            TestSourceId{ .index = 0, .generation = 0 },
+            slot.value.source_id,
+        );
+    }
     _ = try prepared.prepare(
         &description,
         upstream.provider(),
@@ -830,8 +858,148 @@ test "ARA prepared spectral source publishes and invalidates generations" {
     );
     for (upstream.samples, output) |expected, actual|
         try std.testing.expectApproxEqAbs(expected * 0.5, actual, 0.000_01);
+
+    var mismatched_buffers =
+        try prepared.publisher.beginUpdate();
+    defer mismatched_buffers.cancel();
+    const mismatched_state = mismatched_buffers.value() orelse
+        return error.MissingPreparedSourceState;
+    mismatched_state.channel_count = 2;
+    _ = try mismatched_buffers.commit();
+    var aliased_destination = [_]f32{-7.0} ** 2;
+    const aliased_destinations = [_][]f32{
+        &aliased_destination,
+        &aliased_destination,
+    };
+    try std.testing.expectError(
+        error.InvalidAudioBuffer,
+        provider.read(
+            provider.context,
+            description.audio_source,
+            0,
+            &aliased_destinations,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{-7.0} ** 2),
+        &aliased_destination,
+    );
+    var first_destination = [_]f32{-11.0} ** 2;
+    var short_destination = [_]f32{-13.0};
+    const invalid_shape = [_][]f32{
+        &first_destination,
+        &short_destination,
+    };
+    try std.testing.expectError(
+        error.InvalidAudioBuffer,
+        provider.read(
+            provider.context,
+            description.audio_source,
+            0,
+            &invalid_shape,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{-11.0} ** 2),
+        &first_destination,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{-13.0}),
+        &short_destination,
+    );
+
+    _ = try prepared.prepare(
+        &description,
+        upstream.provider(),
+        .{ .process = Half.process },
+    );
+    var invalid_channels =
+        try prepared.publisher.beginUpdate();
+    defer invalid_channels.cancel();
+    const invalid_channel_state = invalid_channels.value() orelse
+        return error.MissingPreparedSourceState;
+    invalid_channel_state.channel_count = 3;
+    _ = try invalid_channels.commit();
+    first_destination = @splat(-17.0);
+    var second_destination = [_]f32{-19.0} ** 2;
+    var third_destination = [_]f32{-23.0} ** 2;
+    const hostile_channels = [_][]f32{
+        &first_destination,
+        &second_destination,
+        &third_destination,
+    };
+    try std.testing.expect(!provider.ready(
+        provider.context,
+        &description,
+    ));
+    try std.testing.expectError(
+        error.SourceUnavailable,
+        provider.read(
+            provider.context,
+            description.audio_source,
+            0,
+            &hostile_channels,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{-17.0} ** 2),
+        &first_destination,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{-19.0} ** 2),
+        &second_destination,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{-23.0} ** 2),
+        &third_destination,
+    );
+
+    _ = try prepared.prepare(
+        &description,
+        upstream.provider(),
+        .{ .process = Half.process },
+    );
+    var invalid_frames =
+        try prepared.publisher.beginUpdate();
+    defer invalid_frames.cancel();
+    const invalid_frame_state = invalid_frames.value() orelse
+        return error.MissingPreparedSourceState;
+    invalid_frame_state.frame_count = 65;
+    _ = try invalid_frames.commit();
+    first_destination = @splat(-29.0);
+    try std.testing.expectError(
+        error.SourceUnavailable,
+        provider.read(
+            provider.context,
+            description.audio_source,
+            0,
+            &.{&first_destination},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{-29.0} ** 2),
+        &first_destination,
+    );
+
     _ = try prepared.invalidate();
     try std.testing.expect(!provider.ready(provider.context, &description));
+    var invalidated = prepared.publisher.tryAcquire() orelse
+        return error.TestUnexpectedResult;
+    defer invalidated.release();
+    const invalidated_state = invalidated.value() orelse
+        return error.TestUnexpectedResult;
+    try std.testing.expect(!invalidated_state.valid);
+    try std.testing.expectEqualDeep(
+        TestSourceId{ .index = 0, .generation = 0 },
+        invalidated_state.source_id,
+    );
     try std.testing.expectError(
         error.SourceUnavailable,
         provider.read(
@@ -918,6 +1086,24 @@ test "ARA prepared spectral source falls back and retains successful state" {
             actual,
             0.000_01,
         );
+
+    var malformed = try prepared.publisher.beginUpdate();
+    defer malformed.cancel();
+    const malformed_state = malformed.value() orelse
+        return error.MissingPreparedSourceState;
+    malformed_state.channel_count = 2;
+    _ = try malformed.commit();
+    try provider.read(
+        provider.context,
+        description.audio_source,
+        4,
+        &.{&output},
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        upstream.samples[4..12],
+        &output,
+    );
 
     _ = try prepared.invalidate();
     try provider.read(

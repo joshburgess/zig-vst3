@@ -47,6 +47,7 @@ pub fn Analyzer(
 
     const Description =
         ControllerType.PlaybackRegionRenderDescription;
+    const empty_description: Description = std.mem.zeroes(Description);
     const SourceId = @FieldType(Description, "audio_source");
     const RegionId = @FieldType(Description, "playback_region");
 
@@ -55,7 +56,7 @@ pub fn Analyzer(
 
         const Entry = struct {
             occupied: bool = false,
-            description: Description = undefined,
+            description: Description = empty_description,
             fades: ara_playback_renderer.FadeDescription = .{},
         };
 
@@ -655,6 +656,17 @@ fn exerciseAnalyzer(comptime Sample: type) !void {
         .fallback_fade_seconds = 0.25,
         .curve = .equal_power,
     });
+    for (analyzer.entries) |entry| {
+        try std.testing.expect(!entry.occupied);
+        try std.testing.expectEqualDeep(
+            std.mem.zeroes(TestDescription),
+            entry.description,
+        );
+        try std.testing.expectEqualDeep(
+            ara_playback_renderer.FadeDescription{},
+            entry.fades,
+        );
+    }
     const description = testDescription(0);
     const fades = try analyzer.analyzeRegion(
         &controller,
@@ -713,6 +725,14 @@ fn exerciseAnalyzer(comptime Sample: type) !void {
     try std.testing.expectEqual(
         null,
         provide(provider.fade_context, &description),
+    );
+    try std.testing.expectEqualDeep(
+        std.mem.zeroes(TestDescription),
+        analyzer.entries[0].description,
+    );
+    try std.testing.expectEqualDeep(
+        ara_playback_renderer.FadeDescription{},
+        analyzer.entries[0].fades,
     );
 }
 

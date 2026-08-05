@@ -173,22 +173,24 @@ pub fn Cache(
                 return false;
             defer handle.release();
             const state = handle.value() orelse return false;
-            return stateMatches(
+            const source_sample_count = std.math.cast(
+                usize,
+                description.source_sample_count,
+            ) orelse return false;
+            const source_channel_count = std.math.cast(
+                usize,
+                description.source_channel_count,
+            ) orelse return false;
+            return stateValid(
                 state,
                 description.audio_source,
             ) and
                 description.source_sample_count > 0 and
-                state.sample_count ==
-                    @as(usize, @intCast(
-                        description.source_sample_count,
-                    )) and
+                state.sample_count == source_sample_count and
                 state.sample_rate ==
                     description.source_sample_rate and
                 description.source_channel_count > 0 and
-                state.channel_count ==
-                    @as(usize, @intCast(
-                        description.source_channel_count,
-                    ));
+                state.channel_count == source_channel_count;
         }
 
         fn providerRead(
@@ -209,11 +211,14 @@ pub fn Cache(
             defer handle.release();
             const state = handle.value() orelse
                 return error.SourceUnavailable;
-            if (!stateMatches(state, source_id))
+            if (!stateValid(state, source_id))
                 return error.SourceUnavailable;
             if (buffers.len != state.channel_count)
                 return error.InvalidAudioBuffer;
-            const start: usize = @intCast(sample_position);
+            const start = std.math.cast(
+                usize,
+                sample_position,
+            ) orelse return error.InvalidAudioBuffer;
             const count = if (buffers.len == 0)
                 0
             else
@@ -222,6 +227,8 @@ pub fn Cache(
                 if (buffer.len != count)
                     return error.InvalidAudioBuffer;
             }
+            if (sampleBuffersOverlap(Sample, buffers))
+                return error.InvalidAudioBuffer;
             if (start > state.sample_count or
                 count > state.sample_count - start)
                 return error.InvalidAudioBuffer;
@@ -245,6 +252,19 @@ pub fn Cache(
             return state.valid and
                 state.source_index == source_id.index and
                 state.source_generation == source_id.generation;
+        }
+
+        fn stateValid(
+            state: *const SourceState,
+            source_id: SourceId,
+        ) bool {
+            return stateMatches(state, source_id) and
+                state.sample_count > 0 and
+                state.sample_count <= limits.frames_per_source and
+                std.math.isFinite(state.sample_rate) and
+                state.sample_rate > 0.0 and
+                state.channel_count > 0 and
+                state.channel_count <= limits.channels;
         }
     };
 }
@@ -457,6 +477,8 @@ pub fn PagedCache(
                 @splat(false);
             var missing_pages: [limits.page_slots]usize =
                 undefined;
+            var selected_slots: [limits.page_slots]?usize =
+                @splat(null);
             var missing_count: usize = 0;
             for (first_page..last_page + 1) |logical_page| {
                 const existing = findDirectoryEntry(
@@ -464,25 +486,25 @@ pub fn PagedCache(
                     source_id,
                     logical_page,
                 );
-                if (!refresh) {
-                    if (existing) |slot| {
+                if (existing) |slot| {
+                    if (!refresh) {
                         protected[slot] = true;
                         next.entries[slot].last_used = next.clock;
                         continue;
                     }
+                    selected_slots[missing_count] = slot;
+                    protected[slot] = true;
                 }
-                {
-                    missing_pages[missing_count] = logical_page;
-                    missing_count += 1;
-                }
+                missing_pages[missing_count] = logical_page;
+                missing_count += 1;
             }
 
-            var selected_slots: [limits.page_slots]usize =
-                undefined;
             for (missing_pages[0..missing_count], 0..) |
                 _,
                 missing_index,
             | {
+                if (selected_slots[missing_index] != null)
+                    continue;
                 const slot = selectVictim(
                     next,
                     &protected,
@@ -498,7 +520,14 @@ pub fn PagedCache(
                 for (page_writers[0..reserved_count]) |*writer|
                     writer.cancel();
             }
-            for (selected_slots[0..missing_count]) |slot| {
+            var concrete_slots: [limits.page_slots]usize = undefined;
+            for (selected_slots[0..missing_count], 0..) |
+                maybe_slot,
+                index,
+            | {
+                const slot = maybe_slot orelse
+                    return error.PageCapacityExceeded;
+                concrete_slots[index] = slot;
                 page_writers[reserved_count] =
                     try self.pages[slot].beginPublish();
                 reserved_count += 1;
@@ -556,7 +585,7 @@ pub fn PagedCache(
 
             for (
                 missing_pages[0..missing_count],
-                selected_slots[0..missing_count],
+                concrete_slots[0..missing_count],
                 page_writers[0..missing_count],
             ) |logical_page, slot, *writer| {
                 const page_generation = try writer.commit();
@@ -648,7 +677,12 @@ pub fn PagedCache(
                 if (buffer.len != count)
                     return error.InvalidAudioBuffer;
             }
-            const start: usize = @intCast(sample_position);
+            if (sampleBuffersOverlap(Sample, buffers))
+                return error.InvalidAudioBuffer;
+            const start = std.math.cast(
+                usize,
+                sample_position,
+            ) orelse return error.InvalidAudioBuffer;
             const end = std.math.add(
                 usize,
                 start,
@@ -661,24 +695,46 @@ pub fn PagedCache(
             defer directory_handle.release();
             const directory = directory_handle.value() orelse
                 return error.SourceUnavailable;
-            if (count == 0) {
-                for (directory.entries) |entry| {
-                    if (entry.valid and
-                        entry.source_index == source_id.index and
-                        entry.source_generation == source_id.generation)
-                    {
-                        return;
-                    }
-                }
+            const source_slot = findSourceEntry(
+                directory,
+                source_id,
+            ) orelse return error.SourceUnavailable;
+            const source_entry = directory.entries[source_slot];
+            var source_page_handle =
+                self.pages[source_slot].tryAcquire() orelse
                 return error.SourceUnavailable;
+            defer source_page_handle.release();
+            if (source_page_handle.generation() !=
+                @as(?u64, source_entry.page_generation))
+                return error.SourceUnavailable;
+            const source_page = source_page_handle.value() orelse
+                return error.SourceUnavailable;
+            if (!pageStateValid(
+                source_page,
+                source_id,
+                source_entry.logical_page,
+            )) return error.SourceUnavailable;
+            if (buffers.len != source_page.channel_count or
+                end > source_page.source_sample_count)
+                return error.InvalidAudioBuffer;
+            if (count == 0) {
+                return;
             }
-            var copied: usize = 0;
-            while (copied < count) {
-                const frame = start + copied;
-                const logical_page =
-                    frame / limits.frames_per_page;
-                const page_offset =
-                    frame % limits.frames_per_page;
+            const first_page = start / limits.frames_per_page;
+            const last_page = (end - 1) / limits.frames_per_page;
+            const page_count = last_page - first_page + 1;
+            if (page_count > limits.page_slots)
+                return error.SourceUnavailable;
+            var page_handles: [limits.page_slots]?PagePublisher.Handle =
+                @splat(null);
+            var page_values: [limits.page_slots]*const PageState = undefined;
+            var acquired_count: usize = 0;
+            defer {
+                for (page_handles[0..acquired_count]) |*maybe_handle| {
+                    if (maybe_handle.*) |*handle| handle.release();
+                }
+            }
+            for (first_page..last_page + 1) |logical_page| {
                 const slot = findDirectoryEntry(
                     directory,
                     source_id,
@@ -688,17 +744,48 @@ pub fn PagedCache(
                 var page_handle =
                     self.pages[slot].tryAcquire() orelse
                     return error.SourceUnavailable;
-                defer page_handle.release();
                 if (page_handle.generation() !=
                     @as(?u64, entry.page_generation))
+                {
+                    page_handle.release();
                     return error.SourceUnavailable;
+                }
                 const page = page_handle.value() orelse
-                    return error.SourceUnavailable;
-                if (!pageMatches(page, source_id, logical_page) or
-                    buffers.len != page.channel_count or
-                    end > page.source_sample_count or
-                    page_offset >= page.frame_count)
+                    {
+                        page_handle.release();
+                        return error.SourceUnavailable;
+                    };
+                const page_start = logical_page * limits.frames_per_page;
+                const page_capacity_end = std.math.add(
+                    usize,
+                    page_start,
+                    limits.frames_per_page,
+                ) catch {
+                    page_handle.release();
                     return error.InvalidAudioBuffer;
+                };
+                const requested_page_end = @min(end, page_capacity_end);
+                const page_offset = @max(start, page_start) - page_start;
+                if (!pageStateValid(page, source_id, logical_page) or
+                    page.channel_count != source_page.channel_count or
+                    page.source_sample_count !=
+                        source_page.source_sample_count or
+                    page.sample_rate != source_page.sample_rate or
+                    page_offset >= page.frame_count or
+                    requested_page_end - page_start > page.frame_count)
+                {
+                    page_handle.release();
+                    return error.SourceUnavailable;
+                }
+                page_values[acquired_count] = page;
+                page_handles[acquired_count] = page_handle;
+                acquired_count += 1;
+            }
+
+            var copied: usize = 0;
+            for (page_values[0..acquired_count]) |page| {
+                const page_offset =
+                    (start + copied) % limits.frames_per_page;
                 const chunk = @min(
                     count - copied,
                     page.frame_count - page_offset,
@@ -749,7 +836,7 @@ pub fn PagedCache(
                     usize,
                     description.source_sample_count,
                 ) orelse return false;
-                if (!pageMatches(page, source_id, logical_page) or
+                if (!pageStateValid(page, source_id, logical_page) or
                     description.source_sample_count <= 0 or
                     page.source_sample_count !=
                         described_sample_count or
@@ -830,6 +917,21 @@ pub fn PagedCache(
             return null;
         }
 
+        fn findSourceEntry(
+            directory: *const Directory,
+            source_id: SourceId,
+        ) ?usize {
+            for (directory.entries, 0..) |entry, slot| {
+                if (entry.valid and
+                    entry.source_index == source_id.index and
+                    entry.source_generation == source_id.generation)
+                {
+                    return slot;
+                }
+            }
+            return null;
+        }
+
         fn selectVictim(
             directory: *const Directory,
             protected: *const [limits.page_slots]bool,
@@ -861,12 +963,75 @@ pub fn PagedCache(
                 page.logical_page == logical_page;
         }
 
+        fn pageStateValid(
+            page: *const PageState,
+            source_id: SourceId,
+            logical_page: usize,
+        ) bool {
+            if (!pageMatches(page, source_id, logical_page) or
+                page.source_sample_count == 0 or
+                !std.math.isFinite(page.sample_rate) or
+                page.sample_rate <= 0.0 or
+                page.channel_count == 0 or
+                page.channel_count > limits.channels or
+                page.frame_count == 0 or
+                page.frame_count > limits.frames_per_page)
+                return false;
+            const page_start = std.math.mul(
+                usize,
+                logical_page,
+                limits.frames_per_page,
+            ) catch return false;
+            if (page_start >= page.source_sample_count)
+                return false;
+            return page.frame_count == @min(
+                limits.frames_per_page,
+                page.source_sample_count - page_start,
+            );
+        }
+
         fn sourceSlotIndex(source_id: SourceId) Error!usize {
             if (source_id.index >= limits.sources)
                 return error.SourceCapacityExceeded;
             return source_id.index;
         }
     };
+}
+
+fn sampleBuffersOverlap(
+    comptime Sample: type,
+    buffers: []const []Sample,
+) bool {
+    for (buffers, 0..) |buffer, index| {
+        const buffer_start = @intFromPtr(buffer.ptr);
+        const buffer_bytes = std.math.mul(
+            usize,
+            buffer.len,
+            @sizeOf(Sample),
+        ) catch return true;
+        const buffer_end = std.math.add(
+            usize,
+            buffer_start,
+            buffer_bytes,
+        ) catch return true;
+        for (buffers[index + 1 ..]) |other| {
+            const other_start = @intFromPtr(other.ptr);
+            const other_bytes = std.math.mul(
+                usize,
+                other.len,
+                @sizeOf(Sample),
+            ) catch return true;
+            const other_end = std.math.add(
+                usize,
+                other_start,
+                other_bytes,
+            ) catch return true;
+            if (buffer_start < other_end and
+                other_start < buffer_end)
+                return true;
+        }
+    }
+    return false;
 }
 
 fn validatePagedLimits(comptime limits: PagedLimits) void {
@@ -1019,6 +1184,38 @@ fn exerciseCache(comptime Sample: type) !void {
         &.{ 6, 7 },
         &right,
     );
+    left = @splat(-5.0);
+    const aliased_buffers = [_][]Sample{ &left, &left };
+    try std.testing.expectError(
+        error.InvalidAudioBuffer,
+        provider.read(
+            provider.context,
+            source_id,
+            1,
+            &aliased_buffers,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-5.0} ** 2),
+        &left,
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBuffer,
+        provider.read(
+            provider.context,
+            source_id,
+            std.math.maxInt(i64),
+            &buffers,
+        ),
+    );
+    var oversized_description = description;
+    oversized_description.source_sample_count =
+        std.math.maxInt(i64);
+    try std.testing.expect(!provider.ready(
+        provider.context,
+        &oversized_description,
+    ));
 
     controller.source.sample_count = 5;
     try std.testing.expectError(
@@ -1066,6 +1263,84 @@ fn exerciseCache(comptime Sample: type) !void {
         provider.context,
         &reused_description,
     ));
+
+    controller.fail_reads = false;
+    var hostile_cache = TestCache.init();
+    _ = try hostile_cache.loadSource(&controller, source_id);
+    const hostile_provider = hostile_cache.provider(TestRenderer);
+    var invalid_channels =
+        try hostile_cache.publishers[0].beginUpdate();
+    defer invalid_channels.cancel();
+    const invalid_channel_state = invalid_channels.value() orelse
+        return error.MissingSourceCacheState;
+    invalid_channel_state.channel_count = 3;
+    _ = try invalid_channels.commit();
+    var hostile_left = [_]Sample{-11.0} ** 2;
+    var hostile_right = [_]Sample{-13.0} ** 2;
+    var hostile_extra = [_]Sample{-17.0} ** 2;
+    const hostile_channels = [_][]Sample{
+        &hostile_left,
+        &hostile_right,
+        &hostile_extra,
+    };
+    try std.testing.expectError(
+        error.SourceUnavailable,
+        hostile_provider.read(
+            hostile_provider.context,
+            source_id,
+            0,
+            &hostile_channels,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-11.0} ** 2),
+        &hostile_left,
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-13.0} ** 2),
+        &hostile_right,
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-17.0} ** 2),
+        &hostile_extra,
+    );
+
+    _ = try hostile_cache.loadSource(&controller, source_id);
+    var invalid_frames =
+        try hostile_cache.publishers[0].beginUpdate();
+    defer invalid_frames.cancel();
+    const invalid_frame_state = invalid_frames.value() orelse
+        return error.MissingSourceCacheState;
+    invalid_frame_state.sample_count = 5;
+    _ = try invalid_frames.commit();
+    hostile_left = @splat(-19.0);
+    hostile_right = @splat(-23.0);
+    const hostile_frames = [_][]Sample{
+        &hostile_left,
+        &hostile_right,
+    };
+    try std.testing.expectError(
+        error.SourceUnavailable,
+        hostile_provider.read(
+            hostile_provider.context,
+            source_id,
+            3,
+            &hostile_frames,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-19.0} ** 2),
+        &hostile_left,
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-23.0} ** 2),
+        &hostile_right,
+    );
     try std.testing.expectEqual(
         controller.opened_readers,
         controller.closed_readers,
@@ -1266,12 +1541,77 @@ test "ARA paged source cache loads regions evicts and rolls back" {
             right[index],
         );
     }
+    var aliased_page_output = [_]Sample{-7.0} ** 12;
+    const aliased_page_buffers = [_][]Sample{
+        &aliased_page_output,
+        &aliased_page_output,
+    };
+    try std.testing.expectError(
+        error.InvalidAudioBuffer,
+        provider.read(
+            provider.context,
+            source_id,
+            15,
+            &aliased_page_buffers,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-7.0} ** 12),
+        &aliased_page_output,
+    );
+    try std.testing.expectError(
+        error.InvalidAudioBuffer,
+        provider.read(
+            provider.context,
+            source_id,
+            std.math.maxInt(i64),
+            &buffers,
+        ),
+    );
+    const empty = [_][]Sample{ left[0..0], right[0..0] };
+    try provider.read(provider.context, source_id, 15, &empty);
+    const missing_channel = [_][]Sample{left[0..0]};
+    try std.testing.expectError(
+        error.InvalidAudioBuffer,
+        provider.read(
+            provider.context,
+            source_id,
+            15,
+            &missing_channel,
+        ),
+    );
 
     _ = try cache.loadRange(&controller, source_id, 40, 8);
     try std.testing.expect(!provider.ready(
         provider.context,
         &description,
     ));
+    var incomplete_left = [_]Sample{-31.0} ** 17;
+    var incomplete_right = [_]Sample{-47.0} ** 17;
+    const incomplete = [_][]Sample{
+        &incomplete_left,
+        &incomplete_right,
+    };
+    try std.testing.expectError(
+        error.SourceUnavailable,
+        provider.read(
+            provider.context,
+            source_id,
+            16,
+            &incomplete,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-31.0} ** 17),
+        &incomplete_left,
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-47.0} ** 17),
+        &incomplete_right,
+    );
     var later_left: [8]Sample = undefined;
     var later_right: [8]Sample = undefined;
     const later = [_][]Sample{ &later_left, &later_right };
@@ -1297,10 +1637,210 @@ test "ARA paged source cache loads regions evicts and rolls back" {
     );
     try std.testing.expectEqual(@as(Sample, 40), later_left[0]);
     controller.fail_reads = false;
+    controller.fill(1000);
+    _ = try cache.refreshRange(&controller, source_id, 40, 8);
+    try provider.read(
+        provider.context,
+        source_id,
+        40,
+        &later,
+    );
+    try std.testing.expectEqual(@as(Sample, 1040), later_left[0]);
+    try std.testing.expectEqual(@as(Sample, 1147), later_right[7]);
+    var refreshed_directory =
+        cache.directory.tryAcquire() orelse
+        return error.MissingSourceCacheDirectory;
+    defer refreshed_directory.release();
+    const refreshed_entries = refreshed_directory.value() orelse
+        return error.MissingSourceCacheDirectory;
+    var refreshed_page_count: usize = 0;
+    for (refreshed_entries.entries) |entry| {
+        if (entry.valid and
+            entry.source_index == source_id.index and
+            entry.source_generation == source_id.generation and
+            entry.logical_page == 5)
+            refreshed_page_count += 1;
+    }
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        refreshed_page_count,
+    );
+
+    _ = try cache.loadRange(&controller, source_id, 16, 8);
+    controller.fill(2000);
+    _ = try cache.refreshRange(&controller, source_id, 16, 16);
+    var refreshed_left: [16]Sample = undefined;
+    var refreshed_right: [16]Sample = undefined;
+    const refreshed_buffers = [_][]Sample{
+        &refreshed_left,
+        &refreshed_right,
+    };
+    try provider.read(
+        provider.context,
+        source_id,
+        16,
+        &refreshed_buffers,
+    );
+    for (0..refreshed_left.len) |index| {
+        try std.testing.expectEqual(
+            @as(Sample, @floatFromInt(2016 + index)),
+            refreshed_left[index],
+        );
+        try std.testing.expectEqual(
+            refreshed_left[index] + 100,
+            refreshed_right[index],
+        );
+    }
+    var multi_refresh_directory =
+        cache.directory.tryAcquire() orelse
+        return error.MissingSourceCacheDirectory;
+    defer multi_refresh_directory.release();
+    const multi_refresh_entries =
+        multi_refresh_directory.value() orelse
+        return error.MissingSourceCacheDirectory;
+    var page_two_count: usize = 0;
+    var page_three_count: usize = 0;
+    for (multi_refresh_entries.entries) |entry| {
+        if (!entry.valid or
+            entry.source_index != source_id.index or
+            entry.source_generation != source_id.generation)
+            continue;
+        if (entry.logical_page == 2)
+            page_two_count += 1;
+        if (entry.logical_page == 3)
+            page_three_count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), page_two_count);
+    try std.testing.expectEqual(@as(usize, 1), page_three_count);
     try std.testing.expectError(
         error.PageCapacityExceeded,
         cache.loadRange(&controller, source_id, 0, 32),
     );
+
+    var hostile_cache = TestCache.init();
+    _ = try hostile_cache.loadRegion(&controller, &description);
+    const hostile_provider = hostile_cache.provider(TestRenderer);
+    var active_directory =
+        hostile_cache.directory.tryAcquire() orelse
+        return error.MissingSourceCacheDirectory;
+    const directory = active_directory.value() orelse {
+        active_directory.release();
+        return error.MissingSourceCacheDirectory;
+    };
+    var hostile_slot: ?usize = null;
+    for (directory.entries, 0..) |entry, slot| {
+        if (entry.valid and
+            entry.source_index == source_id.index and
+            entry.source_generation == source_id.generation and
+            entry.logical_page == 1)
+        {
+            hostile_slot = slot;
+            break;
+        }
+    }
+    active_directory.release();
+    const slot = hostile_slot orelse
+        return error.MissingSourceCachePage;
+
+    var invalid_channels =
+        try hostile_cache.pages[slot].beginUpdate();
+    defer invalid_channels.cancel();
+    const invalid_channel_page = invalid_channels.value() orelse
+        return error.MissingSourceCachePage;
+    invalid_channel_page.channel_count = 3;
+    const invalid_channel_generation =
+        try invalid_channels.commit();
+    var channel_directory =
+        try hostile_cache.directory.beginUpdate();
+    defer channel_directory.cancel();
+    const channel_entries = channel_directory.value() orelse
+        return error.MissingSourceCacheDirectory;
+    channel_entries.entries[slot].page_generation =
+        invalid_channel_generation;
+    _ = try channel_directory.commit();
+    try std.testing.expect(!hostile_provider.ready(
+        hostile_provider.context,
+        &description,
+    ));
+    var hostile_left = [_]Sample{-53.0} ** 2;
+    var hostile_right = [_]Sample{-59.0} ** 2;
+    var hostile_extra = [_]Sample{-61.0} ** 2;
+    const hostile_channels = [_][]Sample{
+        &hostile_left,
+        &hostile_right,
+        &hostile_extra,
+    };
+    try std.testing.expectError(
+        error.SourceUnavailable,
+        hostile_provider.read(
+            hostile_provider.context,
+            source_id,
+            15,
+            &hostile_channels,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-53.0} ** 2),
+        &hostile_left,
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-59.0} ** 2),
+        &hostile_right,
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-61.0} ** 2),
+        &hostile_extra,
+    );
+
+    _ = try hostile_cache.refreshRegion(&controller, &description);
+    var invalid_frames =
+        try hostile_cache.pages[slot].beginUpdate();
+    defer invalid_frames.cancel();
+    const invalid_frame_page = invalid_frames.value() orelse
+        return error.MissingSourceCachePage;
+    invalid_frame_page.frame_count = 9;
+    const invalid_frame_generation = try invalid_frames.commit();
+    var frame_directory =
+        try hostile_cache.directory.beginUpdate();
+    defer frame_directory.cancel();
+    const frame_entries = frame_directory.value() orelse
+        return error.MissingSourceCacheDirectory;
+    frame_entries.entries[slot].page_generation =
+        invalid_frame_generation;
+    _ = try frame_directory.commit();
+    try std.testing.expect(!hostile_provider.ready(
+        hostile_provider.context,
+        &description,
+    ));
+    hostile_left = @splat(-67.0);
+    hostile_right = @splat(-71.0);
+    const hostile_frames = [_][]Sample{
+        &hostile_left,
+        &hostile_right,
+    };
+    try std.testing.expectError(
+        error.SourceUnavailable,
+        hostile_provider.read(
+            hostile_provider.context,
+            source_id,
+            15,
+            &hostile_frames,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-67.0} ** 2),
+        &hostile_left,
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{-71.0} ** 2),
+        &hostile_right,
+    );
+
     _ = try cache.invalidate(source_id);
     try std.testing.expectError(
         error.SourceUnavailable,

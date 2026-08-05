@@ -99,6 +99,11 @@ pub fn Renderer(
     });
     const Description =
         ControllerType.PlaybackRegionRenderDescription;
+    const empty_description: Description = std.mem.zeroes(Description);
+    const empty_tempo_warp_point = TempoWarpPoint{
+        .playback_time = 0.0,
+        .modification_time = 0.0,
+    };
 
     return struct {
         const Self = @This();
@@ -136,15 +141,15 @@ pub fn Renderer(
         };
 
         const Region = struct {
-            description: Description,
+            description: Description = empty_description,
             fades: FadeDescription = .{},
             tempo_warp: [limits.maximum_tempo_warp_points]TempoWarpPoint =
-                undefined,
+                @splat(empty_tempo_warp_point),
             tempo_warp_count: usize = 0,
         };
 
         const Plan = struct {
-            regions: [limits.regions]Region = undefined,
+            regions: [limits.regions]Region = @splat(.{}),
             region_count: usize = 0,
             model_revision: u64 = 0,
             assignment_revision: u64 = 0,
@@ -286,14 +291,10 @@ pub fn Renderer(
                     try controller.playbackRegionRenderDescription(
                         region_ref,
                     );
-                if (description.source_channel_count <= 0 or
-                    description.source_channel_count >
-                        limits.channels or
-                    description.source_sample_count <= 0 or
-                    !std.math.isFinite(
-                        description.source_sample_rate,
-                    ) or
-                    description.source_sample_rate <= 0)
+                if (!renderDescriptionValid(
+                    &description,
+                    limits.channels,
+                ))
                     return error.InvalidSourceFormat;
                 if (!self.source_provider.ready(
                     self.source_provider.context,
@@ -441,12 +442,12 @@ pub fn Renderer(
             const overlap_end = @min(block_end_time, region_end);
             if (overlap_end <= overlap_start) return;
 
-            const first_output = sampleIndexAtOrAfter(
+            const first_output = boundedSampleIndexAtOrAfter(
                 overlap_start - block_start_time,
                 sample_rate,
                 block_frames,
             );
-            const end_output = sampleIndexAtOrAfter(
+            const end_output = boundedSampleIndexAtOrAfter(
                 overlap_end - block_start_time,
                 sample_rate,
                 block_frames,
@@ -600,6 +601,39 @@ pub fn Renderer(
                 if (output.len != frames)
                     return error.InvalidOutputBuffers;
             }
+            for (outputs, 0..) |output, index| {
+                for (outputs[index + 1 ..]) |other| {
+                    if (slicesOverlap(output, other))
+                        return error.InvalidOutputBuffers;
+                }
+            }
+        }
+
+        fn slicesOverlap(left: []Sample, right: []Sample) bool {
+            const left_start = @intFromPtr(left.ptr);
+            const right_start = @intFromPtr(right.ptr);
+            const left_bytes = std.math.mul(
+                usize,
+                left.len,
+                @sizeOf(Sample),
+            ) catch return true;
+            const right_bytes = std.math.mul(
+                usize,
+                right.len,
+                @sizeOf(Sample),
+            ) catch return true;
+            const left_end = std.math.add(
+                usize,
+                left_start,
+                left_bytes,
+            ) catch return true;
+            const right_end = std.math.add(
+                usize,
+                right_start,
+                right_bytes,
+            ) catch return true;
+            return left_start < right_end and
+                right_start < left_end;
         }
 
         fn sourcePosition(
@@ -627,19 +661,6 @@ pub fn Renderer(
                     );
             return modification_time *
                 description.source_sample_rate;
-        }
-
-        fn sampleIndexAtOrAfter(
-            relative_time: f64,
-            sample_rate: f64,
-            maximum: usize,
-        ) usize {
-            const exact = @ceil(relative_time * sample_rate);
-            if (exact <= 0.0) return 0;
-            const maximum_float: f64 =
-                @floatFromInt(maximum);
-            if (exact >= maximum_float) return maximum;
-            return @intFromFloat(exact);
         }
 
         fn clearOutputs(outputs: []const []Sample) void {
@@ -698,6 +719,97 @@ pub fn Renderer(
             }
         };
     };
+}
+
+fn renderDescriptionValid(
+    description: anytype,
+    maximum_channels: usize,
+) bool {
+    const source_channels = std.math.cast(
+        usize,
+        description.source_channel_count,
+    ) orelse return false;
+    const source_sample_rate: f64 = description.source_sample_rate;
+    if (source_channels == 0 or
+        source_channels > maximum_channels or
+        description.source_sample_count <= 0 or
+        !std.math.isFinite(source_sample_rate) or
+        source_sample_rate <= 0)
+        return false;
+    const times = [_]f64{
+        description.start_in_modification_time,
+        description.duration_in_modification_time,
+        description.start_in_playback_time,
+        description.duration_in_playback_time,
+    };
+    for (times) |time| {
+        if (!std.math.isFinite(time)) return false;
+    }
+    if (description.duration_in_modification_time < 0 or
+        description.duration_in_playback_time < 0)
+        return false;
+    const modification_end =
+        description.start_in_modification_time +
+        description.duration_in_modification_time;
+    const playback_end =
+        description.start_in_playback_time +
+        description.duration_in_playback_time;
+    return std.math.isFinite(modification_end) and
+        std.math.isFinite(playback_end) and
+        std.math.isFinite(
+            description.start_in_modification_time *
+                description.source_sample_rate,
+        ) and
+        std.math.isFinite(
+            modification_end * description.source_sample_rate,
+        );
+}
+
+fn boundedSampleIndexAtOrAfter(
+    relative_time: f64,
+    sample_rate: f64,
+    maximum: usize,
+) usize {
+    const exact = @ceil(relative_time * sample_rate);
+    if (!std.math.isFinite(exact))
+        return if (exact > 0.0) maximum else 0;
+    if (exact <= 0.0) return 0;
+    const maximum_float: f64 = @floatFromInt(maximum);
+    if (exact >= maximum_float) return maximum;
+    return @intFromFloat(exact);
+}
+
+test "ARA playback sample indices contain non-finite products" {
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        boundedSampleIndexAtOrAfter(std.math.nan(f64), 48_000.0, 64),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 64),
+        boundedSampleIndexAtOrAfter(std.math.inf(f64), 48_000.0, 64),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        boundedSampleIndexAtOrAfter(-std.math.inf(f64), 48_000.0, 64),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 64),
+        boundedSampleIndexAtOrAfter(std.math.floatMax(f64), 48_000.0, 64),
+    );
+
+    const overflowing_description = .{
+        .source_channel_count = @as(i32, 2),
+        .source_sample_count = @as(i64, 64),
+        .source_sample_rate = 48_000.0,
+        .start_in_modification_time = std.math.floatMax(f64),
+        .duration_in_modification_time = std.math.floatMax(f64),
+        .start_in_playback_time = std.math.floatMax(f64),
+        .duration_in_playback_time = std.math.floatMax(f64),
+    };
+    try std.testing.expect(!renderDescriptionValid(
+        &overflowing_description,
+        2,
+    ));
 }
 
 fn interpolate(
@@ -1379,6 +1491,30 @@ fn exercisePlaybackRenderer(
     var renderer = TestRenderer.init(
         source_cache.provider(TestRenderer),
     );
+    for (renderer.plan_publisher.slots) |slot| {
+        try std.testing.expectEqual(@as(usize, 0), slot.value.region_count);
+        for (slot.value.regions) |planned_region| {
+            try std.testing.expectEqualDeep(
+                std.mem.zeroes(
+                    ControllerType.PlaybackRegionRenderDescription,
+                ),
+                planned_region.description,
+            );
+            try std.testing.expectEqual(
+                @as(usize, 0),
+                planned_region.tempo_warp_count,
+            );
+            for (planned_region.tempo_warp) |point| {
+                try std.testing.expectEqualDeep(
+                    TempoWarpPoint{
+                        .playback_time = 0.0,
+                        .modification_time = 0.0,
+                    },
+                    point,
+                );
+            }
+        }
+    }
     renderer.initializeInPlace();
     defer renderer.deinit();
     var entry = TestRenderer.EntryPoint.init(
@@ -1418,6 +1554,21 @@ fn exercisePlaybackRenderer(
         Sample,
         &.{ 0, 0, 16, 17, 18, 19, 20, 21, 22, 23 },
         &right,
+    );
+
+    var aliased_output: [10]Sample = @splat(-1);
+    const aliased_outputs = [_][]Sample{
+        &aliased_output,
+        &aliased_output,
+    };
+    try std.testing.expectError(
+        error.InvalidOutputBuffers,
+        renderer.render(0.0, 8.0, &aliased_outputs),
+    );
+    try std.testing.expectEqualSlices(
+        Sample,
+        &([_]Sample{0} ** 10),
+        &aliased_output,
     );
 
     try controller.setAudioSourceSamplesAccess(source, false);

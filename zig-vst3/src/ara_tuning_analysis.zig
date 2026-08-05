@@ -17,6 +17,8 @@ pub const Error = controller_api.Error || error{
     KeySignatureNotFound,
     ChordNotFound,
     NoteNotFound,
+    InvalidChordAnalysisState,
+    InvalidKeyAnalysisState,
 };
 
 pub const DetectionConfig = struct {
@@ -329,13 +331,20 @@ pub fn detectChords(
             current = candidate;
             continue;
         }
-        if (sameChord(current.?, candidate)) {
+        const current_chord = current orelse
+            return error.InvalidChordAnalysisState;
+        if (sameChord(current_chord, candidate)) {
             pending = null;
             pending_count = 0;
             continue;
         }
-        if (pending != null and sameChord(pending.?, candidate)) {
-            pending_count += 1;
+        if (pending) |pending_chord| {
+            if (sameChord(pending_chord, candidate)) {
+                pending_count += 1;
+            } else {
+                pending = candidate;
+                pending_count = 1;
+            }
         } else {
             pending = candidate;
             pending_count = 1;
@@ -353,7 +362,7 @@ pub fn detectChords(
                     ),
                 );
         staged[staged_count] = chordEvent(
-            pending.?,
+            pending orelse return error.InvalidChordAnalysisState,
             change_position,
         );
         staged_count += 1;
@@ -599,13 +608,20 @@ pub fn detectKeySignatures(
             current = candidate;
             continue;
         }
-        if (sameKey(current.?, candidate)) {
+        const current_key = current orelse
+            return error.InvalidKeyAnalysisState;
+        if (sameKey(current_key, candidate)) {
             pending = null;
             pending_count = 0;
             continue;
         }
-        if (pending != null and sameKey(pending.?, candidate)) {
-            pending_count += 1;
+        if (pending) |pending_key| {
+            if (sameKey(pending_key, candidate)) {
+                pending_count += 1;
+            } else {
+                pending = candidate;
+                pending_count = 1;
+            }
         } else {
             pending = candidate;
             pending_count = 1;
@@ -623,7 +639,7 @@ pub fn detectKeySignatures(
                     ),
                 );
         staged[staged_count] = keySignatureEvent(
-            pending.?,
+            pending orelse return error.InvalidKeyAnalysisState,
             change_position,
         );
         staged_count += 1;
@@ -890,6 +906,15 @@ fn sameNotes(
     return true;
 }
 
+fn boundedSearchIndex(value: f64, maximum: usize) ?usize {
+    if (std.math.isNan(value)) return null;
+    if (value <= 0.0) return 0;
+    if (!std.math.isFinite(value) or
+        value >= @as(f64, @floatFromInt(maximum)))
+        return maximum;
+    return @intFromFloat(value);
+}
+
 pub fn detectTempoEnvelope(
     onset_envelope: []const f64,
     envelope_rate: f64,
@@ -899,18 +924,19 @@ pub fn detectTempoEnvelope(
     if (onset_envelope.len < 4)
         return error.InvalidSampleCount;
 
+    const lag_limit = onset_envelope.len / 2;
     const minimum_lag = @max(
         @as(usize, 1),
-        @as(usize, @intFromFloat(@floor(
+        boundedSearchIndex(@floor(
             envelope_rate * 60.0 / config.maximum_bpm,
-        ))),
+        ), lag_limit) orelse return error.InvalidConfiguration,
     );
-    const maximum_lag = @min(
-        onset_envelope.len / 2,
-        @as(usize, @intFromFloat(@ceil(
+    const maximum_lag = boundedSearchIndex(
+        @ceil(
             envelope_rate * 60.0 / config.minimum_bpm,
-        ))),
-    );
+        ),
+        lag_limit,
+    ) orelse return error.InvalidConfiguration;
     if (minimum_lag >= maximum_lag)
         return error.InvalidSampleCount;
 
@@ -1258,15 +1284,17 @@ pub fn detectBarSignaturesEnvelope(
             pulse_duration * config.onset_window_ratio *
                 envelope_rate,
         );
-        if (!std.math.isFinite(radius_float))
-            return error.MeterNotFound;
         const radius: usize = @max(
             @as(usize, 1),
-            @as(usize, @intFromFloat(radius_float)),
+            boundedSearchIndex(
+                radius_float,
+                onset_envelope.len,
+            ) orelse return error.MeterNotFound,
         );
-        const center: usize = @intFromFloat(@round(
-            time * envelope_rate,
-        ));
+        const center = boundedSearchIndex(
+            @round(time * envelope_rate),
+            onset_envelope.len,
+        ) orelse return error.MeterNotFound;
         const first = center -| radius;
         const end = @min(
             onset_envelope.len,
@@ -1544,6 +1572,9 @@ pub fn detectPolyphonicNotes(
     if (!std.math.isFinite(window_product) or
         !std.math.isFinite(hop_product))
         return error.InvalidConfiguration;
+    if (window_product > maximum_note_window_samples or
+        hop_product > maximum_note_window_samples)
+        return error.InvalidSampleCount;
     const window_samples: usize = @intFromFloat(@round(
         window_product,
     ));
@@ -2082,6 +2113,22 @@ pub fn detectEqualTemperament(
         config.minimum_correlation > 1.0)
         return error.InvalidFrequencyRange;
 
+    const lag_limit = samples.len / 2;
+    const minimum_lag = @max(
+        @as(usize, 2),
+        boundedSearchIndex(@floor(
+            sample_rate / config.maximum_frequency,
+        ), lag_limit) orelse return error.InvalidFrequencyRange,
+    );
+    const maximum_lag = boundedSearchIndex(
+        @ceil(
+            sample_rate / config.minimum_frequency,
+        ),
+        lag_limit,
+    ) orelse return error.InvalidFrequencyRange;
+    if (minimum_lag >= maximum_lag)
+        return error.InvalidSampleCount;
+
     var mean: f64 = 0.0;
     for (samples) |sample| {
         if (!std.math.isFinite(sample))
@@ -2096,21 +2143,6 @@ pub fn detectEqualTemperament(
     }
     const rms = @sqrt(energy / @as(f64, @floatFromInt(samples.len)));
     if (rms < config.minimum_rms) return error.SignalTooQuiet;
-
-    const minimum_lag = @max(
-        @as(usize, 2),
-        @as(usize, @intFromFloat(@floor(
-            sample_rate / config.maximum_frequency,
-        ))),
-    );
-    const maximum_lag = @min(
-        samples.len / 2,
-        @as(usize, @intFromFloat(@ceil(
-            sample_rate / config.minimum_frequency,
-        ))),
-    );
-    if (minimum_lag >= maximum_lag)
-        return error.InvalidSampleCount;
 
     var best_lag = minimum_lag;
     var best_score: f64 = -1.0;
@@ -4464,6 +4496,17 @@ test "ARA tuning detection rejects silence and invalid configuration" {
             .{ .maximum_frequency = 30_000 },
         ),
     );
+    try std.testing.expectError(
+        error.InvalidSampleCount,
+        detectEqualTemperament(
+            &silence,
+            48_000,
+            .{
+                .minimum_frequency = 1.0e-300,
+                .maximum_frequency = 2.0e-300,
+            },
+        ),
+    );
 }
 
 test "ARA tempo detection estimates periodic onset timing" {
@@ -4500,6 +4543,17 @@ test "ARA tempo detection estimates periodic onset timing" {
             &envelope,
             envelope_rate,
             .{ .minimum_bpm = 240.0, .maximum_bpm = 40.0 },
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidSampleCount,
+        detectTempoEnvelope(
+            &envelope,
+            envelope_rate,
+            .{
+                .minimum_bpm = 1.0e-300,
+                .maximum_bpm = 2.0e-300,
+            },
         ),
     );
 }
@@ -5445,6 +5499,18 @@ test "ARA note detection accepts silence and rejects malformed input" {
             &silence,
             4_000.0,
             .{},
+            &notes,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidSampleCount,
+        detectPolyphonicNotes(
+            &silence,
+            8_000.0,
+            .{
+                .window_seconds = 1.0e200,
+                .hop_seconds = 1.0e200,
+            },
             &notes,
         ),
     );

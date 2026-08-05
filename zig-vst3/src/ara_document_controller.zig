@@ -207,12 +207,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             state: *const AudioReaderState,
 
             fn release(self: AudioReadLease) void {
-                const previous =
-                    self.slot.active_reads.fetchSub(
-                        1,
-                        .release,
-                    );
-                std.debug.assert(previous != 0);
+                _ = releaseAudioRead(self.slot);
             }
         };
 
@@ -452,6 +447,8 @@ pub fn Controller(comptime limits: model_api.Limits) type {
         }
 
         pub fn documentName(self: *const Self) []const u8 {
+            if (self.document_name_len > self.document_name.len)
+                return &.{};
             return self.document_name[0..self.document_name_len];
         }
 
@@ -468,7 +465,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             if (self.destroyed) return error.ControllerDestroyed;
             if (self.document.isEditing()) return error.ObjectInUse;
             for (&self.model_observers, 0..) |*slot, index| {
-                if (slot.sink != null) continue;
+                if (slot.sink != null or slot.generation == 0) continue;
                 slot.sink = sink;
                 return .{
                     .index = @intCast(index),
@@ -488,8 +485,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             if (slot.generation != observer_id.generation)
                 return;
             slot.sink = null;
-            slot.generation +%= 1;
-            if (slot.generation == 0) slot.generation = 1;
+            slot.generation = retiredGeneration(slot.generation);
         }
 
         pub fn markDocumentDataChanged(self: *Self) Error!void {
@@ -1052,6 +1048,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
         ) callconv(.c) raw.ARABool {
             const self = usable(controller_ref) catch return raw.kARAFalse;
             if (self.pending_archive_size == 0 or
+                self.pending_archive_size > self.archive_buffer.len or
                 self.pending_archive_reader != archive_reader)
             {
                 self.record(error.InvalidArchive);
@@ -1969,8 +1966,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 return;
             }
             slot.value = null;
-            slot.generation +%= 1;
-            if (slot.generation == 0) slot.generation = 1;
+            slot.generation = retiredGeneration(slot.generation);
         }
 
         fn getPlaybackRegionHeadAndTailTime(
@@ -2804,7 +2800,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             if (count > std.math.maxInt(i32))
                 return error.ContentCountOverflow;
             for (&self.content_readers, 0..) |*slot, index| {
-                if (slot.value != null) continue;
+                if (slot.value != null or slot.generation == 0) continue;
                 slot.value = .{
                     .object = object,
                     .content_type = content_type,
@@ -2836,8 +2832,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             for (&self.content_readers) |*slot| {
                 if (slot.value == null) continue;
                 slot.value = null;
-                slot.generation +%= 1;
-                if (slot.generation == 0) slot.generation = 1;
+                slot.generation = retiredGeneration(slot.generation);
             }
         }
 
@@ -2905,13 +2900,13 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             if (slot.closing.load(.acquire) or
                 slot.generation != reader_id.generation)
             {
-                _ = slot.active_reads.fetchSub(1, .release);
+                _ = releaseAudioRead(slot);
                 return null;
             }
             const state = if (slot.value) |*value|
                 value
             else {
-                _ = slot.active_reads.fetchSub(1, .release);
+                _ = releaseAudioRead(slot);
                 return null;
             };
             return .{
@@ -2920,9 +2915,27 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             };
         }
 
+        fn releaseAudioRead(slot: *AudioReaderSlot) bool {
+            var active_reads = slot.active_reads.load(.acquire);
+            while (active_reads != 0) {
+                if (slot.active_reads.cmpxchgWeak(
+                    active_reads,
+                    active_reads - 1,
+                    .release,
+                    .acquire,
+                )) |observed| {
+                    active_reads = observed;
+                    continue;
+                }
+                return true;
+            }
+            return false;
+        }
+
         fn vacantAudioReaderIndex(self: *const Self) ?usize {
             for (&self.audio_readers, 0..) |*slot, index| {
-                if (slot.value == null) return index;
+                if (slot.value == null and slot.generation != 0)
+                    return index;
             }
             return null;
         }
@@ -2960,8 +2973,7 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 );
             }
             slot.value = null;
-            slot.generation +%= 1;
-            if (slot.generation == 0) slot.generation = 1;
+            slot.generation = retiredGeneration(slot.generation);
         }
 
         fn closeAudioReadersForSource(
@@ -3537,6 +3549,11 @@ fn eraseHostRef(pointer: anytype) ?*anyopaque {
     return @ptrCast(value);
 }
 
+fn retiredGeneration(current: u32) u32 {
+    if (current == 0 or current == std.math.maxInt(u32)) return 0;
+    return current + 1;
+}
+
 fn encodeRef(comptime Ref: type, id: anytype) Ref {
     return encodeRefParts(Ref, id.index, id.generation);
 }
@@ -3808,6 +3825,45 @@ test "ARA model publication contains reentrant observer changes" {
     );
 }
 
+test "ARA controller does not reuse exhausted observer or reader slots" {
+    const TestController = Controller(.{
+        .audio_readers = 1,
+        .content_readers = 1,
+        .model_observers = 1,
+        .name_bytes = 16,
+        .persistent_id_bytes = 16,
+    });
+    const Observer = struct {
+        fn changed(_: ?*anyopaque, _: *TestController, _: u64) void {}
+    };
+    var controller = TestController{
+        .host = testHost(),
+        .factory = @ptrFromInt(0x1000),
+    };
+    controller.model_observers[0].generation = std.math.maxInt(u32);
+    const final = try controller.addModelPublicationSink(.{
+        .changed = Observer.changed,
+    });
+    try std.testing.expectEqual(std.math.maxInt(u32), final.generation);
+    controller.removeModelPublicationSink(final);
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        controller.model_observers[0].generation,
+    );
+    try std.testing.expectError(
+        error.CapacityExceeded,
+        controller.addModelPublicationSink(.{
+            .changed = Observer.changed,
+        }),
+    );
+
+    controller.audio_readers[0].generation = 0;
+    try std.testing.expectEqual(
+        @as(?usize, null),
+        controller.vacantAudioReaderIndex(),
+    );
+}
+
 test "ARA document-data notifications flush only on host request" {
     const TestController = Controller(.{});
     const Observer = struct {
@@ -3863,6 +3919,11 @@ test "ARA controller publishes a complete valid interface" {
     try std.testing.expectEqualStrings(
         "Session",
         controller.documentName(),
+    );
+    controller.document_name_len = std.math.maxInt(u16);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        controller.documentName().len,
     );
 }
 
@@ -4245,6 +4306,20 @@ test "ARA controller round trips bounded versioned archives" {
         error.InvalidArchive,
         controller.takeLastError().?,
     );
+    const pending_archive_size = controller.pending_archive_size;
+    controller.pending_archive_size = std.math.maxInt(usize);
+    try std.testing.expectEqual(
+        raw.kARAFalse,
+        api.endRestoringDocumentFromArchive.?(
+            controller_ref,
+            reader_ref,
+        ),
+    );
+    try std.testing.expectEqual(
+        error.InvalidArchive,
+        controller.takeLastError().?,
+    );
+    controller.pending_archive_size = pending_archive_size;
     const wrong_reader: raw.ARAArchiveReaderHostRef =
         @ptrFromInt(0x1234);
     try std.testing.expectEqual(
@@ -4424,6 +4499,18 @@ test "ARA controller reads host audio and closes readers safely" {
     };
     var controller: TestController = undefined;
     try controller.init(&factory, &host, &document_properties);
+    const inactive_slot = &controller.audio_readers[0];
+    try std.testing.expect(!TestController.releaseAudioRead(inactive_slot));
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        inactive_slot.active_reads.load(.acquire),
+    );
+    inactive_slot.active_reads.store(1, .release);
+    try std.testing.expect(TestController.releaseAudioRead(inactive_slot));
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        inactive_slot.active_reads.load(.acquire),
+    );
     try controller.document.beginEditing();
     const source = try controller.document.createAudioSource(
         null,
@@ -4535,6 +4622,7 @@ test "ARA controller reads host audio and closes readers safely" {
     concurrent_reader.close();
 
     try controller.setAudioSourceSamplesAccess(source, true);
+    controller.audio_readers[0].generation = std.math.maxInt(u32);
     var second_reader = try controller.openAudioReader(source, false);
     const instance = controller.documentControllerInstance();
     const api: *const raw.ARADocumentControllerInterface =
@@ -4543,6 +4631,10 @@ test "ARA controller reads host audio and closes readers safely" {
         instance.documentControllerRef,
     );
     try std.testing.expectEqual(@as(usize, 3), audio.destroy_count);
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        controller.audio_readers[0].generation,
+    );
     try std.testing.expectError(
         error.AudioReaderUnavailable,
         second_reader.readF32(0, &buffers),
@@ -4766,6 +4858,35 @@ test "ARA controller publishes typed provider content readers" {
     );
     try std.testing.expectEqual(
         error.ContentReaderUnavailable,
+        controller.takeLastError().?,
+    );
+
+    controller.content_readers[0].generation = std.math.maxInt(u32);
+    const final_reader = api.createAudioSourceContentReader.?(
+        instance.documentControllerRef,
+        source_ref,
+        raw.kARAContentTypeNotes,
+        null,
+    );
+    try std.testing.expect(final_reader != null);
+    api.destroyContentReader.?(
+        instance.documentControllerRef,
+        final_reader,
+    );
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        controller.content_readers[0].generation,
+    );
+    try std.testing.expect(
+        api.createAudioSourceContentReader.?(
+            instance.documentControllerRef,
+            source_ref,
+            raw.kARAContentTypeNotes,
+            null,
+        ) == null,
+    );
+    try std.testing.expectEqual(
+        error.CapacityExceeded,
         controller.takeLastError().?,
     );
 }
@@ -5352,9 +5473,9 @@ const TestHostTempoContent = struct {
 
 fn testTempoContentState(
     host_ref: raw.ARAContentAccessControllerHostRef,
-) *TestHostTempoContent {
-    return @ptrCast(@alignCast(host_ref orelse
-        unreachable));
+) ?*TestHostTempoContent {
+    const pointer = host_ref orelse return null;
+    return @ptrCast(@alignCast(pointer));
 }
 
 fn testMusicalContentAvailable(
@@ -5382,7 +5503,7 @@ fn testCreateMusicalContentReader(
     _: raw.ARAContentType,
     range: [*c]const raw.ARAContentTimeRange,
 ) callconv(.c) raw.ARAContentReaderHostRef {
-    const state = testTempoContentState(host_ref);
+    const state = testTempoContentState(host_ref) orelse return null;
     state.create_calls += 1;
     state.requested_range =
         if (range == null) null else range[0];
@@ -5393,9 +5514,8 @@ fn testHostContentEventCount(
     host_ref: raw.ARAContentAccessControllerHostRef,
     _: raw.ARAContentReaderHostRef,
 ) callconv(.c) raw.ARAInt32 {
-    return @intCast(
-        testTempoContentState(host_ref).events.len,
-    );
+    const state = testTempoContentState(host_ref) orelse return 0;
+    return @intCast(state.events.len);
 }
 
 fn testHostContentEventData(
@@ -5404,7 +5524,7 @@ fn testHostContentEventData(
     event_index: raw.ARAInt32,
 ) callconv(.c) ?*const anyopaque {
     if (event_index < 0) return null;
-    const state = testTempoContentState(host_ref);
+    const state = testTempoContentState(host_ref) orelse return null;
     const index: usize = @intCast(event_index);
     if (index >= state.events.len) return null;
     return &state.events[index];
@@ -5414,10 +5534,25 @@ fn testDestroyHostContentReader(
     host_ref: raw.ARAContentAccessControllerHostRef,
     _: raw.ARAContentReaderHostRef,
 ) callconv(.c) void {
-    testTempoContentState(host_ref).destroy_calls += 1;
+    const state = testTempoContentState(host_ref) orelse return;
+    state.destroy_calls += 1;
 }
 
 test "ARA controller copies bounded host musical-context content" {
+    try std.testing.expectEqual(
+        @as(raw.ARAContentReaderHostRef, null),
+        testCreateMusicalContentReader(null, null, 0, null),
+    );
+    try std.testing.expectEqual(
+        @as(raw.ARAInt32, 0),
+        testHostContentEventCount(null, null),
+    );
+    try std.testing.expectEqual(
+        @as(?*const anyopaque, null),
+        testHostContentEventData(null, null, 0),
+    );
+    testDestroyHostContentReader(null, null);
+
     const limits = model_api.Limits{
         .musical_contexts = 1,
         .name_bytes = 32,

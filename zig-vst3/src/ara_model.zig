@@ -101,6 +101,7 @@ fn BoundedBytes(
         }
 
         pub fn slice(self: *const @This()) []const u8 {
+            if (self.len > capacity) return &.{};
             return self.bytes[0..self.len];
         }
 
@@ -903,6 +904,15 @@ pub fn Document(comptime limits: Limits) type {
             if (properties.duration_in_modification_time < 0.0 or
                 properties.duration_in_playback_time < 0.0)
                 return error.InvalidPlaybackRange;
+            if (!std.math.isFinite(
+                properties.start_in_modification_time +
+                    properties.duration_in_modification_time,
+            ) or
+                !std.math.isFinite(
+                    properties.start_in_playback_time +
+                        properties.duration_in_playback_time,
+                ))
+                return error.InvalidPlaybackRange;
             if (!properties.transformation.time_stretch and
                 properties.duration_in_modification_time !=
                     properties.duration_in_playback_time)
@@ -1042,7 +1052,7 @@ fn colorsEqual(first: ?Color, second: ?Color) bool {
 
 fn vacantIndex(slots: anytype) ?usize {
     for (slots, 0..) |*slot, index| {
-        if (slot.value == null) return index;
+        if (slot.value == null and slot.generation != 0) return index;
     }
     return null;
 }
@@ -1065,8 +1075,12 @@ fn sameId(first: anytype, second: @TypeOf(first)) bool {
 
 fn destroySlot(slot: anytype) void {
     slot.value = null;
-    slot.generation +%= 1;
-    if (slot.generation == 0) slot.generation = 1;
+    slot.generation = retiredGeneration(slot.generation);
+}
+
+fn retiredGeneration(current: u32) u32 {
+    if (current == 0 or current == std.math.maxInt(u32)) return 0;
+    return current + 1;
 }
 
 test "ARA document enforces graph ownership and stale handles" {
@@ -1158,6 +1172,42 @@ test "ARA document enforces graph ownership and stale handles" {
     try std.testing.expectEqual(source.index, replacement.index);
     try std.testing.expect(source.generation != replacement.generation);
     try std.testing.expect(try model.endEditing());
+}
+
+test "ARA document does not reuse an exhausted handle generation" {
+    const Model = Document(.{
+        .musical_contexts = 1,
+        .name_bytes = 16,
+        .persistent_id_bytes = 16,
+    });
+    var model = Model{};
+    model.musical_contexts[0].generation = std.math.maxInt(u32);
+
+    try model.beginEditing();
+    const final = try model.createMusicalContext(
+        null,
+        .{ .name = "Final", .order_index = 0 },
+    );
+    try std.testing.expectEqual(std.math.maxInt(u32), final.generation);
+    try model.destroyMusicalContext(final);
+    try std.testing.expectEqual(@as(u32, 0), model.musical_contexts[0].generation);
+    try std.testing.expectError(
+        error.CapacityExceeded,
+        model.createMusicalContext(
+            null,
+            .{ .name = "Reused", .order_index = 0 },
+        ),
+    );
+    try std.testing.expect(model.musicalContext(final) == null);
+}
+
+test "ARA bounded text contains malformed retained lengths" {
+    const Text = BoundedBytes(8, error.NameTooLong);
+    var text = try Text.init("Session");
+    text.len = std.math.maxInt(u16);
+
+    try std.testing.expectEqual(@as(usize, 0), text.slice().len);
+    try std.testing.expect(!text.eql("Session"));
 }
 
 test "ARA document validates atomic source updates and capacity" {
@@ -1287,6 +1337,17 @@ test "ARA document rejects malformed playback and no-op revisions" {
             .duration_in_modification_time = 1.0,
             .start_in_playback_time = 0.0,
             .duration_in_playback_time = 1.0,
+        }),
+    );
+    try std.testing.expectError(
+        error.InvalidPlaybackRange,
+        model.createPlaybackRegion(modification, null, .{
+            .name = "Overflowing range",
+            .region_sequence = sequence,
+            .start_in_modification_time = std.math.floatMax(f64),
+            .duration_in_modification_time = std.math.floatMax(f64),
+            .start_in_playback_time = std.math.floatMax(f64),
+            .duration_in_playback_time = std.math.floatMax(f64),
         }),
     );
     try std.testing.expect(try model.endEditing());
