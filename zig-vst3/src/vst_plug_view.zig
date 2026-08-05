@@ -110,15 +110,15 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         const owner = interface_map.ownerFromField(Self, iplugview.IPlugView, "iface");
         const ownerFromScale = interface_map.ownerFromField(Self, scale_support.IPlugViewContentScaleSupport, "scale_iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             return queryInstance(owner(ptr), ptr, addRef, requested_iid, out);
         }
 
-        fn queryFromScale(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromScale(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             return queryInstance(ownerFromScale(ptr), ptr, addRefFromScale, requested_iid, out);
         }
 
-        fn queryInstance(self: *Self, ptr: *anyopaque, add_ref: *const fn (*anyopaque) callconv(.c) types.uint32, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+        fn queryInstance(self: *Self, ptr: *anyopaque, add_ref: *const fn (*anyopaque) callconv(.c) types.uint32, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{
                 interface_map.fieldEntry("iface", self, &funknown.iid),
                 interface_map.fieldEntry("iface", self, &iplugview.iplug_view_iid),
@@ -226,12 +226,16 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getSize(ptr: *anyopaque, out: *iplugview.ViewRect) callconv(.c) types.tresult {
+        fn getSize(ptr: *anyopaque, out_raw: [*c]iplugview.ViewRect) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *iplugview.ViewRect = @ptrCast(out_raw);
             out.* = owner(ptr).rect;
             return types.kResultOk;
         }
 
-        fn onSize(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
+        fn onSize(ptr: *anyopaque, rect_raw: [*c]iplugview.ViewRect) callconv(.c) types.tresult {
+            if (rect_raw == null) return types.kInvalidArgument;
+            const rect: *iplugview.ViewRect = @ptrCast(rect_raw);
             const requested = rect.*;
             if (!iplugview.hasValidDimensions(requested)) return types.kInvalidArgument;
             if (@hasDecl(Config, "onSize")) {
@@ -274,7 +278,9 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn checkSizeConstraint(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
+        fn checkSizeConstraint(ptr: *anyopaque, rect_raw: [*c]iplugview.ViewRect) callconv(.c) types.tresult {
+            if (rect_raw == null) return types.kInvalidArgument;
+            const rect: *iplugview.ViewRect = @ptrCast(rect_raw);
             const requested = rect.*;
             if (!iplugview.hasValidDimensions(requested)) return types.kInvalidArgument;
             if (@hasDecl(Config, "checkSizeConstraint")) {
@@ -371,10 +377,13 @@ test "plug view tracks input size focus and frame state" {
     const iface = view.asInterface();
 
     var rect = iplugview.ViewRect{ .left = 0, .top = 0, .right = 640, .bottom = 480 };
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.onSize(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.onSize(iface, &rect));
     var size = iplugview.ViewRect{};
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getSize(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getSize(iface, &size));
     try std.testing.expectEqual(rect, size);
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.checkSizeConstraint(iface, null));
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.onWheel(iface, -1.5));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.onKeyDown(iface, 'a', 12, 3));

@@ -722,8 +722,9 @@ const TestEventList = struct {
 
     const owner = interface_map.ownerFromField(TestEventList, events.IEventList, "iface");
 
-    fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.c) base.tresult {
-        out.* = null;
+    fn queryInterface(_: *anyopaque, requested_iid: [*c]const @import("../../tuid.zig").TUID, out_raw: [*c]?*anyopaque) callconv(.c) base.tresult {
+        const arguments = @import("../../funknown.zig").queryArguments(requested_iid, out_raw) orelse return base.kInvalidArgument;
+        arguments.out.* = null;
         return base.kNoInterface;
     }
 
@@ -740,7 +741,9 @@ const TestEventList = struct {
         return self.reported_count orelse @intCast(self.items.len);
     }
 
-    fn getEvent(ptr: *anyopaque, index: base.int32, event: *events.Event) callconv(.c) base.tresult {
+    fn getEvent(ptr: *anyopaque, index: base.int32, event_raw: [*c]events.Event) callconv(.c) base.tresult {
+        if (event_raw == null) return base.kInvalidArgument;
+        const event = &event_raw[0];
         if (index < 0) return base.kInvalidArgument;
         const self = owner(ptr);
         self.read_count += 1;
@@ -753,7 +756,8 @@ const TestEventList = struct {
         return base.kResultOk;
     }
 
-    fn addEvent(_: *anyopaque, _: *events.Event) callconv(.c) base.tresult {
+    fn addEvent(_: *anyopaque, event: [*c]events.Event) callconv(.c) base.tresult {
+        if (event == null) return base.kInvalidArgument;
         return base.kResultFalse;
     }
 };
@@ -786,7 +790,9 @@ const TestParamValueQueue = struct {
 
     const owner = interface_map.ownerFromField(TestParamValueQueue, parameter_changes.IParamValueQueue, "iface");
 
-    fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.c) base.tresult {
+    fn queryInterface(_: *anyopaque, _: [*c]const @import("../../tuid.zig").TUID, out_raw: [*c]?*anyopaque) callconv(.c) base.tresult {
+        if (out_raw == null) return base.kInvalidArgument;
+        const out: *?*anyopaque = @ptrCast(out_raw);
         out.* = null;
         return base.kNoInterface;
     }
@@ -808,20 +814,22 @@ const TestParamValueQueue = struct {
         return self.reported_count orelse @intCast(self.points.len);
     }
 
-    fn getPoint(ptr: *anyopaque, index: base.int32, sample_offset: *base.int32, value: *vsttypes.ParamValue) callconv(.c) base.tresult {
+    fn getPoint(ptr: *anyopaque, index: base.int32, sample_offset: [*c]base.int32, value: [*c]vsttypes.ParamValue) callconv(.c) base.tresult {
+        if (sample_offset == null or value == null) return base.kInvalidArgument;
         if (index < 0) return base.kInvalidArgument;
         const self = owner(ptr);
         self.read_count += 1;
         const point_index: usize = @intCast(index);
         const points = self.points;
         if (point_index >= points.len) return base.kInvalidArgument;
-        sample_offset.* = points[point_index].sample_offset;
-        value.* = points[point_index].value;
+        sample_offset[0] = points[point_index].sample_offset;
+        value[0] = points[point_index].value;
         return base.kResultOk;
     }
 
-    fn addPoint(_: *anyopaque, _: base.int32, _: vsttypes.ParamValue, index: *base.int32) callconv(.c) base.tresult {
-        index.* = -1;
+    fn addPoint(_: *anyopaque, _: base.int32, _: vsttypes.ParamValue, index: [*c]base.int32) callconv(.c) base.tresult {
+        if (index == null) return base.kInvalidArgument;
+        index[0] = -1;
         return base.kResultFalse;
     }
 };
@@ -851,8 +859,9 @@ const TestParameterChanges = struct {
 
     const owner = interface_map.ownerFromField(TestParameterChanges, parameter_changes.IParameterChanges, "iface");
 
-    fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.c) base.tresult {
-        out.* = null;
+    fn queryInterface(_: *anyopaque, requested_iid: [*c]const @import("../../tuid.zig").TUID, out_raw: [*c]?*anyopaque) callconv(.c) base.tresult {
+        const arguments = @import("../../funknown.zig").queryArguments(requested_iid, out_raw) orelse return base.kInvalidArgument;
+        arguments.out.* = null;
         return base.kNoInterface;
     }
 
@@ -878,8 +887,9 @@ const TestParameterChanges = struct {
         return self.queues[queue_index];
     }
 
-    fn addParameterData(_: *anyopaque, _: *const vsttypes.ParamID, index: *base.int32) callconv(.c) ?*parameter_changes.IParamValueQueue {
-        index.* = -1;
+    fn addParameterData(_: *anyopaque, id: [*c]const vsttypes.ParamID, index: [*c]base.int32) callconv(.c) ?*parameter_changes.IParamValueQueue {
+        if (id == null or index == null) return null;
+        index[0] = -1;
         return null;
     }
 };

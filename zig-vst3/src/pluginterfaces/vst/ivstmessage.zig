@@ -7,7 +7,7 @@ pub const imessage_iid = tuid.inlineUid(0x936F033B, 0xC6C047DB, 0xBB0882F8, 0x13
 pub const iconnection_point_iid = tuid.inlineUid(0x70A4156F, 0x6E6E4026, 0x989148BF, 0xAA60D8D1);
 
 pub const IMessageVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     getMessageID: *const fn (*anyopaque) callconv(.c) ?base_types.FIDString,
@@ -30,7 +30,7 @@ pub fn messageIdEquals(message: *IMessage, expected: []const u8) bool {
 }
 
 pub const IConnectionPointVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     connect: *const fn (*anyopaque, ?*IConnectionPoint) callconv(.c) base_types.tresult,

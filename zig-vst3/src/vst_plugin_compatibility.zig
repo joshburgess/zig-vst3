@@ -37,7 +37,7 @@ pub fn PluginCompatibility(comptime json: []const u8) type {
 
         const owner = interface_map.ownerFromField(Self, iplugincompatibility.IPluginCompatibility, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugincompatibility.iplugin_compatibility_iid, .ptr = ptr },
@@ -85,7 +85,7 @@ pub fn StaticPluginCompatibility(comptime json: []const u8) type {
 
         const owner = interface_map.ownerFromField(Instance, iplugincompatibility.IPluginCompatibility, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugincompatibility.iplugin_compatibility_iid, .ptr = ptr },

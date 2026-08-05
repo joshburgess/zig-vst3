@@ -94,9 +94,15 @@ pub fn StandaloneBridge(comptime Window: type) type {
 
         fn canonicalQuery(
             self: *Self,
-            requested_iid: *const tuid.TUID,
-            out: *?*anyopaque,
+            requested_iid_raw: [*c]const tuid.TUID,
+            out_raw: [*c]?*anyopaque,
         ) types.tresult {
+            const arguments = funknown.queryArguments(
+                requested_iid_raw,
+                out_raw,
+            ) orelse return types.kInvalidArgument;
+            const requested_iid = arguments.requested_iid;
+            const out = arguments.out;
             const entries = [_]interface_map.Entry{
                 .{
                     .iid = &funknown.iid,
@@ -137,8 +143,8 @@ pub fn StandaloneBridge(comptime Window: type) type {
 
         fn queryFromPlugFrame(
             ptr: *anyopaque,
-            requested_iid: *const tuid.TUID,
-            out: *?*anyopaque,
+            requested_iid: [*c]const tuid.TUID,
+            out: [*c]?*anyopaque,
         ) callconv(.c) types.tresult {
             return owner_from_plug_frame(ptr).canonicalQuery(
                 requested_iid,
@@ -148,8 +154,8 @@ pub fn StandaloneBridge(comptime Window: type) type {
 
         fn queryFromWaylandFrame(
             ptr: *anyopaque,
-            requested_iid: *const tuid.TUID,
-            out: *?*anyopaque,
+            requested_iid: [*c]const tuid.TUID,
+            out: [*c]?*anyopaque,
         ) callconv(.c) types.tresult {
             return owner_from_wayland_frame(ptr).canonicalQuery(
                 requested_iid,
@@ -159,8 +165,8 @@ pub fn StandaloneBridge(comptime Window: type) type {
 
         fn queryFromWaylandHost(
             ptr: *anyopaque,
-            requested_iid: *const tuid.TUID,
-            out: *?*anyopaque,
+            requested_iid: [*c]const tuid.TUID,
+            out: [*c]?*anyopaque,
         ) callconv(.c) types.tresult {
             return owner_from_wayland_host(ptr).canonicalQuery(
                 requested_iid,
@@ -207,8 +213,10 @@ pub fn StandaloneBridge(comptime Window: type) type {
         fn resizeView(
             ptr: *anyopaque,
             view: ?*iplugview.IPlugView,
-            rect: *iplugview.ViewRect,
+            rect_raw: [*c]iplugview.ViewRect,
         ) callconv(.c) types.tresult {
+            if (rect_raw == null) return types.kInvalidArgument;
+            const rect: *iplugview.ViewRect = @ptrCast(rect_raw);
             const requested = rect.*;
             if (!iplugview.hasValidDimensions(requested))
                 return types.kInvalidArgument;
@@ -276,9 +284,11 @@ pub fn StandaloneBridge(comptime Window: type) type {
 
         fn getParentSurface(
             ptr: *anyopaque,
-            rect: *iplugview.ViewRect,
+            rect_raw: [*c]iplugview.ViewRect,
             display: ?*iwaylandframe.wl_display,
         ) callconv(.c) ?*iwaylandframe.xdg_surface {
+            if (rect_raw == null) return null;
+            const rect: *iplugview.ViewRect = @ptrCast(rect_raw);
             const self = owner_from_wayland_frame(ptr);
             if (!self.matchesDisplay(display)) {
                 clearRect(rect);

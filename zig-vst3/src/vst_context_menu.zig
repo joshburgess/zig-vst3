@@ -40,7 +40,7 @@ pub fn ContextMenuTarget(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstcontextmenu.IContextMenuTarget, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstcontextmenu.icontext_menu_target_iid, .ptr = ptr },
@@ -121,7 +121,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
 
         const owner = interface_map.ownerFromField(Self, ivstcontextmenu.IContextMenu, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstcontextmenu.icontext_menu_iid, .ptr = ptr },
@@ -180,7 +180,11 @@ pub fn ContextMenu(comptime max_items: usize) type {
             return types.kInvalidArgument;
         }
 
-        fn getItem(ptr: *anyopaque, index: types.int32, out: *ivstcontextmenu.IContextMenuItem, target_out: *?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
+        fn getItem(ptr: *anyopaque, index: types.int32, out_raw: [*c]ivstcontextmenu.IContextMenuItem, target_out_raw: [*c]?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
+            if (out_raw == null or target_out_raw == null) return types.kInvalidArgument;
+            const out: *ivstcontextmenu.IContextMenuItem = @ptrCast(out_raw);
+            const target_out: *?*ivstcontextmenu.IContextMenuTarget =
+                @ptrCast(target_out_raw);
             const entry = owner(ptr).occupiedByIndex(index) orelse return failItemLookup(out, target_out);
             out.* = entry.item;
             target_out.* = entry.target;
@@ -198,7 +202,10 @@ pub fn ContextMenu(comptime max_items: usize) type {
             return null;
         }
 
-        fn addItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
+        fn addItem(ptr: *anyopaque, item_raw: [*c]const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
+            if (item_raw == null) return types.kInvalidArgument;
+            const item: *const ivstcontextmenu.IContextMenuItem =
+                @ptrCast(item_raw);
             if (!menuItemIsValid(item)) return types.kInvalidArgument;
             _ = owner(ptr).appendItem(item, target) orelse return types.kResultFalse;
             return types.kResultOk;
@@ -217,7 +224,10 @@ pub fn ContextMenu(comptime max_items: usize) type {
             return null;
         }
 
-        fn removeItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
+        fn removeItem(ptr: *anyopaque, item_raw: [*c]const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
+            if (item_raw == null) return types.kInvalidArgument;
+            const item: *const ivstcontextmenu.IContextMenuItem =
+                @ptrCast(item_raw);
             if (!menuItemIsValid(item)) return types.kInvalidArgument;
             const entry = owner(ptr).matchingItem(item, target) orelse return types.kResultFalse;
             entry.clear();
@@ -346,6 +356,14 @@ test "context menu rejects malformed item payloads without retaining targets" {
     var incomplete_group_end = ivstcontextmenu.IContextMenuItem{ .tag = 40, .flags = 1 << 4 };
     unterminated_name.name = [_]vsttypes.TChar{'x'} ** unterminated_name.name.len;
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addItem(iface, null, target.asInterface()));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.removeItem(iface, null, target.asInterface()));
+    var untouched_item = ivstcontextmenu.IContextMenuItem{ .tag = 99 };
+    var untouched_target: ?*ivstcontextmenu.IContextMenuTarget = target.asInterface();
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getItem(iface, 0, null, &untouched_target));
+    try std.testing.expectEqual(target.asInterface(), untouched_target);
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getItem(iface, 0, &untouched_item, null));
+    try std.testing.expectEqual(@as(types.int32, 99), untouched_item.tag);
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addItem(iface, &unknown_flags, target.asInterface()));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addItem(iface, &unterminated_name, target.asInterface()));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addItem(iface, &incomplete_group_start, target.asInterface()));

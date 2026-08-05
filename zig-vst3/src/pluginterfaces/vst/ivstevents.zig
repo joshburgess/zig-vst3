@@ -111,12 +111,12 @@ pub const Event = extern struct {
 };
 
 pub const IEventListVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     getEventCount: *const fn (*anyopaque) callconv(.c) base_types.int32,
-    getEvent: *const fn (*anyopaque, base_types.int32, *Event) callconv(.c) base_types.tresult,
-    addEvent: *const fn (*anyopaque, *Event) callconv(.c) base_types.tresult,
+    getEvent: *const fn (*anyopaque, base_types.int32, [*c]Event) callconv(.c) base_types.tresult,
+    addEvent: *const fn (*anyopaque, [*c]Event) callconv(.c) base_types.tresult,
 };
 
 pub const IEventList = extern struct {

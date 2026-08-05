@@ -24,7 +24,7 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivsthostapplication.IHostApplication, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             owner(ptr).query_count +|= 1;
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
@@ -45,8 +45,9 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
             return funknown.decrementRefCount(&self.ref_count, "IHostApplication");
         }
 
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            string128.copyPtr(out, name);
+        fn getName(_: *anyopaque, out_raw: [*c]vsttypes.TChar) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            string128.copyPtr(@ptrCast(out_raw), name);
             return types.kResultOk;
         }
 
@@ -55,7 +56,11 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
             return result;
         }
 
-        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn createInstance(ptr: *anyopaque, cid_raw: [*c]const tuid.TUID, iid_raw: [*c]const tuid.TUID, out_raw: [*c]?*anyopaque) callconv(.c) types.tresult {
+            if (cid_raw == null or iid_raw == null or out_raw == null) return types.kInvalidArgument;
+            const cid: *const tuid.TUID = @ptrCast(cid_raw);
+            const iid: *const tuid.TUID = @ptrCast(iid_raw);
+            const out: *?*anyopaque = @ptrCast(out_raw);
             const self = owner(ptr);
             self.create_instance_count +|= 1;
             out.* = null;
@@ -91,7 +96,7 @@ pub fn WrapperMarker(comptime Interface: type, comptime VTable: type, comptime i
 
         const owner = interface_map.ownerFromField(Self, Interface, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = iid, .ptr = ptr },
@@ -136,7 +141,7 @@ pub fn WrapperMPESupport(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivsthostapplication.IVst3WrapperMPESupport, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivsthostapplication.ivst3_wrapper_mpe_support_iid, .ptr = ptr },
@@ -204,11 +209,16 @@ test "host application exposes name and create-instance hook" {
     const iface = host.asInterface();
 
     var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getName(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getName(iface, &name));
     try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Test Host"), std.mem.sliceTo(&name, 0));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[10]);
 
     var created: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.createInstance(iface, null, &funknown.iid, &created));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.createInstance(iface, &funknown.iid, null, &created));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.createInstance(iface, &funknown.iid, &funknown.iid, null));
+    try std.testing.expectEqual(@as(types.uint32, 0), host.create_instance_count);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.createInstance(iface, &funknown.iid, &funknown.iid, &created));
     try std.testing.expect(created != null);
     try std.testing.expectEqual(@as(types.uint32, 1), host.create_instance_count);

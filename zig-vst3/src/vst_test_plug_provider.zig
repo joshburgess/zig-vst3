@@ -34,7 +34,7 @@ pub fn TestPlugProvider(comptime Config: type) type {
         const ownerFromProvider = interface_map.ownerFromField(Self, ivsttestplugprovider.ITestPlugProvider, "iface");
         const ownerFromProvider2 = interface_map.ownerFromField(Self, ivsttestplugprovider.ITestPlugProvider2, "iface2");
 
-        fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+        fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
                 .{ .iid = &ivsttestplugprovider.itest_plug_provider_iid, .ptr = &self.iface },
@@ -43,11 +43,11 @@ pub fn TestPlugProvider(comptime Config: type) type {
             return interface_map.queryWithAddRef(add_ref_ptr, providerAddRef, &entries, requested_iid, out);
         }
 
-        fn providerQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn providerQuery(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             return ownerFromProvider(ptr).queryCanonical(ptr, requested_iid, out);
         }
 
-        fn provider2Query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn provider2Query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromProvider2(ptr);
             return self.queryCanonical(&self.iface, requested_iid, out);
         }
@@ -126,12 +126,16 @@ pub fn TestPlugProvider(comptime Config: type) type {
             if (controller) |value| _ = value.vtable.release(value);
         }
 
-        fn getSubCategories(ptr: *anyopaque, out: *istringresult.IStringResult) callconv(.c) types.tresult {
+        fn getSubCategories(ptr: *anyopaque, out_raw: [*c]istringresult.IStringResult) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *istringresult.IStringResult = @ptrCast(out_raw);
             _ = ownerFromProvider(ptr);
             return subCategoriesFor(out);
         }
 
-        fn provider2GetSubCategories(ptr: *anyopaque, out: *istringresult.IStringResult) callconv(.c) types.tresult {
+        fn provider2GetSubCategories(ptr: *anyopaque, out_raw: [*c]istringresult.IStringResult) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *istringresult.IStringResult = @ptrCast(out_raw);
             _ = ownerFromProvider2(ptr);
             return subCategoriesFor(out);
         }
@@ -141,14 +145,16 @@ pub fn TestPlugProvider(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getComponentUID(ptr: *anyopaque, out: *anyopaque) callconv(.c) types.tresult {
+        fn getComponentUID(ptr: *anyopaque, out: ?*anyopaque) callconv(.c) types.tresult {
+            const destination = out orelse return types.kInvalidArgument;
             _ = ownerFromProvider(ptr);
-            return componentUidFor(out);
+            return componentUidFor(destination);
         }
 
-        fn provider2GetComponentUID(ptr: *anyopaque, out: *anyopaque) callconv(.c) types.tresult {
+        fn provider2GetComponentUID(ptr: *anyopaque, out: ?*anyopaque) callconv(.c) types.tresult {
+            const destination = out orelse return types.kInvalidArgument;
             _ = ownerFromProvider2(ptr);
-            return componentUidFor(out);
+            return componentUidFor(destination);
         }
 
         fn componentUidFor(out: *anyopaque) types.tresult {
@@ -204,6 +210,8 @@ test "test plug provider returns configured metadata" {
     const iface = provider.asProvider();
 
     var out_uid: tuid.TUID = tuid.zero;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getSubCategories(iface, null));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getComponentUID(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getSubCategories(iface, string.asResult()));
     try std.testing.expectEqualStrings("Fx|Tools", string.text8Span());
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getComponentUID(iface, &out_uid));

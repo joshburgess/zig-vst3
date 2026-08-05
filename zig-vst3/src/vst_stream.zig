@@ -25,7 +25,7 @@ pub fn streamPosition(position: usize) ?types.int64 {
 
 pub fn streamPositionLen(position: types.int64, capacity: usize) ?usize {
     if (position < 0) return null;
-    const value: usize = @intCast(position);
+    const value = std.math.cast(usize, position) orelse return null;
     return if (value <= capacity) value else null;
 }
 
@@ -125,7 +125,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         const ownerFromStream = interface_map.ownerFromField(Self, ibstream.IBStream, "iface");
         const ownerFromSizeable = interface_map.ownerFromField(Self, ibstream.ISizeableStream, "sizeable_iface");
 
-        fn query(self: *Self, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+        fn query(self: *Self, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
                 .{ .iid = &ibstream.ibstream_iid, .ptr = &self.iface },
@@ -134,11 +134,11 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return interface_map.queryWithAddRef(&self.iface, addRefStream, &entries, requested_iid, out);
         }
 
-        fn queryStream(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryStream(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             return query(ownerFromStream(ptr), requested_iid, out);
         }
 
-        fn querySizeable(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn querySizeable(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             return query(ownerFromSizeable(ptr), requested_iid, out);
         }
 
@@ -213,14 +213,18 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return types.kResultOk;
         }
 
-        fn tell(ptr: *anyopaque, pos: *types.int64) callconv(.c) types.tresult {
+        fn tell(ptr: *anyopaque, pos_raw: [*c]types.int64) callconv(.c) types.tresult {
+            if (pos_raw == null) return types.kInvalidArgument;
+            const pos = &pos_raw[0];
             pos.* = streamPosition(ownerFromStream(ptr).pos) orelse {
                 return failPosition(pos, types.kResultFalse);
             };
             return types.kResultOk;
         }
 
-        fn getStreamSize(ptr: *anyopaque, size: *types.int64) callconv(.c) types.tresult {
+        fn getStreamSize(ptr: *anyopaque, size_raw: [*c]types.int64) callconv(.c) types.tresult {
+            if (size_raw == null) return types.kInvalidArgument;
+            const size = &size_raw[0];
             size.* = streamPosition(ownerFromSizeable(ptr).boundedLen()) orelse {
                 return failPosition(size, types.kResultFalse);
             };
@@ -314,6 +318,10 @@ test "stream position conversions reject invalid stream positions" {
     try std.testing.expectEqual(@as(?usize, 0), streamPositionLen(0, 8));
     try std.testing.expectEqual(@as(?usize, 8), streamPositionLen(8, 8));
     try std.testing.expectEqual(@as(?usize, null), streamPositionLen(9, 8));
+    try std.testing.expectEqual(
+        @as(?usize, null),
+        streamPositionLen(std.math.maxInt(types.int64), 8),
+    );
 }
 
 test "fixed buffer stream round-trips generated chunked IO" {
@@ -570,6 +578,15 @@ test "fixed buffer stream zero-byte IO permits null buffers" {
     const iface = stream.asStream();
     var count: types.int32 = -1;
     var pos: types.int64 = -1;
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.tell(iface, null));
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        stream.asSizeableStream().vtable.getStreamSize(
+            stream.asSizeableStream(),
+            null,
+        ),
+    );
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, null, 0, &count));
     try std.testing.expectEqual(@as(types.int32, 0), count);

@@ -5,14 +5,14 @@ pub const istring_result_iid = tuid.inlineUid(0x550798BC, 0x872049DB, 0x84920A15
 pub const istring_iid = tuid.inlineUid(0xF99DB7A3, 0x0FC14821, 0x800B0CF9, 0x8E348EDF);
 
 pub const IStringResultVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     setText: *const fn (*anyopaque, ?[*:0]const base_types.char8) callconv(.c) void,
 };
 
 pub const IStringVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     setText8: *const fn (*anyopaque, ?[*:0]const base_types.char8) callconv(.c) void,

@@ -11,7 +11,7 @@ pub const xdg_surface = opaque {};
 pub const xdg_toplevel = opaque {};
 
 pub const IWaylandHostVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     openWaylandConnection: *const fn (*anyopaque) callconv(.c) ?*wl_display,
@@ -19,11 +19,11 @@ pub const IWaylandHostVTable = extern struct {
 };
 
 pub const IWaylandFrameVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     getWaylandSurface: *const fn (*anyopaque, ?*wl_display) callconv(.c) ?*wl_surface,
-    getParentSurface: *const fn (*anyopaque, *iplugview.ViewRect, ?*wl_display) callconv(.c) ?*xdg_surface,
+    getParentSurface: *const fn (*anyopaque, [*c]iplugview.ViewRect, ?*wl_display) callconv(.c) ?*xdg_surface,
     getParentToplevel: *const fn (*anyopaque, ?*wl_display) callconv(.c) ?*xdg_toplevel,
 };
 

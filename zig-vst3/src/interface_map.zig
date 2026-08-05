@@ -21,8 +21,8 @@ pub fn fieldEntry(
 pub fn query(
     unknown: *funknown.Header,
     entries: []const Entry,
-    requested_iid: *const tuid.TUID,
-    out: *?*anyopaque,
+    requested_iid: [*c]const tuid.TUID,
+    out: [*c]?*anyopaque,
 ) funknown.tresult {
     return queryWithAddRef(unknown, unknown.vtable.addRef, entries, requested_iid, out);
 }
@@ -31,9 +31,13 @@ pub fn queryWithAddRef(
     add_ref_ptr: *anyopaque,
     add_ref: *const fn (*anyopaque) callconv(.c) funknown.uint32,
     entries: []const Entry,
-    requested_iid: *const tuid.TUID,
-    out: *?*anyopaque,
+    requested_iid_raw: [*c]const tuid.TUID,
+    out_raw: [*c]?*anyopaque,
 ) funknown.tresult {
+    const arguments = funknown.queryArguments(requested_iid_raw, out_raw) orelse
+        return funknown.kInvalidArgument;
+    const requested_iid = arguments.requested_iid;
+    const out = arguments.out;
     for (entries) |entry| {
         if (std.mem.eql(u8, requested_iid, entry.iid)) {
             _ = add_ref(add_ref_ptr);
@@ -46,11 +50,19 @@ pub fn queryWithAddRef(
     return funknown.kNoInterface;
 }
 
+pub fn matches(
+    requested_iid: [*c]const tuid.TUID,
+    candidate_iid: *const tuid.TUID,
+) bool {
+    if (requested_iid == null) return false;
+    return std.mem.eql(u8, &requested_iid[0], candidate_iid);
+}
+
 pub fn DelegatedInterface(
     comptime Owner: type,
     comptime ownerFn: fn (*anyopaque) *Owner,
     comptime primary_field: []const u8,
-    comptime queryFn: fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) funknown.tresult,
+    comptime queryFn: fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) funknown.tresult,
     comptime addRefFn: fn (*anyopaque) callconv(.c) funknown.uint32,
     comptime releaseFn: fn (*anyopaque) callconv(.c) funknown.uint32,
 ) type {
@@ -59,7 +71,7 @@ pub fn DelegatedInterface(
             return @ptrCast(&@field(ownerFn(ptr), primary_field));
         }
 
-        pub fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
+        pub fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) funknown.tresult {
             return queryFn(primary(ptr), requested_iid, out);
         }
 
@@ -115,6 +127,25 @@ test "query clears output for missing interface" {
 
     try std.testing.expectEqual(funknown.kNoInterface, query(object.asUnknown(), &.{}, &missing_iid, &out));
     try std.testing.expectEqual(@as(?*anyopaque, null), out);
+    try std.testing.expectEqual(@as(funknown.uint32, 1), object.refCount());
+}
+
+test "query rejects null arguments without retaining or changing output" {
+    var object = funknown.TestObject{};
+    var out: ?*anyopaque = object.asUnknown();
+
+    try std.testing.expectEqual(
+        funknown.kInvalidArgument,
+        query(object.asUnknown(), &.{}, null, &out),
+    );
+    try std.testing.expectEqual(
+        @as(?*anyopaque, @ptrCast(object.asUnknown())),
+        out,
+    );
+    try std.testing.expectEqual(
+        funknown.kInvalidArgument,
+        query(object.asUnknown(), &.{}, &funknown.iid, null),
+    );
     try std.testing.expectEqual(@as(funknown.uint32, 1), object.refCount());
 }
 
@@ -194,7 +225,7 @@ test "delegated interface forwards through primary interface" {
             return @fieldParentPtr("alternate", alternate);
         }
 
-        fn primaryQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
+        fn primaryQuery(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) funknown.tresult {
             const unknown: *funknown.Header = @ptrCast(@alignCast(ptr));
             const entries = [_]Entry{
                 .{ .iid = &funknown.iid, .ptr = unknown },

@@ -34,7 +34,7 @@ pub fn EventHandler(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, Linux.IEventHandler, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.ievent_handler_iid, .ptr = ptr },
@@ -82,7 +82,7 @@ pub fn TimerHandler(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, Linux.ITimerHandler, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.itimer_handler_iid, .ptr = ptr },
@@ -320,7 +320,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
             return null;
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.irun_loop_iid, .ptr = ptr },

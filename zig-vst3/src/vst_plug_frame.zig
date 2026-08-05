@@ -26,7 +26,7 @@ pub fn PlugFrame(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, iplugview.IPlugFrame, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.iplug_frame_iid, .ptr = ptr },
@@ -42,7 +42,9 @@ pub fn PlugFrame(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPlugFrame");
         }
 
-        fn resizeView(ptr: *anyopaque, view: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
+        fn resizeView(ptr: *anyopaque, view: ?*iplugview.IPlugView, rect_raw: [*c]iplugview.ViewRect) callconv(.c) types.tresult {
+            if (rect_raw == null) return types.kInvalidArgument;
+            const rect: *iplugview.ViewRect = @ptrCast(rect_raw);
             const self = owner(ptr);
             const requested = rect.*;
             if (!iplugview.hasValidDimensions(requested)) return types.kInvalidArgument;
@@ -77,6 +79,8 @@ test "plug frame stores resize requests by default" {
     const iface = frame.asInterface();
     var rect = iplugview.ViewRect{ .left = 1, .top = 2, .right = 101, .bottom = 202 };
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.resizeView(iface, null, null));
+    try std.testing.expectEqual(@as(types.uint32, 0), frame.resize_count);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.resizeView(iface, null, &rect));
     try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
     try std.testing.expectEqual(rect, frame.last_rect);

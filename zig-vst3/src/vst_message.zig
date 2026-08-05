@@ -42,7 +42,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstmessage.IConnectionPoint, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstmessage.iconnection_point_iid, .ptr = ptr },
@@ -294,7 +294,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         const owner = interface_map.ownerFromField(Self, ivstattributes.IAttributeList, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstattributes.iattribute_list_iid, .ptr = ptr },
@@ -352,7 +352,9 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return result;
         }
 
-        fn getInt(ptr: *anyopaque, id: ?ivstattributes.AttrID, out: *types.int64) callconv(.c) types.tresult {
+        fn getInt(ptr: *anyopaque, id: ?ivstattributes.AttrID, out_raw: [*c]types.int64) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *types.int64 = @ptrCast(out_raw);
             const attribute_id = id orelse return failInt(out, types.kInvalidArgument);
             const entry = owner(ptr).findEntry(attribute_id) orelse return failInt(out, types.kResultFalse);
             if (!entry.hasKind(.int)) return failInt(out, types.kInvalidArgument);
@@ -372,7 +374,9 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return result;
         }
 
-        fn getFloat(ptr: *anyopaque, id: ?ivstattributes.AttrID, out: *f64) callconv(.c) types.tresult {
+        fn getFloat(ptr: *anyopaque, id: ?ivstattributes.AttrID, out_raw: [*c]f64) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *f64 = @ptrCast(out_raw);
             const attribute_id = id orelse return failFloat(out, types.kInvalidArgument);
             const entry = owner(ptr).findEntry(attribute_id) orelse return failFloat(out, types.kResultFalse);
             if (!entry.hasKind(.float)) return failFloat(out, types.kInvalidArgument);
@@ -388,21 +392,23 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
-        fn getString(ptr: *anyopaque, id: ?ivstattributes.AttrID, out: [*]vsttypes.TChar, size: types.uint32) callconv(.c) types.tresult {
+        fn getString(ptr: *anyopaque, id: ?ivstattributes.AttrID, out: [*c]vsttypes.TChar, size: types.uint32) callconv(.c) types.tresult {
             if (size == 0) return types.kInvalidArgument;
+            if (out == null) return types.kInvalidArgument;
+            const output: [*]vsttypes.TChar = @ptrCast(out);
             const attribute_id = id orelse {
-                fixed_string.copyUtf16ZPtr(out, size, &.{});
+                fixed_string.copyUtf16ZPtr(output, size, &.{});
                 return types.kInvalidArgument;
             };
             const entry = owner(ptr).findEntry(attribute_id) orelse {
-                fixed_string.copyUtf16ZPtr(out, size, &.{});
+                fixed_string.copyUtf16ZPtr(output, size, &.{});
                 return types.kResultFalse;
             };
             if (!entry.hasKind(.string)) {
-                fixed_string.copyUtf16ZPtr(out, size, &.{});
+                fixed_string.copyUtf16ZPtr(output, size, &.{});
                 return types.kInvalidArgument;
             }
-            fixed_string.copyUtf16ZPtr(out, size, std.mem.sliceTo(&entry.string_value, 0));
+            fixed_string.copyUtf16ZPtr(output, size, std.mem.sliceTo(&entry.string_value, 0));
             return types.kResultOk;
         }
 
@@ -421,7 +427,10 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return result;
         }
 
-        fn getBinary(ptr: *anyopaque, id: ?ivstattributes.AttrID, out: *?*const anyopaque, size: *types.uint32) callconv(.c) types.tresult {
+        fn getBinary(ptr: *anyopaque, id: ?ivstattributes.AttrID, out_raw: [*c]?*const anyopaque, size_raw: [*c]types.uint32) callconv(.c) types.tresult {
+            if (out_raw == null or size_raw == null) return types.kInvalidArgument;
+            const out: *?*const anyopaque = @ptrCast(out_raw);
+            const size: *types.uint32 = @ptrCast(size_raw);
             const attribute_id = id orelse return failBinary(out, size, types.kInvalidArgument);
             const entry = owner(ptr).findEntry(attribute_id) orelse return failBinary(out, size, types.kResultFalse);
             if (!entry.hasKind(.binary)) return failBinary(out, size, types.kInvalidArgument);
@@ -468,7 +477,7 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
 
         const owner = interface_map.ownerFromField(Self, ivstattributes.IStreamAttributes, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstattributes.istream_attributes_iid, .ptr = ptr },
@@ -484,9 +493,11 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IStreamAttributes");
         }
 
-        fn getFileName(ptr: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
+        fn getFileName(ptr: *anyopaque, out: [*c]vsttypes.TChar) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
             const self = owner(ptr);
-            fixed_string.copyUtf16ZPtr(out, string128.code_units, std.mem.sliceTo(&self.file_name, 0));
+            const destination: [*]vsttypes.TChar = @ptrCast(out);
+            fixed_string.copyUtf16ZPtr(destination, string128.code_units, std.mem.sliceTo(&self.file_name, 0));
             return types.kResultOk;
         }
 
@@ -522,7 +533,7 @@ pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: us
 
         const owner = interface_map.ownerFromField(Self, ivstmessage.IMessage, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstmessage.imessage_iid, .ptr = ptr },
@@ -613,21 +624,28 @@ test "attribute list rejects full storage and clears failed outputs" {
 
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setInt(iface, null, 1));
     var int_value: types.int64 = 77;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getInt(iface, "count", null));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getInt(iface, null, &int_value));
     try std.testing.expectEqual(@as(types.int64, 0), int_value);
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setFloat(iface, null, 1.0));
     var float_value: f64 = 3.0;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getFloat(iface, "ratio", null));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getFloat(iface, null, &float_value));
     try std.testing.expectEqual(@as(f64, 0), float_value);
     const text: [2:0]vsttypes.TChar = .{ 'x', 0 };
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setString(iface, null, &text));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setString(iface, "text", null));
     var text_out: [2]vsttypes.TChar = .{ 'x', 'x' };
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getString(iface, "text", null, text_out.len));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getString(iface, null, &text_out, text_out.len));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text_out[0]);
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setBinary(iface, null, null, 0));
     var binary_out: ?*const anyopaque = @ptrFromInt(0x1000);
     var binary_size: types.uint32 = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getBinary(iface, "data", null, &binary_size));
+    try std.testing.expectEqual(@as(types.uint32, 99), binary_size);
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getBinary(iface, "data", &binary_out, null));
+    try std.testing.expectEqual(@as(?*const anyopaque, @ptrFromInt(0x1000)), binary_out);
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getBinary(iface, null, &binary_out, &binary_size));
     try std.testing.expectEqual(@as(?*const anyopaque, null), binary_out);
     try std.testing.expectEqual(@as(types.uint32, 0), binary_size);
@@ -756,6 +774,7 @@ test "stream attributes expose filename and attribute list" {
     stream_attributes.setFileName(&file_name);
 
     var file_name_out: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getFileName(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getFileName(iface, &file_name_out));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'p'), file_name_out[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 't'), file_name_out[9]);

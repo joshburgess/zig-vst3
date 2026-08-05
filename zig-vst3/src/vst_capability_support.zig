@@ -62,7 +62,7 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
 
         const owner = interface_map.ownerFromField(Self, ivstpluginterfacesupport.IPlugInterfaceSupport, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstpluginterfacesupport.iplug_interface_support_iid, .ptr = ptr },
@@ -78,7 +78,9 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPlugInterfaceSupport");
         }
 
-        fn isPlugInterfaceSupported(ptr: *anyopaque, iid: *const tuid.TUID) callconv(.c) types.tresult {
+        fn isPlugInterfaceSupported(ptr: *anyopaque, iid_raw: [*c]const tuid.TUID) callconv(.c) types.tresult {
+            if (iid_raw == null) return types.kInvalidArgument;
+            const iid: *const tuid.TUID = @ptrCast(iid_raw);
             const self = owner(ptr);
             return if (self.supports(iid)) types.kResultOk else types.kResultFalse;
         }
@@ -107,7 +109,7 @@ pub fn PrefetchableSupport(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstprefetchablesupport.IPrefetchableSupport, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstprefetchablesupport.iprefetchable_support_iid, .ptr = ptr },
@@ -128,7 +130,10 @@ pub fn PrefetchableSupport(comptime Config: type) type {
             return result;
         }
 
-        fn getPrefetchableSupport(ptr: *anyopaque, out: *ivstprefetchablesupport.PrefetchableSupport) callconv(.c) types.tresult {
+        fn getPrefetchableSupport(ptr: *anyopaque, out_raw: [*c]ivstprefetchablesupport.PrefetchableSupport) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *ivstprefetchablesupport.PrefetchableSupport =
+                @ptrCast(out_raw);
             const self = owner(ptr);
             self.get_count +|= 1;
             out.* = self.state;
@@ -172,7 +177,7 @@ pub fn MidiLearn(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstmidilearn.IMidiLearn, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstmidilearn.imidi_learn_iid, .ptr = ptr },
@@ -293,7 +298,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
         const ownerFromMapping = interface_map.ownerFromField(Self, ivstmidimapping2.IMidiMapping2, "iface");
         const ownerFromLearn = interface_map.ownerFromField(Self, ivstmidimapping2.IMidiLearn2, "learn_iface");
 
-        fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+        fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
                 .{ .iid = &ivstmidimapping2.imidi_mapping2_iid, .ptr = &self.iface },
@@ -302,11 +307,11 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return interface_map.queryWithAddRef(add_ref_ptr, mappingAddRef, &entries, requested_iid, out);
         }
 
-        fn mappingQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn mappingQuery(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             return ownerFromMapping(ptr).queryCanonical(ptr, requested_iid, out);
         }
 
-        fn learnQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn learnQuery(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromLearn(ptr);
             return self.queryCanonical(&self.iface, requested_iid, out);
         }
@@ -358,7 +363,9 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return types.kResultOk;
         }
 
-        fn getMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi2ControllerParamIDAssignmentList) callconv(.c) types.tresult {
+        fn getMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list_raw: [*c]const ivstmidimapping2.Midi2ControllerParamIDAssignmentList) callconv(.c) types.tresult {
+            if (list_raw == null) return types.kInvalidArgument;
+            const list = &list_raw[0];
             const self = ownerFromMapping(ptr);
             return copyAssignments(direction, list, self.midi2Assignments());
         }
@@ -368,7 +375,9 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return if (acceptsDirection(direction)) vst_index.uint32Count(self.midi1Assignments().len) else 0;
         }
 
-        fn getMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.c) types.tresult {
+        fn getMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list_raw: [*c]const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.c) types.tresult {
+            if (list_raw == null) return types.kInvalidArgument;
+            const list = &list_raw[0];
             const self = ownerFromMapping(ptr);
             return copyAssignments(direction, list, self.midi1Assignments());
         }
@@ -470,7 +479,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstphysicalui.INoteExpressionPhysicalUIMapping, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstphysicalui.inote_expression_physical_ui_mapping_iid, .ptr = ptr },
@@ -495,7 +504,10 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             return result;
         }
 
-        fn getPhysicalUIMapping(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
+        fn getPhysicalUIMapping(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, out_raw: [*c]ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *ivstphysicalui.PhysicalUIMapList =
+                @ptrCast(out_raw);
             const self = owner(ptr);
             self.recordRequest(bus_index, channel);
             const requested_maps = out.map orelse return types.kInvalidArgument;
@@ -532,6 +544,7 @@ test "plug interface support stores supported IIDs" {
     var support = Support{};
     const iface = support.asInterface();
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.isPlugInterfaceSupported(iface, null));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.isPlugInterfaceSupported(iface, &ivstpluginterfacesupport.iplug_interface_support_iid));
     try std.testing.expectEqual(types.kResultOk, support.addSupported(&ivstpluginterfacesupport.iplug_interface_support_iid));
     try std.testing.expectEqual(types.kResultFalse, support.addSupported(&ivstprefetchablesupport.iprefetchable_support_iid));
@@ -585,6 +598,7 @@ test "prefetchable support reports default state and supports query interface" {
     const iface = support.asInterface();
     var state: ivstprefetchablesupport.PrefetchableSupport = 0;
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getPrefetchableSupport(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getPrefetchableSupport(iface, &state));
     try std.testing.expectEqual(@as(ivstprefetchablesupport.PrefetchableSupport, @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable)), state);
 
@@ -701,6 +715,7 @@ test "midi 2 mapping copies midi 1 and midi 2 assignment lists" {
 
     var midi2_out = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** 1;
     const midi2_list = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = midi2_out.len, .map = &midi2_out };
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &midi2_list));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 100), midi2_out[0].pId);
     try std.testing.expectEqual(@as(ivstmidimapping2.MidiChannel, 2), midi2_out[0].channel);
@@ -708,6 +723,7 @@ test "midi 2 mapping copies midi 1 and midi 2 assignment lists" {
 
     var midi1_out = [_]ivstmidimapping2.Midi1ControllerParamIDAssignment{.{}} ** 1;
     const midi1_list = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = midi1_out.len, .map = &midi1_out };
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &midi1_list));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 200), midi1_out[0].pId);
     try std.testing.expectEqual(@as(vsttypes.CtrlNumber, 64), midi1_out[0].controller);
@@ -901,6 +917,8 @@ test "physical UI mapping exposes fixed map list and clears delegated failures" 
         .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 77 },
     };
     var list = ivstphysicalui.PhysicalUIMapList{ .count = requested.len, .map = &requested };
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getPhysicalUIMapping(iface, 3, 4, null));
+    try std.testing.expectEqual(@as(types.int32, 0), mapping.last_bus);
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getPhysicalUIMapping(iface, 3, 4, &list));
     try std.testing.expectEqual(@as(types.uint32, 1), list.count);
     try std.testing.expectEqual(@as(types.uint32, @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID)), requested[0].noteExpressionTypeID);

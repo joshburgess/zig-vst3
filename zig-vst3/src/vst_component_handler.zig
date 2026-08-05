@@ -112,7 +112,7 @@ pub fn ComponentHandler(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "iface");
 
-        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryInterface(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
@@ -239,20 +239,20 @@ pub fn ComponentHandler2(comptime Config: type) type {
         const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
         const ownerFromHandler2 = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler2, "handler2");
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
                 .{ .iid = &ivsteditcontroller.icomponent_handler_iid, .ptr = &self.handler },
                 .{ .iid = &ivsteditcontroller.icomponent_handler2_iid, .ptr = &self.handler2 },
             };
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler2_iid)) {
+            if (interface_map.matches(requested_iid, &ivsteditcontroller.icomponent_handler2_iid)) {
                 return interface_map.queryWithAddRef(&self.handler2, addRefFromHandler2, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromHandler2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler2(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler2 },
@@ -416,20 +416,20 @@ pub fn ComponentHandler3(comptime Config: type) type {
         const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
         const ownerFromHandler3 = interface_map.ownerFromField(Self, ivstcontextmenu.IComponentHandler3, "handler3");
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
                 .{ .iid = &ivsteditcontroller.icomponent_handler_iid, .ptr = &self.handler },
                 .{ .iid = &ivstcontextmenu.icomponent_handler3_iid, .ptr = &self.handler3 },
             };
-            if (std.mem.eql(u8, requested_iid, &ivstcontextmenu.icomponent_handler3_iid)) {
+            if (interface_map.matches(requested_iid, &ivstcontextmenu.icomponent_handler3_iid)) {
                 return interface_map.queryWithAddRef(&self.handler3, addRefFromHandler3, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromHandler3(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler3(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler3(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler3 },
@@ -598,7 +598,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         const ownerFromBus = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandlerBusActivation, "bus_activation");
         const ownerFromTime = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandlerSystemTime, "system_time");
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
@@ -606,16 +606,16 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
                 .{ .iid = &ivsteditcontroller.icomponent_handler_bus_activation_iid, .ptr = &self.bus_activation },
                 .{ .iid = &ivsteditcontroller.icomponent_handler_system_time_iid, .ptr = &self.system_time },
             };
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler_bus_activation_iid)) {
+            if (interface_map.matches(requested_iid, &ivsteditcontroller.icomponent_handler_bus_activation_iid)) {
                 return interface_map.queryWithAddRef(&self.bus_activation, addRefFromBus, &entries, requested_iid, out);
             }
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler_system_time_iid)) {
+            if (interface_map.matches(requested_iid, &ivsteditcontroller.icomponent_handler_system_time_iid)) {
                 return interface_map.queryWithAddRef(&self.system_time, addRefFromTime, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromBus(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromBus(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromBus(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.bus_activation },
@@ -624,7 +624,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.bus_activation, addRefFromBus, &entries, requested_iid, out);
         }
 
-        fn queryFromTime(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromTime(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromTime(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.system_time },
@@ -711,7 +711,9 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             return result;
         }
 
-        fn getSystemTime(ptr: *anyopaque, out: *types.int64) callconv(.c) types.tresult {
+        fn getSystemTime(ptr: *anyopaque, out_raw: [*c]types.int64) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *types.int64 = @ptrCast(out_raw);
             const self = ownerFromTime(ptr);
             const value = self.startSystemTimeRequest();
             out.* = value;
@@ -824,20 +826,20 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
         const ownerFromProgress = interface_map.ownerFromField(Self, ivsteditcontroller.IProgress, "progress");
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
                 .{ .iid = &ivsteditcontroller.icomponent_handler_iid, .ptr = &self.handler },
                 .{ .iid = &ivsteditcontroller.iprogress_iid, .ptr = &self.progress },
             };
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.iprogress_iid)) {
+            if (interface_map.matches(requested_iid, &ivsteditcontroller.iprogress_iid)) {
                 return interface_map.queryWithAddRef(&self.progress, addRefFromProgress, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromProgress(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromProgress(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.progress },
@@ -904,7 +906,9 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             return result;
         }
 
-        fn start(ptr: *anyopaque, progress_type: types.uint32, description: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
+        fn start(ptr: *anyopaque, progress_type: types.uint32, description: ?[*]const types.char16, out_raw: [*c]ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *ivsteditcontroller.ProgressID = @ptrCast(out_raw);
             if (!progressTypeIsValid(progress_type)) {
                 out.* = 0;
                 return types.kInvalidArgument;
@@ -1027,7 +1031,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         const ownerFromUnit = interface_map.ownerFromField(Self, ivstunits.IUnitHandler, "unit_handler");
         const ownerFromUnit2 = interface_map.ownerFromField(Self, ivstunits.IUnitHandler2, "unit_handler2");
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
@@ -1035,16 +1039,16 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
                 .{ .iid = &ivstunits.iunit_handler_iid, .ptr = &self.unit_handler },
                 .{ .iid = &ivstunits.iunit_handler2_iid, .ptr = &self.unit_handler2 },
             };
-            if (std.mem.eql(u8, requested_iid, &ivstunits.iunit_handler_iid)) {
+            if (interface_map.matches(requested_iid, &ivstunits.iunit_handler_iid)) {
                 return interface_map.queryWithAddRef(&self.unit_handler, addRefFromUnit, &entries, requested_iid, out);
             }
-            if (std.mem.eql(u8, requested_iid, &ivstunits.iunit_handler2_iid)) {
+            if (interface_map.matches(requested_iid, &ivstunits.iunit_handler2_iid)) {
                 return interface_map.queryWithAddRef(&self.unit_handler2, addRefFromUnit2, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromUnit(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromUnit(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.unit_handler },
@@ -1053,7 +1057,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.unit_handler, addRefFromUnit, &entries, requested_iid, out);
         }
 
-        fn queryFromUnit2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromUnit2(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromUnit2(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.unit_handler2 },
@@ -1302,6 +1306,34 @@ test "component handler 2 clears unsupported query outputs from both interfaces"
     try std.testing.expectEqual(@as(types.uint32, 0), handler.handler2_add_ref_count);
 }
 
+test "component handler 2 rejects null query arguments" {
+    const Handler = ComponentHandler2(struct {});
+    var handler = Handler{};
+    var out: ?*anyopaque = handler.asHandler();
+
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        handler.asHandler().vtable.queryInterface(
+            handler.asHandler(),
+            null,
+            &out,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(?*anyopaque, @ptrCast(handler.asHandler())),
+        out,
+    );
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        handler.asHandler().vtable.queryInterface(
+            handler.asHandler(),
+            &funknown.iid,
+            null,
+        ),
+    );
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.handler2_add_ref_count);
+}
+
 test "component handler secondary interfaces expose their own unknown identity" {
     const Handler2 = ComponentHandler2(struct {});
     const Handler3 = ComponentHandler3(struct {});
@@ -1445,6 +1477,7 @@ test "component handler exposes bus activation and system time extensions" {
     try std.testing.expectEqual(@as(types.uint32, 0), handler.bus_activation_count);
     try std.testing.expectEqual(types.kResultOk, bus.vtable.requestBusActivation(bus, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 2, 1));
     var value: types.int64 = 0;
+    try std.testing.expectEqual(types.kInvalidArgument, time.vtable.getSystemTime(time, null));
     try std.testing.expectEqual(types.kResultOk, time.vtable.getSystemTime(time, &value));
     try std.testing.expectEqual(@as(types.int64, 12345), value);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.bus_activation_count);
@@ -1547,6 +1580,7 @@ test "component handler exposes progress callbacks" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.progress_add_ref_count);
 
     var progress_id: ivsteditcontroller.ProgressID = 0;
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.start(progress, @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, null));
     try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.start(progress, 99, null, &progress_id));
     try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 0), progress_id);
     try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.update(progress, 77, -0.1));

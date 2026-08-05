@@ -41,7 +41,7 @@ pub const VirtualKeyCode = struct {
 };
 
 pub const IPlugViewVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     isPlatformTypeSupported: *const fn (*anyopaque, ?base_types.FIDString) callconv(.c) base_types.tresult,
@@ -50,12 +50,12 @@ pub const IPlugViewVTable = extern struct {
     onWheel: *const fn (*anyopaque, f32) callconv(.c) base_types.tresult,
     onKeyDown: *const fn (*anyopaque, base_types.char16, base_types.int16, base_types.int16) callconv(.c) base_types.tresult,
     onKeyUp: *const fn (*anyopaque, base_types.char16, base_types.int16, base_types.int16) callconv(.c) base_types.tresult,
-    getSize: *const fn (*anyopaque, *ViewRect) callconv(.c) base_types.tresult,
-    onSize: *const fn (*anyopaque, *ViewRect) callconv(.c) base_types.tresult,
+    getSize: *const fn (*anyopaque, [*c]ViewRect) callconv(.c) base_types.tresult,
+    onSize: *const fn (*anyopaque, [*c]ViewRect) callconv(.c) base_types.tresult,
     onFocus: *const fn (*anyopaque, base_types.TBool) callconv(.c) base_types.tresult,
     setFrame: *const fn (*anyopaque, ?*IPlugFrame) callconv(.c) base_types.tresult,
     canResize: *const fn (*anyopaque) callconv(.c) base_types.tresult,
-    checkSizeConstraint: *const fn (*anyopaque, *ViewRect) callconv(.c) base_types.tresult,
+    checkSizeConstraint: *const fn (*anyopaque, [*c]ViewRect) callconv(.c) base_types.tresult,
 };
 
 pub const IPlugView = extern struct {
@@ -63,10 +63,10 @@ pub const IPlugView = extern struct {
 };
 
 pub const IPlugFrameVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    resizeView: *const fn (*anyopaque, ?*IPlugView, *ViewRect) callconv(.c) base_types.tresult,
+    resizeView: *const fn (*anyopaque, ?*IPlugView, [*c]ViewRect) callconv(.c) base_types.tresult,
 };
 
 pub const IPlugFrame = extern struct {
@@ -78,7 +78,7 @@ pub const Linux = struct {
     pub const FileDescriptor = c_int;
 
     pub const IEventHandlerVTable = extern struct {
-        queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+        queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
         addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
         release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
         onFDIsSet: *const fn (*anyopaque, FileDescriptor) callconv(.c) void,
@@ -89,7 +89,7 @@ pub const Linux = struct {
     };
 
     pub const ITimerHandlerVTable = extern struct {
-        queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+        queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
         addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
         release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
         onTimer: *const fn (*anyopaque) callconv(.c) void,
@@ -100,7 +100,7 @@ pub const Linux = struct {
     };
 
     pub const IRunLoopVTable = extern struct {
-        queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+        queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
         addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
         release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
         registerEventHandler: *const fn (*anyopaque, ?*IEventHandler, FileDescriptor) callconv(.c) base_types.tresult,

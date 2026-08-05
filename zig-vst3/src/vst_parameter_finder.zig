@@ -26,7 +26,7 @@ pub fn ParameterFinder(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstplugview.IParameterFinder, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstplugview.iparameter_finder_iid, .ptr = ptr },
@@ -42,7 +42,9 @@ pub fn ParameterFinder(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IParameterFinder");
         }
 
-        fn findParameter(_: *anyopaque, x: types.int32, y: types.int32, out: *vsttypes.ParamID) callconv(.c) types.tresult {
+        fn findParameter(_: *anyopaque, x: types.int32, y: types.int32, out_raw: [*c]vsttypes.ParamID) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *vsttypes.ParamID = @ptrCast(out_raw);
             if (@hasDecl(Config, "findParameter")) {
                 if (Config.findParameter(x, y)) |id| {
                     out.* = id;
@@ -74,7 +76,7 @@ pub fn ParameterFunctionName(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstparameterfunctionname.IParameterFunctionName, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstparameterfunctionname.iparameter_function_name_iid, .ptr = ptr },
@@ -90,7 +92,9 @@ pub fn ParameterFunctionName(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IParameterFunctionName");
         }
 
-        fn getParameterIDFromFunctionName(_: *anyopaque, unit_id: vsttypes.UnitID, function_name: ?types.FIDString, out: *vsttypes.ParamID) callconv(.c) types.tresult {
+        fn getParameterIDFromFunctionName(_: *anyopaque, unit_id: vsttypes.UnitID, function_name: ?types.FIDString, out_raw: [*c]vsttypes.ParamID) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *vsttypes.ParamID = @ptrCast(out_raw);
             const name = function_name orelse return failParamIdWithResult(out, types.kInvalidArgument);
             if (@hasDecl(Config, "getParameterIDFromFunctionName")) {
                 if (Config.getParameterIDFromFunctionName(unit_id, name)) |id| {
@@ -128,7 +132,7 @@ pub fn RemapParamID(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstremapparamid.IRemapParamID, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstremapparamid.iremap_param_id_iid, .ptr = ptr },
@@ -144,7 +148,10 @@ pub fn RemapParamID(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IRemapParamID");
         }
 
-        fn getCompatibleParamID(_: *anyopaque, class_id: *const tuid.TUID, old_param_id: vsttypes.ParamID, out: *vsttypes.ParamID) callconv(.c) types.tresult {
+        fn getCompatibleParamID(_: *anyopaque, class_id_raw: [*c]const tuid.TUID, old_param_id: vsttypes.ParamID, out_raw: [*c]vsttypes.ParamID) callconv(.c) types.tresult {
+            if (class_id_raw == null or out_raw == null) return types.kInvalidArgument;
+            const class_id: *const tuid.TUID = @ptrCast(class_id_raw);
+            const out: *vsttypes.ParamID = @ptrCast(out_raw);
             if (@hasDecl(Config, "getCompatibleParamID")) {
                 if (Config.getCompatibleParamID(class_id, old_param_id)) |id| {
                     out.* = id;
@@ -175,6 +182,7 @@ test "parameter finder maps coordinates to parameter ids" {
     const iface = finder.asInterface();
 
     var found: vsttypes.ParamID = 0;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.findParameter(iface, 12, 6, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.findParameter(iface, 12, 6, &found));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 42), found);
 
@@ -223,6 +231,7 @@ test "parameter function name maps known host function names" {
     const iface = functions.asInterface();
     var found: vsttypes.ParamID = 0;
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getParameterIDFromFunctionName(iface, 2, ivstparameterfunctionname.FunctionNameType.kDryWetMix, null));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getParameterIDFromFunctionName(iface, 2, null, &found));
     try std.testing.expectEqual(vsttypes.kNoParamId, found);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getParameterIDFromFunctionName(iface, 2, ivstparameterfunctionname.FunctionNameType.kDryWetMix, &found));
@@ -248,6 +257,9 @@ test "remap param ID returns no-param without a config hook" {
     const iface = remap.asInterface();
     var found: vsttypes.ParamID = 123;
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getCompatibleParamID(iface, null, 1, &found));
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 123), found);
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getCompatibleParamID(iface, &funknown.iid, 1, null));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getCompatibleParamID(iface, &funknown.iid, 1, &found));
     try std.testing.expectEqual(vsttypes.kNoParamId, found);
 }
