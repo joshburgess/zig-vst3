@@ -33,7 +33,7 @@ pub fn Decoder(
         config: Config,
         low_decoder: MatrixDecoder,
         high_decoder: MatrixDecoder,
-        crossovers: [maximum_inputs]Crossover = undefined,
+        crossovers: [maximum_inputs]Crossover,
 
         pub fn init(
             blocks: []const adm_xml.BlockFormat,
@@ -52,17 +52,16 @@ pub fn Decoder(
                 output_count,
                 high_output_major_coefficients,
             );
-            var result = Self{
+            const crossover = try Crossover.init(.{
+                .sample_rate = config.sample_rate,
+                .frequency_hz = config.crossover_hz,
+            });
+            const result = Self{
                 .config = config,
                 .low_decoder = low_decoder,
                 .high_decoder = high_decoder,
+                .crossovers = @splat(crossover),
             };
-            for (result.crossovers[0..blocks.len]) |*crossover| {
-                crossover.* = try Crossover.init(.{
-                    .sample_rate = config.sample_rate,
-                    .frequency_hz = config.crossover_hz,
-                });
-            }
             if (!result.valid())
                 return error.InvalidAdmHoaDualBandDecoder;
             return result;
@@ -314,7 +313,7 @@ fn testBlocks() ![2]adm_xml.BlockFormat {
 
 test "dual-band HOA routes low and high frequencies independently" {
     const blocks = try testBlocks();
-    const DualBand = Decoder(f64, 2, 2);
+    const DualBand = Decoder(f64, 3, 2);
     var decoder = try DualBand.init(
         blocks[0..1],
         2,
@@ -325,6 +324,17 @@ test "dual-band HOA routes low and high frequencies independently" {
             .crossover_hz = 1_000.0,
         },
     );
+    for (decoder.crossovers) |crossover| {
+        try std.testing.expect(crossover.valid());
+        try std.testing.expectEqual(
+            decoder.config.sample_rate,
+            crossover.config.sample_rate,
+        );
+        try std.testing.expectEqual(
+            decoder.config.crossover_hz,
+            crossover.config.frequency_hz,
+        );
+    }
 
     var low_energy: f64 = 0.0;
     var low_leakage: f64 = 0.0;

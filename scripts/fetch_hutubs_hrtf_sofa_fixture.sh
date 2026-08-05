@@ -20,10 +20,28 @@ if test -e "$destination"; then
     exit 0
 fi
 
-partial=${destination}.partial
-trap 'rm -f "$partial"' EXIT HUP INT TERM
+partial=$(mktemp "${destination}.partial.XXXXXX")
+cleanup() {
+    if [ -n "$partial" ]; then
+        rm -f -- "$partial"
+    fi
+}
+on_hup() {
+    exit 129
+}
+on_int() {
+    exit 130
+}
+on_term() {
+    exit 143
+}
+trap cleanup EXIT
+trap on_hup HUP
+trap on_int INT
+trap on_term TERM
 curl -fL --proto '=https' --tlsv1.2 --retry 3 --retry-all-errors \
     -o "$partial" "$fixture_url"
 verify_fixture "$partial"
-mv "$partial" "$destination"
+mv -- "$partial" "$destination"
+partial=
 trap - EXIT HUP INT TERM

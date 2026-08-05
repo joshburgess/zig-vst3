@@ -6,14 +6,14 @@ pub const maximum_regions: usize = 256;
 const region_tolerance: f64 = 1.0e-9;
 
 pub const Vector = struct {
-    x: f64,
-    y: f64,
-    z: f64,
+    x: f64 = 0.0,
+    y: f64 = 0.0,
+    z: f64 = 0.0,
 };
 
 pub const PolarPosition = struct {
-    azimuth_degrees: f64,
-    elevation_degrees: f64,
+    azimuth_degrees: f64 = 0.0,
+    elevation_degrees: f64 = 0.0,
 };
 
 pub const Speaker = struct {
@@ -24,18 +24,18 @@ pub const Speaker = struct {
 };
 
 const RegionGains = struct {
-    count: u8,
+    count: u8 = 0,
     values: [4]f64 = @splat(0.0),
 };
 
 const Region = struct {
-    count: u8,
-    vertices: [4]u8,
+    count: u8 = 0,
+    vertices: [4]u8 = @splat(0),
 };
 
 const Vertex = struct {
-    position: Vector,
-    output_gains: [maximum_outputs]f64,
+    position: Vector = .{},
+    output_gains: [maximum_outputs]f64 = @splat(0.0),
 };
 
 const PannerMode = enum {
@@ -50,15 +50,15 @@ pub fn Panner(comptime Sample: type) type {
     return struct {
         const Self = @This();
 
-        mode: PannerMode,
-        output_count: usize,
-        panner_output_count: usize,
-        stereo_outputs: [2]u8,
-        vertex_count: usize,
-        region_count: usize,
-        vertices: [maximum_vertices]Vertex = undefined,
-        nominal_positions: [maximum_vertices]Vector = undefined,
-        regions: [maximum_regions]Region = undefined,
+        mode: PannerMode = .generic,
+        output_count: usize = 0,
+        panner_output_count: usize = 0,
+        stereo_outputs: [2]u8 = @splat(0),
+        vertex_count: usize = 0,
+        region_count: usize = 0,
+        vertices: [maximum_vertices]Vertex = @splat(.{}),
+        nominal_positions: [maximum_vertices]Vector = @splat(.{}),
+        regions: [maximum_regions]Region = @splat(.{}),
 
         pub fn init(
             output_count: usize,
@@ -1425,6 +1425,19 @@ test "generic polar panner builds and solves quadrilateral facets" {
         has_quad = has_quad or region.count == 4;
     }
     try std.testing.expect(has_quad);
+    for (panner.vertices[panner.vertex_count..]) |vertex| {
+        try std.testing.expectEqualDeep(Vector{}, vertex.position);
+        try std.testing.expectEqual(
+            @as([maximum_outputs]f64, @splat(0.0)),
+            vertex.output_gains,
+        );
+    }
+    for (panner.nominal_positions[panner.vertex_count..]) |position|
+        try std.testing.expectEqualDeep(Vector{}, position);
+    for (panner.regions[panner.region_count..]) |region| {
+        try std.testing.expectEqual(@as(u8, 0), region.count);
+        try std.testing.expectEqual(@as([4]u8, @splat(0)), region.vertices);
+    }
 
     var gains: [speakers.len]f64 = undefined;
     try panner.calculateGains(

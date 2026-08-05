@@ -69,8 +69,8 @@ pub fn LoudspeakerMatrix(
         screen_reference: bool,
         order_weighting: OrderWeighting,
         condition_number: f64,
-        orders: [maximum_inputs]u8 = undefined,
-        degrees: [maximum_inputs]i8 = undefined,
+        orders: [maximum_inputs]u8 = @splat(0),
+        degrees: [maximum_inputs]i8 = @splat(0),
         lfe_outputs: [maximum_outputs]bool = @splat(false),
         coefficients: [maximum_inputs * maximum_outputs]Sample =
             @splat(0.0),
@@ -963,8 +963,10 @@ test "HOA loudspeaker matrix applies explicit screen reference policy" {
         .{ .azimuth_degrees = 0.0, .elevation_degrees = 45.0 },
         .{ .azimuth_degrees = 180.0, .elevation_degrees = -45.0 },
     };
-    const Matrix = LoudspeakerMatrix(f64, 2, 2);
+    const Matrix = LoudspeakerMatrix(f64, 3, 2);
     const ordinary = try Matrix.init(&blocks, &loudspeakers, .{});
+    try std.testing.expectEqual(@as(u8, 0), ordinary.orders[2]);
+    try std.testing.expectEqual(@as(i8, 0), ordinary.degrees[2]);
 
     blocks[0].screen_ref = true;
     blocks[1].screen_ref = true;

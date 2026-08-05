@@ -92,6 +92,7 @@ pub fn databaseFromDecodedInto(
         .azimuth_degrees = 0.0,
         .elevation_degrees = 0.0,
     });
+    var distances_metres: [maximum_measurements]f64 = @splat(1.0);
     for (0..decoded.measurement_count) |measurement_index| {
         const position =
             decoded.source_positions[measurement_index * 3 ..][0..3];
@@ -99,7 +100,7 @@ pub fn databaseFromDecodedInto(
             if (!std.math.isFinite(value))
                 return error.InvalidSofaPosition;
         }
-        directions[measurement_index] = switch (decoded.position_encoding) {
+        const measurement_position = switch (decoded.position_encoding) {
             .spherical_degrees => blk: {
                 if (position[2] <= 0.0 or
                     position[0] < -180.0 or
@@ -111,13 +112,15 @@ pub fn databaseFromDecodedInto(
                     position[0] - 360.0
                 else
                     position[0];
-                const direction = hrtf.Direction{
-                    .azimuth_degrees = azimuth,
-                    .elevation_degrees = position[1],
+                break :blk hrtf.MeasurementPosition{
+                    .direction = .{
+                        .azimuth_degrees = azimuth,
+                        .elevation_degrees = position[1],
+                    },
+                    .distance_metres = position[2],
                 };
-                break :blk direction;
             },
-            .cartesian_metres => hrtf.directionFromPositions(
+            .cartesian_metres => hrtf.measurementFromPositions(
                 .{
                     .x = position[0],
                     .y = position[1],
@@ -128,6 +131,9 @@ pub fn databaseFromDecodedInto(
                 },
             ) catch return error.InvalidSofaPosition,
         };
+        directions[measurement_index] = measurement_position.direction;
+        distances_metres[measurement_index] =
+            measurement_position.distance_metres;
     }
 
     for (decoded.responses_measurement_ear_frame) |value| {
@@ -171,10 +177,11 @@ pub fn databaseFromDecodedInto(
     return hrtf.Database(
         maximum_measurements,
         maximum_frames,
-    ).initWithDelaysInto(
+    ).initWithDistancesAndDelaysInto(
         destination,
         first_rate,
         directions[0..decoded.measurement_count],
+        distances_metres[0..decoded.measurement_count],
         interleaved,
         decoded.delays_measurement_ear,
     );
@@ -223,6 +230,15 @@ fn terminatedPath(
     return allocator.dupeZ(u8, path);
 }
 
+fn terminatedRuntimePath(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+) ![:0]u8 {
+    if (path.len == 0 or std.mem.indexOfScalar(u8, path, 0) != null)
+        return error.InvalidSofaRuntimePath;
+    return allocator.dupeZ(u8, path);
+}
+
 pub fn Loader(
     comptime maximum_measurements: usize,
     comptime maximum_frames: usize,
@@ -232,8 +248,20 @@ pub fn Loader(
         const DatabaseType =
             hrtf.Database(maximum_measurements, maximum_frames);
 
-        library: DynamicLibrary,
-        api: Api,
+        library: ?DynamicLibrary,
+        api: ?Api,
+
+        pub fn openRuntime(
+            allocator: std.mem.Allocator,
+            path: []const u8,
+        ) !Self {
+            const terminated_path = try terminatedRuntimePath(
+                allocator,
+                path,
+            );
+            defer allocator.free(terminated_path);
+            return openTerminated(terminated_path);
+        }
 
         pub fn openDefault() !Self {
             const names = switch (builtin.os.tag) {
@@ -242,29 +270,45 @@ pub fn Loader(
                     "netcdf-19.dll",
                 },
                 .macos => &[_][:0]const u8{
+                    "libnetcdf.22.dylib",
+                    "libnetcdf.21.dylib",
+                    "libnetcdf.20.dylib",
                     "libnetcdf.19.dylib",
                     "libnetcdf.dylib",
+                    "/opt/homebrew/opt/netcdf/lib/libnetcdf.dylib",
+                    "/usr/local/opt/netcdf/lib/libnetcdf.dylib",
+                    "/opt/local/lib/libnetcdf.dylib",
                 },
                 else => &[_][:0]const u8{
+                    "libnetcdf.so.22",
+                    "libnetcdf.so.21",
+                    "libnetcdf.so.20",
                     "libnetcdf.so.19",
                     "libnetcdf.so",
                 },
             };
             for (names) |name| {
-                var library =
-                    DynamicLibrary.open(name) catch continue;
-                const api = Api.load(&library) catch {
-                    library.close();
-                    continue;
-                };
-                return .{ .library = library, .api = api };
+                return openTerminated(name) catch continue;
             }
             return error.SofaRuntimeUnavailable;
         }
 
+        fn openTerminated(path: [:0]const u8) !Self {
+            var library = DynamicLibrary.open(path) catch
+                return error.SofaRuntimeUnavailable;
+            errdefer library.close();
+            const api = try Api.load(&library);
+            return .{ .library = library, .api = api };
+        }
+
         pub fn deinit(self: *Self) void {
-            self.library.close();
-            self.* = undefined;
+            self.api = null;
+            if (self.library) |*library| library.close();
+            self.library = null;
+        }
+
+        pub fn isOpen(self: *const Self) bool {
+            return self.library != null and self.api != null;
         }
 
         pub fn loadFile(
@@ -287,44 +331,46 @@ pub fn Loader(
             path: []const u8,
             destination: *DatabaseType,
         ) !void {
+            if (self.library == null) return error.SofaLoaderClosed;
+            const api = self.api orelse return error.SofaLoaderClosed;
             const terminated_path = try terminatedPath(allocator, path);
             defer allocator.free(terminated_path);
 
             var file_id: c_int = 0;
-            try check(self.api.open(
+            try check(api.open(
                 terminated_path.ptr,
                 nc_nowrite,
                 &file_id,
             ));
-            defer _ = self.api.close(file_id);
+            defer _ = api.close(file_id);
 
             try requireAttribute(
-                &self.api,
+                &api,
                 file_id,
                 nc_global,
                 "Conventions",
                 "SOFA",
             );
             try requireContainerConventionVersions(
-                &self.api,
+                &api,
                 file_id,
             );
             try requireAttribute(
-                &self.api,
+                &api,
                 file_id,
                 nc_global,
                 "SOFAConventions",
                 "SimpleFreeFieldHRIR",
             );
             try requireAttribute(
-                &self.api,
+                &api,
                 file_id,
                 nc_global,
                 "DataType",
                 "FIR",
             );
             try requireAttribute(
-                &self.api,
+                &api,
                 file_id,
                 nc_global,
                 "RoomType",
@@ -336,7 +382,7 @@ pub fn Loader(
             ) catch return error.SofaDatasetTooLarge;
 
             const ir = try readVariable(
-                &self.api,
+                &api,
                 allocator,
                 file_id,
                 "Data.IR",
@@ -361,7 +407,7 @@ pub fn Loader(
             ) catch return error.SofaDatasetTooLarge;
 
             const positions = try readVariable(
-                &self.api,
+                &api,
                 allocator,
                 file_id,
                 "SourcePosition",
@@ -384,7 +430,7 @@ pub fn Loader(
                 ) != null)
                 return error.InvalidSofaPositionShape;
             try requireDefaultListenerGeometry(
-                &self.api,
+                &api,
                 allocator,
                 file_id,
                 ir.shape[0],
@@ -393,7 +439,7 @@ pub fn Loader(
                 positions.dimension_ids[1],
             );
             try requireDefaultEmitterGeometry(
-                &self.api,
+                &api,
                 allocator,
                 file_id,
                 ir.shape[0],
@@ -401,13 +447,13 @@ pub fn Loader(
                 positions.dimension_ids[1],
             );
             const position_encoding = try positionEncoding(
-                &self.api,
+                &api,
                 file_id,
                 positions.variable_id,
             );
 
             const rates = try readVariable(
-                &self.api,
+                &api,
                 allocator,
                 file_id,
                 "Data.SamplingRate",
@@ -424,7 +470,7 @@ pub fn Loader(
                 ))
                 return error.InvalidSofaSamplingRateShape;
             try requireAttribute(
-                &self.api,
+                &api,
                 file_id,
                 rates.variable_id,
                 "Units",
@@ -433,13 +479,13 @@ pub fn Loader(
 
             var delays: []f64 = &.{};
             var delay_variable_id: c_int = 0;
-            if (self.api.inquire_variable_id(
+            if (api.inquire_variable_id(
                 file_id,
                 "Data.Delay",
                 &delay_variable_id,
             ) == nc_no_error) {
                 const loaded = try readVariableById(
-                    &self.api,
+                    &api,
                     allocator,
                     file_id,
                     delay_variable_id,
@@ -498,7 +544,7 @@ else
 const WindowsDynamicLibrary = struct {
     const windows = std.os.windows;
 
-    handle: windows.HMODULE,
+    handle: ?windows.HMODULE,
 
     fn open(name: [:0]const u8) !WindowsDynamicLibrary {
         return .{
@@ -508,8 +554,9 @@ const WindowsDynamicLibrary = struct {
     }
 
     fn close(self: *WindowsDynamicLibrary) void {
-        _ = FreeLibrary(self.handle);
-        self.* = undefined;
+        const handle = self.handle orelse return;
+        _ = FreeLibrary(handle);
+        self.handle = null;
     }
 
     fn lookup(
@@ -517,8 +564,9 @@ const WindowsDynamicLibrary = struct {
         comptime T: type,
         name: [:0]const u8,
     ) ?T {
+        const handle = self.handle orelse return null;
         const procedure =
-            GetProcAddress(self.handle, name.ptr) orelse return null;
+            GetProcAddress(handle, name.ptr) orelse return null;
         return @ptrCast(procedure);
     }
 
@@ -1193,6 +1241,11 @@ test "decoded standard HRTF dataset converts layout and positions" {
         database.directions[1].azimuth_degrees,
         0.000_001,
     );
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ 1.0, 1.0 },
+        database.distances_metres[0..2],
+    );
     var output: [6]f32 = undefined;
     try database.interpolate(
         database.directions[0],
@@ -1202,6 +1255,51 @@ test "decoded standard HRTF dataset converts layout and positions" {
     try std.testing.expectEqualDeep(
         [_]f32{ 1.0, 0.25, 0.5, 0.125, 0.0, 0.0 },
         output,
+    );
+}
+
+test "decoded standard HRTF dataset preserves measurement radii" {
+    const decoded = DecodedDataset{
+        .measurement_count = 2,
+        .response_frame_count = 1,
+        .sampling_rates = &.{48_000.0},
+        .source_positions = &.{
+            0.0, 0.0, 0.5,
+            0.0, 0.0, 1.5,
+        },
+        .position_encoding = .spherical_degrees,
+        .responses_measurement_ear_frame = &.{ 1.0, 2.0, 3.0, 4.0 },
+    };
+    const database = try databaseFromDecoded(
+        2,
+        1,
+        std.testing.allocator,
+        decoded,
+    );
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ 0.5, 1.5 },
+        database.distances_metres[0..2],
+    );
+    var output: [2]f32 = undefined;
+    try database.interpolateAt(
+        .{
+            .direction = database.directions[0],
+            .distance_metres = 1.0,
+        },
+        .inverse_distance,
+        &output,
+    );
+    try std.testing.expectEqualDeep([_]f32{ 2.0, 3.0 }, output);
+
+    var duplicate = decoded;
+    duplicate.source_positions = &.{
+        0.0, 0.0, 0.5,
+        0.0, 0.0, 0.5,
+    };
+    try std.testing.expectError(
+        error.DuplicateHrtfDirection,
+        databaseFromDecoded(2, 1, std.testing.allocator, duplicate),
     );
 }
 
@@ -1611,6 +1709,97 @@ test "standard HRTF loader rejects ambiguous paths" {
     );
     defer std.testing.allocator.free(path);
     try std.testing.expectEqualStrings("fixture.sofa", path);
+
+    const TestLoader = Loader(1, 1);
+    try std.testing.expectError(
+        error.InvalidSofaRuntimePath,
+        TestLoader.openRuntime(std.testing.allocator, ""),
+    );
+    try std.testing.expectError(
+        error.InvalidSofaRuntimePath,
+        TestLoader.openRuntime(
+            std.testing.allocator,
+            "libnetcdf.so\x00ignored",
+        ),
+    );
+    var runtime_failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.OutOfMemory,
+        TestLoader.openRuntime(
+            runtime_failing.allocator(),
+            "libnetcdf.so",
+        ),
+    );
+    try std.testing.expectError(
+        error.SofaRuntimeUnavailable,
+        TestLoader.openRuntime(
+            std.testing.allocator,
+            "/zig-vst3/missing/libnetcdf",
+        ),
+    );
+}
+
+test "standard HRTF loader contains closed ownership state" {
+    const TestLoader = Loader(1, 1);
+    var loader = TestLoader{
+        .library = null,
+        .api = null,
+    };
+    try std.testing.expect(!loader.isOpen());
+    loader.deinit();
+    loader.deinit();
+
+    const DatabaseType = hrtf.Database(1, 1);
+    var destination = try DatabaseType.init(
+        48_000,
+        &.{.{
+            .azimuth_degrees = 0.0,
+            .elevation_degrees = 0.0,
+        }},
+        &.{ 0.25, -0.25 },
+    );
+    const before = destination;
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.SofaLoaderClosed,
+        loader.loadFileInto(
+            failing.allocator(),
+            "fixture.sofa",
+            &destination,
+        ),
+    );
+    try std.testing.expectEqualDeep(before, destination);
+    try std.testing.expectError(
+        error.SofaLoaderClosed,
+        loader.loadFile(std.testing.allocator, "fixture.sofa"),
+    );
+}
+
+fn openPublicTestLoader(
+    comptime maximum_measurements: usize,
+    comptime maximum_frames: usize,
+) !Loader(maximum_measurements, maximum_frames) {
+    const runtime_path = std.testing.environ.getAlloc(
+        std.testing.allocator,
+        "ZIG_VST3_NETCDF_TEST_LIBRARY",
+    ) catch |load_error| switch (load_error) {
+        error.EnvironmentVariableMissing => return Loader(
+            maximum_measurements,
+            maximum_frames,
+        ).openDefault(),
+        else => return load_error,
+    };
+    defer std.testing.allocator.free(runtime_path);
+    return Loader(
+        maximum_measurements,
+        maximum_frames,
+    ).openRuntime(std.testing.allocator, runtime_path);
 }
 
 test "standard HRTF loader reads a CC BY public fixture" {
@@ -1623,8 +1812,7 @@ test "standard HRTF loader reads a CC BY public fixture" {
     };
     defer std.testing.allocator.free(path);
 
-    const PublicLoader = Loader(1_513, 128);
-    var loader = try PublicLoader.openDefault();
+    var loader = try openPublicTestLoader(1_513, 128);
     defer loader.deinit();
     const database = try std.testing.allocator.create(
         hrtf.Database(1_513, 128),
@@ -1865,6 +2053,9 @@ test "standard HRTF loader reads a CC BY public fixture" {
         interpolated_output[1],
         render_tolerance,
     );
+    loader.deinit();
+    try std.testing.expect(!loader.isOpen());
+    loader.deinit();
 }
 
 test "standard HRTF loader reads an independent CC BY fixture" {
@@ -1877,8 +2068,7 @@ test "standard HRTF loader reads an independent CC BY fixture" {
     };
     defer std.testing.allocator.free(path);
 
-    const PublicLoader = Loader(440, 256);
-    var loader = try PublicLoader.openDefault();
+    var loader = try openPublicTestLoader(440, 256);
     defer loader.deinit();
     const database = try std.testing.allocator.create(
         hrtf.Database(440, 256),

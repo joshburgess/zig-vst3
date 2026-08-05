@@ -25,11 +25,13 @@ pub fn MatrixDecoder(
 
         input_count: usize,
         output_count: usize,
+        declared_input_count: usize,
+        declared_output_count: usize,
         normalization: adm_xml.HoaNormalization,
         nfc_reference_distance: f64,
         screen_reference: bool,
-        orders: [maximum_inputs]u8 = undefined,
-        degrees: [maximum_inputs]i8 = undefined,
+        orders: [maximum_inputs]u8 = @splat(0),
+        degrees: [maximum_inputs]i8 = @splat(0),
         coefficients: [maximum_outputs][maximum_inputs]Sample =
             @splat(@splat(0.0)),
 
@@ -63,6 +65,8 @@ pub fn MatrixDecoder(
             var result = Self{
                 .input_count = blocks.len,
                 .output_count = output_count,
+                .declared_input_count = blocks.len,
+                .declared_output_count = output_count,
                 .normalization = first.hoa_normalization,
                 .nfc_reference_distance = first.hoa_nfc_reference_distance,
                 .screen_reference = first.screen_ref,
@@ -203,8 +207,10 @@ pub fn MatrixDecoder(
         pub fn valid(self: *const Self) bool {
             if (self.input_count == 0 or
                 self.input_count > maximum_inputs or
+                self.input_count != self.declared_input_count or
                 self.output_count == 0 or
                 self.output_count > maximum_outputs or
+                self.output_count != self.declared_output_count or
                 !std.math.isFinite(self.nfc_reference_distance) or
                 self.nfc_reference_distance < 0.0)
             {
@@ -363,6 +369,8 @@ test "HOA matrix decoder validates components and decodes blocks" {
     try std.testing.expectEqual(adm_xml.HoaNormalization.sn3d, decoder.normalization);
     try std.testing.expectEqualDeep([_]u8{ 0, 1 }, decoder.orders[0..2].*);
     try std.testing.expectEqualDeep([_]i8{ 0, -1 }, decoder.degrees[0..2].*);
+    try std.testing.expectEqual([_]u8{ 0, 0 }, decoder.orders[2..4].*);
+    try std.testing.expectEqual([_]i8{ 0, 0 }, decoder.degrees[2..4].*);
 
     const first = [_]f32{ 2.0, 4.0, std.math.nan(f32) };
     const second = [_]f32{ 3.0, -2.0, 8.0 };
@@ -476,4 +484,38 @@ test "HOA matrix decoder rejects inconsistent plans transactionally" {
         decoder.process(&inputs, &outputs),
     );
     try std.testing.expectEqualDeep([_]f64{ 1.0, 2.0 }, aliased);
+
+    const CountBoundDecoder = MatrixDecoder(f64, 3, 2);
+    const count_bound = try CountBoundDecoder.init(
+        blocks[0..1],
+        1,
+        &.{1.0},
+    );
+    for (2..4) |forged_count| {
+        var hostile = count_bound;
+        hostile.input_count = forged_count;
+        const hostile_before = hostile;
+        var retained = [_]f64{ 31.0, 47.0 };
+        try std.testing.expect(!hostile.valid());
+        try std.testing.expectError(
+            error.InvalidAdmHoaDecoderState,
+            hostile.processSample(&.{ 1.0, 2.0 }, retained[0..1]),
+        );
+        try std.testing.expectEqualDeep(hostile_before, hostile);
+        try std.testing.expectEqualDeep([_]f64{ 31.0, 47.0 }, retained);
+    }
+    var hostile_output_count = count_bound;
+    hostile_output_count.output_count = 2;
+    const hostile_output_count_before = hostile_output_count;
+    var retained = [_]f64{ 53.0, 59.0 };
+    try std.testing.expect(!hostile_output_count.valid());
+    try std.testing.expectError(
+        error.InvalidAdmHoaDecoderState,
+        hostile_output_count.processSample(&.{1.0}, &retained),
+    );
+    try std.testing.expectEqualDeep(
+        hostile_output_count_before,
+        hostile_output_count,
+    );
+    try std.testing.expectEqualDeep([_]f64{ 53.0, 59.0 }, retained);
 }

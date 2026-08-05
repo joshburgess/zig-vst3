@@ -181,6 +181,7 @@ pub const View = struct {
     }
 
     pub fn entry(self: View, index: usize) !Entry {
+        try self.validateRetainedBounds();
         if (index >= self.num_uids) return error.AdmTrackUidIndexOutOfRange;
         return decodeEntry(self.entryBytes(index), self.num_tracks);
     }
@@ -189,7 +190,8 @@ pub const View = struct {
         return .{ .view = self };
     }
 
-    fn validate(self: View) !void {
+    pub fn validate(self: View) !void {
+        try self.validateRetainedBounds();
         if (self.num_tracks == 0 and self.num_uids != 0)
             return error.InvalidAdmTrackCount;
 
@@ -226,6 +228,41 @@ pub const View = struct {
         }
     }
 
+    pub fn valid(self: View) bool {
+        self.validate() catch return false;
+        return true;
+    }
+
+    fn validateRetainedBounds(self: View) !void {
+        if (self.bytes.len < 12 or
+            !std.mem.eql(u8, self.bytes[0..4], "chna"))
+        {
+            return error.InvalidAdmChannelAllocation;
+        }
+        const payload_bytes: usize = std.mem.readInt(
+            u32,
+            self.bytes[4..8],
+            .little,
+        );
+        if (payload_bytes < 4 or
+            payload_bytes > std.math.maxInt(usize) - 8 or
+            payload_bytes + 8 != self.bytes.len or
+            (payload_bytes - 4) % audio_id_bytes != 0)
+        {
+            return error.InvalidAdmChannelAllocation;
+        }
+        const capacity_value = (payload_bytes - 4) / audio_id_bytes;
+        if (capacity_value > std.math.maxInt(u16))
+            return error.TooManyAdmTrackUids;
+        if (self.entry_capacity != @as(u16, @intCast(capacity_value)) or
+            self.num_tracks != std.mem.readInt(u16, self.bytes[8..10], .little) or
+            self.num_uids != std.mem.readInt(u16, self.bytes[10..12], .little) or
+            self.num_uids > self.entry_capacity)
+        {
+            return error.InvalidAdmChannelAllocation;
+        }
+    }
+
     fn entryBytes(self: View, index: usize) []const u8 {
         const offset = 12 + index * audio_id_bytes;
         return self.bytes[offset..][0..audio_id_bytes];
@@ -236,7 +273,14 @@ pub const Iterator = struct {
     view: View,
     index: usize = 0,
 
+    pub fn valid(self: Iterator) bool {
+        self.view.validate() catch return false;
+        return self.index <= self.view.num_uids;
+    }
+
     pub fn next(self: *Iterator) !?Entry {
+        if (!self.valid())
+            return error.InvalidAdmChannelAllocationIteratorState;
         if (self.index == self.view.num_uids) return null;
         const result = try self.view.entry(self.index);
         self.index += 1;
@@ -264,6 +308,8 @@ pub fn encode(
     const required = try requiredBytes(allocation);
     if (destination.len < required)
         return error.AdmChannelAllocationOutputTooSmall;
+    const output = destination[0..required];
+    try validateStorageDisjoint(output, allocation);
 
     @memcpy(destination[0..4], "chna");
     std.mem.writeInt(u32, destination[4..8], @intCast(required - 8), .little);
@@ -439,6 +485,44 @@ fn writeEntry(destination: []u8, entry: Entry) void {
     if (entry.pack_ref) |pack_ref| @memcpy(destination[28..39], pack_ref);
 }
 
+fn validateStorageDisjoint(
+    output: []const u8,
+    allocation: ChannelAllocation,
+) !void {
+    if (byteSlicesOverlap(output, allocation.entries))
+        return error.AdmChannelAllocationSourceAliasesOutput;
+    for (allocation.entries) |entry| {
+        if (byteSlicesOverlap(output, entry.uid) or
+            byteSlicesOverlap(output, entry.track_ref) or
+            if (entry.pack_ref) |pack_ref|
+                byteSlicesOverlap(output, pack_ref)
+            else
+                false)
+        {
+            return error.AdmChannelAllocationSourceAliasesOutput;
+        }
+    }
+}
+
+fn byteSlicesOverlap(first: anytype, second: anytype) bool {
+    if (first.len == 0 or second.len == 0) return false;
+    const first_bytes = std.mem.sliceAsBytes(first);
+    const second_bytes = std.mem.sliceAsBytes(second);
+    const first_start = @intFromPtr(first_bytes.ptr);
+    const second_start = @intFromPtr(second_bytes.ptr);
+    const first_end = std.math.add(
+        usize,
+        first_start,
+        first_bytes.len,
+    ) catch return true;
+    const second_end = std.math.add(
+        usize,
+        second_start,
+        second_bytes.len,
+    ) catch return true;
+    return first_start < second_end and second_start < first_end;
+}
+
 fn allZeroBytes(bytes: []const u8) bool {
     for (bytes) |byte| {
         if (byte != 0) return false;
@@ -552,6 +636,38 @@ test "ADM channel allocation encodes the normative stereo layout" {
     try std.testing.expectEqualStrings("ATU_00000002", second.uid);
     try std.testing.expectEqualStrings("AT_00010002_01", second.track_ref);
     try std.testing.expectEqualStrings("AP_00010002", second.pack_ref.?);
+
+    var malformed = view;
+    malformed.num_uids = std.math.maxInt(u16);
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectError(
+        error.InvalidAdmChannelAllocation,
+        malformed.entry(0),
+    );
+    var malformed_iterator = malformed.iterator();
+    try std.testing.expect(!malformed_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidAdmChannelAllocationIteratorState,
+        malformed_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), malformed_iterator.index);
+
+    malformed = view;
+    malformed.bytes = malformed.bytes[0..12];
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectError(
+        error.InvalidAdmChannelAllocation,
+        malformed.entry(0),
+    );
+
+    @memcpy(storage[54..66], storage[14..26]);
+    var duplicate_iterator = view.iterator();
+    try std.testing.expect(!duplicate_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidAdmChannelAllocationIteratorState,
+        duplicate_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), duplicate_iterator.index);
 }
 
 test "ADM channel allocation retains reserved zero entries" {
@@ -632,6 +748,47 @@ test "ADM channel allocation rejects malformed mappings transactionally" {
             }},
         }),
     );
+}
+
+test "ADM channel allocation rejects overlapping borrowed input" {
+    var uid_storage: [52]u8 = @splat(0xa5);
+    @memcpy(uid_storage[0..12], "ATU_00000001");
+    const uid_before = uid_storage;
+    const uid_entries = [_]Entry{.{
+        .track_index = 1,
+        .uid = uid_storage[0..12],
+        .track_ref = "AT_00010001_01",
+        .pack_ref = "AP_00010001",
+    }};
+    try std.testing.expectError(
+        error.AdmChannelAllocationSourceAliasesOutput,
+        encode(&uid_storage, .{
+            .num_tracks = 1,
+            .entries = &uid_entries,
+        }),
+    );
+    try std.testing.expectEqual(uid_before, uid_storage);
+
+    var entry_storage: [64]u8 align(@alignOf(Entry)) = @splat(0x5a);
+    const entries = std.mem.bytesAsSlice(
+        Entry,
+        entry_storage[0..@sizeOf(Entry)],
+    );
+    entries[0] = .{
+        .track_index = 1,
+        .uid = "ATU_00000001",
+        .track_ref = "AT_00010001_01",
+        .pack_ref = "AP_00010001",
+    };
+    const entry_before = entry_storage;
+    try std.testing.expectError(
+        error.AdmChannelAllocationSourceAliasesOutput,
+        encode(&entry_storage, .{
+            .num_tracks = 1,
+            .entries = entries,
+        }),
+    );
+    try std.testing.expectEqual(entry_before, entry_storage);
 }
 
 test "ADM channel allocation parser rejects nonzero reserved bytes" {

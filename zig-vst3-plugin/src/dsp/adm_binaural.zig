@@ -17,19 +17,30 @@ pub fn StereoGainTimeline(
         pub const channel_count: usize = 2;
 
         const Segment = struct {
-            first_sample: u64,
-            interpolation_end_sample: u64,
-            end_sample: u64,
-            start_position: ExactSamplePosition,
-            interpolation_end_position: ExactSamplePosition,
-            end_position: ExactSamplePosition,
-            interpolate_from_previous: bool,
-            target_gain: Sample,
+            first_sample: u64 = 0,
+            interpolation_end_sample: u64 = 0,
+            end_sample: u64 = 0,
+            start_position: ExactSamplePosition = .{
+                .numerator = 0,
+                .denominator = 1,
+            },
+            interpolation_end_position: ExactSamplePosition = .{
+                .numerator = 0,
+                .denominator = 1,
+            },
+            end_position: ExactSamplePosition = .{
+                .numerator = 0,
+                .denominator = 1,
+            },
+            interpolate_from_previous: bool = false,
+            target_gain: Sample = 0.0,
         };
 
-        input_indices: [channel_count]u1,
-        segment_counts: [channel_count]usize,
-        segments: [channel_count][maximum_blocks_per_ear]Segment = undefined,
+        input_indices: [channel_count]u1 = @splat(0),
+        segment_counts: [channel_count]usize = @splat(0),
+        declared_segment_counts: [channel_count]usize = @splat(0),
+        segments: [channel_count][maximum_blocks_per_ear]Segment =
+            @splat(@splat(.{})),
 
         pub fn init(
             input_blocks: []const []const adm_xml.BlockFormat,
@@ -40,10 +51,7 @@ pub fn StereoGainTimeline(
             if (input_blocks.len != channel_count)
                 return error.InvalidAdmBinauralInputCount;
 
-            var result = Self{
-                .input_indices = undefined,
-                .segment_counts = @splat(0),
-            };
+            var result = Self{};
             var ear_seen: [channel_count]bool = @splat(false);
             for (input_blocks, 0..) |blocks, input_index| {
                 if (blocks.len == 0)
@@ -57,6 +65,7 @@ pub fn StereoGainTimeline(
                 ear_seen[ear_index] = true;
                 result.input_indices[ear_index] = @intCast(input_index);
                 result.segment_counts[ear_index] = blocks.len;
+                result.declared_segment_counts[ear_index] = blocks.len;
 
                 const channel = blocks[0].channel_identifier;
                 for (blocks, 0..) |*block, block_index| {
@@ -236,15 +245,13 @@ pub fn StereoGainTimeline(
         }
 
         pub fn blockCount(self: *const Self, ear_index: usize) usize {
-            if (ear_index >= channel_count) return 0;
-            return @min(
-                self.segment_counts[ear_index],
-                maximum_blocks_per_ear,
-            );
+            if (ear_index >= channel_count or !self.valid()) return 0;
+            return self.segment_counts[ear_index];
         }
 
         pub fn totalBlockCount(self: *const Self) usize {
-            return self.blockCount(0) + self.blockCount(1);
+            if (!self.valid()) return 0;
+            return self.segment_counts[0] + self.segment_counts[1];
         }
 
         pub fn valid(self: *const Self) bool {
@@ -252,7 +259,9 @@ pub fn StereoGainTimeline(
                 return false;
             for (0..channel_count) |ear_index| {
                 const count = self.segment_counts[ear_index];
-                if (count == 0 or count > maximum_blocks_per_ear)
+                if (count == 0 or
+                    count > maximum_blocks_per_ear or
+                    count != self.declared_segment_counts[ear_index])
                     return false;
                 for (self.segmentSlice(ear_index), 0..) |segment, index| {
                     if (!std.math.isFinite(segment.target_gain) or
@@ -719,6 +728,14 @@ test "ADM binaural gain timeline is invariant across processing partitions" {
     try std.testing.expect(timeline.valid());
     try std.testing.expectEqual(@as(usize, 5), timeline.totalBlockCount());
     try std.testing.expectEqualDeep([_]u1{ 1, 0 }, timeline.input_indices);
+    for (timeline.segments[1][right_blocks.len..]) |segment| {
+        try std.testing.expectEqual(@as(u64, 0), segment.first_sample);
+        try std.testing.expectEqual(
+            @as(u128, 1),
+            segment.start_position.denominator,
+        );
+        try std.testing.expectEqual(@as(f64, 0.0), segment.target_gain);
+    }
 
     const input: [20]f64 = @splat(1.0);
     const inputs = [_][]const f64{ &input, &input };
@@ -953,7 +970,10 @@ test "ADM binaural gain timeline rejects invalid state transactionally" {
     );
     try std.testing.expectEqualDeep([_]f32{ 7.0, 7.0 }, first);
 
-    timeline.segment_counts[0] = 3;
+    timeline.segment_counts[0] = 1;
+    try std.testing.expect(!timeline.valid());
+    try std.testing.expectEqual(@as(usize, 0), timeline.blockCount(0));
+    try std.testing.expectEqual(@as(usize, 0), timeline.totalBlockCount());
     try std.testing.expectError(
         error.InvalidAdmBinauralTimelineState,
         timeline.process(0, &inputs, &outputs),

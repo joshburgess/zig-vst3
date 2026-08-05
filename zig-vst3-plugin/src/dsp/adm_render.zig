@@ -22,8 +22,8 @@ pub const PolarPosition = struct {
 };
 
 pub const CartesianPosition = struct {
-    x: f64,
-    y: f64,
+    x: f64 = 0.0,
+    y: f64 = 0.0,
     z: f64 = 0.0,
 };
 
@@ -251,8 +251,8 @@ pub fn CartesianPointSourcePanner(comptime Sample: type) type {
 
         output_count: usize,
         panner_output_count: usize,
-        positions: [maximum_output_channels]CartesianPosition = undefined,
-        enabled: [maximum_output_channels]bool = undefined,
+        positions: [maximum_output_channels]CartesianPosition = @splat(.{}),
+        enabled: [maximum_output_channels]bool = @splat(false),
 
         pub fn init(outputs: []const OutputSpeaker) !Self {
             try validateOutputLayout(outputs);
@@ -639,9 +639,10 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
             cartesian_extent: *const CartesianExtentPanner(Sample),
         };
 
-        output_count: usize,
-        direct_gains: [maximum_output_channels]Sample = undefined,
-        diffuse_gains: [maximum_output_channels]Sample = undefined,
+        output_count: usize = 0,
+        declared_output_count: usize = 0,
+        direct_gains: [maximum_output_channels]Sample = @splat(0.0),
+        diffuse_gains: [maximum_output_channels]Sample = @splat(0.0),
 
         pub fn init(
             block: *const adm_xml.BlockFormat,
@@ -942,7 +943,10 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
                 return error.InvalidAdmRendererGain;
             }
 
-            var result = Self{ .output_count = outputs.len };
+            var result = Self{
+                .output_count = outputs.len,
+                .declared_output_count = outputs.len,
+            };
             for (
                 combined[0..outputs.len],
                 result.direct_gains[0..outputs.len],
@@ -963,11 +967,13 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
         }
 
         pub fn directGainSlice(self: *const Self) []const Sample {
-            return self.direct_gains[0..@min(self.output_count, maximum_output_channels)];
+            if (!self.retainedGainsValid()) return &.{};
+            return self.direct_gains[0..self.output_count];
         }
 
         pub fn diffuseGainSlice(self: *const Self) []const Sample {
-            return self.diffuse_gains[0..@min(self.output_count, maximum_output_channels)];
+            if (!self.retainedGainsValid()) return &.{};
+            return self.diffuse_gains[0..self.output_count];
         }
 
         pub fn mix(
@@ -1015,14 +1021,19 @@ pub fn ObjectPointGainPlan(comptime Sample: type) type {
         }
 
         pub fn valid(self: *const Self) bool {
+            return self.retainedGainsValid();
+        }
+
+        fn retainedGainsValid(self: *const Self) bool {
             if (self.output_count == 0 or
-                self.output_count > maximum_output_channels)
+                self.output_count > maximum_output_channels or
+                self.output_count != self.declared_output_count)
             {
                 return false;
             }
             for (
-                self.directGainSlice(),
-                self.diffuseGainSlice(),
+                self.direct_gains[0..self.output_count],
+                self.diffuse_gains[0..self.output_count],
             ) |direct_gain, diffuse_gain| {
                 if (!std.math.isFinite(direct_gain) or
                     !std.math.isFinite(diffuse_gain) or
@@ -1063,19 +1074,30 @@ pub fn ObjectGainTimeline(
             cartesian_extent: *const CartesianExtentPanner(Sample),
         };
         const Segment = struct {
-            first_sample: u64,
-            interpolation_end_sample: u64,
-            end_sample: u64,
-            start_position: ExactSamplePosition,
-            interpolation_end_position: ExactSamplePosition,
-            end_position: ExactSamplePosition,
-            interpolate_from_previous: bool,
-            target: GainPlan,
+            first_sample: u64 = 0,
+            interpolation_end_sample: u64 = 0,
+            end_sample: u64 = 0,
+            start_position: ExactSamplePosition = .{
+                .numerator = 0,
+                .denominator = 1,
+            },
+            interpolation_end_position: ExactSamplePosition = .{
+                .numerator = 0,
+                .denominator = 1,
+            },
+            end_position: ExactSamplePosition = .{
+                .numerator = 0,
+                .denominator = 1,
+            },
+            interpolate_from_previous: bool = false,
+            target: GainPlan = .{},
         };
 
-        output_count: usize,
-        segment_count: usize,
-        segments: [maximum_blocks]Segment = undefined,
+        output_count: usize = 0,
+        segment_count: usize = 0,
+        declared_output_count: usize = 0,
+        declared_segment_count: usize = 0,
+        segments: [maximum_blocks]Segment = @splat(.{}),
 
         pub fn init(
             blocks: []const adm_xml.BlockFormat,
@@ -1147,6 +1169,8 @@ pub fn ObjectGainTimeline(
             var result = Self{
                 .output_count = outputs.len,
                 .segment_count = blocks.len,
+                .declared_output_count = outputs.len,
+                .declared_segment_count = blocks.len,
             };
             for (blocks, 0..) |*block, block_index| {
                 if (!block.channel_identifier.eql(channel))
@@ -1364,14 +1388,16 @@ pub fn ObjectGainTimeline(
         }
 
         pub fn blockCount(self: *const Self) usize {
-            return @min(self.segment_count, maximum_blocks);
+            return if (self.valid()) self.segment_count else 0;
         }
 
         pub fn valid(self: *const Self) bool {
             if (self.output_count == 0 or
                 self.output_count > maximum_output_channels or
+                self.output_count != self.declared_output_count or
                 self.segment_count == 0 or
-                self.segment_count > maximum_blocks)
+                self.segment_count > maximum_blocks or
+                self.segment_count != self.declared_segment_count)
             {
                 return false;
             }
@@ -1472,10 +1498,12 @@ pub fn StaticMatrixMixer(comptime Sample: type) type {
     return struct {
         const Self = @This();
 
-        input_count: usize,
-        term_count: usize,
-        input_indices: [maximum_input_channels]u8 = undefined,
-        gains: [maximum_input_channels]Sample = undefined,
+        input_count: usize = 0,
+        term_count: usize = 0,
+        declared_input_count: usize = 0,
+        declared_term_count: usize = 0,
+        input_indices: [maximum_input_channels]u8 = @splat(0),
+        gains: [maximum_input_channels]Sample = @splat(0.0),
 
         pub fn init(
             block: *const adm_xml.BlockFormat,
@@ -1506,6 +1534,8 @@ pub fn StaticMatrixMixer(comptime Sample: type) type {
             var result = Self{
                 .input_count = input_channels.len,
                 .term_count = coefficients.len,
+                .declared_input_count = input_channels.len,
+                .declared_term_count = coefficients.len,
             };
             for (coefficients, 0..) |coefficient, term_index| {
                 if (coefficient.gain_variable != null or
@@ -1589,8 +1619,10 @@ pub fn StaticMatrixMixer(comptime Sample: type) type {
         pub fn valid(self: *const Self) bool {
             if (self.input_count == 0 or
                 self.input_count > maximum_input_channels or
+                self.input_count != self.declared_input_count or
                 self.term_count == 0 or
-                self.term_count > maximum_input_channels)
+                self.term_count > maximum_input_channels or
+                self.term_count != self.declared_term_count)
             {
                 return false;
             }
@@ -1628,11 +1660,13 @@ pub fn MatrixCoefficientMixer(
 
         pub const delay_capacity = maximum_delay_samples;
 
-        input_count: usize,
-        term_count: usize,
-        input_indices: [maximum_input_channels]u8 = undefined,
-        gains: [maximum_input_channels]Sample = undefined,
-        delays: [maximum_input_channels]usize = undefined,
+        input_count: usize = 0,
+        term_count: usize = 0,
+        declared_input_count: usize = 0,
+        declared_term_count: usize = 0,
+        input_indices: [maximum_input_channels]u8 = @splat(0),
+        gains: [maximum_input_channels]Sample = @splat(0.0),
+        delays: [maximum_input_channels]usize = @splat(0),
         history: [maximum_input_channels][history_length]Sample =
             @splat(@splat(0.0)),
         cursor: usize = 0,
@@ -1669,6 +1703,8 @@ pub fn MatrixCoefficientMixer(
             var result = Self{
                 .input_count = input_channels.len,
                 .term_count = coefficients.len,
+                .declared_input_count = input_channels.len,
+                .declared_term_count = coefficients.len,
             };
             for (coefficients, 0..) |coefficient, term_index| {
                 if (coefficient.gain_variable != null or
@@ -1702,6 +1738,11 @@ pub fn MatrixCoefficientMixer(
         }
 
         pub fn reset(self: *Self) void {
+            if (self.input_count != self.declared_input_count or
+                self.term_count != self.declared_term_count)
+            {
+                return;
+            }
             self.cursor = 0;
             for (&self.history) |*term_history|
                 @memset(term_history, 0.0);
@@ -1776,8 +1817,10 @@ pub fn MatrixCoefficientMixer(
         pub fn valid(self: *const Self) bool {
             if (self.input_count == 0 or
                 self.input_count > maximum_input_channels or
+                self.input_count != self.declared_input_count or
                 self.term_count == 0 or
                 self.term_count > maximum_input_channels or
+                self.term_count != self.declared_term_count or
                 self.cursor >= history_length)
             {
                 return false;
@@ -1842,14 +1885,14 @@ pub fn VariableMatrixCoefficientMixer(
         const history_length =
             maximum_delay_samples + maximum_phase_taps + 1;
         const Lane = struct {
-            kind: MatrixVariableKind,
-            interpolation: MatrixVariableInterpolation,
-            first_point: u32,
-            point_count: u32,
+            kind: MatrixVariableKind = .gain_linear,
+            interpolation: MatrixVariableInterpolation = .linear,
+            first_point: u32 = 0,
+            point_count: u32 = 0,
         };
         const StoredPoint = struct {
-            sample: u64,
-            value: f64,
+            sample: u64 = 0,
+            value: f64 = 0.0,
         };
 
         pub const delay_capacity = maximum_delay_samples;
@@ -1857,22 +1900,24 @@ pub fn VariableMatrixCoefficientMixer(
         pub const point_capacity = maximum_points;
         pub const phase_tap_capacity = maximum_phase_taps;
 
-        input_count: usize,
-        term_count: usize,
-        lane_count: usize,
-        point_count: usize,
-        phase_tap_count: usize,
-        phase_latency: usize,
-        input_indices: [maximum_input_channels]u8 = undefined,
-        fixed_gains: [maximum_input_channels]Sample = undefined,
-        fixed_phases: [maximum_input_channels]f64 = undefined,
-        fixed_delays: [maximum_input_channels]f64 = undefined,
+        input_count: usize = 0,
+        term_count: usize = 0,
+        declared_input_count: usize = 0,
+        declared_term_count: usize = 0,
+        lane_count: usize = 0,
+        point_count: usize = 0,
+        phase_tap_count: usize = 0,
+        phase_latency: usize = 0,
+        input_indices: [maximum_input_channels]u8 = @splat(0),
+        fixed_gains: [maximum_input_channels]Sample = @splat(0.0),
+        fixed_phases: [maximum_input_channels]f64 = @splat(0.0),
+        fixed_delays: [maximum_input_channels]f64 = @splat(0.0),
         gain_lanes: [maximum_input_channels]?u16 = @splat(null),
         phase_lanes: [maximum_input_channels]?u16 = @splat(null),
         delay_lanes: [maximum_input_channels]?u16 = @splat(null),
-        lanes: [maximum_variables]Lane = undefined,
-        points: [maximum_points]StoredPoint = undefined,
-        phase_taps: [maximum_phase_taps]Sample = undefined,
+        lanes: [maximum_variables]Lane = @splat(.{}),
+        points: [maximum_points]StoredPoint = @splat(.{}),
+        phase_taps: [maximum_phase_taps]Sample = @splat(0.0),
         history: [maximum_input_channels][history_length]Sample =
             @splat(@splat(0.0)),
         cursor: usize = 0,
@@ -1914,6 +1959,8 @@ pub fn VariableMatrixCoefficientMixer(
             var result = Self{
                 .input_count = input_channels.len,
                 .term_count = coefficients.len,
+                .declared_input_count = input_channels.len,
+                .declared_term_count = coefficients.len,
                 .lane_count = timelines.len,
                 .point_count = 0,
                 .phase_tap_count = 0,
@@ -2061,6 +2108,11 @@ pub fn VariableMatrixCoefficientMixer(
         }
 
         pub fn resetAt(self: *Self, first_sample: u64) void {
+            if (self.input_count != self.declared_input_count or
+                self.term_count != self.declared_term_count)
+            {
+                return;
+            }
             self.cursor = 0;
             self.next_sample = first_sample;
             for (&self.history) |*term_history|
@@ -2165,8 +2217,10 @@ pub fn VariableMatrixCoefficientMixer(
         pub fn valid(self: *const Self) bool {
             if (self.input_count == 0 or
                 self.input_count > maximum_input_channels or
+                self.input_count != self.declared_input_count or
                 self.term_count == 0 or
                 self.term_count > maximum_input_channels or
+                self.term_count != self.declared_term_count or
                 self.lane_count > maximum_variables or
                 self.point_count > maximum_points or
                 self.phase_tap_count > maximum_phase_taps or
@@ -2473,6 +2527,7 @@ pub fn DirectSpeakerRouter(comptime Sample: type) type {
         const Self = @This();
 
         output_count: usize,
+        declared_output_count: usize,
         output_index: u8,
         gain: Sample,
 
@@ -2525,6 +2580,7 @@ pub fn DirectSpeakerRouter(comptime Sample: type) type {
                 return error.MissingAdmRendererSpeakerRoute;
             return .{
                 .output_count = output_labels.len,
+                .declared_output_count = output_labels.len,
                 .output_index = @intCast(output_index),
                 .gain = try renderGain(Sample, block.gain),
             };
@@ -2576,6 +2632,7 @@ pub fn DirectSpeakerRouter(comptime Sample: type) type {
         pub fn valid(self: *const Self) bool {
             return self.output_count > 0 and
                 self.output_count <= maximum_output_channels and
+                self.output_count == self.declared_output_count and
                 self.output_index < self.output_count and
                 std.math.isFinite(self.gain);
         }
@@ -2592,6 +2649,7 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
         const Self = @This();
 
         output_count: usize,
+        declared_output_count: usize,
         route: DirectSpeakerRoute,
         gain: Sample,
 
@@ -2612,6 +2670,7 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
             );
             return .{
                 .output_count = outputs.len,
+                .declared_output_count = outputs.len,
                 .route = route,
                 .gain = try renderGain(Sample, block.gain),
             };
@@ -2793,6 +2852,7 @@ pub fn DirectSpeakerPositionRouter(comptime Sample: type) type {
         pub fn valid(self: *const Self) bool {
             if (self.output_count == 0 or
                 self.output_count > maximum_output_channels or
+                self.output_count != self.declared_output_count or
                 !std.math.isFinite(self.gain))
             {
                 return false;
@@ -4622,6 +4682,15 @@ test "ADM point Objects plan applies block gain and diffuse split" {
             plan.diffuseGainSlice()[index],
         );
     }
+    for (plan.direct_gains[outputs.len..]) |gain|
+        try std.testing.expectEqual(@as(f64, 0.0), gain);
+    for (plan.diffuse_gains[outputs.len..]) |gain|
+        try std.testing.expectEqual(@as(f64, 0.0), gain);
+    var malformed_plan = plan;
+    malformed_plan.output_count += 1;
+    try std.testing.expect(!malformed_plan.valid());
+    try std.testing.expectEqual(@as(usize, 0), malformed_plan.directGainSlice().len);
+    try std.testing.expectEqual(@as(usize, 0), malformed_plan.diffuseGainSlice().len);
 
     const input = [_]f64{ 2.0, std.math.nan(f64), -2.0 };
     var direct_storage: [outputs.len][input.len]f64 =
@@ -4873,7 +4942,15 @@ test "ADM polar extent panner matches independent gain vectors" {
 test "ADM Cartesian extent panner matches independent gain vectors" {
     const outputs = testCartesianCubeLayout();
     const point_panner = try CartesianPointSourcePanner(f64).init(&outputs);
+    for (point_panner.positions[outputs.len..]) |position|
+        try std.testing.expectEqualDeep(CartesianPosition{}, position);
+    for (point_panner.enabled[outputs.len..]) |enabled|
+        try std.testing.expect(!enabled);
     var panner = try CartesianExtentPanner(f64).init(&point_panner);
+    for (panner.core.positions[outputs.len..]) |position|
+        try std.testing.expectEqualDeep(adm_cartesian_extent.Position{}, position);
+    for (panner.core.enabled[outputs.len..]) |enabled|
+        try std.testing.expect(!enabled);
     try std.testing.expect(panner.valid());
 
     const Case = struct {
@@ -5788,12 +5865,24 @@ test "ADM point Objects plan rejects unsupported and aliased work" {
     invalid_plan.output_count = maximum_output_channels + 1;
     try std.testing.expect(!invalid_plan.valid());
     try std.testing.expectEqual(
-        maximum_output_channels,
+        @as(usize, 0),
         invalid_plan.directGainSlice().len,
     );
     try std.testing.expectError(
         error.InvalidAdmRendererState,
         invalid_plan.mix(&input, &direct_outputs, &diffuse_outputs),
+    );
+
+    invalid_plan = plan;
+    invalid_plan.diffuse_gains[0] = std.math.nan(f32);
+    try std.testing.expect(!invalid_plan.valid());
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        invalid_plan.directGainSlice().len,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        invalid_plan.diffuseGainSlice().len,
     );
 }
 
@@ -6320,6 +6409,27 @@ test "ADM Objects gain timeline honors zero and fractional block boundaries" {
         [_]f32{ 0.0, 0.75, 0.75, 0.0 },
         direct_storage[2],
     );
+
+    const spare_timeline = try ObjectGainTimeline(f32, 2).init(
+        &fractional_blocks,
+        &outputs,
+        &panner,
+        null,
+        .{},
+        4,
+    );
+    const spare = spare_timeline.segments[1];
+    try std.testing.expectEqual(@as(u64, 0), spare.first_sample);
+    try std.testing.expectEqual(@as(u128, 1), spare.start_position.denominator);
+    try std.testing.expectEqual(@as(usize, 0), spare.target.output_count);
+    try std.testing.expectEqual(
+        @as([maximum_output_channels]f32, @splat(0.0)),
+        spare.target.direct_gains,
+    );
+    try std.testing.expectEqual(
+        @as([maximum_output_channels]f32, @splat(0.0)),
+        spare.target.diffuse_gains,
+    );
 }
 
 test "ADM Objects gain timeline preserves phase beyond f64 integer precision" {
@@ -6622,7 +6732,21 @@ test "ADM Objects gain timeline rejects malformed sequences transactionally" {
         direct_output.* = direct_samples;
         diffuse_output.* = diffuse_samples;
     }
+    timeline.segment_count = 1;
+    try std.testing.expect(!timeline.valid());
+    try std.testing.expectEqual(@as(usize, 0), timeline.blockCount());
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        timeline.mix(0, &input, &direct, &diffuse),
+    );
+    try std.testing.expectEqual(
+        @as([outputs.len][1]f32, @splat(@splat(7.0))),
+        direct_storage,
+    );
+
     timeline.segment_count = 3;
+    try std.testing.expect(!timeline.valid());
+    try std.testing.expectEqual(@as(usize, 0), timeline.blockCount());
     try std.testing.expectError(
         error.InvalidAdmRendererState,
         timeline.mix(0, &input, &direct, &diffuse),
@@ -6677,6 +6801,10 @@ test "ADM static matrix mixer binds identifiers and applies gains" {
         try adm.Identifier.parse("AC_00010003"),
     };
     const mixer = try StaticMatrixMixer(f64).init(&block, &channels);
+    for (mixer.input_indices[mixer.term_count..]) |input_index|
+        try std.testing.expectEqual(@as(u8, 0), input_index);
+    for (mixer.gains[mixer.term_count..]) |gain|
+        try std.testing.expectEqual(@as(f64, 0.0), gain);
     try std.testing.expectApproxEqAbs(
         @as(f64, 2.0),
         mixer.processSample(&.{ 1.0, 3.0, 1000.0 }),
@@ -6751,6 +6879,85 @@ test "ADM static matrix mixer rejects unsupported plans transactionally" {
     );
 }
 
+test "ADM Matrix mixers bind public counts to the resolved plan" {
+    const document = try adm_xml.Document.init(
+        \\<audioFormatExtended>
+        \\  <audioChannelFormat audioChannelFormatID="AC_00021001">
+        \\    <audioBlockFormatMatrix audioBlockFormatID="AB_00021001_00000001">
+        \\      <matrix>
+        \\        <coefficient gain="0.5">AC_00010002</coefficient>
+        \\      </matrix>
+        \\    </audioBlockFormatMatrix>
+        \\  </audioChannelFormat>
+        \\</audioFormatExtended>
+    );
+    var blocks = document.blocks();
+    const block = (try blocks.next()).?;
+    const channels = [_]adm.Identifier{
+        try adm.Identifier.parse("AC_00010001"),
+        try adm.Identifier.parse("AC_00010002"),
+    };
+    const first = [_]f64{1.0};
+    const second = [_]f64{2.0};
+    const unused = [_]f64{3.0};
+    const inputs = [_][]const f64{ &first, &second };
+    const expanded_inputs = [_][]const f64{ &first, &second, &unused };
+
+    var static_mixer = try StaticMatrixMixer(f64).init(&block, &channels);
+    static_mixer.input_count = expanded_inputs.len;
+    var output = [_]f64{7.0};
+    try std.testing.expect(!static_mixer.valid());
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        static_mixer.process(&expanded_inputs, &output),
+    );
+    try std.testing.expectEqual(@as(f64, 7.0), output[0]);
+    static_mixer.input_count = static_mixer.declared_input_count;
+    static_mixer.term_count += 1;
+    try std.testing.expect(!static_mixer.valid());
+    try std.testing.expectEqual(@as(f64, 0.0), static_mixer.processSample(&.{ 1.0, 2.0 }));
+
+    var delayed_mixer = try MatrixCoefficientMixer(f64, 1).init(
+        &block,
+        &channels,
+        1000.0,
+    );
+    delayed_mixer.cursor = 1;
+    delayed_mixer.history[0][0] = 0.25;
+    delayed_mixer.input_count = expanded_inputs.len;
+    delayed_mixer.reset();
+    try std.testing.expectEqual(@as(usize, 1), delayed_mixer.cursor);
+    try std.testing.expectEqual(@as(f64, 0.25), delayed_mixer.history[0][0]);
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        delayed_mixer.process(&expanded_inputs, &output),
+    );
+    try std.testing.expectEqual(@as(f64, 7.0), output[0]);
+
+    const VariableMixer =
+        VariableMatrixCoefficientMixer(f64, 1, 0, 0, 0);
+    var variable_mixer = try VariableMixer.init(
+        &block,
+        &channels,
+        1000.0,
+        &.{},
+        &.{},
+    );
+    variable_mixer.cursor = 1;
+    variable_mixer.next_sample = 4;
+    variable_mixer.history[0][0] = 0.5;
+    variable_mixer.term_count += 1;
+    variable_mixer.resetAt(0);
+    try std.testing.expectEqual(@as(usize, 1), variable_mixer.cursor);
+    try std.testing.expectEqual(@as(u64, 4), variable_mixer.next_sample);
+    try std.testing.expectEqual(@as(f64, 0.5), variable_mixer.history[0][0]);
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        variable_mixer.process(4, &inputs, &output),
+    );
+    try std.testing.expectEqual(@as(f64, 7.0), output[0]);
+}
+
 test "ADM Matrix coefficient mixer applies rounded delays across partitions" {
     const document = try adm_xml.Document.init(
         \\<audioFormatExtended>
@@ -6774,6 +6981,12 @@ test "ADM Matrix coefficient mixer applies rounded delays across partitions" {
     var complete = try Mixer.init(&block, &channels, 1000.0);
     try std.testing.expectEqual(@as(usize, 0), complete.delays[0]);
     try std.testing.expectEqual(@as(usize, 1), complete.delays[1]);
+    for (complete.input_indices[complete.term_count..]) |input_index|
+        try std.testing.expectEqual(@as(u8, 0), input_index);
+    for (complete.gains[complete.term_count..]) |gain|
+        try std.testing.expectEqual(@as(f32, 0.0), gain);
+    for (complete.delays[complete.term_count..]) |delay|
+        try std.testing.expectEqual(@as(usize, 0), delay);
     const first = [_]f32{ 1.0, 2.0, 3.0, 4.0 };
     const second = [_]f32{ 10.0, 20.0, std.math.nan(f32), 40.0 };
     const inputs = [_][]const f32{ &first, &second };
@@ -6964,6 +7177,23 @@ test "ADM variable Matrix mixer interpolates gain and delay across partitions" {
         &timelines,
         &.{},
     );
+    for (complete.input_indices[complete.term_count..]) |input_index|
+        try std.testing.expectEqual(@as(u8, 0), input_index);
+    for (complete.fixed_gains[complete.term_count..]) |gain|
+        try std.testing.expectEqual(@as(f64, 0.0), gain);
+    for (complete.fixed_phases[complete.term_count..]) |phase|
+        try std.testing.expectEqual(@as(f64, 0.0), phase);
+    for (complete.fixed_delays[complete.term_count..]) |delay|
+        try std.testing.expectEqual(@as(f64, 0.0), delay);
+    for (complete.lanes[complete.lane_count..]) |lane| {
+        try std.testing.expectEqual(MatrixVariableKind.gain_linear, lane.kind);
+        try std.testing.expectEqual(
+            MatrixVariableInterpolation.linear,
+            lane.interpolation,
+        );
+        try std.testing.expectEqual(@as(u32, 0), lane.first_point);
+        try std.testing.expectEqual(@as(u32, 0), lane.point_count);
+    }
     const input = [_]f64{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 };
     const inputs = [_][]const f64{&input};
     var complete_output: [input.len]f64 = undefined;
@@ -7048,6 +7278,12 @@ test "ADM variable Matrix mixer rotates phase with explicit FIR latency" {
         &quadrature_fir,
     );
     try std.testing.expectEqual(@as(usize, 1), mixer.latencySamples());
+    for (mixer.points[mixer.point_count..]) |point| {
+        try std.testing.expectEqual(@as(u64, 0), point.sample);
+        try std.testing.expectEqual(@as(f64, 0.0), point.value);
+    }
+    for (mixer.phase_taps[mixer.phase_tap_count..]) |tap|
+        try std.testing.expectEqual(@as(f32, 0.0), tap);
     const input = [_]f32{ 1.0, 0.0, -1.0, 0.0, 1.0, 0.0 };
     const inputs = [_][]const f32{&input};
     var output: [input.len]f32 = undefined;
@@ -7265,7 +7501,7 @@ test "ADM direct speaker router mixes an exact label match" {
     var blocks = document.blocks();
     const block = (try blocks.next()).?;
     const labels = [_][]const u8{ "M+030", "M+000", "M-030" };
-    const router = try DirectSpeakerRouter(f32).init(&block, &labels);
+    var router = try DirectSpeakerRouter(f32).init(&block, &labels);
     try std.testing.expectEqual(@as(u8, 1), router.output_index);
     try std.testing.expectEqual(
         @as(f32, 1.0),
@@ -7290,6 +7526,16 @@ test "ADM direct speaker router mixes an exact label match" {
         [_]f32{ 1.0, 1.0, 1.0 },
         right,
     );
+    router.output_count += 1;
+    try std.testing.expect(!router.valid());
+    try std.testing.expectEqual(@as(f32, 0.0), router.processSample(2.0));
+    var unused = [_]f32{ 1.0, 1.0, 1.0 };
+    const expanded_outputs = [_][]f32{ &left, &center, &right, &unused };
+    try std.testing.expectError(
+        error.InvalidAdmRendererState,
+        router.mix(&input, &expanded_outputs),
+    );
+    try std.testing.expectEqualDeep([_]f32{ 1.0, 1.0, 1.0 }, unused);
 }
 
 test "ADM direct speaker router rejects ambiguous and aliased routes" {

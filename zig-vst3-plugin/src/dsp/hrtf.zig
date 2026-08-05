@@ -2,27 +2,32 @@ const std = @import("std");
 const convolution = @import("../gui_ir_convolution.zig");
 
 pub const Direction = struct {
-    azimuth_degrees: f64,
-    elevation_degrees: f64,
+    azimuth_degrees: f64 = 0,
+    elevation_degrees: f64 = 0,
+};
+
+pub const MeasurementPosition = struct {
+    direction: Direction = .{},
+    distance_metres: f64 = 1.0,
 };
 
 pub const Position = struct {
-    x: f64,
-    y: f64,
-    z: f64,
+    x: f64 = 0,
+    y: f64 = 0,
+    z: f64 = 0,
 };
 
 pub const HeadPose = struct {
-    position: Position,
+    position: Position = .{},
     yaw_degrees: f64 = 0.0,
     pitch_degrees: f64 = 0.0,
     roll_degrees: f64 = 0.0,
 };
 
 pub const MotionPoint = struct {
-    sample_position: u64,
-    source_position: Position,
-    head_pose: HeadPose,
+    sample_position: u64 = 0,
+    source_position: Position = .{},
+    head_pose: HeadPose = .{},
 };
 
 /// Maps an ordered tracker clock onto absolute audio sample positions.
@@ -73,6 +78,11 @@ pub const MotionClock = struct {
             second_tracker_timestamp,
             second_sample_position,
         );
+    }
+
+    pub fn valid(self: *const MotionClock) bool {
+        self.validate() catch return false;
+        return true;
     }
 
     pub fn map(
@@ -133,6 +143,33 @@ pub const MotionClock = struct {
         {
             return error.InvalidHrtfMotionClockState;
         }
+        if (!self.has_mapped_timestamp) {
+            if (self.last_tracker_timestamp != 0 or
+                self.last_sample_position != 0)
+            {
+                return error.InvalidHrtfMotionClockState;
+            }
+            return;
+        }
+        if (self.last_tracker_timestamp < self.tracker_anchor) {
+            if (self.last_sample_position >= self.sample_anchor)
+                return error.InvalidHrtfMotionClockState;
+            return;
+        }
+        const tracker_delta =
+            self.last_tracker_timestamp - self.tracker_anchor;
+        const sample_delta_wide =
+            (@as(u128, tracker_delta) * self.sample_rate) /
+            self.tracker_ticks_per_second;
+        if (sample_delta_wide > std.math.maxInt(u64))
+            return error.InvalidHrtfMotionClockState;
+        const expected = std.math.add(
+            u64,
+            self.sample_anchor,
+            @intCast(sample_delta_wide),
+        ) catch return error.InvalidHrtfMotionClockState;
+        if (self.last_sample_position != expected)
+            return error.InvalidHrtfMotionClockState;
     }
 };
 
@@ -184,6 +221,11 @@ pub fn MotionClockCalibrator(
             }
             self.observations[self.observation_count] = observation;
             self.observation_count += 1;
+        }
+
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
         }
 
         pub fn count(self: *const Self) !usize {
@@ -384,7 +426,7 @@ pub fn MotionPointQueue(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        points: [capacity]MotionPoint = undefined,
+        points: [capacity]MotionPoint = @splat(.{}),
         write_index: std.atomic.Value(usize) =
             std.atomic.Value(usize).init(0),
         read_index: std.atomic.Value(usize) =
@@ -395,6 +437,7 @@ pub fn MotionPointQueue(comptime capacity: usize) type {
         has_submitted_sample: bool = false,
 
         pub fn submit(self: *Self, point: MotionPoint) !bool {
+            _ = try self.validateState();
             _ = try directionFromPositions(
                 point.source_position,
                 point.head_pose,
@@ -416,9 +459,9 @@ pub fn MotionPointQueue(comptime capacity: usize) type {
             }
 
             self.points[write % capacity] = point;
-            self.write_index.store(write +% 1, .release);
             self.last_submitted_sample = point.sample_position;
             self.has_submitted_sample = true;
+            self.write_index.store(write +% 1, .release);
             return true;
         }
 
@@ -429,6 +472,9 @@ pub fn MotionPointQueue(comptime capacity: usize) type {
             source_position: Position,
             head_pose: HeadPose,
         ) !bool {
+            _ = try self.validateState();
+            if (!clock.valid())
+                return error.InvalidHrtfMotionClockState;
             var staged_clock = clock.*;
             const sample_position =
                 try staged_clock.map(tracker_timestamp);
@@ -443,24 +489,31 @@ pub fn MotionPointQueue(comptime capacity: usize) type {
         }
 
         pub fn receive(self: *Self) !?MotionPoint {
+            const pending_count = try self.validateCursors();
             const read = self.read_index.load(.monotonic);
-            const write = self.write_index.load(.acquire);
-            const pending_count = write -% read;
-            if (pending_count > capacity)
-                return error.InvalidHrtfMotionQueueState;
             if (pending_count == 0) return null;
             const point = self.points[read % capacity];
+            _ = directionFromPositions(
+                point.source_position,
+                point.head_pose,
+            ) catch return error.InvalidHrtfMotionQueueState;
+            if (pending_count > 1) {
+                const next = self.points[(read +% 1) % capacity];
+                if (point.sample_position >= next.sample_position)
+                    return error.InvalidHrtfMotionQueueState;
+            }
             self.read_index.store(read +% 1, .release);
             return point;
         }
 
         pub fn pending(self: *const Self) !usize {
-            const read = self.read_index.load(.acquire);
-            const write = self.write_index.load(.acquire);
-            const count = write -% read;
-            if (count > capacity)
-                return error.InvalidHrtfMotionQueueState;
-            return count;
+            return self.validateCursors();
+        }
+
+        /// Query complete state only while producer and consumer are stopped.
+        pub fn valid(self: *const Self) bool {
+            _ = self.validateState() catch return false;
+            return true;
         }
 
         pub fn dropped(self: *const Self) usize {
@@ -469,6 +522,7 @@ pub fn MotionPointQueue(comptime capacity: usize) type {
 
         /// Reset is only valid while both participating threads are stopped.
         pub fn reset(self: *Self) void {
+            @memset(&self.points, .{});
             self.write_index.store(0, .release);
             self.read_index.store(0, .release);
             self.dropped_count.store(0, .release);
@@ -489,6 +543,49 @@ pub fn MotionPointQueue(comptime capacity: usize) type {
                 } else return;
             }
         }
+
+        fn validateState(self: *const Self) !usize {
+            const read = self.read_index.load(.acquire);
+            const write = self.write_index.load(.acquire);
+            const pending_count = write -% read;
+            if (pending_count > capacity)
+                return error.InvalidHrtfMotionQueueState;
+            if (!self.has_submitted_sample) {
+                if (self.last_submitted_sample != 0 or
+                    pending_count != 0)
+                {
+                    return error.InvalidHrtfMotionQueueState;
+                }
+                return pending_count;
+            }
+            var previous_sample: ?u64 = null;
+            for (0..pending_count) |offset| {
+                const point = self.points[(read +% offset) % capacity];
+                _ = directionFromPositions(
+                    point.source_position,
+                    point.head_pose,
+                ) catch return error.InvalidHrtfMotionQueueState;
+                if (previous_sample) |previous| {
+                    if (point.sample_position <= previous)
+                        return error.InvalidHrtfMotionQueueState;
+                }
+                previous_sample = point.sample_position;
+            }
+            if (previous_sample) |latest| {
+                if (latest != self.last_submitted_sample)
+                    return error.InvalidHrtfMotionQueueState;
+            }
+            return pending_count;
+        }
+
+        fn validateCursors(self: *const Self) !usize {
+            const read = self.read_index.load(.acquire);
+            const write = self.write_index.load(.acquire);
+            const pending_count = write -% read;
+            if (pending_count > capacity)
+                return error.InvalidHrtfMotionQueueState;
+            return pending_count;
+        }
     };
 }
 
@@ -501,6 +598,7 @@ pub const Interpolation = enum {
 
 pub const RoomPath = struct {
     direction: Direction,
+    distance_metres: f64 = 1.0,
     gain: f64 = 1.0,
     additional_delay_samples: f64 = 0.0,
 };
@@ -554,6 +652,7 @@ pub const FirstOrderRoomPathPlan = struct {
         },
     }),
     path_count: usize = 0,
+    declared_path_count: usize = 0,
 
     pub fn init(
         room: ShoeboxRoom,
@@ -619,6 +718,7 @@ pub const FirstOrderRoomPathPlan = struct {
             );
             result.path_count += 1;
         }
+        result.declared_path_count = result.path_count;
         if (!result.valid()) return error.InvalidHrtfRoomPathPlanState;
         return result;
     }
@@ -629,6 +729,7 @@ pub const FirstOrderRoomPathPlan = struct {
     }
 
     pub fn valid(self: *const FirstOrderRoomPathPlan) bool {
+        if (self.path_count != self.declared_path_count) return false;
         return roomPathPlanValid(
             &self.path_storage,
             self.path_count,
@@ -645,6 +746,7 @@ pub const SecondOrderRoomPathPlan = struct {
         },
     }),
     path_count: usize = 0,
+    declared_path_count: usize = 0,
 
     pub fn init(
         room: ShoeboxRoom,
@@ -687,6 +789,7 @@ pub const SecondOrderRoomPathPlan = struct {
             result.path_storage[result.path_count] = path;
             result.path_count += 1;
         }
+        result.declared_path_count = result.path_count;
         if (!result.valid()) return error.InvalidHrtfRoomPathPlanState;
         return result;
     }
@@ -697,6 +800,7 @@ pub const SecondOrderRoomPathPlan = struct {
     }
 
     pub fn valid(self: *const SecondOrderRoomPathPlan) bool {
+        if (self.path_count != self.declared_path_count) return false;
         return roomPathPlanValid(
             &self.path_storage,
             self.path_count,
@@ -722,6 +826,7 @@ pub fn ImageSourceRoomPathPlan(comptime reflection_order: usize) type {
         image_index_storage: [path_capacity][3]i16 =
             @splat(.{ 0, 0, 0 }),
         path_count: usize = 0,
+        declared_path_count: usize = 0,
 
         pub fn init(
             room: ShoeboxRoom,
@@ -740,7 +845,12 @@ pub fn ImageSourceRoomPathPlan(comptime reflection_order: usize) type {
             var result = Self{};
             result.path_storage[0] = origin.direct_path;
             result.path_count = 1;
-            if (reflection_order == 0) return result;
+            if (reflection_order == 0) {
+                result.declared_path_count = result.path_count;
+                if (!result.valid())
+                    return error.InvalidHrtfRoomPathPlanState;
+                return result;
+            }
 
             const coordinate_count = 2 * reflection_order + 1;
             const signed_order: i16 = @intCast(reflection_order);
@@ -777,6 +887,7 @@ pub fn ImageSourceRoomPathPlan(comptime reflection_order: usize) type {
                     }
                 }
             }
+            result.declared_path_count = result.path_count;
             if (!result.valid()) return error.InvalidHrtfRoomPathPlanState;
             return result;
         }
@@ -792,6 +903,7 @@ pub fn ImageSourceRoomPathPlan(comptime reflection_order: usize) type {
         }
 
         pub fn valid(self: *const Self) bool {
+            if (self.path_count != self.declared_path_count) return false;
             if (!roomPathPlanValid(
                 &self.path_storage,
                 self.path_count,
@@ -833,6 +945,8 @@ pub fn RoomSurfaceImpulseResponses(comptime maximum_frames: usize) type {
             @splat(@splat(0.0)),
         frame_counts: [6]usize = @splat(0),
         sample_rate: u32 = 0,
+        declared_frame_counts: [6]usize = @splat(0),
+        declared_sample_rate: u32 = 0,
 
         pub fn init(
             sample_rate: u32,
@@ -850,6 +964,7 @@ pub fn RoomSurfaceImpulseResponses(comptime maximum_frames: usize) type {
             };
             var result = Self{};
             result.sample_rate = sample_rate;
+            result.declared_sample_rate = sample_rate;
             for (responses, 0..) |surface_response, surface| {
                 if (surface_response.len == 0 or
                     surface_response.len > maximum_frames)
@@ -863,6 +978,8 @@ pub fn RoomSurfaceImpulseResponses(comptime maximum_frames: usize) type {
                     surface_response,
                 );
                 result.frame_counts[surface] = surface_response.len;
+                result.declared_frame_counts[surface] =
+                    surface_response.len;
             }
             if (!result.valid())
                 return error.InvalidHrtfRoomSurfaceResponseState;
@@ -870,10 +987,14 @@ pub fn RoomSurfaceImpulseResponses(comptime maximum_frames: usize) type {
         }
 
         pub fn valid(self: *const Self) bool {
-            if (self.sample_rate < 8_000 or self.sample_rate > 384_000)
+            if (self.sample_rate < 8_000 or
+                self.sample_rate > 384_000 or
+                self.sample_rate != self.declared_sample_rate)
                 return false;
             for (self.frame_counts, 0..) |frame_count, surface| {
-                if (frame_count == 0 or frame_count > maximum_frames)
+                if (frame_count == 0 or
+                    frame_count > maximum_frames or
+                    frame_count != self.declared_frame_counts[surface])
                     return false;
                 for (self.response_storage[surface][0..frame_count]) |sample| {
                     if (!std.math.isFinite(sample)) return false;
@@ -908,11 +1029,15 @@ pub fn Database(
         measurement_count: usize,
         frame_count: usize,
         response_frame_count: usize,
+        declared_measurement_count: usize,
+        declared_frame_count: usize,
+        declared_response_frame_count: usize,
         directions: [maximum_measurements]Direction =
             @splat(.{
                 .azimuth_degrees = 0.0,
                 .elevation_degrees = 0.0,
             }),
+        distances_metres: [maximum_measurements]f64 = @splat(1.0),
         delays_samples: [maximum_measurements][channel_count]f64 =
             @splat(@splat(0.0)),
         responses: [maximum_measurements][maximum_frames][channel_count]f32 =
@@ -972,6 +1097,77 @@ pub fn Database(
             interleaved_responses: []const f32,
             delays_samples: []const f64,
         ) !void {
+            return initWithDistancesAndDelaysInto(
+                destination,
+                sample_rate,
+                directions,
+                &.{},
+                interleaved_responses,
+                delays_samples,
+            );
+        }
+
+        pub fn initWithDistances(
+            sample_rate: u32,
+            directions: []const Direction,
+            distances_metres: []const f64,
+            interleaved_responses: []const f32,
+        ) !Self {
+            var result: Self = undefined;
+            try initWithDistancesInto(
+                &result,
+                sample_rate,
+                directions,
+                distances_metres,
+                interleaved_responses,
+            );
+            return result;
+        }
+
+        pub fn initWithDistancesInto(
+            destination: *Self,
+            sample_rate: u32,
+            directions: []const Direction,
+            distances_metres: []const f64,
+            interleaved_responses: []const f32,
+        ) !void {
+            return initWithDistancesAndDelaysInto(
+                destination,
+                sample_rate,
+                directions,
+                distances_metres,
+                interleaved_responses,
+                &.{},
+            );
+        }
+
+        pub fn initWithDistancesAndDelays(
+            sample_rate: u32,
+            directions: []const Direction,
+            distances_metres: []const f64,
+            interleaved_responses: []const f32,
+            delays_samples: []const f64,
+        ) !Self {
+            var result: Self = undefined;
+            try initWithDistancesAndDelaysInto(
+                &result,
+                sample_rate,
+                directions,
+                distances_metres,
+                interleaved_responses,
+                delays_samples,
+            );
+            return result;
+        }
+
+        pub fn initWithDistancesAndDelaysInto(
+            destination: *Self,
+            sample_rate: u32,
+            directions: []const Direction,
+            distances_metres: []const f64,
+            interleaved_responses: []const f32,
+            delays_samples: []const f64,
+        ) !void {
             if (sample_rate < 8_000 or sample_rate > 384_000)
                 return error.InvalidHrtfSampleRate;
             if (directions.len == 0 or
@@ -995,6 +1191,9 @@ pub fn Database(
                 delays_samples.len !=
                     directions.len * channel_count)
                 return error.InvalidHrtfDelayShape;
+            if (distances_metres.len != 0 and
+                distances_metres.len != directions.len)
+                return error.InvalidHrtfDistanceShape;
             const destination_bytes = std.mem.asBytes(destination);
             if (memorySlicesOverlap(
                 Direction,
@@ -1004,6 +1203,11 @@ pub fn Database(
             ) or memorySlicesOverlap(
                 f32,
                 interleaved_responses,
+                u8,
+                destination_bytes,
+            ) or memorySlicesOverlap(
+                f64,
+                distances_metres,
                 u8,
                 destination_bytes,
             ) or memorySlicesOverlap(
@@ -1041,9 +1245,23 @@ pub fn Database(
 
             for (directions, 0..) |direction, measurement_index| {
                 try validateDirection(direction);
-                const vector = directionVector(direction);
-                for (directions[0..measurement_index]) |previous| {
-                    if (sameDirection(vector, directionVector(previous)))
+                const position = MeasurementPosition{
+                    .direction = direction,
+                    .distance_metres = distanceValue(
+                        distances_metres,
+                        measurement_index,
+                    ),
+                };
+                try validateMeasurementPosition(position);
+                for (0..measurement_index) |previous_index| {
+                    const previous = MeasurementPosition{
+                        .direction = directions[previous_index],
+                        .distance_metres = distanceValue(
+                            distances_metres,
+                            previous_index,
+                        ),
+                    };
+                    if (sameMeasurementPosition(position, previous))
                         return error.DuplicateHrtfDirection;
                 }
                 var has_energy = false;
@@ -1069,9 +1287,14 @@ pub fn Database(
                 .measurement_count = directions.len,
                 .frame_count = frame_count,
                 .response_frame_count = response_frame_count,
+                .declared_measurement_count = directions.len,
+                .declared_frame_count = frame_count,
+                .declared_response_frame_count = response_frame_count,
             };
             for (directions, 0..) |direction, measurement_index| {
                 destination.directions[measurement_index] = direction;
+                destination.distances_metres[measurement_index] =
+                    distanceValue(distances_metres, measurement_index);
                 for (0..channel_count) |channel_index| {
                     destination.delays_samples[measurement_index][channel_index] =
                         delayValue(
@@ -1108,6 +1331,43 @@ pub fn Database(
                 return error.InvalidHrtfDestinationShape;
 
             const selected = self.neighbors(direction);
+            return self.interpolateSelected(
+                selected,
+                method,
+                destination,
+            );
+        }
+
+        pub fn interpolateAt(
+            self: *const Self,
+            position: MeasurementPosition,
+            method: Interpolation,
+            destination: []f32,
+        ) !void {
+            if (!self.valid()) return error.InvalidHrtfDatabase;
+            try validateMeasurementPosition(position);
+            if (destination.len != self.frame_count * channel_count)
+                return error.InvalidHrtfDestinationShape;
+            return self.interpolateSelected(
+                self.spatialNeighbors(position),
+                method,
+                destination,
+            );
+        }
+
+        fn interpolateSelected(
+            self: *const Self,
+            selected: Neighbors,
+            method: Interpolation,
+            destination: []f32,
+        ) !void {
+            if (memorySlicesOverlap(
+                f32,
+                destination,
+                u8,
+                std.mem.asBytes(&self.responses),
+            )) return error.OverlappingHrtfInterpolationStorage;
+
             var weights: [3]f64 = @splat(0.0);
             switch (method) {
                 .nearest => weights[0] = 1.0,
@@ -1195,10 +1455,14 @@ pub fn Database(
             if (self.sample_rate < 8_000 or self.sample_rate > 384_000 or
                 self.measurement_count == 0 or
                 self.measurement_count > maximum_measurements or
+                self.measurement_count != self.declared_measurement_count or
                 self.frame_count == 0 or
                 self.frame_count > maximum_frames or
+                self.frame_count != self.declared_frame_count or
                 self.response_frame_count == 0 or
-                self.response_frame_count > self.frame_count)
+                self.response_frame_count > self.frame_count or
+                self.response_frame_count !=
+                    self.declared_response_frame_count)
             {
                 return false;
             }
@@ -1207,10 +1471,17 @@ pub fn Database(
                 self.directions[0..self.measurement_count],
                 0..,
             ) |direction, measurement_index| {
-                validateDirection(direction) catch return false;
-                const vector = directionVector(direction);
-                for (self.directions[0..measurement_index]) |previous| {
-                    if (sameDirection(vector, directionVector(previous)))
+                const position = MeasurementPosition{
+                    .direction = direction,
+                    .distance_metres = self.distances_metres[measurement_index],
+                };
+                validateMeasurementPosition(position) catch return false;
+                for (0..measurement_index) |previous_index| {
+                    const previous = MeasurementPosition{
+                        .direction = self.directions[previous_index],
+                        .distance_metres = self.distances_metres[previous_index],
+                    };
+                    if (sameMeasurementPosition(position, previous))
                         return false;
                 }
                 var has_energy = false;
@@ -1281,6 +1552,59 @@ pub fn Database(
                 result.distances[insertion_index] = distance;
             }
             return result;
+        }
+
+        fn spatialNeighbors(
+            self: *const Self,
+            position: MeasurementPosition,
+        ) Neighbors {
+            const distance = if (self.hasVariableDistances())
+                position.distance_metres
+            else
+                self.distances_metres[0];
+            const target = measurementVector(.{
+                .direction = position.direction,
+                .distance_metres = distance,
+            });
+            var result = Neighbors{
+                .count = @min(self.measurement_count, 3),
+                .indices = @splat(0),
+                .distances = @splat(std.math.inf(f64)),
+            };
+            for (0..self.measurement_count) |candidate_index| {
+                const candidate = measurementVector(.{
+                    .direction = self.directions[candidate_index],
+                    .distance_metres = self.distances_metres[candidate_index],
+                });
+                const distance_squared = vectorDistanceSquared(
+                    target,
+                    candidate,
+                );
+                var insertion_index: usize = 0;
+                while (insertion_index < result.count and
+                    distance_squared >= result.distances[insertion_index])
+                {
+                    insertion_index += 1;
+                }
+                if (insertion_index == result.count) continue;
+                var shift = result.count - 1;
+                while (shift > insertion_index) : (shift -= 1) {
+                    result.indices[shift] = result.indices[shift - 1];
+                    result.distances[shift] =
+                        result.distances[shift - 1];
+                }
+                result.indices[insertion_index] = candidate_index;
+                result.distances[insertion_index] = distance_squared;
+            }
+            return result;
+        }
+
+        fn hasVariableDistances(self: *const Self) bool {
+            const first = self.distances_metres[0];
+            for (self.distances_metres[1..self.measurement_count]) |value| {
+                if (value != first) return true;
+            }
+            return false;
         }
 
         fn sampleResponse(
@@ -1488,7 +1812,7 @@ pub fn RoomResponseComposer(
             interpolation: Interpolation,
             destination: []f32,
         ) !usize {
-            if (!database.valid()) return error.InvalidHrtfDatabase;
+            if (!database.*.valid()) return error.InvalidHrtfDatabase;
             if (database.frame_count > maximum_frames)
                 return error.HrtfFrameCapacityExceeded;
             if (paths.len == 0 or paths.len > maximum_paths)
@@ -1497,7 +1821,10 @@ pub fn RoomResponseComposer(
             var maximum_delay: f64 = 0.0;
             var staged_paths: [maximum_paths]RoomPath = undefined;
             for (paths, 0..) |path, index| {
-                try validateDirection(path.direction);
+                try validateMeasurementPosition(.{
+                    .direction = path.direction,
+                    .distance_metres = path.distance_metres,
+                });
                 if (!std.math.isFinite(path.gain))
                     return error.InvalidHrtfRoomPathGain;
                 if (!std.math.isFinite(path.additional_delay_samples) or
@@ -1540,13 +1867,26 @@ pub fn RoomResponseComposer(
                 used_destination,
                 f64,
                 &self.accumulation,
+            ) or memorySlicesOverlap(
+                f32,
+                used_destination,
+                u8,
+                std.mem.asBytes(&database.responses),
+            ) or memorySlicesOverlap(
+                f32,
+                used_destination,
+                RoomPath,
+                paths,
             )) return error.OverlappingHrtfRoomResponseStorage;
 
             @memset(self.accumulation[0..sample_count], 0.0);
             const database_samples = database.frame_count * 2;
             for (staged_paths[0..paths.len]) |path| {
-                try database.interpolate(
-                    path.direction,
+                try database.interpolateAt(
+                    .{
+                        .direction = path.direction,
+                        .distance_metres = path.distance_metres,
+                    },
                     interpolation,
                     self.path_response[0..database_samples],
                 );
@@ -1619,7 +1959,7 @@ pub fn FrequencyDependentRoomResponseComposer(
             interpolation: Interpolation,
             destination: []f32,
         ) !usize {
-            if (!database.valid()) return error.InvalidHrtfDatabase;
+            if (!database.*.valid()) return error.InvalidHrtfDatabase;
             if (!materials.valid())
                 return error.InvalidHrtfRoomSurfaceResponseState;
             if (materials.sample_rate != database.sample_rate)
@@ -1710,13 +2050,31 @@ pub fn FrequencyDependentRoomResponseComposer(
                 used_destination,
                 f32,
                 material_samples,
+            ) or memorySlicesOverlap(
+                f32,
+                used_destination,
+                u8,
+                std.mem.asBytes(plan),
+            ) or memorySlicesOverlap(
+                f32,
+                used_destination,
+                u8,
+                std.mem.asBytes(materials),
+            ) or memorySlicesOverlap(
+                f32,
+                used_destination,
+                u8,
+                std.mem.asBytes(&database.responses),
             )) return error.OverlappingHrtfRoomResponseStorage;
 
             @memset(self.accumulation[0..sample_count], 0.0);
             const database_samples = database.frame_count * 2;
             for (paths, image_indices) |path, indices| {
-                try database.interpolate(
-                    path.direction,
+                try database.interpolateAt(
+                    .{
+                        .direction = path.direction,
+                        .distance_metres = path.distance_metres,
+                    },
                     interpolation,
                     self.path_response[0..database_samples],
                 );
@@ -1893,6 +2251,14 @@ fn delayValue(
     return delays[measurement_index * 2 + channel_index];
 }
 
+fn distanceValue(
+    distances_metres: []const f64,
+    measurement_index: usize,
+) f64 {
+    if (distances_metres.len == 0) return 1.0;
+    return distances_metres[measurement_index];
+}
+
 pub fn Renderer(
     comptime maximum_frames: usize,
     comptime partition_size: usize,
@@ -1949,6 +2315,28 @@ pub fn Renderer(
             );
         }
 
+        pub fn prepareAt(
+            self: *Self,
+            database: anytype,
+            position: MeasurementPosition,
+            interpolation: Interpolation,
+            generation: u64,
+        ) !void {
+            if (database.frame_count > maximum_frames)
+                return error.HrtfFrameCapacityExceeded;
+            const samples = self.prepared_response[0 .. database.frame_count * 2];
+            try database.interpolateAt(
+                position,
+                interpolation,
+                samples,
+            );
+            try self.prepareInterleavedResponse(
+                database.sample_rate,
+                samples,
+                generation,
+            );
+        }
+
         pub fn prepareInterleavedResponse(
             self: *Self,
             sample_rate: u32,
@@ -1980,6 +2368,11 @@ pub fn Renderer(
 
         pub fn adoptPending(self: *Self) bool {
             return self.convolver.adoptPending();
+        }
+
+        /// Requires preparation and audio processing to be stopped.
+        pub fn valid(self: *const Self) bool {
+            return self.convolver.valid();
         }
 
         pub fn processSample(
@@ -2035,6 +2428,10 @@ pub fn MotionRenderer(
         frame_count: usize = 0,
         point_count: usize = 0,
         crossfade_samples: usize = 0,
+        declared_sample_rate: u32 = 0,
+        declared_frame_count: usize = 0,
+        declared_point_count: usize = 0,
+        declared_crossfade_samples: usize = 0,
         points: [maximum_points]MotionPoint = @splat(.{
             .sample_position = 0,
             .source_position = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
@@ -2053,6 +2450,57 @@ pub fn MotionRenderer(
         current_point: usize = 0,
         sample_position: u64 = 0,
         prepared: bool = false,
+
+        pub fn valid(self: *const Self) bool {
+            if (!self.prepared) {
+                if (self.sample_rate != 0 or
+                    self.frame_count != 0 or
+                    self.point_count != 0 or
+                    self.crossfade_samples != 0 or
+                    self.declared_sample_rate != 0 or
+                    self.declared_frame_count != 0 or
+                    self.declared_point_count != 0 or
+                    self.declared_crossfade_samples != 0 or
+                    self.history_write != 0 or
+                    self.current_point != 0 or
+                    self.sample_position != 0)
+                    return false;
+                for (self.history) |sample| {
+                    if (sample != 0.0) return false;
+                }
+                return true;
+            }
+            if (!self.processingStateValid()) return false;
+            for (self.history) |sample| {
+                if (!std.math.isFinite(sample)) return false;
+            }
+            for (self.points[0..self.point_count], 0..) |point, index| {
+                const direction = directionFromPositions(
+                    point.source_position,
+                    point.head_pose,
+                ) catch return false;
+                validateDirection(self.directions[index]) catch return false;
+                if (!sameDirection(
+                    directionVector(direction),
+                    directionVector(self.directions[index]),
+                )) return false;
+                if (index == 0) {
+                    if (point.sample_position != 0) return false;
+                } else {
+                    const previous = self.points[index - 1].sample_position;
+                    if (point.sample_position <= previous or
+                        point.sample_position - previous <
+                            self.crossfade_samples)
+                        return false;
+                }
+                for (self.filters[index][0..self.frame_count]) |frame| {
+                    if (!std.math.isFinite(frame[0]) or
+                        !std.math.isFinite(frame[1]))
+                        return false;
+                }
+            }
+            return true;
+        }
 
         pub fn prepare(
             self: *Self,
@@ -2075,17 +2523,17 @@ pub fn MotionRenderer(
             var staged_filters: [maximum_points][maximum_frames][2]f32 =
                 @splat(@splat(@splat(0.0)));
             for (points, 0..) |point, point_index| {
-                const direction = try directionFromPositions(
+                const position = try measurementFromPositions(
                     point.source_position,
                     point.head_pose,
                 );
-                staged_directions[point_index] = direction;
+                staged_directions[point_index] = position.direction;
                 const destination = @as(
                     [*]f32,
                     @ptrCast(&staged_filters[point_index]),
                 )[0 .. database.frame_count * 2];
-                try database.interpolate(
-                    direction,
+                try database.interpolateAt(
+                    position,
                     interpolation,
                     destination,
                 );
@@ -2297,11 +2745,14 @@ pub fn MotionRenderer(
         }
 
         pub fn processSample(self: *Self, input: f32) [2]f32 {
-            if (!self.prepared or self.frame_count == 0)
+            if (!self.processingStateValid())
                 return @splat(0.0);
-            self.history[self.history_write] =
+            const contained_input =
                 if (std.math.isFinite(input)) input else 0.0;
-            const current = self.filtered(self.current_point);
+            const current = self.filtered(
+                self.current_point,
+                contained_input,
+            ) orelse return @splat(0.0);
             var output = current;
             const next_point = self.current_point + 1;
             if (next_point < self.point_count and
@@ -2323,7 +2774,10 @@ pub fn MotionRenderer(
                 );
                 const blend =
                     progress * progress * (3.0 - 2.0 * progress);
-                const next = self.filtered(next_point);
+                const next = self.filtered(
+                    next_point,
+                    contained_input,
+                ) orelse return @splat(0.0);
                 for (0..2) |channel_index| {
                     output[channel_index] = @floatCast(
                         @as(f64, current[channel_index]) *
@@ -2334,6 +2788,7 @@ pub fn MotionRenderer(
                 if (completed_samples >= self.crossfade_samples)
                     self.current_point = next_point;
             }
+            self.history[self.history_write] = contained_input;
             self.history_write =
                 (self.history_write + 1) % self.frame_count;
             self.sample_position +|= 1;
@@ -2348,14 +2803,15 @@ pub fn MotionRenderer(
         }
 
         pub fn currentDirection(self: *const Self) ?Direction {
-            if (!self.prepared) return null;
+            if (!self.processingStateValid()) return null;
             return self.directions[self.current_point];
         }
 
         fn filtered(
             self: *const Self,
             point_index: usize,
-        ) [2]f32 {
+            current_input: f32,
+        ) ?[2]f32 {
             var output: [2]f64 = @splat(0.0);
             for (0..self.frame_count) |frame_index| {
                 const history_index =
@@ -2363,11 +2819,18 @@ pub fn MotionRenderer(
                         self.frame_count -
                         frame_index) %
                     self.frame_count;
-                const sample = self.history[history_index];
+                const sample = if (frame_index == 0)
+                    current_input
+                else
+                    self.history[history_index];
+                if (!std.math.isFinite(sample)) return null;
                 for (0..2) |channel_index| {
+                    const coefficient =
+                        self.filters[point_index][frame_index][channel_index];
+                    if (!std.math.isFinite(coefficient)) return null;
                     output[channel_index] +=
                         sample *
-                        self.filters[point_index][frame_index][channel_index];
+                        coefficient;
                 }
             }
             const converted = [2]f32{
@@ -2376,8 +2839,42 @@ pub fn MotionRenderer(
             };
             if (!std.math.isFinite(converted[0]) or
                 !std.math.isFinite(converted[1]))
-                return @splat(0.0);
+                return null;
             return converted;
+        }
+
+        fn processingStateValid(self: *const Self) bool {
+            if (!self.prepared or
+                self.sample_rate < 8_000 or
+                self.sample_rate > 384_000 or
+                self.sample_rate != self.declared_sample_rate or
+                self.frame_count == 0 or
+                self.frame_count > maximum_frames or
+                self.frame_count != self.declared_frame_count or
+                self.point_count == 0 or
+                self.point_count > maximum_points or
+                self.point_count != self.declared_point_count or
+                self.crossfade_samples == 0 or
+                self.crossfade_samples > maximum_crossfade_samples or
+                self.crossfade_samples != self.declared_crossfade_samples or
+                self.history_write >= self.frame_count or
+                self.current_point >= self.point_count)
+                return false;
+            if (self.sample_position <
+                self.points[self.current_point].sample_position)
+                return false;
+            const next_point = self.current_point + 1;
+            if (next_point == self.point_count) return true;
+            const crossfade_tail = std.math.cast(
+                u64,
+                self.crossfade_samples - 1,
+            ) orelse return false;
+            const transition_end = std.math.add(
+                u64,
+                self.points[next_point].sample_position,
+                crossfade_tail,
+            ) catch return false;
+            return self.sample_position <= transition_end;
         }
 
         fn validatePreparation(
@@ -2385,7 +2882,7 @@ pub fn MotionRenderer(
             prepared_points: []const MotionPoint,
             prepared_crossfade_samples: usize,
         ) !void {
-            if (!database.valid()) return error.InvalidHrtfDatabase;
+            if (!database.*.valid()) return error.InvalidHrtfDatabase;
             if (database.frame_count > maximum_frames)
                 return error.HrtfFrameCapacityExceeded;
             if (prepared_points.len == 0 or
@@ -2400,6 +2897,10 @@ pub fn MotionRenderer(
             }
             if (prepared_points[0].sample_position != 0)
                 return error.InvalidHrtfMotionSchedule;
+            const crossfade_tail = std.math.cast(
+                u64,
+                prepared_crossfade_samples - 1,
+            ) orelse return error.InvalidHrtfMotionSchedule;
             for (prepared_points[1..], 1..) |point, point_index| {
                 const previous =
                     prepared_points[point_index - 1].sample_position;
@@ -2409,6 +2910,11 @@ pub fn MotionRenderer(
                 {
                     return error.InvalidHrtfMotionSchedule;
                 }
+                _ = std.math.add(
+                    u64,
+                    point.sample_position,
+                    crossfade_tail,
+                ) catch return error.InvalidHrtfMotionSchedule;
             }
         }
 
@@ -2425,6 +2931,10 @@ pub fn MotionRenderer(
             self.frame_count = prepared_frame_count;
             self.point_count = prepared_points.len;
             self.crossfade_samples = prepared_crossfade_samples;
+            self.declared_sample_rate = prepared_sample_rate;
+            self.declared_frame_count = prepared_frame_count;
+            self.declared_point_count = prepared_points.len;
+            self.declared_crossfade_samples = prepared_crossfade_samples;
             @memcpy(self.points[0..prepared_points.len], prepared_points);
             @memcpy(
                 self.directions[0..prepared_points.len],
@@ -2446,6 +2956,16 @@ pub fn directionFromPositions(
     source_position: Position,
     head_pose: HeadPose,
 ) !Direction {
+    return (try measurementFromPositions(
+        source_position,
+        head_pose,
+    )).direction;
+}
+
+pub fn measurementFromPositions(
+    source_position: Position,
+    head_pose: HeadPose,
+) !MeasurementPosition {
     try validatePosition(source_position);
     try validatePosition(head_pose.position);
     if (!std.math.isFinite(head_pose.yaw_degrees) or
@@ -2491,13 +3011,17 @@ pub fn directionFromPositions(
     const horizontal = @sqrt(
         local[0] * local[0] + local[1] * local[1],
     );
-    const result = Direction{
+    const direction = Direction{
         .azimuth_degrees = std.math.atan2(local[1], local[0]) * 180.0 /
             std.math.pi,
         .elevation_degrees = std.math.atan2(local[2], horizontal) * 180.0 /
             std.math.pi,
     };
-    try validateDirection(result);
+    const result = MeasurementPosition{
+        .direction = direction,
+        .distance_metres = @sqrt(distance_squared),
+    };
+    try validateMeasurementPosition(result);
     return result;
 }
 
@@ -2567,6 +3091,7 @@ fn roomPlanOrigin(
     return .{
         .direct_path = .{
             .direction = direct_direction,
+            .distance_metres = direct_distance,
         },
         .direct_distance = direct_distance,
     };
@@ -2709,6 +3234,7 @@ fn roomPathFromImage(
     }
     return .{
         .direction = try directionFromPositions(image, head_pose),
+        .distance_metres = reflected_distance,
         .gain = gain,
         .additional_delay_samples = delay,
     };
@@ -2726,7 +3252,10 @@ fn roomPathPlanValid(
         return false;
     }
     for (path_storage[0..path_count], 0..) |path, index| {
-        validateDirection(path.direction) catch return false;
+        validateMeasurementPosition(.{
+            .direction = path.direction,
+            .distance_metres = path.distance_metres,
+        }) catch return false;
         if (!std.math.isFinite(path.gain) or
             path.gain < 0.0 or path.gain > 1.0 or
             !std.math.isFinite(path.additional_delay_samples) or
@@ -2785,6 +3314,15 @@ fn validateDirection(direction: Direction) !void {
     }
 }
 
+fn validateMeasurementPosition(position: MeasurementPosition) !void {
+    try validateDirection(position.direction);
+    if (!std.math.isFinite(position.distance_metres) or
+        position.distance_metres <= 0.0)
+    {
+        return error.InvalidHrtfDistance;
+    }
+}
+
 fn directionVector(direction: Direction) [3]f64 {
     const azimuth =
         direction.azimuth_degrees * std.math.pi / 180.0;
@@ -2805,6 +3343,29 @@ fn chordDistanceSquared(first: [3]f64, second: [3]f64) f64 {
     return x * x + y * y + z * z;
 }
 
+fn measurementVector(position: MeasurementPosition) [3]f64 {
+    const unit = directionVector(position.direction);
+    return .{
+        unit[0] * position.distance_metres,
+        unit[1] * position.distance_metres,
+        unit[2] * position.distance_metres,
+    };
+}
+
+fn vectorDistanceSquared(first: [3]f64, second: [3]f64) f64 {
+    return chordDistanceSquared(first, second);
+}
+
+fn sameMeasurementPosition(
+    first: MeasurementPosition,
+    second: MeasurementPosition,
+) bool {
+    return vectorDistanceSquared(
+        measurementVector(first),
+        measurementVector(second),
+    ) <= direction_tolerance_squared;
+}
+
 fn sameDirection(first: [3]f64, second: [3]f64) bool {
     return chordDistanceSquared(first, second) <=
         direction_tolerance_squared;
@@ -2817,6 +3378,7 @@ test "HRTF motion clock maps ordered tracker timestamps exactly" {
         10_000_000_000,
         100,
     );
+    try std.testing.expect(clock.valid());
     try std.testing.expectEqual(
         @as(u64, 100),
         try clock.map(10_000_000_000),
@@ -2829,8 +3391,10 @@ test "HRTF motion clock maps ordered tracker timestamps exactly" {
         @as(u64, 48_100),
         try clock.map(11_000_000_000),
     );
+    try std.testing.expect(clock.valid());
 
     try clock.reanchor(12_000_000_000, 96_101);
+    try std.testing.expect(clock.valid());
     try std.testing.expectEqual(
         @as(u64, 96_101),
         try clock.map(12_000_000_000),
@@ -2839,6 +3403,7 @@ test "HRTF motion clock maps ordered tracker timestamps exactly" {
         @as(u64, 120_101),
         try clock.map(12_500_000_000),
     );
+    try std.testing.expect(clock.valid());
 }
 
 test "HRTF motion clock calibrates an observed tracker rate" {
@@ -2895,6 +3460,7 @@ test "HRTF motion clock calibrates an observed tracker rate" {
 test "HRTF motion clock calibrator filters an interior outlier" {
     const Calibrator = MotionClockCalibrator(5);
     var calibrator = Calibrator{};
+    try std.testing.expect(calibrator.valid());
     for ([_]MotionClockObservation{
         .{ .tracker_timestamp = 0, .sample_position = 0 },
         .{ .tracker_timestamp = 100_000_000, .sample_position = 4_800 },
@@ -2902,6 +3468,7 @@ test "HRTF motion clock calibrator filters an interior outlier" {
         .{ .tracker_timestamp = 300_000_000, .sample_position = 14_400 },
         .{ .tracker_timestamp = 400_000_000, .sample_position = 19_200 },
     }) |observation| try calibrator.observe(observation);
+    try std.testing.expect(calibrator.valid());
 
     var clock = try calibrator.calibrate(48_000, 1_000);
     try std.testing.expectEqual(
@@ -3000,6 +3567,7 @@ test "HRTF motion clock calibrator rolls its bounded window" {
     try std.testing.expectEqual(@as(u64, 19_200), clock.sample_anchor);
 
     calibrator.reset();
+    try std.testing.expect(calibrator.valid());
     try std.testing.expectEqual(@as(usize, 0), try calibrator.count());
     try std.testing.expectError(
         error.InsufficientHrtfTrackerClockObservations,
@@ -3045,6 +3613,7 @@ test "HRTF motion clock calibrator contains invalid state" {
 
     var corrupt_count = calibrator;
     corrupt_count.observation_count = 4;
+    try std.testing.expect(!corrupt_count.valid());
     try std.testing.expectError(
         error.InvalidHrtfMotionClockCalibratorState,
         corrupt_count.count(),
@@ -3060,6 +3629,7 @@ test "HRTF motion clock calibrator contains invalid state" {
         .sample_position = 2,
     };
     corrupt_order.observation_count = 2;
+    try std.testing.expect(!corrupt_order.valid());
     try std.testing.expectError(
         error.InvalidHrtfMotionClockCalibratorState,
         corrupt_order.observe(.{
@@ -3124,21 +3694,36 @@ test "HRTF motion clock rejects invalid and unresolved time transactionally" {
 
     var corrupt = clock;
     corrupt.tracker_ticks_per_second = 0;
+    try std.testing.expect(!corrupt.valid());
     try std.testing.expectError(
         error.InvalidHrtfMotionClockState,
         corrupt.map(50_000),
     );
     corrupt = clock;
     corrupt.sample_rate = 1;
+    try std.testing.expect(!corrupt.valid());
     try std.testing.expectError(
         error.InvalidHrtfMotionClockState,
         corrupt.reanchor(50_000, 10),
     );
+
+    corrupt = clock;
+    corrupt.has_mapped_timestamp = false;
+    try std.testing.expect(!corrupt.valid());
+    const corrupt_before = corrupt;
+    try std.testing.expectError(
+        error.InvalidHrtfMotionClockState,
+        corrupt.map(50_000),
+    );
+    try std.testing.expectEqual(corrupt_before, corrupt);
 }
 
 test "HRTF motion point queue validates and preserves tracker updates" {
     const Queue = MotionPointQueue(2);
     var queue = Queue{};
+    try std.testing.expect(queue.valid());
+    for (queue.points) |point|
+        try std.testing.expectEqualDeep(MotionPoint{}, point);
     const first = MotionPoint{
         .sample_position = 10,
         .source_position = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
@@ -3163,15 +3748,44 @@ test "HRTF motion point queue validates and preserves tracker updates" {
     };
 
     try std.testing.expect(try queue.submit(first));
+    try std.testing.expect(queue.valid());
+    const read_before_corruption = queue.read_index.load(.acquire);
+    queue.points[0].head_pose.yaw_degrees = std.math.nan(f64);
+    try std.testing.expect(!queue.valid());
+    try std.testing.expectError(
+        error.InvalidHrtfMotionQueueState,
+        queue.receive(),
+    );
+    try std.testing.expectEqual(
+        read_before_corruption,
+        queue.read_index.load(.acquire),
+    );
+    try std.testing.expectEqual(@as(usize, 1), try queue.pending());
+    queue.points[0] = first;
+    try std.testing.expect(queue.valid());
     try std.testing.expect(try queue.submit(second));
     try std.testing.expect(!(try queue.submit(third)));
     try std.testing.expectEqual(@as(usize, 2), try queue.pending());
     try std.testing.expectEqual(@as(usize, 1), queue.dropped());
+    queue.points[0].sample_position = second.sample_position;
+    try std.testing.expect(!queue.valid());
+    try std.testing.expectError(
+        error.InvalidHrtfMotionQueueState,
+        queue.receive(),
+    );
+    try std.testing.expectEqual(
+        read_before_corruption,
+        queue.read_index.load(.acquire),
+    );
+    try std.testing.expectEqual(@as(usize, 2), try queue.pending());
+    queue.points[0] = first;
+    try std.testing.expect(queue.valid());
     try std.testing.expectEqualDeep(first, (try queue.receive()).?);
     try std.testing.expect(try queue.submit(third));
     try std.testing.expectEqualDeep(second, (try queue.receive()).?);
     try std.testing.expectEqualDeep(third, (try queue.receive()).?);
     try std.testing.expect((try queue.receive()) == null);
+    try std.testing.expect(queue.valid());
 
     try std.testing.expectError(
         error.InvalidHrtfMotionSchedule,
@@ -3187,7 +3801,10 @@ test "HRTF motion point queue validates and preserves tracker updates" {
     try std.testing.expectEqual(@as(usize, 0), try queue.pending());
 
     queue.reset();
+    try std.testing.expect(queue.valid());
     try std.testing.expectEqual(@as(usize, 0), queue.dropped());
+    for (queue.points) |point|
+        try std.testing.expectEqualDeep(MotionPoint{}, point);
     try std.testing.expect(try queue.submit(.{
         .sample_position = 0,
         .source_position = first.source_position,
@@ -3276,6 +3893,7 @@ test "HRTF motion point queue contains cursor overflow" {
 
     queue.write_index.store(3, .release);
     queue.read_index.store(0, .release);
+    try std.testing.expect(!queue.valid());
     try std.testing.expectError(
         error.InvalidHrtfMotionQueueState,
         queue.pending(),
@@ -3291,9 +3909,25 @@ test "HRTF motion point queue contains cursor overflow" {
     );
 
     queue.reset();
+    try std.testing.expect(queue.valid());
     try std.testing.expect(try queue.submit(point));
     next.sample_position = 1;
     try std.testing.expect(try queue.submit(next));
+    queue.last_submitted_sample = 0;
+    try std.testing.expect(!queue.valid());
+    const write_before_rejection = queue.write_index.load(.acquire);
+    var rejected = next;
+    rejected.sample_position = 2;
+    try std.testing.expectError(
+        error.InvalidHrtfMotionQueueState,
+        queue.submit(rejected),
+    );
+    try std.testing.expectEqual(
+        write_before_rejection,
+        queue.write_index.load(.acquire),
+    );
+    queue.last_submitted_sample = 1;
+    try std.testing.expect(queue.valid());
     queue.dropped_count.store(std.math.maxInt(usize), .release);
     var overflow = next;
     overflow.sample_position = 2;
@@ -3409,6 +4043,161 @@ test "HRTF database interpolates nearest and inverse-distance responses" {
     try std.testing.expect(output[0] < output[1]);
 }
 
+test "HRTF database interpolates repeated directions across distance" {
+    const direction = Direction{
+        .azimuth_degrees = 0.0,
+        .elevation_degrees = 0.0,
+    };
+    const Db = Database(2, 1);
+    const database = try Db.initWithDistances(
+        48_000,
+        &.{ direction, direction },
+        &.{ 0.5, 1.5 },
+        &.{ 1.0, 2.0, 3.0, 4.0 },
+    );
+    try std.testing.expect(database.valid());
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ 0.5, 1.5 },
+        database.distances_metres[0..2],
+    );
+
+    var output: [2]f32 = undefined;
+    try database.interpolateAt(
+        .{ .direction = direction, .distance_metres = 0.5 },
+        .inverse_distance,
+        &output,
+    );
+    try std.testing.expectEqualDeep([_]f32{ 1.0, 2.0 }, output);
+    try database.interpolateAt(
+        .{ .direction = direction, .distance_metres = 1.0 },
+        .inverse_distance,
+        &output,
+    );
+    try std.testing.expectEqualDeep([_]f32{ 2.0, 3.0 }, output);
+    try database.interpolateAt(
+        .{ .direction = direction, .distance_metres = 1.5 },
+        .nearest,
+        &output,
+    );
+    try std.testing.expectEqualDeep([_]f32{ 3.0, 4.0 }, output);
+
+    try database.interpolate(direction, .nearest, &output);
+    try std.testing.expectEqualDeep([_]f32{ 1.0, 2.0 }, output);
+}
+
+test "HRTF single-radius data preserves directional interpolation" {
+    const directions = [_]Direction{
+        .{ .azimuth_degrees = -45.0, .elevation_degrees = 0.0 },
+        .{ .azimuth_degrees = 45.0, .elevation_degrees = 0.0 },
+    };
+    const Db = Database(2, 1);
+    const database = try Db.initWithDistances(
+        48_000,
+        &directions,
+        &.{ 2.0, 2.0 },
+        &.{ 1.0, 2.0, 3.0, 4.0 },
+    );
+    var directional: [2]f32 = undefined;
+    var spatial: [2]f32 = undefined;
+    const center = Direction{};
+    try database.interpolate(center, .inverse_distance, &directional);
+    try database.interpolateAt(
+        .{ .direction = center, .distance_metres = 100.0 },
+        .inverse_distance,
+        &spatial,
+    );
+    try std.testing.expectEqualDeep(directional, spatial);
+}
+
+test "HRTF distance construction and interpolation reject transactionally" {
+    const direction = Direction{};
+    const Db = Database(2, 1);
+    var destination: Db = undefined;
+    @memset(std.mem.asBytes(&destination), 0xA5);
+    const before = destination;
+    try std.testing.expectError(
+        error.InvalidHrtfDistanceShape,
+        Db.initWithDistancesInto(
+            &destination,
+            48_000,
+            &.{ direction, direction },
+            &.{0.5},
+            &.{ 1.0, 1.0, 2.0, 2.0 },
+        ),
+    );
+    try std.testing.expectEqualDeep(before, destination);
+    try std.testing.expectError(
+        error.InvalidHrtfDistance,
+        Db.initWithDistancesInto(
+            &destination,
+            48_000,
+            &.{ direction, direction },
+            &.{ 0.5, std.math.nan(f64) },
+            &.{ 1.0, 1.0, 2.0, 2.0 },
+        ),
+    );
+    try std.testing.expectEqualDeep(before, destination);
+
+    var database = try Db.initWithDistances(
+        48_000,
+        &.{ direction, direction },
+        &.{ 0.5, 1.5 },
+        &.{ 1.0, 1.0, 2.0, 2.0 },
+    );
+    var output = [_]f32{ 9.0, 9.0 };
+    try std.testing.expectError(
+        error.InvalidHrtfDistance,
+        database.interpolateAt(
+            .{ .direction = direction, .distance_metres = 0.0 },
+            .nearest,
+            &output,
+        ),
+    );
+    try std.testing.expectEqualDeep([_]f32{ 9.0, 9.0 }, output);
+
+    const database_before = database;
+    try std.testing.expectError(
+        error.OverlappingHrtfInterpolationStorage,
+        database.interpolate(
+            direction,
+            .nearest,
+            database.responses[0][0][0..],
+        ),
+    );
+    try std.testing.expectError(
+        error.OverlappingHrtfInterpolationStorage,
+        database.interpolateAt(
+            .{ .direction = direction, .distance_metres = 0.5 },
+            .nearest,
+            database.responses[1][0][0..],
+        ),
+    );
+    try std.testing.expectEqualDeep(database_before, database);
+
+    var corrupted = database;
+    corrupted.measurement_count = 1;
+    try std.testing.expect(!corrupted.valid());
+    try std.testing.expectError(
+        error.InvalidHrtfDatabase,
+        corrupted.interpolateAt(
+            .{ .direction = direction, .distance_metres = 0.5 },
+            .nearest,
+            &output,
+        ),
+    );
+    try std.testing.expectEqualDeep([_]f32{ 9.0, 9.0 }, output);
+
+    corrupted = database;
+    corrupted.distances_metres[0] = std.math.nan(f64);
+    try std.testing.expect(!corrupted.valid());
+    try std.testing.expectError(
+        error.InvalidHrtfDatabase,
+        corrupted.interpolateAt(.{}, .nearest, &output),
+    );
+    try std.testing.expectEqualDeep([_]f32{ 9.0, 9.0 }, output);
+}
+
 test "HRTF database applies measured delays and reconstructs exact spectra" {
     const directions = [_]Direction{
         .{ .azimuth_degrees = 0.0, .elevation_degrees = 0.0 },
@@ -3506,14 +4295,14 @@ test "HRTF room response composes bounded directional paths" {
         .{ .azimuth_degrees = 90.0, .elevation_degrees = 0.0 },
     };
     const Db = Database(2, 1);
-    const database = try Db.init(
+    var database = try Db.init(
         48_000,
         &directions,
         &.{ 1.0, 0.5, 0.25, 1.0 },
     );
     const Composer = RoomResponseComposer(4, 2);
     var composer = Composer{};
-    const paths = [_]RoomPath{
+    var paths = [_]RoomPath{
         .{ .direction = directions[0] },
         .{
             .direction = directions[1],
@@ -3523,7 +4312,7 @@ test "HRTF room response composes bounded directional paths" {
     };
     var response = [_]f32{99.0} ** 8;
     const frame_count = try composer.compose(
-        database,
+        &database,
         &paths,
         .nearest,
         &response,
@@ -3539,8 +4328,40 @@ test "HRTF room response composes bounded directional paths" {
     );
     try std.testing.expectEqualDeep([_]f32{ 99.0, 99.0 }, response[6..8].*);
 
+    const database_before_alias = database;
+    const aliased_response = @as(
+        [*]f32,
+        @ptrCast(&database.responses),
+    )[0..2];
+    try std.testing.expectError(
+        error.OverlappingHrtfRoomResponseStorage,
+        composer.compose(
+            &database,
+            paths[0..1],
+            .nearest,
+            aliased_response,
+        ),
+    );
+    try std.testing.expectEqualDeep(database_before_alias, database);
+
+    const paths_before_alias = paths;
+    const path_backed_response = @as(
+        [*]f32,
+        @ptrCast(&paths),
+    )[0..2];
+    try std.testing.expectError(
+        error.OverlappingHrtfRoomResponseStorage,
+        composer.compose(
+            &database,
+            paths[0..1],
+            .nearest,
+            path_backed_response,
+        ),
+    );
+    try std.testing.expectEqualDeep(paths_before_alias, paths);
+
     const cancellation_frames = try composer.compose(
-        database,
+        &database,
         &.{
             .{ .direction = directions[0] },
             .{ .direction = directions[0], .gain = -1.0 },
@@ -3553,7 +4374,7 @@ test "HRTF room response composes bounded directional paths" {
 
     var renderer = try Renderer(8, 8).init(48_000, .zero);
     _ = try composer.compose(
-        database,
+        &database,
         &paths,
         .nearest,
         &response,
@@ -3588,15 +4409,15 @@ test "HRTF room response composes frequency-dependent surfaces" {
         .azimuth_degrees = 0.0,
         .elevation_degrees = 0.0,
     };
-    const Db = Database(1, 1);
-    const database = try Db.init(8_000, &.{direction}, &.{ 1.0, 1.0 });
+    const Db = Database(1, 8);
+    var database = try Db.init(8_000, &.{direction}, &.{ 1.0, 1.0 });
     const room = ShoeboxRoom{
         .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
         .maximum = .{ .x = 10.0, .y = 2.0, .z = 2.0 },
         .absorption = .{ .maximum_x = 0.0 },
     };
     const Plan = ImageSourceRoomPathPlan(1);
-    const plan = try Plan.init(
+    var plan = try Plan.init(
         room,
         8_000,
         8_000.0,
@@ -3624,7 +4445,7 @@ test "HRTF room response composes frequency-dependent surfaces" {
     var composer = Composer{};
     var response = [_]f32{99.0} ** 18;
     const frame_count = try composer.compose(
-        database,
+        &database,
         &plan,
         &materials,
         .nearest,
@@ -3646,6 +4467,40 @@ test "HRTF room response composes frequency-dependent surfaces" {
     );
     try std.testing.expectEqualDeep([_]f32{ 99.0, 99.0 }, response[16..18].*);
 
+    const database_before_alias = database;
+    const aliased_response = @as(
+        [*]f32,
+        @ptrCast(&database.responses),
+    )[0..16];
+    try std.testing.expectError(
+        error.OverlappingHrtfRoomResponseStorage,
+        composer.compose(
+            &database,
+            &plan,
+            &materials,
+            .nearest,
+            aliased_response,
+        ),
+    );
+    try std.testing.expectEqualDeep(database_before_alias, database);
+
+    const plan_before_alias = plan;
+    const plan_backed_response = @as(
+        [*]f32,
+        @ptrCast(&plan),
+    )[0..16];
+    try std.testing.expectError(
+        error.OverlappingHrtfRoomResponseStorage,
+        composer.compose(
+            &database,
+            &plan,
+            &materials,
+            .nearest,
+            plan_backed_response,
+        ),
+    );
+    try std.testing.expectEqualDeep(plan_before_alias, plan);
+
     const response_before_failure = response;
     const mismatched_materials = try Materials.init(16_000, .{
         .minimum_x = &delta,
@@ -3658,7 +4513,7 @@ test "HRTF room response composes frequency-dependent surfaces" {
     try std.testing.expectError(
         error.HrtfRoomSurfaceSampleRateMismatch,
         composer.compose(
-            database,
+            &database,
             &plan,
             &mismatched_materials,
             .nearest,
@@ -3669,7 +4524,7 @@ test "HRTF room response composes frequency-dependent surfaces" {
     try std.testing.expectError(
         error.InvalidHrtfDestinationShape,
         composer.compose(
-            database,
+            &database,
             &plan,
             &materials,
             .nearest,
@@ -3680,7 +4535,7 @@ test "HRTF room response composes frequency-dependent surfaces" {
     try std.testing.expectError(
         error.OverlappingHrtfRoomResponseStorage,
         composer.compose(
-            database,
+            &database,
             &plan,
             &materials,
             .nearest,
@@ -3691,7 +4546,7 @@ test "HRTF room response composes frequency-dependent surfaces" {
     try std.testing.expectError(
         error.HrtfFrameCapacityExceeded,
         too_small.compose(
-            database,
+            &database,
             &plan,
             &materials,
             .nearest,
@@ -3795,7 +4650,7 @@ test "HRTF room materials follow repeated image surfaces transactionally" {
     try std.testing.expectError(
         error.InvalidHrtfRoomSurfaceResponseState,
         composer.compose(
-            database,
+            &database,
             &plan,
             &materials,
             .nearest,
@@ -3853,7 +4708,7 @@ test "HRTF first-order room plan derives reflection gain and delay" {
     var composer = Composer{};
     var response: [2048]f32 = @splat(99.0);
     const frame_count = try composer.compose(
-        database,
+        &database,
         paths,
         .nearest,
         &response,
@@ -4361,6 +5216,91 @@ test "HRTF higher-order room plan multiplies repeated surfaces" {
     try std.testing.expect(found_maximum);
 }
 
+test "HRTF room assets bind constructed path and response shapes" {
+    const room = ShoeboxRoom{
+        .minimum = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        .maximum = .{ .x = 4.0, .y = 4.0, .z = 4.0 },
+        .absorption = .{
+            .minimum_x = 0.0,
+            .maximum_x = 0.0,
+            .minimum_y = 0.0,
+            .maximum_y = 0.0,
+            .minimum_z = 0.0,
+            .maximum_z = 0.0,
+        },
+    };
+    const source = Position{ .x = 1.0, .y = 2.0, .z = 2.0 };
+    const head = HeadPose{
+        .position = .{ .x = 2.0, .y = 2.0, .z = 2.0 },
+    };
+
+    var first = try FirstOrderRoomPathPlan.init(
+        room,
+        48_000,
+        343.0,
+        source,
+        head,
+    );
+    first.path_count -= 1;
+    try std.testing.expect(!first.valid());
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathPlanState,
+        first.items(),
+    );
+    first.path_count = first.declared_path_count;
+    try std.testing.expect(first.valid());
+
+    var second = try SecondOrderRoomPathPlan.init(
+        room,
+        48_000,
+        343.0,
+        source,
+        head,
+    );
+    second.path_count -= 1;
+    try std.testing.expect(!second.valid());
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathPlanState,
+        second.items(),
+    );
+    second.path_count = second.declared_path_count;
+    try std.testing.expect(second.valid());
+
+    var image_source = try ImageSourceRoomPathPlan(2).init(
+        room,
+        48_000,
+        343.0,
+        source,
+        head,
+    );
+    image_source.path_count -= 1;
+    try std.testing.expect(!image_source.valid());
+    try std.testing.expectError(
+        error.InvalidHrtfRoomPathPlanState,
+        image_source.imageIndices(),
+    );
+    image_source.path_count = image_source.declared_path_count;
+    try std.testing.expect(image_source.valid());
+
+    const Materials = RoomSurfaceImpulseResponses(2);
+    const delta = [_]f32{1.0};
+    var materials = try Materials.init(8_000, .{
+        .minimum_x = &.{ 1.0, 0.5 },
+        .maximum_x = &delta,
+        .minimum_y = &delta,
+        .maximum_y = &delta,
+        .minimum_z = &delta,
+        .maximum_z = &delta,
+    });
+    materials.frame_counts[0] = 1;
+    try std.testing.expect(!materials.valid());
+    materials.frame_counts = materials.declared_frame_counts;
+    materials.sample_rate = 16_000;
+    try std.testing.expect(!materials.valid());
+    materials.sample_rate = materials.declared_sample_rate;
+    try std.testing.expect(materials.valid());
+}
+
 test "HRTF room response rejects invalid policy transactionally" {
     const direction = Direction{
         .azimuth_degrees = 0.0,
@@ -4374,12 +5314,12 @@ test "HRTF room response rejects invalid policy transactionally" {
 
     try std.testing.expectError(
         error.InvalidHrtfRoomPathCount,
-        composer.compose(database, &.{}, .nearest, &destination),
+        composer.compose(&database, &.{}, .nearest, &destination),
     );
     try std.testing.expectError(
         error.InvalidHrtfRoomPathCount,
         composer.compose(
-            database,
+            &database,
             &.{ .{ .direction = direction }, .{ .direction = direction }, .{ .direction = direction } },
             .nearest,
             &destination,
@@ -4388,7 +5328,7 @@ test "HRTF room response rejects invalid policy transactionally" {
     try std.testing.expectError(
         error.InvalidHrtfRoomPathGain,
         composer.compose(
-            database,
+            &database,
             &.{.{ .direction = direction, .gain = std.math.inf(f64) }},
             .nearest,
             &destination,
@@ -4397,7 +5337,7 @@ test "HRTF room response rejects invalid policy transactionally" {
     try std.testing.expectError(
         error.InvalidHrtfRoomPathDelay,
         composer.compose(
-            database,
+            &database,
             &.{.{
                 .direction = direction,
                 .additional_delay_samples = -0.5,
@@ -4409,7 +5349,7 @@ test "HRTF room response rejects invalid policy transactionally" {
     try std.testing.expectError(
         error.InvalidHrtfDirection,
         composer.compose(
-            database,
+            &database,
             &.{.{
                 .direction = .{
                     .azimuth_degrees = std.math.nan(f64),
@@ -4423,7 +5363,7 @@ test "HRTF room response rejects invalid policy transactionally" {
     try std.testing.expectError(
         error.HrtfFrameCapacityExceeded,
         composer.compose(
-            database,
+            &database,
             &.{.{
                 .direction = direction,
                 .additional_delay_samples = 3.0,
@@ -4435,7 +5375,7 @@ test "HRTF room response rejects invalid policy transactionally" {
     try std.testing.expectError(
         error.InvalidHrtfDestinationShape,
         composer.compose(
-            database,
+            &database,
             &.{.{ .direction = direction }},
             .nearest,
             destination[0..1],
@@ -4444,7 +5384,7 @@ test "HRTF room response rejects invalid policy transactionally" {
     try std.testing.expectError(
         error.InvalidHrtfRoomResponse,
         composer.compose(
-            database,
+            &database,
             &.{.{
                 .direction = direction,
                 .gain = std.math.floatMax(f64),
@@ -4456,7 +5396,7 @@ test "HRTF room response rejects invalid policy transactionally" {
     try std.testing.expectEqualDeep([_]f32{17.0} ** 6, destination);
 
     const frame_count = try composer.compose(
-        database,
+        &database,
         &.{.{ .direction = direction }},
         .nearest,
         &destination,
@@ -4468,7 +5408,7 @@ test "HRTF room response rejects invalid policy transactionally" {
     try std.testing.expectError(
         error.OverlappingHrtfRoomResponseStorage,
         composer.compose(
-            database,
+            &database,
             &.{.{ .direction = direction }},
             .nearest,
             composer.path_response[1..],
@@ -4513,13 +5453,16 @@ test "HRTF renderer publishes and convolves a measured response" {
     const database = try Db.init(48_000, &directions, &responses);
     const HrtfRenderer = Renderer(16, 8);
     var renderer = try HrtfRenderer.init(48_000, .zero);
+    try std.testing.expect(renderer.valid());
     try renderer.prepare(
         &database,
         directions[0],
         .nearest,
         1,
     );
+    try std.testing.expect(renderer.valid());
     try std.testing.expect(renderer.adoptPending());
+    try std.testing.expect(renderer.valid());
     try std.testing.expectEqual(@as(?u64, 1), renderer.activeGeneration());
     try std.testing.expectEqual(@as(usize, 0), renderer.latencySamples());
     const impulse = renderer.processSample(1.0);
@@ -4535,11 +5478,20 @@ test "HRTF renderer publishes and convolves a measured response" {
     );
     const contained = renderer.processSample(std.math.nan(f32));
     try std.testing.expectEqualDeep([_]f32{ 0.0, 0.0 }, contained);
+    try std.testing.expect(renderer.valid());
+    renderer.convolver.output_index = HrtfRenderer.latency_capacity;
+    try std.testing.expect(!renderer.valid());
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.0, 0.0 },
+        renderer.processSample(1.0),
+    );
     renderer.reset();
+    try std.testing.expect(renderer.valid());
     try std.testing.expect(
         try renderer.reprepareForSampleRate(96_000),
     );
     try std.testing.expect(renderer.adoptPending());
+    try std.testing.expect(renderer.valid());
     try std.testing.expectEqual(@as(?u64, 1), renderer.activeGeneration());
 }
 
@@ -4576,16 +5528,29 @@ test "HRTF motion schedule follows head pose with smooth filter changes" {
     };
     const Moving = MotionRenderer(1, 2, 4);
     var renderer = Moving{};
+    try std.testing.expect(renderer.valid());
     try renderer.prepare(
         &database,
         &points,
         .nearest,
         4,
     );
+    try std.testing.expect(renderer.valid());
     try std.testing.expectEqual(
         directions[0],
         renderer.currentDirection().?,
     );
+    var truncated_plan = renderer;
+    truncated_plan.point_count = 1;
+    try std.testing.expect(!truncated_plan.valid());
+    const truncated_history = truncated_plan.history;
+    const truncated_sample = truncated_plan.sample_position;
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.0, 0.0 },
+        truncated_plan.processSample(1.0),
+    );
+    try std.testing.expectEqualDeep(truncated_history, truncated_plan.history);
+    try std.testing.expectEqual(truncated_sample, truncated_plan.sample_position);
 
     var previous: [2]f32 = @splat(0.0);
     for (0..8) |sample_index| {
@@ -4613,6 +5578,56 @@ test "HRTF motion schedule follows head pose with smooth filter changes" {
         [_]f32{ 0.0, 1.0 },
         renderer.processSample(1.0),
     );
+    try std.testing.expect(renderer.valid());
+
+    var hostile_cursor = renderer;
+    hostile_cursor.current_point = hostile_cursor.point_count;
+    try std.testing.expect(!hostile_cursor.valid());
+    const cursor_history = hostile_cursor.history;
+    const cursor_sample = hostile_cursor.sample_position;
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.0, 0.0 },
+        hostile_cursor.processSample(1.0),
+    );
+    try std.testing.expectEqual(cursor_sample, hostile_cursor.sample_position);
+    try std.testing.expectEqualDeep(cursor_history, hostile_cursor.history);
+
+    var early_cursor = renderer;
+    early_cursor.sample_position =
+        early_cursor.points[early_cursor.current_point].sample_position - 1;
+    try std.testing.expect(!early_cursor.valid());
+    const early_history = early_cursor.history;
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.0, 0.0 },
+        early_cursor.processSample(1.0),
+    );
+    try std.testing.expectEqualDeep(early_history, early_cursor.history);
+
+    var overdue_cursor = renderer;
+    overdue_cursor.current_point = 0;
+    overdue_cursor.sample_position =
+        overdue_cursor.points[1].sample_position +
+        overdue_cursor.crossfade_samples;
+    try std.testing.expect(!overdue_cursor.valid());
+    const overdue_history = overdue_cursor.history;
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.0, 0.0 },
+        overdue_cursor.processSample(1.0),
+    );
+    try std.testing.expectEqualDeep(overdue_history, overdue_cursor.history);
+
+    var hostile_filter = renderer;
+    hostile_filter.filters[hostile_filter.current_point][0][0] =
+        std.math.nan(f32);
+    try std.testing.expect(!hostile_filter.valid());
+    const filter_history = hostile_filter.history;
+    const filter_sample = hostile_filter.sample_position;
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.0, 0.0 },
+        hostile_filter.processSample(1.0),
+    );
+    try std.testing.expectEqual(filter_sample, hostile_filter.sample_position);
+    try std.testing.expectEqualDeep(filter_history, hostile_filter.history);
 
     const original_direction = renderer.currentDirection();
     var invalid = points;
@@ -4621,10 +5636,75 @@ test "HRTF motion schedule follows head pose with smooth filter changes" {
         error.InvalidHrtfMotionSchedule,
         renderer.prepare(&database, &invalid, .nearest, 4),
     );
+    invalid[1].sample_position = std.math.maxInt(u64) - 1;
+    try std.testing.expectError(
+        error.InvalidHrtfMotionSchedule,
+        renderer.prepare(&database, &invalid, .nearest, 4),
+    );
     try std.testing.expectEqual(
         original_direction,
         renderer.currentDirection(),
     );
+    renderer.reset();
+    try std.testing.expect(renderer.valid());
+}
+
+test "HRTF static motion and room rendering select measured distance" {
+    const direction = Direction{};
+    const Db = Database(2, 1);
+    const database = try Db.initWithDistances(
+        48_000,
+        &.{ direction, direction },
+        &.{ 0.5, 1.5 },
+        &.{ 0.25, 0.5, 0.75, 1.0 },
+    );
+    const measured = try measurementFromPositions(
+        .{ .x = 1.5, .y = 0.0, .z = 0.0 },
+        .{},
+    );
+    try std.testing.expectEqual(direction, measured.direction);
+    try std.testing.expectEqual(@as(f64, 1.5), measured.distance_metres);
+
+    const Static = Renderer(1, 8);
+    var static = try Static.init(48_000, .zero);
+    try static.prepareAt(&database, measured, .nearest, 1);
+    try std.testing.expect(static.adoptPending());
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.75, 1.0 },
+        static.processSample(1.0),
+    );
+
+    const Moving = MotionRenderer(1, 1, 2);
+    var moving = Moving{};
+    try moving.prepare(
+        &database,
+        &.{.{
+            .source_position = .{ .x = 1.5, .y = 0.0, .z = 0.0 },
+        }},
+        .nearest,
+        2,
+    );
+    try std.testing.expectEqualDeep(
+        [_]f32{ 0.75, 1.0 },
+        moving.processSample(1.0),
+    );
+
+    const Composer = RoomResponseComposer(1, 1);
+    var composer = Composer{};
+    var response: [2]f32 = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        try composer.compose(
+            &database,
+            &.{.{
+                .direction = direction,
+                .distance_metres = 0.5,
+            }},
+            .nearest,
+            &response,
+        ),
+    );
+    try std.testing.expectEqualDeep([_]f32{ 0.25, 0.5 }, response);
 }
 
 test "HRTF motion schedule crossfades first-order room responses" {
@@ -4665,7 +5745,7 @@ test "HRTF motion schedule crossfades first-order room responses" {
     const Moving = MotionRenderer(8, 2, 2);
     var renderer = Moving{};
     try renderer.prepareRoom(
-        database,
+        &database,
         room,
         343.0,
         &points,
@@ -4733,7 +5813,7 @@ test "HRTF motion schedule crossfades first-order room responses" {
     try std.testing.expectError(
         error.HrtfRoomPositionOutsideBounds,
         renderer.prepareRoom(
-            database,
+            &database,
             room,
             343.0,
             &invalid,
@@ -4750,7 +5830,7 @@ test "HRTF motion schedule crossfades first-order room responses" {
     try std.testing.expectError(
         error.HrtfFrameCapacityExceeded,
         too_small.prepareRoom(
-            database,
+            &database,
             room,
             343.0,
             &points,
@@ -4789,7 +5869,7 @@ test "HRTF motion renderer prepares second-order room responses" {
     };
     var renderer = MotionRenderer(8, 1, 2){};
     try renderer.prepareSecondOrderRoom(
-        database,
+        &database,
         room,
         343.0,
         &.{point},
@@ -4819,7 +5899,7 @@ test "HRTF motion renderer prepares second-order room responses" {
     var higher_order = MotionRenderer(16, 1, 2){};
     try higher_order.prepareImageSourceRoom(
         3,
-        database,
+        &database,
         room,
         343.0,
         &.{point},
@@ -4879,7 +5959,7 @@ test "HRTF motion renderer prepares frequency-dependent room responses" {
     try renderer.prepareFrequencyDependentImageSourceRoom(
         1,
         2,
-        database,
+        &database,
         room,
         &materials,
         8_000.0,
@@ -4921,7 +6001,7 @@ test "HRTF motion renderer prepares frequency-dependent room responses" {
         renderer.prepareFrequencyDependentImageSourceRoom(
             1,
             2,
-            database,
+            &database,
             room,
             &materials,
             8_000.0,

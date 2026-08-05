@@ -8,14 +8,15 @@ pub const GainVector = struct {
     gains: [maximum_outputs]f64 = @splat(0.0),
 
     pub fn slice(self: *const GainVector) []const f64 {
-        return self.gains[0..@min(self.output_count, maximum_outputs)];
+        if (!self.valid()) return &.{};
+        return self.gains[0..self.output_count];
     }
 
     pub fn valid(self: *const GainVector) bool {
         if (self.output_count == 0 or self.output_count > maximum_outputs)
             return false;
         var has_gain = false;
-        for (self.slice()) |gain| {
+        for (self.gains[0..self.output_count]) |gain| {
             if (!std.math.isFinite(gain) or gain < 0.0) return false;
             has_gain = has_gain or gain != 0.0;
         }
@@ -353,12 +354,12 @@ fn findLabel(
     return null;
 }
 
-fn pack(raw: []const u8) adm.Identifier {
-    return adm.Identifier.parse(raw) catch unreachable;
+fn pack(raw: []const u8) !adm.Identifier {
+    return adm.Identifier.parse(raw);
 }
 
 test "ADM common speaker mapping follows first matching horizontal rule" {
-    const input_pack = pack("AP_00010005");
+    const input_pack = try pack("AP_00010005");
     const full = [_][]const u8{ "M+110", "M+030" };
     const full_result =
         resolve(input_pack, "4+5+0", "M+060", &full).?;
@@ -388,10 +389,26 @@ test "ADM common speaker mapping follows first matching horizontal rule" {
     );
 }
 
+test "ADM common speaker gain views reject malformed retained values" {
+    var gains = GainVector{ .output_count = 2 };
+    gains.gains[0] = 1.0;
+    try std.testing.expect(gains.valid());
+    try std.testing.expectEqual(@as(usize, 2), gains.slice().len);
+
+    gains.output_count = maximum_outputs + 1;
+    try std.testing.expect(!gains.valid());
+    try std.testing.expectEqual(@as(usize, 0), gains.slice().len);
+
+    gains.output_count = 2;
+    gains.gains[0] = std.math.nan(f64);
+    try std.testing.expect(!gains.valid());
+    try std.testing.expectEqual(@as(usize, 0), gains.slice().len);
+}
+
 test "ADM common speaker mapping mirrors lateral rules" {
     const labels = [_][]const u8{ "M-030", "M-110" };
     const result =
-        resolve(pack("AP_00010009"), "4+5+0", "M-090", &labels).?;
+        resolve(try pack("AP_00010009"), "4+5+0", "M-090", &labels).?;
     try std.testing.expectApproxEqAbs(
         root_third,
         result.gains[0],
@@ -405,7 +422,7 @@ test "ADM common speaker mapping mirrors lateral rules" {
 }
 
 test "ADM common speaker mapping covers upper top and bottom families" {
-    const input_pack = pack("AP_00010017");
+    const input_pack = try pack("AP_00010017");
     const upper_labels = [_][]const u8{ "U+045", "UH+180" };
     const upper =
         resolve(input_pack, "4+7+0", "U+110", &upper_labels).?;
@@ -440,7 +457,7 @@ test "ADM common speaker mapping covers upper top and bottom families" {
 }
 
 test "ADM common speaker mapping applies high-channel LFE restrictions" {
-    const high_pack = pack("AP_00010009");
+    const high_pack = try pack("AP_00010009");
     const two_lfe = [_][]const u8{ "LFE1", "LFE2" };
     const retained =
         resolve(high_pack, "9+10+3", "LFE2", &two_lfe).?;
@@ -456,7 +473,7 @@ test "ADM common speaker mapping applies high-channel LFE restrictions" {
     );
     try std.testing.expect(
         resolve(
-            pack("AP_00010005"),
+            try pack("AP_00010005"),
             "4+5+0",
             "LFE2",
             &one_lfe,
@@ -468,7 +485,7 @@ test "ADM common speaker mapping rejects noncommon and incomplete rules" {
     const labels = [_][]const u8{"M+030"};
     try std.testing.expect(
         resolve(
-            pack("AP_00011001"),
+            try pack("AP_00011001"),
             "0+5+0",
             "M+060",
             &labels,
@@ -476,7 +493,7 @@ test "ADM common speaker mapping rejects noncommon and incomplete rules" {
     );
     try std.testing.expect(
         resolve(
-            pack("AP_00010006"),
+            try pack("AP_00010006"),
             "0+5+0",
             "M+060",
             &labels,
@@ -484,7 +501,7 @@ test "ADM common speaker mapping rejects noncommon and incomplete rules" {
     );
     try std.testing.expect(
         resolve(
-            pack("AP_00010005"),
+            try pack("AP_00010005"),
             "0+5+0",
             "M+SC",
             &labels,

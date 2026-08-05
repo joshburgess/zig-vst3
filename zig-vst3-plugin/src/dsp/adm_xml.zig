@@ -215,7 +215,7 @@ const EmissionObjectParent = struct {
 };
 
 const EmissionPackChannels = struct {
-    primaries: [24]u32 = undefined,
+    primaries: [24]u32 = @splat(0),
     len: usize = 0,
 
     fn append(self: *EmissionPackChannels, primary: u32) !void {
@@ -292,9 +292,9 @@ const EmissionAlternativeParameters = struct {
     position: ?EmissionPositionOffset = null,
 
     fn usesPositionControls(self: EmissionAlternativeParameters) bool {
-        return self.position != null or
-            (self.interaction != null and
-                self.interaction.?.position_range != null);
+        if (self.position != null) return true;
+        const interaction = self.interaction orelse return false;
+        return interaction.position_range != null;
     }
 };
 
@@ -1167,8 +1167,10 @@ fn readEmissionAlternativeValueSet(
     } else return error.InvalidAdmEmissionProfileAlternativeValueSet;
 
     if (result.interaction) |alternative| {
+        const parent = parent_interaction orelse
+            return error.InvalidAdmEmissionProfileAlternativeInteraction;
         if (!emissionInteractionBaseEqual(
-            parent_interaction.?,
+            parent,
             alternative,
         )) {
             return error.InvalidAdmEmissionProfileAlternativeInteraction;
@@ -2532,9 +2534,9 @@ pub const Frequency = struct {
     high_pass_hz: ?f64 = null,
 
     pub fn isLfe(self: Frequency) bool {
-        return self.low_pass_hz != null and
-            self.high_pass_hz == null and
-            self.low_pass_hz.? <= 120.0;
+        if (self.high_pass_hz != null) return false;
+        const low_pass_hz = self.low_pass_hz orelse return false;
+        return low_pass_hz <= 120.0;
     }
 };
 
@@ -2571,18 +2573,23 @@ pub const ScreenEdge = enum {
 };
 
 pub const Position = struct {
-    coordinate: Coordinate,
-    bound: PositionBound,
-    value: f64,
+    coordinate: Coordinate = .azimuth,
+    bound: PositionBound = .exact,
+    value: f64 = 0.0,
     screen_edge_lock: ?ScreenEdge = null,
 };
 
 pub const SpeakerLabel = struct {
-    bytes: [max_adm_speaker_label_bytes]u8 = undefined,
+    bytes: [max_adm_speaker_label_bytes]u8 = @splat(0),
     len: u8 = 0,
 
     pub fn value(self: *const SpeakerLabel) []const u8 {
+        if (self.len > self.bytes.len) return &.{};
         return self.bytes[0..self.len];
+    }
+
+    pub fn valid(self: *const SpeakerLabel) bool {
+        return self.len <= self.bytes.len;
     }
 };
 
@@ -2598,19 +2605,19 @@ pub const ChannelLock = struct {
 };
 
 pub const CartesianExclusionZone = struct {
-    min_x: f64,
-    min_y: f64,
-    min_z: f64,
-    max_x: f64,
-    max_y: f64,
-    max_z: f64,
+    min_x: f64 = 0.0,
+    min_y: f64 = 0.0,
+    min_z: f64 = 0.0,
+    max_x: f64 = 0.0,
+    max_y: f64 = 0.0,
+    max_z: f64 = 0.0,
 };
 
 pub const PolarExclusionZone = struct {
-    min_azimuth: f64,
-    max_azimuth: f64,
-    min_elevation: f64,
-    max_elevation: f64,
+    min_azimuth: f64 = 0.0,
+    max_azimuth: f64 = 0.0,
+    min_elevation: f64 = 0.0,
+    max_elevation: f64 = 0.0,
 };
 
 pub const ExclusionZone = union(enum) {
@@ -2625,17 +2632,22 @@ pub const HoaNormalization = enum {
 };
 
 pub const AdmText = struct {
-    bytes: [max_profile_text_bytes]u8 = undefined,
+    bytes: [max_profile_text_bytes]u8 = @splat(0),
     len: u8 = 0,
 
     pub fn value(self: *const AdmText) []const u8 {
+        if (self.len > self.bytes.len) return &.{};
         return self.bytes[0..self.len];
+    }
+
+    pub fn valid(self: *const AdmText) bool {
+        return self.len <= self.bytes.len;
     }
 };
 
 pub const MatrixCoefficient = struct {
-    channel_identifier_bytes: [max_identifier_bytes]u8 = undefined,
-    channel_identifier_len: u8,
+    channel_identifier_bytes: [max_identifier_bytes]u8 = @splat(0),
+    channel_identifier_len: u8 = 0,
     gain: Gain = .{},
     gain_variable: ?AdmText = null,
     phase_degrees: f64 = 0.0,
@@ -2646,6 +2658,8 @@ pub const MatrixCoefficient = struct {
     pub fn channelIdentifier(
         self: *const MatrixCoefficient,
     ) !adm.Identifier {
+        if (self.channel_identifier_len > self.channel_identifier_bytes.len)
+            return error.InvalidAdmMatrixCoefficientState;
         return adm.Identifier.parse(
             self.channel_identifier_bytes[0..self.channel_identifier_len],
         );
@@ -2669,9 +2683,9 @@ pub const BlockFormat = struct {
     head_locked: bool = false,
     headphone_virtualise: HeadphoneVirtualise = .{},
     cartesian: bool = false,
-    positions: [max_adm_positions]Position = undefined,
+    positions: [max_adm_positions]Position = @splat(.{}),
     position_count: usize = 0,
-    speaker_labels: [max_adm_speaker_labels]SpeakerLabel = undefined,
+    speaker_labels: [max_adm_speaker_labels]SpeakerLabel = @splat(.{}),
     speaker_label_count: usize = 0,
     width: f64 = 0.0,
     height: f64 = 0.0,
@@ -2679,7 +2693,8 @@ pub const BlockFormat = struct {
     diffuse: f64 = 0.0,
     object_divergence: ObjectDivergence = .{},
     channel_lock: ChannelLock = .{},
-    exclusion_zones: [max_adm_exclusion_zones]ExclusionZone = undefined,
+    exclusion_zones: [max_adm_exclusion_zones]ExclusionZone =
+        @splat(.{ .cartesian = .{} }),
     exclusion_zone_count: usize = 0,
     screen_ref: bool = false,
     hoa_equation: ?AdmText = null,
@@ -2688,28 +2703,40 @@ pub const BlockFormat = struct {
     hoa_normalization: HoaNormalization = .sn3d,
     hoa_nfc_reference_distance: f64 = 0.0,
     matrix_coefficients: [max_adm_matrix_coefficients]MatrixCoefficient =
-        undefined,
+        @splat(.{}),
     matrix_coefficient_count: usize = 0,
 
+    pub fn retainedCountsValid(self: *const BlockFormat) bool {
+        return self.position_count <= self.positions.len and
+            self.speaker_label_count <= self.speaker_labels.len and
+            self.exclusion_zone_count <= self.exclusion_zones.len and
+            self.matrix_coefficient_count <= self.matrix_coefficients.len;
+    }
+
     pub fn positionSlice(self: *const BlockFormat) []const Position {
+        if (self.position_count > self.positions.len) return &.{};
         return self.positions[0..self.position_count];
     }
 
     pub fn speakerLabelSlice(
         self: *const BlockFormat,
     ) []const SpeakerLabel {
+        if (self.speaker_label_count > self.speaker_labels.len) return &.{};
         return self.speaker_labels[0..self.speaker_label_count];
     }
 
     pub fn exclusionZoneSlice(
         self: *const BlockFormat,
     ) []const ExclusionZone {
+        if (self.exclusion_zone_count > self.exclusion_zones.len) return &.{};
         return self.exclusion_zones[0..self.exclusion_zone_count];
     }
 
     pub fn matrixCoefficientSlice(
         self: *const BlockFormat,
     ) []const MatrixCoefficient {
+        if (self.matrix_coefficient_count > self.matrix_coefficients.len)
+            return &.{};
         return self.matrix_coefficients[0..self.matrix_coefficient_count];
     }
 };
@@ -2966,6 +2993,14 @@ fn MetadataElementIterator(comptime relation: MetadataElementRelation) type {
         /// Returned namespace and owner identifier storage remain valid until
         /// the next iterator call.
         pub fn next(self: *Self) !?Result {
+            const checkpoint = self.*;
+            return self.nextInPlace() catch |err| {
+                self.* = checkpoint;
+                return err;
+            };
+        }
+
+        fn nextInPlace(self: *Self) !?Result {
             while (try self.events.next()) |event| {
                 switch (event) {
                     .start => |element| {
@@ -3253,7 +3288,11 @@ pub const ExtensionAttributeIterator = struct {
     pub fn next(
         self: *ExtensionAttributeIterator,
     ) !?ExtensionAttribute {
-        return self.iterator.next(.foreign);
+        const checkpoint = self.*;
+        return self.iterator.next(.foreign) catch |err| {
+            self.* = checkpoint;
+            return err;
+        };
     }
 };
 
@@ -3269,7 +3308,11 @@ pub const UntypedAttributeIterator = struct {
     pub fn next(
         self: *UntypedAttributeIterator,
     ) !?UntypedAttribute {
-        return self.iterator.next(.metadata);
+        const checkpoint = self.*;
+        return self.iterator.next(.metadata) catch |err| {
+            self.* = checkpoint;
+            return err;
+        };
     }
 };
 
@@ -4000,7 +4043,9 @@ pub const Document = struct {
                         continue;
                     }
                     if (element.self_closing) {
-                        try validateEmissionFormatOwner(owner.?);
+                        const current = owner orelse
+                            return error.InvalidAdmEmissionProfileFormatStructure;
+                        try validateEmissionFormatOwner(current);
                         owner = null;
                     }
                 },
@@ -4035,7 +4080,8 @@ pub const Document = struct {
             if (block.identifier.typeLabel() != 0x0003) continue;
             if (!block.rtime_explicit or block.duration == null)
                 return error.MissingAdmEmissionProfileBlockTiming;
-            const duration = block.duration.?;
+            const duration = block.duration orelse
+                return error.MissingAdmEmissionProfileBlockTiming;
             if (duration.compare(zero) != .eq and
                 duration.compare(minimum_duration) == .lt)
             {
@@ -4380,7 +4426,8 @@ pub const Document = struct {
                         frame_depth = element.depth;
                         continue;
                     }
-                    const depth = frame_depth.?;
+                    const depth = frame_depth orelse
+                        return error.InvalidAdmEmissionProfileSerialFrame;
                     if (element.depth != depth + 1) continue;
                     if (std.mem.eql(u8, name, "frameHeader")) {
                         header_count += 1;
@@ -5261,7 +5308,9 @@ pub const Document = struct {
                                 &events,
                                 element,
                             );
-                        if (parameters.interaction.?.position_range != null)
+                        const interaction = parameters.interaction orelse
+                            return error.InvalidAdmEmissionProfileObjectInteraction;
+                        if (interaction.position_range != null)
                             parameters.uses_position_controls = true;
                         continue;
                     }
@@ -5895,8 +5944,10 @@ pub const Document = struct {
                     output_pack = target.primary;
                 },
                 .channel_format => {
+                    const definition_index = target.definitionIndex() orelse
+                        return error.InvalidAdmEmissionProfileMatrixPack;
                     if (target.typeLabel() != 0x0002 or
-                        target.definitionIndex().? < 0x1000 or
+                        definition_index < 0x1000 or
                         channels.indexOf(target.primary) != null)
                     {
                         return error.InvalidAdmEmissionProfileMatrixPack;
@@ -7043,6 +7094,14 @@ pub const ProfileIterator = struct {
 
     /// Returned fields remain valid until the next iterator call.
     pub fn next(self: *ProfileIterator) !?Profile {
+        const checkpoint = self.*;
+        return self.nextInPlace() catch |err| {
+            self.* = checkpoint;
+            return err;
+        };
+    }
+
+    fn nextInPlace(self: *ProfileIterator) !?Profile {
         while (try self.events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -7060,7 +7119,7 @@ pub const ProfileIterator = struct {
                     const owner_depth = self.owner_depth orelse continue;
                     if (element.depth <= owner_depth) continue;
                     if (std.mem.eql(u8, element.localName(), "profileList")) {
-                        if (element.depth != owner_depth + 1)
+                        if (!isDirectChild(owner_depth, element.depth))
                             return error.InvalidAdmProfileListOwner;
                         if (self.profile_list_seen)
                             return error.MultipleAdmProfileLists;
@@ -7088,7 +7147,7 @@ pub const ProfileIterator = struct {
                     }
                     const list_depth = self.profile_list_depth orelse
                         return error.InvalidAdmProfileOwner;
-                    if (element.depth != list_depth + 1)
+                    if (!isDirectChild(list_depth, element.depth))
                         return error.InvalidAdmProfileOwner;
                     if (self.scope == .serial_frame_header) {
                         try validateEmissionAttributes(
@@ -7100,7 +7159,11 @@ pub const ProfileIterator = struct {
                     if (element.self_closing)
                         return error.EmptyAdmProfileReference;
                     const profile = try self.readProfile(element);
-                    self.profiles_in_list += 1;
+                    self.profiles_in_list = std.math.add(
+                        usize,
+                        self.profiles_in_list,
+                        1,
+                    ) catch return error.InvalidAdmProfileIteratorState;
                     return profile;
                 },
                 .end => |element| {
@@ -7216,6 +7279,14 @@ pub const TagIterator = struct {
 
     /// Returned text and identifiers remain valid until the next iterator call.
     pub fn next(self: *TagIterator) !?TagItem {
+        const checkpoint = self.*;
+        return self.nextInPlace() catch |err| {
+            self.* = checkpoint;
+            return err;
+        };
+    }
+
+    fn nextInPlace(self: *TagIterator) !?TagItem {
         while (try self.events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -7234,7 +7305,7 @@ pub const TagIterator = struct {
                     if (std.mem.eql(u8, element.localName(), "tagList")) {
                         const afe_depth = self.afe_depth orelse
                             return error.InvalidAdmTagListOwner;
-                        if (element.depth != afe_depth + 1)
+                        if (!isDirectChild(afe_depth, element.depth))
                             return error.InvalidAdmTagListOwner;
                         if (self.tag_list_seen)
                             return error.MultipleAdmTagLists;
@@ -7247,7 +7318,7 @@ pub const TagIterator = struct {
                     if (std.mem.eql(u8, element.localName(), "tagGroup")) {
                         const list_depth = self.tag_list_depth orelse
                             return error.InvalidAdmTagGroupOwner;
-                        if (element.depth != list_depth + 1 or
+                        if (!isDirectChild(list_depth, element.depth) or
                             self.tag_group_depth != null)
                         {
                             return error.InvalidAdmTagGroupOwner;
@@ -7263,7 +7334,7 @@ pub const TagIterator = struct {
                     if (std.mem.eql(u8, element.localName(), "tag")) {
                         const depth = group_depth orelse
                             return error.InvalidAdmTagOwner;
-                        if (element.depth != depth + 1)
+                        if (!isDirectChild(depth, element.depth))
                             return error.InvalidAdmTagOwner;
                         const encoded_class = try element.attribute("class");
                         const class = if (encoded_class) |encoded|
@@ -7274,7 +7345,11 @@ pub const TagIterator = struct {
                         else
                             null;
                         const value = try self.readText(element);
-                        self.tags_in_group += 1;
+                        self.tags_in_group = std.math.add(
+                            usize,
+                            self.tags_in_group,
+                            1,
+                        ) catch return error.InvalidAdmTagIteratorState;
                         return .{ .tag = .{
                             .group_index = self.group_count,
                             .value = value,
@@ -7287,7 +7362,7 @@ pub const TagIterator = struct {
                     if (self.tag_list_depth == null) continue;
                     const depth = group_depth orelse
                         return error.InvalidAdmTagTargetOwner;
-                    if (element.depth != depth + 1)
+                    if (!isDirectChild(depth, element.depth))
                         return error.InvalidAdmTagTargetOwner;
                     const raw = try self.readText(element);
                     const identifier = try adm.Identifier.parse(raw);
@@ -7297,7 +7372,11 @@ pub const TagIterator = struct {
                         self.identifier_storage[0..raw.len],
                         raw,
                     );
-                    self.targets_in_group += 1;
+                    self.targets_in_group = std.math.add(
+                        usize,
+                        self.targets_in_group,
+                        1,
+                    ) catch return error.InvalidAdmTagIteratorState;
                     return .{ .target = .{
                         .group_index = self.group_count,
                         .identifier = try adm.Identifier.parse(
@@ -7314,7 +7393,11 @@ pub const TagIterator = struct {
                         if (self.targets_in_group == 0)
                             return error.AdmTagGroupMissingTarget;
                         self.tag_group_depth = null;
-                        self.group_count += 1;
+                        self.group_count = std.math.add(
+                            usize,
+                            self.group_count,
+                            1,
+                        ) catch return error.InvalidAdmTagIteratorState;
                     }
                     if (self.tag_list_depth == element.depth and
                         std.mem.eql(u8, element.localName(), "tagList"))
@@ -7395,6 +7478,14 @@ pub const BlockIterator = struct {
 
     /// Returned identifiers remain valid until the next iterator call.
     pub fn next(self: *BlockIterator) !?BlockFormat {
+        const checkpoint = self.*;
+        return self.nextInPlace() catch |err| {
+            self.* = checkpoint;
+            return err;
+        };
+    }
+
+    fn nextInPlace(self: *BlockIterator) !?BlockFormat {
         while (try self.events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -7451,7 +7542,7 @@ pub const BlockIterator = struct {
                     )) {
                         const channel_depth = self.channel_depth orelse
                             return error.InvalidAdmFrequencyOwner;
-                        if (element.depth != channel_depth + 1)
+                        if (!isDirectChild(channel_depth, element.depth))
                             return error.InvalidAdmFrequencyOwner;
                         const type_definition =
                             try element.attribute("typeDefinition") orelse
@@ -7491,7 +7582,7 @@ pub const BlockIterator = struct {
                         return error.InvalidAdmBlockOwner;
                     const channel_depth = self.channel_depth orelse
                         return error.InvalidAdmBlockOwner;
-                    if (element.depth != channel_depth + 1)
+                    if (!isDirectChild(channel_depth, element.depth))
                         return error.InvalidAdmBlockOwner;
                     return try self.readBlock(
                         element,
@@ -8319,6 +8410,14 @@ pub const DeclarationIterator = struct {
 
     /// The returned identifier remains valid until the next iterator call.
     pub fn next(self: *DeclarationIterator) !?Declaration {
+        const checkpoint = self.*;
+        return self.nextInPlace() catch |err| {
+            self.* = checkpoint;
+            return err;
+        };
+    }
+
+    fn nextInPlace(self: *DeclarationIterator) !?Declaration {
         while (try self.events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -8383,6 +8482,14 @@ pub const ReferenceIterator = struct {
 
     /// Returned identifiers remain valid until the next iterator call.
     pub fn next(self: *ReferenceIterator) !?Reference {
+        const checkpoint = self.*;
+        return self.nextInPlace() catch |err| {
+            self.* = checkpoint;
+            return err;
+        };
+    }
+
+    fn nextInPlace(self: *ReferenceIterator) !?Reference {
         while (try self.events.next()) |event| {
             switch (event) {
                 .start => |element| {
@@ -8648,9 +8755,13 @@ fn insideAfe(afe_depth: ?usize, element_depth: usize) bool {
     return element_depth > depth;
 }
 
+fn isDirectChild(parent_depth: usize, child_depth: usize) bool {
+    return child_depth > parent_depth and child_depth - parent_depth == 1;
+}
+
 fn directOwner(owner_depth: ?usize, reference_depth: usize) bool {
     const depth = owner_depth orelse return false;
-    return depth + 1 == reference_depth;
+    return isDirectChild(depth, reference_depth);
 }
 
 fn validateReferenceRelationship(
@@ -9168,19 +9279,20 @@ fn validatePositionBounds(positions: []const Position) !void {
         }
         if (exact) |value| {
             if (coordinate == .azimuth) {
-                if (minimum != null and maximum != null) {
-                    if (!insideAdmAngleRange(
-                        value,
-                        minimum.?,
-                        maximum.?,
-                    )) {
-                        return error.InvalidAdmPositionBounds;
-                    }
-                } else {
-                    if (minimum) |minimum_value| {
+                if (minimum) |minimum_value| {
+                    if (maximum) |maximum_value| {
+                        if (!insideAdmAngleRange(
+                            value,
+                            minimum_value,
+                            maximum_value,
+                        )) {
+                            return error.InvalidAdmPositionBounds;
+                        }
+                    } else {
                         if (value < minimum_value)
                             return error.InvalidAdmPositionBounds;
                     }
+                } else {
                     if (maximum) |maximum_value| {
                         if (value > maximum_value)
                             return error.InvalidAdmPositionBounds;
@@ -9283,6 +9395,32 @@ test "ADM XML validates a namespaced custom reference graph" {
     try std.testing.expect(try document.contains(
         try adm.Identifier.parse("AB_00031001_00000001"),
     ));
+}
+
+test "ADM XML public iterators roll back malformed nested cursors" {
+    const document = try Document.init("<audioFormatExtended/>");
+
+    var declarations = document.declarations();
+    declarations.events.events.offset = std.math.maxInt(usize);
+    try std.testing.expectError(
+        error.InvalidXmlEventIteratorState,
+        declarations.next(),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        declarations.events.events.offset,
+    );
+
+    var attributes = document.extensionAttributes();
+    attributes.iterator.events.offset = std.math.maxInt(usize);
+    try std.testing.expectError(
+        error.InvalidXmlEventIteratorState,
+        attributes.next(),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        attributes.iterator.events.offset,
+    );
 }
 
 test "ADM XML resolves typed namespace identity" {
@@ -9770,6 +9908,50 @@ test "ADM XML exposes complete profile declarations" {
     try std.testing.expectEqualStrings("2", second.level);
     try std.testing.expectEqualStrings("EBU R 143", second.reference);
     try std.testing.expect((try profiles.next()) == null);
+}
+
+test "ADM XML profile iterator contains hostile retained state" {
+    const document = try Document.init(
+        \\<audioFormatExtended>
+        \\  <profileList>
+        \\    <profile profileName="A" profileVersion="1" profileLevel="1">A</profile>
+        \\    <profile profileName="B" profileVersion="1" profileLevel="1">B</profile>
+        \\  </profileList>
+        \\</audioFormatExtended>
+    );
+    var profiles = document.profiles();
+    _ = (try profiles.next()).?;
+
+    profiles.profile_list_depth = std.math.maxInt(usize);
+    const hostile_depth_offset = profiles.events.events.offset;
+    try std.testing.expectError(
+        error.InvalidAdmProfileOwner,
+        profiles.next(),
+    );
+    try std.testing.expectEqual(
+        hostile_depth_offset,
+        profiles.events.events.offset,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        profiles.profile_list_depth.?,
+    );
+
+    profiles.profile_list_depth = 1;
+    profiles.profiles_in_list = std.math.maxInt(usize);
+    const hostile_count_offset = profiles.events.events.offset;
+    try std.testing.expectError(
+        error.InvalidAdmProfileIteratorState,
+        profiles.next(),
+    );
+    try std.testing.expectEqual(
+        hostile_count_offset,
+        profiles.events.events.offset,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        profiles.profiles_in_list,
+    );
 }
 
 test "ADM XML rejects malformed profile lists" {
@@ -13541,6 +13723,85 @@ test "ADM XML exposes tag groups and typed targets" {
     try std.testing.expectEqual(adm.IdentifierKind.object, object.identifier.kind);
 }
 
+test "ADM XML tag iterator contains hostile retained state" {
+    const document = try Document.init(
+        \\<audioFormatExtended>
+        \\  <audioObject audioObjectID="AO_1001"/>
+        \\  <tagList><tagGroup>
+        \\    <tag>first</tag><tag>second</tag>
+        \\    <audioObjectIDRef>AO_1001</audioObjectIDRef>
+        \\  </tagGroup></tagList>
+        \\</audioFormatExtended>
+    );
+    var items = document.tags();
+    _ = (try items.next()).?.tag;
+
+    items.tag_group_depth = std.math.maxInt(usize);
+    const hostile_depth_offset = items.events.events.offset;
+    try std.testing.expectError(error.InvalidAdmTagOwner, items.next());
+    try std.testing.expectEqual(
+        hostile_depth_offset,
+        items.events.events.offset,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        items.tag_group_depth.?,
+    );
+
+    items.tag_group_depth = 2;
+    items.tags_in_group = std.math.maxInt(usize);
+    const hostile_count_offset = items.events.events.offset;
+    try std.testing.expectError(
+        error.InvalidAdmTagIteratorState,
+        items.next(),
+    );
+    try std.testing.expectEqual(
+        hostile_count_offset,
+        items.events.events.offset,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        items.tags_in_group,
+    );
+
+    var target_items = document.tags();
+    _ = (try target_items.next()).?.tag;
+    _ = (try target_items.next()).?.tag;
+    target_items.targets_in_group = std.math.maxInt(usize);
+    const hostile_target_offset = target_items.events.events.offset;
+    try std.testing.expectError(
+        error.InvalidAdmTagIteratorState,
+        target_items.next(),
+    );
+    try std.testing.expectEqual(
+        hostile_target_offset,
+        target_items.events.events.offset,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        target_items.targets_in_group,
+    );
+
+    var group_items = document.tags();
+    _ = (try group_items.next()).?.tag;
+    _ = (try group_items.next()).?.tag;
+    _ = (try group_items.next()).?.target;
+    group_items.group_count = std.math.maxInt(usize);
+    const hostile_group_offset = group_items.events.events.offset;
+    try std.testing.expectError(
+        error.InvalidAdmTagIteratorState,
+        group_items.next(),
+    );
+    try std.testing.expectEqual(
+        hostile_group_offset,
+        group_items.events.events.offset,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        group_items.group_count,
+    );
+}
+
 test "ADM XML rejects malformed tag groups and misplaced references" {
     try std.testing.expectError(
         error.AdmTagGroupMissingTarget,
@@ -13646,6 +13907,76 @@ test "ADM XML exposes block timing and common parameters" {
         first.headphone_virtualise.direct_to_reverberant_ratio_db,
     );
     try std.testing.expectEqual(@as(usize, 3), first.position_count);
+    for (first.positions[first.position_count..]) |position|
+        try std.testing.expectEqualDeep(Position{}, position);
+    for (first.speaker_labels) |label| {
+        try std.testing.expectEqual(@as(u8, 0), label.len);
+        try std.testing.expectEqual(
+            @as([max_adm_speaker_label_bytes]u8, @splat(0)),
+            label.bytes,
+        );
+    }
+    for (first.exclusion_zones) |zone| switch (zone) {
+        .cartesian => |cartesian| try std.testing.expectEqualDeep(
+            CartesianExclusionZone{},
+            cartesian,
+        ),
+        .polar => return error.TestUnexpectedResult,
+    };
+    for (first.matrix_coefficients) |coefficient| {
+        try std.testing.expectEqual(
+            @as(u8, 0),
+            coefficient.channel_identifier_len,
+        );
+        try std.testing.expectEqual(
+            @as([max_identifier_bytes]u8, @splat(0)),
+            coefficient.channel_identifier_bytes,
+        );
+    }
+
+    var malformed_block = first;
+    malformed_block.position_count = std.math.maxInt(usize);
+    malformed_block.speaker_label_count = std.math.maxInt(usize);
+    malformed_block.exclusion_zone_count = std.math.maxInt(usize);
+    malformed_block.matrix_coefficient_count = std.math.maxInt(usize);
+    try std.testing.expect(!malformed_block.retainedCountsValid());
+    try std.testing.expectEqual(@as(usize, 0), malformed_block.positionSlice().len);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        malformed_block.speakerLabelSlice().len,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        malformed_block.exclusionZoneSlice().len,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        malformed_block.matrixCoefficientSlice().len,
+    );
+
+    const malformed_text = AdmText{ .len = std.math.maxInt(u8) };
+    try std.testing.expect(!malformed_text.valid());
+    try std.testing.expectEqual(@as(usize, 0), malformed_text.value().len);
+    try std.testing.expectEqual(
+        @as([max_profile_text_bytes]u8, @splat(0)),
+        (AdmText{}).bytes,
+    );
+
+    const malformed_label = SpeakerLabel{ .len = std.math.maxInt(u8) };
+    try std.testing.expect(!malformed_label.valid());
+    try std.testing.expectEqual(@as(usize, 0), malformed_label.value().len);
+    try std.testing.expectEqual(
+        @as([max_adm_speaker_label_bytes]u8, @splat(0)),
+        (SpeakerLabel{}).bytes,
+    );
+
+    const malformed_coefficient = MatrixCoefficient{
+        .channel_identifier_len = std.math.maxInt(u8),
+    };
+    try std.testing.expectError(
+        error.InvalidAdmMatrixCoefficientState,
+        malformed_coefficient.channelIdentifier(),
+    );
     try std.testing.expectEqual(@as(f64, 45.0), first.width);
     try std.testing.expectEqual(@as(f64, 20.0), first.height);
     try std.testing.expectEqual(@as(f64, 0.2), first.depth);
@@ -13660,6 +13991,19 @@ test "ADM XML exposes block timing and common parameters" {
         first.channel_lock.max_distance,
     );
     try std.testing.expect(first.screen_ref);
+
+    blocks.channel_depth = std.math.maxInt(usize);
+    const hostile_depth_offset = blocks.events.events.offset;
+    try std.testing.expectError(error.InvalidAdmBlockOwner, blocks.next());
+    try std.testing.expectEqual(
+        hostile_depth_offset,
+        blocks.events.events.offset,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        blocks.channel_depth.?,
+    );
+    blocks.channel_depth = 1;
 
     const second = (try blocks.next()).?;
     try std.testing.expectEqual(GainUnit.linear, second.gain.unit);

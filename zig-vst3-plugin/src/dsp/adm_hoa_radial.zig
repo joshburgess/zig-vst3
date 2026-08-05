@@ -51,10 +51,11 @@ pub fn RadialFilterBank(
         const Self = @This();
 
         input_count: usize,
+        declared_input_count: usize,
         reference_distance: f64,
         screen_reference: bool,
         config: Config,
-        orders: [maximum_inputs]u8 = undefined,
+        orders: [maximum_inputs]u8 = @splat(0),
         section_counts: [maximum_inputs]u8 = @splat(0),
         coefficients: [maximum_inputs][section_capacity]biquad.Coefficients =
             @splat(@splat(.{})),
@@ -79,6 +80,7 @@ pub fn RadialFilterBank(
 
             var result = Self{
                 .input_count = blocks.len,
+                .declared_input_count = blocks.len,
                 .reference_distance = reference_distance,
                 .screen_reference = blocks[0].screen_ref,
                 .config = config,
@@ -149,6 +151,7 @@ pub fn RadialFilterBank(
         pub fn reset(self: *Self) void {
             if (self.input_count == 0 or self.input_count > maximum_inputs)
                 return;
+            if (self.input_count != self.declared_input_count) return;
             for (0..self.input_count) |input| {
                 if (self.section_counts[input] > section_capacity) return;
             }
@@ -245,17 +248,22 @@ pub fn RadialFilterBank(
             validateConfig(self.config) catch return false;
             if (self.input_count == 0 or
                 self.input_count > maximum_inputs or
+                self.input_count != self.declared_input_count or
                 !std.math.isFinite(self.reference_distance) or
-                self.reference_distance <= 0.0)
+                self.reference_distance <= 0.0 or
+                (self.screen_reference and
+                    self.config.screen_reference_policy == .reject))
             {
                 return false;
             }
             for (0..self.input_count) |input| {
                 const count = self.section_counts[input];
+                const expected_count = self.expectedSectionCount(
+                    self.orders[input],
+                ) orelse return false;
                 if (self.orders[input] > maximum_order or
                     count > section_capacity or
-                    (self.orders[input] == 0 and count != 0) or
-                    (self.orders[input] != 0 and count == 0))
+                    count != expected_count)
                 {
                     return false;
                 }
@@ -287,6 +295,44 @@ pub fn RadialFilterBank(
                 }
             }
             return true;
+        }
+
+        fn expectedSectionCount(
+            self: *const Self,
+            order: u8,
+        ) ?u8 {
+            if (order > maximum_order) return null;
+            var count: usize = (@as(usize, order) + 1) / 2;
+            switch (self.config.regularization) {
+                .none => {},
+                .gain_limit => |limit| {
+                    const distance_ratio =
+                        self.config.loudspeaker_distance /
+                        self.reference_distance;
+                    if (!std.math.isFinite(distance_ratio) or
+                        distance_ratio <= 0.0)
+                    {
+                        return null;
+                    }
+                    const ideal_dc_gain = std.math.pow(
+                        f64,
+                        distance_ratio,
+                        @floatFromInt(order),
+                    );
+                    const maximum_gain = std.math.pow(
+                        f64,
+                        10.0,
+                        limit.maximum_gain_db / 20.0,
+                    );
+                    if (std.math.isNan(ideal_dc_gain) or
+                        !std.math.isFinite(maximum_gain))
+                    {
+                        return null;
+                    }
+                    if (ideal_dc_gain > maximum_gain) count += 1;
+                },
+            }
+            return std.math.cast(u8, count);
         }
 
         fn designOrder(
@@ -564,16 +610,110 @@ fn hoaBlock(
     };
 }
 
+fn referenceReverseBesselValue(
+    order: usize,
+    argument: std.math.Complex(f64),
+) std.math.Complex(f64) {
+    var result = std.math.Complex(f64).init(0.0, 0.0);
+    var power = order + 1;
+    while (power > 0) {
+        power -= 1;
+        const numerator = referenceFactorial(2 * order - power);
+        var denominator: f128 = 1.0;
+        for (0..order - power) |_| denominator *= 2.0;
+        denominator *= referenceFactorial(order - power);
+        denominator *= referenceFactorial(power);
+        const coefficient: f64 = @floatCast(numerator / denominator);
+        result = result.mul(argument).add(
+            std.math.Complex(f64).init(coefficient, 0.0),
+        );
+    }
+    return result;
+}
+
+fn referenceFactorial(value: usize) f128 {
+    var result: f128 = 1.0;
+    var factor: usize = 2;
+    while (factor <= value) : (factor += 1)
+        result *= @floatFromInt(factor);
+    return result;
+}
+
+fn referenceRadialMagnitude(
+    order: usize,
+    reference_distance: f64,
+    config: Config,
+    frequency_hz: f64,
+) f64 {
+    if (order == 0 or frequency_hz == config.sample_rate * 0.5)
+        return 1.0;
+    const warped_frequency = 2.0 * config.sample_rate *
+        @tan(std.math.pi * frequency_hz / config.sample_rate);
+    const imaginary = std.math.Complex(f64).init(0.0, warped_frequency);
+    const numerator = referenceReverseBesselValue(
+        order,
+        imaginary.mul(std.math.Complex(f64).init(
+            reference_distance / config.speed_of_sound,
+            0.0,
+        )),
+    );
+    const denominator = referenceReverseBesselValue(
+        order,
+        imaginary.mul(std.math.Complex(f64).init(
+            config.loudspeaker_distance / config.speed_of_sound,
+            0.0,
+        )),
+    );
+    var magnitude = numerator.div(denominator).magnitude() *
+        std.math.pow(
+            f64,
+            config.loudspeaker_distance / reference_distance,
+            @floatFromInt(order),
+        );
+    switch (config.regularization) {
+        .none => {},
+        .gain_limit => |limit| {
+            const ideal_dc_gain = std.math.pow(
+                f64,
+                config.loudspeaker_distance / reference_distance,
+                @floatFromInt(order),
+            );
+            const maximum_gain = std.math.pow(
+                f64,
+                10.0,
+                limit.maximum_gain_db / 20.0,
+            );
+            if (ideal_dc_gain > maximum_gain) {
+                const dc_gain = maximum_gain / ideal_dc_gain;
+                const warped_transition = 2.0 * config.sample_rate *
+                    @tan(
+                        std.math.pi * limit.transition_hz /
+                            config.sample_rate,
+                    );
+                magnitude *= @sqrt(
+                    (warped_frequency * warped_frequency +
+                        dc_gain * dc_gain *
+                            warped_transition * warped_transition) /
+                        (warped_frequency * warped_frequency +
+                            warped_transition * warped_transition),
+                );
+            }
+        },
+    }
+    return magnitude;
+}
+
 test "ADM HOA radial filter follows distance adaptation limits" {
     const blocks = [_]adm_xml.BlockFormat{
         try hoaBlock(0, 0, 1.0),
         try hoaBlock(1, -1, 1.0),
         try hoaBlock(2, 0, 1.0),
     };
-    var bank = try RadialFilterBank(f64, 3, 4).init(&blocks, .{
+    var bank = try RadialFilterBank(f64, 4, 4).init(&blocks, .{
         .sample_rate = 48_000.0,
         .loudspeaker_distance = 2.0,
     });
+    try std.testing.expectEqual(@as(u8, 0), bank.orders[3]);
     try std.testing.expectApproxEqAbs(
         @as(f64, 1.0),
         bank.magnitude(0, 0.0),
@@ -623,6 +763,101 @@ test "ADM HOA radial filter designs every supported order" {
             @as(f64, 1.0),
             bank.magnitude(0, 96_000.0),
             1.0e-10,
+        );
+    }
+}
+
+test "ADM HOA radial filters match direct reverse-Bessel references" {
+    const geometries = [_]struct {
+        sample_rate: f64,
+        reference_distance: f64,
+        loudspeaker_distance: f64,
+    }{
+        .{
+            .sample_rate = 48_000.0,
+            .reference_distance = 0.5,
+            .loudspeaker_distance = 1.25,
+        },
+        .{
+            .sample_rate = 96_000.0,
+            .reference_distance = 1.0,
+            .loudspeaker_distance = 2.0,
+        },
+        .{
+            .sample_rate = 192_000.0,
+            .reference_distance = 2.0,
+            .loudspeaker_distance = 0.75,
+        },
+    };
+    for (geometries) |geometry| {
+        var blocks = [_]adm_xml.BlockFormat{
+            try hoaBlock(1, 0, geometry.reference_distance),
+        };
+        const config = Config{
+            .sample_rate = geometry.sample_rate,
+            .loudspeaker_distance = geometry.loudspeaker_distance,
+        };
+        const frequencies = [_]f64{
+            0.0,
+            5.0,
+            20.0,
+            80.0,
+            250.0,
+            1_000.0,
+            5_000.0,
+            geometry.sample_rate * 0.2,
+            geometry.sample_rate * 0.49,
+            geometry.sample_rate * 0.5,
+        };
+        for (1..17) |order| {
+            blocks[0].hoa_order = @intCast(order);
+            const bank = try RadialFilterBank(f64, 1, 16).init(
+                &blocks,
+                config,
+            );
+            for (frequencies) |frequency| {
+                const expected = referenceRadialMagnitude(
+                    order,
+                    geometry.reference_distance,
+                    config,
+                    frequency,
+                );
+                const actual = bank.magnitude(0, frequency);
+                try std.testing.expectApproxEqAbs(
+                    expected,
+                    actual,
+                    2.0e-7 * @max(expected, 1.0),
+                );
+            }
+        }
+    }
+}
+
+test "regularized HOA radial filters match the direct shelf reference" {
+    const reference_distance = 0.5;
+    const blocks = [_]adm_xml.BlockFormat{
+        try hoaBlock(8, 0, reference_distance),
+    };
+    const config = Config{
+        .sample_rate = 48_000.0,
+        .loudspeaker_distance = 2.0,
+        .regularization = .{ .gain_limit = .{
+            .maximum_gain_db = 18.0,
+            .transition_hz = 120.0,
+        } },
+    };
+    const bank = try RadialFilterBank(f64, 1, 16).init(&blocks, config);
+    for ([_]f64{ 0.0, 20.0, 80.0, 120.0, 500.0, 5_000.0, 24_000.0 }) |frequency| {
+        const expected = referenceRadialMagnitude(
+            8,
+            reference_distance,
+            config,
+            frequency,
+        );
+        try std.testing.expectApproxEqAbs(
+            expected,
+            bank.magnitude(0, frequency),
+            2.0e-7 * @max(expected, 1.0),
         );
     }
 }
@@ -758,4 +993,60 @@ test "ADM HOA radial filter rejects malformed policy and retained state" {
         error.InvalidAdmHoaRadialState,
         bank.process(&.{&input}, &.{&output}),
     );
+
+    const CountBoundRadial = RadialFilterBank(f64, 2, 4);
+    var hostile_count = try CountBoundRadial.init(&blocks, .{
+        .sample_rate = 48_000.0,
+        .loudspeaker_distance = 1.0,
+    });
+    hostile_count.input_count = 2;
+    const hostile_count_before = hostile_count;
+    hostile_count.reset();
+    try std.testing.expectEqualDeep(hostile_count_before, hostile_count);
+    var second_input = [_]f64{2.0};
+    var second_output = [_]f64{11.0};
+    output[0] = 7.0;
+    try std.testing.expect(!hostile_count.valid());
+    try std.testing.expectError(
+        error.InvalidAdmHoaRadialState,
+        hostile_count.process(
+            &.{ &input, &second_input },
+            &.{ &output, &second_output },
+        ),
+    );
+    try std.testing.expectEqualDeep(hostile_count_before, hostile_count);
+    try std.testing.expectEqual(@as(f64, 7.0), output[0]);
+    try std.testing.expectEqual(@as(f64, 11.0), second_output[0]);
+
+    var rejected_screen = screen_referenced;
+    rejected_screen.config.screen_reference_policy = .reject;
+    const rejected_screen_before = rejected_screen;
+    output[0] = 7.0;
+    try std.testing.expect(!rejected_screen.valid());
+    try std.testing.expectError(
+        error.InvalidAdmHoaRadialState,
+        rejected_screen.process(&.{&input}, &.{&output}),
+    );
+    try std.testing.expectEqualDeep(
+        rejected_screen_before,
+        rejected_screen,
+    );
+    try std.testing.expectEqual(@as(f64, 7.0), output[0]);
+
+    blocks[0].hoa_order = 4;
+    bank = try RadialFilterBank(f64, 1, 4).init(&blocks, .{
+        .sample_rate = 48_000.0,
+        .loudspeaker_distance = 1.0,
+    });
+    try std.testing.expectEqual(@as(u8, 2), bank.section_counts[0]);
+    bank.section_counts[0] = 1;
+    const shortened_before = bank;
+    output[0] = 7.0;
+    try std.testing.expect(!bank.valid());
+    try std.testing.expectError(
+        error.InvalidAdmHoaRadialState,
+        bank.process(&.{&input}, &.{&output}),
+    );
+    try std.testing.expectEqualDeep(shortened_before, bank);
+    try std.testing.expectEqual(@as(f64, 7.0), output[0]);
 }

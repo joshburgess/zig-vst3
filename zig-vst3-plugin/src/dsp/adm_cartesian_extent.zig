@@ -6,9 +6,9 @@ const minimum_term: f64 = std.math.pow(f64, 10.0, -6.5);
 const normalization_tolerance: f64 = 1.0e-16;
 
 pub const Position = struct {
-    x: f64,
-    y: f64,
-    z: f64,
+    x: f64 = 0.0,
+    y: f64 = 0.0,
+    z: f64 = 0.0,
 };
 
 pub fn Panner(
@@ -25,8 +25,8 @@ pub fn Panner(
 
         output_count: usize,
         panner_output_count: usize,
-        positions: [maximum_outputs]Position = undefined,
-        enabled: [maximum_outputs]bool = undefined,
+        positions: [maximum_outputs]Position = @splat(.{}),
+        enabled: [maximum_outputs]bool = @splat(false),
 
         pub fn init(
             positions: []const Position,
@@ -310,7 +310,7 @@ pub fn Panner(
             sy: f64,
             sz: f64,
         ) f64 {
-            const first = self.firstEnabledPosition();
+            const first = self.firstEnabledPosition() orelse return 0.0;
             var same_y = true;
             var same_z = true;
             for (
@@ -335,7 +335,7 @@ pub fn Panner(
         }
 
         fn dimension(self: *const Self) usize {
-            const first = self.firstEnabledPosition();
+            const first = self.firstEnabledPosition() orelse return 0;
             var varies_x = false;
             var varies_y = false;
             var varies_z = false;
@@ -379,14 +379,14 @@ pub fn Panner(
                 reduced_height_grid_count;
         }
 
-        fn firstEnabledPosition(self: *const Self) Position {
+        fn firstEnabledPosition(self: *const Self) ?Position {
             for (
                 self.positions[0..self.output_count],
                 self.enabled[0..self.output_count],
             ) |position, is_enabled| {
                 if (is_enabled) return position;
             }
-            unreachable;
+            return null;
         }
 
         fn axisContribution(
@@ -419,14 +419,12 @@ pub fn Panner(
                 .x => self.xBounds(coordinate, output.y, output.z),
             };
             const output_coordinate = axisCoordinate(output, axis);
-            if (bounds.low == null) {
-                return if (output_coordinate == bounds.high.?) 1.0 else 0.0;
-            }
-            if (bounds.high == null) {
-                return if (output_coordinate == bounds.low.?) 1.0 else 0.0;
-            }
-            const low = bounds.low.?;
-            const high = bounds.high.?;
+            const low = bounds.low orelse {
+                const high = bounds.high orelse return 0.0;
+                return if (output_coordinate == high) 1.0 else 0.0;
+            };
+            const high = bounds.high orelse
+                return if (output_coordinate == low) 1.0 else 0.0;
             if (output_coordinate < low or output_coordinate > high)
                 return 0.0;
             if (low == high) return 1.0;
@@ -614,12 +612,18 @@ fn updateBounds(
     coordinate: f64,
 ) void {
     if (candidate <= coordinate) {
-        if (bounds.low == null or candidate > bounds.low.?)
+        if (bounds.low) |low| {
+            if (candidate > low) bounds.low = candidate;
+        } else {
             bounds.low = candidate;
+        }
     }
     if (candidate >= coordinate) {
-        if (bounds.high == null or candidate < bounds.high.?)
+        if (bounds.high) |high| {
+            if (candidate < high) bounds.high = candidate;
+        } else {
             bounds.high = candidate;
+        }
     }
 }
 
