@@ -343,9 +343,10 @@ fn validControllerList(entries: []const Controller, all_channels: bool) bool {
 fn sameIdentity(a: Controller, b: Controller) bool {
     if (a.channel != b.channel or a.controller_type != b.controller_type)
         return false;
-    if (a.controller_index == null or b.controller_index == null)
-        return a.controller_index == null and b.controller_index == null;
-    return std.mem.eql(u7, a.controller_index.?, b.controller_index.?);
+    const a_index = a.controller_index orelse
+        return b.controller_index == null;
+    const b_index = b.controller_index orelse return false;
+    return std.mem.eql(u7, a_index, b_index);
 }
 
 fn writeControllers(writer: anytype, entries: []const Controller, include_channel: bool) !void {
@@ -358,8 +359,11 @@ fn writeControllers(writer: anytype, entries: []const Controller, include_channe
             try writer.writeAll(",\"description\":");
             try writeString(writer, value);
         }
-        if (include_channel)
-            try writer.print(",\"channel\":{d}", .{entry.channel.?});
+        if (include_channel) {
+            const channel = entry.channel orelse
+                return error.InvalidMidiCiControllerList;
+            try writer.print(",\"channel\":{d}", .{channel});
+        }
         try writer.writeAll(",\"ctrlType\":");
         try writeString(writer, entry.controller_type.text());
         if (entry.controller_index) |values| {

@@ -84,7 +84,9 @@ pub const Chunk = struct {
 
     pub fn parse(ump_packet: ump.Packet) !Chunk {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .stream) return error.NotStreamUmp;
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .stream) return error.NotStreamUmp;
 
         const first = byteAt(ump_packet, 0);
         if ((first & 0x03) != 0) return error.InvalidStreamReservedField;
@@ -147,8 +149,21 @@ pub const Packetizer = struct {
         return .{ .kind = kind, .block = block, .source = source };
     }
 
+    pub fn valid(self: *const Packetizer) bool {
+        if (!segmented.packetizerStateValid(
+            self.source.len,
+            self.cursor,
+            self.emitted_empty,
+        )) return false;
+        validateBlock(self.kind, self.block) catch return false;
+        if (self.source.len > self.kind.maximumLength()) return false;
+        validateTextBytes(self.kind, self.source) catch return false;
+        return self.kind == .product_instance_id or
+            std.unicode.utf8ValidateSlice(self.source);
+    }
+
     pub fn next(self: *Packetizer) !?ump.Packet {
-        if (self.cursor > self.source.len) return error.InvalidStreamTextPacketizerState;
+        if (!self.valid()) return error.InvalidStreamTextPacketizerState;
         if (self.source.len == 0) {
             if (self.emitted_empty) return null;
             self.emitted_empty = true;
@@ -189,7 +204,7 @@ pub fn Reassembler(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        storage: [capacity]u8 = undefined,
+        storage: [capacity]u8 = @splat(0),
         count: usize = 0,
         kind: ?Kind = null,
         block: ?u5 = null,
@@ -212,6 +227,10 @@ pub fn Reassembler(comptime capacity: usize) type {
             if (self.kind == .function_block_name and self.block == null) return false;
             if (self.kind != null and self.kind != .function_block_name and self.block != null)
                 return false;
+            if (self.kind) |kind| {
+                if (self.count > kind.maximumLength()) return false;
+                validateTextBytes(kind, self.storage[0..self.count]) catch return false;
+            }
             return true;
         }
 
@@ -265,11 +284,14 @@ pub fn Reassembler(comptime capacity: usize) type {
                 else
                     error.UnexpectedStreamTextContinuation;
             }
-            if (self.kind.? != chunk.kind) return error.StreamTextKindMismatch;
+            const kind = self.kind orelse
+                return error.InvalidStreamTextReassemblerState;
+            if (kind != chunk.kind) return error.StreamTextKindMismatch;
             if (self.block != chunk.block) return error.StreamTextBlockMismatch;
+            const maximum = @min(capacity, @as(usize, kind.maximumLength()));
             if (!segmented.append(
                 u8,
-                self.storage[0..],
+                self.storage[0..maximum],
                 &self.count,
                 chunk.storage[0..chunk.count],
             )) return error.StreamTextCapacityExceeded;
@@ -313,6 +335,11 @@ test "stream text packetizers and reassemblers cover every boundary" {
             try std.testing.expectEqual(kind, assembler.kind.?);
             try std.testing.expectEqual(block, assembler.block);
             try std.testing.expectEqualSlices(u8, source[0..length], assembler.text().?);
+            for (assembler.storage[length..]) |byte|
+                try std.testing.expectEqual(@as(u8, 0), byte);
+            assembler.reset();
+            for (assembler.storage) |byte|
+                try std.testing.expectEqual(@as(u8, 0), byte);
         }
     }
 }
@@ -385,8 +412,47 @@ test "stream text rejects malformed input and sequences transactionally" {
         )).packet()),
     );
     try std.testing.expectEqualDeep(before, assembler);
+    assembler.storage[0] = 0;
+    try std.testing.expect(!assembler.valid());
+    try std.testing.expectEqual(@as(?[]const u8, null), assembler.bytes());
+    assembler.storage[0] = 'a';
+    try std.testing.expect(assembler.valid());
     try std.testing.expect(try assembler.push(
         try (try Chunk.init(.endpoint_name, .end, null, "done")).packet(),
     ));
     try std.testing.expectEqualSlices(u8, "abcdefghijklmndone", assembler.text().?);
+
+    const OversizedAssembler = Reassembler(112);
+    var oversized = OversizedAssembler{};
+    for (0..7) |_| {
+        _ = try oversized.push(try (try Chunk.init(
+            .endpoint_name,
+            if (oversized.active) .continuation else .begin,
+            null,
+            "abcdefghijklmn",
+        )).packet());
+    }
+    const retained = oversized;
+    try std.testing.expectError(
+        error.StreamTextCapacityExceeded,
+        oversized.push(try (try Chunk.init(
+            .endpoint_name,
+            .end,
+            null,
+            "x",
+        )).packet()),
+    );
+    try std.testing.expectEqualDeep(retained, oversized);
+
+    var malformed_packetizer = try Packetizer.init(
+        .function_block_name,
+        1,
+        "name",
+    );
+    malformed_packetizer.block = null;
+    try std.testing.expect(!malformed_packetizer.valid());
+    try std.testing.expectError(
+        error.InvalidStreamTextPacketizerState,
+        malformed_packetizer.next(),
+    );
 }

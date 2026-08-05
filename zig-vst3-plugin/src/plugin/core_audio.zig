@@ -598,6 +598,12 @@ pub fn BoundedBackend(
                 incrementSaturating(&self.rejected_count);
                 return -1;
             };
+            if ((input_count != 0 and input_channels == null) or
+                (output_count != 0 and output_channels == null))
+            {
+                incrementSaturating(&self.rejected_count);
+                return -1;
+            }
             for (0..input_count) |index| {
                 const pointer = input_channels[index] orelse {
                     incrementSaturating(&self.rejected_count);
@@ -653,6 +659,10 @@ pub fn BoundedBackend(
                 incrementSaturating(&self.rejected_count);
                 return -1;
             };
+            if (input_count != 0 and input_channels == null) {
+                incrementSaturating(&self.rejected_count);
+                return -1;
+            }
             for (0..input_count) |index| {
                 const pointer = input_channels[index] orelse {
                     incrementSaturating(&self.rejected_count);
@@ -693,6 +703,10 @@ pub fn BoundedBackend(
                 incrementSaturating(&self.rejected_count);
                 return -1;
             };
+            if (output_count != 0 and output_channels == null) {
+                incrementSaturating(&self.rejected_count);
+                return -1;
+            }
             for (0..output_count) |index| {
                 const pointer = output_channels[index] orelse {
                     incrementSaturating(&self.rejected_count);
@@ -1485,6 +1499,14 @@ test "backend adapts planar callbacks and preserves auxiliary bus boundaries" {
         },
         backend.statistics(),
     );
+    try std.testing.expectEqual(
+        @as(i32, -1),
+        process(MockApi.callback_context, 2, null, &output_pointers),
+    );
+    try std.testing.expectEqual(
+        @as(i32, -1),
+        process(MockApi.callback_context, 2, &input_pointers, null),
+    );
     const missing_output_pointers = [_]?*anyopaque{
         &output_a,
         null,
@@ -1501,7 +1523,7 @@ test "backend adapts planar callbacks and preserves auxiliary bus boundaries" {
     try std.testing.expectEqual(
         CallbackStatistics{
             .processed = 1,
-            .rejected = 1,
+            .rejected = 3,
             .device_failures = 0,
         },
         backend.statistics(),
@@ -1656,6 +1678,10 @@ test "CoreAudio split devices feed the bounded capture-rate adapter" {
         @as(i32, -1),
         capture_callback(MockApi.callback_context, 9, &inputs),
     );
+    try std.testing.expectEqual(
+        @as(i32, -1),
+        capture_callback(MockApi.callback_context, 8, null),
+    );
     const missing_input = [_]?*const anyopaque{ null, &input_b };
     try std.testing.expectEqual(
         @as(i32, -1),
@@ -1707,6 +1733,10 @@ test "CoreAudio split devices feed the bounded capture-rate adapter" {
     try std.testing.expectEqual(
         @as(i32, -1),
         render_callback(MockApi.callback_context, 9, &outputs),
+    );
+    try std.testing.expectEqual(
+        @as(i32, -1),
+        render_callback(MockApi.callback_context, 4, null),
     );
 
     MockApi.device_failures = 5;

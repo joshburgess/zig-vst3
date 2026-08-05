@@ -230,6 +230,7 @@ pub fn Recovery(comptime Config: type) type {
         expected_reference: ?Reference,
         kind: RequestKind,
         publication_generation: u64,
+        running_publication_generation: *std.atomic.Value(u64),
         exchange: *Exchange,
         completion: *Completion,
         preparation_context: PreparationContext,
@@ -254,6 +255,18 @@ pub fn Recovery(comptime Config: type) type {
             0;
 
         pub fn run(request: Request, context: *job_mod.WorkerContext) job_mod.Outcome(Result, Failure) {
+            request.running_publication_generation.store(
+                request.publication_generation,
+                .release,
+            );
+            defer {
+                _ = request.running_publication_generation.cmpxchgStrong(
+                    request.publication_generation,
+                    0,
+                    .acq_rel,
+                    .acquire,
+                );
+            }
             const outcome = if (has_preparation_context)
                 Config.prepare(request.path, request.preparation_context, context)
             else
@@ -332,11 +345,12 @@ pub fn Recovery(comptime Config: type) type {
             cancellation_pending: bool,
 
             pub fn statusText(self: PresentationSnapshot) []const u8 {
+                if (!self.valid()) return "";
                 return @tagName(self.status);
             }
 
             pub fn metadata(self: *const PresentationSnapshot) []const u8 {
-                if (!self.reference.valid()) return "";
+                if (!self.valid()) return "";
                 return switch (self.reference) {
                     .empty => "",
                     .linked => |*linked| linked.metadata.slice(),
@@ -375,6 +389,7 @@ pub fn Recovery(comptime Config: type) type {
         exchange: Exchange = .{},
         completion: Completion = .{},
         clear_before_generation: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        running_publication_generation: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
         next_publication_generation: u64 = 0,
         observed_job_generation: u64 = 0,
         latest_source_request: ?SourceRequest = null,
@@ -556,6 +571,7 @@ pub fn Recovery(comptime Config: type) type {
                 .expected_reference = expected_reference,
                 .kind = kind,
                 .publication_generation = generation,
+                .running_publication_generation = &self.running_publication_generation,
                 .exchange = &self.exchange,
                 .completion = &self.completion,
                 .preparation_context = self.preparation_context,
@@ -567,9 +583,26 @@ pub fn Recovery(comptime Config: type) type {
         }
 
         fn nextGeneration(self: *Self) u64 {
-            self.next_publication_generation +%= 1;
-            if (self.next_publication_generation == 0) self.next_publication_generation = 1;
-            return self.next_publication_generation;
+            const running = self.running_publication_generation.load(.acquire);
+            const current = self.completion.snapshot().generation;
+            const clear_before = self.clear_before_generation.load(.acquire);
+            const exchange_latest = self.exchange.latest_generation.load(.acquire);
+            const exchange_active = self.exchange.activeGeneration();
+            var candidate = self.next_publication_generation;
+            while (true) {
+                candidate +%= 1;
+                if (candidate == 0) candidate = 1;
+                if (candidate == running or
+                    candidate == current or
+                    candidate == clear_before or
+                    candidate == exchange_latest or
+                    candidate == exchange_active)
+                {
+                    continue;
+                }
+                self.next_publication_generation = candidate;
+                return candidate;
+            }
         }
 
         fn progressForPresentation(
@@ -701,6 +734,8 @@ test "resource recovery presents one bounded generation to the GUI" {
     var malformed = presentation;
     malformed.progress.generation +%= 1;
     try std.testing.expectError(error.InvalidPresentationGeneration, malformed.validate());
+    try std.testing.expectEqualStrings("", malformed.statusText());
+    try std.testing.expectEqualStrings("", malformed.metadata());
     malformed = presentation;
     malformed.can_cancel = true;
     try std.testing.expectError(error.InvalidPresentationActions, malformed.validate());
@@ -779,6 +814,11 @@ test "resource recovery publishes and adopts across generation rollover" {
     try std.testing.expect(!recovery.adoptPendingThroughAtBlockBoundary(std.math.maxInt(u64)));
     try std.testing.expect(recovery.adoptPendingThroughAtBlockBoundary(1));
     try std.testing.expectEqual(@as(usize, 1), recovery.reclaim());
+
+    recovery.next_publication_generation = std.math.maxInt(u64);
+    recovery.running_publication_generation.store(1, .release);
+    recovery.clear_before_generation.store(2, .release);
+    try std.testing.expectEqual(@as(u64, 3), recovery.nextGeneration());
 }
 
 test "resource recovery restores, detects changes, and relinks moved content" {

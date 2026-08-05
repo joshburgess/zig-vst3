@@ -77,7 +77,8 @@ pub const Zone = struct {
 
     pub fn usesChannel(self: Zone, channel_index: u8) bool {
         if (!self.active()) return false;
-        return channel_index == self.masterChannel().? or self.isMemberChannel(channel_index);
+        const master = self.masterChannel() orelse return false;
+        return channel_index == master or self.isMemberChannel(channel_index);
     }
 };
 
@@ -140,8 +141,12 @@ pub const Layout = struct {
 
     pub fn masterZone(self: Layout, channel_index: u8) ?ZoneType {
         if (!self.valid()) return null;
-        if (self.lower.active() and channel_index == self.lower.masterChannel().?) return .lower;
-        if (self.upper.active() and channel_index == self.upper.masterChannel().?) return .upper;
+        if (self.lower.active() and
+            channel_index == (self.lower.masterChannel() orelse return null))
+            return .lower;
+        if (self.upper.active() and
+            channel_index == (self.upper.masterChannel() orelse return null))
+            return .upper;
         return null;
     }
 

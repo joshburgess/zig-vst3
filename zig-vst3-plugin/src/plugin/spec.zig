@@ -73,7 +73,8 @@ pub fn PluginSpec(comptime Plugin: type) type {
                 null;
         const dynamic_audio_bus_snapshot: ?AudioBusSnapshot =
             if (dynamic_audio_bus_topology) |topology|
-                topology.snapshot() catch unreachable
+                topology.snapshot() catch
+                    @compileError("invalid audio_bus_topology declaration")
             else
                 null;
         pub const audio_input_layout: AudioBusLayout =
@@ -188,8 +189,10 @@ pub fn PluginSpec(comptime Plugin: type) type {
             return spec;
         }
 
-        pub fn init(params: Params) Self {
-            return initChecked(params) catch @panic("invalid plugin metadata");
+        /// Use `initChecked` when parameter descriptors are not compile-time constants.
+        pub fn init(comptime params: Params) Self {
+            return comptime initChecked(params) catch |err|
+                @compileError("invalid plugin metadata: " ++ @errorName(err));
         }
 
         pub fn validate(self: *const Self) !void {

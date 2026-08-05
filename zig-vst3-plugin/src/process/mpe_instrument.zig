@@ -20,10 +20,10 @@ pub const KeyState = enum {
 };
 
 pub const Note = struct {
-    id: u64,
-    channel_index: u8,
-    initial_note: u7,
-    note_on_velocity: u7,
+    id: u64 = 0,
+    channel_index: u8 = 0,
+    initial_note: u7 = 0,
+    note_on_velocity: u7 = 0,
     note_off_velocity: u7 = 0,
     pitch_bend: u14 = 8192,
     pressure: u7 = 64,
@@ -31,7 +31,7 @@ pub const Note = struct {
     timbre: u7 = 64,
     total_pitch_bend_semitones: f32 = 0.0,
     key_state: KeyState = .key_down,
-    serial: u64,
+    serial: u64 = 0,
 };
 
 pub const ChangeKind = enum {
@@ -59,7 +59,7 @@ pub fn Instrument(comptime capacity: usize) type {
         const Self = @This();
 
         layout: mpe.Layout,
-        notes_storage: [capacity]Note = undefined,
+        notes_storage: [capacity]Note = @splat(.{}),
         note_count: usize = 0,
         pitch_tracking: TrackingMode = .last,
         pressure_tracking: TrackingMode = .last,
@@ -88,7 +88,10 @@ pub fn Instrument(comptime capacity: usize) type {
             for (self.notes_storage[0..self.note_count], 0..) |active_note, index| {
                 if (active_note.id == 0 or active_note.serial == 0 or
                     self.layout.memberZone(active_note.channel_index) == null or
-                    !std.math.isFinite(active_note.total_pitch_bend_semitones))
+                    !std.math.isFinite(active_note.total_pitch_bend_semitones) or
+                    (self.next_id != 0 and active_note.id >= self.next_id) or
+                    (self.next_serial != 0 and
+                        active_note.serial >= self.next_serial))
                 {
                     return false;
                 }
@@ -120,26 +123,50 @@ pub fn Instrument(comptime capacity: usize) type {
             const channel_index = message.channel() orelse return error.InvalidMidiMessage;
             const kind = message.kind() orelse return error.InvalidMidiMessage;
             return switch (kind) {
-                .note_on => if (message.data2().? == 0)
-                    try self.releaseNote(channel_index, @intCast(message.data1().?), 0)
-                else
-                    try self.addNote(channel_index, @intCast(message.data1().?), @intCast(message.data2().?)),
-                .note_off => try self.releaseNote(
+                .note_on => blk: {
+                    const note_number: u7 = @intCast(message.data1() orelse
+                        return error.InvalidMidiMessage);
+                    const velocity: u7 = @intCast(message.data2() orelse
+                        return error.InvalidMidiMessage);
+                    break :blk if (velocity == 0)
+                        try self.releaseNote(channel_index, note_number, 0)
+                    else
+                        try self.addNote(channel_index, note_number, velocity);
+                },
+                .note_off => blk: {
+                    const note_number: u7 = @intCast(message.data1() orelse
+                        return error.InvalidMidiMessage);
+                    const velocity: u7 = @intCast(message.data2() orelse
+                        return error.InvalidMidiMessage);
+                    break :blk try self.releaseNote(
+                        channel_index,
+                        note_number,
+                        velocity,
+                    );
+                },
+                .pitch_bend => self.applyPitchBend(
                     channel_index,
-                    @intCast(message.data1().?),
-                    @intCast(message.data2().?),
+                    message.pitchBendValue() orelse
+                        return error.InvalidMidiMessage,
                 ),
-                .pitch_bend => self.applyPitchBend(channel_index, message.pitchBendValue().?),
-                .channel_pressure => self.applyPressure(channel_index, @intCast(message.data1().?)),
+                .channel_pressure => self.applyPressure(
+                    channel_index,
+                    @intCast(message.data1() orelse
+                        return error.InvalidMidiMessage),
+                ),
                 .polyphonic_key_pressure => self.applyPolyphonicPressure(
                     channel_index,
-                    @intCast(message.data1().?),
-                    @intCast(message.data2().?),
+                    @intCast(message.data1() orelse
+                        return error.InvalidMidiMessage),
+                    @intCast(message.data2() orelse
+                        return error.InvalidMidiMessage),
                 ),
                 .control_change => try self.applyControlChange(
                     channel_index,
-                    message.data1().?,
-                    @intCast(message.data2().?),
+                    message.data1() orelse
+                        return error.InvalidMidiMessage,
+                    @intCast(message.data2() orelse
+                        return error.InvalidMidiMessage),
                 ),
                 .program_change => .{},
             };
@@ -148,6 +175,7 @@ pub fn Instrument(comptime capacity: usize) type {
         pub fn allNotesOff(self: *Self) usize {
             if (!self.valid()) return 0;
             const released_count = self.note_count;
+            @memset(&self.notes_storage, .{});
             self.note_count = 0;
             self.sustain_down = .{ false, false };
             return released_count;
@@ -353,11 +381,15 @@ pub fn Instrument(comptime capacity: usize) type {
             var selected_note: ?*const Note = null;
             for (self.notes()) |*active_note| {
                 if (active_note.channel_index != channel_index or !active_note.key_state.isKeyDown()) continue;
-                if (selected_note == null or preferred(active_note, selected_note.?, mode)) {
+                if (selected_note) |current| {
+                    if (preferred(active_note, current, mode))
+                        selected_note = active_note;
+                } else {
                     selected_note = active_note;
                 }
             }
-            return selected_note != null and selected_note.?.id == candidate.id;
+            const selected_note_value = selected_note orelse return false;
+            return selected_note_value.id == candidate.id;
         }
 
         fn mostRecentMatchingNote(
@@ -373,11 +405,13 @@ pub fn Instrument(comptime capacity: usize) type {
                 {
                     continue;
                 }
-                if (selected_index == null or
-                    active_note.serial > self.notes_storage[selected_index.?].serial)
-                {
+                const selected_note_index = selected_index orelse {
                     selected_index = index;
-                }
+                    continue;
+                };
+                if (active_note.serial >
+                    self.notes_storage[selected_note_index].serial)
+                    selected_index = index;
             }
             return selected_index;
         }
@@ -404,6 +438,7 @@ pub fn Instrument(comptime capacity: usize) type {
             if (index != self.note_count) {
                 self.notes_storage[index] = self.notes_storage[self.note_count];
             }
+            self.notes_storage[self.note_count] = .{};
         }
     };
 }
@@ -414,10 +449,10 @@ pub const StealPolicy = enum {
 };
 
 pub const Assignment = struct {
-    id: u64,
-    note: u7,
-    channel_index: u8,
-    serial: u64,
+    id: u64 = 0,
+    note: u7 = 0,
+    channel_index: u8 = 0,
+    serial: u64 = 0,
 };
 
 pub const Allocation = struct {
@@ -427,7 +462,7 @@ pub const Allocation = struct {
 
 pub const MemberChannelAllocator = struct {
     zone: mpe.Zone,
-    assignments_storage: [15]Assignment = undefined,
+    assignments_storage: [15]Assignment = @splat(.{}),
     assignment_count: usize = 0,
     next_id: u64 = 1,
     next_serial: u64 = 1,
@@ -451,7 +486,11 @@ pub const MemberChannelAllocator = struct {
         }
         for (self.assignments_storage[0..self.assignment_count], 0..) |active_assignment, index| {
             if (active_assignment.id == 0 or active_assignment.serial == 0 or
-                !self.zone.isMemberChannel(active_assignment.channel_index))
+                !self.zone.isMemberChannel(active_assignment.channel_index) or
+                (self.next_id != 0 and
+                    active_assignment.id >= self.next_id) or
+                (self.next_serial != 0 and
+                    active_assignment.serial >= self.next_serial))
             {
                 return false;
             }
@@ -531,6 +570,7 @@ pub const MemberChannelAllocator = struct {
             if (index != self.assignment_count) {
                 self.assignments_storage[index] = self.assignments_storage[self.assignment_count];
             }
+            self.assignments_storage[self.assignment_count] = .{};
             return active_assignment;
         }
         return null;
@@ -601,6 +641,8 @@ test "MPE instrument tracks notes expression and combined pitch bend" {
         try mpe.Zone.init(.lower, 4, 48, 2),
         try mpe.Zone.init(.upper, 0, 48, 2),
     ));
+    for (instrument.notes_storage) |active_note|
+        try std.testing.expectEqualDeep(Note{}, active_note);
 
     const added = try instrument.process(try midi1.Message.noteOn(1, 60, 100));
     try std.testing.expectEqual(ChangeKind.note_added, added.kind);
@@ -673,6 +715,8 @@ test "MPE instrument sustains and releases notes without allocation" {
     try std.testing.expectEqual(ChangeKind.sustain, pedal_up.kind);
     try std.testing.expectEqual(@as(usize, 1), pedal_up.affected_count);
     try std.testing.expectEqual(@as(usize, 0), instrument.notes().len);
+    for (instrument.notes_storage) |active_note|
+        try std.testing.expectEqualDeep(Note{}, active_note);
 }
 
 test "MPE instrument rejects capacity overflow transactionally" {
@@ -707,10 +751,45 @@ test "MPE instrument contains malformed retained state and reset recovers" {
     );
     try instrument.reset(layout);
     try std.testing.expect(instrument.valid());
+    for (instrument.notes_storage) |active_note|
+        try std.testing.expectEqualDeep(Note{}, active_note);
 
     instrument.note_count = 3;
     try std.testing.expectEqual(@as(usize, 0), instrument.notes().len);
     try std.testing.expectEqual(@as(usize, 0), instrument.allNotesOff());
+}
+
+test "MPE instrument rejects retained identity counter rollback" {
+    const TestInstrument = Instrument(2);
+    const layout = try mpe.Layout.init(
+        try mpe.Zone.init(.lower, 1, 48, 2),
+        try mpe.Zone.init(.upper, 0, 48, 2),
+    );
+    const note_on = try midi1.Message.noteOn(1, 60, 100);
+
+    var instrument = try TestInstrument.init(layout);
+    _ = try instrument.process(note_on);
+    instrument.next_id = instrument.notes_storage[0].id;
+    const retained = instrument;
+    try std.testing.expect(!instrument.valid());
+    try std.testing.expectError(
+        error.InvalidMpeInstrumentState,
+        instrument.process(note_on),
+    );
+    try std.testing.expectEqualDeep(retained, instrument);
+
+    instrument = try TestInstrument.init(layout);
+    _ = try instrument.process(note_on);
+    instrument.next_serial = instrument.notes_storage[0].serial;
+    try std.testing.expect(!instrument.valid());
+
+    instrument.next_id = 0;
+    instrument.next_serial = 0;
+    try std.testing.expect(instrument.valid());
+    try std.testing.expectError(
+        error.MpeIdentifierExhausted,
+        instrument.process(note_on),
+    );
 }
 
 test "MPE instrument generated message sequences remain bounded" {
@@ -761,6 +840,8 @@ test "MPE instrument generated message sequences remain bounded" {
 
 test "member channel allocator is deterministic and reports stealing" {
     var allocator = try MemberChannelAllocator.init(try mpe.Zone.init(.lower, 2, 48, 2));
+    for (allocator.assignments_storage) |assignment|
+        try std.testing.expectEqualDeep(Assignment{}, assignment);
     const first = try allocator.allocate(60, .reject);
     const second = try allocator.allocate(64, .reject);
     try std.testing.expectEqual(@as(u8, 1), first.assignment.channel_index);
@@ -775,6 +856,7 @@ test "member channel allocator is deterministic and reports stealing" {
     try std.testing.expectEqual(@as(u8, 1), stolen.assignment.channel_index);
     try std.testing.expect(allocator.assignment(first.assignment.id) == null);
     try std.testing.expectEqualDeep(second.assignment, allocator.release(second.assignment.id).?);
+    try std.testing.expectEqualDeep(Assignment{}, allocator.assignments_storage[1]);
     const reused = try allocator.allocate(69, .reject);
     try std.testing.expectEqual(@as(u8, 2), reused.assignment.channel_index);
 }
@@ -791,9 +873,38 @@ test "member channel allocator rejects malformed retained state and reset recove
     );
     try allocator.reset(zone);
     try std.testing.expect(allocator.valid());
+    for (allocator.assignments_storage) |assignment|
+        try std.testing.expectEqualDeep(Assignment{}, assignment);
 
     allocator.assignment_count = 16;
     try std.testing.expectEqual(@as(usize, 0), allocator.assignments().len);
+}
+
+test "member channel allocator rejects retained identity counter rollback" {
+    const zone = try mpe.Zone.init(.lower, 2, 48, 2);
+    var allocator = try MemberChannelAllocator.init(zone);
+    _ = try allocator.allocate(60, .reject);
+    allocator.next_id = allocator.assignments_storage[0].id;
+    const retained = allocator;
+    try std.testing.expect(!allocator.valid());
+    try std.testing.expectError(
+        error.InvalidMpeAllocatorState,
+        allocator.allocate(62, .reject),
+    );
+    try std.testing.expectEqualDeep(retained, allocator);
+
+    allocator = try MemberChannelAllocator.init(zone);
+    _ = try allocator.allocate(60, .reject);
+    allocator.next_serial = allocator.assignments_storage[0].serial;
+    try std.testing.expect(!allocator.valid());
+
+    allocator.next_id = 0;
+    allocator.next_serial = 0;
+    try std.testing.expect(allocator.valid());
+    try std.testing.expectError(
+        error.MpeIdentifierExhausted,
+        allocator.allocate(62, .reject),
+    );
 }
 
 test "member channel allocator generated operations preserve invariants" {

@@ -54,7 +54,9 @@ pub const Chunk = struct {
 
     pub fn parse(ump_packet: ump.Packet) !Chunk {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .data128) return error.NotSysex8Ump;
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .data128) return error.NotSysex8Ump;
 
         const status_and_count = byteAt(ump_packet, 1);
         const raw_kind = status_and_count >> 4;
@@ -96,8 +98,16 @@ pub const Packetizer = struct {
         };
     }
 
+    pub fn valid(self: *const Packetizer) bool {
+        return segmented.packetizerStateValid(
+            self.source.len,
+            self.cursor,
+            self.emitted_empty,
+        );
+    }
+
     pub fn next(self: *Packetizer) !?ump.Packet {
-        if (self.cursor > self.source.len) return error.InvalidSysex8PacketizerState;
+        if (!self.valid()) return error.InvalidSysex8PacketizerState;
         if (self.source.len == 0) {
             if (self.emitted_empty) return null;
             self.emitted_empty = true;
@@ -137,7 +147,7 @@ pub fn Reassembler(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        storage: [capacity]u8 = undefined,
+        storage: [capacity]u8 = @splat(0),
         count: usize = 0,
         group: ?u4 = null,
         stream_id: ?u8 = null,
@@ -204,8 +214,12 @@ pub fn Reassembler(comptime capacity: usize) type {
                 else
                     error.UnexpectedSysex8Continuation;
             }
-            if (self.group.? != chunk.group) return error.Sysex8GroupMismatch;
-            if (self.stream_id.? != chunk.stream_id) return error.Sysex8StreamMismatch;
+            const group = self.group orelse
+                return error.InvalidSysex8ReassemblerState;
+            const stream_id = self.stream_id orelse
+                return error.InvalidSysex8ReassemblerState;
+            if (group != chunk.group) return error.Sysex8GroupMismatch;
+            if (stream_id != chunk.stream_id) return error.Sysex8StreamMismatch;
             if (!segmented.append(
                 u8,
                 self.storage[0..],
@@ -250,7 +264,19 @@ test "SysEx8 packetizer and reassembler cover every boundary length" {
         try std.testing.expectEqual(@as(?u4, 9), assembler.group);
         try std.testing.expectEqual(@as(?u8, 0x42), assembler.stream_id);
         try std.testing.expectEqualSlices(u8, source[0..length], assembler.message().?);
+        for (assembler.storage[length..]) |byte|
+            try std.testing.expectEqual(@as(u8, 0), byte);
+        assembler.reset();
+        for (assembler.storage) |byte|
+            try std.testing.expectEqual(@as(u8, 0), byte);
     }
+
+    var malformed = try Packetizer.init(9, 0x42, source[0..1]);
+    malformed.emitted_empty = true;
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectError(error.InvalidSysex8PacketizerState, malformed.next());
+    malformed.emitted_empty = false;
+    try std.testing.expect(malformed.valid());
 }
 
 test "SysEx8 rejects malformed chunks and sequences transactionally" {

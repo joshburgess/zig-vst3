@@ -111,7 +111,9 @@ pub const Chunk = struct {
 
     pub fn parse(ump_packet: ump.Packet) !Chunk {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .flex_data) return error.NotFlexDataUmp;
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .flex_data) return error.NotFlexDataUmp;
 
         const target_and_form = byteAt(ump_packet, 1);
         const address: flex.Address = switch ((target_and_form >> 4) & 3) {
@@ -176,8 +178,23 @@ pub const Packetizer = struct {
         return .{ .target = target, .kind = kind, .source = source };
     }
 
+    pub fn valid(self: *const Packetizer) bool {
+        if (!segmented.packetizerStateValid(
+            self.source.len,
+            self.cursor,
+            self.emitted_empty,
+        ) or !self.target.valid() or
+            self.source.len > 32 * 12 or
+            !std.unicode.utf8ValidateSlice(self.source) or
+            startsWithBom(self.source)) return false;
+        for (self.source) |byte| {
+            if (byte == 0) return false;
+        }
+        return true;
+    }
+
     pub fn next(self: *Packetizer) !?ump.Packet {
-        if (self.cursor > self.source.len) return error.InvalidFlexTextPacketizerState;
+        if (!self.valid()) return error.InvalidFlexTextPacketizerState;
         if (self.source.len == 0) {
             if (self.emitted_empty) return null;
             self.emitted_empty = true;
@@ -222,7 +239,7 @@ pub fn Reassembler(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        storage: [capacity]u8 = undefined,
+        storage: [capacity]u8 = @splat(0),
         count: usize = 0,
         packet_count: u6 = 0,
         target: ?flex.Target = null,
@@ -247,6 +264,20 @@ pub fn Reassembler(comptime capacity: usize) type {
             if (!self.active and !self.completed and
                 self.packet_count != 0)
                 return false;
+            if (self.active or self.completed) {
+                const target = self.target orelse return false;
+                if (!target.valid() or self.packet_count == 0) return false;
+                const packet_bytes = @as(usize, self.packet_count) * 12;
+                if (self.active and self.count != packet_bytes) return false;
+                if (self.completed and
+                    (self.count < packet_bytes - 12 or
+                        self.count > packet_bytes))
+                    return false;
+                if (startsWithBom(self.storage[0..self.count])) return false;
+                for (self.storage[0..self.count]) |byte| {
+                    if (byte == 0) return false;
+                }
+            }
             return true;
         }
 
@@ -301,8 +332,12 @@ pub fn Reassembler(comptime capacity: usize) type {
                 else
                     error.UnexpectedFlexTextContinuation;
             }
-            if (!std.meta.eql(self.target.?, chunk.target)) return error.FlexTextTargetMismatch;
-            if (self.kind.? != chunk.kind) return error.FlexTextKindMismatch;
+            const target = self.target orelse
+                return error.InvalidFlexTextReassemblerState;
+            const kind = self.kind orelse
+                return error.InvalidFlexTextReassemblerState;
+            if (!std.meta.eql(target, chunk.target)) return error.FlexTextTargetMismatch;
+            if (kind != chunk.kind) return error.FlexTextKindMismatch;
             if (self.packet_count == 32) return error.FlexTextPacketLimitExceeded;
             if (!segmented.append(
                 u8,
@@ -345,6 +380,11 @@ test "Flex Data text packetizers and reassemblers cover every boundary" {
         try std.testing.expectEqualDeep(target, assembler.target.?);
         try std.testing.expectEqual(Kind.composition_name, assembler.kind.?);
         try std.testing.expectEqualSlices(u8, source[0..length], assembler.text().?);
+        for (assembler.storage[length..]) |byte|
+            try std.testing.expectEqual(@as(u8, 0), byte);
+        assembler.reset();
+        for (assembler.storage) |byte|
+            try std.testing.expectEqual(@as(u8, 0), byte);
     }
 }
 
@@ -405,8 +445,40 @@ test "Flex Data text rejects malformed input and sequences transactionally" {
         )).packet()),
     );
     try std.testing.expectEqualDeep(before, assembler);
+    assembler.target = .{ .group = 1, .address = .group, .channel = 1 };
+    try std.testing.expect(!assembler.valid());
+    try std.testing.expectEqual(@as(?[]const u8, null), assembler.bytes());
+    try std.testing.expectError(
+        error.InvalidFlexTextReassemblerState,
+        assembler.push(try (try Chunk.init(
+            target,
+            .project_name,
+            .end,
+            "done",
+        )).packet()),
+    );
+    assembler.target = target;
+    assembler.packet_count = 0;
+    try std.testing.expect(!assembler.valid());
+    assembler.packet_count = 1;
+    try std.testing.expect(assembler.valid());
     try std.testing.expect(try assembler.push(
         try (try Chunk.init(target, .project_name, .end, "done")).packet(),
     ));
     try std.testing.expectEqualStrings("abcdefghijkldone", assembler.text().?);
+
+    var malformed_packetizer = try Packetizer.init(
+        target,
+        .project_name,
+        "name",
+    );
+    malformed_packetizer.emitted_empty = true;
+    try std.testing.expect(!malformed_packetizer.valid());
+    try std.testing.expectError(
+        error.InvalidFlexTextPacketizerState,
+        malformed_packetizer.next(),
+    );
+    malformed_packetizer.emitted_empty = false;
+    malformed_packetizer.target = .{ .group = 1, .address = .group, .channel = 1 };
+    try std.testing.expect(!malformed_packetizer.valid());
 }

@@ -20,8 +20,23 @@ pub const FloatParam = struct {
     is_read_only: bool = false,
     unit_id: i32 = 0,
 
-    pub fn init(id: u32, name: []const u8, min: f64, max: f64, default: f64) FloatParam {
-        return initChecked(id, name, min, max, default) catch @panic("invalid float parameter range");
+    /// Use `initChecked` when any argument is known only at runtime.
+    pub fn init(
+        comptime id: u32,
+        comptime name: []const u8,
+        comptime min: f64,
+        comptime max: f64,
+        comptime default: f64,
+    ) FloatParam {
+        if (comptime !common.isValidRange(min, max))
+            @compileError("invalid float parameter range");
+        return .{
+            .id = id,
+            .name = name,
+            .min = min,
+            .max = max,
+            .default = clampPlainInRange(min, max, default),
+        };
     }
 
     pub fn initChecked(id: u32, name: []const u8, min: f64, max: f64, default: f64) !FloatParam {
@@ -110,8 +125,23 @@ pub const LogFloatParam = struct {
     is_read_only: bool = false,
     unit_id: i32 = 0,
 
-    pub fn init(id: u32, name: []const u8, min: f64, max: f64, default: f64) LogFloatParam {
-        return initChecked(id, name, min, max, default) catch @panic("invalid logarithmic parameter range");
+    /// Use `initChecked` when any argument is known only at runtime.
+    pub fn init(
+        comptime id: u32,
+        comptime name: []const u8,
+        comptime min: f64,
+        comptime max: f64,
+        comptime default: f64,
+    ) LogFloatParam {
+        if (comptime !validRange(min, max))
+            @compileError("invalid logarithmic parameter range");
+        return .{
+            .id = id,
+            .name = name,
+            .min = min,
+            .max = max,
+            .default = clampPlainInRange(min, max, default),
+        };
     }
 
     pub fn initChecked(id: u32, name: []const u8, min: f64, max: f64, default: f64) !LogFloatParam {
@@ -127,7 +157,7 @@ pub const LogFloatParam = struct {
 
     pub fn containsPlain(self: LogFloatParam, plain: f64) bool {
         return validRange(self.min, self.max) and
-            std.math.isFinite(plain) and plain >= self.min and plain <= self.max;
+            common.isFiniteInRange(f64, plain, self.min, self.max);
     }
 
     fn valid(self: LogFloatParam) bool {
@@ -182,7 +212,13 @@ pub const LogFloatParam = struct {
     }
 
     fn validRange(min: f64, max: f64) bool {
-        return std.math.isFinite(min) and std.math.isFinite(max) and min > 0.0 and max > min;
+        if (!common.isFinite(f64, min) or
+            !common.isFinite(f64, max) or
+            min <= 0.0 or
+            max <= min)
+            return false;
+        const ratio = max / min;
+        return common.isFinite(f64, ratio) and ratio > 1.0;
     }
 
     fn clampPlainInRange(min: f64, max: f64, plain: f64) f64 {
@@ -204,8 +240,23 @@ pub const IntParam = struct {
     is_read_only: bool = false,
     unit_id: i32 = 0,
 
-    pub fn init(id: u32, name: []const u8, min: i64, max: i64, default: i64) IntParam {
-        return initChecked(id, name, min, max, default) catch @panic("invalid integer parameter range");
+    /// Use `initChecked` when any argument is known only at runtime.
+    pub fn init(
+        comptime id: u32,
+        comptime name: []const u8,
+        comptime min: i64,
+        comptime max: i64,
+        comptime default: i64,
+    ) IntParam {
+        if (comptime max <= min)
+            @compileError("invalid integer parameter range");
+        return .{
+            .id = id,
+            .name = name,
+            .min = min,
+            .max = max,
+            .default = clampPlainInRange(min, max, default),
+        };
     }
 
     pub fn initChecked(id: u32, name: []const u8, min: i64, max: i64, default: i64) !IntParam {
@@ -342,6 +393,9 @@ pub fn EnumParam(comptime Enum: type) type {
     if (info.fields.len == 0) {
         @compileError("EnumParam requires at least one enum field");
     }
+    if (!info.is_exhaustive) {
+        @compileError("EnumParam requires an exhaustive enum");
+    }
 
     return struct {
         const Self = @This();
@@ -434,14 +488,14 @@ pub fn EnumParam(comptime Enum: type) type {
             inline for (info.fields, 0..) |field, index| {
                 if (field.value == @intFromEnum(value)) return index;
             }
-            unreachable;
+            return 0;
         }
 
         fn valueAtIndex(wanted_index: usize) Enum {
             inline for (info.fields, 0..) |field, index| {
                 if (index == wanted_index) return @enumFromInt(field.value);
             }
-            unreachable;
+            return @enumFromInt(info.fields[0].value);
         }
 
         fn normalizedFromIndex(index: usize) f64 {
@@ -474,6 +528,16 @@ test "float parameter clamps defaults and values" {
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "Flat", 1.0, 1.0, 1.0));
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "Inf", 0.0, std.math.inf(f64), 1.0));
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "NaN", std.math.nan(f64), 1.0, 1.0));
+    try std.testing.expectError(
+        error.InvalidParameterRange,
+        FloatParam.initChecked(
+            1,
+            "Overflowing span",
+            -std.math.floatMax(f64),
+            std.math.floatMax(f64),
+            0.0,
+        ),
+    );
 }
 
 test "logarithmic float parameter maps and formats perceptual ranges" {
@@ -488,6 +552,16 @@ test "logarithmic float parameter maps and formats perceptual ranges" {
     try std.testing.expectEqual(@as(f64, 0.0), frequency.normalize(std.math.nan(f64)));
     try std.testing.expectEqual(@as(f64, 1.0), frequency.normalize(std.math.inf(f64)));
     try std.testing.expectError(error.InvalidParameterRange, LogFloatParam.initChecked(11, "Invalid", 0.0, 20_000.0, 1_000.0));
+    try std.testing.expectError(
+        error.InvalidParameterRange,
+        LogFloatParam.initChecked(
+            11,
+            "Overflowing ratio",
+            std.math.floatMin(f64),
+            std.math.floatMax(f64),
+            1.0,
+        ),
+    );
 }
 
 test "parameter descriptor parsing trims plain text consistently" {

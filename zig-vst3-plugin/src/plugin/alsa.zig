@@ -409,6 +409,10 @@ pub fn BoundedBackend(
             const frame_count: usize = frame_count_u32;
             if (frame_count > self.maximum_frames)
                 return -1;
+            if (input_count != 0 and input_channels == null)
+                return -1;
+            if (output_count != 0 and output_channels == null)
+                return -1;
             for (0..input_count) |index| {
                 const pointer = input_channels[index] orelse
                     return -1;
@@ -450,6 +454,8 @@ pub fn BoundedBackend(
             const frame_count: usize = frame_count_u32;
             if (frame_count > self.maximum_frames)
                 return -1;
+            if (input_count != 0 and input_channels == null)
+                return -1;
             for (0..input_count) |index| {
                 const pointer = input_channels[index] orelse
                     return -1;
@@ -477,6 +483,8 @@ pub fn BoundedBackend(
                 return -1;
             const frame_count: usize = frame_count_u32;
             if (frame_count > self.maximum_frames)
+                return -1;
+            if (output_count != 0 and output_channels == null)
                 return -1;
             for (0..output_count) |index| {
                 const pointer = output_channels[index] orelse
@@ -1238,6 +1246,14 @@ test "ALSA backend adapts f64 callbacks and retains statistics" {
         @as(i32, 0),
         process(MockApi.callback_context, 2, &inputs, &outputs),
     );
+    try std.testing.expectEqual(
+        @as(i32, -1),
+        process(MockApi.callback_context, 2, null, &outputs),
+    );
+    try std.testing.expectEqual(
+        @as(i32, -1),
+        process(MockApi.callback_context, 2, &inputs, null),
+    );
     try std.testing.expectEqualSlices(f64, &input, &output);
     try std.testing.expectEqual(@as(usize, 1), probe.call_count);
     try std.testing.expect(backend.statistics().realtime_priority_acquired);
@@ -1383,6 +1399,10 @@ test "ALSA split callbacks feed the bounded capture-rate adapter" {
         @as(i32, -1),
         capture_callback(MockApi.callback_context, 9, &inputs),
     );
+    try std.testing.expectEqual(
+        @as(i32, -1),
+        capture_callback(MockApi.callback_context, 8, null),
+    );
     const missing_input = [_]?*const anyopaque{ null, &input_b };
     try std.testing.expectEqual(
         @as(i32, -1),
@@ -1438,6 +1458,10 @@ test "ALSA split callbacks feed the bounded capture-rate adapter" {
     try std.testing.expectEqual(
         @as(i32, -1),
         render_callback(MockApi.callback_context, 9, &outputs),
+    );
+    try std.testing.expectEqual(
+        @as(i32, -1),
+        render_callback(MockApi.callback_context, 4, null),
     );
 
     backend.stop();

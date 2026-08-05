@@ -58,7 +58,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
 
         const owner = interface_map.ownerFromField(Instance, ipluginbase.IPluginFactory, "iface");
 
-        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryInterface(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ipluginbase.iplugin_factory_iid, .ptr = ptr },
@@ -74,8 +74,9 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
             return releaseStaticRef(&owner(ptr).ref_count);
         }
 
-        fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
-            fillFactoryInfo(info, out);
+        fn getFactoryInfo(_: *anyopaque, out: [*c]ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            fillFactoryInfo(info, @ptrCast(out));
             return types.kResultOk;
         }
 
@@ -83,14 +84,21 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
             return vst_index.int32Count(classes.len);
         }
 
-        fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.c) types.tresult {
-            const class = classAt(index) orelse return failClassInfo(out);
-            fillClassInfo(class, out);
+        fn getClassInfo(_: *anyopaque, index: types.int32, out: [*c]ipluginbase.PClassInfo) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: *ipluginbase.PClassInfo = @ptrCast(out);
+            const class = classAt(index) orelse return failClassInfo(output);
+            fillClassInfo(class, output);
             return types.kResultOk;
         }
 
-        fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
-            return createClassInstance(classes, cid, requested_iid, out);
+        fn createInstance(_: *anyopaque, cid: ?types.FIDString, requested_iid: ?types.FIDString, out: [*c]?*anyopaque) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: *?*anyopaque = @ptrCast(out);
+            output.* = null;
+            const class_id = cid orelse return types.kInvalidArgument;
+            const interface_id = requested_iid orelse return types.kInvalidArgument;
+            return createClassInstance(classes, class_id, interface_id, output);
         }
 
         fn classAt(index: types.int32) ?ClassInfo {
@@ -139,7 +147,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
 
         const owner = interface_map.ownerFromField(Instance, ipluginbase.IPluginFactory3, "iface");
 
-        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryInterface(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ipluginbase.iplugin_factory_iid, .ptr = ptr },
@@ -157,8 +165,10 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             return releaseStaticRef(&owner(ptr).ref_count);
         }
 
-        fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
-            fillFactoryInfo(info, out);
+        fn getFactoryInfo(_: *anyopaque, out: [*c]ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: *ipluginbase.PFactoryInfo = @ptrCast(out);
+            fillFactoryInfo(info, output);
             return types.kResultOk;
         }
 
@@ -166,25 +176,36 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             return vst_index.int32Count(classes.len);
         }
 
-        fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.c) types.tresult {
-            const class = classAt(index) orelse return failClassInfo(out);
-            fillClassInfo(class, out);
+        fn getClassInfo(_: *anyopaque, index: types.int32, out: [*c]ipluginbase.PClassInfo) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: *ipluginbase.PClassInfo = @ptrCast(out);
+            const class = classAt(index) orelse return failClassInfo(output);
+            fillClassInfo(class, output);
             return types.kResultOk;
         }
 
-        fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
-            return createClassInstance(classes, cid, requested_iid, out);
+        fn createInstance(_: *anyopaque, cid: ?types.FIDString, requested_iid: ?types.FIDString, out: [*c]?*anyopaque) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: *?*anyopaque = @ptrCast(out);
+            output.* = null;
+            const class_id = cid orelse return types.kInvalidArgument;
+            const interface_id = requested_iid orelse return types.kInvalidArgument;
+            return createClassInstance(classes, class_id, interface_id, output);
         }
 
-        fn getClassInfo2(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo2) callconv(.c) types.tresult {
-            const class = classAt(index) orelse return failClassInfo(out);
-            fillClassInfo2(info, class, out);
+        fn getClassInfo2(_: *anyopaque, index: types.int32, out: [*c]ipluginbase.PClassInfo2) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: *ipluginbase.PClassInfo2 = @ptrCast(out);
+            const class = classAt(index) orelse return failClassInfo(output);
+            fillClassInfo2(info, class, output);
             return types.kResultOk;
         }
 
-        fn getClassInfoUnicode(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfoW) callconv(.c) types.tresult {
-            const class = classAt(index) orelse return failClassInfo(out);
-            fillClassInfoUnicode(info, class, out);
+        fn getClassInfoUnicode(_: *anyopaque, index: types.int32, out: [*c]ipluginbase.PClassInfoW) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: *ipluginbase.PClassInfoW = @ptrCast(out);
+            const class = classAt(index) orelse return failClassInfo(output);
+            fillClassInfoUnicode(info, class, output);
             return types.kResultOk;
         }
 
@@ -378,6 +399,47 @@ test "static factory clears invalid class info outputs" {
     class_info.cardinality = 7;
     try std.testing.expectEqual(types.kInvalidArgument, non_empty.vtable.getClassInfo(non_empty, 1, &class_info));
     try std.testing.expectEqual(@as(types.int32, 0), class_info.cardinality);
+}
+
+test "static factory rejects null callback arguments" {
+    const TestFactory = StaticFactory(.{ .vendor = "Test Vendor" }, &.{});
+    const factory = TestFactory.getPluginFactory().?;
+    const cid = tuid.inlineUid(
+        0x11111111,
+        0x22222222,
+        0x33333333,
+        0x44444444,
+    );
+    var out: ?*anyopaque = @ptrFromInt(0x1);
+
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        factory.vtable.getFactoryInfo(factory, null),
+    );
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        factory.vtable.getClassInfo(factory, 0, null),
+    );
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        factory.vtable.createInstance(factory, null, @ptrCast(&funknown.iid), &out),
+    );
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
+    out = @ptrFromInt(0x1);
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        factory.vtable.createInstance(factory, @ptrCast(&cid), null, &out),
+    );
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        factory.vtable.createInstance(
+            factory,
+            @ptrCast(&cid),
+            @ptrCast(&funknown.iid),
+            null,
+        ),
+    );
 }
 
 test "static factory rejects generated invalid class indexes" {
@@ -597,6 +659,11 @@ test "static factory 3 clears invalid metadata and stores host context" {
     const factory = TestFactory.getPluginFactory3();
     var info2 = ipluginbase.PClassInfo2{ .classFlags = 77 };
     var info_w = ipluginbase.PClassInfoW{ .classFlags = 77 };
+
+    try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getFactoryInfo(factory, null));
+    try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfo(factory, 0, null));
+    try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfo2(factory, 0, null));
+    try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfoUnicode(factory, 0, null));
 
     try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfo2(factory, 0, &info2));
     try std.testing.expectEqual(@as(types.uint32, 0), info2.classFlags);

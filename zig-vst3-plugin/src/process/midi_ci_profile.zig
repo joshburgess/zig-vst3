@@ -29,7 +29,7 @@ pub fn List(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        storage: [capacity]Id = undefined,
+        storage: [capacity]Id = @splat(.{ .bytes = @splat(0) }),
         count: u14 = 0,
 
         pub fn init(profiles: []const Id) !Self {
@@ -458,7 +458,7 @@ pub fn DetailsReply(comptime capacity: usize) type {
         destination: midi_ci.Muid,
         profile: Id,
         target: u7,
-        storage: [capacity]u8 = undefined,
+        storage: [capacity]u8 = @splat(0),
         count: u14 = 0,
 
         pub fn init(
@@ -563,7 +563,7 @@ pub fn SpecificData(comptime capacity: usize) type {
         source: midi_ci.Muid,
         destination: midi_ci.Muid,
         profile: Id,
-        storage: [capacity]u8 = undefined,
+        storage: [capacity]u8 = @splat(0),
         count: u28 = 0,
 
         pub fn init(
@@ -1093,6 +1093,16 @@ test "MIDI-CI Profile reply covers bounded list combinations" {
                 encoded.len,
             );
             const parsed = try ProfileReply.parse(encoded);
+            for (reply.enabled.storage[reply.enabled.count..]) |item|
+                try std.testing.expectEqual(
+                    @as([5]u7, @splat(0)),
+                    item.bytes,
+                );
+            for (reply.disabled.storage[reply.disabled.count..]) |item|
+                try std.testing.expectEqual(
+                    @as([5]u7, @splat(0)),
+                    item.bytes,
+                );
             try std.testing.expectEqual(reply.address, parsed.address);
             try std.testing.expectEqual(reply.version, parsed.version);
             try std.testing.expectEqual(reply.source.value, parsed.source.value);
@@ -1295,6 +1305,10 @@ test "MIDI-CI Profile Details covers every bounded payload length" {
         const parsed = try ProfileDetailsReply.parse(encoded);
         try std.testing.expectEqual(@as(usize, 21 + length), encoded.len);
         try std.testing.expectEqualSlices(u8, reply.data(), parsed.data());
+        for (reply.storage[reply.count..]) |byte|
+            try std.testing.expectEqual(@as(u8, 0), byte);
+        for (parsed.storage[parsed.count..]) |byte|
+            try std.testing.expectEqual(@as(u8, 0), byte);
     }
 }
 
@@ -1358,6 +1372,10 @@ test "MIDI-CI Profile Specific Data covers bounded payloads and versions" {
                 message.data(),
                 parsed.data(),
             );
+            for (message.storage[message.count..]) |byte|
+                try std.testing.expectEqual(@as(u8, 0), byte);
+            for (parsed.storage[parsed.count..]) |byte|
+                try std.testing.expectEqual(@as(u8, 0), byte);
         }
     }
 }

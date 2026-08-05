@@ -41,9 +41,13 @@ pub const Decoder = struct {
         if (!message.valid()) return error.InvalidMidiMessage;
         if (message.kind() != .control_change) return null;
 
-        const channel_index = message.channel().?;
-        const controller = message.data1().?;
-        const value: u7 = @intCast(message.data2().?);
+        const channel_index = message.channel() orelse
+            return error.InvalidMidiMessage;
+        const controller = message.data1() orelse
+            return error.InvalidMidiMessage;
+        const data = message.data2() orelse
+            return error.InvalidMidiMessage;
+        const value: u7 = @intCast(data);
         const state = &self.channels[channel_index];
 
         return switch (controller) {

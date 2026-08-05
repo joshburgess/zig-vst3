@@ -1220,6 +1220,9 @@ const MockApi = struct {
         var output = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
         var inputs = [_]?*const anyopaque{&input};
         var outputs = [_]?*anyopaque{&output};
+        if (process(context, 4, null, &outputs) != -1 or
+            process(context, 4, &inputs, null) != -1)
+            return error.MockMalformedCallbackAccepted;
         if (process(
             context,
             4,
@@ -1260,6 +1263,9 @@ const MockApi = struct {
         var output = [_]f32{ 9.0, 9.0 };
         var inputs = [_]?*const anyopaque{&input};
         var outputs = [_]?*anyopaque{&output};
+        if (capture(context, 2, null) != -1 or
+            render(context, 2, null) != -1)
+            return error.MockMalformedCallbackAccepted;
         if (capture(context, 2, &inputs) != 0 or
             render(context, 2, &outputs) != 0)
             return error.MockCallbackFailed;

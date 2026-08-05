@@ -208,7 +208,9 @@ pub const Message = struct {
 
     pub fn parse(ump_packet: ump.Packet) !Message {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .stream) return error.NotStreamUmp;
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .stream) return error.NotStreamUmp;
         if ((byteAt(ump_packet, 0) & 0x0F) != 0) return error.UnsupportedStreamPacketFormat;
 
         const status = statusFromByte(byteAt(ump_packet, 1)) orelse

@@ -571,7 +571,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         const ownerFromRemapParamID = interface_map.ownerFromField(Controller, ivstremapparamid.IRemapParamID, "remap_param_id");
         const ownerFromXmlRepresentation = interface_map.ownerFromField(Controller, ivstrepresentation.IXmlRepresentationController, "xml_representation");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
                 interface_map.fieldEntry("iface", self, &funknown.iid),
@@ -698,15 +698,15 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return owner(ptr).parameters.parameterCount();
         }
 
-        fn getParameterInfo(ptr: *anyopaque, index: types.int32, out: *ivsteditcontroller.ParameterInfo) callconv(.c) types.tresult {
+        fn getParameterInfo(ptr: *anyopaque, index: types.int32, out: [*c]ivsteditcontroller.ParameterInfo) callconv(.c) types.tresult {
             return owner(ptr).parameters.parameterInfo(index, out);
         }
 
-        fn getParamStringByValue(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
+        fn getParamStringByValue(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*c]vsttypes.TChar) callconv(.c) types.tresult {
             return owner(ptr).parameters.stringByValue(id, value, out);
         }
 
-        fn getParamValueByString(ptr: *anyopaque, id: vsttypes.ParamID, text: [*]vsttypes.TChar, out: *vsttypes.ParamValue) callconv(.c) types.tresult {
+        fn getParamValueByString(ptr: *anyopaque, id: vsttypes.ParamID, text: [*c]vsttypes.TChar, out: [*c]vsttypes.ParamValue) callconv(.c) types.tresult {
             return owner(ptr).parameters.valueByString(id, text, out);
         }
 
@@ -803,11 +803,16 @@ pub fn ReflectedEditController(comptime Config: type) type {
         };
 
         fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
+            const connection_peer = peer orelse
+                return types.kInvalidArgument;
             const self = ownerFromConnectionPoint(ptr);
-            const result = replaceConnectionPeer(&self.connected_peer, peer);
+            const result = replaceConnectionPeer(
+                &self.connected_peer,
+                connection_peer,
+            );
             if (result != types.kResultOk) return result;
             releaseTelemetrySource(&self.telemetry_source);
-            self.telemetry_source = gui_telemetry_source.query(peer.?);
+            self.telemetry_source = gui_telemetry_source.query(connection_peer);
             return types.kResultOk;
         }
 
@@ -897,7 +902,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return vst_index.int32Count(UnitSet.unit_count);
         }
 
-        fn getUnitInfo(_: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
+        fn getUnitInfo(_: *anyopaque, index: types.int32, out_raw: [*c]ivstunits.UnitInfo) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *ivstunits.UnitInfo = @ptrCast(out_raw);
             const unit_index = vst_index.bounded(index, UnitSet.unit_count) orelse return failInfo(out);
             const reflected = units.unit(unit_index) orelse return failInfo(out);
             out.* = .{
@@ -913,7 +920,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return vst_index.int32Count(UnitSet.program_list_count);
         }
 
-        fn getProgramListInfo(_: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
+        fn getProgramListInfo(_: *anyopaque, index: types.int32, out_raw: [*c]ivstunits.ProgramListInfo) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *ivstunits.ProgramListInfo = @ptrCast(out_raw);
             const list_index = vst_index.bounded(index, UnitSet.program_list_count) orelse return failInfo(out);
             const reflected = units.programList(list_index) orelse return failInfo(out);
             out.* = .{
@@ -924,22 +933,26 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getProgramName(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            string128.clearPtr(out);
+        fn getProgramName(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*c]vsttypes.TChar) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: [*]vsttypes.TChar = @ptrCast(out);
+            string128.clearPtr(output);
             const count = units.programCount(list_id) orelse return types.kInvalidArgument;
             const index = vst_index.bounded(program_index, count) orelse return types.kInvalidArgument;
             const name = units.programName(list_id, index) orelse return types.kInvalidArgument;
-            string128.copyPtr(out, name);
+            string128.copyPtr(output, name);
             return types.kResultOk;
         }
 
-        fn getProgramInfo(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: ?vsttypes.CString, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            string128.clearPtr(out);
+        fn getProgramInfo(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: ?vsttypes.CString, out: [*c]vsttypes.TChar) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: [*]vsttypes.TChar = @ptrCast(out);
+            string128.clearPtr(output);
             const id = attribute_id orelse return types.kInvalidArgument;
             const count = units.programCount(list_id) orelse return types.kInvalidArgument;
             const index = vst_index.bounded(program_index, count) orelse return types.kInvalidArgument;
             const value = units.programInfo(list_id, index, std.mem.span(id)) orelse return types.kInvalidArgument;
-            string128.copyPtr(out, value);
+            string128.copyPtr(output, value);
             return types.kResultOk;
         }
 
@@ -947,8 +960,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultFalse;
         }
 
-        fn getProgramPitchName(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: types.int16, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            string128.clearPtr(out);
+        fn getProgramPitchName(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: types.int16, out: [*c]vsttypes.TChar) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: [*]vsttypes.TChar = @ptrCast(out);
+            string128.clearPtr(output);
             return types.kInvalidArgument;
         }
 
@@ -961,7 +976,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getUnitByBus(_: *anyopaque, _: vsttypes.MediaType, _: vsttypes.BusDirection, _: types.int32, _: types.int32, out: *vsttypes.UnitID) callconv(.c) types.tresult {
+        fn getUnitByBus(_: *anyopaque, _: vsttypes.MediaType, _: vsttypes.BusDirection, _: types.int32, _: types.int32, out_raw: [*c]vsttypes.UnitID) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *vsttypes.UnitID = @ptrCast(out_raw);
             out.* = units.rootUnit().id;
             return types.kResultOk;
         }
@@ -1035,8 +1052,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             .getMidiControllerAssignment = getMidiControllerAssignment,
         };
 
-        fn getMidiControllerAssignment(_: *anyopaque, _: types.int32, _: types.int16, _: vsttypes.CtrlNumber, out: *vsttypes.ParamID) callconv(.c) types.tresult {
-            out.* = vsttypes.kNoParamId;
+        fn getMidiControllerAssignment(_: *anyopaque, _: types.int32, _: types.int16, _: vsttypes.CtrlNumber, out: [*c]vsttypes.ParamID) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            out[0] = vsttypes.kNoParamId;
             return types.kResultFalse;
         }
 
@@ -1065,7 +1083,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return 0;
         }
 
-        fn getMidi2ControllerAssignments(_: *anyopaque, _: vsttypes.BusDirection, _: *const ivstmidimapping2.Midi2ControllerParamIDAssignmentList) callconv(.c) types.tresult {
+        fn getMidi2ControllerAssignments(_: *anyopaque, _: vsttypes.BusDirection, list: [*c]const ivstmidimapping2.Midi2ControllerParamIDAssignmentList) callconv(.c) types.tresult {
+            if (list == null) return types.kInvalidArgument;
             return types.kResultFalse;
         }
 
@@ -1073,7 +1092,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return 0;
         }
 
-        fn getMidi1ControllerAssignments(_: *anyopaque, _: vsttypes.BusDirection, _: *const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.c) types.tresult {
+        fn getMidi1ControllerAssignments(_: *anyopaque, _: vsttypes.BusDirection, list: [*c]const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.c) types.tresult {
+            if (list == null) return types.kInvalidArgument;
             return types.kResultFalse;
         }
 
@@ -1107,17 +1127,26 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return 0;
         }
 
-        fn getNoteExpressionInfo(_: *anyopaque, _: types.int32, _: types.int16, _: types.int32, out: *ivstnoteexpression.NoteExpressionTypeInfo) callconv(.c) types.tresult {
+        fn getNoteExpressionInfo(_: *anyopaque, _: types.int32, _: types.int16, _: types.int32, out_raw: [*c]ivstnoteexpression.NoteExpressionTypeInfo) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *ivstnoteexpression.NoteExpressionTypeInfo =
+                @ptrCast(out_raw);
             out.* = .{};
             return types.kInvalidArgument;
         }
 
-        fn getNoteExpressionStringByValue(_: *anyopaque, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
+        fn getNoteExpressionStringByValue(_: *anyopaque, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: ivstnoteexpression.NoteExpressionValue, out_raw: [*c]vsttypes.TChar) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: [*]vsttypes.TChar = @ptrCast(out_raw);
             string128.clearPtr(out);
             return types.kInvalidArgument;
         }
 
-        fn getNoteExpressionValueByString(_: *anyopaque, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: [*:0]const vsttypes.TChar, out: *ivstnoteexpression.NoteExpressionValue) callconv(.c) types.tresult {
+        fn getNoteExpressionValueByString(_: *anyopaque, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, value_raw: [*c]const vsttypes.TChar, out_raw: [*c]ivstnoteexpression.NoteExpressionValue) callconv(.c) types.tresult {
+            if (value_raw == null or out_raw == null)
+                return types.kInvalidArgument;
+            const out: *ivstnoteexpression.NoteExpressionValue =
+                @ptrCast(out_raw);
             out.* = 0;
             return types.kInvalidArgument;
         }
@@ -1134,7 +1163,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return 0;
         }
 
-        fn getKeyswitchInfo(_: *anyopaque, _: types.int32, _: types.int16, _: types.int32, out: *ivstnoteexpression.KeyswitchInfo) callconv(.c) types.tresult {
+        fn getKeyswitchInfo(_: *anyopaque, _: types.int32, _: types.int16, _: types.int32, out_raw: [*c]ivstnoteexpression.KeyswitchInfo) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *ivstnoteexpression.KeyswitchInfo = @ptrCast(out_raw);
             out.* = .{};
             return types.kInvalidArgument;
         }
@@ -1146,7 +1177,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             .getPhysicalUIMapping = getPhysicalUIMapping,
         };
 
-        fn getPhysicalUIMapping(_: *anyopaque, _: types.int32, _: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
+        fn getPhysicalUIMapping(_: *anyopaque, _: types.int32, _: types.int16, out_raw: [*c]ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out = &out_raw[0];
             const requested_maps = out.map orelse return types.kInvalidArgument;
             if (physical_ui_maps.len == 0 or out.count == 0) return types.kResultFalse;
             for (requested_maps[0..out.count]) |*requested| {
@@ -1168,7 +1201,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             .getParameterIDFromFunctionName = getParameterIDFromFunctionName,
         };
 
-        fn getParameterIDFromFunctionName(_: *anyopaque, _: vsttypes.UnitID, function_name: ?types.FIDString, out: *vsttypes.ParamID) callconv(.c) types.tresult {
+        fn getParameterIDFromFunctionName(_: *anyopaque, _: vsttypes.UnitID, function_name: ?types.FIDString, out_raw: [*c]vsttypes.ParamID) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *vsttypes.ParamID = @ptrCast(out_raw);
             out.* = vsttypes.kNoParamId;
             if (function_name == null) return types.kInvalidArgument;
             return types.kResultFalse;
@@ -1181,7 +1216,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
             .getCompatibleParamID = getCompatibleParamID,
         };
 
-        fn getCompatibleParamID(_: *anyopaque, _: *const tuid.TUID, _: vsttypes.ParamID, out: *vsttypes.ParamID) callconv(.c) types.tresult {
+        fn getCompatibleParamID(_: *anyopaque, cid: [*c]const tuid.TUID, _: vsttypes.ParamID, out_raw: [*c]vsttypes.ParamID) callconv(.c) types.tresult {
+            if (cid == null or out_raw == null)
+                return types.kInvalidArgument;
+            const out: *vsttypes.ParamID = @ptrCast(out_raw);
             out.* = vsttypes.kNoParamId;
             return types.kResultFalse;
         }
@@ -1193,7 +1231,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             .getXmlRepresentationStream = getXmlRepresentationStream,
         };
 
-        fn getXmlRepresentationStream(_: *anyopaque, info: *ivstrepresentation.RepresentationInfo, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
+        fn getXmlRepresentationStream(_: *anyopaque, info_raw: [*c]ivstrepresentation.RepresentationInfo, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
+            if (info_raw == null) return types.kInvalidArgument;
+            const info = &info_raw[0];
             if (@hasDecl(Config, "getXmlRepresentationStream")) {
                 return Config.getXmlRepresentationStream(info, stream);
             }
@@ -1331,6 +1371,13 @@ test "reflected edit controller rejects malformed host requests" {
     const controller: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out orelse return error.MissingController));
     defer _ = controller.vtable.release(controller);
 
+    try std.testing.expectEqual(types.kInvalidArgument, controller.vtable.getParameterInfo(controller, 0, null));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.vtable.getParamStringByValue(controller, 0, 0, null));
+    var text = [_]vsttypes.TChar{0};
+    var value: vsttypes.ParamValue = 0.5;
+    try std.testing.expectEqual(types.kInvalidArgument, controller.vtable.getParamValueByString(controller, 0, null, &value));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.vtable.getParamValueByString(controller, 0, &text, null));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
     try std.testing.expectEqual(types.kInvalidArgument, TestController.setDirty(controller, 2));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.requestBusActivation(controller, 99, @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.requestBusActivation(controller, @intFromEnum(ivstcomponent.MediaTypes.kAudio), 99, 0, 1));
@@ -3178,6 +3225,18 @@ test "simple effect binds dynamic topology across host metadata negotiation acti
         ));
     defer _ = processor.vtable.release(processor);
 
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        processor.vtable.getBusArrangement(processor, input, 0, null),
+    );
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        processor.vtable.setupProcessing(processor, null),
+    );
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        processor.vtable.process(processor, null),
+    );
     var input_arrangements = [_]vsttypes.SpeakerArrangement{
         vstspeaker.SpeakerArr.kMono,
         vstspeaker.SpeakerArr.kMono,
@@ -3918,6 +3977,24 @@ test "high-level effect derives metadata and configured parameters" {
     defer _ = component.vtable.release(component);
 
     try std.testing.expectEqual(
+        types.kInvalidArgument,
+        component.vtable.getControllerClassId(component, null),
+    );
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        component.vtable.getBusInfo(
+            component,
+            @intFromEnum(ivstcomponent.MediaTypes.kAudio),
+            @intFromEnum(ivstcomponent.BusDirections.kInput),
+            0,
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kNoInterface,
+        component.vtable.getRoutingInfo(component, null, null),
+    );
+    try std.testing.expectEqual(
         @as(types.int32, 1),
         component.vtable.getBusCount(
             component,
@@ -4247,7 +4324,8 @@ pub fn SimpleEffect(comptime Config: type) type {
         const initial_audio_bus_topology: AudioBusTopology =
             declared_audio_bus_topology orelse fixedAudioBusTopology();
         const initial_audio_bus_snapshot =
-            initial_audio_bus_topology.snapshot() catch unreachable;
+            initial_audio_bus_topology.snapshot() catch
+                @compileError("invalid initial audio bus topology");
         const AudioBusSnapshotPublisher =
             plug_core.dsp.RealtimeSnapshotPublisher(
                 AudioBusSnapshot,
@@ -4336,17 +4414,17 @@ pub fn SimpleEffect(comptime Config: type) type {
                     plug_core.plugin.DynamicAudioBus.fixed(
                         audio_input_layout,
                         true,
-                    ) catch unreachable;
+                    ) catch @compileError("invalid main audio input layout");
                 topology.input_count = 1;
                 for (0..bus_config.auxiliaryInputCount()) |index| {
                     const layout =
                         bus_config.auxiliaryInputLayout(index) orelse
-                        unreachable;
+                        @compileError("invalid auxiliary audio input index");
                     topology.input_buses[topology.input_count] =
                         plug_core.plugin.DynamicAudioBus.fixed(
                             layout,
                             false,
-                        ) catch unreachable;
+                        ) catch @compileError("invalid auxiliary audio input layout");
                     topology.input_count += 1;
                 }
             }
@@ -4355,17 +4433,17 @@ pub fn SimpleEffect(comptime Config: type) type {
                     plug_core.plugin.DynamicAudioBus.fixed(
                         audio_output_layout,
                         true,
-                    ) catch unreachable;
+                    ) catch @compileError("invalid main audio output layout");
                 topology.output_count = 1;
                 for (0..bus_config.auxiliaryOutputCount()) |index| {
                     const layout =
                         bus_config.auxiliaryOutputLayoutAt(index) orelse
-                        unreachable;
+                        @compileError("invalid auxiliary audio output index");
                     topology.output_buses[topology.output_count] =
                         plug_core.plugin.DynamicAudioBus.fixed(
                             layout,
                             false,
-                        ) catch unreachable;
+                        ) catch @compileError("invalid auxiliary audio output layout");
                     topology.output_count += 1;
                 }
             }
@@ -4840,7 +4918,7 @@ pub fn SimpleEffect(comptime Config: type) type {
             );
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             const base_entries = [_]interface_map.Entry{
                 interface_map.fieldEntry("iface", self, &funknown.iid),
@@ -4916,8 +4994,8 @@ pub fn SimpleEffect(comptime Config: type) type {
 
         fn araIdentityQuery(
             context: *anyopaque,
-            requested_iid: *const tuid.TUID,
-            out: *?*anyopaque,
+            requested_iid: [*c]const tuid.TUID,
+            out: [*c]?*anyopaque,
         ) callconv(.c) types.tresult {
             const self: *Component = @ptrCast(@alignCast(context));
             return query(
@@ -5017,9 +5095,11 @@ pub fn SimpleEffect(comptime Config: type) type {
         fn telemetryLoadGraph(
             ptr: *anyopaque,
             source_id: types.uint32,
-            output: [*]plug_core.gui_graph.Point,
+            output_raw: [*c]plug_core.gui_graph.Point,
             capacity: types.uint32,
         ) callconv(.c) types.uint32 {
+            if (output_raw == null) return 0;
+            const output: [*]plug_core.gui_graph.Point = @ptrCast(output_raw);
             if (comptime processor_gui_graph_load) {
                 const bounded_capacity = @min(capacity, gui_telemetry_source.maximum_graph_points);
                 const count = ownerFromTelemetrySource(ptr).processor_impl.guiGraphLoad(source_id, output[0..bounded_capacity]);
@@ -5031,9 +5111,11 @@ pub fn SimpleEffect(comptime Config: type) type {
         fn telemetryLoadText(
             ptr: *anyopaque,
             source_id: types.uint32,
-            output: [*]u8,
+            output_raw: [*c]u8,
             capacity: types.uint32,
         ) callconv(.c) types.uint32 {
+            if (output_raw == null) return 0;
+            const output: [*]u8 = @ptrCast(output_raw);
             if (comptime processor_gui_telemetry_load_text) {
                 const bounded_capacity = @min(capacity, gui_telemetry_source.maximum_text_bytes);
                 const count = ownerFromTelemetrySource(ptr).processor_impl.guiTelemetryLoadText(source_id, output[0..bounded_capacity]);
@@ -5070,8 +5152,9 @@ pub fn SimpleEffect(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getControllerClassId(_: *anyopaque, out: *tuid.TUID) callconv(.c) types.tresult {
-            out.* = Config.controller_cid;
+        fn getControllerClassId(_: *anyopaque, out: [*c]tuid.TUID) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            out[0] = Config.controller_cid;
             return types.kResultOk;
         }
 
@@ -5096,13 +5179,15 @@ pub fn SimpleEffect(comptime Config: type) type {
                 .busCountConfigured(media_type, direction, config);
         }
 
-        fn getBusInfo(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo) callconv(.c) types.tresult {
+        fn getBusInfo(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: [*c]ivstcomponent.BusInfo) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            const output: *ivstcomponent.BusInfo = @ptrCast(out);
             const self = owner(ptr);
             lockAudioBusTopology(self);
             defer unlockAudioBusTopology(self);
             const snapshot =
                 self.audio_bus_topology.snapshot() catch {
-                    out.* = .{};
+                    output.* = .{};
                     return types.kInvalidArgument;
                 };
             return zig_vst3_plugin_bridge.StereoAudioBuses
@@ -5110,14 +5195,14 @@ pub fn SimpleEffect(comptime Config: type) type {
                 media_type,
                 direction,
                 index,
-                out,
+                output,
                 &snapshot,
                 event_input,
                 event_output,
             );
         }
 
-        fn getRoutingInfo(_: *anyopaque, _: *ivstcomponent.RoutingInfo, _: *ivstcomponent.RoutingInfo) callconv(.c) types.tresult {
+        fn getRoutingInfo(_: *anyopaque, _: [*c]ivstcomponent.RoutingInfo, _: [*c]ivstcomponent.RoutingInfo) callconv(.c) types.tresult {
             return types.kNoInterface;
         }
 
@@ -5443,7 +5528,9 @@ pub fn SimpleEffect(comptime Config: type) type {
             .isPlugInterfaceSupported = isPlugInterfaceSupported,
         };
 
-        fn isPlugInterfaceSupported(_: *anyopaque, iid: *const tuid.TUID) callconv(.c) types.tresult {
+        fn isPlugInterfaceSupported(_: *anyopaque, iid_raw: [*c]const tuid.TUID) callconv(.c) types.tresult {
+            if (iid_raw == null) return types.kInvalidArgument;
+            const iid = &iid_raw[0];
             const supported = [_]*const tuid.TUID{
                 &ivstcomponent.icomponent_iid,
                 &ivstmessage.iconnection_point_iid,
@@ -5467,8 +5554,9 @@ pub fn SimpleEffect(comptime Config: type) type {
             .getPrefetchableSupport = getPrefetchableSupport,
         };
 
-        fn getPrefetchableSupport(_: *anyopaque, out: *ivstprefetchablesupport.PrefetchableSupport) callconv(.c) types.tresult {
-            out.* = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNeverPrefetchable);
+        fn getPrefetchableSupport(_: *anyopaque, out: [*c]ivstprefetchablesupport.PrefetchableSupport) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            out[0] = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNeverPrefetchable);
             return types.kResultOk;
         }
 
@@ -5481,7 +5569,9 @@ pub fn SimpleEffect(comptime Config: type) type {
             .onDataExchangeBlocksReceived = onDataExchangeBlocksReceived,
         };
 
-        fn dataExchangeQueueOpened(_: *anyopaque, user_context_id: ivstdataexchange.DataExchangeUserContextID, block_size: types.uint32, out: *types.TBool) callconv(.c) void {
+        fn dataExchangeQueueOpened(_: *anyopaque, user_context_id: ivstdataexchange.DataExchangeUserContextID, block_size: types.uint32, out_raw: [*c]types.TBool) callconv(.c) void {
+            if (out_raw == null) return;
+            const out: *types.TBool = @ptrCast(out_raw);
             out.* = 0;
             if (block_size == 0) return;
             if (@hasDecl(Config, "dataExchangeQueueOpened")) {
@@ -5558,7 +5648,9 @@ pub fn SimpleEffect(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getBusArrangement(ptr: *anyopaque, direction: vsttypes.BusDirection, index: types.int32, out: *vsttypes.SpeakerArrangement) callconv(.c) types.tresult {
+        fn getBusArrangement(ptr: *anyopaque, direction: vsttypes.BusDirection, index: types.int32, out_raw: [*c]vsttypes.SpeakerArrangement) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *vsttypes.SpeakerArrangement = @ptrCast(out_raw);
             const self = ownerFromProcessor(ptr);
             lockAudioBusTopology(self);
             defer unlockAudioBusTopology(self);
@@ -5616,7 +5708,10 @@ pub fn SimpleEffect(comptime Config: type) type {
             return zig_vst3_plugin_bridge.RealtimeProcessorDefaults.latencySamples();
         }
 
-        fn setupProcessing(ptr: *anyopaque, setup: *ivstaudioprocessor.ProcessSetup) callconv(.c) types.tresult {
+        fn setupProcessing(ptr: *anyopaque, setup_raw: [*c]ivstaudioprocessor.ProcessSetup) callconv(.c) types.tresult {
+            if (setup_raw == null) return types.kInvalidArgument;
+            const setup: *const ivstaudioprocessor.ProcessSetup =
+                @ptrCast(setup_raw);
             const self = ownerFromProcessor(ptr);
             const setup_result = zig_vst3_plugin_bridge.RealtimeProcessorDefaults.validateProcessSetup(setup);
             if (setup_result != types.kResultOk) return setup_result;
@@ -5652,7 +5747,10 @@ pub fn SimpleEffect(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn process(ptr: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.c) types.tresult {
+        fn process(ptr: *anyopaque, data_raw: [*c]ivstaudioprocessor.ProcessData) callconv(.c) types.tresult {
+            if (data_raw == null) return types.kInvalidArgument;
+            const data: *ivstaudioprocessor.ProcessData =
+                @ptrCast(data_raw);
             const self = ownerFromProcessor(ptr);
             const Processor = struct {
                 component: *Component,

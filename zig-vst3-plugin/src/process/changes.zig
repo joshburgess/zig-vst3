@@ -3,9 +3,9 @@ const common = @import("../common.zig");
 const ordered = @import("ordered.zig");
 
 pub const ParameterChange = struct {
-    id: u32,
-    sample_offset: usize,
-    normalized: f64,
+    id: u32 = 0,
+    sample_offset: usize = 0,
+    normalized: f64 = 0,
 
     pub fn isForId(self: ParameterChange, wanted_id: u32) bool {
         return self.id == wanted_id;
@@ -26,12 +26,12 @@ pub const ParameterChange = struct {
 };
 
 pub const ParameterRamp = struct {
-    id: u32,
-    start_offset: i32,
-    duration_frames: u32,
-    start_normalized: f64,
-    end_normalized: f64,
-    sequence: usize,
+    id: u32 = 0,
+    start_offset: i32 = 0,
+    duration_frames: u32 = 0,
+    start_normalized: f64 = 0,
+    end_normalized: f64 = 0,
+    sequence: usize = 0,
 
     pub fn validate(self: ParameterRamp, frame_count: usize) !void {
         if (self.duration_frames == 0)
@@ -271,9 +271,15 @@ pub const BlockSegmentIterator = struct {
     next_start: usize = 0,
 
     pub fn next(self: *BlockSegmentIterator) ?BlockSegment {
+        if (!self.valid()) return null;
         if (self.next_start >= self.frame_count) return null;
         const boundary = self.changes.nextSampleOffset(self.next_start) orelse self.frame_count;
         return advanceBlockSegment(&self.next_start, self.frame_count, boundary);
+    }
+
+    pub fn valid(self: *const BlockSegmentIterator) bool {
+        return self.next_start <= self.frame_count and
+            self.changes.valid(self.frame_count);
     }
 };
 
@@ -285,19 +291,27 @@ pub const ParameterSegmentIterator = struct {
     next_start: usize = 0,
 
     pub fn next(self: *ParameterSegmentIterator) ?ParameterSegment {
+        if (!self.valid()) return null;
         const segment = self.changes.segmentAt(self.id, self.next_start, self.frame_count, self.default) orelse return null;
         self.next_start = segment.end_offset;
         return segment;
+    }
+
+    pub fn valid(self: *const ParameterSegmentIterator) bool {
+        return self.next_start <= self.frame_count and
+            self.changes.valid(self.frame_count);
     }
 };
 
 pub const ParameterChangeIdIterator = struct {
     changes: ParameterChanges,
+    frame_count: usize,
     id: u32,
     last_offset: ?usize = null,
     last_index: usize = 0,
 
     pub fn next(self: *ParameterChangeIdIterator) ?ParameterChange {
+        if (!self.valid()) return null;
         if (nextMatchingChange(self.changes.items, self.last_offset, self.last_index, self.id, matchesId)) |result| {
             self.last_offset = result.item.sample_offset;
             self.last_index = result.index;
@@ -305,27 +319,61 @@ pub const ParameterChangeIdIterator = struct {
         }
         return null;
     }
+
+    pub fn valid(self: *const ParameterChangeIdIterator) bool {
+        return self.changes.frame_count == self.frame_count and
+            self.changes.valid(self.frame_count) and
+            ordered.indexedCursorValid(
+                self.changes.items,
+                self.last_offset,
+                self.last_index,
+                self.id,
+                matchesId,
+            );
+    }
 };
 
 pub const ParameterChangeOffsetIterator = struct {
     changes: ParameterChanges,
+    frame_count: usize,
     sample_offset: usize,
     next_index: usize = 0,
 
     pub fn next(self: *ParameterChangeOffsetIterator) ?ParameterChange {
+        if (!self.valid()) return null;
         return nextStoredMatchingChange(self.changes.items, &self.next_index, self.sample_offset, matchesOffset);
+    }
+
+    pub fn valid(self: *const ParameterChangeOffsetIterator) bool {
+        return self.changes.frame_count == self.frame_count and
+            self.changes.valid(self.frame_count) and
+            ordered.storedCursorValid(
+                self.changes.items.len,
+                self.next_index,
+            );
     }
 };
 
 pub const ParameterChangeIdOffsetIterator = struct {
     changes: ParameterChanges,
+    frame_count: usize,
     id: u32,
     sample_offset: usize,
     next_index: usize = 0,
 
     pub fn next(self: *ParameterChangeIdOffsetIterator) ?ParameterChange {
+        if (!self.valid()) return null;
         const context = IdOffset{ .id = self.id, .sample_offset = self.sample_offset };
         return nextStoredMatchingChange(self.changes.items, &self.next_index, context, matchesIdOffset);
+    }
+
+    pub fn valid(self: *const ParameterChangeIdOffsetIterator) bool {
+        return self.changes.frame_count == self.frame_count and
+            self.changes.valid(self.frame_count) and
+            ordered.storedCursorValid(
+                self.changes.items.len,
+                self.next_index,
+            );
     }
 };
 
@@ -333,6 +381,7 @@ pub const ParameterChanges = struct {
     items: []const ParameterChange = &.{},
     item_sequences: []const usize = &.{},
     ramps: []const ParameterRamp = &.{},
+    frame_count: usize = 0,
 
     pub fn init(items: []const ParameterChange, frame_count: usize) !ParameterChanges {
         return initWithRamps(items, &.{}, &.{}, frame_count);
@@ -357,6 +406,7 @@ pub const ParameterChanges = struct {
             .items = items,
             .item_sequences = item_sequences,
             .ramps = ramps,
+            .frame_count = frame_count,
         };
     }
 
@@ -688,8 +738,11 @@ pub const ParameterChanges = struct {
             else
                 continue;
             if (candidate <= after_sample_offset) continue;
-            if (result == null or candidate < result.?)
+            if (result) |current| {
+                if (candidate < current) result = candidate;
+            } else {
                 result = candidate;
+            }
         }
         return result;
     }
@@ -714,8 +767,11 @@ pub const ParameterChanges = struct {
             else
                 continue;
             if (candidate <= after_sample_offset) continue;
-            if (result == null or candidate < result.?)
+            if (result) |current| {
+                if (candidate < current) result = candidate;
+            } else {
                 result = candidate;
+            }
         }
         return result;
     }
@@ -749,6 +805,7 @@ pub const ParameterChanges = struct {
     pub fn forId(self: ParameterChanges, id: u32) ParameterChangeIdIterator {
         return .{
             .changes = self,
+            .frame_count = self.frame_count,
             .id = id,
         };
     }
@@ -756,6 +813,7 @@ pub const ParameterChanges = struct {
     pub fn atOffset(self: ParameterChanges, sample_offset: usize) ParameterChangeOffsetIterator {
         return .{
             .changes = self,
+            .frame_count = self.frame_count,
             .sample_offset = sample_offset,
         };
     }
@@ -763,6 +821,7 @@ pub const ParameterChanges = struct {
     pub fn forIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) ParameterChangeIdOffsetIterator {
         return .{
             .changes = self,
+            .frame_count = self.frame_count,
             .id = id,
             .sample_offset = sample_offset,
         };
@@ -1217,12 +1276,15 @@ test "parameter changes query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 5, .normalized = 0.25 }, view.segmentAt(7, 1, 8, 0.0).?);
 
     var id_changes = view.forId(7);
+    try std.testing.expect(id_changes.valid());
     try std.testing.expectEqual(changes[2], id_changes.next().?);
     try std.testing.expectEqual(changes[0], id_changes.next().?);
     try std.testing.expectEqual(changes[3], id_changes.next().?);
     try std.testing.expectEqual(@as(?ParameterChange, null), id_changes.next());
+    try std.testing.expect(id_changes.valid());
 
     var offset_changes = view.atOffset(5);
+    try std.testing.expect(offset_changes.valid());
     try std.testing.expectEqual(changes[0], offset_changes.next().?);
     try std.testing.expectEqual(changes[3], offset_changes.next().?);
     try std.testing.expectEqual(@as(?ParameterChange, null), offset_changes.next());
@@ -1232,8 +1294,70 @@ test "parameter changes query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(changes[3], id_offset_changes.next().?);
     try std.testing.expectEqual(@as(?ParameterChange, null), id_offset_changes.next());
 
+    id_changes.last_index = changes.len;
+    try std.testing.expect(!id_changes.valid());
+    try std.testing.expectEqual(@as(?ParameterChange, null), id_changes.next());
+    try std.testing.expectEqual(changes.len, id_changes.last_index);
+    offset_changes.next_index = changes.len + 1;
+    try std.testing.expect(!offset_changes.valid());
+    try std.testing.expectEqual(
+        @as(?ParameterChange, null),
+        offset_changes.next(),
+    );
+    try std.testing.expectEqual(changes.len + 1, offset_changes.next_index);
+
     var missing_changes = view.forId(99);
     try std.testing.expectEqual(@as(?ParameterChange, null), missing_changes.next());
+}
+
+test "parameter filters reject mutated borrowed changes" {
+    var changes = [_]ParameterChange{.{
+        .id = 7,
+        .sample_offset = 0,
+        .normalized = 0.5,
+    }};
+    const view = try ParameterChanges.init(&changes, 4);
+    var by_id = view.forId(7);
+    var by_offset = view.atOffset(0);
+    var by_id_offset = view.forIdAtOffset(7, 0);
+
+    changes[0].normalized = std.math.nan(f64);
+    try std.testing.expect(!by_id.valid());
+    try std.testing.expect(!by_offset.valid());
+    try std.testing.expect(!by_id_offset.valid());
+    try std.testing.expect(by_id.next() == null);
+    try std.testing.expect(by_offset.next() == null);
+    try std.testing.expect(by_id_offset.next() == null);
+    try std.testing.expect(by_id.last_offset == null);
+    try std.testing.expectEqual(@as(usize, 0), by_offset.next_index);
+    try std.testing.expectEqual(@as(usize, 0), by_id_offset.next_index);
+}
+
+test "parameter filters retain their construction frame extent" {
+    var changes = [_]ParameterChange{.{
+        .id = 7,
+        .sample_offset = 3,
+        .normalized = 0.5,
+    }};
+    const view = try ParameterChanges.init(&changes, 4);
+    var by_id = view.forId(7);
+    var by_offset = view.atOffset(3);
+    var by_id_offset = view.forIdAtOffset(7, 3);
+
+    by_id.changes.frame_count = 8;
+    by_offset.changes.frame_count = 8;
+    by_id_offset.changes.frame_count = 8;
+    changes[0].sample_offset = 6;
+
+    try std.testing.expect(!by_id.valid());
+    try std.testing.expect(!by_offset.valid());
+    try std.testing.expect(!by_id_offset.valid());
+    try std.testing.expect(by_id.next() == null);
+    try std.testing.expect(by_offset.next() == null);
+    try std.testing.expect(by_id_offset.next() == null);
+    try std.testing.expect(by_id.last_offset == null);
+    try std.testing.expectEqual(@as(usize, 0), by_offset.next_index);
+    try std.testing.expectEqual(@as(usize, 0), by_id_offset.next_index);
 }
 
 test "parameter changes generated queries match reference scans" {
@@ -1435,11 +1559,17 @@ test "parameter changes iterate stable automation segments without allocation" {
     };
     const view = try ParameterChanges.init(&changes, 8);
     var iterator = view.segments(7, 8, 0.0);
+    try std.testing.expect(iterator.valid());
 
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 0.0 }, iterator.next().?);
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 5, .normalized = 0.25 }, iterator.next().?);
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 5, .end_offset = 8, .normalized = 0.75 }, iterator.next().?);
     try std.testing.expectEqual(@as(?ParameterSegment, null), iterator.next());
+    try std.testing.expect(iterator.valid());
+    iterator.next_start = 9;
+    try std.testing.expect(!iterator.valid());
+    try std.testing.expectEqual(@as(?ParameterSegment, null), iterator.next());
+    try std.testing.expectEqual(@as(usize, 9), iterator.next_start);
 }
 
 test "parameter changes collapse same-offset values into one segment" {
@@ -1466,6 +1596,7 @@ test "parameter changes iterate block segments split at change offsets" {
     };
     const view = try ParameterChanges.init(&changes, 8);
     var iterator = view.blockSegments(8);
+    try std.testing.expect(iterator.valid());
 
     const first_segment = iterator.next().?;
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, first_segment);
@@ -1481,6 +1612,11 @@ test "parameter changes iterate block segments split at change offsets" {
     try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 5, .end_offset = 8 }, iterator.next().?);
     try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+    try std.testing.expect(iterator.valid());
+    iterator.next_start = 9;
+    try std.testing.expect(!iterator.valid());
+    try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+    try std.testing.expectEqual(@as(usize, 9), iterator.next_start);
     try std.testing.expect((BlockSegment{ .start_offset = 2, .end_offset = 2 }).isEmpty());
     const reversed_block_segment = BlockSegment{ .start_offset = 4, .end_offset = 2 };
     try std.testing.expectEqual(@as(usize, 0), reversed_block_segment.frameCount());

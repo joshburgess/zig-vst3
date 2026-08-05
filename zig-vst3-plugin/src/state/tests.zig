@@ -2,6 +2,8 @@ const std = @import("std");
 const parameters = @import("../parameters.zig");
 const state = @import("../state.zig");
 const format = @import("format.zig");
+const ByteAccumulator =
+    @import("../resource/byte_accumulator.zig").ByteAccumulator;
 
 const magic = format.magic;
 const format_version = state.format_version;
@@ -262,17 +264,25 @@ test "parameter state writes debug json" {
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [160]u8 = undefined;
-
     try std.testing.expect(values.storeField(&set, "gain", 0.25));
     try std.testing.expect(values.storeField(&set, "mix", 0.75));
 
-    var out_stream = FixedBufferStream.init(&bytes);
-    try writeParameterStateJson(Params, &set, &values, out_stream.writer());
+    var output = try ByteAccumulator.initCapacity(
+        std.testing.allocator,
+        160,
+        8,
+    );
+    defer output.deinit();
+    try writeParameterStateJson(
+        Params,
+        &set,
+        &values,
+        try output.writer(),
+    );
 
     try std.testing.expectEqualStrings(
         "{\"version\":1,\"parameters\":[{\"id\":0,\"name\":\"Gain\",\"normalized\":0.25},{\"id\":1,\"name\":\"Mix\",\"normalized\":0.75}]}",
-        out_stream.getWritten(),
+        try output.bytes(),
     );
 }
 

@@ -218,7 +218,9 @@ pub const Message = struct {
 
     pub fn parse(ump_packet: ump.Packet) !Message {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .flex_data) return error.NotFlexDataUmp;
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .flex_data) return error.NotFlexDataUmp;
 
         const form_and_target = byteAt(ump_packet, 1);
         if ((form_and_target & 0xC0) != 0) return error.UnsupportedFlexFormat;

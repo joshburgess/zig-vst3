@@ -85,8 +85,28 @@ pub const Iterator = struct {
     source: []const u32,
     cursor: usize = 0,
 
+    pub fn valid(self: *const Iterator) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn next(self: *Iterator) !?Packet {
-        if (self.cursor > self.source.len) return error.InvalidUmpIteratorState;
+        try self.validateState();
+        return self.nextInPlace();
+    }
+
+    fn validateState(self: *const Iterator) !void {
+        if (self.cursor > self.source.len)
+            return error.InvalidUmpIteratorState;
+        var canonical = Iterator{ .source = self.source };
+        var state_seen = self.cursor == 0;
+        while (try canonical.nextInPlace()) |_| {
+            if (self.cursor == canonical.cursor) state_seen = true;
+        }
+        if (!state_seen) return error.InvalidUmpIteratorState;
+    }
+
+    fn nextInPlace(self: *Iterator) !?Packet {
         if (self.cursor == self.source.len) return null;
 
         const count: usize = wordCountForType(typeFromWord(self.source[self.cursor]));
@@ -124,7 +144,9 @@ pub fn fromMidi1(group: u8, message: midi1.Message) !Packet {
 
 pub fn toMidi1(packet: Packet) !Midi1Packet {
     if (!packet.valid()) return error.InvalidUmpPacket;
-    if (packet.messageType().? != .midi1_channel_voice) {
+    const message_type = packet.messageType() orelse
+        return error.InvalidUmpPacket;
+    if (message_type != .midi1_channel_voice) {
         return error.NotMidi1ChannelVoiceUmp;
     }
 
@@ -264,19 +286,30 @@ test "UMP iterator walks mixed packet sizes and contains truncation" {
         3,
     };
     var iterator = Iterator{ .source = &words };
+    try std.testing.expect(iterator.valid());
     try std.testing.expectEqual(MessageType.midi1_channel_voice, (try iterator.next()).?.messageType().?);
     try std.testing.expectEqual(MessageType.midi2_channel_voice, (try iterator.next()).?.messageType().?);
     try std.testing.expectEqual(MessageType.flex_data, (try iterator.next()).?.messageType().?);
     try std.testing.expect((try iterator.next()) == null);
+    try std.testing.expect(iterator.valid());
+
+    iterator.cursor = 2;
+    try std.testing.expect(!iterator.valid());
+    try std.testing.expectError(error.InvalidUmpIteratorState, iterator.next());
+    try std.testing.expectEqual(@as(usize, 2), iterator.cursor);
 
     var truncated = Iterator{ .source = &.{ 0x5000_0000, 1 } };
+    try std.testing.expect(!truncated.valid());
     try std.testing.expectError(error.TruncatedUmpPacket, truncated.next());
     try std.testing.expectEqual(@as(usize, 0), truncated.cursor);
 
     iterator.cursor = words.len + 1;
+    try std.testing.expect(!iterator.valid());
     try std.testing.expectError(error.InvalidUmpIteratorState, iterator.next());
+    try std.testing.expectEqual(words.len + 1, iterator.cursor);
     iterator.reset();
     try std.testing.expectEqual(@as(usize, 0), iterator.cursor);
+    try std.testing.expect(iterator.valid());
 }
 
 test "MIDI 1 channel messages round trip through UMP exactly" {

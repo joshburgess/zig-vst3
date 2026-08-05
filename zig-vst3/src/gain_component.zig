@@ -686,7 +686,7 @@ test "gain component delegates combined advanced host integration lifecycle" {
         const ownerFromAutomation = interface_map.ownerFromField(Self, ivstautomationstate.IAutomationState, "automation_state");
         const ownerFromDataExchange = interface_map.ownerFromField(Self, ivstdataexchange.IDataExchangeHandler, "data_exchange_handler");
 
-        fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryHost(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.host_application },
@@ -695,13 +695,13 @@ test "gain component delegates combined advanced host integration lifecycle" {
                 .{ .iid = &ivstautomationstate.iautomation_state_iid, .ptr = &self.automation_state },
                 .{ .iid = &ivstdataexchange.idata_exchange_handler_iid, .ptr = &self.data_exchange_handler },
             };
-            if (std.mem.eql(u8, requested_iid, &ivstchannelcontextinfo.iinfo_listener_iid)) return interface_map.queryWithAddRef(&self.info_listener, addRefInfo, &entries, requested_iid, out);
-            if (std.mem.eql(u8, requested_iid, &ivstautomationstate.iautomation_state_iid)) return interface_map.queryWithAddRef(&self.automation_state, addRefAutomation, &entries, requested_iid, out);
-            if (std.mem.eql(u8, requested_iid, &ivstdataexchange.idata_exchange_handler_iid)) return interface_map.queryWithAddRef(&self.data_exchange_handler, addRefDataExchange, &entries, requested_iid, out);
+            if (interface_map.matches(requested_iid, &ivstchannelcontextinfo.iinfo_listener_iid)) return interface_map.queryWithAddRef(&self.info_listener, addRefInfo, &entries, requested_iid, out);
+            if (interface_map.matches(requested_iid, &ivstautomationstate.iautomation_state_iid)) return interface_map.queryWithAddRef(&self.automation_state, addRefAutomation, &entries, requested_iid, out);
+            if (interface_map.matches(requested_iid, &ivstdataexchange.idata_exchange_handler_iid)) return interface_map.queryWithAddRef(&self.data_exchange_handler, addRefDataExchange, &entries, requested_iid, out);
             return interface_map.queryWithAddRef(&self.host_application, addRefHost, &entries, requested_iid, out);
         }
 
-        fn queryInfo(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryInfo(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromInfo(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.info_listener },
@@ -710,7 +710,7 @@ test "gain component delegates combined advanced host integration lifecycle" {
             return interface_map.queryWithAddRef(&self.info_listener, addRefInfo, &entries, requested_iid, out);
         }
 
-        fn queryAutomation(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryAutomation(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromAutomation(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.automation_state },
@@ -719,7 +719,7 @@ test "gain component delegates combined advanced host integration lifecycle" {
             return interface_map.queryWithAddRef(&self.automation_state, addRefAutomation, &entries, requested_iid, out);
         }
 
-        fn queryDataExchange(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryDataExchange(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.data_exchange_handler },
@@ -776,13 +776,15 @@ test "gain component delegates combined advanced host integration lifecycle" {
             return funknown.decrementRefCount(&self.data_exchange_ref_count, "IDataExchangeHandler");
         }
 
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
+        fn getName(_: *anyopaque, out: [*c]vsttypes.TChar) callconv(.c) types.tresult {
+            if (out == null) return types.kInvalidArgument;
             out[0] = 0;
             return types.kResultOk;
         }
 
-        fn createInstance(_: *anyopaque, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            out.* = null;
+        fn createInstance(_: *anyopaque, class_id: [*c]const tuid.TUID, iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
+            if (class_id == null or iid == null or out == null) return types.kInvalidArgument;
+            out[0] = null;
             return types.kResultFalse;
         }
 
@@ -796,7 +798,9 @@ test "gain component delegates combined advanced host integration lifecycle" {
             return types.kResultOk;
         }
 
-        fn openQueue(ptr: *anyopaque, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
+        fn openQueue(ptr: *anyopaque, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out_raw: [*c]ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out = &out_raw[0];
             const self = ownerFromDataExchange(ptr);
             self.open_count +|= 1;
             self.last_user_context_id = user_context_id;
@@ -815,7 +819,9 @@ test "gain component delegates combined advanced host integration lifecycle" {
             return if (queue_id == 44) types.kResultOk else types.kInvalidArgument;
         }
 
-        fn lockBlock(_: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) callconv(.c) types.tresult {
+        fn lockBlock(_: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block_raw: [*c]ivstdataexchange.DataExchangeBlock) callconv(.c) types.tresult {
+            if (block_raw == null) return types.kInvalidArgument;
+            const block = &block_raw[0];
             if (queue_id != 44) return types.kInvalidArgument;
             block.* = .{ .blockID = 12, .size = 256, .data = @ptrFromInt(0x1000) };
             return types.kResultOk;

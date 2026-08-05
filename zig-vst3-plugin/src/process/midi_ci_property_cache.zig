@@ -44,12 +44,12 @@ pub fn RemoteCache(
         const Slot = struct {
             active: bool = false,
             remote: midi_ci.Muid = .{ .value = 0 },
-            resource_storage: [resource_capacity]u8 = undefined,
+            resource_storage: [resource_capacity]u8 = @splat(0),
             resource_count: usize = 0,
             has_res_id: bool = false,
-            res_id_storage: [res_id_capacity]u8 = undefined,
+            res_id_storage: [res_id_capacity]u8 = @splat(0),
             res_id_count: usize = 0,
-            data_storage: [data_capacity]u8 = undefined,
+            data_storage: [data_capacity]u8 = @splat(0),
             data_count: usize = 0,
             generation: u64 = 0,
 
@@ -78,6 +78,7 @@ pub fn RemoteCache(
             key: Key,
             data: []const u8,
         ) !usize {
+            try self.validate();
             try validateKey(key);
             const res_id_length = if (key.res_id) |value| value.len else 0;
             if (key.resource.len > resource_capacity or
@@ -95,7 +96,7 @@ pub fn RemoteCache(
                 .has_res_id = key.res_id != null,
                 .res_id_count = res_id_length,
                 .data_count = data.len,
-                .generation = self.takeGeneration(),
+                .generation = try self.takeGeneration(),
             };
             @memcpy(
                 replacement.resource_storage[0..key.resource.len],
@@ -110,6 +111,7 @@ pub fn RemoteCache(
         }
 
         pub fn get(self: *const Self, key: Key) !Entry {
+            try self.validate();
             try validateKey(key);
             const index = self.findIndex(key) orelse
                 return error.MidiCiPropertyCacheEntryNotFound;
@@ -117,6 +119,7 @@ pub fn RemoteCache(
         }
 
         pub fn remove(self: *Self, key: Key) !void {
+            try self.validate();
             try validateKey(key);
             const index = self.findIndex(key) orelse
                 return error.MidiCiPropertyCacheEntryNotFound;
@@ -133,7 +136,7 @@ pub fn RemoteCache(
                     released += 1;
                 }
             }
-            self.active_count -= released;
+            self.active_count = self.countActiveSlots();
             return released;
         }
 
@@ -143,25 +146,46 @@ pub fn RemoteCache(
         }
 
         pub fn count(self: *const Self) usize {
-            return self.active_count;
+            return self.countActiveSlots();
+        }
+
+        pub fn validate(self: *const Self) !void {
+            if (self.next_generation == 0)
+                return error.InvalidMidiCiPropertyCacheState;
+            var counted: usize = 0;
+            for (&self.slots, 0..) |*slot, index| {
+                if (!slot.active) continue;
+                try validateSlot(slot);
+                if (slot.generation == self.next_generation)
+                    return error.InvalidMidiCiPropertyCacheState;
+                for (self.slots[0..index]) |earlier| {
+                    if (earlier.active and
+                        earlier.generation == slot.generation)
+                    {
+                        return error.InvalidMidiCiPropertyCacheState;
+                    }
+                }
+                counted += 1;
+            }
+            if (counted != self.active_count)
+                return error.InvalidMidiCiPropertyCacheState;
+        }
+
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
         }
 
         pub fn snapshotSize(self: *const Self) !usize {
-            if (self.active_count > capacity or self.next_generation == 0)
-                return error.InvalidMidiCiPropertyCacheState;
+            try self.validate();
             var size: usize = snapshot_header_length;
-            var counted: usize = 0;
             for (&self.slots) |*slot| {
                 if (!slot.active) continue;
-                try validateSlot(slot);
-                counted += 1;
                 size = try addSize(size, snapshot_entry_header_length);
                 size = try addSize(size, slot.resource_count);
                 size = try addSize(size, slot.res_id_count);
                 size = try addSize(size, slot.data_count);
             }
-            if (counted != self.active_count)
-                return error.InvalidMidiCiPropertyCacheState;
             return size;
         }
 
@@ -297,6 +321,8 @@ pub fn RemoteCache(
             }
             if (offset != source.len)
                 return error.InvalidMidiCiPropertyCacheSnapshot;
+            restored.validate() catch
+                return error.InvalidMidiCiPropertyCacheSnapshot;
             self.* = restored;
         }
 
@@ -328,11 +354,38 @@ pub fn RemoteCache(
             return null;
         }
 
-        fn takeGeneration(self: *Self) u64 {
+        fn countActiveSlots(self: *const Self) usize {
+            var result: usize = 0;
+            for (self.slots) |slot| {
+                if (slot.active) result += 1;
+            }
+            return result;
+        }
+
+        fn takeGeneration(self: *Self) !u64 {
             const generation = self.next_generation;
-            self.next_generation +%= 1;
-            if (self.next_generation == 0) self.next_generation = 1;
-            return generation;
+            var next = incrementGeneration(generation);
+            for (0..capacity + 1) |_| {
+                if (next != generation and !self.generationInUse(next)) {
+                    self.next_generation = next;
+                    return generation;
+                }
+                next = incrementGeneration(next);
+            }
+            return error.MidiCiPropertyCacheGenerationExhausted;
+        }
+
+        fn generationInUse(self: *const Self, generation: u64) bool {
+            for (self.slots) |slot| {
+                if (slot.active and slot.generation == generation)
+                    return true;
+            }
+            return false;
+        }
+
+        fn incrementGeneration(generation: u64) u64 {
+            const next = generation +% 1;
+            return if (next == 0) 1 else next;
         }
 
         fn putRestored(
@@ -400,7 +453,16 @@ test "MIDI-CI property cache replaces values transactionally" {
         .res_id = "main",
     };
     var cache = Cache{};
+    for (cache.slots) |slot|
+        try std.testing.expectEqualDeep(@TypeOf(slot){}, slot);
     const index = try cache.put(key, "one");
+    const stored = cache.slots[index];
+    for (stored.resource_storage[stored.resource_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (stored.res_id_storage[stored.res_id_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (stored.data_storage[stored.data_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     const first = try cache.get(key);
     try std.testing.expectEqualStrings("one", first.data);
 
@@ -414,6 +476,11 @@ test "MIDI-CI property cache replaces values transactionally" {
     try std.testing.expectEqualStrings("two", second.data);
     try std.testing.expect(second.generation > first.generation);
     try std.testing.expectEqual(@as(usize, 1), cache.count());
+    try cache.remove(key);
+    try std.testing.expectEqualDeep(
+        @TypeOf(cache.slots[index]){},
+        cache.slots[index],
+    );
 }
 
 test "MIDI-CI property cache bounds entries and releases remotes" {
@@ -436,6 +503,57 @@ test "MIDI-CI property cache bounds entries and releases remotes" {
     try std.testing.expectEqualStrings(
         "b",
         (try cache.get(.{ .remote = second, .resource = "State" })).data,
+    );
+}
+
+test "MIDI-CI property cache contains malformed retained counts" {
+    const Cache = RemoteCache(2, 12, 12, 8);
+    const remote = try midi_ci.Muid.init(1);
+    const key = Key{ .remote = remote, .resource = "State" };
+    var cache = Cache{};
+    _ = try cache.put(key, "a");
+
+    cache.active_count = std.math.maxInt(usize);
+    try std.testing.expect(!cache.valid());
+    try std.testing.expectEqual(@as(usize, 1), cache.count());
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyCacheState,
+        cache.put(.{ .remote = remote, .resource = "Other" }, "b"),
+    );
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyCacheState,
+        cache.remove(key),
+    );
+    try std.testing.expectEqual(@as(usize, 1), cache.releaseRemote(remote));
+    try std.testing.expect(cache.valid());
+    try std.testing.expectEqual(@as(usize, 0), cache.count());
+
+    _ = try cache.put(key, "a");
+    const active_generation = (try cache.get(key)).generation;
+    cache.next_generation = active_generation;
+    try std.testing.expect(!cache.valid());
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyCacheState,
+        cache.put(key, "b"),
+    );
+    try std.testing.expectEqual(active_generation, cache.next_generation);
+    cache.next_generation = active_generation + 1;
+    try std.testing.expectEqualStrings("a", (try cache.get(key)).data);
+}
+
+test "MIDI-CI property cache skips active generation after rollover" {
+    const Cache = RemoteCache(2, 12, 12, 8);
+    const remote = try midi_ci.Muid.init(1);
+    var cache = Cache{};
+    _ = try cache.put(.{ .remote = remote, .resource = "State" }, "a");
+    cache.next_generation = std.math.maxInt(u64);
+    _ = try cache.put(.{ .remote = remote, .resource = "Other" }, "b");
+
+    try std.testing.expect(cache.valid());
+    try std.testing.expectEqual(@as(u64, 2), cache.next_generation);
+    try std.testing.expectEqual(
+        std.math.maxInt(u64),
+        (try cache.get(.{ .remote = remote, .resource = "Other" })).generation,
     );
 }
 
@@ -517,6 +635,21 @@ test "MIDI-CI property cache snapshot restore is transactional" {
         );
     }
     try std.testing.expectEqual(@as(usize, 2), cache.count());
+
+    @memcpy(malformed[0..valid.len], valid);
+    const active_generation = (try cache.get(.{
+        .remote = remote,
+        .resource = "State",
+    })).generation;
+    std.mem.writeInt(u64, malformed[7..15], active_generation, .little);
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyCacheSnapshot,
+        cache.restoreSnapshot(malformed[0..valid.len]),
+    );
+    try std.testing.expectEqualStrings(
+        "new",
+        (try cache.get(.{ .remote = remote, .resource = "Other" })).data,
+    );
 
     @memcpy(malformed[0..valid.len], valid);
     const second_resource_offset =

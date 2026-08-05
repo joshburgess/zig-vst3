@@ -103,12 +103,14 @@ fn restoreParameterStateEntry(
     };
 
     if (comptime parameters.ParameterSet(Params).count > 0) {
+        if (index >= seen_restored.len)
+            return error.ParameterStateRestoreStorageTooSmall;
         if (seen_restored[index]) return error.DuplicateParameterStateEntry;
         seen_restored[index] = true;
     }
 
-    const stored = values.store(index, entry.normalized);
-    std.debug.assert(stored);
+    if (!values.store(index, entry.normalized))
+        return error.ParameterStateRestoreFailed;
     report.restored_count += 1;
 }
 
@@ -162,7 +164,8 @@ pub fn readParameterStateWithMigrationsReport(
         const entry = try readParameterStateEntry(reader);
         try restoreParameterStateEntry(Params, set, &restored, &seen_restored, migrations, entry, &report);
     }
-    std.debug.assert(report.accountedCount() == report.entry_count);
+    if (report.accountedCount() != report.entry_count)
+        return error.InvalidParameterStateReport;
     values.copyFrom(&restored);
     return report;
 }

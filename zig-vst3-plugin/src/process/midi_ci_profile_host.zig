@@ -3,11 +3,13 @@ const midi_ci = @import("midi_ci.zig");
 const profile = @import("midi_ci_profile.zig");
 
 pub const Entry = struct {
-    address: midi_ci.Address,
-    id: profile.Id,
+    address: midi_ci.Address = .function_block,
+    id: profile.Id = .{ .bytes = @splat(0) },
     enabled: bool = false,
     channels: u14 = 0,
 };
+
+const empty_entry = Entry{};
 
 pub const SpecificDataRequest = struct {
     address: midi_ci.Address,
@@ -35,8 +37,22 @@ pub fn BorrowedHost(
         delegate: *Delegate,
 
         pub fn profiles(self: *const Self) []const Entry {
-            if (self.count.* > capacity) return &.{};
+            if (!self.valid()) return &.{};
             return self.entries[0..self.count.*];
+        }
+
+        pub fn validate(self: *const Self) !void {
+            if (!self.source.validSource() or
+                self.version < 1 or self.version > 2 or
+                self.count.* > capacity)
+            {
+                return error.InvalidMidiCiProfileHostState;
+            }
+        }
+
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
         }
 
         pub fn addProfile(
@@ -44,6 +60,7 @@ pub fn BorrowedHost(
             address: midi_ci.Address,
             id: profile.Id,
         ) !profile.Presence {
+            try self.validate();
             if (self.version != 2) return error.UnsupportedMidiCiVersion;
             if (self.find(address, id) != null)
                 return error.MidiCiProfileAlreadyRegistered;
@@ -67,6 +84,7 @@ pub fn BorrowedHost(
             address: midi_ci.Address,
             id: profile.Id,
         ) !profile.Presence {
+            try self.validate();
             if (self.version != 2) return error.UnsupportedMidiCiVersion;
             const index = self.find(address, id) orelse
                 return error.MidiCiProfileNotRegistered;
@@ -79,6 +97,7 @@ pub fn BorrowedHost(
                 );
             }
             self.count.* -= 1;
+            self.entries[self.count.*] = empty_entry;
             return .{
                 .kind = .removed,
                 .address = address,
@@ -94,6 +113,7 @@ pub fn BorrowedHost(
             enabled: bool,
             channels: u14,
         ) !profile.Report {
+            try self.validate();
             const profile_entry = try self.entry(address, id);
             try validateChannels(address, enabled, channels);
             profile_entry.enabled = enabled;
@@ -106,6 +126,7 @@ pub fn BorrowedHost(
             inquiry: profile.Inquiry,
             response_address: midi_ci.Address,
         ) !ProfileReply {
+            try self.validate();
             if (!inquiry.valid())
                 return error.InvalidMidiCiProfileInquiry;
             try self.validateRequest(
@@ -149,6 +170,7 @@ pub fn BorrowedHost(
             self: *Self,
             request: profile.Set,
         ) !profile.Report {
+            try self.validate();
             if (!request.valid())
                 return error.InvalidMidiCiProfileSet;
             try self.validateRequest(
@@ -179,6 +201,7 @@ pub fn BorrowedHost(
             self: *Self,
             inquiry: profile.DetailsInquiry,
         ) !ProfileDetailsReply {
+            try self.validate();
             try self.validateRequest(
                 inquiry.source,
                 inquiry.destination,
@@ -200,6 +223,7 @@ pub fn BorrowedHost(
             self: *Self,
             message: anytype,
         ) !void {
+            try self.validate();
             if (!message.valid())
                 return error.InvalidMidiCiProfileSpecificData;
             try self.validateRequest(
@@ -283,7 +307,7 @@ pub fn Host(
 
         source: midi_ci.Muid,
         version: u5 = 2,
-        entries: [capacity]Entry = undefined,
+        entries: [capacity]Entry = @splat(empty_entry),
         count: usize = 0,
         delegate: *Delegate,
 
@@ -304,7 +328,22 @@ pub fn Host(
         }
 
         pub fn profiles(self: *const Self) []const Entry {
+            if (!self.valid()) return &.{};
             return self.entries[0..self.count];
+        }
+
+        pub fn validate(self: *const Self) !void {
+            if (!self.source.validSource() or
+                self.version < 1 or self.version > 2 or
+                self.count > capacity)
+            {
+                return error.InvalidMidiCiProfileHostState;
+            }
+        }
+
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
         }
 
         pub fn addProfile(
@@ -529,6 +568,7 @@ test "MIDI-CI Profile Host dispatches details and specific data" {
     const removed = try host.removeProfile(.function_block, id);
     try std.testing.expectEqual(profile.PresenceKind.removed, removed.kind);
     try std.testing.expectEqual(@as(usize, 0), host.profiles().len);
+    try std.testing.expectEqualDeep(empty_entry, host.entries[0]);
 }
 
 test "MIDI-CI Profile Host preserves version and transactional registry state" {
@@ -538,6 +578,7 @@ test "MIDI-CI Profile Host preserves version and transactional registry state" {
     const second = profile.Id.standard(3, 4, 5, 7);
     var delegate = TestDelegate{};
     var host = try Host(1, 16, TestDelegate).init(local, 2, &delegate);
+    try std.testing.expectEqualDeep(empty_entry, host.entries[0]);
 
     _ = try host.addProfile(.{ .channel = 2 }, first);
     try std.testing.expectError(
@@ -580,4 +621,25 @@ test "MIDI-CI Profile Host preserves version and transactional registry state" {
         }),
     );
     try std.testing.expect(!host.profiles()[0].enabled);
+
+    host.count = std.math.maxInt(usize);
+    try std.testing.expect(!host.valid());
+    try std.testing.expectEqual(@as(usize, 0), host.profiles().len);
+    try std.testing.expectError(
+        error.InvalidMidiCiProfileHostState,
+        host.addProfile(.function_block, second),
+    );
+    try std.testing.expectError(
+        error.InvalidMidiCiProfileHostState,
+        host.handleInquiry(.{
+            .source = remote,
+            .destination = local,
+        }, .function_block),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        host.count,
+    );
+    host.count = 1;
+    try std.testing.expect(host.valid());
 }

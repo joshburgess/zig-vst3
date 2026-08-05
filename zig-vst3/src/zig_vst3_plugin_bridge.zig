@@ -1,4 +1,5 @@
 const std = @import("std");
+const funknown = @import("funknown.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
@@ -697,16 +698,25 @@ pub fn ParameterController(comptime Params: type) type {
             return vst_index.int32Count(Set.count);
         }
 
-        pub fn parameterInfo(self: *const Self, index: types.int32, out: *ivsteditcontroller.ParameterInfo) types.tresult {
-            return fillParameterInfo(Params, self.set, index, out);
+        pub fn parameterInfo(self: *const Self, index: types.int32, out: [*c]ivsteditcontroller.ParameterInfo) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            return fillParameterInfo(Params, self.set, index, @ptrCast(out));
         }
 
-        pub fn stringByValue(self: *const Self, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*]vsttypes.TChar) types.tresult {
-            return getParamStringByValue(Params, self.set, id, value, out);
+        pub fn stringByValue(self: *const Self, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*c]vsttypes.TChar) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            return getParamStringByValue(Params, self.set, id, value, @ptrCast(out));
         }
 
-        pub fn valueByString(self: *const Self, id: vsttypes.ParamID, text: [*]vsttypes.TChar, out: *vsttypes.ParamValue) types.tresult {
-            return getParamValueByString(Params, self.set, id, text, out);
+        pub fn valueByString(self: *const Self, id: vsttypes.ParamID, text: [*c]vsttypes.TChar, out: [*c]vsttypes.ParamValue) types.tresult {
+            if (text == null or out == null) return types.kInvalidArgument;
+            return getParamValueByString(
+                Params,
+                self.set,
+                id,
+                @ptrCast(text),
+                @ptrCast(out),
+            );
         }
 
         pub fn plainFromNormalized(self: *const Self, id: vsttypes.ParamID, normalized: vsttypes.ParamValue) vsttypes.ParamValue {
@@ -753,12 +763,14 @@ pub fn fillParameterInfo(
     const name = set.name(parameter_index) orelse return failParameterInfo(out);
     const short_name = set.shortName(parameter_index) orelse return failParameterInfo(out);
     const units = set.units(parameter_index) orelse return failParameterInfo(out);
+    const flags = parameterInfoFlags(Params, set, parameter_index) orelse
+        return failParameterInfo(out);
     out.* = .{
         .id = id,
         .stepCount = step_count,
         .defaultNormalizedValue = default_normalized,
         .unitId = unit_id,
-        .flags = parameterInfoFlags(Params, set, parameter_index),
+        .flags = flags,
     };
     string128.copy(&out.title, name);
     string128.copy(&out.shortTitle, short_name);
@@ -779,12 +791,12 @@ fn parameterInfoFlags(
     comptime Params: type,
     set: *const plug.parameters.ParameterSet(Params),
     index: usize,
-) types.int32 {
+) ?types.int32 {
     var flags: types.int32 = 0;
-    addParameterFlag(&flags, set.canAutomate(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate);
-    addParameterFlag(&flags, set.isReadOnly(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsReadOnly);
-    addParameterFlag(&flags, set.isList(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList);
-    addParameterFlag(&flags, set.isBypass(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsBypass);
+    addParameterFlag(&flags, set.canAutomate(index) orelse return null, ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate);
+    addParameterFlag(&flags, set.isReadOnly(index) orelse return null, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsReadOnly);
+    addParameterFlag(&flags, set.isList(index) orelse return null, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList);
+    addParameterFlag(&flags, set.isBypass(index) orelse return null, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsBypass);
     return flags;
 }
 
@@ -828,8 +840,10 @@ pub fn normalizedParamToPlain(
     id: vsttypes.ParamID,
     normalized: vsttypes.ParamValue,
 ) vsttypes.ParamValue {
+    if (!std.math.isFinite(normalized)) return 0;
     const index = set.indexOfId(id) orelse return 0;
-    return set.plainFromNormalized(index, normalized) orelse unreachable;
+    const plain = set.plainFromNormalized(index, normalized) orelse return 0;
+    return if (std.math.isFinite(plain)) plain else 0;
 }
 
 pub fn plainParamToNormalized(
@@ -838,8 +852,10 @@ pub fn plainParamToNormalized(
     id: vsttypes.ParamID,
     plain: vsttypes.ParamValue,
 ) vsttypes.ParamValue {
+    if (!std.math.isFinite(plain)) return 0;
     const index = set.indexOfId(id) orelse return 0;
-    return set.normalizedFromPlain(index, plain) orelse unreachable;
+    const normalized = set.normalizedFromPlain(index, plain) orelse return 0;
+    return if (std.math.isFinite(normalized)) normalized else 0;
 }
 
 pub fn frameCountOrZero(data: *const ivstaudioprocessor.ProcessData) usize {
@@ -2108,7 +2124,7 @@ fn BoundedCollector(comptime T: type) type {
         }
 
         fn items(self: *const @This()) []const T {
-            std.debug.assert(self.count <= self.storage.len);
+            if (self.count > self.storage.len) return self.storage[0..0];
             return self.storage[0..self.count];
         }
     };
@@ -2700,8 +2716,9 @@ test "zig-vst3-plugin bridge rejects overreported IBStream byte counts" {
             .tell = tell,
         };
 
-        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, obj: *?*anyopaque) callconv(.c) types.tresult {
-            obj.* = null;
+        fn queryInterface(_: *anyopaque, requested_iid: [*c]const tuid.TUID, obj_raw: [*c]?*anyopaque) callconv(.c) types.tresult {
+            const arguments = funknown.queryArguments(requested_iid, obj_raw) orelse return types.kInvalidArgument;
+            arguments.out.* = null;
             return types.kNoInterface;
         }
 
@@ -2728,8 +2745,9 @@ test "zig-vst3-plugin bridge rejects overreported IBStream byte counts" {
             return types.kResultOk;
         }
 
-        fn tell(_: *anyopaque, pos: *types.int64) callconv(.c) types.tresult {
-            pos.* = 0;
+        fn tell(_: *anyopaque, pos: [*c]types.int64) callconv(.c) types.tresult {
+            if (pos == null) return types.kInvalidArgument;
+            pos[0] = 0;
             return types.kResultOk;
         }
     };
@@ -2882,8 +2900,9 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
 
         const owner = interface_map.ownerFromField(Self, ivstparameterchanges.IParamValueQueue, "iface");
 
-        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            out.* = null;
+        fn queryInterface(_: *anyopaque, requested_iid: [*c]const tuid.TUID, out_raw: [*c]?*anyopaque) callconv(.c) types.tresult {
+            const arguments = funknown.queryArguments(requested_iid, out_raw) orelse return types.kInvalidArgument;
+            arguments.out.* = null;
             return types.kNoInterface;
         }
 
@@ -2903,17 +2922,19 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
             return vst_index.int32Count(owner(ptr).points.len);
         }
 
-        fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.c) types.tresult {
+        fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: [*c]types.int32, value: [*c]vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (sample_offset == null or value == null) return types.kInvalidArgument;
             const self = owner(ptr);
             const point_index = vst_index.bounded(index, self.points.len) orelse return types.kInvalidArgument;
             const point = self.points[point_index];
-            sample_offset.* = point.sample_offset;
-            value.* = point.value;
+            sample_offset[0] = point.sample_offset;
+            value[0] = point.value;
             return types.kResultOk;
         }
 
-        fn addPoint(_: *anyopaque, _: types.int32, _: vsttypes.ParamValue, index: *types.int32) callconv(.c) types.tresult {
-            index.* = -1;
+        fn addPoint(_: *anyopaque, _: types.int32, _: vsttypes.ParamValue, index: [*c]types.int32) callconv(.c) types.tresult {
+            if (index == null) return types.kInvalidArgument;
+            index[0] = -1;
             return types.kResultFalse;
         }
 
@@ -2935,8 +2956,9 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
 
         const owner = interface_map.ownerFromField(Self, ivstparameterchanges.IParameterChanges, "iface");
 
-        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            out.* = null;
+        fn queryInterface(_: *anyopaque, requested_iid: [*c]const tuid.TUID, out_raw: [*c]?*anyopaque) callconv(.c) types.tresult {
+            const arguments = funknown.queryArguments(requested_iid, out_raw) orelse return types.kInvalidArgument;
+            arguments.out.* = null;
             return types.kNoInterface;
         }
 
@@ -2958,8 +2980,9 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
             return self.queues[queue_index];
         }
 
-        fn addParameterData(_: *anyopaque, _: *const vsttypes.ParamID, index: *types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
-            index.* = -1;
+        fn addParameterData(_: *anyopaque, id: [*c]const vsttypes.ParamID, index: [*c]types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
+            if (id == null or index == null) return null;
+            index[0] = -1;
             return null;
         }
 
@@ -3558,6 +3581,11 @@ test "zig-vst3-plugin bridge parameter controller exposes reflected edit operati
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[6]);
     try std.testing.expectEqual(types.kResultOk, controller.valueByString(7, &text, &value));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
+    try std.testing.expectEqual(types.kInvalidArgument, controller.parameterInfo(0, null));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.stringByValue(7, 0.5, null));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.valueByString(7, null, &value));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.valueByString(7, &text, null));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), controller.plainFromNormalized(7, 0.5));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), controller.normalizedFromPlain(7, 1.0));
 
@@ -4131,6 +4159,10 @@ test "zig-vst3-plugin bridge converts VST3 normalized and plain values" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), normalizedParamToPlain(Params, &set, 7, 0.5));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), plainParamToNormalized(Params, &set, 7, 1.0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), normalizedParamToPlain(Params, &set, 8, 0.5));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), normalizedParamToPlain(Params, &set, 7, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), normalizedParamToPlain(Params, &set, 7, std.math.inf(f64)));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), plainParamToNormalized(Params, &set, 7, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), plainParamToNormalized(Params, &set, 7, -std.math.inf(f64)));
 }
 
 test "zig-vst3-plugin bridge builds process context from VST3 buffers" {
@@ -5127,6 +5159,10 @@ test "bridge bounded collector caps appended items" {
     try std.testing.expect(collector.append(2));
     try std.testing.expect(!collector.append(3));
     try std.testing.expectEqualSlices(u8, &.{ 1, 2 }, collector.items());
+    try std.testing.expect(!collector.hasCapacity());
+
+    collector.count = std.math.maxInt(usize);
+    try std.testing.expectEqual(@as(usize, 0), collector.items().len);
     try std.testing.expect(!collector.hasCapacity());
 }
 

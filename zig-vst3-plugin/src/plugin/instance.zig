@@ -42,15 +42,15 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self;
         }
 
-        pub fn prepareChecked(self: *Self, config: PrepareConfig) !void {
+        pub fn prepare(self: *Self, config: PrepareConfig) !void {
             try config.validate();
             if (Spec.has_prepare) {
                 self.plugin.prepare(config);
             }
         }
 
-        pub fn prepare(self: *Self, config: PrepareConfig) void {
-            self.prepareChecked(config) catch @panic("invalid prepare config");
+        pub fn prepareChecked(self: *Self, config: PrepareConfig) !void {
+            try self.prepare(config);
         }
 
         pub fn hasAudioInput(_: *const Self) bool {
@@ -1337,7 +1337,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             }
             var changed_count: usize = 0;
             for (item.parameters) |parameter| {
-                changed_count += self.storeParameterByIdCount(parameter.parameter_id, parameter.normalized) orelse unreachable;
+                changed_count += self.storeParameterByIdCount(
+                    parameter.parameter_id,
+                    parameter.normalized,
+                ) orelse return error.UnknownProgramParameter;
             }
             return changed_count;
         }

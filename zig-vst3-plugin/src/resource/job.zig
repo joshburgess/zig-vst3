@@ -126,34 +126,62 @@ pub fn Job(comptime Config: type) type {
             result_available: bool,
 
             pub fn progress(self: Snapshot) f64 {
+                if (!self.valid()) return 0.0;
                 if (self.total_units == 0) return 0.0;
-                return @as(f64, @floatFromInt(@min(self.completed_units, self.total_units))) /
+                return @as(f64, @floatFromInt(self.completed_units)) /
                     @as(f64, @floatFromInt(self.total_units));
             }
 
             pub fn canCancel(self: Snapshot) bool {
-                return !self.cancellation_pending and
+                return self.valid() and !self.cancellation_pending and
                     (self.status == .queued or self.status == .validating or self.status == .loading);
             }
 
             pub fn canRetry(self: Snapshot) bool {
-                return self.status == .cancelled or self.status == .failed;
+                return self.valid() and (self.status == .cancelled or self.status == .failed);
             }
 
             pub fn valid(self: Snapshot) bool {
-                if ((self.total_units == 0 and self.completed_units != 0) or
+                if ((self.generation == 0 and self.status != .idle) or
+                    self.total_units > maximum_work_units or
+                    (self.total_units == 0 and self.completed_units != 0) or
                     self.completed_units > self.total_units)
                 {
                     return false;
                 }
-                if (self.framework_failure != .none and self.status != .failed) return false;
-                if (self.failure != null and self.status != .failed) return false;
-                if (self.cancellation_pending and
-                    self.status != .queued and self.status != .validating and self.status != .loading)
-                {
+                const active = self.status == .queued or
+                    self.status == .validating or self.status == .loading;
+                if (self.cancellation_pending and !active) return false;
+                if (self.framework_failure != .none and self.failure != null)
                     return false;
-                }
-                return !self.result_available or self.status == .ready;
+                return switch (self.status) {
+                    .idle => self.completed_units == 0 and
+                        self.total_units == 0 and
+                        self.framework_failure == .none and
+                        self.failure == null and
+                        !self.cancellation_pending and
+                        !self.result_available,
+                    .queued => self.completed_units == 0 and
+                        self.total_units == 0 and
+                        self.framework_failure == .none and
+                        self.failure == null and
+                        !self.result_available,
+                    .validating, .loading => self.framework_failure == .none and
+                        self.failure == null and
+                        !self.result_available,
+                    .ready => self.completed_units == self.total_units and
+                        self.framework_failure == .none and
+                        self.failure == null and
+                        !self.cancellation_pending,
+                    .cancelled => self.framework_failure == .none and
+                        self.failure == null and
+                        !self.cancellation_pending and
+                        !self.result_available,
+                    .failed => (self.framework_failure != .none or
+                        self.failure != null) and
+                        !self.cancellation_pending and
+                        !self.result_available,
+                };
             }
         };
 
@@ -165,6 +193,7 @@ pub fn Job(comptime Config: type) type {
         mutex: std.Io.Mutex = .init,
         thread: ?std.Thread = null,
         worker_running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        running_generation: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
         latest_generation: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
         cancelled_generation: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
         shutting_down: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
@@ -186,8 +215,7 @@ pub fn Job(comptime Config: type) type {
         pub fn deinit(self: *Self) void {
             self.lock();
             self.shutting_down.store(true, .release);
-            self.generation +%= 1;
-            if (self.generation == 0) self.generation = 1;
+            self.generation = self.nextGeneration();
             self.latest_generation.store(self.generation, .release);
             self.cancelled_generation.store(0, .release);
             self.queued = null;
@@ -206,12 +234,11 @@ pub fn Job(comptime Config: type) type {
                 self.unlock();
                 return false;
             }
+            const generation = self.nextGeneration();
             const abandoned = self.result;
             self.result = null;
             self.result_generation = 0;
-            self.generation +%= 1;
-            if (self.generation == 0) self.generation = 1;
-            const generation = self.generation;
+            self.generation = generation;
             self.latest_generation.store(generation, .release);
             self.cancelled_generation.store(0, .release);
             self.last_request = request;
@@ -260,8 +287,7 @@ pub fn Job(comptime Config: type) type {
             const abandoned = self.result;
             self.result = null;
             self.result_generation = 0;
-            self.generation +%= 1;
-            if (self.generation == 0) self.generation = 1;
+            self.generation = self.nextGeneration();
             self.latest_generation.store(self.generation, .release);
             self.cancelled_generation.store(0, .release);
             self.queued = null;
@@ -287,7 +313,8 @@ pub fn Job(comptime Config: type) type {
                 .total_units = self.total_units,
                 .framework_failure = self.framework_failure,
                 .failure = self.failure,
-                .cancellation_pending = self.cancelled_generation.load(.acquire) == self.generation,
+                .cancellation_pending = self.generation != 0 and
+                    self.cancelled_generation.load(.acquire) == self.generation,
                 .result_available = self.result != null,
             };
         }
@@ -315,6 +342,7 @@ pub fn Job(comptime Config: type) type {
                     return;
                 };
                 self.queued = null;
+                self.running_generation.store(work.generation, .release);
                 if (work.generation == self.generation) self.status = .validating;
                 self.unlock();
 
@@ -375,6 +403,12 @@ pub fn Job(comptime Config: type) type {
                     self.cancelled_generation.store(0, .release);
                 }
                 const continue_running = self.queued != null and !self.shutting_down.load(.acquire);
+                _ = self.running_generation.cmpxchgStrong(
+                    work.generation,
+                    0,
+                    .acq_rel,
+                    .acquire,
+                );
                 if (!continue_running) self.worker_running.store(false, .release);
                 self.unlock();
                 if (discarded) |value| dispose(value);
@@ -413,6 +447,21 @@ pub fn Job(comptime Config: type) type {
             self.framework_failure = failure;
             self.failure = null;
             self.status = .failed;
+        }
+
+        fn nextGeneration(self: *const Self) u64 {
+            const latest = self.latest_generation.load(.acquire);
+            const running = self.running_generation.load(.acquire);
+            var candidate = self.generation;
+            while (true) {
+                candidate +%= 1;
+                if (candidate == 0) candidate = 1;
+                if (candidate == latest or candidate == running) continue;
+                if (self.queued) |queued| {
+                    if (candidate == queued.generation) continue;
+                }
+                return candidate;
+            }
         }
 
         fn successValue(outcome: WorkOutcome) ?Result {
@@ -683,10 +732,71 @@ test "resource job snapshots contain malformed presentation state" {
     var malformed = valid;
     malformed.completed_units = 8;
     try std.testing.expect(!malformed.valid());
-    try std.testing.expectEqual(@as(f64, 1.0), malformed.progress());
+    try std.testing.expectEqual(@as(f64, 0.0), malformed.progress());
+    try std.testing.expect(!malformed.canCancel());
+    try std.testing.expect(!malformed.canRetry());
     malformed = valid;
     malformed.cancellation_pending = true;
     try std.testing.expect(!malformed.canCancel());
+    try std.testing.expect(malformed.valid());
     malformed.status = .ready;
     try std.testing.expect(!malformed.valid());
+
+    malformed = valid;
+    malformed.generation = 0;
+    try std.testing.expect(!malformed.valid());
+    malformed = valid;
+    malformed.total_units = 5;
+    try std.testing.expect(!malformed.valid());
+    malformed = valid;
+    malformed.status = .failed;
+    try std.testing.expect(!malformed.valid());
+
+    const idle = SnapshotJob.Snapshot{
+        .status = .idle,
+        .generation = 0,
+        .completed_units = 0,
+        .total_units = 0,
+        .framework_failure = .none,
+        .failure = null,
+        .cancellation_pending = false,
+        .result_available = false,
+    };
+    try std.testing.expect(idle.valid());
+
+    var initial_job = SnapshotJob.init();
+    defer initial_job.deinit();
+    const initial = initial_job.snapshot();
+    try std.testing.expect(initial.valid());
+    try std.testing.expect(!initial.cancellation_pending);
+}
+
+test "resource job generation skips retained active identities" {
+    const GenerationJob = Job(struct {
+        pub const Request = u8;
+        pub const Result = void;
+        pub const Failure = enum { unused };
+        pub const maximum_work_units = 1;
+        pub const maximum_result_units = 1;
+
+        pub fn run(_: Request, _: *WorkerContext) Outcome(Result, Failure) {
+            return .{ .success = .{ .value = {}, .result_units = 1 } };
+        }
+    });
+
+    var resource_job = GenerationJob.init();
+    defer resource_job.deinit();
+    resource_job.generation = std.math.maxInt(u64);
+    resource_job.running_generation.store(1, .release);
+    resource_job.latest_generation.store(2, .release);
+    resource_job.queued = .{ .generation = 2, .request = 7 };
+    resource_job.worker_running.store(true, .release);
+
+    try std.testing.expect(resource_job.submit(8));
+    try std.testing.expectEqual(@as(u64, 3), resource_job.generation);
+    try std.testing.expectEqual(
+        @as(u64, 3),
+        resource_job.latest_generation.load(.acquire),
+    );
+    try std.testing.expectEqual(@as(u64, 3), resource_job.queued.?.generation);
 }

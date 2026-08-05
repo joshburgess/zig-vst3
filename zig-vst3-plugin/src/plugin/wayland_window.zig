@@ -9,7 +9,7 @@ pub fn Backend(comptime Api: type) type {
         const Self = @This();
         const maximum_title_bytes = 128;
 
-        title_storage: [maximum_title_bytes]u8 = undefined,
+        title_storage: [maximum_title_bytes]u8 = @splat(0),
         title_length: u8,
         window: ?Api.Window = null,
 
@@ -368,6 +368,8 @@ test "Wayland window backend adapts lifecycle resize events and handles" {
     MockApi.reset();
     const TestBackend = Backend(MockApi);
     var backend = try TestBackend.init("Standalone Probe");
+    for (backend.title_storage[backend.title_length..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     const erased = backend.windowBackend();
     const parent = try erased.vtable.open(
         erased.context,

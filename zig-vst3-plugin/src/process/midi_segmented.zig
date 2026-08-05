@@ -28,6 +28,15 @@ pub fn packetForm(
     return .continuation;
 }
 
+pub fn packetizerStateValid(
+    source_len: usize,
+    cursor: usize,
+    emitted_empty: bool,
+) bool {
+    return cursor <= source_len and
+        (source_len == 0 or !emitted_empty);
+}
+
 pub fn reassemblyStateValid(
     count: usize,
     capacity: usize,
@@ -53,6 +62,7 @@ pub fn replace(
 ) bool {
     if (source.len > storage.len) return false;
     @memcpy(storage[0..source.len], source);
+    @memset(storage[source.len..], 0);
     count.* = source.len;
     return true;
 }
@@ -95,6 +105,15 @@ test "segmented payload bounds contain addition overflow" {
     );
 }
 
+test "segmented packetizer phase rejects retained sentinel mismatches" {
+    try std.testing.expect(packetizerStateValid(0, 0, false));
+    try std.testing.expect(packetizerStateValid(0, 0, true));
+    try std.testing.expect(packetizerStateValid(4, 4, false));
+    try std.testing.expect(!packetizerStateValid(0, 1, false));
+    try std.testing.expect(!packetizerStateValid(4, 5, false));
+    try std.testing.expect(!packetizerStateValid(4, 0, true));
+}
+
 test "segmented storage updates are transactional" {
     var storage = [_]u8{ 1, 2, 3, 4 };
     var count: usize = 2;
@@ -121,6 +140,14 @@ test "segmented storage updates are transactional" {
         &.{ 1, 2, 5, 6 },
         &storage,
     );
+}
+
+test "segmented replacement scrubs inactive capacity" {
+    var storage = [_]u8{ 1, 2, 3, 4 };
+    var count: usize = storage.len;
+    try std.testing.expect(replace(u8, &storage, &count, &.{9}));
+    try std.testing.expectEqualSlices(u8, &.{ 9, 0, 0, 0 }, &storage);
+    try std.testing.expectEqual(@as(usize, 1), count);
 }
 
 test "segmented reassembly state validates identity phases" {

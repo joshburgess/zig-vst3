@@ -54,14 +54,17 @@ const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
     .{ .id = 2, .x = 0.5, .y = 0.5 },
     .{ .id = 3, .x = 1.0, .y = 0.0 },
-}) catch unreachable;
+}) catch @compileError("invalid gallery envelope declaration");
 const cleared_gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
     .{ .id = 3, .x = 1.0, .y = 0.0 },
-}) catch unreachable;
-const empty_preset_search = plug_core.editor_state.Text.init("") catch unreachable;
-const gallery_label = plug_core.editor_state.Text.init("Studio Plate") catch unreachable;
-const gallery_live_label = plug_core.editor_state.Text.init("48 kHz, stereo") catch unreachable;
+}) catch @compileError("invalid cleared gallery envelope declaration");
+const empty_preset_search = plug_core.editor_state.Text.init("") catch
+    @compileError("invalid empty preset search declaration");
+const gallery_label = plug_core.editor_state.Text.init("Studio Plate") catch
+    @compileError("invalid gallery label declaration");
+const gallery_live_label = plug_core.editor_state.Text.init("48 kHz, stereo") catch
+    @compileError("invalid gallery live label declaration");
 
 const GalleryAudioImporter = parameter_editor.DecodedAudioFileImporter(gallery_decoded_frame_capacity);
 

@@ -17,9 +17,12 @@ fn validateVoidHook(
 
     const hook = @typeInfo(@TypeOf(@field(Plugin, hook_name))).@"fn";
     if (hook.params.len != hook_params.len) @compileError(message);
-    if (hook.return_type.? != void) @compileError(message);
+    const return_type = hook.return_type orelse @compileError(message);
+    if (return_type != void) @compileError(message);
     inline for (hook_params, 0..) |expected_type, index| {
-        if (hook.params[index].type.? != expected_type) {
+        const parameter_type = hook.params[index].type orelse
+            @compileError(message);
+        if (parameter_type != expected_type) {
             @compileError(message);
         }
     }
@@ -32,7 +35,9 @@ fn validateInitHook(comptime Plugin: type) void {
     if (init_info.params.len != 1) {
         @compileError("init must be fn (std.mem.Allocator) !Plugin");
     }
-    if (init_info.params[0].type.? != std.mem.Allocator) {
+    const allocator_type = init_info.params[0].type orelse
+        @compileError("init must be fn (std.mem.Allocator) !Plugin");
+    if (allocator_type != std.mem.Allocator) {
         @compileError("init must be fn (std.mem.Allocator) !Plugin");
     }
 
@@ -50,9 +55,11 @@ fn validateU32Hook(
     if (!@hasDecl(Plugin, hook_name)) return;
 
     const hook = @typeInfo(@TypeOf(@field(Plugin, hook_name))).@"fn";
-    if (hook.params.len != 1 or
-        hook.params[0].type.? != *const Plugin or
-        hook.return_type.? != u32)
+    if (hook.params.len != 1) @compileError(message);
+    const parameter_type = hook.params[0].type orelse
+        @compileError(message);
+    const return_type = hook.return_type orelse @compileError(message);
+    if (parameter_type != *const Plugin or return_type != u32)
         @compileError(message);
 }
 

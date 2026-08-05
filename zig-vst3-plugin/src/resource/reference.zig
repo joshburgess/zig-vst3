@@ -59,7 +59,7 @@ pub fn BoundedMetadata(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        bytes: [capacity]u8 = undefined,
+        bytes: [capacity]u8 = @splat(0),
         length: usize = 0,
 
         pub fn init(metadata: []const u8) error{MetadataTooLong}!Self {
@@ -234,6 +234,8 @@ test "resource reference round trips a maximum length path" {
     const path = "12345678901234567890123456789012";
     const source = "bounded model fixture";
     const stored = try Stored.init(path, Identity.fromBytes(source), 7, "Linear, 48 kHz");
+    for (stored.metadata.bytes[stored.metadata.length..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     var encoded: [Stored.maximum_encoded_size]u8 = undefined;
     var writer = std.Io.Writer.fixed(&encoded);
     try stored.write(&writer);
@@ -245,6 +247,10 @@ test "resource reference round trips a maximum length path" {
     try std.testing.expect(stored.identity.eql(restored.identity));
     try std.testing.expectEqual(@as(u32, 7), restored.resource_schema_version);
     try std.testing.expectEqualStrings("Linear, 48 kHz", restored.metadata.slice());
+    for (restored.path.bytes[restored.path.length..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (restored.metadata.bytes[restored.metadata.length..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
 }
 
 test "resource reference rejects malformed lengths transactionally" {

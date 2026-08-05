@@ -837,8 +837,8 @@ fn validateFloatParameterRange(param: FloatParam) ?anyerror {
 }
 
 fn validateLogFloatParameterRange(param: LogFloatParam) ?anyerror {
-    if (!std.math.isFinite(param.min) or
-        !std.math.isFinite(param.max) or
+    if (!shared.isFinite(f64, param.min) or
+        !shared.isFinite(f64, param.max) or
         param.min <= 0.0 or
         param.max <= param.min)
     {

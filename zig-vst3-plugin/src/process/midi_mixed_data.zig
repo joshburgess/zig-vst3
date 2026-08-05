@@ -53,7 +53,9 @@ pub const Header = struct {
 
     pub fn parse(ump_packet: ump.Packet) !Header {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .data128) return error.NotData128Ump;
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .data128) return error.NotData128Ump;
         if (((ump_packet.storage[0] >> 20) & 0x0F) != 0x8)
             return error.NotMixedDataHeader;
         const header = Header{
@@ -116,7 +118,9 @@ pub const Payload = struct {
 
     pub fn parse(ump_packet: ump.Packet, expected_count: u4) !Payload {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .data128) return error.NotData128Ump;
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .data128) return error.NotData128Ump;
         if (((ump_packet.storage[0] >> 20) & 0x0F) != 0x9)
             return error.NotMixedDataPayload;
         if (expected_count > 14) return error.InvalidMixedDataPayloadCount;
@@ -155,8 +159,15 @@ pub const Packetizer = struct {
         };
     }
 
+    pub fn valid(self: *const Packetizer) bool {
+        const payload_bytes = self.header.payloadByteCount() orelse return false;
+        if (payload_bytes != self.source.len or self.cursor > self.source.len)
+            return false;
+        return self.emitted_header or self.cursor == 0;
+    }
+
     pub fn next(self: *Packetizer) !?ump.Packet {
-        if (self.cursor > self.source.len) return error.InvalidMixedDataPacketizerState;
+        if (!self.valid()) return error.InvalidMixedDataPacketizerState;
         if (!self.emitted_header) {
             self.emitted_header = true;
             return try self.header.packet();
@@ -187,7 +198,7 @@ pub fn Reassembler(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        storage: [capacity]u8 = undefined,
+        storage: [capacity]u8 = @splat(0),
         count: usize = 0,
         header: ?Header = null,
         active: bool = false,
@@ -222,7 +233,9 @@ pub fn Reassembler(comptime capacity: usize) type {
         pub fn push(self: *Self, ump_packet: ump.Packet) !bool {
             if (!self.valid()) return error.InvalidMixedDataReassemblerState;
             if (!ump_packet.valid()) return error.InvalidUmpPacket;
-            if (ump_packet.messageType().? != .data128) return error.NotData128Ump;
+            const message_type = ump_packet.messageType() orelse
+                return error.InvalidUmpPacket;
+            if (message_type != .data128) return error.NotData128Ump;
             return switch ((ump_packet.storage[0] >> 20) & 0x0F) {
                 0x8 => try self.acceptHeader(try Header.parse(ump_packet)),
                 0x9 => try self.acceptPayload(ump_packet),
@@ -232,8 +245,10 @@ pub fn Reassembler(comptime capacity: usize) type {
 
         fn acceptHeader(self: *Self, header: Header) !bool {
             if (self.active) return error.UnexpectedMixedDataHeader;
-            const expected: usize = header.payloadByteCount().?;
+            const expected: usize = header.payloadByteCount() orelse
+                return error.InvalidMixedDataHeader;
             if (expected > capacity) return error.MixedDataCapacityExceeded;
+            @memset(&self.storage, 0);
             self.count = 0;
             self.header = header;
             return segmented.setCompletion(
@@ -245,8 +260,13 @@ pub fn Reassembler(comptime capacity: usize) type {
 
         fn acceptPayload(self: *Self, ump_packet: ump.Packet) !bool {
             if (!self.active) return error.UnexpectedMixedDataPayload;
-            const header = self.header.?;
-            const remaining = @as(usize, header.payloadByteCount().?) - self.count;
+            const header = self.header orelse
+                return error.InvalidMixedDataReassemblerState;
+            const expected: usize = header.payloadByteCount() orelse
+                return error.InvalidMixedDataReassemblerState;
+            if (self.count > expected)
+                return error.InvalidMixedDataReassemblerState;
+            const remaining = expected - self.count;
             const packet_count: u4 = @intCast(@min(remaining, 14));
             const payload = try Payload.parse(ump_packet, packet_count);
             if (payload.group != header.metadata.group)
@@ -263,7 +283,7 @@ pub fn Reassembler(comptime capacity: usize) type {
             return segmented.setCompletion(
                 &self.active,
                 &self.completed,
-                self.count == header.payloadByteCount().?,
+                self.count == expected,
             );
         }
     };
@@ -290,6 +310,11 @@ test "Mixed Data Set chunks round trip every payload boundary" {
         while (try packetizer.next()) |packet| _ = try assembler.push(packet);
         try std.testing.expectEqualDeep(metadata, assembler.header.?.metadata);
         try std.testing.expectEqualSlices(u8, source[0..length], assembler.bytes().?);
+        for (assembler.storage[length..]) |byte|
+            try std.testing.expectEqual(@as(u8, 0), byte);
+        assembler.reset();
+        for (assembler.storage) |byte|
+            try std.testing.expectEqual(@as(u8, 0), byte);
     }
 }
 
@@ -305,6 +330,16 @@ test "Mixed Data Set packets use canonical wire fields" {
         .sub_id_2 = 0xABCD,
     };
     var packetizer = try Packetizer.init(metadata, "mixed payload");
+    packetizer.header.valid_byte_count += 1;
+    try std.testing.expect(!packetizer.valid());
+    try std.testing.expectError(
+        error.InvalidMixedDataPacketizerState,
+        packetizer.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), packetizer.cursor);
+    try std.testing.expect(!packetizer.emitted_header);
+    packetizer.header.valid_byte_count -= 1;
+    try std.testing.expect(packetizer.valid());
     try std.testing.expectEqualSlices(
         u32,
         &.{ 0x5487_001D, 0x0003_0002, 0x007D_FFFF, 0x1234_ABCD },

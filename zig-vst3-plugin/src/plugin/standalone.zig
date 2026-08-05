@@ -226,7 +226,7 @@ pub fn BoundedCaptureFifo(
         pub const channel_capacity = maximum_channels;
         pub const capacity_frames = frame_capacity;
 
-        storage: [maximum_channels][slot_count]Sample = undefined,
+        storage: [maximum_channels][slot_count]Sample = @splat(@splat(0.0)),
         channel_count: usize,
         read_index: std.atomic.Value(usize) =
             std.atomic.Value(usize).init(0),
@@ -389,6 +389,7 @@ pub fn BoundedCaptureFifo(
 
         /// Reset only after both capture and render callbacks have stopped.
         pub fn reset(self: *Self) void {
+            self.storage = @splat(@splat(0.0));
             self.read_index.store(0, .release);
             self.write_index.store(0, .release);
             self.written_frames.store(0, .monotonic);
@@ -1590,9 +1591,12 @@ pub fn StandaloneRuntime(
 }
 
 pub const Midi1CallbackPacket = struct {
-    sample_offset: usize,
+    sample_offset: usize = 0,
     bus_index: i32 = 0,
-    message: process_api.Midi1Message,
+    message: process_api.Midi1Message = .{
+        .storage = @splat(0),
+        .length = 0,
+    },
 
     pub fn valid(
         self: Midi1CallbackPacket,
@@ -1609,10 +1613,11 @@ pub fn Midi1EventBuffer(comptime capacity: usize) type {
         @compileError("Midi1EventBuffer capacity must be positive");
 
     return struct {
-        storage: [capacity]process_api.Event = undefined,
+        storage: [capacity]process_api.Event = @splat(process_api.Event.other(0)),
         count: usize = 0,
 
         pub fn reset(self: *@This()) void {
+            self.storage = @splat(process_api.Event.other(0));
             self.count = 0;
         }
 
@@ -1694,8 +1699,11 @@ pub const Midi1OutputSink = struct {
 };
 
 pub const TimestampedMidi1Packet = struct {
-    timestamp_nanoseconds: u64,
-    message: process_api.Midi1Message,
+    timestamp_nanoseconds: u64 = 0,
+    message: process_api.Midi1Message = .{
+        .storage = @splat(0),
+        .length = 0,
+    },
 };
 
 /// Use from exactly one device producer and one audio-thread consumer
@@ -1710,7 +1718,7 @@ pub fn Midi1InputQueue(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        storage: [slot_count]TimestampedMidi1Packet = undefined,
+        storage: [slot_count]TimestampedMidi1Packet = @splat(.{}),
         read_index: std.atomic.Value(usize) =
             std.atomic.Value(usize).init(0),
         write_index: std.atomic.Value(usize) =
@@ -1774,6 +1782,7 @@ pub fn Midi1InputQueue(comptime capacity: usize) type {
 
         /// Reset only after both producer and consumer have stopped
         pub fn reset(self: *Self) void {
+            self.storage = @splat(.{});
             self.read_index.store(0, .release);
             self.write_index.store(0, .release);
             self.last_timestamp_nanoseconds = null;
@@ -1940,8 +1949,11 @@ pub const Midi1OutputDevice = struct {
 };
 
 pub const TimestampedUmpPacket = struct {
-    timestamp_nanoseconds: u64,
-    packet: process_api.UmpPacket,
+    timestamp_nanoseconds: u64 = 0,
+    packet: process_api.UmpPacket = .{
+        .storage = @splat(0),
+        .word_count = 0,
+    },
 
     pub fn valid(self: TimestampedUmpPacket) bool {
         return self.packet.valid();
@@ -1949,8 +1961,11 @@ pub const TimestampedUmpPacket = struct {
 };
 
 pub const UmpBlockPacket = struct {
-    sample_offset: usize,
-    packet: process_api.UmpPacket,
+    sample_offset: usize = 0,
+    packet: process_api.UmpPacket = .{
+        .storage = @splat(0),
+        .word_count = 0,
+    },
 
     pub fn valid(
         self: UmpBlockPacket,
@@ -1966,10 +1981,11 @@ pub fn UmpBlockBuffer(comptime capacity: usize) type {
         @compileError("UmpBlockBuffer capacity must be positive");
 
     return struct {
-        storage: [capacity]UmpBlockPacket = undefined,
+        storage: [capacity]UmpBlockPacket = @splat(.{}),
         count: usize = 0,
 
         pub fn reset(self: *@This()) void {
+            self.storage = @splat(.{});
             self.count = 0;
         }
 
@@ -2012,7 +2028,7 @@ pub fn UmpInputQueue(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        storage: [slot_count]TimestampedUmpPacket = undefined,
+        storage: [slot_count]TimestampedUmpPacket = @splat(.{}),
         read_index: std.atomic.Value(usize) =
             std.atomic.Value(usize).init(0),
         write_index: std.atomic.Value(usize) =
@@ -2076,6 +2092,7 @@ pub fn UmpInputQueue(comptime capacity: usize) type {
 
         /// Reset only after both producer and consumer have stopped
         pub fn reset(self: *Self) void {
+            self.storage = @splat(.{});
             self.read_index.store(0, .release);
             self.write_index.store(0, .release);
             self.last_timestamp_nanoseconds = null;
@@ -2614,6 +2631,9 @@ fn recordSaturatingAmount(
 test "bounded capture FIFO preserves planar order across wraparound" {
     const Fifo = BoundedCaptureFifo(f32, 2, 5);
     var fifo = try Fifo.init(2);
+    for (fifo.storage) |channel| {
+        try std.testing.expectEqual(@as([6]f32, @splat(0.0)), channel);
+    }
     const first_left = [_]f32{ 1, 2, 3, 4 };
     const first_right = [_]f32{ 11, 12, 13, 14 };
     const first = [_][]const f32{ &first_left, &first_right };
@@ -2685,6 +2705,10 @@ test "bounded capture FIFO preserves planar order across wraparound" {
         },
         try fifo.statistics(),
     );
+    fifo.reset();
+    for (fifo.storage) |channel| {
+        try std.testing.expectEqual(@as([6]f32, @splat(0.0)), channel);
+    }
 }
 
 test "bounded capture FIFO drops newest overflow and reports saturation" {
@@ -4309,6 +4333,8 @@ test "MIDI block scheduler preserves late current and future packets" {
     try std.testing.expectEqual(@as(i32, 2), events.storage[1].bus_index);
 
     events.reset();
+    for (events.storage) |event|
+        try std.testing.expectEqualDeep(process_api.Event.other(0), event);
     const second = try scheduler.fillBlock(
         4,
         &events,
@@ -4488,6 +4514,9 @@ test "MIDI input queue is stable under concurrent SPSC traffic" {
         error.InvalidMidiInputQueue,
         queue.pop(),
     );
+    queue.reset();
+    for (queue.storage) |packet|
+        try std.testing.expectEqualDeep(TimestampedMidi1Packet{}, packet);
 }
 
 test "UMP device interfaces preserve complete packets and timestamps" {
@@ -4706,6 +4735,8 @@ test "UMP block scheduler preserves every packet width and timing" {
     );
 
     packets.reset();
+    for (packets.storage) |packet|
+        try std.testing.expectEqualDeep(UmpBlockPacket{}, packet);
     const second = try scheduler.fillBlock(
         4,
         &packets,
@@ -4800,6 +4831,8 @@ test "UMP queue and scheduler retain rejected packets safely" {
         @as(usize, 0),
         scheduler.rejectedPacketCount(),
     );
+    for (scheduler.queue.storage) |packet|
+        try std.testing.expectEqualDeep(TimestampedUmpPacket{}, packet);
     try scheduler.receive(.{
         .timestamp_nanoseconds = 9,
         .packet = first_packet,
@@ -4858,6 +4891,10 @@ test "standalone MIDI block buffers contain hostile counts before queue consumpt
     );
     midi_buffer.reset();
     try std.testing.expect(midi_buffer.valid());
+    try std.testing.expectEqualDeep(
+        process_api.Event.other(0),
+        midi_buffer.storage[0],
+    );
     const midi_report = try midi_scheduler.fillBlock(
         1,
         &midi_buffer,
@@ -4907,6 +4944,7 @@ test "standalone MIDI block buffers contain hostile counts before queue consumpt
     );
     ump_buffer.reset();
     try std.testing.expect(ump_buffer.valid());
+    try std.testing.expectEqualDeep(UmpBlockPacket{}, ump_buffer.storage[0]);
     const ump_report = try ump_scheduler.fillBlock(
         1,
         &ump_buffer,

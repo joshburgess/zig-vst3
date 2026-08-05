@@ -2,12 +2,14 @@ const std = @import("std");
 const common = @import("../common.zig");
 const parameters = @import("../parameters.zig");
 const process_api = @import("../process.zig");
+const realtime_audit = @import("../realtime_audit.zig");
 const instance_mod = @import("instance.zig");
 
 pub const RuntimeState = enum {
     initialized,
     prepared,
     active,
+    deinitialized,
 };
 
 pub fn ProcessorRuntime(comptime Plugin: type) type {
@@ -47,6 +49,8 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
             self: *Self,
             config: instance_mod.PrepareConfig,
         ) !void {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             if (self.state == .active) return error.ProcessorActive;
             try config.validate();
             if (self.state == .prepared) {
@@ -60,6 +64,8 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
         }
 
         pub fn activate(self: *Self) !void {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             if (self.state == .active) return error.ProcessorAlreadyActive;
             if (self.state != .prepared) return error.ProcessorNotPrepared;
             self.instance.activate();
@@ -67,6 +73,8 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
         }
 
         pub fn deactivate(self: *Self) !void {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             if (self.state != .active) return error.ProcessorNotActive;
             self.instance.deactivate();
             self.instance.reset();
@@ -74,12 +82,16 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
         }
 
         pub fn reset(self: *Self) !void {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             if (self.state == .initialized)
                 return error.ProcessorNotPrepared;
             self.instance.reset();
         }
 
         pub fn releaseResources(self: *Self) !void {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             if (self.state == .active) return error.ProcessorActive;
             if (self.state != .prepared)
                 return error.ProcessorNotPrepared;
@@ -95,10 +107,14 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
                 Instance.Spec.auxiliary_audio_bus_capacity,
             ),
         ) !void {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             if (!Instance.Spec.has_process32_hook)
                 return error.UnsupportedSamplePrecision;
             try self.validateContext(f32, context);
+            const scope = realtime_audit.Scope.enter();
             self.instance.process(context);
+            if (!scope.leave().clean()) return error.RealtimeSafetyViolation;
         }
 
         pub fn process64(
@@ -108,10 +124,14 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
                 Instance.Spec.auxiliary_audio_bus_capacity,
             ),
         ) !void {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             if (!Instance.Spec.has_process64_hook)
                 return error.UnsupportedSamplePrecision;
             try self.validateContext(f64, context);
+            const scope = realtime_audit.Scope.enter();
             self.instance.process64(context);
+            if (!scope.leave().clean()) return error.RealtimeSafetyViolation;
         }
 
         pub fn flushParameterChanges(
@@ -119,16 +139,20 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
             changes: process_api.ParameterChanges,
             frame_count: usize,
         ) !usize {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             if (!changes.valid(frame_count))
                 return error.InvalidParameterChanges;
             return self.instance.applyParameterChangesChangedCount(changes);
         }
 
         pub fn latencySamples(self: *const Self) u32 {
+            if (self.state == .deinitialized) return 0;
             return self.instance.latencySamples();
         }
 
         pub fn tailSamples(self: *const Self) u32 {
+            if (self.state == .deinitialized) return 0;
             return self.instance.tailSamples();
         }
 
@@ -136,6 +160,8 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
             self: *const Self,
             writer: anytype,
         ) !void {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             try self.instance.writeParameterState(writer);
         }
 
@@ -143,6 +169,8 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
             self: *Self,
             reader: anytype,
         ) !void {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             if (self.state == .active) return error.ProcessorActive;
             try self.readParameterStateExclusive(reader);
         }
@@ -152,19 +180,22 @@ pub fn ProcessorRuntime(comptime Plugin: type) type {
             self: *Self,
             reader: anytype,
         ) !void {
+            if (self.state == .deinitialized)
+                return error.ProcessorDeinitialized;
             try self.instance.readParameterState(reader);
             self.instance.afterStateRestore();
         }
 
         pub fn deinit(self: *Self) void {
+            if (self.state == .deinitialized) return;
             if (self.state == .active) {
                 self.instance.deactivate();
                 self.instance.reset();
             }
             if (self.state != .initialized)
                 self.instance.releaseResources();
-            self.state = .initialized;
             self.prepare_config = null;
+            self.state = .deinitialized;
             self.instance.deinit();
         }
 
@@ -379,6 +410,111 @@ test "processor runtime enforces lifecycle and carries host-neutral process data
     try std.testing.expectEqual(@as(usize, 2), runtime.instance.plugin.release_count);
 }
 
+test "processor runtime teardown enters a deterministic terminal state" {
+    const Owned = struct {
+        allocator: std.mem.Allocator,
+        storage: []u8,
+
+        pub const name = "Owned Runtime";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+
+        pub fn init(allocator: std.mem.Allocator) !@This() {
+            return .{
+                .allocator = allocator,
+                .storage = try allocator.alloc(u8, 16),
+            };
+        }
+
+        pub fn deinit(self: *@This()) void {
+            self.allocator.free(self.storage);
+        }
+    };
+
+    var runtime = try ProcessorRuntime(Owned).init(
+        std.testing.allocator,
+        .{},
+    );
+    runtime.deinit();
+    try std.testing.expectEqual(
+        RuntimeState.deinitialized,
+        runtime.runtimeState(),
+    );
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.prepare(.{
+            .sample_rate = 48_000.0,
+            .max_block_size = 16,
+        }),
+    );
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.activate(),
+    );
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.deactivate(),
+    );
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.reset(),
+    );
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.releaseResources(),
+    );
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.flushParameterChanges(.{}, 0),
+    );
+    try std.testing.expectEqual(@as(u32, 0), runtime.latencySamples());
+    try std.testing.expectEqual(@as(u32, 0), runtime.tailSamples());
+
+    var encoded: [1]u8 = .{0};
+    var writer = std.Io.Writer.fixed(&encoded);
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.writeParameterState(&writer),
+    );
+    var reader: std.Io.Reader = .fixed(&encoded);
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.readParameterState(&reader),
+    );
+    reader = .fixed(&encoded);
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.readParameterStateExclusive(&reader),
+    );
+
+    var context32 = try process_api.ProcessContext(f32).init(
+        48_000.0,
+        &.{},
+        &.{},
+    );
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.process(&context32),
+    );
+    var context64 = try process_api.ProcessContext(f64).init(
+        48_000.0,
+        &.{},
+        &.{},
+    );
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.process64(&context64),
+    );
+
+    runtime.deinit();
+    try runtime.initInto(std.testing.allocator, .{});
+    try std.testing.expectEqual(
+        RuntimeState.initialized,
+        runtime.runtimeState(),
+    );
+    runtime.deinit();
+}
+
 test "processor runtime validates context and restores state only while inactive" {
     const Gain = struct {
         restored_count: usize = 0,
@@ -474,6 +610,56 @@ test "processor runtime validates context and restores state only while inactive
     try std.testing.expectError(
         error.ProcessorActive,
         restored.readParameterState(&active_reader),
+    );
+}
+
+test "processor runtime reports observed realtime violations" {
+    const Violating = struct {
+        pub const name = "Realtime Violation";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+
+        pub fn process(
+            _: *@This(),
+            _: *process_api.ProcessContext(f32),
+        ) void {
+            _ = realtime_audit.observe(.allocation);
+        }
+
+        pub fn process64(
+            _: *@This(),
+            _: *process_api.ProcessContext(f64),
+        ) void {
+            _ = realtime_audit.observe(.lock);
+        }
+    };
+
+    const Runtime = ProcessorRuntime(Violating);
+    var runtime = try Runtime.init(std.testing.allocator, .{});
+    defer runtime.deinit();
+    try runtime.prepare(.{
+        .sample_rate = 48_000.0,
+        .max_block_size = 1,
+    });
+    try runtime.activate();
+
+    var context = try process_api.ProcessContext(f32).init(
+        48_000.0,
+        &.{},
+        &.{},
+    );
+    try std.testing.expectError(
+        error.RealtimeSafetyViolation,
+        runtime.process(&context),
+    );
+    var context64 = try process_api.ProcessContext(f64).init(
+        48_000.0,
+        &.{},
+        &.{},
+    );
+    try std.testing.expectError(
+        error.RealtimeSafetyViolation,
+        runtime.process64(&context64),
     );
 }
 

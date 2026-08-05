@@ -213,6 +213,12 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(dsp, "inverseJacobiSn"));
     try std.testing.expect(@hasDecl(dsp, "inverseJacobiCn"));
     try std.testing.expect(@hasDecl(dsp, "inverseJacobiDn"));
+    try std.testing.expect(@hasDecl(dsp, "inverseJacobiSnBranch"));
+    try std.testing.expect(@hasDecl(dsp, "inverseJacobiCnBranch"));
+    try std.testing.expect(@hasDecl(dsp, "inverseJacobiDnBranch"));
+    try std.testing.expect(
+        @hasDecl(dsp, "complexParameterJacobiElliptic"),
+    );
     try std.testing.expect(@hasDecl(dsp, "ButterworthDesigner"));
     try std.testing.expect(@hasDecl(dsp, "ButterworthCascade"));
     try std.testing.expect(@hasDecl(dsp, "ButterworthSpecification"));
@@ -264,6 +270,12 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(dsp, "WavWriter"));
     try std.testing.expect(@hasDecl(dsp, "WavFileWriter"));
     try std.testing.expect(@hasDecl(dsp, "Wave64FileWriter"));
+    try std.testing.expect(
+        @hasDecl(dsp, "VorbisQualityRateController"),
+    );
+    try std.testing.expect(
+        @hasDecl(dsp, "VorbisQualitySignalDecision"),
+    );
     try std.testing.expect(@hasDecl(dsp, "fillWindow"));
     try std.testing.expect(@hasDecl(dsp, "applyWindow"));
     try std.testing.expect(@hasDecl(dsp, "fillKaiserWindow"));
@@ -271,6 +283,7 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(resource.job, "Job"));
     try std.testing.expect(@hasDecl(resource.exchange, "Exchange"));
     try std.testing.expect(@hasDecl(resource, "Reference"));
+    try std.testing.expect(@hasDecl(resource, "ByteAccumulator"));
     try std.testing.expect(@hasDecl(resource, "ResourceRecovery"));
     try std.testing.expect(@hasDecl(parameters, "normalizedFromBipolar"));
     try std.testing.expect(@hasDecl(plugin, "PluginSpec"));

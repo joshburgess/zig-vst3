@@ -63,7 +63,9 @@ pub const Chunk = struct {
 
     pub fn parse(ump_packet: ump.Packet) !Chunk {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .data64) return error.NotSysex7Ump;
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .data64) return error.NotSysex7Ump;
 
         const status_and_count = byteAt(ump_packet, 1);
         const raw_kind = status_and_count >> 4;
@@ -103,8 +105,16 @@ pub const Packetizer = struct {
         return .{ .group = @intCast(group), .source = source };
     }
 
+    pub fn valid(self: *const Packetizer) bool {
+        return segmented.packetizerStateValid(
+            self.source.len,
+            self.cursor,
+            self.emitted_empty,
+        );
+    }
+
     pub fn next(self: *Packetizer) !?ump.Packet {
-        if (self.cursor > self.source.len) return error.InvalidSysex7PacketizerState;
+        if (!self.valid()) return error.InvalidSysex7PacketizerState;
         if (self.source.len == 0) {
             if (self.emitted_empty) return null;
             self.emitted_empty = true;
@@ -143,7 +153,7 @@ pub fn Reassembler(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        storage: [capacity]u7 = undefined,
+        storage: [capacity]u7 = @splat(0),
         count: usize = 0,
         group: ?u4 = null,
         active: bool = false,
@@ -208,7 +218,9 @@ pub fn Reassembler(comptime capacity: usize) type {
                 else
                     error.UnexpectedSysex7Continuation;
             }
-            if (self.group.? != chunk.group) return error.Sysex7GroupMismatch;
+            const group = self.group orelse
+                return error.InvalidSysex7ReassemblerState;
+            if (group != chunk.group) return error.Sysex7GroupMismatch;
             if (!segmented.append(
                 u7,
                 self.storage[0..],
@@ -258,6 +270,11 @@ test "SysEx7 packetizer and reassembler cover every boundary length" {
         try std.testing.expectEqual(@max(@as(usize, 1), (length + 5) / 6), packet_count);
         try std.testing.expectEqual(@as(?u4, 9), assembler.group);
         try std.testing.expectEqualSlices(u7, expected[0..length], assembler.message().?);
+        for (assembler.storage[length..]) |byte|
+            try std.testing.expectEqual(@as(u7, 0), byte);
+        assembler.reset();
+        for (assembler.storage) |byte|
+            try std.testing.expectEqual(@as(u7, 0), byte);
         packetizer.reset();
         try std.testing.expect((try packetizer.next()) != null);
     }
@@ -326,4 +343,10 @@ test "SysEx7 packetizer rejects malformed input and retained cursors" {
     var packetizer = try Packetizer.init(0, &.{ 1, 2, 3 });
     packetizer.cursor = 4;
     try std.testing.expectError(error.InvalidSysex7PacketizerState, packetizer.next());
+    packetizer.cursor = 0;
+    packetizer.emitted_empty = true;
+    try std.testing.expect(!packetizer.valid());
+    try std.testing.expectError(error.InvalidSysex7PacketizerState, packetizer.next());
+    packetizer.emitted_empty = false;
+    try std.testing.expect(packetizer.valid());
 }

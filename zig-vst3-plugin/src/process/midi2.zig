@@ -99,7 +99,9 @@ pub const ChannelMessage = struct {
 
     pub fn parse(ump_packet: ump.Packet) !ChannelMessage {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .midi2_channel_voice) {
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .midi2_channel_voice) {
             return error.NotMidi2ChannelVoiceUmp;
         }
 
@@ -217,7 +219,7 @@ pub const ChannelMessage = struct {
                 first |= @as(u32, value.note) << 8;
                 second = value.data;
             },
-            .reserved => unreachable,
+            .reserved => return error.ReservedMidi2Status,
             .note_off, .note_on => |value| {
                 first |= @as(u32, value.note) << 8;
                 first |= value.attribute;
@@ -264,7 +266,7 @@ fn indexedControllerPayload(
         .assignable_controller => .{ .assignable_controller = value },
         .relative_registered_controller => .{ .relative_registered_controller = value },
         .relative_assignable_controller => .{ .relative_assignable_controller = value },
-        else => unreachable,
+        else => return error.UnsupportedMidi2ControllerStatus,
     };
 }
 
@@ -329,6 +331,10 @@ test "MIDI 2 channel parser rejects reserved and malformed fields" {
         .payload = .{ .reserved = {} },
     };
     try std.testing.expectError(error.ReservedMidi2Status, reserved.packet());
+    try std.testing.expectError(
+        error.UnsupportedMidi2ControllerStatus,
+        indexedControllerPayload(.note_on, 60, 0, 0),
+    );
 }
 
 test "MIDI 2 known note attributes classify without rejecting extensions" {

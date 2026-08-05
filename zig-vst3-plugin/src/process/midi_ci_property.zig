@@ -235,11 +235,11 @@ pub fn DataMessage(
         source: midi_ci.Muid,
         destination: midi_ci.Muid,
         request_id: u7,
-        header_storage: [header_capacity]u8 = undefined,
+        header_storage: [header_capacity]u8 = @splat(0),
         header_count: u14 = 0,
         total_chunks: u14 = 1,
         chunk_number: u14 = 1,
-        data_storage: [data_capacity]u8 = undefined,
+        data_storage: [data_capacity]u8 = @splat(0),
         data_count: u14 = 0,
 
         pub fn init(
@@ -447,26 +447,83 @@ pub fn Reassembler(
         request_id: u7 = 0,
         declared_total: u14 = 0,
         next_chunk: u14 = 1,
-        header_storage: [header_capacity]u8 = undefined,
+        header_storage: [header_capacity]u8 = @splat(0),
         header_count: u14 = 0,
-        data_storage: [data_capacity]u8 = undefined,
+        data_storage: [data_capacity]u8 = @splat(0),
         data_count: u14 = 0,
 
         pub fn reset(self: *Self) void {
             self.* = .{};
         }
 
+        pub fn validate(self: *const Self) !void {
+            if (self.header_count > header_capacity or
+                self.data_count > data_capacity)
+            {
+                return error.InvalidMidiCiPropertyReassemblyState;
+            }
+            if (!self.started) {
+                if (self.complete or self.aborted or
+                    self.header_count != 0 or self.data_count != 0 or
+                    self.declared_total != 0 or self.next_chunk != 1)
+                {
+                    return error.InvalidMidiCiPropertyReassemblyState;
+                }
+                return;
+            }
+            if ((self.version != 1 and self.version != 2) or
+                !self.source.validSource() or
+                !self.destination.validSource() or
+                (self.aborted and !self.complete))
+            {
+                return error.InvalidMidiCiPropertyReassemblyState;
+            }
+            if (self.kind.fixedHeaderOnly()) {
+                if (!self.complete or self.aborted or
+                    self.declared_total != 1 or self.next_chunk != 1 or
+                    self.data_count != 0)
+                {
+                    return error.InvalidMidiCiPropertyReassemblyState;
+                }
+            } else if (self.complete and !self.aborted) {
+                if (self.declared_total == 0 or
+                    self.next_chunk != self.declared_total)
+                {
+                    return error.InvalidMidiCiPropertyReassemblyState;
+                }
+            } else if (self.next_chunk < 2 or
+                (self.declared_total != 0 and
+                    self.next_chunk > self.declared_total))
+            {
+                return error.InvalidMidiCiPropertyReassemblyState;
+            }
+            for (self.header_storage[0..self.header_count]) |byte| {
+                if (byte > 0x7F)
+                    return error.InvalidMidiCiPropertyReassemblyState;
+            }
+            for (self.data_storage[0..self.data_count]) |byte| {
+                if (byte > 0x7F)
+                    return error.InvalidMidiCiPropertyReassemblyState;
+            }
+        }
+
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
+        }
+
         pub fn header(self: *const Self) []const u8 {
-            if (!self.started or self.aborted) return &.{};
+            if (!self.valid() or !self.started or self.aborted) return &.{};
             return self.header_storage[0..self.header_count];
         }
 
         pub fn data(self: *const Self) []const u8 {
-            if (!self.started or self.aborted) return &.{};
+            if (!self.valid() or !self.started or self.aborted) return &.{};
             return self.data_storage[0..self.data_count];
         }
 
         pub fn push(self: *Self, message: anytype) !ChunkResult {
+            try self.validate();
             if (self.complete)
                 return error.InvalidMidiCiPropertyReassemblyState;
             if (!message.valid()) return error.InvalidMidiCiPropertyData;
@@ -549,6 +606,7 @@ pub fn RequestIds(comptime capacity: usize) type {
         next: u7 = 0,
 
         pub fn acquire(self: *Self) !u7 {
+            if (!self.valid()) return error.InvalidMidiCiPropertyRequestIdsState;
             for (0..capacity) |offset| {
                 const index =
                     (@as(usize, self.next) + offset) % capacity;
@@ -562,6 +620,7 @@ pub fn RequestIds(comptime capacity: usize) type {
         }
 
         pub fn release(self: *Self, request_id: u7) !void {
+            if (!self.valid()) return error.InvalidMidiCiPropertyRequestIdsState;
             if (request_id >= capacity or
                 !self.active.isSet(request_id))
                 return error.InvalidMidiCiPropertyRequestId;
@@ -569,11 +628,21 @@ pub fn RequestIds(comptime capacity: usize) type {
         }
 
         pub fn isActive(self: Self, request_id: u7) bool {
-            return request_id < capacity and self.active.isSet(request_id);
+            return self.valid() and request_id < capacity and self.active.isSet(request_id);
         }
 
         pub fn count(self: Self) usize {
+            if (!self.valid()) return 0;
             return self.active.count();
+        }
+
+        pub fn valid(self: Self) bool {
+            if (self.next >= capacity) return false;
+            var active_count: usize = 0;
+            for (0..capacity) |request_id| {
+                if (self.active.isSet(request_id)) active_count += 1;
+            }
+            return active_count == self.active.count();
         }
     };
 }
@@ -751,6 +820,14 @@ test "MIDI-CI Property Exchange data messages round trip every kind" {
                 message.data(),
                 parsed.data(),
             );
+            for (message.header_storage[message.header_count..]) |byte|
+                try std.testing.expectEqual(@as(u8, 0), byte);
+            for (message.data_storage[message.data_count..]) |byte|
+                try std.testing.expectEqual(@as(u8, 0), byte);
+            for (parsed.header_storage[parsed.header_count..]) |byte|
+                try std.testing.expectEqual(@as(u8, 0), byte);
+            for (parsed.data_storage[parsed.data_count..]) |byte|
+                try std.testing.expectEqual(@as(u8, 0), byte);
         }
     }
 }
@@ -891,6 +968,14 @@ test "MIDI-CI Property Exchange reassembles known and unknown chunk counts" {
         &.{ 3, 4, 5, 6 },
         known.data(),
     );
+    known.reset();
+    try std.testing.expect(!known.started);
+    try std.testing.expectEqual(@as(u14, 0), known.header_count);
+    try std.testing.expectEqual(@as(u14, 0), known.data_count);
+    for (known.header_storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (known.data_storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
 
     var unknown = PropertyReassembler{};
     try std.testing.expectEqual(
@@ -956,6 +1041,32 @@ test "MIDI-CI Property Exchange reassembly rejects mismatches transactionally" {
         )),
     );
     try std.testing.expectEqualSlices(u8, &.{2}, reassembler.data());
+    reassembler.next_chunk = 1;
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyReassemblyState,
+        reassembler.validate(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), reassembler.data().len);
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyReassemblyState,
+        reassembler.push(try PropertyData.init(
+            .get_reply,
+            2,
+            source,
+            destination,
+            1,
+            &.{},
+            3,
+            2,
+            &.{3},
+        )),
+    );
+    try std.testing.expectEqual(@as(u14, 1), reassembler.next_chunk);
+    reassembler.next_chunk = 2;
+    reassembler.data_storage[0] = 0x80;
+    try std.testing.expect(!reassembler.valid());
+    reassembler.data_storage[0] = 2;
+    try reassembler.validate();
     try std.testing.expectError(
         error.MidiCiPropertyReassemblyCapacityExceeded,
         reassembler.push(try PropertyData.init(
@@ -971,6 +1082,37 @@ test "MIDI-CI Property Exchange reassembly rejects mismatches transactionally" {
         )),
     );
     try std.testing.expectEqualSlices(u8, &.{2}, reassembler.data());
+
+    var malformed = PropertyReassembler{};
+    malformed.started = true;
+    malformed.header_count = std.math.maxInt(u14);
+    malformed.data_count = std.math.maxInt(u14);
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectEqual(@as(usize, 0), malformed.header().len);
+    try std.testing.expectEqual(@as(usize, 0), malformed.data().len);
+    const next_message = try PropertyData.init(
+        .get_reply,
+        2,
+        source,
+        destination,
+        1,
+        &.{1},
+        1,
+        1,
+        &.{2},
+    );
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyReassemblyState,
+        malformed.push(next_message),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(u14),
+        malformed.header_count,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(u14),
+        malformed.data_count,
+    );
 }
 
 test "MIDI-CI Property Exchange reassembly reports aborted data" {
@@ -1030,4 +1172,20 @@ test "MIDI-CI Property Exchange request IDs are bounded and reusable" {
         error.InvalidMidiCiPropertyRequestId,
         request_ids.release(7),
     );
+
+    request_ids.next = 4;
+    try std.testing.expect(!request_ids.valid());
+    try std.testing.expectEqual(@as(usize, 0), request_ids.count());
+    try std.testing.expect(!request_ids.isActive(1));
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyRequestIdsState,
+        request_ids.acquire(),
+    );
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyRequestIdsState,
+        request_ids.release(1),
+    );
+    request_ids.next = 0;
+    try std.testing.expect(request_ids.valid());
+    try request_ids.release(1);
 }

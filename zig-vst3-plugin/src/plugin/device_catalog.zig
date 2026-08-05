@@ -12,7 +12,7 @@ pub const DeviceKind = enum(u8) {
 };
 
 pub const DeviceIdentifier = struct {
-    storage: [maximum_device_identifier_bytes]u8 = undefined,
+    storage: [maximum_device_identifier_bytes]u8 = @splat(0),
     length: u8 = 0,
 
     pub fn init(value: []const u8) !DeviceIdentifier {
@@ -30,6 +30,9 @@ pub const DeviceIdentifier = struct {
     }
 
     pub fn slice(self: *const DeviceIdentifier) []const u8 {
+        if (self.length == 0 or
+            self.length > maximum_device_identifier_bytes)
+            return &.{};
         return self.storage[0..self.length];
     }
 
@@ -37,6 +40,7 @@ pub const DeviceIdentifier = struct {
         self: *const DeviceIdentifier,
         other: *const DeviceIdentifier,
     ) bool {
+        if (!self.valid() or !other.valid()) return false;
         return std.mem.eql(u8, self.slice(), other.slice());
     }
 
@@ -51,10 +55,10 @@ pub const DeviceIdentifier = struct {
 };
 
 pub const DeviceDescriptor = struct {
-    kind: DeviceKind,
-    identifier: DeviceIdentifier,
-    name_storage: [maximum_device_name_bytes]u8 = undefined,
-    name_length: u8,
+    kind: DeviceKind = .audio,
+    identifier: DeviceIdentifier = .{},
+    name_storage: [maximum_device_name_bytes]u8 = @splat(0),
+    name_length: u8 = 0,
     input_channel_count: u8 = 0,
     output_channel_count: u8 = 0,
     is_default: bool = false,
@@ -104,6 +108,9 @@ pub const DeviceDescriptor = struct {
     }
 
     pub fn name(self: *const DeviceDescriptor) []const u8 {
+        if (self.name_length == 0 or
+            self.name_length > maximum_device_name_bytes)
+            return &.{};
         return self.name_storage[0..self.name_length];
     }
 
@@ -134,7 +141,7 @@ pub fn DeviceCatalog(comptime capacity: usize) type {
         @compileError("DeviceCatalog capacity must be positive");
 
     return struct {
-        descriptors: [capacity]DeviceDescriptor = undefined,
+        descriptors: [capacity]DeviceDescriptor = @splat(.{}),
         count: usize = 0,
         current_generation: u64 = 0,
 
@@ -146,7 +153,7 @@ pub fn DeviceCatalog(comptime capacity: usize) type {
                 return error.DeviceCatalogCapacityExceeded;
             try validateDescriptors(descriptors);
 
-            var next: [capacity]DeviceDescriptor = undefined;
+            var next: [capacity]DeviceDescriptor = @splat(.{});
             @memcpy(next[0..descriptors.len], descriptors);
             self.descriptors = next;
             self.count = descriptors.len;
@@ -156,7 +163,7 @@ pub fn DeviceCatalog(comptime capacity: usize) type {
         }
 
         pub fn generation(self: *const @This()) u64 {
-            return self.current_generation;
+            return if (self.valid()) self.current_generation else 0;
         }
 
         pub fn valid(self: *const @This()) bool {
@@ -166,7 +173,8 @@ pub fn DeviceCatalog(comptime capacity: usize) type {
         }
 
         pub fn items(self: *const @This()) []const DeviceDescriptor {
-            return self.descriptors[0..@min(self.count, capacity)];
+            if (!self.valid()) return &.{};
+            return self.descriptors[0..self.count];
         }
 
         pub fn find(
@@ -471,11 +479,17 @@ pub const DeviceFailureReport = struct {
     }
 };
 
+var empty_failure_source_context: u8 = 0;
+
+fn readEmptyFailureSnapshot(_: *anyopaque) anyerror!DeviceFailureSnapshot {
+    return .{};
+}
+
 pub const DeviceFailureSource = struct {
-    context: *anyopaque,
+    context: *anyopaque = &empty_failure_source_context,
     read_snapshot: *const fn (
         *anyopaque,
-    ) anyerror!DeviceFailureSnapshot,
+    ) anyerror!DeviceFailureSnapshot = readEmptyFailureSnapshot,
 
     pub fn snapshot(
         self: DeviceFailureSource,
@@ -485,8 +499,8 @@ pub const DeviceFailureSource = struct {
 };
 
 pub const DeviceFailureMonitor = struct {
-    source: DeviceFailureSource,
-    previous: DeviceFailureSnapshot,
+    source: DeviceFailureSource = .{},
+    previous: DeviceFailureSnapshot = .{},
 
     pub fn init(
         source: DeviceFailureSource,
@@ -512,14 +526,15 @@ pub fn DeviceFailureMonitorSet(comptime capacity: usize) type {
         @compileError("DeviceFailureMonitorSet capacity must be positive");
 
     return struct {
-        monitors: [capacity]DeviceFailureMonitor = undefined,
+        monitors: [capacity]DeviceFailureMonitor = @splat(.{}),
         count: usize = 0,
 
         pub fn add(
             self: *@This(),
             source: DeviceFailureSource,
         ) !void {
-            if (self.count == capacity)
+            try self.validate();
+            if (self.count >= capacity)
                 return error.DeviceFailureSourceCapacityExceeded;
             const monitor = try DeviceFailureMonitor.init(source);
             self.monitors[self.count] = monitor;
@@ -530,18 +545,22 @@ pub fn DeviceFailureMonitorSet(comptime capacity: usize) type {
             self: *@This(),
             source: DeviceFailureSource,
         ) !void {
+            try self.validate();
             const monitor = try DeviceFailureMonitor.init(source);
+            self.monitors = @splat(.{});
             self.monitors[0] = monitor;
             self.count = 1;
         }
 
         pub fn clear(self: *@This()) void {
+            self.monitors = @splat(.{});
             self.count = 0;
         }
 
         pub fn poll(
             self: *@This(),
         ) !DeviceFailureReport {
+            try self.validate();
             var snapshots: [capacity]DeviceFailureSnapshot = undefined;
             var report = DeviceFailureReport{};
             for (self.monitors[0..self.count], 0..) |monitor, index| {
@@ -556,6 +575,16 @@ pub fn DeviceFailureMonitorSet(comptime capacity: usize) type {
                 monitor.previous = snapshots[index];
             }
             return report;
+        }
+
+        pub fn validate(self: *const @This()) !void {
+            if (self.count > capacity)
+                return error.InvalidDeviceFailureMonitorSetState;
+        }
+
+        pub fn valid(self: *const @This()) bool {
+            self.validate() catch return false;
+            return true;
         }
     };
 }
@@ -760,6 +789,10 @@ test "device catalog refresh is transactional and generation tracked" {
         false,
     );
     var catalog = DeviceCatalog(2){};
+    try std.testing.expectEqualDeep(
+        @as([2]DeviceDescriptor, @splat(.{})),
+        catalog.descriptors,
+    );
     try catalog.replace(&.{ built_in, interface });
     try std.testing.expectEqual(@as(u64, 1), catalog.generation());
     try std.testing.expectEqual(@as(usize, 2), catalog.items().len);
@@ -889,11 +922,34 @@ test "device descriptors validate bounded text channels and generation rollover"
         2,
         true,
     );
+    for (audio.identifier.storage[audio.identifier.length..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (audio.name_storage[audio.name_length..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    var malformed_identifier = audio.identifier;
+    malformed_identifier.length = std.math.maxInt(u8);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        malformed_identifier.slice().len,
+    );
+    try std.testing.expect(!malformed_identifier.eql(&audio.identifier));
+    var malformed_descriptor = audio;
+    malformed_descriptor.name_length = std.math.maxInt(u8);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        malformed_descriptor.name().len,
+    );
+    try std.testing.expect(!malformed_descriptor.valid());
+
     var catalog = DeviceCatalog(1){
         .current_generation = std.math.maxInt(u64),
     };
     try catalog.replace(&.{audio});
     try std.testing.expectEqual(@as(u64, 1), catalog.generation());
+    catalog.descriptors[0].name_length = std.math.maxInt(u8);
+    try std.testing.expect(!catalog.valid());
+    try std.testing.expectEqual(@as(u64, 0), catalog.generation());
+    try std.testing.expectEqual(@as(usize, 0), catalog.items().len);
 }
 
 test "device selection round trips and rejects malformed state transactionally" {
@@ -1070,6 +1126,10 @@ test "device selection tracker restores preferred devices after hot plug" {
     );
 
     try catalog.replace(&.{built_in});
+    try std.testing.expectEqualDeep(
+        DeviceDescriptor{},
+        catalog.descriptors[1],
+    );
     const removed = try tracker.reconcile(&catalog);
     try std.testing.expect(removed.changed());
     try std.testing.expect(removed.audio_uses_fallback);
@@ -1159,6 +1219,8 @@ test "device failure monitor set aggregates transactionally" {
     var audio = Probe{};
     var midi = Probe{};
     var monitors = DeviceFailureMonitorSet(2){};
+    for (monitors.monitors) |monitor|
+        try std.testing.expectEqualDeep(DeviceFailureMonitor{}, monitor);
     try monitors.add(audio.source());
     try monitors.add(midi.source());
     audio.snapshot.audio_output = 1;
@@ -1184,6 +1246,33 @@ test "device failure monitor set aggregates transactionally" {
         error.DeviceFailureSourceCapacityExceeded,
         full.add(midi.source()),
     );
+
+    var malformed = DeviceFailureMonitorSet(1){};
+    malformed.count = std.math.maxInt(usize);
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectError(
+        error.InvalidDeviceFailureMonitorSetState,
+        malformed.poll(),
+    );
+    try std.testing.expectError(
+        error.InvalidDeviceFailureMonitorSetState,
+        malformed.add(audio.source()),
+    );
+    try std.testing.expectError(
+        error.InvalidDeviceFailureMonitorSetState,
+        malformed.replace(audio.source()),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        malformed.count,
+    );
+    malformed.clear();
+    try std.testing.expect(malformed.valid());
+    try std.testing.expectEqualDeep(
+        DeviceFailureMonitor{},
+        malformed.monitors[0],
+    );
+    try malformed.add(audio.source());
 }
 
 test "device recovery publishes changed selections only after success" {

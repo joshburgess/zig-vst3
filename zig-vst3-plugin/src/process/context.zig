@@ -69,7 +69,12 @@ pub const Transport = struct {
     }
 
     pub fn tempoOr(self: Transport, fallback_bpm: f64) f64 {
-        if (self.tempo_bpm) |tempo| return tempo;
+        if (self.tempo_bpm) |tempo| {
+            if (std.math.isFinite(tempo) and
+                tempo > 0.0 and
+                tempo <= 1_000.0)
+                return tempo;
+        }
         return if (std.math.isFinite(fallback_bpm) and
             fallback_bpm > 0.0 and
             fallback_bpm <= 1_000.0)
@@ -149,11 +154,18 @@ pub const ProcessBlockSegmentIterator = struct {
     next_start: usize = 0,
 
     pub fn next(self: *ProcessBlockSegmentIterator) ?BlockSegment {
+        if (!self.valid()) return null;
         if (self.next_start >= self.frame_count) return null;
         const next_parameter_offset = self.parameter_changes.nextSampleOffset(self.next_start);
         const next_event_offset = self.events.nextSampleOffset(self.next_start);
         const boundary = ordered.earliestOffset(next_parameter_offset, next_event_offset, self.frame_count);
         return changes_mod.advanceBlockSegment(&self.next_start, self.frame_count, boundary);
+    }
+
+    pub fn valid(self: *const ProcessBlockSegmentIterator) bool {
+        return self.next_start <= self.frame_count and
+            self.parameter_changes.valid(self.frame_count) and
+            self.events.valid(self.frame_count);
     }
 };
 
@@ -436,6 +448,7 @@ pub fn BoundedProcessContext(
         outputs: AudioOutputs(Sample) = .{},
         auxiliary_outputs: AudioOutputs(Sample) = .{},
         auxiliary_output_ranges: BusRanges = .{},
+        explicit_frame_count: ?usize = null,
         parameter_changes: ParameterChanges = .{},
         events: Events = .{},
         output_events: ?*EventWriter = null,
@@ -450,6 +463,7 @@ pub fn BoundedProcessContext(
             output_channels: []const []Sample = &.{},
             auxiliary_output_channels: []const []Sample = &.{},
             auxiliary_output_bus_channel_counts: []const usize = &.{},
+            frame_count: ?usize = null,
             attachments: ProcessAttachments = .{},
             transport: ?Transport = null,
         };
@@ -482,7 +496,14 @@ pub fn BoundedProcessContext(
                 auxiliary_outputs.channelCount(),
             );
             try validateProcessFrameCounts(inputs.channelCount(), inputs.frameCount(), outputs.channelCount(), outputs.frameCount());
-            const frame_count = processFrameCount(inputs.channelCount(), inputs.frameCount(), outputs.frameCount());
+            const audio_frame_count = processFrameCount(inputs.channelCount(), inputs.frameCount(), outputs.frameCount());
+            const frame_count = options.frame_count orelse audio_frame_count;
+            if (options.frame_count != null and
+                (inputs.hasChannels() or outputs.hasChannels()) and
+                frame_count != audio_frame_count)
+            {
+                return error.MismatchedFrameCount;
+            }
             if (sidechain_inputs.hasChannels() and sidechain_inputs.frameCount() != frame_count) {
                 return error.MismatchedFrameCount;
             }
@@ -498,6 +519,7 @@ pub fn BoundedProcessContext(
                 .outputs = outputs,
                 .auxiliary_outputs = auxiliary_outputs,
                 .auxiliary_output_ranges = auxiliary_output_ranges,
+                .explicit_frame_count = options.frame_count,
                 .host_transport = options.transport,
             };
             try context.setParameterAutomation(
@@ -1985,6 +2007,8 @@ pub fn BoundedProcessContext(
         }
 
         pub fn frameCount(self: *const @This()) usize {
+            if (self.explicit_frame_count) |frame_count|
+                return frame_count;
             return processFrameCount(self.inputChannelCount(), self.inputFrameCount(), self.outputFrameCount());
         }
     };
@@ -2243,6 +2267,36 @@ test "process context rejects side-to-side frame count mismatch" {
     const output_channels = [_][]f32{&output};
 
     try std.testing.expectError(error.MismatchedFrameCount, ProcessContext(f32).init(48_000.0, &input_channels, &output_channels));
+}
+
+test "process context supports event-only processing blocks" {
+    var output_storage: [2]Event = undefined;
+    var output_events = EventWriter.init(&output_storage, 8);
+    const context = try ProcessContext(f32).initWithOptions(.{
+        .sample_rate = 48_000.0,
+        .frame_count = 8,
+        .attachments = .{ .output_events = &output_events },
+    });
+
+    try std.testing.expectEqual(@as(usize, 8), context.frameCount());
+    try std.testing.expect(context.inputChannelsEmpty());
+    try std.testing.expect(context.outputChannelsEmpty());
+    try std.testing.expect(context.outputEventWriter() != null);
+}
+
+test "process context rejects explicit frame count that conflicts with audio" {
+    const input = [_]f32{ 0.1, 0.2 };
+    var output = [_]f32{ 0.0, 0.0 };
+
+    try std.testing.expectError(
+        error.MismatchedFrameCount,
+        ProcessContext(f32).initWithOptions(.{
+            .sample_rate = 48_000.0,
+            .frame_count = 3,
+            .input_channels = &.{&input},
+            .output_channels = &.{&output},
+        }),
+    );
 }
 
 test "process context keeps sidechain input separate from main audio" {
@@ -3136,12 +3190,18 @@ test "process block segments split at parameter and event offsets" {
         .events = input_events,
         .frame_count = 8,
     };
+    try std.testing.expect(iterator.valid());
 
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 2 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 2, .end_offset = 3 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 5, .end_offset = 8 }, iterator.next().?);
     try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+    try std.testing.expect(iterator.valid());
+    iterator.next_start = 9;
+    try std.testing.expect(!iterator.valid());
+    try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+    try std.testing.expectEqual(@as(usize, 9), iterator.next_start);
 
     var empty = ProcessBlockSegmentIterator{ .parameter_changes = .{}, .events = .{}, .frame_count = 4 };
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 4 }, empty.next().?);
@@ -3572,6 +3632,27 @@ test "process context exposes checked host transport" {
     try std.testing.expectEqual(
         @as(f64, 120.0),
         (Transport{ .project_time_samples = 0 }).tempoOr(120.0),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 90.0),
+        (Transport{
+            .project_time_samples = 0,
+            .tempo_bpm = std.math.nan(f64),
+        }).tempoOr(90.0),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 120.0),
+        (Transport{
+            .project_time_samples = 0,
+            .tempo_bpm = std.math.inf(f64),
+        }).tempoOr(std.math.nan(f64)),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 120.0),
+        (Transport{
+            .project_time_samples = 0,
+            .tempo_bpm = 1_001.0,
+        }).tempoOr(-1.0),
     );
 
     try std.testing.expectError(

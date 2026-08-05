@@ -81,35 +81,33 @@ pub fn receive(receiver: anytype, expected_target_id: u32, message: ?*ivstmessag
         else => return types.kInvalidArgument,
     };
 
-    if (commandNeedsPath(command)) {
-        var payload: ?*const anyopaque = null;
-        var byte_count: u32 = 0;
-        if (attributes.vtable.getBinary(attributes, "path", &payload, &byte_count) != types.kResultOk or
-            byte_count == 0 or byte_count > maximum_path_bytes or payload == null)
-        {
-            return types.kInvalidArgument;
-        }
-        const bytes: [*]const u8 = @ptrCast(payload.?);
-        const path = bytes[0..byte_count];
-        if (!validPath(path)) return types.kInvalidArgument;
-        const accepted = switch (command) {
-            .import => receiver.importPath(path),
-            .relink => receiver.relink(path),
-            .cancel, .retry => unreachable,
-        };
-        return if (accepted) types.kResultOk else types.kResultFalse;
-    }
-
     const accepted = switch (command) {
+        .import, .relink => blk: {
+            var payload: ?*const anyopaque = null;
+            var byte_count: u32 = 0;
+            if (attributes.vtable.getBinary(attributes, "path", &payload, &byte_count) != types.kResultOk or
+                byte_count == 0 or byte_count > maximum_path_bytes or payload == null)
+            {
+                return types.kInvalidArgument;
+            }
+            const path_payload = payload orelse
+                return types.kInvalidArgument;
+            const bytes: [*]const u8 = @ptrCast(path_payload);
+            const path = bytes[0..byte_count];
+            if (!validPath(path)) return types.kInvalidArgument;
+            break :blk if (command == .import) receiver.importPath(path) else receiver.relink(path);
+        },
         .cancel => receiver.requestCancel(),
         .retry => receiver.retry(),
-        .import, .relink => unreachable,
     };
     return if (accepted) types.kResultOk else types.kResultFalse;
 }
 
 fn commandNeedsPath(command: Command) bool {
-    return command == .import or command == .relink;
+    return switch (command) {
+        .import, .relink => true,
+        .cancel, .retry => false,
+    };
 }
 
 fn validPath(path: []const u8) bool {
@@ -205,4 +203,54 @@ test "resource path transport rejects malformed and unrelated messages" {
     try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "target", 2));
     try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "command", @intFromEnum(Command.cancel)));
     try std.testing.expectEqual(types.kInvalidArgument, receive(&state, 1, wrong_iface));
+}
+
+test "resource path transport rejects generated unknown commands without dispatch" {
+    const ReceiverState = struct {
+        calls: usize = 0,
+
+        pub fn importPath(self: *@This(), _: []const u8) bool {
+            self.calls += 1;
+            return true;
+        }
+        pub fn relink(self: *@This(), _: []const u8) bool {
+            self.calls += 1;
+            return true;
+        }
+        pub fn requestCancel(self: *@This()) bool {
+            self.calls += 1;
+            return true;
+        }
+        pub fn retry(self: *@This()) bool {
+            self.calls += 1;
+            return true;
+        }
+    };
+    var state = ReceiverState{};
+    var message = TransportMessage{};
+    const iface = message.asInterface();
+    iface.vtable.setMessageID(iface, message_id);
+    const attributes = iface.vtable.getAttributes(iface) orelse
+        return error.MissingAttributes;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        attributes.vtable.setInt(attributes, "target", 73),
+    );
+
+    var seed: u64 = 0x9E37_79B9_7F4A_7C15;
+    for (0..4_096) |_| {
+        seed = seed *% 6_364_136_223_846_793_005 +% 1_442_695_040_888_963_407;
+        var command_value: i64 = @bitCast(seed);
+        if (command_value >= 1 and command_value <= 4)
+            command_value = std.math.maxInt(i64);
+        try std.testing.expectEqual(
+            types.kResultOk,
+            attributes.vtable.setInt(attributes, "command", command_value),
+        );
+        try std.testing.expectEqual(
+            types.kInvalidArgument,
+            receive(&state, 73, iface),
+        );
+    }
+    try std.testing.expectEqual(@as(usize, 0), state.calls);
 }

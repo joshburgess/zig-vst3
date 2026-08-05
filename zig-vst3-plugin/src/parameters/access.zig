@@ -290,8 +290,9 @@ pub fn ParameterValues(comptime Params: type) type {
 
         fn automatedChangeIndex(_: *Self, set: *const Set, change: process.ParameterChange) ?usize {
             const index = set.indexOfId(change.id) orelse return null;
-            if (!(set.canAutomate(index) orelse unreachable)) return null;
-            if (set.isReadOnly(index) orelse unreachable) return null;
+            const can_automate = set.canAutomate(index) orelse return null;
+            const read_only = set.isReadOnly(index) orelse return null;
+            if (!can_automate or read_only) return null;
             return index;
         }
 
@@ -335,7 +336,7 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         fn storeNormalizedAt(self: *Self, index: usize, normalized: f64) usize {
-            std.debug.assert(index < Set.count);
+            if (index >= Set.count) return 0;
             const changed: usize = if (self.values[index].load() != normalized) 1 else 0;
             self.values[index].store(normalized);
             return changed;
@@ -1698,6 +1699,10 @@ test "parameter values initialize from reflected defaults" {
     const set = Set.init(.{});
     var values = Values.init(&set);
 
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        values.storeNormalizedAt(Set.count, 0.5),
+    );
     try std.testing.expectEqual(@as(?f64, 0.25), values.load(0));
     try std.testing.expectEqual(@as(f64, 0.25), values.loadAt(0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(1));

@@ -1385,7 +1385,7 @@ test "plugin instance drives declared lifecycle hooks" {
     try std.testing.expect(instance.hasProcessFunctionHook());
     try std.testing.expect(!instance.hasProcessWithParameterViewHook());
     try std.testing.expect(!instance.hasProcessWithParametersHook());
-    instance.prepare(.{ .sample_rate = 48_000.0, .max_block_size = 64 });
+    try instance.prepare(.{ .sample_rate = 48_000.0, .max_block_size = 64 });
     instance.process(&context);
     instance.deinit();
 
@@ -1420,7 +1420,7 @@ test "plugin instance validates prepare configuration" {
     try std.testing.expectError(error.InvalidSampleRate, (PrepareConfig{ .sample_rate = 0.0, .max_block_size = 64 }).validate());
     try std.testing.expectError(error.InvalidSampleRate, (PrepareConfig{ .sample_rate = std.math.inf(f64), .max_block_size = 64 }).validate());
     try std.testing.expectError(error.InvalidMaxBlockSize, (PrepareConfig{ .sample_rate = 48_000.0, .max_block_size = 0 }).validate());
-    try std.testing.expectError(error.InvalidSampleRate, instance.prepareChecked(.{ .sample_rate = std.math.nan(f64), .max_block_size = 64 }));
+    try std.testing.expectError(error.InvalidSampleRate, instance.prepare(.{ .sample_rate = std.math.nan(f64), .max_block_size = 64 }));
     try std.testing.expect(!instance.plugin.prepared);
 
     try instance.prepareChecked(.{ .sample_rate = 48_000.0, .max_block_size = 64, .process_mode = .prefetch });
@@ -2748,7 +2748,7 @@ test "plugin instance accepts metadata-only plugins" {
         .outputs = try process_api.AudioOutputs(f64).init(&output_channels),
     };
 
-    instance.prepare(.{ .sample_rate = 48_000.0, .max_block_size = 1 });
+    try instance.prepare(.{ .sample_rate = 48_000.0, .max_block_size = 1 });
     instance.process64(&context);
     instance.deinit();
 

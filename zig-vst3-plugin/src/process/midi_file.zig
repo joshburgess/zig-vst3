@@ -135,7 +135,33 @@ pub const TrackIterator = struct {
     running_status: ?u8 = null,
     ended: bool = false,
 
+    pub fn validate(self: *const TrackIterator) !void {
+        if (self.position > self.bytes.len)
+            return error.InvalidMidiTrackIteratorState;
+        var canonical = TrackIterator{ .bytes = self.bytes };
+        while (true) {
+            if (trackStatesEqual(self.*, canonical)) return;
+            if (canonical.position >= self.position)
+                return error.InvalidMidiTrackIteratorState;
+            _ = (try canonical.nextInPlace()) orelse
+                return error.InvalidMidiTrackIteratorState;
+        }
+    }
+
+    pub fn valid(self: *const TrackIterator) bool {
+        self.validate() catch return false;
+        return true;
+    }
+
     pub fn next(self: *TrackIterator) !?Event {
+        try self.validate();
+        var staged = self.*;
+        const result = try staged.nextInPlace();
+        self.* = staged;
+        return result;
+    }
+
+    fn nextInPlace(self: *TrackIterator) !?Event {
         if (self.ended) {
             if (self.position != self.bytes.len) return error.EventAfterEndOfTrack;
             return null;
@@ -207,6 +233,13 @@ pub const TrackIterator = struct {
     }
 };
 
+fn trackStatesEqual(left: TrackIterator, right: TrackIterator) bool {
+    return left.position == right.position and
+        left.absolute_ticks == right.absolute_ticks and
+        left.running_status == right.running_status and
+        left.ended == right.ended;
+}
+
 pub const Track = struct {
     bytes: []const u8,
 
@@ -264,6 +297,23 @@ pub const File = struct {
         };
     }
 
+    pub fn validate(self: File) !void {
+        try self.division.validate();
+        const parsed = File.parse(self.bytes) catch
+            return error.InvalidMidiFileState;
+        if (parsed.format != self.format or
+            parsed.track_count != self.track_count or
+            !std.meta.eql(parsed.division, self.division))
+        {
+            return error.InvalidMidiFileState;
+        }
+    }
+
+    pub fn valid(self: File) bool {
+        self.validate() catch return false;
+        return true;
+    }
+
     pub fn track(self: File, index: usize) ?Track {
         if (index >= self.track_count) return null;
         var position: usize = 14;
@@ -276,6 +326,7 @@ pub const File = struct {
 
     pub fn secondsAtTick(self: File, track_index: usize, tick: u64) !f64 {
         if (track_index >= self.track_count) return error.InvalidMidiTrackIndex;
+        try self.validate();
         return switch (self.division) {
             .smpte => |division| smpteSecondsAtTick(division, tick),
             .ticks_per_quarter_note => |ticks_per_quarter_note| blk: {
@@ -283,7 +334,9 @@ pub const File = struct {
                     .single_track, .simultaneous_tracks => 0,
                     .independent_tracks => track_index,
                 };
-                var iterator = self.track(tempo_track_index).?.iterator();
+                const tempo_track = self.track(tempo_track_index) orelse
+                    return error.InvalidMidiFileState;
+                var iterator = tempo_track.iterator();
                 var segment_start_tick: u64 = 0;
                 var tempo_microseconds: u32 = 500_000;
                 var seconds: f64 = 0.0;
@@ -350,7 +403,7 @@ pub const Writer = struct {
     }
 
     pub fn writeMessage(self: *Writer, delta_ticks: u32, message: midi1.Message) !void {
-        if (self.active_track_header == null) return error.NoActiveMidiTrack;
+        _ = try self.checkedActiveTrackHeader();
         if (!message.valid()) return error.InvalidMidiMessage;
         var delta_storage: [4]u8 = undefined;
         const delta = try encodeVariableLength(delta_ticks, &delta_storage);
@@ -361,7 +414,7 @@ pub const Writer = struct {
     }
 
     pub fn writeMeta(self: *Writer, delta_ticks: u32, kind: u8, data: []const u8) !void {
-        if (self.active_track_header == null) return error.NoActiveMidiTrack;
+        _ = try self.checkedActiveTrackHeader();
         if (kind == 0x2F) return error.UseEndMidiTrack;
         try validateMetaEvent(kind, data);
         const data_length = std.math.cast(u32, data.len) orelse return error.MidiEventTooLarge;
@@ -379,7 +432,7 @@ pub const Writer = struct {
     }
 
     pub fn writeSysEx(self: *Writer, delta_ticks: u32, status: u8, data: []const u8) !void {
-        if (self.active_track_header == null) return error.NoActiveMidiTrack;
+        _ = try self.checkedActiveTrackHeader();
         if (status != 0xF0 and status != 0xF7) return error.InvalidMidiSysExStatus;
         const data_length = std.math.cast(u32, data.len) orelse return error.MidiEventTooLarge;
         var delta_storage: [4]u8 = undefined;
@@ -396,7 +449,7 @@ pub const Writer = struct {
     }
 
     pub fn endTrack(self: *Writer, delta_ticks: u32) !void {
-        const header = self.active_track_header orelse return error.NoActiveMidiTrack;
+        const header = try self.checkedActiveTrackHeader();
         var delta_storage: [4]u8 = undefined;
         const delta = try encodeVariableLength(delta_ticks, &delta_storage);
         try self.requireCapacity(delta.len + 3);
@@ -416,13 +469,31 @@ pub const Writer = struct {
     pub fn finish(self: *const Writer) ![]const u8 {
         if (self.active_track_header != null) return error.MidiTrackStillActive;
         if (self.completed_track_count != self.expected_track_count) return error.MissingMidiTracks;
+        if (self.position < 14 or self.position > self.buffer.len)
+            return error.InvalidMidiWriterState;
         return self.buffer[0..self.position];
     }
 
     fn requireCapacity(self: *const Writer, additional: usize) !void {
+        if (self.position < 14 or self.position > self.buffer.len)
+            return error.InvalidMidiWriterState;
         const end = std.math.add(usize, self.position, additional) catch
             return error.MidiFileBufferTooSmall;
         if (end > self.buffer.len) return error.MidiFileBufferTooSmall;
+    }
+
+    fn checkedActiveTrackHeader(self: *const Writer) !usize {
+        const header = self.active_track_header orelse
+            return error.NoActiveMidiTrack;
+        if (self.position < 14 or self.position > self.buffer.len)
+            return error.InvalidMidiWriterState;
+        const payload_start = std.math.add(usize, header, 8) catch
+            return error.InvalidMidiWriterState;
+        if (payload_start > self.position or payload_start > self.buffer.len)
+            return error.InvalidMidiWriterState;
+        if (!std.mem.eql(u8, self.buffer[header..][0..4], "MTrk"))
+            return error.InvalidMidiWriterState;
+        return header;
     }
 
     fn append(self: *Writer, bytes: []const u8) void {
@@ -647,6 +718,111 @@ test "MIDI file parser rejects every truncated prefix" {
     _ = try File.parse(&valid);
 }
 
+test "MIDI file parser contains generated structural mutations" {
+    const valid = [_]u8{
+        'M',  'T', 'h',  'd',  0,    0,    0,    6,
+        0,    0,   0,    1,    0x01, 0xe0, 'M',  'T',
+        'r',  'k', 0,    0,    0,    11,   0,    0xff,
+        0x51, 3,   0x07, 0xa1, 0x20, 0,    0xff, 0x2f,
+        0,
+    };
+    var rejected: usize = 0;
+    var accepted: usize = 0;
+    for (0..valid.len) |index| {
+        for ([_]u8{ 0x01, 0x55, 0xff }) |mask| {
+            var mutated = valid;
+            mutated[index] ^= mask;
+            const file = File.parse(&mutated) catch {
+                rejected += 1;
+                continue;
+            };
+            accepted += 1;
+            for (0..file.track_count) |track_index| {
+                const track = file.track(track_index) orelse
+                    return error.InvalidAcceptedMidiTrack;
+                var iterator = track.iterator();
+                while (try iterator.next()) |_| {}
+            }
+            _ = try file.secondsAtTick(0, std.math.maxInt(u64));
+        }
+    }
+    try std.testing.expect(rejected != 0);
+    try std.testing.expect(accepted != 0);
+}
+
+test "MIDI track iteration preserves state after malformed input" {
+    var truncated = (Track{ .bytes = &.{0x81} }).iterator();
+    try std.testing.expectError(
+        error.TruncatedVariableLengthQuantity,
+        truncated.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), truncated.position);
+    try std.testing.expectEqual(@as(u64, 0), truncated.absolute_ticks);
+    try std.testing.expectEqual(@as(?u8, null), truncated.running_status);
+    try std.testing.expect(!truncated.ended);
+
+    var overflowing = (Track{
+        .bytes = &.{ 1, 0xff, 0x2f, 0 },
+    }).iterator();
+    overflowing.absolute_ticks = std.math.maxInt(u64);
+    try std.testing.expectError(
+        error.InvalidMidiTrackIteratorState,
+        overflowing.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), overflowing.position);
+    try std.testing.expectEqual(
+        std.math.maxInt(u64),
+        overflowing.absolute_ticks,
+    );
+    try std.testing.expectEqual(@as(?u8, null), overflowing.running_status);
+    try std.testing.expect(!overflowing.ended);
+
+    var hostile = (Track{ .bytes = &.{0} }).iterator();
+    hostile.position = std.math.maxInt(usize);
+    try std.testing.expect(!hostile.valid());
+    try std.testing.expectError(
+        error.InvalidMidiTrackIteratorState,
+        hostile.next(),
+    );
+    try std.testing.expectEqual(std.math.maxInt(usize), hostile.position);
+
+    hostile.position = 0;
+    hostile.running_status = 0xF0;
+    try std.testing.expect(!hostile.valid());
+    try std.testing.expectError(
+        error.InvalidMidiTrackIteratorState,
+        hostile.next(),
+    );
+    hostile.running_status = null;
+    try hostile.validate();
+
+    const valid_events = [_]u8{
+        0,    0x90, 60, 100,
+        0,    61,   0,  0,
+        0xff, 0x2f, 0,
+    };
+    var middle = (Track{ .bytes = &valid_events }).iterator();
+    middle.position = 1;
+    try std.testing.expect(!middle.valid());
+    try std.testing.expectError(
+        error.InvalidMidiTrackIteratorState,
+        middle.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 1), middle.position);
+
+    var stale_running = (Track{ .bytes = &valid_events }).iterator();
+    _ = try stale_running.next();
+    stale_running.running_status = 0x91;
+    try std.testing.expect(!stale_running.valid());
+    try std.testing.expectError(
+        error.InvalidMidiTrackIteratorState,
+        stale_running.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 4), stale_running.position);
+    try std.testing.expectEqual(@as(u64, 0), stale_running.absolute_ticks);
+    try std.testing.expectEqual(@as(?u8, 0x91), stale_running.running_status);
+}
+
 test "MIDI file writer round trips multiple tracks and event kinds" {
     var storage: [256]u8 = undefined;
     var writer = try Writer.init(
@@ -726,6 +902,83 @@ test "MIDI file writer rejects invalid state and preserves bounded writes" {
     _ = try writer.finish();
 }
 
+test "MIDI file writer contains malformed retained cursors" {
+    var position_storage = [_]u8{0} ** 64;
+    var invalid_position = try Writer.init(
+        &position_storage,
+        .single_track,
+        1,
+        .{ .ticks_per_quarter_note = 96 },
+    );
+    invalid_position.position = std.math.maxInt(usize);
+    const position_before = position_storage;
+    try std.testing.expectError(
+        error.InvalidMidiWriterState,
+        invalid_position.beginTrack(),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &position_before,
+        &position_storage,
+    );
+
+    var header_storage = [_]u8{0} ** 64;
+    var invalid_header = try Writer.init(
+        &header_storage,
+        .single_track,
+        1,
+        .{ .ticks_per_quarter_note = 96 },
+    );
+    try invalid_header.beginTrack();
+    invalid_header.active_track_header = std.math.maxInt(usize);
+    const header_before = header_storage;
+    const header_position = invalid_header.position;
+    try std.testing.expectError(
+        error.InvalidMidiWriterState,
+        invalid_header.writeMessage(
+            0,
+            try midi1.Message.noteOn(0, 60, 100),
+        ),
+    );
+    try std.testing.expectEqual(header_position, invalid_header.position);
+    try std.testing.expectEqualSlices(
+        u8,
+        &header_before,
+        &header_storage,
+    );
+
+    var magic_storage = [_]u8{0} ** 64;
+    var invalid_magic = try Writer.init(
+        &magic_storage,
+        .single_track,
+        1,
+        .{ .ticks_per_quarter_note = 96 },
+    );
+    try invalid_magic.beginTrack();
+    magic_storage[14] = 'X';
+    const magic_position = invalid_magic.position;
+    try std.testing.expectError(
+        error.InvalidMidiWriterState,
+        invalid_magic.endTrack(0),
+    );
+    try std.testing.expectEqual(magic_position, invalid_magic.position);
+
+    var finish_storage = [_]u8{0} ** 64;
+    var invalid_finish = try Writer.init(
+        &finish_storage,
+        .single_track,
+        1,
+        .{ .ticks_per_quarter_note = 96 },
+    );
+    try invalid_finish.beginTrack();
+    try invalid_finish.endTrack(0);
+    invalid_finish.position = std.math.maxInt(usize);
+    try std.testing.expectError(
+        error.InvalidMidiWriterState,
+        invalid_finish.finish(),
+    );
+}
+
 test "MIDI file converts metric and SMPTE ticks to seconds" {
     var storage: [128]u8 = undefined;
     var writer = try Writer.init(
@@ -740,9 +993,31 @@ test "MIDI file converts metric and SMPTE ticks to seconds" {
     try writer.endTrack(480);
     const metric = try File.parse(try writer.finish());
 
+    try metric.validate();
+    try std.testing.expect(metric.valid());
     try std.testing.expectApproxEqAbs(@as(f64, 0.5), try metric.secondsAtTick(0, 480), 0.000_001);
     try std.testing.expectApproxEqAbs(@as(f64, 0.75), try metric.secondsAtTick(0, 960), 0.000_001);
     try std.testing.expectError(error.InvalidMidiTrackIndex, metric.secondsAtTick(1, 0));
+
+    var truncated_metric = metric;
+    truncated_metric.bytes = truncated_metric.bytes[0..14];
+    try std.testing.expectError(
+        error.InvalidMidiFileState,
+        truncated_metric.secondsAtTick(0, 480),
+    );
+    try std.testing.expect(!truncated_metric.valid());
+    var invalid_track_count = metric;
+    invalid_track_count.track_count = 2;
+    try std.testing.expectError(
+        error.InvalidMidiFileState,
+        invalid_track_count.validate(),
+    );
+    var invalid_division = metric;
+    invalid_division.division = .{ .ticks_per_quarter_note = 0 };
+    try std.testing.expectError(
+        error.InvalidMidiDivision,
+        invalid_division.secondsAtTick(0, 480),
+    );
 
     const smpte_bytes = [_]u8{
         'M',  'T', 'h', 'd', 0,    0,  0,   6,

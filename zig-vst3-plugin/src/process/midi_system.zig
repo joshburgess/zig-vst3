@@ -57,7 +57,9 @@ pub const Message = struct {
 
     pub fn parse(ump_packet: ump.Packet) !Message {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .system) return error.NotSystemUmp;
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .system) return error.NotSystemUmp;
 
         const word = ump_packet.storage[0];
         const status_byte: u8 = @intCast((word >> 16) & 0xFF);
@@ -88,7 +90,7 @@ pub const Message = struct {
                     .stop => .{ .stop = {} },
                     .active_sensing => .{ .active_sensing = {} },
                     .reset => .{ .reset = {} },
-                    else => unreachable,
+                    else => return error.UnsupportedSystemStatus,
                 };
             },
         };

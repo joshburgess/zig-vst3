@@ -34,9 +34,9 @@ pub fn SubscriptionRegistry(comptime capacity: usize) type {
         const Entry = struct {
             active: bool = false,
             remote: midi_ci.Muid = .{ .value = 0 },
-            resource_storage: [36]u8 = undefined,
+            resource_storage: [36]u8 = @splat(0),
             resource_count: u6 = 0,
-            id_storage: [8]u8 = undefined,
+            id_storage: [8]u8 = @splat(0),
             id_count: u4 = 0,
 
             fn value(self: *const Entry) Subscription {
@@ -57,6 +57,7 @@ pub fn SubscriptionRegistry(comptime capacity: usize) type {
             resource: []const u8,
             subscribe_id: []const u8,
         ) !u7 {
+            try self.validate();
             if (!remote.validSource()) return error.InvalidMidiCiMuid;
             if (!(property_json.SubscriptionHeader{
                 .command = .start,
@@ -88,6 +89,7 @@ pub fn SubscriptionRegistry(comptime capacity: usize) type {
             remote: midi_ci.Muid,
             header: property_json.SubscriptionHeader,
         ) !SubscriptionUpdate {
+            try self.validate();
             if (!header.valid()) return error.InvalidMidiCiPropertySubscriptionHeader;
             if (header.command == .start)
                 return error.InvalidMidiCiPropertySubscriptionCommand;
@@ -108,6 +110,7 @@ pub fn SubscriptionRegistry(comptime capacity: usize) type {
         }
 
         pub fn get(self: *const Self, handle: u7) !Subscription {
+            try self.validate();
             if (handle >= capacity or !self.entries[handle].active)
                 return error.InvalidMidiCiPropertySubscriptionHandle;
             return self.entries[handle].value();
@@ -118,10 +121,12 @@ pub fn SubscriptionRegistry(comptime capacity: usize) type {
             remote: midi_ci.Muid,
             subscribe_id: []const u8,
         ) ?u7 {
+            if (!self.valid()) return null;
             return self.find(remote, subscribe_id);
         }
 
         pub fn release(self: *Self, handle: u7) !void {
+            try self.validate();
             if (handle >= capacity or !self.entries[handle].active)
                 return error.InvalidMidiCiPropertySubscriptionHandle;
             self.entries[handle] = .{};
@@ -136,12 +141,53 @@ pub fn SubscriptionRegistry(comptime capacity: usize) type {
                     released += 1;
                 }
             }
-            self.active_count -= released;
+            self.active_count = self.countActiveEntries();
             return released;
         }
 
         pub fn activeCount(self: *const Self) usize {
-            return self.active_count;
+            return self.countActiveEntries();
+        }
+
+        pub fn validate(self: *const Self) !void {
+            var counted: usize = 0;
+            for (&self.entries, 0..) |*entry, index| {
+                if (!entry.active) continue;
+                if (!entry.remote.validSource() or
+                    entry.resource_count == 0 or
+                    entry.resource_count > entry.resource_storage.len or
+                    entry.id_count == 0 or
+                    entry.id_count > entry.id_storage.len)
+                    return error.InvalidMidiCiPropertySubscriptionState;
+                const value = entry.value();
+                if (!(property_json.SubscriptionHeader{
+                    .command = .start,
+                    .resource = value.resource,
+                }).valid() or !(property_json.SubscriptionHeader{
+                    .command = .partial,
+                    .subscribe_id = value.subscribe_id,
+                }).valid()) {
+                    return error.InvalidMidiCiPropertySubscriptionState;
+                }
+                for (self.entries[0..index]) |earlier| {
+                    if (!earlier.active or
+                        earlier.remote.value != entry.remote.value)
+                        continue;
+                    if (std.mem.eql(
+                        u8,
+                        earlier.id_storage[0..earlier.id_count],
+                        value.subscribe_id,
+                    )) return error.InvalidMidiCiPropertySubscriptionState;
+                }
+                counted += 1;
+            }
+            if (counted != self.active_count)
+                return error.InvalidMidiCiPropertySubscriptionState;
+        }
+
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
         }
 
         fn find(
@@ -164,6 +210,14 @@ pub fn SubscriptionRegistry(comptime capacity: usize) type {
                 if (!entry.active) return index;
             }
             return null;
+        }
+
+        fn countActiveEntries(self: *const Self) usize {
+            var result: usize = 0;
+            for (self.entries) |entry| {
+                if (entry.active) result += 1;
+            }
+            return result;
         }
     };
 }
@@ -219,6 +273,7 @@ pub fn Initiator(
             total_chunks: u14,
             data: []const u8,
         ) !Message {
+            try self.validate();
             if (!requestKind(kind)) return error.InvalidMidiCiPropertyRequestKind;
             if (!destination.validSource() or destination.value == self.source.value)
                 return error.InvalidMidiCiPropertyDestination;
@@ -361,6 +416,7 @@ pub fn Initiator(
         }
 
         pub fn releaseRemote(self: *Self, remote: midi_ci.Muid) usize {
+            if (!self.valid()) return 0;
             var released: usize = 0;
             for (&self.slots, 0..) |*slot, request_id| {
                 const id: u7 = @intCast(request_id);
@@ -376,7 +432,37 @@ pub fn Initiator(
         }
 
         pub fn activeCount(self: *const Self) usize {
+            if (!self.valid()) return 0;
             return self.request_ids.count();
+        }
+
+        pub fn validate(self: *const Self) !void {
+            if (!self.source.validSource() or
+                (self.version != 1 and self.version != 2) or
+                !self.request_ids.valid())
+            {
+                return error.InvalidMidiCiPropertySessionState;
+            }
+            for (&self.slots, 0..) |*slot, index| {
+                const request_id: u7 = @intCast(index);
+                const active = self.request_ids.isActive(request_id);
+                if (active == (slot.state == .unused))
+                    return error.InvalidMidiCiPropertySessionState;
+                if (!active) continue;
+                if (!slot.destination.validSource() or
+                    slot.destination.value == self.source.value or
+                    !requestKind(slot.request_kind) or
+                    slot.version != self.version or
+                    !slot.response.valid())
+                {
+                    return error.InvalidMidiCiPropertySessionState;
+                }
+            }
+        }
+
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
         }
 
         fn correlatedSlot(self: *Self, message: anytype) !*Slot {
@@ -390,12 +476,14 @@ pub fn Initiator(
         }
 
         fn activeSlot(self: *const Self, request_id: u7) !*const Slot {
+            try self.validate();
             if (!self.request_ids.isActive(request_id))
                 return error.InvalidMidiCiPropertyRequestId;
             return &self.slots[request_id];
         }
 
         fn mutableActiveSlot(self: *Self, request_id: u7) !*Slot {
+            try self.validate();
             if (!self.request_ids.isActive(request_id))
                 return error.InvalidMidiCiPropertyRequestId;
             return &self.slots[request_id];
@@ -434,6 +522,7 @@ pub fn Responder(
         }
 
         pub fn push(self: *Self, message: anytype) !ReceiveResult {
+            try self.validate();
             if (!message.valid()) return error.InvalidMidiCiPropertyData;
             if (!requestKind(message.kind))
                 return error.InvalidMidiCiPropertyRequestKind;
@@ -513,6 +602,7 @@ pub fn Responder(
         }
 
         pub fn release(self: *Self, handle: u7) !void {
+            try self.validate();
             _ = try self.mutableActiveSlot(handle);
             self.slots[handle] = .{};
             self.active_count -= 1;
@@ -526,12 +616,52 @@ pub fn Responder(
                     released += 1;
                 }
             }
-            self.active_count -= released;
+            self.active_count = self.countActiveSlots();
             return released;
         }
 
         pub fn activeCount(self: *const Self) usize {
-            return self.active_count;
+            return self.countActiveSlots();
+        }
+
+        pub fn validate(self: *const Self) !void {
+            try self.validateCount();
+            if (!self.source.validSource())
+                return error.InvalidMidiCiPropertyResponderState;
+            for (self.slots, 0..) |slot, index| {
+                if (!slot.active) continue;
+                if (!slot.request.valid() or
+                    !slot.request.started or
+                    !slot.request.source.validSource() or
+                    slot.request.source.value == self.source.value or
+                    slot.request.destination.value != self.source.value or
+                    !requestKind(slot.request.kind) or
+                    (slot.request.version != 1 and slot.request.version != 2))
+                {
+                    return error.InvalidMidiCiPropertyResponderState;
+                }
+                if (slot.response_started) {
+                    if (slot.response_next_chunk < 2)
+                        return error.InvalidMidiCiPropertyResponderState;
+                } else if (slot.response_declared_total != 0 or
+                    slot.response_next_chunk != 1)
+                {
+                    return error.InvalidMidiCiPropertyResponderState;
+                }
+                for (self.slots[0..index]) |earlier| {
+                    if (earlier.active and
+                        earlier.request.source.value == slot.request.source.value and
+                        earlier.request.request_id == slot.request.request_id)
+                    {
+                        return error.InvalidMidiCiPropertyResponderState;
+                    }
+                }
+            }
+        }
+
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
         }
 
         fn find(self: *const Self, source: midi_ci.Muid, request_id: u7) ?usize {
@@ -551,13 +681,28 @@ pub fn Responder(
             return null;
         }
 
+        fn validateCount(self: *const Self) !void {
+            if (self.active_count != self.countActiveSlots())
+                return error.InvalidMidiCiPropertyResponderState;
+        }
+
+        fn countActiveSlots(self: *const Self) usize {
+            var result: usize = 0;
+            for (self.slots) |slot| {
+                if (slot.active) result += 1;
+            }
+            return result;
+        }
+
         fn activeSlot(self: *const Self, handle: u7) !*const Slot {
+            try self.validate();
             if (handle >= capacity or !self.slots[handle].active)
                 return error.InvalidMidiCiPropertyRequestHandle;
             return &self.slots[handle];
         }
 
         fn mutableActiveSlot(self: *Self, handle: u7) !*Slot {
+            try self.validate();
             if (handle >= capacity or !self.slots[handle].active)
                 return error.InvalidMidiCiPropertyRequestHandle;
             return &self.slots[handle];
@@ -596,6 +741,23 @@ test "Property Exchange sessions transact chunked get and set data" {
     const SessionResponder = Responder(2, 32, 64);
     var initiator = try SessionInitiator.init(try midi_ci.Muid.init(1), 2);
     var responder = try SessionResponder.init(try midi_ci.Muid.init(2));
+
+    try initiator.validate();
+    initiator.slots[0].state = .pending;
+    try std.testing.expect(!initiator.valid());
+    try std.testing.expectEqual(@as(usize, 0), initiator.activeCount());
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertySessionState,
+        initiator.begin(
+            .get,
+            responder.source,
+            "{\"resource\":\"DeviceInfo\"}",
+            1,
+            &.{},
+        ),
+    );
+    initiator.slots[0] = .{};
+    try initiator.validate();
 
     const get = try initiator.begin(
         .get,
@@ -790,7 +952,14 @@ test "Property Exchange subscription registry owns lifecycle identifiers" {
     const Registry = SubscriptionRegistry(2);
     const remote = try midi_ci.Muid.init(2);
     var registry = Registry{};
+    for (registry.entries) |entry|
+        try std.testing.expectEqualDeep(@TypeOf(entry){}, entry);
     const handle = try registry.register(remote, "ChannelList", "sub_1");
+    const stored = registry.entries[handle];
+    for (stored.resource_storage[stored.resource_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (stored.id_storage[stored.id_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     try std.testing.expectEqualStrings(
         "ChannelList",
         (try registry.get(handle)).resource,
@@ -822,6 +991,10 @@ test "Property Exchange subscription registry owns lifecycle identifiers" {
         error.InvalidMidiCiPropertySubscriptionHandle,
         registry.get(handle),
     );
+    try std.testing.expectEqualDeep(
+        @TypeOf(registry.entries[handle]){},
+        registry.entries[handle],
+    );
     try std.testing.expectEqual(@as(usize, 1), registry.activeCount());
     try std.testing.expectEqual(@as(usize, 1), registry.releaseRemote(remote));
     try std.testing.expectEqual(@as(usize, 0), registry.activeCount());
@@ -829,6 +1002,101 @@ test "Property Exchange subscription registry owns lifecycle identifiers" {
         error.InvalidMidiCiPropertySubscriptionHandle,
         registry.get(other),
     );
+    try std.testing.expectEqualDeep(
+        @TypeOf(registry.entries[other]){},
+        registry.entries[other],
+    );
+}
+
+test "Property Exchange registries contain malformed retained counts" {
+    const Registry = SubscriptionRegistry(2);
+    const SessionResponder = Responder(2, 16, 16);
+    const Message = property.DataMessage(16, 16);
+    const local = try midi_ci.Muid.init(1);
+    const remote = try midi_ci.Muid.init(2);
+
+    var registry = Registry{};
+    const handle = try registry.register(remote, "State", "sub_1");
+    registry.entries[handle].resource_storage[0] = '_';
+    try std.testing.expect(!registry.valid());
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertySubscriptionState,
+        registry.get(handle),
+    );
+    registry.entries[handle].resource_storage[0] = 'S';
+    const duplicate = try registry.register(remote, "DeviceInfo", "sub_2");
+    registry.entries[duplicate].id_storage[4] = '1';
+    try std.testing.expect(!registry.valid());
+    try std.testing.expectEqual(
+        @as(?u7, null),
+        registry.findHandle(remote, "sub_1"),
+    );
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertySubscriptionState,
+        registry.release(duplicate),
+    );
+    registry.entries[duplicate].id_storage[4] = '2';
+    try registry.validate();
+    try registry.release(duplicate);
+    registry.active_count = std.math.maxInt(usize);
+    try std.testing.expect(!registry.valid());
+    try std.testing.expectEqual(@as(usize, 1), registry.activeCount());
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertySubscriptionState,
+        registry.register(remote, "DeviceInfo", "sub_2"),
+    );
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertySubscriptionState,
+        registry.release(handle),
+    );
+    try std.testing.expectEqual(@as(usize, 1), registry.releaseRemote(remote));
+    try std.testing.expect(registry.valid());
+
+    var responder = try SessionResponder.init(local);
+    const request = try Message.init(
+        .get,
+        2,
+        remote,
+        local,
+        7,
+        "{}",
+        1,
+        1,
+        &.{},
+    );
+    const request_handle = switch (try responder.push(request)) {
+        .complete => |value| value,
+        else => return error.TestUnexpectedResult,
+    };
+    responder.active_count = std.math.maxInt(usize);
+    try std.testing.expectEqual(@as(usize, 1), responder.activeCount());
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyResponderState,
+        responder.release(request_handle),
+    );
+    try std.testing.expectEqual(@as(usize, 1), responder.releaseRemote(remote));
+    try std.testing.expectEqual(@as(usize, 0), responder.activeCount());
+
+    const malformed_handle = switch (try responder.push(request)) {
+        .complete => |value| value,
+        else => return error.TestUnexpectedResult,
+    };
+    responder.slots[malformed_handle].request.header_count = 17;
+    try std.testing.expect(!responder.valid());
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyResponderState,
+        responder.request(malformed_handle),
+    );
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyResponderState,
+        responder.push(request),
+    );
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyResponderState,
+        responder.release(malformed_handle),
+    );
+    try std.testing.expectEqual(@as(usize, 1), responder.releaseRemote(remote));
+    try responder.validate();
 }
 
 test "Property Exchange sessions release all state for a remote" {

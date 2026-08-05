@@ -32,9 +32,9 @@ pub const Options = struct {
 };
 
 pub const ProfileState = struct {
-    address: midi_ci.Address,
-    id: profile.Id,
-    enabled: bool,
+    address: midi_ci.Address = .function_block,
+    id: profile.Id = .{ .bytes = @splat(0) },
+    enabled: bool = false,
     channels: u14 = 0,
 };
 
@@ -117,13 +117,22 @@ pub fn Device(comptime config: Config) type {
 
         const RemoteSlot = struct {
             active: bool = false,
-            participant: midi_ci.Participant = undefined,
+            participant: midi_ci.Participant = .{
+                .muid = .{ .value = 0 },
+                .identity = .{
+                    .manufacturer = @splat(0),
+                    .family = @splat(0),
+                    .model = @splat(0),
+                    .revision = @splat(0),
+                },
+            },
             output_path: u7 = 0,
             function_block: ?u5 = null,
             product_instance_id: ?midi_ci.ProductInstanceId = null,
             property_agreement: ?property.Agreement = null,
             process_features: ?process.Features = null,
-            profile_storage: [config.profile_capacity]ProfileState = undefined,
+            profile_storage: [config.profile_capacity]ProfileState =
+                @splat(.{}),
             profile_count: usize = 0,
 
             fn value(self: *const RemoteSlot) Remote {
@@ -142,10 +151,10 @@ pub fn Device(comptime config: Config) type {
         const PendingProperty = struct {
             active: bool = false,
             remote: midi_ci.Muid = .{ .value = 0 },
-            resource_storage: [36]u8 = undefined,
+            resource_storage: [36]u8 = @splat(0),
             resource_count: usize = 0,
             has_res_id: bool = false,
-            res_id_storage: [36]u8 = undefined,
+            res_id_storage: [36]u8 = @splat(0),
             res_id_count: usize = 0,
 
             fn key(self: *const PendingProperty) !property_cache.Key {
@@ -185,7 +194,8 @@ pub fn Device(comptime config: Config) type {
         property_cache: PropertyCache = .{},
         pending_properties: [config.property_session_capacity]PendingProperty =
             [_]PendingProperty{.{}} ** config.property_session_capacity,
-        local_profiles: [config.profile_capacity]profile_host.Entry = undefined,
+        local_profiles: [config.profile_capacity]profile_host.Entry =
+            @splat(.{}),
         local_profile_count: usize = 0,
 
         pub fn init(options: Options) !Self {
@@ -272,13 +282,28 @@ pub fn Device(comptime config: Config) type {
         }
 
         pub fn remoteCount(self: *const Self) usize {
-            return self.remote_count;
+            return self.countActiveRemotes();
+        }
+
+        pub fn validate(self: *const Self) !void {
+            try self.validateRemoteState();
+            if (self.local_profile_count > config.profile_capacity)
+                return error.InvalidMidiCiDeviceState;
+            try self.subscriptions.validate();
+            try self.property_cache.validate();
+            try self.property_responder.validate();
+        }
+
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
         }
 
         pub fn findRemote(
             self: *const Self,
             muid: midi_ci.Muid,
         ) ?u7 {
+            self.validateRemoteState() catch return null;
             for (self.remotes, 0..) |slot, index| {
                 if (slot.active and
                     slot.participant.muid.value == muid.value)
@@ -381,6 +406,8 @@ pub fn Device(comptime config: Config) type {
         ) {
             if (!self.participant.categories.profile_configuration)
                 return error.MidiCiProfileConfigurationNotSupported;
+            if (self.local_profile_count > config.profile_capacity)
+                return error.InvalidMidiCiDeviceState;
             return .{
                 .source = self.participant.muid,
                 .version = self.participant.version,
@@ -665,6 +692,7 @@ pub fn Device(comptime config: Config) type {
                 next += 1;
             }
             slot.profile_count = next;
+            @memset(slot.profile_storage[next..], .{});
         }
 
         pub fn applyProfileReport(
@@ -713,6 +741,7 @@ pub fn Device(comptime config: Config) type {
             self: *Self,
             muid: midi_ci.Muid,
         ) !Cleanup {
+            try self.validateRemoteState();
             const handle = self.findRemote(muid) orelse
                 return error.MidiCiDeviceRemoteNotFound;
             return self.removeRemoteHandle(handle);
@@ -722,6 +751,7 @@ pub fn Device(comptime config: Config) type {
             self: *Self,
             invalidation: midi_ci.Invalidation,
         ) !InvalidationResult {
+            try self.validateRemoteState();
             if (!invalidation.valid())
                 return error.InvalidMidiCiInvalidation;
             if (invalidation.target.value == self.participant.muid.value)
@@ -751,6 +781,7 @@ pub fn Device(comptime config: Config) type {
             output_path: u7,
             function_block: ?u5,
         ) !u7 {
+            try self.validateRemoteState();
             if (!participant.valid() or
                 participant.muid.value == self.participant.muid.value)
                 return error.InvalidMidiCiParticipant;
@@ -765,6 +796,7 @@ pub fn Device(comptime config: Config) type {
                     slot.product_instance_id = null;
                     slot.property_agreement = null;
                     slot.process_features = null;
+                    @memset(&slot.profile_storage, .{});
                     slot.profile_count = 0;
                 }
                 slot.participant = participant;
@@ -790,7 +822,7 @@ pub fn Device(comptime config: Config) type {
         fn removeRemoteHandle(self: *Self, handle: u7) Cleanup {
             const remote_muid = self.remotes[handle].participant.muid;
             self.remotes[handle] = .{};
-            self.remote_count -= 1;
+            self.remote_count = self.countActiveRemotes();
             self.clearPendingProperties(remote_muid);
             return .{
                 .remotes = 1,
@@ -825,6 +857,7 @@ pub fn Device(comptime config: Config) type {
             self: *const Self,
             handle: u7,
         ) !*const RemoteSlot {
+            try self.validateRemoteState();
             if (handle >= config.remote_capacity or
                 !self.remotes[handle].active)
                 return error.InvalidMidiCiDeviceRemoteHandle;
@@ -861,10 +894,33 @@ pub fn Device(comptime config: Config) type {
             self: *Self,
             handle: u7,
         ) !*RemoteSlot {
+            try self.validateRemoteState();
             if (handle >= config.remote_capacity or
                 !self.remotes[handle].active)
                 return error.InvalidMidiCiDeviceRemoteHandle;
             return &self.remotes[handle];
+        }
+
+        fn validateRemoteState(self: *const Self) !void {
+            var counted: usize = 0;
+            for (self.remotes) |slot| {
+                if (!slot.active) continue;
+                if (!slot.participant.valid() or
+                    slot.participant.muid.value == self.participant.muid.value or
+                    slot.profile_count > config.profile_capacity)
+                    return error.InvalidMidiCiDeviceState;
+                counted += 1;
+            }
+            if (counted != self.remote_count)
+                return error.InvalidMidiCiDeviceState;
+        }
+
+        fn countActiveRemotes(self: *const Self) usize {
+            var result: usize = 0;
+            for (self.remotes) |slot| {
+                if (slot.active) result += 1;
+            }
+            return result;
         }
 
         fn setProfileState(
@@ -912,6 +968,7 @@ pub fn Device(comptime config: Config) type {
                     );
                 }
                 slot.profile_count -= 1;
+                slot.profile_storage[slot.profile_count] = .{};
                 return;
             }
         }
@@ -1019,6 +1076,10 @@ test "MIDI-CI device composes discovery capabilities profiles and cleanup" {
         .process_features = .{ .midi_message_report = true },
         .simultaneous_property_requests = 2,
     });
+    for (device.remotes) |slot|
+        try std.testing.expectEqualDeep(@TypeOf(slot){}, slot);
+    for (device.pending_properties) |pending|
+        try std.testing.expectEqualDeep(@TypeOf(pending){}, pending);
 
     const discovery_result = try device.handleDiscovery(.{ .discovery = .{
         .participant = remote_participant,
@@ -1058,6 +1119,11 @@ test "MIDI-CI device composes discovery capabilities profiles and cleanup" {
         discovery_result.handle,
         .{ .resource = "DeviceInfo" },
     );
+    const pending_get = device.pending_properties[property_get.request_id];
+    for (pending_get.resource_storage[pending_get.resource_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (pending_get.res_id_storage[pending_get.res_id_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     const property_get_reply = try property.DataMessage(64, 128).init(
         .get_reply,
         2,
@@ -1074,6 +1140,10 @@ test "MIDI-CI device composes discovery capabilities profiles and cleanup" {
         property_get_reply,
     );
     try std.testing.expect(property_update.complete.cached);
+    try std.testing.expectEqualDeep(
+        @TypeOf(device.pending_properties[property_get.request_id]){},
+        device.pending_properties[property_get.request_id],
+    );
     try std.testing.expectEqualStrings(
         "{\"manufacturer\":\"Remote\"}",
         (try device.property_cache.get(.{
@@ -1102,6 +1172,10 @@ test "MIDI-CI device composes discovery capabilities profiles and cleanup" {
     try std.testing.expectEqual(
         PropertyUpdate{ .terminated = cancelled_get.request_id },
         terminated,
+    );
+    try std.testing.expectEqualDeep(
+        @TypeOf(device.pending_properties[cancelled_get.request_id]){},
+        device.pending_properties[cancelled_get.request_id],
     );
     try std.testing.expectError(
         error.InvalidMidiCiPropertyGetRequest,
@@ -1236,6 +1310,19 @@ test "MIDI-CI device composes discovery capabilities profiles and cleanup" {
     try std.testing.expectEqual(@as(usize, 2), remote.profiles.len);
     try std.testing.expect(remote.profiles[0].enabled);
     try std.testing.expect(remote.profiles[1].enabled);
+    try device.applyProfilePresence(discovery_result.handle, .{
+        .kind = .removed,
+        .source = remote_participant.muid,
+        .profile = disabled,
+    });
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        (try device.remote(discovery_result.handle)).profiles.len,
+    );
+    try std.testing.expectEqualDeep(
+        ProfileState{},
+        device.remotes[discovery_result.handle].profile_storage[1],
+    );
 
     _ = try device.property_initiator.begin(
         .get,
@@ -1277,6 +1364,42 @@ test "MIDI-CI device composes discovery capabilities profiles and cleanup" {
     try std.testing.expectEqual(@as(usize, 1), cleanup.subscriptions);
     try std.testing.expectEqual(@as(usize, 1), cleanup.cached_properties);
     try std.testing.expectEqual(@as(usize, 0), device.remoteCount());
+    try std.testing.expectEqualDeep(
+        @TypeOf(device.remotes[discovery_result.handle]){},
+        device.remotes[discovery_result.handle],
+    );
+}
+
+test "MIDI-CI device contains malformed retained remote counts" {
+    const LocalDevice = Device(.{
+        .remote_capacity = 2,
+        .profile_capacity = 2,
+        .property_session_capacity = 1,
+        .subscription_capacity = 1,
+        .property_cache_capacity = 1,
+        .property_header_capacity = 16,
+        .property_data_capacity = 16,
+    });
+    const local = try testParticipant(1);
+    const remote_participant = try testParticipant(2);
+    var device = try LocalDevice.init(.{ .participant = local });
+    const handle = (try device.handleDiscovery(.{ .discovery = .{
+        .participant = remote_participant,
+    } })).handle;
+    try device.validate();
+
+    device.remote_count = std.math.maxInt(usize);
+    try std.testing.expect(!device.valid());
+    try std.testing.expectEqual(@as(usize, 1), device.remoteCount());
+    try std.testing.expectEqual(@as(?u7, null), device.findRemote(remote_participant.muid));
+    try std.testing.expectError(
+        error.InvalidMidiCiDeviceState,
+        device.remote(handle),
+    );
+    try std.testing.expectError(
+        error.InvalidMidiCiDeviceState,
+        device.removeRemote(remote_participant.muid),
+    );
 }
 
 test "MIDI-CI device capacity failures preserve remote state" {

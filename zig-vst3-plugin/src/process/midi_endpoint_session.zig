@@ -435,6 +435,19 @@ pub const Replies = struct {
     }
 
     pub fn next(self: *Replies) !?ump.Packet {
+        var trial = self.*;
+        const packet = try trial.nextInPlace();
+        self.* = trial;
+        return packet;
+    }
+
+    pub fn valid(self: *const Replies) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
+    fn nextInPlace(self: *Replies) !?ump.Packet {
+        try self.validateState();
         while (true) {
             if (self.text) |*packetizer| {
                 if (try packetizer.next()) |packet| return packet;
@@ -448,6 +461,8 @@ pub const Replies = struct {
                 },
                 .endpoint => {
                     const state = &self.mode.endpoint;
+                    if (!state.descriptor.valid() or state.cursor > 5)
+                        return error.InvalidEndpointRepliesState;
                     if (state.cursor == 5) {
                         self.mode = .empty;
                         continue;
@@ -475,11 +490,15 @@ pub const Replies = struct {
                         4 => return try (stream.Message{ .payload = .{
                             .stream_configuration_notification = state.configuration,
                         } }).packet(),
-                        else => unreachable,
+                        else => return error.InvalidEndpointRepliesState,
                     }
                 },
                 .function_blocks => {
                     const state = &self.mode.function_blocks;
+                    if (!state.descriptor.valid() or
+                        state.end > state.descriptor.function_blocks.len or
+                        state.cursor > state.end)
+                        return error.InvalidEndpointRepliesState;
                     if (state.cursor == state.end) {
                         self.mode = .empty;
                         continue;
@@ -511,6 +530,39 @@ pub const Replies = struct {
                     }
                 },
             }
+        }
+    }
+
+    fn validateState(self: *const Replies) !void {
+        if (self.text) |*packetizer| {
+            if (!packetizer.valid())
+                return error.InvalidEndpointRepliesState;
+        }
+        switch (self.mode) {
+            .empty, .fixed => if (self.text != null)
+                return error.InvalidEndpointRepliesState,
+            .endpoint => |state| {
+                if (!state.descriptor.valid() or state.cursor > 5)
+                    return error.InvalidEndpointRepliesState;
+                configurationSupported(
+                    state.descriptor.info,
+                    state.configuration,
+                ) catch return error.InvalidEndpointRepliesState;
+                if (self.text != null and
+                    state.cursor != 3 and state.cursor != 4)
+                {
+                    return error.InvalidEndpointRepliesState;
+                }
+            },
+            .function_blocks => |state| {
+                if (!state.descriptor.valid() or
+                    state.end > state.descriptor.function_blocks.len or
+                    state.cursor > state.end or
+                    (self.text != null and state.stage != .advance))
+                {
+                    return error.InvalidEndpointRepliesState;
+                }
+            },
         }
     }
 };
@@ -732,6 +784,67 @@ test "responder rejects invalid requests without changing configuration" {
         responder.handle(.{ .payload = .{ .endpoint_info = endpointInfo(false) } }),
     );
     try std.testing.expectEqualDeep(before, responder);
+}
+
+test "endpoint reply iteration contains malformed retained cursors" {
+    const blocks = [_]FunctionBlockDescriptor{
+        .{ .info = functionBlock(0), .name = "Input" },
+    };
+    var responder = try Responder.init(endpointDescriptor(&blocks, false));
+
+    var endpoint_replies = try responder.handle(.{ .payload = .{
+        .endpoint_discovery = .{
+            .version_major = 1,
+            .version_minor = 1,
+            .filter = EndpointFilter.all().bits(),
+        },
+    } });
+    endpoint_replies.mode.endpoint.cursor = 6;
+    try std.testing.expect(!endpoint_replies.valid());
+    const endpoint_before = endpoint_replies;
+    try std.testing.expectError(
+        error.InvalidEndpointRepliesState,
+        endpoint_replies.next(),
+    );
+    try std.testing.expectEqualDeep(endpoint_before, endpoint_replies);
+
+    var block_replies = try responder.handle(.{ .payload = .{
+        .function_block_discovery = .{
+            .selector = .all,
+            .filter = FunctionBlockFilter.all().bits(),
+        },
+    } });
+    block_replies.mode.function_blocks.cursor = 2;
+    try std.testing.expect(!block_replies.valid());
+    const block_before = block_replies;
+    try std.testing.expectError(
+        error.InvalidEndpointRepliesState,
+        block_replies.next(),
+    );
+    try std.testing.expectEqualDeep(block_before, block_replies);
+
+    var configuration_replies = try responder.handle(.{ .payload = .{
+        .endpoint_discovery = .{
+            .version_major = 1,
+            .version_minor = 1,
+            .filter = EndpointFilter.all().bits(),
+        },
+    } });
+    configuration_replies.mode.endpoint.cursor = 4;
+    configuration_replies.mode.endpoint.descriptor.info.supports_midi2 = false;
+    configuration_replies.mode.endpoint.configuration = .{
+        .protocol = .midi2,
+    };
+    const configuration_before = configuration_replies;
+    try std.testing.expect(!configuration_replies.valid());
+    try std.testing.expectError(
+        error.InvalidEndpointRepliesState,
+        configuration_replies.next(),
+    );
+    try std.testing.expectEqualDeep(
+        configuration_before,
+        configuration_replies,
+    );
 }
 
 test "responder generated requests preserve invariants" {

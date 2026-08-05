@@ -37,7 +37,9 @@ pub const Message = struct {
 
     pub fn parse(ump_packet: ump.Packet) !Message {
         if (!ump_packet.valid()) return error.InvalidUmpPacket;
-        if (ump_packet.messageType().? != .utility) return error.NotUtilityUmp;
+        const message_type = ump_packet.messageType() orelse
+            return error.InvalidUmpPacket;
+        if (message_type != .utility) return error.NotUtilityUmp;
 
         const word = ump_packet.storage[0];
         if ((word & 0x0F00_0000) != 0) return error.InvalidUtilityReservedField;

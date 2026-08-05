@@ -6,7 +6,7 @@ pub fn BoundedPath(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        bytes: [capacity]u8 = undefined,
+        bytes: [capacity]u8 = @splat(0),
         length: usize = 0,
 
         pub fn init(path: []const u8) error{ InvalidPath, PathTooLong }!Self {
@@ -32,6 +32,8 @@ test "bounded path owns validated inline storage" {
     const path = try BoundedPath(16).init(&source);
     source[5] = 'x';
     try std.testing.expectEqualStrings("/tmp/model", path.slice());
+    for (path.bytes[path.length..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     try std.testing.expectError(error.InvalidPath, BoundedPath(16).init(""));
     try std.testing.expectError(error.InvalidPath, BoundedPath(16).init("bad\x00path"));
     try std.testing.expectError(error.PathTooLong, BoundedPath(4).init("model"));

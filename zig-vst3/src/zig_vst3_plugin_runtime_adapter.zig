@@ -20,13 +20,15 @@ pub fn ProcessorWithParameters(
     const ResourcePathReceiver =
         if (has_resource_path_receiver)
             @typeInfo(@TypeOf(Plugin.resourcePathReceiver))
-                .@"fn".return_type.?
+                .@"fn".return_type orelse
+                @compileError("resourcePathReceiver must return a receiver pointer")
         else
             void;
     const AudioImportReceiver =
         if (has_audio_import_receiver)
             @typeInfo(@TypeOf(Plugin.audioImportReceiver))
-                .@"fn".return_type.?
+                .@"fn".return_type orelse
+                @compileError("audioImportReceiver must return a receiver pointer")
         else
             void;
 
