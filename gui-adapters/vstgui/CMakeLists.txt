@@ -118,6 +118,7 @@ elseif(WIN32)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND ZIG_VSTGUI_ADAPTER_SOURCES
         zig_vstgui_accessibility_linux_clipboard.cpp
+        zig_vstgui_accessibility_wayland_clipboard.c
     )
 endif()
 
@@ -144,7 +145,11 @@ target_link_libraries(zig_vstgui_adapter PRIVATE vstgui)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(
         zig_vstgui_adapter
-        PRIVATE PkgConfig::GIO PkgConfig::PANGO_SEGMENTATION PkgConfig::XCB
+        PRIVATE
+            PkgConfig::GIO
+            PkgConfig::PANGO_SEGMENTATION
+            PkgConfig::XCB
+            ${CMAKE_DL_LIBS}
     )
 endif()
 if(APPLE AND (ZIG_VSTGUI_ENABLE_SANITIZERS OR ZIG_VSTGUI_ENABLE_THREAD_SANITIZER))
@@ -241,6 +246,30 @@ if(APPLE)
             zig_vstgui_accessibility_atspi_tests
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_library(
+        zig_vstgui_accessibility_wayland_fake
+        SHARED zig_vstgui_accessibility_wayland_fake.c
+    )
+    set_target_properties(
+        zig_vstgui_accessibility_wayland_fake
+        PROPERTIES
+            OUTPUT_NAME wayland-client
+            SOVERSION 0
+    )
+    add_executable(
+        zig_vstgui_accessibility_wayland_clipboard_tests
+        zig_vstgui_accessibility_wayland_clipboard_tests.cpp
+    )
+    target_compile_features(
+        zig_vstgui_accessibility_wayland_clipboard_tests
+        PRIVATE cxx_std_17
+    )
+    target_link_libraries(
+        zig_vstgui_accessibility_wayland_clipboard_tests
+        PRIVATE
+            zig_vstgui_adapter
+            zig_vstgui_accessibility_wayland_fake
+    )
     add_executable(
         zig_vstgui_accessibility_linux_clipboard_tests
         zig_vstgui_accessibility_linux_clipboard_tests.cpp
@@ -284,10 +313,15 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_custom_target(zig_vstgui_accessibility_tests_run
         COMMAND $<TARGET_FILE:zig_vstgui_accessibility_atspi_tests>
         COMMAND $<TARGET_FILE:zig_vstgui_accessibility_atspi_bridge_tests>
+        COMMAND
+            ${CMAKE_COMMAND} -E env
+            "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:zig_vstgui_accessibility_wayland_fake>"
+            $<TARGET_FILE:zig_vstgui_accessibility_wayland_clipboard_tests>
         COMMAND $<TARGET_FILE:zig_vstgui_accessibility_linux_clipboard_tests>
         DEPENDS
             zig_vstgui_accessibility_atspi_tests
             zig_vstgui_accessibility_atspi_bridge_tests
+            zig_vstgui_accessibility_wayland_clipboard_tests
             zig_vstgui_accessibility_linux_clipboard_tests
     )
 else()

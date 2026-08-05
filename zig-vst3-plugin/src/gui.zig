@@ -69,6 +69,83 @@ pub const Error = error{
     InvalidScale,
 };
 
+pub const maximum_host_value_uri_bytes = 4096;
+
+pub const HostValueRequest = struct {
+    key_uri: [:0]const u8,
+    value_type_uri: ?[:0]const u8 = null,
+};
+
+pub const HostValueRequestStatus = enum {
+    accepted,
+    busy,
+    unknown,
+    unsupported,
+};
+
+pub const maximum_host_port_symbol_bytes = 255;
+pub const maximum_host_peak_subscriptions = 16;
+pub const maximum_host_atom_notifications = 16;
+pub const maximum_host_atom_body_bytes = 64 * 1024;
+pub const maximum_plugin_atom_body_bytes = 64 * 1024;
+
+pub const HostPeakDelivery = enum {
+    dynamic,
+    static,
+};
+
+pub const HostPeakSubscription = struct {
+    port_symbol: [:0]const u8,
+    source_id: u32,
+    delivery: HostPeakDelivery = .dynamic,
+};
+
+pub const HostSubscriptionStatus = enum {
+    accepted,
+    unsupported,
+    rejected,
+    full,
+};
+
+pub const HostPeakMeasurement = struct {
+    source_id: u32,
+    period_start: u32,
+    period_size: u32,
+    peak: f32,
+
+    pub fn valid(self: HostPeakMeasurement) bool {
+        return self.period_size > 0 and
+            std.math.isFinite(self.peak) and self.peak >= 0.0;
+    }
+};
+
+pub const HostAtomNotification = struct {
+    port_symbol: [:0]const u8,
+    atom_type_uri: [:0]const u8,
+    source_id: u32,
+};
+
+pub const HostAtomMessage = struct {
+    source_id: u32,
+    body: []const u8,
+
+    pub fn valid(self: HostAtomMessage) bool {
+        return self.body.len <= maximum_host_atom_body_bytes;
+    }
+};
+
+pub const PluginMessageStatus = enum {
+    accepted,
+    unsupported,
+    rejected,
+};
+
+pub const PluginAtomMessage = struct {
+    port_symbol: [:0]const u8,
+    atom_type_uri: [:0]const u8,
+    body: []const u8,
+};
+
 /// Calls supplied by the plugin controller. All calls run on the host GUI thread.
 pub const Context = struct {
     userdata: *anyopaque,
@@ -85,6 +162,12 @@ pub const Context = struct {
         request_resize: *const fn (*anyopaque, Size) Error!Size,
         request_repaint: *const fn (*anyopaque) void,
         open_context_menu: *const fn (*anyopaque, ParameterId, i32, i32) Error!void,
+        request_host_value: ?*const fn (*anyopaque, HostValueRequest) HostValueRequestStatus = null,
+        subscribe_host_peak: ?*const fn (*anyopaque, HostPeakSubscription) HostSubscriptionStatus = null,
+        unsubscribe_host_peak: ?*const fn (*anyopaque, HostPeakSubscription) HostSubscriptionStatus = null,
+        register_host_atom_notification: ?*const fn (*anyopaque, HostAtomNotification) HostSubscriptionStatus = null,
+        unregister_host_atom_notification: ?*const fn (*anyopaque, HostAtomNotification) HostSubscriptionStatus = null,
+        send_plugin_atom_message: ?*const fn (*anyopaque, PluginAtomMessage) PluginMessageStatus = null,
     };
 
     pub fn value(self: Context, id: ParameterId) ?NormalizedValue {
@@ -123,7 +206,127 @@ pub const Context = struct {
     pub fn openContextMenu(self: Context, id: ParameterId, x: i32, y: i32) Error!void {
         try self.vtable.open_context_menu(self.userdata, id, x, y);
     }
+
+    pub fn requestHostValue(
+        self: Context,
+        request: HostValueRequest,
+    ) Error!HostValueRequestStatus {
+        if (!validHostValueUri(request.key_uri))
+            return error.InvalidParameter;
+        if (request.value_type_uri) |value_type_uri| {
+            if (!validHostValueUri(value_type_uri))
+                return error.InvalidParameter;
+        }
+        const callback = self.vtable.request_host_value orelse
+            return .unsupported;
+        return callback(self.userdata, request);
+    }
+
+    pub fn subscribeHostPeak(
+        self: Context,
+        subscription: HostPeakSubscription,
+    ) Error!HostSubscriptionStatus {
+        if (!validHostPortSymbol(subscription.port_symbol))
+            return error.InvalidParameter;
+        const callback = self.vtable.subscribe_host_peak orelse
+            return .unsupported;
+        return callback(self.userdata, subscription);
+    }
+
+    pub fn unsubscribeHostPeak(
+        self: Context,
+        subscription: HostPeakSubscription,
+    ) Error!HostSubscriptionStatus {
+        if (!validHostPortSymbol(subscription.port_symbol))
+            return error.InvalidParameter;
+        const callback = self.vtable.unsubscribe_host_peak orelse
+            return .unsupported;
+        return callback(self.userdata, subscription);
+    }
+
+    pub fn registerHostAtomNotification(
+        self: Context,
+        notification: HostAtomNotification,
+    ) Error!HostSubscriptionStatus {
+        if (!validHostPortSymbol(notification.port_symbol) or
+            !validHostValueUri(notification.atom_type_uri))
+            return error.InvalidParameter;
+        const callback = self.vtable.register_host_atom_notification orelse
+            return .unsupported;
+        return callback(self.userdata, notification);
+    }
+
+    pub fn unregisterHostAtomNotification(
+        self: Context,
+        notification: HostAtomNotification,
+    ) Error!HostSubscriptionStatus {
+        if (!validHostPortSymbol(notification.port_symbol) or
+            !validHostValueUri(notification.atom_type_uri))
+            return error.InvalidParameter;
+        const callback = self.vtable.unregister_host_atom_notification orelse
+            return .unsupported;
+        return callback(self.userdata, notification);
+    }
+
+    pub fn sendPluginAtomMessage(
+        self: Context,
+        message: PluginAtomMessage,
+    ) Error!PluginMessageStatus {
+        if (!validHostPortSymbol(message.port_symbol) or
+            !validHostValueUri(message.atom_type_uri) or
+            message.body.len > maximum_plugin_atom_body_bytes)
+            return error.InvalidParameter;
+        const callback = self.vtable.send_plugin_atom_message orelse
+            return .unsupported;
+        return callback(self.userdata, message);
+    }
 };
+
+fn validHostPortSymbol(symbol: [:0]const u8) bool {
+    if (symbol.len == 0 or symbol.len > maximum_host_port_symbol_bytes or
+        std.mem.indexOfScalar(u8, symbol, 0) != null)
+        return false;
+    if (!std.ascii.isAlphabetic(symbol[0]) and symbol[0] != '_')
+        return false;
+    for (symbol[1..]) |byte| {
+        if (!std.ascii.isAlphanumeric(byte) and byte != '_')
+            return false;
+    }
+    return true;
+}
+
+fn validHostValueUri(uri: [:0]const u8) bool {
+    if (uri.len == 0 or uri.len > maximum_host_value_uri_bytes)
+        return false;
+    if (std.mem.indexOfScalar(u8, uri, 0) != null)
+        return false;
+    const colon = std.mem.indexOfScalar(u8, uri, ':') orelse return false;
+    if (colon == 0 or !std.ascii.isAlphabetic(uri[0])) return false;
+    for (uri[1..colon]) |byte| {
+        if (!std.ascii.isAlphanumeric(byte) and
+            byte != '+' and byte != '-' and byte != '.')
+            return false;
+    }
+    var index: usize = 0;
+    while (index < uri.len) {
+        const byte = uri[index];
+        if (byte <= 0x20 or byte >= 0x7f or
+            byte == '<' or byte == '>' or byte == '"' or byte == '\\' or
+            byte == '{' or byte == '}' or byte == '|' or byte == '^' or
+            byte == '`')
+            return false;
+        if (byte == '%') {
+            if (uri.len - index < 3 or
+                !std.ascii.isHex(uri[index + 1]) or
+                !std.ascii.isHex(uri[index + 2]))
+                return false;
+            index += 3;
+            continue;
+        }
+        index += 1;
+    }
+    return true;
+}
 
 pub const Gesture = struct {
     context: Context,
@@ -418,6 +621,8 @@ pub const Adapter = struct {
         scale: *const fn (*anyopaque, Scale) Error!void,
         focus: *const fn (*anyopaque, bool) void,
         parameter_changed: *const fn (*anyopaque, ParameterId, NormalizedValue) void,
+        host_peak_measurement: ?*const fn (*anyopaque, HostPeakMeasurement) void = null,
+        host_atom_message: ?*const fn (*anyopaque, HostAtomMessage) void = null,
         destroy: *const fn (*anyopaque) void,
     };
 };
@@ -492,6 +697,23 @@ pub const Editor = struct {
         self.adapter.vtable.parameter_changed(self.adapter.userdata, id, value);
     }
 
+    pub fn hostPeakMeasurement(
+        self: *Editor,
+        measurement: HostPeakMeasurement,
+    ) void {
+        if (!measurement.valid()) return;
+        const callback = self.adapter.vtable.host_peak_measurement orelse
+            return;
+        callback(self.adapter.userdata, measurement);
+    }
+
+    pub fn hostAtomMessage(self: *Editor, message: HostAtomMessage) void {
+        if (!message.valid()) return;
+        const callback = self.adapter.vtable.host_atom_message orelse
+            return;
+        callback(self.adapter.userdata, message);
+    }
+
     fn acceptSize(self: *Editor, accepted: Size) Error!void {
         try self.adapter.vtable.resize(self.adapter.userdata, accepted);
         self.size = accepted;
@@ -529,6 +751,35 @@ const Fake = struct {
     detach_count: usize = 0,
     destroy_count: usize = 0,
     repaint_count: usize = 0,
+    host_value_request_count: usize = 0,
+    host_value_key_length: usize = 0,
+    host_value_type_length: usize = 0,
+    host_value_status: HostValueRequestStatus = .accepted,
+    host_subscription_count: usize = 0,
+    host_unsubscription_count: usize = 0,
+    host_subscription_source: u32 = 0,
+    host_subscription_delivery: HostPeakDelivery = .dynamic,
+    host_subscription_symbol_length: usize = 0,
+    host_subscription_status: HostSubscriptionStatus = .accepted,
+    host_peak_count: usize = 0,
+    host_peak: HostPeakMeasurement = .{
+        .source_id = 0,
+        .period_start = 0,
+        .period_size = 1,
+        .peak = 0.0,
+    },
+    host_atom_registration_count: usize = 0,
+    host_atom_unregistration_count: usize = 0,
+    host_atom_source: u32 = 0,
+    host_atom_symbol_length: usize = 0,
+    host_atom_type_length: usize = 0,
+    host_atom_count: usize = 0,
+    host_atom_body_length: usize = 0,
+    plugin_atom_count: usize = 0,
+    plugin_atom_symbol_length: usize = 0,
+    plugin_atom_type_length: usize = 0,
+    plugin_atom_body_length: usize = 0,
+    plugin_message_status: PluginMessageStatus = .accepted,
     parameter_change_count: usize = 0,
     last_size: Size = .{ .width = 400, .height = 300 },
     last_scale: Scale = .{},
@@ -600,6 +851,80 @@ const Fake = struct {
         if (id != 7) return error.InvalidParameter;
     }
 
+    fn requestHostValue(
+        ptr: *anyopaque,
+        request: HostValueRequest,
+    ) HostValueRequestStatus {
+        const self = from(ptr);
+        self.host_value_request_count += 1;
+        self.host_value_key_length = request.key_uri.len;
+        self.host_value_type_length = if (request.value_type_uri) |uri|
+            uri.len
+        else
+            0;
+        return self.host_value_status;
+    }
+
+    fn subscribeHostPeak(
+        ptr: *anyopaque,
+        subscription: HostPeakSubscription,
+    ) HostSubscriptionStatus {
+        const self = from(ptr);
+        self.host_subscription_count += 1;
+        self.host_subscription_source = subscription.source_id;
+        self.host_subscription_delivery = subscription.delivery;
+        self.host_subscription_symbol_length = subscription.port_symbol.len;
+        return self.host_subscription_status;
+    }
+
+    fn unsubscribeHostPeak(
+        ptr: *anyopaque,
+        subscription: HostPeakSubscription,
+    ) HostSubscriptionStatus {
+        const self = from(ptr);
+        self.host_unsubscription_count += 1;
+        self.host_subscription_source = subscription.source_id;
+        self.host_subscription_delivery = subscription.delivery;
+        self.host_subscription_symbol_length = subscription.port_symbol.len;
+        return self.host_subscription_status;
+    }
+
+    fn registerHostAtomNotification(
+        ptr: *anyopaque,
+        notification: HostAtomNotification,
+    ) HostSubscriptionStatus {
+        const self = from(ptr);
+        self.host_atom_registration_count += 1;
+        self.host_atom_source = notification.source_id;
+        self.host_atom_symbol_length = notification.port_symbol.len;
+        self.host_atom_type_length = notification.atom_type_uri.len;
+        return self.host_subscription_status;
+    }
+
+    fn unregisterHostAtomNotification(
+        ptr: *anyopaque,
+        notification: HostAtomNotification,
+    ) HostSubscriptionStatus {
+        const self = from(ptr);
+        self.host_atom_unregistration_count += 1;
+        self.host_atom_source = notification.source_id;
+        self.host_atom_symbol_length = notification.port_symbol.len;
+        self.host_atom_type_length = notification.atom_type_uri.len;
+        return self.host_subscription_status;
+    }
+
+    fn sendPluginAtomMessage(
+        ptr: *anyopaque,
+        message: PluginAtomMessage,
+    ) PluginMessageStatus {
+        const self = from(ptr);
+        self.plugin_atom_count += 1;
+        self.plugin_atom_symbol_length = message.port_symbol.len;
+        self.plugin_atom_type_length = message.atom_type_uri.len;
+        self.plugin_atom_body_length = message.body.len;
+        return self.plugin_message_status;
+    }
+
     fn attach(ptr: *anyopaque, _: NativeParent, _: Size, _: Scale) Error!void {
         from(ptr).attach_count += 1;
     }
@@ -625,6 +950,22 @@ const Fake = struct {
         from(ptr).parameter_change_count += 1;
     }
 
+    fn hostPeakMeasurement(
+        ptr: *anyopaque,
+        measurement: HostPeakMeasurement,
+    ) void {
+        const self = from(ptr);
+        self.host_peak_count += 1;
+        self.host_peak = measurement;
+    }
+
+    fn hostAtomMessage(ptr: *anyopaque, message: HostAtomMessage) void {
+        const self = from(ptr);
+        self.host_atom_count += 1;
+        self.host_atom_source = message.source_id;
+        self.host_atom_body_length = message.body.len;
+    }
+
     fn destroy(ptr: *anyopaque) void {
         from(ptr).destroy_count += 1;
     }
@@ -640,6 +981,12 @@ const Fake = struct {
         .request_resize = requestResize,
         .request_repaint = repaint,
         .open_context_menu = contextMenu,
+        .request_host_value = requestHostValue,
+        .subscribe_host_peak = subscribeHostPeak,
+        .unsubscribe_host_peak = unsubscribeHostPeak,
+        .register_host_atom_notification = registerHostAtomNotification,
+        .unregister_host_atom_notification = unregisterHostAtomNotification,
+        .send_plugin_atom_message = sendPluginAtomMessage,
     };
 
     const adapter_vtable = Adapter.VTable{
@@ -649,6 +996,8 @@ const Fake = struct {
         .scale = setScale,
         .focus = focus,
         .parameter_changed = parameterChanged,
+        .host_peak_measurement = hostPeakMeasurement,
+        .host_atom_message = hostAtomMessage,
         .destroy = destroy,
     };
 };
@@ -762,6 +1111,280 @@ const MultiFake = struct {
         .open_context_menu = contextMenu,
     };
 };
+
+test "host value requests validate URIs before dispatch" {
+    var fake = Fake{};
+    const context = fake.context();
+    const key_uri = "https://example.test/parameters/sample";
+    const type_uri = "http://lv2plug.in/ns/ext/atom#Path";
+    try std.testing.expectEqual(
+        HostValueRequestStatus.accepted,
+        try context.requestHostValue(.{
+            .key_uri = key_uri,
+            .value_type_uri = type_uri,
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 1), fake.host_value_request_count);
+    try std.testing.expectEqual(key_uri.len, fake.host_value_key_length);
+    try std.testing.expectEqual(type_uri.len, fake.host_value_type_length);
+
+    fake.host_value_status = .busy;
+    try std.testing.expectEqual(
+        HostValueRequestStatus.busy,
+        try context.requestHostValue(.{ .key_uri = key_uri }),
+    );
+    try std.testing.expectEqual(@as(usize, 2), fake.host_value_request_count);
+
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.requestHostValue(.{ .key_uri = "missing-scheme" }),
+    );
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.requestHostValue(.{ .key_uri = "urn:bad\x00tail" }),
+    );
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.requestHostValue(.{ .key_uri = "urn:bad%2" }),
+    );
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.requestHostValue(.{ .key_uri = "urn:bad|tail" }),
+    );
+    var oversized: [maximum_host_value_uri_bytes + 1:0]u8 = @splat('a');
+    oversized[1] = ':';
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.requestHostValue(.{ .key_uri = &oversized }),
+    );
+    try std.testing.expectEqual(@as(usize, 2), fake.host_value_request_count);
+
+    var multi = MultiFake{};
+    try std.testing.expectEqual(
+        HostValueRequestStatus.unsupported,
+        try multi.context().requestHostValue(.{ .key_uri = key_uri }),
+    );
+}
+
+test "host peak subscriptions validate symbols before dispatch" {
+    var fake = Fake{};
+    const context = fake.context();
+    const subscription = HostPeakSubscription{
+        .port_symbol = "audio_in",
+        .source_id = 17,
+    };
+    try std.testing.expectEqual(
+        HostSubscriptionStatus.accepted,
+        try context.subscribeHostPeak(subscription),
+    );
+    try std.testing.expectEqual(@as(usize, 1), fake.host_subscription_count);
+    try std.testing.expectEqual(@as(u32, 17), fake.host_subscription_source);
+    try std.testing.expectEqual(
+        HostPeakDelivery.dynamic,
+        fake.host_subscription_delivery,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 8),
+        fake.host_subscription_symbol_length,
+    );
+    fake.host_subscription_status = .rejected;
+    try std.testing.expectEqual(
+        HostSubscriptionStatus.rejected,
+        try context.unsubscribeHostPeak(subscription),
+    );
+    try std.testing.expectEqual(@as(usize, 1), fake.host_unsubscription_count);
+    const static_subscription = HostPeakSubscription{
+        .port_symbol = "audio_out",
+        .source_id = 18,
+        .delivery = .static,
+    };
+    try std.testing.expectEqual(
+        HostSubscriptionStatus.rejected,
+        try context.subscribeHostPeak(static_subscription),
+    );
+    try std.testing.expectEqual(
+        HostPeakDelivery.static,
+        fake.host_subscription_delivery,
+    );
+
+    inline for (.{ "", "1audio", "audio-in", "audio\x00in" }) |symbol| {
+        try std.testing.expectError(
+            error.InvalidParameter,
+            context.subscribeHostPeak(.{
+                .port_symbol = symbol,
+                .source_id = 1,
+            }),
+        );
+    }
+    var oversized: [maximum_host_port_symbol_bytes + 1:0]u8 =
+        @splat('a');
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.unsubscribeHostPeak(.{
+            .port_symbol = &oversized,
+            .source_id = 1,
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 2), fake.host_subscription_count);
+    try std.testing.expectEqual(@as(usize, 1), fake.host_unsubscription_count);
+
+    var multi = MultiFake{};
+    try std.testing.expectEqual(
+        HostSubscriptionStatus.unsupported,
+        try multi.context().subscribeHostPeak(subscription),
+    );
+    try std.testing.expectEqual(
+        HostSubscriptionStatus.unsupported,
+        try multi.context().unsubscribeHostPeak(subscription),
+    );
+}
+
+test "editor contains malformed host peak measurements" {
+    var fake = Fake{};
+    var editor = fakeEditor(&fake);
+    const measurement = HostPeakMeasurement{
+        .source_id = 23,
+        .period_start = 100,
+        .period_size = 64,
+        .peak = 1.25,
+    };
+    editor.hostPeakMeasurement(measurement);
+    try std.testing.expectEqual(@as(usize, 1), fake.host_peak_count);
+    try std.testing.expectEqual(measurement, fake.host_peak);
+
+    editor.hostPeakMeasurement(.{
+        .source_id = 23,
+        .period_start = 100,
+        .period_size = 0,
+        .peak = 1.0,
+    });
+    editor.hostPeakMeasurement(.{
+        .source_id = 23,
+        .period_start = 100,
+        .period_size = 64,
+        .peak = -0.01,
+    });
+    editor.hostPeakMeasurement(.{
+        .source_id = 23,
+        .period_start = 100,
+        .period_size = 64,
+        .peak = std.math.nan(f32),
+    });
+    editor.hostPeakMeasurement(.{
+        .source_id = 23,
+        .period_start = 100,
+        .period_size = 64,
+        .peak = std.math.inf(f32),
+    });
+    try std.testing.expectEqual(@as(usize, 1), fake.host_peak_count);
+}
+
+test "Atom messages validate registration and bounded bidirectional delivery" {
+    var fake = Fake{};
+    const context = fake.context();
+    const notification = HostAtomNotification{
+        .port_symbol = "events_out",
+        .atom_type_uri = "https://example.test/messages#status",
+        .source_id = 41,
+    };
+    try std.testing.expectEqual(
+        HostSubscriptionStatus.accepted,
+        try context.registerHostAtomNotification(notification),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        fake.host_atom_registration_count,
+    );
+    try std.testing.expectEqual(@as(u32, 41), fake.host_atom_source);
+    try std.testing.expectEqual(
+        HostSubscriptionStatus.accepted,
+        try context.unregisterHostAtomNotification(notification),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        fake.host_atom_unregistration_count,
+    );
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.registerHostAtomNotification(.{
+            .port_symbol = "events-out",
+            .atom_type_uri = notification.atom_type_uri,
+            .source_id = 1,
+        }),
+    );
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.registerHostAtomNotification(.{
+            .port_symbol = notification.port_symbol,
+            .atom_type_uri = "relative-type",
+            .source_id = 1,
+        }),
+    );
+
+    var editor = fakeEditor(&fake);
+    const body = [_]u8{ 1, 2, 3, 4 };
+    editor.hostAtomMessage(.{ .source_id = 41, .body = &body });
+    try std.testing.expectEqual(@as(usize, 1), fake.host_atom_count);
+    try std.testing.expectEqual(@as(usize, body.len), fake.host_atom_body_length);
+    var oversized: [maximum_host_atom_body_bytes + 1]u8 = undefined;
+    editor.hostAtomMessage(.{ .source_id = 41, .body = &oversized });
+    try std.testing.expectEqual(@as(usize, 1), fake.host_atom_count);
+
+    const plugin_message = PluginAtomMessage{
+        .port_symbol = "events_in",
+        .atom_type_uri = "https://example.test/messages#command",
+        .body = &body,
+    };
+    try std.testing.expectEqual(
+        PluginMessageStatus.accepted,
+        try context.sendPluginAtomMessage(plugin_message),
+    );
+    try std.testing.expectEqual(@as(usize, 1), fake.plugin_atom_count);
+    try std.testing.expectEqual(
+        plugin_message.port_symbol.len,
+        fake.plugin_atom_symbol_length,
+    );
+    try std.testing.expectEqual(
+        plugin_message.atom_type_uri.len,
+        fake.plugin_atom_type_length,
+    );
+    try std.testing.expectEqual(body.len, fake.plugin_atom_body_length);
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.sendPluginAtomMessage(.{
+            .port_symbol = "events-in",
+            .atom_type_uri = plugin_message.atom_type_uri,
+            .body = &body,
+        }),
+    );
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.sendPluginAtomMessage(.{
+            .port_symbol = plugin_message.port_symbol,
+            .atom_type_uri = "relative-type",
+            .body = &body,
+        }),
+    );
+    try std.testing.expectError(
+        error.InvalidParameter,
+        context.sendPluginAtomMessage(.{
+            .port_symbol = plugin_message.port_symbol,
+            .atom_type_uri = plugin_message.atom_type_uri,
+            .body = &oversized,
+        }),
+    );
+    try std.testing.expectEqual(@as(usize, 1), fake.plugin_atom_count);
+
+    var multi = MultiFake{};
+    try std.testing.expectEqual(
+        HostSubscriptionStatus.unsupported,
+        try multi.context().registerHostAtomNotification(notification),
+    );
+    try std.testing.expectEqual(
+        PluginMessageStatus.unsupported,
+        try multi.context().sendPluginAtomMessage(plugin_message),
+    );
+}
 
 test "editor orders complete parameter gestures" {
     var fake = Fake{};

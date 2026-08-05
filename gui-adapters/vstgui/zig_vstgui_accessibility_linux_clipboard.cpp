@@ -1,6 +1,7 @@
 #include "zig_vstgui_accessibility_clipboard.h"
+#include "zig_vstgui_accessibility_wayland_clipboard.h"
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(ZIG_VSTGUI_WAYLAND_CLIPBOARD_TEST_PLATFORM)
 
 #include <glib.h>
 #include <poll.h>
@@ -43,10 +44,82 @@ bool validText(const std::string& text) {
         g_utf8_validate(text.data(), text.size(), nullptr);
 }
 
+bool convertUtf8ToLatin1(const std::string& text, std::string& converted) {
+    if (!validText(text)) return false;
+    std::string result;
+    result.reserve(text.size());
+    const auto* cursor = text.data();
+    const auto* end = cursor + text.size();
+    while (cursor != end) {
+        const auto remaining = static_cast<gssize>(end - cursor);
+        const auto code_point = g_utf8_get_char_validated(cursor, remaining);
+        if (code_point == static_cast<gunichar>(-1) ||
+            code_point == static_cast<gunichar>(-2) ||
+            code_point > 0xff)
+            return false;
+        result.push_back(static_cast<char>(code_point));
+        cursor = g_utf8_next_char(cursor);
+    }
+    converted = std::move(result);
+    return true;
+}
+
 class UnavailableClipboard final : public AccessibilityClipboard {
 public:
     bool writeText(const std::string&) override { return false; }
     bool readText(std::string&, std::size_t) override { return false; }
+};
+
+class WaylandClipboard final : public AccessibilityClipboard {
+public:
+    WaylandClipboard() : clipboard(zv3_wayland_clipboard_create()) {}
+
+    ~WaylandClipboard() override {
+        zv3_wayland_clipboard_destroy(clipboard);
+    }
+
+    bool valid() const { return clipboard != nullptr; }
+
+    bool writeText(const std::string& text) override {
+        if (!clipboard || !validText(text)) return false;
+        return zv3_wayland_clipboard_write(
+            clipboard,
+            reinterpret_cast<const uint8_t*>(text.data()),
+            text.size()
+        ) == 0;
+    }
+
+    bool readText(std::string& text, std::size_t maximum_bytes) override {
+        if (!clipboard || maximum_bytes > maximum_text_bytes) return false;
+        uint8_t* bytes = nullptr;
+        std::size_t length = 0;
+        if (zv3_wayland_clipboard_read(
+                clipboard,
+                maximum_bytes,
+                &bytes,
+                &length
+            ) != 0)
+            return false;
+        std::string received;
+        if (length != 0) {
+            received.assign(
+                reinterpret_cast<const char*>(bytes),
+                length
+            );
+        }
+        zv3_wayland_clipboard_free(bytes);
+        if (!validText(received) || received.size() > maximum_bytes)
+            return false;
+        text = std::move(received);
+        return true;
+    }
+
+    void dispatch() override {
+        zv3_wayland_clipboard_dispatch(clipboard);
+    }
+
+private:
+    zv3_wayland_clipboard* clipboard {nullptr};
 };
 
 class X11Clipboard final : public AccessibilityClipboard {
@@ -205,13 +278,19 @@ private:
                     targets_atom,
                     utf8_atom,
                     text_atom,
+                    XCB_ATOM_STRING,
                 };
+                std::string latin1;
+                const auto target_count = convertUtf8ToLatin1(
+                    retained_text,
+                    latin1
+                ) ? std::size(targets) : std::size(targets) - 1;
                 published = publishProperty(
                     request.requestor,
                     property,
                     XCB_ATOM_ATOM,
                     32,
-                    static_cast<uint32_t>(std::size(targets)),
+                    static_cast<uint32_t>(target_count),
                     targets
                 );
             } else if (request.target == utf8_atom ||
@@ -224,6 +303,18 @@ private:
                     static_cast<uint32_t>(retained_text.size()),
                     retained_text.data()
                 );
+            } else if (request.target == XCB_ATOM_STRING) {
+                std::string latin1;
+                if (convertUtf8ToLatin1(retained_text, latin1)) {
+                    published = publishProperty(
+                        request.requestor,
+                        property,
+                        XCB_ATOM_STRING,
+                        8,
+                        static_cast<uint32_t>(latin1.size()),
+                        latin1.data()
+                    );
+                }
             }
         }
 
@@ -416,8 +507,10 @@ private:
 }
 
 std::shared_ptr<AccessibilityClipboard> createLinuxAccessibilityClipboard() {
-    auto clipboard = std::make_shared<X11Clipboard>();
-    if (clipboard->valid()) return clipboard;
+    auto wayland = std::make_shared<WaylandClipboard>();
+    if (wayland->valid()) return wayland;
+    auto x11 = std::make_shared<X11Clipboard>();
+    if (x11->valid()) return x11;
     return std::make_shared<UnavailableClipboard>();
 }
 

@@ -158,8 +158,10 @@ pub fn receive(convolver: anytype, expected_target_id: u32, message: ?*ivstmessa
             {
                 return types.kInvalidArgument;
             }
+            const samples_payload = payload orelse
+                return types.kInvalidArgument;
             var samples: [samples_per_chunk]f32 = undefined;
-            const bytes: [*]const u8 = @ptrCast(payload.?);
+            const bytes: [*]const u8 = @ptrCast(samples_payload);
             const count = byte_count / @sizeOf(f32);
             decodeSamples(bytes[0..byte_count], samples[0..count]);
             const offset = std.math.cast(usize, offset_value) orelse return types.kInvalidArgument;

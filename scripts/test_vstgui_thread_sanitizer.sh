@@ -3,7 +3,6 @@ set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 source_dir="$root/gui-adapters/vstgui"
-build_dir="${VSTGUI_THREAD_SANITIZER_BUILD_DIR:-$root/.vst3-sdk/vstgui-adapter-thread-sanitizer-build}"
 repetitions="${VSTGUI_THREAD_SANITIZER_REPETITIONS:-4}"
 
 case "$repetitions" in
@@ -12,6 +11,24 @@ case "$repetitions" in
     exit 2
     ;;
 esac
+
+temporary_build=""
+cleanup_build() {
+  if [ -n "$temporary_build" ]; then
+    rm -rf -- "$temporary_build"
+  fi
+}
+trap cleanup_build EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [ -n "${VSTGUI_THREAD_SANITIZER_BUILD_DIR:-}" ]; then
+  build_dir="$VSTGUI_THREAD_SANITIZER_BUILD_DIR"
+else
+  temporary_build=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-vstgui-thread-sanitizer-build.XXXXXX")
+  build_dir="$temporary_build/build"
+fi
 
 output_root="${VSTGUI_THREAD_SANITIZER_OUTPUT_DIR:-${TMPDIR:-/tmp}/zig-vst3-vstgui-thread-sanitizer}"
 timestamp=$(date +%Y%m%d-%H%M%S)

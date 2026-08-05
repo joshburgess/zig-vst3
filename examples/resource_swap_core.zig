@@ -16,6 +16,7 @@ const GraphExchange = plug.resource.exchange.Exchange(struct {
 
 const PreparationRequest = struct {
     exchange: *GraphExchange,
+    running_generation: *std.atomic.Value(u64),
     generation: u64,
     gain: f64,
     work_units: usize,
@@ -30,6 +31,15 @@ const PreparationJob = plug.resource.job.Job(struct {
     pub const maximum_runtime_nanoseconds = 5 * std.time.ns_per_s;
 
     pub fn run(request: Request, context: *plug.resource.job.WorkerContext) plug.resource.job.Outcome(Result, Failure) {
+        request.running_generation.store(request.generation, .release);
+        defer {
+            _ = request.running_generation.cmpxchgStrong(
+                request.generation,
+                0,
+                .acq_rel,
+                .acquire,
+            );
+        }
         context.setTotalUnits(request.work_units) catch return .cancelled;
         for (0..request.work_units) |index| {
             if (context.cancellationRequested()) return .cancelled;
@@ -48,16 +58,21 @@ const PreparationJob = plug.resource.job.Job(struct {
 pub const Processor = struct {
     exchange: GraphExchange,
     preparation: PreparationJob,
+    running_generation: std.atomic.Value(u64),
+    latest_requested_generation: std.atomic.Value(u64),
     next_generation: u64,
 
     pub fn initInPlace(self: *Processor) void {
         self.* = .{
             .exchange = .{},
             .preparation = PreparationJob.init(),
+            .running_generation = std.atomic.Value(u64).init(0),
+            .latest_requested_generation = std.atomic.Value(u64).init(1),
             .next_generation = 1,
         };
         _ = self.preparation.submit(.{
             .exchange = &self.exchange,
+            .running_generation = &self.running_generation,
             .generation = 1,
             .gain = 1.0,
             .work_units = 1,
@@ -72,11 +87,12 @@ pub const Processor = struct {
 
     pub fn requestGain(self: *Processor, gain: f64, work_units: usize) bool {
         if (!std.math.isFinite(gain) or work_units == 0) return false;
-        self.next_generation +%= 1;
-        if (self.next_generation == 0) self.next_generation = 1;
+        const generation = self.nextGeneration();
+        self.latest_requested_generation.store(generation, .release);
         return self.preparation.submit(.{
             .exchange = &self.exchange,
-            .generation = self.next_generation,
+            .running_generation = &self.running_generation,
+            .generation = generation,
             .gain = gain,
             .work_units = work_units,
         });
@@ -91,6 +107,27 @@ pub const Processor = struct {
 
     pub fn reclaimRetired(self: *Processor) usize {
         return self.exchange.reclaim();
+    }
+
+    fn nextGeneration(self: *Processor) u64 {
+        const running = self.running_generation.load(.acquire);
+        const requested = self.latest_requested_generation.load(.acquire);
+        const exchange_latest = self.exchange.latest_generation.load(.acquire);
+        const exchange_active = self.exchange.activeGeneration();
+        var candidate = self.next_generation;
+        while (true) {
+            candidate +%= 1;
+            if (candidate == 0) candidate = 1;
+            if (candidate == running or
+                candidate == requested or
+                candidate == exchange_latest or
+                candidate == exchange_active)
+            {
+                continue;
+            }
+            self.next_generation = candidate;
+            return candidate;
+        }
     }
 
     pub fn process(self: *Processor, _: anytype, comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
@@ -224,4 +261,18 @@ test "resource swap runtime owns the self-referential engine at a stable address
         @as(usize, 1),
         runtime.reclaimRetired(),
     );
+}
+
+test "resource swap publication generation skips retained identities" {
+    var processor: Processor = undefined;
+    processor.initInPlace();
+    defer processor.deinit();
+    try std.testing.expect(processor.waitForPreparation());
+
+    processor.next_generation = std.math.maxInt(u64);
+    processor.running_generation.store(1, .release);
+    processor.latest_requested_generation.store(2, .release);
+    processor.exchange.latest_generation.store(3, .release);
+    processor.exchange.active_generation.store(4, .release);
+    try std.testing.expectEqual(@as(u64, 5), processor.nextGeneration());
 }

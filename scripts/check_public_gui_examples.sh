@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC2086
 set -eu
 
 files='examples/channel_strip_plugin.zig

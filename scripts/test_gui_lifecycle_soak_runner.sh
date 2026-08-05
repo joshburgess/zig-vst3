@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC2016
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)

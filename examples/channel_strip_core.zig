@@ -33,7 +33,7 @@ pub const ChannelStrip = struct {
 
 test "channel strip core metadata is valid" {
     const Spec = plug.plugin.PluginSpec(ChannelStrip);
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
     try std.testing.expectEqualStrings("zig-vst3 Channel Strip", Spec.name);
     try std.testing.expectEqual(@as(usize, 3), Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 3), spec.parameter_set.parameterCount());

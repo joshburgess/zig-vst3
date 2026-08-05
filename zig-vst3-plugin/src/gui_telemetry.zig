@@ -28,12 +28,16 @@ pub fn ScalarSnapshot(comptime Float: type) type {
             return if (finite(value)) value else 0.0;
         }
 
+        pub fn valid(self: *const @This()) bool {
+            const value: Float = @bitCast(self.bits.load(.acquire));
+            return finite(value);
+        }
+
         fn finite(value: Float) bool {
-            const exponent_mask: Bits = switch (Float) {
-                f32 => 0x7f80_0000,
-                f64 => 0x7ff0_0000_0000_0000,
-                else => unreachable,
-            };
+            const exponent_mask: Bits = if (Float == f32)
+                0x7f80_0000
+            else
+                0x7ff0_0000_0000_0000;
             return @as(Bits, @bitCast(value)) & exponent_mask != exponent_mask;
         }
     };
@@ -53,10 +57,25 @@ pub fn SpscQueue(comptime T: type, comptime capacity: usize) type {
     if (capacity == 0) @compileError("SpscQueue capacity must be positive");
 
     return struct {
-        items: [capacity]T = undefined,
+        items: [capacity]T = @splat(std.mem.zeroes(T)),
         write_index: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
         read_index: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
         dropped_count: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
+
+        /// Requires producer and consumer operations to be stopped.
+        pub fn valid(self: *const @This()) bool {
+            const write = self.write_index.load(.acquire);
+            const read = self.read_index.load(.acquire);
+            return write -% read <= capacity;
+        }
+
+        /// Requires producer and consumer operations to be stopped.
+        pub fn reset(self: *@This()) void {
+            self.items = @splat(std.mem.zeroes(T));
+            self.write_index.store(0, .release);
+            self.read_index.store(0, .release);
+            self.dropped_count.store(0, .release);
+        }
 
         pub fn push(self: *@This(), item: T) bool {
             _ = realtime_audit.observe(.telemetry_publication);
@@ -179,13 +198,22 @@ pub fn MeterBank(comptime Float: type, comptime source_count: usize) type {
         pub fn producing(self: *const @This()) bool {
             return self.activity.active();
         }
+
+        pub fn valid(self: *const @This()) bool {
+            for (&self.snapshots) |*snapshot| {
+                if (!snapshot.valid()) return false;
+            }
+            return true;
+        }
     };
 }
 
 test "scalar snapshot preserves the latest value" {
     var snapshot = ScalarSnapshot(f64).init(0.25);
+    try std.testing.expect(snapshot.valid());
     try std.testing.expectEqual(@as(f64, 0.25), snapshot.load());
     snapshot.store(0.75);
+    try std.testing.expect(snapshot.valid());
     try std.testing.expectEqual(@as(f64, 0.75), snapshot.load());
 }
 
@@ -199,34 +227,49 @@ test "scalar snapshot rejects non-finite values" {
 
 test "scalar snapshot contains malformed public bits" {
     var snapshot = ScalarSnapshot(f32).init(0.5);
+    try std.testing.expect(snapshot.valid());
     snapshot.bits.store(@bitCast(std.math.nan(f32)), .release);
+    try std.testing.expect(!snapshot.valid());
     try std.testing.expectEqual(@as(f32, 0.0), snapshot.load());
     snapshot.bits.store(@bitCast(std.math.inf(f32)), .release);
+    try std.testing.expect(!snapshot.valid());
     try std.testing.expectEqual(@as(f32, 0.0), snapshot.load());
     snapshot.store(0.75);
+    try std.testing.expect(snapshot.valid());
     try std.testing.expectEqual(@as(f32, 0.75), snapshot.load());
 }
 
 test "bounded queue preserves order and drops overflow" {
     var queue = SpscQueue(u32, 2){};
+    try std.testing.expect(queue.valid());
+    try std.testing.expectEqual(@as([2]u32, @splat(0)), queue.items);
     try std.testing.expect(queue.push(10));
+    try std.testing.expect(queue.valid());
     try std.testing.expect(queue.push(20));
+    try std.testing.expect(queue.valid());
     try std.testing.expect(!queue.push(30));
     try std.testing.expectEqual(@as(usize, 1), queue.dropped());
     try std.testing.expectEqual(@as(?u32, 10), queue.pop());
     try std.testing.expectEqual(@as(?u32, 20), queue.pop());
     try std.testing.expectEqual(@as(?u32, null), queue.pop());
+    try std.testing.expect(queue.valid());
+    queue.reset();
+    try std.testing.expectEqual(@as([2]u32, @splat(0)), queue.items);
+    try std.testing.expectEqual(@as(usize, 0), queue.dropped());
 }
 
 test "bounded queue rejects malformed public cursors" {
     var queue = SpscQueue(u32, 2){};
     queue.read_index.store(1, .release);
     queue.write_index.store(8, .release);
+    try std.testing.expect(!queue.valid());
     try std.testing.expect(!queue.push(10));
     try std.testing.expectEqual(@as(?u32, null), queue.pop());
     try std.testing.expectEqual(@as(usize, 8), queue.read_index.load(.acquire));
+    try std.testing.expect(queue.valid());
     try std.testing.expect(queue.push(20));
     try std.testing.expectEqual(@as(?u32, 20), queue.pop());
+    try std.testing.expect(queue.valid());
 }
 
 test "bounded queue drop count saturates instead of wrapping" {
@@ -273,6 +316,7 @@ test "editor activity saturates instead of wrapping inactive" {
 
 test "meter bank gates lock-free production by editor activity" {
     var meters = MeterBank(f32, 2).init(0.0);
+    try std.testing.expect(meters.valid());
     try std.testing.expect(!meters.publish(0, 0.5));
     meters.editorOpened();
     try std.testing.expect(meters.producing());
@@ -286,10 +330,12 @@ test "meter bank gates lock-free production by editor activity" {
     try std.testing.expect(!meters.producing());
     try std.testing.expect(!meters.publish(0, 1.0));
     try std.testing.expectEqual(@as(?f32, 0.5), meters.load(0));
+    try std.testing.expect(meters.valid());
 }
 
 test "meter bank never publishes non-finite values" {
     var meters = MeterBank(f64, 1).init(std.math.nan(f64));
+    try std.testing.expect(meters.valid());
     try std.testing.expectEqual(@as(?f64, 0.0), meters.load(0));
     meters.editorOpened();
     try std.testing.expect(meters.publish(0, 0.75));
@@ -297,4 +343,12 @@ test "meter bank never publishes non-finite values" {
     try std.testing.expect(!meters.publish(0, std.math.inf(f64)));
     try std.testing.expect(!meters.publish(0, -std.math.inf(f64)));
     try std.testing.expectEqual(@as(?f64, 0.75), meters.load(0));
+    meters.snapshots[0].bits.store(
+        @bitCast(std.math.nan(f64)),
+        .release,
+    );
+    try std.testing.expect(!meters.valid());
+    try std.testing.expectEqual(@as(?f64, 0.0), meters.load(0));
+    meters.snapshots[0].store(0.5);
+    try std.testing.expect(meters.valid());
 }

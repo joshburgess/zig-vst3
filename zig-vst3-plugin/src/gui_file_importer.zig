@@ -35,18 +35,25 @@ pub const Snapshot = struct {
     cancellation_pending: bool,
 
     pub fn progress(self: Snapshot) f64 {
+        if (!self.valid()) return 0.0;
         if (self.total_units == 0) return 0.0;
-        return @as(f64, @floatFromInt(@min(self.completed_units, self.total_units))) /
+        return @as(f64, @floatFromInt(self.completed_units)) /
             @as(f64, @floatFromInt(self.total_units));
     }
 
     pub fn validate(self: Snapshot) !void {
         if (self.path_count > gui_file_drop.maximum_files) return error.InvalidPathCount;
         if (self.completed_units > self.total_units) return error.InvalidImportProgress;
-        if (self.cancellation_pending and !self.canCancel()) return error.InvalidCancellationState;
-        if (self.path_count != 0 and self.generation == 0) return error.InvalidImportGeneration;
+        if (self.cancellation_pending and !statusCanCancel(self.status))
+            return error.InvalidCancellationState;
+        if (self.status != .idle and self.generation == 0)
+            return error.InvalidImportGeneration;
         switch (self.status) {
-            .idle, .empty, .unsupported_file, .capacity_limit, .invalid_path => {
+            .idle => {
+                if (self.path_count != 0) return error.InvalidPathCount;
+                if (self.completed_units != 0 or self.total_units != 0) return error.InvalidImportProgress;
+            },
+            .empty, .unsupported_file, .capacity_limit, .invalid_path => {
                 if (self.completed_units != 0 or self.total_units != 0) return error.InvalidImportProgress;
             },
             .validating => {
@@ -73,13 +80,18 @@ pub const Snapshot = struct {
     }
 
     pub fn canCancel(self: Snapshot) bool {
-        return self.status == .validating or self.status == .importing;
+        return self.valid() and statusCanCancel(self.status);
     }
 
     pub fn canRetry(self: Snapshot) bool {
-        return self.path_count > 0 and (self.status == .cancelled or self.status == .failed);
+        return self.valid() and self.path_count > 0 and
+            (self.status == .cancelled or self.status == .failed);
     }
 };
+
+fn statusCanCancel(status: Status) bool {
+    return status == .validating or status == .importing;
+}
 
 pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) type {
     const DropZone = gui_file_drop.DropZone(file_capacity, extension_capacity);
@@ -309,7 +321,7 @@ test "import snapshot rejects impossible progress and cancellation" {
     var malformed = valid;
     malformed.completed_units = 9;
     try std.testing.expectError(error.InvalidImportProgress, malformed.validate());
-    try std.testing.expectEqual(@as(f64, 1.0), malformed.progress());
+    try std.testing.expectEqual(@as(f64, 0.0), malformed.progress());
     malformed = valid;
     malformed.status = .ready;
     malformed.cancellation_pending = false;
@@ -328,6 +340,28 @@ test "import snapshot rejects impossible progress and cancellation" {
     malformed = valid;
     malformed.generation = 0;
     try std.testing.expectError(error.InvalidImportGeneration, malformed.validate());
+    malformed = .{
+        .status = .empty,
+        .entry_point = .picker,
+        .path_count = 0,
+        .completed_units = 0,
+        .total_units = 0,
+        .generation = 0,
+        .cancellation_pending = false,
+    };
+    try std.testing.expectError(error.InvalidImportGeneration, malformed.validate());
+    malformed.status = .idle;
+    malformed.path_count = 1;
+    malformed.generation = 1;
+    try std.testing.expectError(error.InvalidPathCount, malformed.validate());
+    malformed.path_count = 0;
+    try malformed.validate();
+    malformed = valid;
+    malformed.path_count = 0;
+    try std.testing.expect(!malformed.canCancel());
+    malformed.status = .failed;
+    malformed.generation = 0;
+    try std.testing.expect(!malformed.canRetry());
     try std.testing.expect(valid.valid());
 }
 

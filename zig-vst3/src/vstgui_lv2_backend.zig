@@ -10,8 +10,16 @@ pub const Control = struct {
     tooltip: ?[:0]const u8 = null,
 };
 
+pub const PeakSource = struct {
+    port_symbol: [:0]const u8,
+    source_id: u32,
+    delivery: core.gui.HostPeakDelivery = .dynamic,
+};
+
 pub const Description = struct {
     controls: []const Control,
+    peak_sources: []const PeakSource = &.{},
+    meters: []const editor_view.MeterDescription = &.{},
     initial_size: core.gui.Size = .{
         .width = 400,
         .height = 300,
@@ -42,10 +50,23 @@ const ResizeCallbacks = extern struct {
     ) callconv(.c) i32,
 };
 
+const MeterCallbacks = extern struct {
+    userdata: ?*anyopaque,
+    load: *const fn (?*anyopaque, u32) callconv(.c) f64,
+};
+
 extern fn zig_vstgui_editor_create(
     [*]const editor_view.ParameterDescription,
     u32,
     editor_view.Callbacks,
+) ?*NativeEditor;
+extern fn zig_vstgui_editor_create_with_meters(
+    [*]const editor_view.ParameterDescription,
+    u32,
+    editor_view.Callbacks,
+    ?[*]const editor_view.MeterDescription,
+    u32,
+    MeterCallbacks,
 ) ?*NativeEditor;
 extern fn zig_vstgui_editor_open(
     *NativeEditor,
@@ -87,11 +108,21 @@ const NativeApi = struct {
     fn create(
         descriptions: []const editor_view.ParameterDescription,
         callbacks: editor_view.Callbacks,
+        meters: []const editor_view.MeterDescription,
+        meter_callbacks: MeterCallbacks,
     ) ?*Editor {
-        return zig_vstgui_editor_create(
+        if (meters.len == 0) return zig_vstgui_editor_create(
             descriptions.ptr,
             @intCast(descriptions.len),
             callbacks,
+        );
+        return zig_vstgui_editor_create_with_meters(
+            descriptions.ptr,
+            @intCast(descriptions.len),
+            callbacks,
+            meters.ptr,
+            @intCast(meters.len),
+            meter_callbacks,
         );
     }
 
@@ -178,15 +209,17 @@ pub fn BackendWithApi(
 ) type {
     validateDescription(description);
     const control_count = description.controls.len;
+    const peak_source_count = description.peak_sources.len;
 
     return struct {
         const Self = @This();
 
         const State = struct {
             context: core.gui.Context,
-            editor: *Api.Editor,
+            editor: ?*Api.Editor = null,
             gesture: ?core.gui.Gesture = null,
             attached: bool = false,
+            peaks: [peak_source_count]f64 = @splat(0.0),
         };
 
         pub fn create(
@@ -257,8 +290,14 @@ pub fn BackendWithApi(
 
             state.* = .{
                 .context = context,
-                .editor = undefined,
             };
+            inline for (description.peak_sources) |source| {
+                _ = context.subscribeHostPeak(.{
+                    .port_symbol = source.port_symbol,
+                    .source_id = source.source_id,
+                    .delivery = source.delivery,
+                }) catch return error.Rejected;
+            }
             const native_editor = Api.create(
                 &descriptions,
                 .{
@@ -269,6 +308,11 @@ pub fn BackendWithApi(
                     .format_value = formatValue,
                     .parse_value = parseValue,
                     .show_context_menu = showContextMenu,
+                },
+                description.meters,
+                .{
+                    .userdata = state,
+                    .load = loadPeak,
                 },
             ) orelse return error.Rejected;
             state.editor = native_editor;
@@ -292,12 +336,14 @@ pub fn BackendWithApi(
         ) ?*anyopaque {
             const state = from(adapter.userdata);
             if (!state.attached) return null;
-            return Api.widget(state.editor);
+            const editor = state.editor orelse return null;
+            return Api.widget(editor);
         }
 
         pub fn idle(adapter: core.gui.Adapter) bool {
             const state = from(adapter.userdata);
-            return state.attached and Api.idle(state.editor);
+            const editor = state.editor orelse return false;
+            return state.attached and Api.idle(editor);
         }
 
         fn from(raw: *anyopaque) *State {
@@ -312,16 +358,17 @@ pub fn BackendWithApi(
         ) core.gui.Error!void {
             const state = from(raw);
             if (state.attached) return error.AlreadyAttached;
+            const editor = state.editor orelse return error.Rejected;
             const handle = parent.handle orelse return error.Rejected;
             if (!scale_value.valid() or
                 scale_value.x != scale_value.y)
                 return error.InvalidScale;
-            if (!Api.open(state.editor, handle, parent.platform))
+            if (!Api.open(editor, handle, parent.platform))
                 return error.Rejected;
-            errdefer Api.close(state.editor);
-            if (!Api.scale(state.editor, scale_value) or
-                !Api.resize(state.editor, size) or
-                Api.widget(state.editor) == null)
+            errdefer Api.close(editor);
+            if (!Api.scale(editor, scale_value) or
+                !Api.resize(editor, size) or
+                Api.widget(editor) == null)
                 return error.Rejected;
             state.attached = true;
         }
@@ -329,7 +376,8 @@ pub fn BackendWithApi(
         fn detach(raw: *anyopaque) void {
             const state = from(raw);
             if (!state.attached) return;
-            Api.close(state.editor);
+            const editor = state.editor orelse return;
+            Api.close(editor);
             finishGesture(state);
             state.attached = false;
         }
@@ -340,7 +388,8 @@ pub fn BackendWithApi(
         ) core.gui.Error!void {
             const state = from(raw);
             if (!state.attached) return error.NotAttached;
-            if (!Api.resize(state.editor, size))
+            const editor = state.editor orelse return error.Rejected;
+            if (!Api.resize(editor, size))
                 return error.Rejected;
         }
 
@@ -352,14 +401,15 @@ pub fn BackendWithApi(
             if (!state.attached) return error.NotAttached;
             if (!value.valid() or value.x != value.y)
                 return error.InvalidScale;
-            if (!Api.scale(state.editor, value))
+            const editor = state.editor orelse return error.Rejected;
+            if (!Api.scale(editor, value))
                 return error.Rejected;
         }
 
         fn focus(raw: *anyopaque, focused: bool) void {
             const state = from(raw);
-            if (state.attached)
-                Api.focus(state.editor, focused);
+            const editor = state.editor orelse return;
+            if (state.attached) Api.focus(editor, focused);
         }
 
         fn parameterChanged(
@@ -369,18 +419,47 @@ pub fn BackendWithApi(
         ) void {
             const state = from(raw);
             if (!std.math.isFinite(normalized)) return;
+            const editor = state.editor orelse return;
             _ = Api.setParameter(
-                state.editor,
+                editor,
                 parameter_id,
                 std.math.clamp(normalized, 0.0, 1.0),
             );
         }
 
+        fn hostPeakMeasurement(
+            raw: *anyopaque,
+            measurement: core.gui.HostPeakMeasurement,
+        ) void {
+            const state = from(raw);
+            inline for (description.peak_sources, 0..) |source, index| {
+                if (source.source_id == measurement.source_id) {
+                    state.peaks[index] = measurement.peak;
+                    return;
+                }
+            }
+        }
+
+        fn loadPeak(
+            raw: ?*anyopaque,
+            source_id: u32,
+        ) callconv(.c) f64 {
+            const state = from(raw orelse return 0.0);
+            inline for (description.peak_sources, 0..) |source, index| {
+                if (source.source_id == source_id)
+                    return state.peaks[index];
+            }
+            return 0.0;
+        }
+
         fn destroy(raw: *anyopaque) void {
             const state = from(raw);
-            if (state.attached) Api.close(state.editor);
+            const editor = state.editor;
+            if (state.attached) {
+                if (editor) |value| Api.close(value);
+            }
             finishGesture(state);
-            Api.destroy(state.editor);
+            if (editor) |value| Api.destroy(value);
             std.heap.page_allocator.destroy(state);
         }
 
@@ -391,6 +470,7 @@ pub fn BackendWithApi(
             .scale = scale,
             .focus = focus,
             .parameter_changed = parameterChanged,
+            .host_peak_measurement = hostPeakMeasurement,
             .destroy = destroy,
         };
 
@@ -442,12 +522,16 @@ pub fn BackendWithApi(
             raw: ?*anyopaque,
             parameter_id: u32,
             normalized: f64,
-            output: [*]u8,
+            output: [*c]u8,
             capacity: u32,
         ) callconv(.c) i32 {
             const state = from(raw orelse return -1);
             if (capacity == 0) return -1;
-            const output_slice = output[0..capacity];
+            const output_slice = editor_view.cSlice(
+                u8,
+                output,
+                capacity,
+            ) orelse return -1;
             const text = state.context.format(
                 parameter_id,
                 normalized,
@@ -460,13 +544,19 @@ pub fn BackendWithApi(
         fn parseValue(
             raw: ?*anyopaque,
             parameter_id: u32,
-            text: [*:0]const u8,
-            normalized: *f64,
+            text: [*c]const u8,
+            normalized: [*c]f64,
         ) callconv(.c) i32 {
             const state = from(raw orelse return -1);
-            normalized.* = state.context.parse(
+            const normalized_output = editor_view.cPointer(
+                f64,
+                normalized,
+            ) orelse return -1;
+            const bytes = editor_view.cStringBytes(text) orelse
+                return -1;
+            normalized_output.* = state.context.parse(
                 parameter_id,
-                std.mem.span(text),
+                bytes,
             ) catch return -1;
             return 0;
         }
@@ -501,7 +591,8 @@ pub fn BackendWithApi(
                     state.context.userdata,
                     requested,
                 ) catch return -1;
-            if (!Api.resize(state.editor, accepted)) return -1;
+            const editor = state.editor orelse return -1;
+            if (!Api.resize(editor, accepted)) return -1;
             return 0;
         }
     };
@@ -544,6 +635,28 @@ fn validateDescription(comptime description: Description) void {
                 );
         }
     }
+    if (description.peak_sources.len > core.gui.maximum_host_peak_subscriptions)
+        @compileError("a VSTGUI LV2 backend has too many peak sources");
+    if (description.meters.len > editor_view.max_meters)
+        @compileError("a VSTGUI LV2 backend has too many meters");
+    for (description.peak_sources, 0..) |source, index| {
+        for (description.peak_sources[0..index]) |previous| {
+            if (source.source_id == previous.source_id)
+                @compileError("a VSTGUI LV2 backend has duplicate peak source IDs");
+            if (std.mem.eql(u8, source.port_symbol, previous.port_symbol))
+                @compileError("a VSTGUI LV2 backend has duplicate peak port symbols");
+        }
+    }
+    for (description.meters) |meter| {
+        var first_found = false;
+        var second_found = meter.kind != .stereo;
+        for (description.peak_sources) |source| {
+            first_found = first_found or source.source_id == meter.first_source_id;
+            second_found = second_found or source.source_id == meter.second_source_id;
+        }
+        if (!first_found or !second_found)
+            @compileError("a VSTGUI LV2 meter references an unknown peak source");
+    }
     if (description.initial_size.width == 0 or
         description.initial_size.height == 0)
         @compileError(
@@ -567,6 +680,8 @@ const TestApi = struct {
     var scale_count: usize = 0;
     var focus_count: usize = 0;
     var parameter_count: usize = 0;
+    var meter_count: usize = 0;
+    var meter_callbacks: MeterCallbacks = undefined;
     var description_valid = false;
     var fail_open = false;
     var widget_available = true;
@@ -589,6 +704,8 @@ const TestApi = struct {
         scale_count = 0;
         focus_count = 0;
         parameter_count = 0;
+        meter_count = 0;
+        meter_callbacks = undefined;
         description_valid = false;
         fail_open = false;
         widget_available = true;
@@ -600,9 +717,13 @@ const TestApi = struct {
     fn create(
         descriptions: []const editor_view.ParameterDescription,
         received_callbacks: editor_view.Callbacks,
+        meters: []const editor_view.MeterDescription,
+        received_meter_callbacks: MeterCallbacks,
     ) ?*Editor {
         create_count += 1;
         callbacks = received_callbacks;
+        meter_count = meters.len;
+        meter_callbacks = received_meter_callbacks;
         description_valid =
             descriptions.len == 2 and
             descriptions[0].parameter_id == 7 and
@@ -693,6 +814,9 @@ const TestContext = struct {
     end_count: usize = 0,
     menu_count: usize = 0,
     resize_count: usize = 0,
+    peak_subscription_count: usize = 0,
+    peak_subscription_source: u32 = 0,
+    peak_subscription_delivery: core.gui.HostPeakDelivery = .dynamic,
     last_resize: core.gui.Size = .{
         .width = 0,
         .height = 0,
@@ -812,6 +936,19 @@ const TestContext = struct {
         from(raw).menu_count += 1;
     }
 
+    fn subscribeHostPeak(
+        raw: *anyopaque,
+        subscription: core.gui.HostPeakSubscription,
+    ) core.gui.HostSubscriptionStatus {
+        const self = from(raw);
+        if (!std.mem.eql(u8, subscription.port_symbol, "output"))
+            return .rejected;
+        self.peak_subscription_count += 1;
+        self.peak_subscription_source = subscription.source_id;
+        self.peak_subscription_delivery = subscription.delivery;
+        return .accepted;
+    }
+
     const vtable = core.gui.Context.VTable{
         .begin_edit = begin,
         .perform_edit = perform,
@@ -823,6 +960,7 @@ const TestContext = struct {
         .request_resize = requestResize,
         .request_repaint = repaint,
         .open_context_menu = menu,
+        .subscribe_host_peak = subscribeHostPeak,
     };
 };
 
@@ -836,6 +974,17 @@ test "VSTGUI LV2 backend owns native lifecycle and host callbacks" {
             },
             .{ .parameter_id = 9 },
         },
+        .peak_sources = &.{.{
+            .port_symbol = "output",
+            .source_id = 42,
+            .delivery = .static,
+        }},
+        .meters = &.{.{
+            .title = "Output",
+            .kind = .peak,
+            .first_source_id = 42,
+            .second_source_id = 0,
+        }},
         .initial_size = .{ .width = 400, .height = 300 },
         .resize_policy = .{
             .resizable = .{
@@ -851,6 +1000,46 @@ test "VSTGUI LV2 backend owns native lifecycle and host callbacks" {
 
     try std.testing.expectEqual(@as(usize, 1), TestApi.create_count);
     try std.testing.expect(TestApi.description_valid);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        context_state.peak_subscription_count,
+    );
+    try std.testing.expectEqual(
+        @as(u32, 42),
+        context_state.peak_subscription_source,
+    );
+    try std.testing.expectEqual(
+        core.gui.HostPeakDelivery.static,
+        context_state.peak_subscription_delivery,
+    );
+    try std.testing.expectEqual(@as(usize, 1), TestApi.meter_count);
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        TestApi.meter_callbacks.load(
+            TestApi.meter_callbacks.userdata,
+            42,
+        ),
+    );
+    editor.hostPeakMeasurement(.{
+        .source_id = 42,
+        .period_start = 0,
+        .period_size = 64,
+        .peak = 0.875,
+    });
+    try std.testing.expectEqual(
+        @as(f64, 0.875),
+        TestApi.meter_callbacks.load(
+            TestApi.meter_callbacks.userdata,
+            42,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        TestApi.meter_callbacks.load(
+            TestApi.meter_callbacks.userdata,
+            99,
+        ),
+    );
     try std.testing.expect(
         TestBackend.widget(editor.adapter) == null,
     );

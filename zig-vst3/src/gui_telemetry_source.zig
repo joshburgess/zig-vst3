@@ -1,4 +1,5 @@
 const std = @import("std");
+const funknown = @import("funknown.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const tuid = @import("tuid.zig");
 const plug_core = @import("zig-vst3-plugin-core");
@@ -10,14 +11,14 @@ pub const maximum_text_bytes: usize = plug_core.editor_state.maximum_text_bytes;
 pub const iid = tuid.inlineUid(0x7CB6A8A1, 0x532E49D8, 0xA32BD0B4, 0x21D827F6);
 
 pub const VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) types.uint32,
     release: *const fn (*anyopaque) callconv(.c) types.uint32,
     load: *const fn (*anyopaque, types.uint32) callconv(.c) f64,
     editorOpened: *const fn (*anyopaque) callconv(.c) void,
     editorClosed: *const fn (*anyopaque) callconv(.c) void,
-    loadGraph: *const fn (*anyopaque, types.uint32, [*]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
-    loadText: *const fn (*anyopaque, types.uint32, [*]u8, types.uint32) callconv(.c) types.uint32,
+    loadGraph: *const fn (*anyopaque, types.uint32, [*c]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
+    loadText: *const fn (*anyopaque, types.uint32, [*c]u8, types.uint32) callconv(.c) types.uint32,
 };
 
 pub const Interface = extern struct {
@@ -91,8 +92,9 @@ test "retained telemetry source bounds graph and text capacities" {
             return @ptrCast(@alignCast(ptr));
         }
 
-        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            out.* = null;
+        fn queryInterface(_: *anyopaque, requested_iid: [*c]const tuid.TUID, out_raw: [*c]?*anyopaque) callconv(.c) types.tresult {
+            const arguments = funknown.queryArguments(requested_iid, out_raw) orelse return types.kInvalidArgument;
+            arguments.out.* = null;
             return types.kNoInterface;
         }
 
@@ -112,12 +114,14 @@ test "retained telemetry source bounds graph and text capacities" {
 
         fn editorClosed(_: *anyopaque) callconv(.c) void {}
 
-        fn loadGraph(ptr: *anyopaque, _: types.uint32, _: [*]gui_graph.Point, capacity: types.uint32) callconv(.c) types.uint32 {
+        fn loadGraph(ptr: *anyopaque, _: types.uint32, output: [*c]gui_graph.Point, capacity: types.uint32) callconv(.c) types.uint32 {
+            if (output == null) return 0;
             owner(ptr).graph_capacity = capacity;
             return std.math.maxInt(types.uint32);
         }
 
-        fn loadText(ptr: *anyopaque, _: types.uint32, _: [*]u8, capacity: types.uint32) callconv(.c) types.uint32 {
+        fn loadText(ptr: *anyopaque, _: types.uint32, output: [*c]u8, capacity: types.uint32) callconv(.c) types.uint32 {
+            if (output == null) return 0;
             owner(ptr).text_capacity = capacity;
             return std.math.maxInt(types.uint32);
         }
@@ -127,6 +131,11 @@ test "retained telemetry source bounds graph and text capacities" {
     const source = RetainedSource{ .iface = &mock.iface };
     var graph_output: [maximum_graph_points + 1]gui_graph.Point = undefined;
     var text_output: [maximum_text_bytes + 1]u8 = undefined;
+
+    try std.testing.expectEqual(@as(types.uint32, 0), mock.iface.vtable.loadGraph(&mock.iface, 1, null, 8));
+    try std.testing.expectEqual(@as(types.uint32, 0), mock.iface.vtable.loadText(&mock.iface, 1, null, 8));
+    try std.testing.expectEqual(@as(types.uint32, 0), mock.graph_capacity);
+    try std.testing.expectEqual(@as(types.uint32, 0), mock.text_capacity);
 
     try std.testing.expectEqual(maximum_graph_points, source.loadGraph(1, &graph_output));
     try std.testing.expectEqual(@as(types.uint32, maximum_graph_points), mock.graph_capacity);

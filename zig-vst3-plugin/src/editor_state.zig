@@ -33,6 +33,8 @@ pub const Text = struct {
 
     pub fn init(value: []const u8) !Text {
         if (value.len > maximum_text_bytes) return error.EditorStateTextTooLong;
+        if (!std.unicode.utf8ValidateSlice(value))
+            return error.InvalidEditorStateTextEncoding;
         var result = Text{};
         @memcpy(result.bytes[0..value.len], value);
         result.len = @intCast(value.len);
@@ -40,8 +42,13 @@ pub const Text = struct {
     }
 
     pub fn slice(self: *const Text) []const u8 {
-        if (self.len > maximum_text_bytes) return &.{};
+        if (!self.valid()) return &.{};
         return self.bytes[0..self.len];
+    }
+
+    pub fn valid(self: *const Text) bool {
+        return self.len <= maximum_text_bytes and
+            std.unicode.utf8ValidateSlice(self.bytes[0..self.len]);
     }
 };
 
@@ -59,8 +66,14 @@ pub const Envelope = struct {
     }
 
     pub fn slice(self: *const Envelope) []const Point {
-        if (self.len > maximum_envelope_points) return &.{};
+        if (!self.valid()) return &.{};
         return self.points[0..self.len];
+    }
+
+    pub fn valid(self: *const Envelope) bool {
+        if (self.len > maximum_envelope_points) return false;
+        validatePoints(self.points[0..self.len]) catch return false;
+        return true;
     }
 };
 
@@ -253,10 +266,15 @@ fn validateValue(value: Value) !void {
     switch (value) {
         .scalar => |number| if (!std.math.isFinite(number)) return error.InvalidEditorStateNumber,
         .point => |point| try validatePoint(point),
-        .text => |text| if (text.len > maximum_text_bytes) return error.EditorStateTextTooLong,
+        .text => |text| {
+            if (text.len > maximum_text_bytes)
+                return error.EditorStateTextTooLong;
+            if (!text.valid())
+                return error.InvalidEditorStateTextEncoding;
+        },
         .envelope => |envelope| {
             if (envelope.len > maximum_envelope_points) return error.EditorStateEnvelopeTooLarge;
-            try validatePoints(envelope.slice());
+            try validatePoints(envelope.points[0..envelope.len]);
         },
         else => {},
     }
@@ -345,6 +363,7 @@ fn readValue(kind: Kind, reader: anytype, payload_len: usize) !Value {
             var text = Text{};
             try reader.readSliceAll(text.bytes[0..payload_len]);
             text.len = @intCast(payload_len);
+            if (!text.valid()) return error.InvalidEditorStateTextEncoding;
             break :blk .{ .text = text };
         },
         .envelope => blk: {
@@ -558,7 +577,7 @@ test "editor state generated mutations remain bounded and transactional" {
         if (destination.read(&reader, &.{})) |_| {
             const scalar = destination.get(3).?.scalar;
             const text = destination.get(4).?.text;
-            if (!std.math.isFinite(scalar) or text.len > maximum_text_bytes) {
+            if (!std.math.isFinite(scalar) or !text.valid()) {
                 std.debug.print("editor state seed={x} case={} decoded an invalid value\n", .{ seed, case_index });
                 return error.InvalidGeneratedEditorState;
             }
@@ -587,6 +606,21 @@ test "editor state rejects malformed direct bounded values before writing" {
     try std.testing.expectEqual(@as(usize, 0), text_writer.end);
 
     state.values[0].text = try Text.init("valid");
+    state.values[0].text.bytes[0] = 0xff;
+    try std.testing.expect(!state.valid());
+    try std.testing.expectEqual(@as(?Value, null), state.get(1));
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        state.values[0].text.slice().len,
+    );
+    var encoding_writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(
+        error.InvalidEditorStateTextEncoding,
+        state.write(&encoding_writer),
+    );
+    try std.testing.expectEqual(@as(usize, 0), encoding_writer.end);
+
+    state.values[0].text = try Text.init("valid");
     state.values[1].envelope.len = maximum_envelope_points + 1;
     try std.testing.expect(!state.valid());
     try std.testing.expectEqual(@as(?Value, null), state.get(2));
@@ -595,10 +629,59 @@ test "editor state rejects malformed direct bounded values before writing" {
     try std.testing.expectError(error.EditorStateEnvelopeTooLarge, state.write(&envelope_writer));
     try std.testing.expectEqual(@as(usize, 0), envelope_writer.end);
 
+    state.values[1].envelope = try Envelope.init(&.{.{
+        .id = 1,
+        .x = 0.5,
+        .y = 0.5,
+    }});
+    state.values[1].envelope.points[0].id = 0;
+    try std.testing.expect(!state.values[1].envelope.valid());
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        state.values[1].envelope.slice().len,
+    );
+    try std.testing.expect(!state.valid());
+
     state.values[1].envelope = try Envelope.init(&.{});
     state.values[2].scalar = std.math.nan(f64);
     try std.testing.expect(!state.valid());
     try std.testing.expectEqual(@as(?Value, null), state.get(3));
     try state.reset(3);
     try std.testing.expect(state.valid());
+}
+
+test "editor state text requires bounded UTF-8" {
+    try std.testing.expectError(
+        error.InvalidEditorStateTextEncoding,
+        Text.init(&.{ 0xc3, 0x28 }),
+    );
+    const text = try Text.init("Hall \xe2\x98\x83");
+    try std.testing.expect(text.valid());
+    try std.testing.expectEqualStrings("Hall \xe2\x98\x83", text.slice());
+}
+
+test "editor state rejects malformed encoded UTF-8 transactionally" {
+    const State = Store(1, &.{.{
+        .id = 1,
+        .default = .{ .text = comptime Text.init("default") catch unreachable },
+    }});
+    var source = State.init();
+    try source.set(1, .{ .text = try Text.init("valid") });
+    var bytes: [State.maximumEncodedSize()]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try source.write(&writer);
+    const payload_offset = encoded_header_size + encoded_entry_header_size;
+    bytes[payload_offset] = 0xff;
+
+    var destination = State.init();
+    try destination.set(1, .{ .text = try Text.init("unchanged") });
+    var reader = std.Io.Reader.fixed(bytes[0..writer.end]);
+    try std.testing.expectError(
+        error.InvalidEditorStateTextEncoding,
+        destination.read(&reader, &.{}),
+    );
+    try std.testing.expectEqualStrings(
+        "unchanged",
+        destination.get(1).?.text.slice(),
+    );
 }

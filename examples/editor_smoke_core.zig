@@ -18,7 +18,7 @@ pub const EditorSmoke = struct {
 
 test "editor smoke core metadata is valid" {
     const Spec = plug.plugin.PluginSpec(EditorSmoke);
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
     try std.testing.expectEqualStrings("zig-vst3 Editor Smoke", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 1), spec.parameter_set.parameterCount());

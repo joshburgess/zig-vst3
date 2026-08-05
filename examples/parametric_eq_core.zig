@@ -42,7 +42,7 @@ pub const ParametricEq = struct {
 
 test "parametric EQ core metadata is valid" {
     const Spec = plug.plugin.PluginSpec(ParametricEq);
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
 
     try std.testing.expectEqualStrings("zig-vst3 Parametric EQ", Spec.name);
     try std.testing.expectEqual(@as(usize, 17), Spec.ParameterSet.count);
@@ -53,7 +53,7 @@ test "parametric EQ core metadata is valid" {
 
 test "parametric EQ frequency parameters use perceptual spacing" {
     const Spec = plug.plugin.PluginSpec(ParametricEq);
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
     const midpoint = spec.parameter_set.plainFromNormalizedById(22, 0.5) orelse return error.MissingParameter;
 
     try std.testing.expectApproxEqRel(@as(f64, 632.455532), midpoint, 0.000001);

@@ -125,6 +125,10 @@ pub fn Store(comptime maximum_frames: usize) type {
             const next_index = slotIndex(next) orelse return false;
             const slot = &self.slots[next_index];
             if (slot.state.load(.acquire) != @intFromEnum(SlotState.ready)) return false;
+            validateCompleteSlot(slot) catch {
+                slot.state.store(@intFromEnum(SlotState.free), .release);
+                return false;
+            };
             if (slotIndex(self.active_slot)) |active_index| {
                 if (active_index != next_index) {
                     self.slots[active_index].state.store(@intFromEnum(SlotState.free), .release);
@@ -152,7 +156,14 @@ pub fn Store(comptime maximum_frames: usize) type {
             const channels: usize = metadata.channels;
             const first_sample = slot.samples[first * channels + source_channel];
             const second_sample = slot.samples[second * channels + source_channel];
-            return first_sample + (second_sample - first_sample) * fraction;
+            if (!std.math.isFinite(first_sample) or
+                !std.math.isFinite(second_sample))
+            {
+                return 0.0;
+            }
+            const result = first_sample +
+                (second_sample - first_sample) * fraction;
+            return if (std.math.isFinite(result)) result else 0.0;
         }
 
         fn claimFreeSlot(self: *Self) ?u8 {
@@ -175,8 +186,17 @@ pub fn Store(comptime maximum_frames: usize) type {
             const index = slotIndex(self.active_slot) orelse return null;
             const slot = &self.slots[index];
             if (slot.state.load(.acquire) != @intFromEnum(SlotState.reading)) return null;
-            slot.metadata.validate(maximum_frames) catch return null;
+            validateCompleteSlot(slot) catch return null;
             return slot;
+        }
+
+        fn validateCompleteSlot(slot: *const Slot) StageError!void {
+            try slot.metadata.validate(maximum_frames);
+            if (slot.received_samples !=
+                slot.metadata.frames * slot.metadata.channels)
+            {
+                return error.Incomplete;
+            }
         }
 
         fn slotIndex(index: u8) ?usize {
@@ -247,6 +267,73 @@ test "sample store rejects malformed active metadata" {
     store.slots[store.active_slot].metadata.channels = 0;
     try std.testing.expectEqual(@as(?Metadata, null), store.activeMetadata());
     try std.testing.expectEqual(@as(f32, 0.0), store.sample(0, 0.0));
+
+    store.slots[store.active_slot].metadata.channels = 1;
+    store.slots[store.active_slot].received_samples = 0;
+    try std.testing.expectEqual(@as(?Metadata, null), store.activeMetadata());
+    try std.testing.expectEqual(@as(f32, 0.0), store.sample(0, 0.0));
+    store.slots[store.active_slot].received_samples = 1;
+    store.slots[store.active_slot].samples[0] = std.math.nan(f32);
+    try std.testing.expectEqual(@as(f32, 0.0), store.sample(0, 0.0));
+}
+
+test "sample store rejects malformed pending state before replacement" {
+    var store: Store(2) = .{};
+    try store.begin(.{
+        .generation = 1,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = 1,
+    });
+    try store.write(1, 0, &.{0.25});
+    try store.commit(1);
+    try std.testing.expect(store.adoptPending());
+
+    try store.begin(.{
+        .generation = 2,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = 1,
+    });
+    try store.write(2, 0, &.{0.5});
+    try store.commit(2);
+    const malformed_metadata = store.pending_slot.load(.acquire);
+    store.slots[malformed_metadata].metadata.channels = 0;
+    try std.testing.expect(!store.adoptPending());
+    try std.testing.expectEqual(
+        @as(u64, 1),
+        store.activeMetadata().?.generation,
+    );
+
+    try store.begin(.{
+        .generation = 3,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = 1,
+    });
+    try store.write(3, 0, &.{0.75});
+    try store.commit(3);
+    const incomplete = store.pending_slot.load(.acquire);
+    store.slots[incomplete].received_samples = 0;
+    try std.testing.expect(!store.adoptPending());
+    try std.testing.expectEqual(
+        @as(u64, 1),
+        store.activeMetadata().?.generation,
+    );
+
+    try store.begin(.{
+        .generation = 4,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = 1,
+    });
+    try store.write(4, 0, &.{1.0});
+    try store.commit(4);
+    try std.testing.expect(store.adoptPending());
+    try std.testing.expectEqual(
+        @as(u64, 4),
+        store.activeMetadata().?.generation,
+    );
 }
 
 test "sample store metadata exposes public bounded validation" {

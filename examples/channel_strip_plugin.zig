@@ -91,8 +91,9 @@ const persisted_envelope = core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
     .{ .id = 2, .x = 0.5, .y = 0.5 },
     .{ .id = 3, .x = 1.0, .y = 0.0 },
-}) catch unreachable;
-const empty_preset_search = core.editor_state.Text.init("") catch unreachable;
+}) catch @compileError("invalid persisted envelope declaration");
+const empty_preset_search = core.editor_state.Text.init("") catch
+    @compileError("invalid empty preset search declaration");
 
 const ChannelStripControllerState = struct {
     importer: vst3.vstgui.AudioFileImporter,

@@ -26,7 +26,8 @@ pub const Config = struct {
             if (!std.math.isFinite(value)) return error.NonFiniteRangeSelectionValue;
         }
         const span = self.maximum - self.minimum;
-        if (span <= 0.0) return error.InvalidRangeSelectionBounds;
+        if (!std.math.isFinite(span) or span <= 0.0)
+            return error.InvalidRangeSelectionBounds;
         if (self.initial_start < self.minimum or self.initial_end > self.maximum or
             self.initial_end < self.initial_start) return error.InvalidInitialRangeSelection;
         if (self.minimum_span < 0.0 or self.minimum_span > span or
@@ -120,6 +121,13 @@ test "range selection validates bounds span and step" {
         .initial_end = 0.3,
         .minimum_span = 0.1,
         .step = 0.01,
+    }).validate());
+    try std.testing.expectError(error.InvalidRangeSelectionBounds, (Config{
+        .minimum = -std.math.floatMax(f64),
+        .maximum = std.math.floatMax(f64),
+        .initial_start = -1.0,
+        .initial_end = 1.0,
+        .step = 1.0,
     }).validate());
 }
 

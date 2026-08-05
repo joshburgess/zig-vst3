@@ -80,7 +80,8 @@ pub const State = struct {
         if (!self.valid(config) or !std.math.isFinite(normalized)) return 0.0;
         const active = if (horizontal) config.axes.includesHorizontal() else config.axes.includesVertical();
         const offset = if (horizontal) self.x_offset else self.y_offset;
-        return (normalized - offset) / self.visibleSpan(active);
+        const projected = (normalized - offset) / self.visibleSpan(active);
+        return if (std.math.isFinite(projected)) projected else 0.0;
     }
 
     pub fn unproject(self: State, config: Config, visible: f64, horizontal: bool) f64 {
@@ -170,6 +171,18 @@ test "viewport panning is axis aware and bounded" {
     try std.testing.expectEqual(0.0, state.y_offset);
     try std.testing.expect(state.pan(config, -100.0, 0.0));
     try std.testing.expectEqual(0.0, state.x_offset);
+}
+
+test "viewport contains derived projection overflow" {
+    const config = Config{ .initial_zoom = 32.0 };
+    const state = try State.init(config);
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        state.project(config, std.math.floatMax(f64), true),
+    );
+    try std.testing.expect(std.math.isFinite(
+        state.unproject(config, std.math.floatMax(f64), true),
+    ));
 }
 
 test "viewport declarations reject ambiguous bounds" {

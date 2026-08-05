@@ -4,8 +4,8 @@ const realtime_audit = @import("realtime_audit.zig");
 const gui_telemetry = @import("gui_telemetry.zig");
 
 pub const Point = extern struct {
-    x: f64,
-    y: f64,
+    x: f64 = 0.0,
+    y: f64 = 0.0,
 
     pub fn finite(self: Point) bool {
         return std.math.isFinite(self.x) and std.math.isFinite(self.y);
@@ -68,8 +68,8 @@ pub const Description = struct {
 pub const PointId = u32;
 
 pub const EditablePoint = struct {
-    id: PointId,
-    position: Point,
+    id: PointId = 0,
+    position: Point = .{},
 };
 
 pub const Snap = struct {
@@ -89,11 +89,11 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
         x_range: Range,
         y_range: Range,
         snap: Snap,
-        points: [capacity]EditablePoint = undefined,
+        points: [capacity]EditablePoint = @splat(.{}),
         point_count: usize = 0,
         selected_id: ?PointId = null,
         next_id: PointId = 1,
-        transaction_points: [capacity]EditablePoint = undefined,
+        transaction_points: [capacity]EditablePoint = @splat(.{}),
         transaction_count: usize = 0,
         transaction_selection: ?PointId = null,
         transaction_next_id: PointId = 1,
@@ -130,7 +130,7 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
         }
 
         pub fn slice(self: *const Self) []const EditablePoint {
-            if (self.point_count > capacity) return &.{};
+            if (!self.valid()) return &.{};
             return self.points[0..self.point_count];
         }
 
@@ -143,6 +143,7 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
         pub fn begin(self: *Self) !void {
             if (self.transaction_active) return error.TransactionActive;
             if (!self.valid()) return error.InvalidEnvelopeState;
+            self.transaction_points = @splat(.{});
             @memcpy(self.transaction_points[0..self.point_count], self.points[0..self.point_count]);
             self.transaction_count = self.point_count;
             self.transaction_selection = self.selected_id;
@@ -151,7 +152,7 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
         }
 
         pub fn finish(self: *Self) void {
-            self.transaction_active = false;
+            self.clearTransaction();
         }
 
         pub fn cancel(self: *Self) void {
@@ -166,17 +167,15 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
                 !validPointStorage(retained_points, self.x_range, self.y_range) or
                 !selection_valid)
             {
-                self.transaction_count = 0;
-                self.transaction_selection = null;
-                self.transaction_next_id = 1;
-                self.transaction_active = false;
+                self.clearTransaction();
                 return;
             }
+            self.points = @splat(.{});
             @memcpy(self.points[0..self.transaction_count], self.transaction_points[0..self.transaction_count]);
             self.point_count = self.transaction_count;
             self.selected_id = self.transaction_selection;
             self.next_id = self.transaction_next_id;
-            self.transaction_active = false;
+            self.clearTransaction();
         }
 
         pub fn select(self: *Self, id: ?PointId) !void {
@@ -241,6 +240,7 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
             const index = self.indexOf(id) orelse return error.PointNotFound;
             for (index + 1..self.point_count) |source| self.points[source - 1] = self.points[source];
             self.point_count -= 1;
+            self.points[self.point_count] = .{};
             if (self.point_count == 0) {
                 self.selected_id = null;
             } else {
@@ -251,6 +251,14 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
         fn requireTransaction(self: *const Self) !void {
             if (!self.transaction_active) return error.NoActiveTransaction;
             if (!self.valid()) return error.InvalidEnvelopeState;
+        }
+
+        fn clearTransaction(self: *Self) void {
+            self.transaction_points = @splat(.{});
+            self.transaction_count = 0;
+            self.transaction_selection = null;
+            self.transaction_next_id = 1;
+            self.transaction_active = false;
         }
 
         fn indexOf(self: *const Self, id: PointId) ?usize {
@@ -340,7 +348,7 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
 pub fn FixedSeries(comptime capacity: usize) type {
     if (capacity == 0) @compileError("FixedSeries capacity must be positive");
     return struct {
-        points: [capacity]Point = undefined,
+        points: [capacity]Point = @splat(.{}),
         count: usize = 0,
 
         pub fn init(source: []const Point) !@This() {
@@ -355,8 +363,16 @@ pub fn FixedSeries(comptime capacity: usize) type {
         }
 
         pub fn slice(self: *const @This()) []const Point {
-            if (self.count > capacity) return &.{};
+            if (!self.valid()) return &.{};
             return self.points[0..self.count];
+        }
+
+        pub fn valid(self: *const @This()) bool {
+            if (self.count > capacity) return false;
+            for (self.points[0..self.count]) |point| {
+                if (!point.finite()) return false;
+            }
+            return true;
         }
     };
 }
@@ -427,10 +443,14 @@ pub fn SnapshotSeries(comptime capacity: usize) type {
                 const count = self.point_count.load(.acquire);
                 if (count > capacity or count > output.len) return null;
                 for (output[0..count], 0..) |*point, index| {
+                    if (!self.points[index].x.valid() or
+                        !self.points[index].y.valid())
+                        return null;
                     point.* = .{
                         .x = self.points[index].x.load(),
                         .y = self.points[index].y.load(),
                     };
+                    if (!point.finite()) return null;
                 }
                 const after = self.generation.load(.acquire);
                 if (before == after and after & 1 == 0) return count;
@@ -444,6 +464,18 @@ pub fn SnapshotSeries(comptime capacity: usize) type {
 
         pub fn producing(self: *const @This()) bool {
             return self.activity.active();
+        }
+
+        /// Requires publication and reading to be stopped.
+        pub fn valid(self: *const @This()) bool {
+            if (self.generation.load(.acquire) & 1 != 0) return false;
+            const count = self.point_count.load(.acquire);
+            if (count > capacity) return false;
+            for (0..count) |index| {
+                const point = &self.points[index];
+                if (!point.x.valid() or !point.y.valid()) return false;
+            }
+            return true;
         }
 
         fn drop(self: *@This()) bool {
@@ -502,6 +534,11 @@ pub fn WaveformCapture(comptime capacity: usize) type {
 
         pub fn dropped(self: *const @This()) usize {
             return self.series.dropped();
+        }
+
+        /// Requires capture and reading to be stopped.
+        pub fn valid(self: *const @This()) bool {
+            return self.series.valid();
         }
     };
 }
@@ -581,6 +618,33 @@ pub fn SpectrumAnalyzer(comptime fft_size: usize) type {
             return self.series.dropped();
         }
 
+        /// Requires analysis, publication, and reading to be stopped.
+        pub fn valid(self: *const @This()) bool {
+            if (!self.series.valid() or
+                self.write_index >= fft_size or
+                self.buffered_count > fft_size)
+            {
+                return false;
+            }
+            if (self.buffered_count < fft_size) {
+                if (self.write_index != self.buffered_count or
+                    self.samples_since_frame != self.buffered_count)
+                {
+                    return false;
+                }
+            } else if (self.samples_since_frame >= fft_size / 2) {
+                return false;
+            }
+            for (self.window) |coefficient| {
+                if (!std.math.isFinite(coefficient) or coefficient < 0.0)
+                    return false;
+            }
+            for (self.samples) |sample| {
+                if (!std.math.isFinite(sample)) return false;
+            }
+            return true;
+        }
+
         fn analyze(self: *@This(), sample_rate: f64) bool {
             var window_sum: f64 = 0.0;
             for (0..fft_size) |index| {
@@ -624,7 +688,16 @@ test "fixed series rejects overflow and invalid points" {
     try std.testing.expectEqual(@as(usize, 2), series.slice().len);
     var malformed = series;
     malformed.count = 3;
+    try std.testing.expect(!malformed.valid());
     try std.testing.expectEqual(@as(usize, 0), malformed.slice().len);
+    malformed = series;
+    malformed.points[0].x = std.math.nan(f64);
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectEqual(@as(usize, 0), malformed.slice().len);
+
+    const spare = try FixedSeries(3).init(&.{.{ .x = 0.25, .y = 0.75 }});
+    try std.testing.expectEqualDeep(Point{}, spare.points[1]);
+    try std.testing.expectEqualDeep(Point{}, spare.points[2]);
 }
 
 test "editable envelopes reject directly constructed invalid ranges" {
@@ -657,6 +730,7 @@ test "editable envelope rejects malformed direct collection state" {
     envelope.point_count = 2;
     envelope.points[1].id = 1;
     try std.testing.expect(!envelope.valid());
+    try std.testing.expectEqual(@as(usize, 0), envelope.slice().len);
     try std.testing.expectError(error.InvalidEnvelopeState, envelope.select(1));
 
     envelope.points[1] = .{ .id = 2, .position = .{ .x = 1.0, .y = 1.0 } };
@@ -705,12 +779,46 @@ test "snapshot series recovers a generation at the integer boundary" {
     try std.testing.expectEqual(@as(f64, 0.75), output[0].y);
 }
 
+test "snapshot series rejects malformed retained points and counts" {
+    var series = SnapshotSeries(2).init();
+    try std.testing.expect(series.valid());
+    series.editorOpened();
+    try std.testing.expect(series.publish(&.{.{ .x = 0.25, .y = 0.75 }}));
+
+    var output: [2]Point = undefined;
+    series.points[0].x.bits.store(
+        @bitCast(std.math.nan(f64)),
+        .release,
+    );
+    try std.testing.expect(!series.valid());
+    try std.testing.expect(series.read(&output) == null);
+    series.points[0].x.store(0.25);
+    series.points[0].y.bits.store(
+        @bitCast(std.math.inf(f64)),
+        .release,
+    );
+    try std.testing.expect(!series.valid());
+    try std.testing.expect(series.read(&output) == null);
+
+    series.points[0].y.store(0.75);
+    series.point_count.store(3, .release);
+    try std.testing.expect(!series.valid());
+    try std.testing.expect(series.read(&output) == null);
+    series.point_count.store(1, .release);
+    try std.testing.expect(series.valid());
+    try std.testing.expectEqual(@as(?usize, 1), series.read(&output));
+    try std.testing.expectEqual(@as(f64, 0.25), output[0].x);
+    try std.testing.expectEqual(@as(f64, 0.75), output[0].y);
+}
+
 test "waveform capture downsamples without work while inactive" {
     var capture = WaveformCapture(4).init();
+    try std.testing.expect(capture.valid());
     const samples = [_]f32{ -1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0 };
     try std.testing.expect(!capture.capture(&samples));
     capture.editorOpened();
     try std.testing.expect(capture.capture(&samples));
+    try std.testing.expect(capture.valid());
     var points: [4]Point = undefined;
     try std.testing.expectEqual(@as(?usize, 4), capture.read(&points));
     try std.testing.expectEqual(@as(f64, 0.0), points[0].x);
@@ -724,6 +832,7 @@ test "waveform capture downsamples without work while inactive" {
 test "spectrum analyzer publishes a deterministic bounded FFT" {
     const fft_size = 64;
     var analyzer = SpectrumAnalyzer(fft_size).init();
+    try std.testing.expect(analyzer.valid());
     var samples: [fft_size]f64 = undefined;
     const expected_bin = 8;
     for (&samples, 0..) |*sample, index| {
@@ -733,6 +842,7 @@ test "spectrum analyzer publishes a deterministic bounded FFT" {
     try std.testing.expect(!analyzer.push(&samples, 48_000.0));
     analyzer.editorOpened();
     try std.testing.expect(analyzer.push(&samples, 48_000.0));
+    try std.testing.expect(analyzer.valid());
     var points: [fft_size / 2]Point = undefined;
     const count = analyzer.read(&points) orelse return error.MissingSpectrum;
     try std.testing.expectEqual(@as(usize, fft_size / 2), count);
@@ -755,14 +865,22 @@ test "spectrum analyzer recovers malformed retained cursors" {
     analyzer.write_index = fft_size;
     analyzer.buffered_count = std.math.maxInt(usize);
     analyzer.samples_since_frame = std.math.maxInt(usize);
+    try std.testing.expect(!analyzer.valid());
     const samples = [_]f64{ 0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0 };
     try std.testing.expect(analyzer.push(&samples, 48_000.0));
+    try std.testing.expect(analyzer.valid());
     try std.testing.expectEqual(@as(usize, 0), analyzer.write_index);
     try std.testing.expectEqual(@as(usize, fft_size), analyzer.buffered_count);
     try std.testing.expectEqual(@as(usize, 0), analyzer.samples_since_frame);
     var points: [fft_size / 2]Point = undefined;
     try std.testing.expectEqual(@as(?usize, fft_size / 2), analyzer.read(&points));
     for (points) |point| try std.testing.expect(point.finite());
+
+    analyzer.window[0] = std.math.nan(f64);
+    try std.testing.expect(!analyzer.valid());
+    analyzer.window[0] = 0.0;
+    analyzer.samples[0] = std.math.inf(f64);
+    try std.testing.expect(!analyzer.valid());
 }
 
 test "editable envelope keeps stable IDs and ordered snapped points" {
@@ -773,6 +891,10 @@ test "editable envelope keeps stable IDs and ordered snapped points" {
         .{ .id = 7, .position = .{ .x = 0.0, .y = 0.0 } },
         .{ .id = 9, .position = .{ .x = 1.0, .y = 0.0 } },
     });
+    try std.testing.expectEqualDeep(EditablePoint{}, envelope.points[2]);
+    try std.testing.expectEqualDeep(EditablePoint{}, envelope.points[3]);
+    for (envelope.transaction_points) |point|
+        try std.testing.expectEqualDeep(EditablePoint{}, point);
     try envelope.begin();
     const added = try envelope.add(.{ .x = 0.61, .y = 0.62 });
     try std.testing.expectEqual(@as(PointId, 10), added);
@@ -783,6 +905,8 @@ test "editable envelope keeps stable IDs and ordered snapped points" {
     try std.testing.expectEqual(@as(f64, -1.0), envelope.selected().?.position.y);
     envelope.finish();
     try std.testing.expectEqual(@as(usize, 3), envelope.slice().len);
+    for (envelope.transaction_points) |point|
+        try std.testing.expectEqualDeep(EditablePoint{}, point);
 }
 
 test "editable envelope cancellation restores points selection and ID allocation" {
@@ -798,8 +922,12 @@ test "editable envelope cancellation restores points selection and ID allocation
     const transient = try envelope.add(.{ .x = 0.5, .y = 0.5 });
     try std.testing.expectEqual(@as(PointId, 5), transient);
     try envelope.delete(3, 1);
+    try std.testing.expectEqualDeep(EditablePoint{}, envelope.points[2]);
     envelope.cancel();
     try std.testing.expectEqual(@as(usize, 2), envelope.slice().len);
+    try std.testing.expectEqualDeep(EditablePoint{}, envelope.points[2]);
+    for (envelope.transaction_points) |point|
+        try std.testing.expectEqualDeep(EditablePoint{}, point);
     try std.testing.expectEqual(@as(PointId, 3), envelope.selected().?.id);
     try envelope.begin();
     try std.testing.expectEqual(@as(PointId, 5), try envelope.add(.{ .x = 0.5, .y = 0.5 }));

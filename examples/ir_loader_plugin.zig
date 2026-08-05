@@ -110,11 +110,16 @@ pub const ir_parameter_set = Spec.ParameterSet.init(.{});
 const Convolver = core.gui_ir_convolution.PartitionedConvolver(maximum_ir_frames, convolution_partition_size);
 const IREditor = core.gui_ir_editor.Editor(maximum_ir_frames);
 const AudioImporter = vst3.vstgui.DecodedAudioFileImporter(maximum_ir_frames);
-const default_ir_name = core.editor_state.Text.init("Untitled IR") catch unreachable;
-const empty_ir_format = core.editor_state.Text.init("No IR loaded") catch unreachable;
-const zero_ir_duration = core.editor_state.Text.init("0.000 s") catch unreachable;
-const zero_ir_peak = core.editor_state.Text.init("0.000") catch unreachable;
-const empty_ir_state = core.editor_state.Text.init("Empty") catch unreachable;
+const default_ir_name = core.editor_state.Text.init("Untitled IR") catch
+    @compileError("invalid default IR name declaration");
+const empty_ir_format = core.editor_state.Text.init("No IR loaded") catch
+    @compileError("invalid empty IR format declaration");
+const zero_ir_duration = core.editor_state.Text.init("0.000 s") catch
+    @compileError("invalid zero IR duration declaration");
+const zero_ir_peak = core.editor_state.Text.init("0.000") catch
+    @compileError("invalid zero IR peak declaration");
+const empty_ir_state = core.editor_state.Text.init("Empty") catch
+    @compileError("invalid empty IR state declaration");
 const IREditorState = core.editor_state.Store(1, &.{
     .{ .id = ir_name_state_id, .default = .{ .text = default_ir_name } },
     .{ .id = ir_zoom_state_id, .default = .{ .scalar = 1.0 } },
@@ -825,7 +830,9 @@ test "IR loader imports and clears one immutable processor generation" {
     };
     try std.testing.expectEqualStrings("Empty", cleared_text.slice());
 
-    try Controller.editorState(controller).set(ir_publish_state_id, .{ .text = core.editor_state.Text.init("Stale") catch unreachable });
+    try Controller.editorState(controller).set(ir_publish_state_id, .{
+        .text = try core.editor_state.Text.init("Stale"),
+    });
     try std.testing.expectEqual(types.kResultOk, state_stream.asStream().vtable.seek(
         state_stream.asStream(),
         0,

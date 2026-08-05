@@ -15,7 +15,7 @@ public:
     virtual void dispatch() {}
 };
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(ZIG_VSTGUI_WAYLAND_CLIPBOARD_TEST_PLATFORM)
 std::shared_ptr<AccessibilityClipboard> createLinuxAccessibilityClipboard();
 #endif
 

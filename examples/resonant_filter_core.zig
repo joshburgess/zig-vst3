@@ -21,7 +21,7 @@ pub const ResonantFilter = struct {
 
 test "resonant filter metadata is valid" {
     const Spec = plug.plugin.PluginSpec(ResonantFilter);
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
 
     try std.testing.expectEqualStrings("zig-vst3 Resonant Filter", Spec.name);
     try std.testing.expectEqual(@as(usize, 7), Spec.ParameterSet.count);
@@ -33,7 +33,7 @@ test "resonant filter metadata is valid" {
 
 test "resonant filter frequency and resonance use perceptual spacing" {
     const Spec = plug.plugin.PluginSpec(ResonantFilter);
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
     const cutoff = spec.parameter_set.plainFromNormalizedById(2, 0.5) orelse return error.MissingParameter;
     const resonance = spec.parameter_set.plainFromNormalizedById(3, 0.5) orelse return error.MissingParameter;
 

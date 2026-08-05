@@ -50,10 +50,14 @@ test "$(wc -l < "$test_cmake_log" | tr -d ' ')" = 3
 grep -q -- '-DZIG_VSTGUI_RUN_VISUAL_TESTS=OFF' "$test_cmake_log"
 grep -q -- '--target zig_vstgui_adapter --parallel' "$test_cmake_log"
 grep -q -- 'zig_vstgui_adapter_tests_run zig_vstgui_accessibility_tests_run zig_vstgui_visual_tests_run' "$test_cmake_log"
-expected_zig_commands=4
+expected_zig_commands=10
+grep -q -- 'zig_vstgui_accessibility_wayland_clipboard.c' "$test_zig_log"
+grep -q -- 'zig_vstgui_accessibility_wayland_fake.c' "$test_zig_log"
+grep -q -- 'zig_vstgui_accessibility_wayland_clipboard_tests.cpp' "$test_zig_log"
 if [ "$(uname -s)" = Linux ]; then
-  expected_zig_commands=6
+  expected_zig_commands=14
   grep -q -- 'zig_vstgui_accessibility_linux_clipboard.cpp' "$test_zig_log"
+  grep -q -- 'zig_vstgui_accessibility_linux_clipboard_tests.cpp' "$test_zig_log"
   clipboard_system_include=$(pkg-config --variable=includedir xcb)
   grep -q -- "-idirafter $clipboard_system_include" "$test_zig_log"
 fi
@@ -64,6 +68,17 @@ grep -q -- 'zig_vstgui_editor.cpp' "$test_zig_log"
 grep -q -- '-target x86_64-linux-gnu' "$test_zig_log"
 grep -q -- '-target aarch64-linux-gnu' "$test_zig_log"
 grep -q -- 'zig_vstgui_accessibility_atspi.cpp' "$test_zig_log"
+cross_output=$(awk '{ for (field_index = 1; field_index <= NF; field_index += 1) if ($field_index == "-o") { print $(field_index + 1); exit } }' "$test_zig_log")
+test -n "$cross_output"
+cross_root=$(dirname -- "$cross_output")
+case "$(basename -- "$cross_root")" in
+  zig-vst3-vstgui-cross-check.*) ;;
+  *)
+    printf 'unexpected VSTGUI cross-check directory: %s\n' "$cross_root" >&2
+    exit 1
+    ;;
+esac
+test ! -e "$cross_root"
 
 set +e
 PATH="$fake_bin:$PATH" "$root/scripts/build_vstgui.sh" invalid > /dev/null 2> "$temporary/invalid.stderr"

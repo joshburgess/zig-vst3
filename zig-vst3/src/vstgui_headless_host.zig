@@ -243,12 +243,12 @@ pub fn run(comptime Config: type, options: Options) !Report {
     thread.join();
     joined = true;
     const failure = worker.failure.load(.acquire);
-    if (failure != .none) return switch (failure) {
-        .parameter_queue => error.AutomationQueueFailed,
-        .parameter_point => error.AutomationPointFailed,
-        .process => error.AudioProcessingFailed,
-        .none => unreachable,
-    };
+    switch (failure) {
+        .none => {},
+        .parameter_queue => return error.AutomationQueueFailed,
+        .parameter_point => return error.AutomationPointFailed,
+        .process => return error.AudioProcessingFailed,
+    }
 
     return .{
         .editor_lifecycles = options.editor_iterations,

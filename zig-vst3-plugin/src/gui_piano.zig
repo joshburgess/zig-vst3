@@ -40,10 +40,11 @@ pub fn Keyboard(comptime capacity: usize) type {
         }
 
         pub fn valid(self: Self) bool {
-            return self.rangeValid() and self.contains(self.selected_note);
+            return self.activeStateValid() and self.contains(self.selected_note);
         }
 
         pub fn select(self: *Self, pitch: u8) !void {
+            if (!self.activeStateValid()) return error.InvalidState;
             if (!self.contains(pitch)) return error.NoteOutsideRange;
             self.selected_note = pitch;
         }
@@ -67,6 +68,7 @@ pub fn Keyboard(comptime capacity: usize) type {
         }
 
         pub fn press(self: *Self, pitch: u8, velocity: f64) !?NoteChange {
+            if (!self.activeStateValid()) return error.InvalidState;
             if (!self.contains(pitch)) return error.NoteOutsideRange;
             if (!std.math.isFinite(velocity) or velocity <= 0.0 or velocity > 1.0) {
                 return error.InvalidVelocity;
@@ -78,6 +80,7 @@ pub fn Keyboard(comptime capacity: usize) type {
         }
 
         pub fn release(self: *Self, pitch: u8) !?NoteChange {
+            if (!self.activeStateValid()) return error.InvalidState;
             if (!self.contains(pitch)) return error.NoteOutsideRange;
             if (!self.isPressed(pitch)) return null;
             self.setPressed(pitch, false);
@@ -87,13 +90,15 @@ pub fn Keyboard(comptime capacity: usize) type {
         pub fn toggleSelected(self: *Self, velocity: f64) !NoteChange {
             if (!self.valid()) return error.InvalidState;
             return if (self.isPressed(self.selected_note))
-                (try self.release(self.selected_note)).?
+                (try self.release(self.selected_note)) orelse
+                    error.InvalidState
             else
-                (try self.press(self.selected_note, velocity)).?;
+                (try self.press(self.selected_note, velocity)) orelse
+                    error.InvalidState;
         }
 
         pub fn releaseAll(self: *Self, output: []NoteChange) usize {
-            if (!self.rangeValid()) return 0;
+            if (!self.activeStateValid()) return 0;
             var count: usize = 0;
             var pitch: usize = self.first_note;
             const end = @as(usize, self.first_note) + @as(usize, self.note_count);
@@ -108,7 +113,7 @@ pub fn Keyboard(comptime capacity: usize) type {
         }
 
         pub fn isPressed(self: Self, pitch: u8) bool {
-            if (!self.contains(pitch)) return false;
+            if (!self.activeStateValid() or !self.contains(pitch)) return false;
             const word: usize = pitch / 64;
             const bit: u6 = @intCast(pitch % 64);
             return self.active[word] & (@as(u64, 1) << bit) != 0;
@@ -124,6 +129,20 @@ pub fn Keyboard(comptime capacity: usize) type {
         fn rangeValid(self: Self) bool {
             if (self.note_count == 0 or @as(usize, self.note_count) > capacity) return false;
             return @as(usize, self.first_note) + @as(usize, self.note_count) <= maximum_midi_notes;
+        }
+
+        fn activeStateValid(self: Self) bool {
+            if (!self.rangeValid()) return false;
+            const first: usize = self.first_note;
+            const end = first + @as(usize, self.note_count);
+            for (0..maximum_midi_notes) |pitch| {
+                if (pitch >= first and pitch < end) continue;
+                const word = pitch / 64;
+                const bit: u6 = @intCast(pitch % 64);
+                if (self.active[word] & (@as(u64, 1) << bit) != 0)
+                    return false;
+            }
+            return true;
         }
     };
 }
@@ -196,7 +215,7 @@ test "keyboard rejects malformed direct state" {
     piano.note_count = 24;
     piano.first_note = 120;
     try std.testing.expect(!piano.valid());
-    try std.testing.expectError(error.NoteOutsideRange, piano.press(127, 0.5));
+    try std.testing.expectError(error.InvalidState, piano.press(127, 0.5));
 
     piano.first_note = 48;
     piano.selected_note = 80;
@@ -205,6 +224,15 @@ test "keyboard rejects malformed direct state" {
     try std.testing.expectError(error.InvalidState, piano.toggleSelected(0.5));
 
     try piano.select(60);
+    try std.testing.expect(piano.valid());
+
+    piano.active[0] |= @as(u64, 1) << 47;
+    try std.testing.expect(!piano.valid());
+    try std.testing.expectError(error.InvalidState, piano.press(60, 0.5));
+    try std.testing.expectError(error.InvalidState, piano.release(60));
+    try std.testing.expectEqual(@as(usize, 0), piano.releaseAll(&releases));
+    try std.testing.expect(!piano.isPressed(60));
+    piano.active[0] = 0;
     try std.testing.expect(piano.valid());
 }
 

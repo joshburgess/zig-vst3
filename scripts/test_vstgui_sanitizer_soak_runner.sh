@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC2016
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -19,6 +20,75 @@ write_success() {
 write_success "$fake_build/zig_vstgui_adapter_tests"
 write_success "$fake_build/zig_vstgui_visual_tests"
 write_success "$fake_build/zig_vstgui_accessibility_macos_tests"
+
+fake_tools="$temporary/tools"
+mkdir -p "$fake_tools"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'set -eu' \
+  'build_dir=""' \
+  'previous=""' \
+  'for argument in "$@"; do' \
+  '  if [ "$previous" = -B ]; then build_dir="$argument"; break; fi' \
+  '  previous="$argument"' \
+  'done' \
+  'if [ -n "$build_dir" ]; then' \
+  '  printf "%s\\n" "$build_dir" > "$CMAKE_BUILD_DIR_RECORD"' \
+  '  mkdir -p "$build_dir"' \
+  '  for executable in zig_vstgui_adapter_tests zig_vstgui_visual_tests zig_vstgui_accessibility_macos_tests; do' \
+  '    printf "#!/bin/sh\\nexit 0\\n" > "$build_dir/$executable"' \
+  '    chmod +x "$build_dir/$executable"' \
+  '  done' \
+  'fi' \
+  'exit 0' > "$fake_tools/cmake"
+chmod +x "$fake_tools/cmake"
+
+direct_record="$temporary/direct-build-dir"
+PATH="$fake_tools:$PATH" \
+CMAKE_BUILD_DIR_RECORD="$direct_record" \
+  "$root/scripts/test_vstgui_sanitizers.sh" > "$temporary/direct.stdout"
+direct_build=$(sed -n '1p' "$direct_record")
+test -n "$direct_build"
+test ! -e "$direct_build"
+
+fake_project="$temporary/project"
+mkdir -p "$fake_project/scripts" "$fake_project/gui-adapters/vstgui"
+cp "$root/scripts/vstgui_sanitizer_soak.sh" "$fake_project/scripts/"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'set -eu' \
+  'build_dir="${VSTGUI_SANITIZER_BUILD_DIR:?}"' \
+  'printf "%s\\n" "$build_dir" > "$BUILD_DIR_RECORD"' \
+  'mkdir -p "$build_dir"' \
+  'if [ "${BUILD_INTERRUPT_PARENT:-0}" = 1 ]; then kill -TERM "$PPID"; exit 0; fi' \
+  'for executable in zig_vstgui_adapter_tests zig_vstgui_visual_tests zig_vstgui_accessibility_macos_tests; do' \
+  '  printf "#!/bin/sh\\nexit 0\\n" > "$build_dir/$executable"' \
+  '  chmod +x "$build_dir/$executable"' \
+  'done' > "$fake_project/scripts/test_vstgui_sanitizers.sh"
+chmod +x "$fake_project/scripts/test_vstgui_sanitizers.sh"
+soak_record="$temporary/soak-build-dir"
+soak_output="$temporary/owned-soak"
+BUILD_DIR_RECORD="$soak_record" \
+VSTGUI_SANITIZER_SOAK_REPETITIONS=1 \
+VSTGUI_SANITIZER_SOAK_OUTPUT_DIR="$soak_output" \
+  "$fake_project/scripts/vstgui_sanitizer_soak.sh" > "$temporary/owned-soak.stdout"
+soak_build=$(sed -n '1p' "$soak_record")
+test -n "$soak_build"
+test ! -e "$soak_build"
+
+interrupted_soak_record="$temporary/interrupted-soak-build-dir"
+set +e
+BUILD_DIR_RECORD="$interrupted_soak_record" \
+BUILD_INTERRUPT_PARENT=1 \
+VSTGUI_SANITIZER_SOAK_REPETITIONS=1 \
+VSTGUI_SANITIZER_SOAK_OUTPUT_DIR="$temporary/interrupted-owned-soak" \
+  "$fake_project/scripts/vstgui_sanitizer_soak.sh" > "$temporary/interrupted-owned-soak.stdout" 2> "$temporary/interrupted-owned-soak.stderr"
+interrupted_soak_status=$?
+set -e
+test "$interrupted_soak_status" = 143
+interrupted_soak_build=$(sed -n '1p' "$interrupted_soak_record")
+test -n "$interrupted_soak_build"
+test ! -e "$interrupted_soak_build"
 
 VSTGUI_SANITIZER_SOAK_REPETITIONS=2 \
 VSTGUI_SANITIZER_SOAK_OUTPUT_DIR="$success_output" \

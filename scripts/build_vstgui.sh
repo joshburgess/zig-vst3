@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC2086
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -13,6 +14,23 @@ case "$mode" in
     exit 2
     ;;
 esac
+
+temporary_test=""
+cleanup_test_artifacts() {
+  if [ -n "$temporary_test" ]; then
+    rm -rf -- "$temporary_test"
+  fi
+}
+trap cleanup_test_artifacts EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [ "$mode" = test ]; then
+  temporary_test=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-vstgui-cross-check.XXXXXX")
+  zig_global_cache="$temporary_test/global-cache"
+  zig_local_cache="$temporary_test/local-cache"
+fi
 
 cmake -S "$source_dir" -B "$build_dir" \
   -DCMAKE_BUILD_TYPE=Release \
@@ -30,8 +48,8 @@ cmake --build "$build_dir" --target zig_vstgui_adapter --parallel
 if [ "$mode" = test ]; then
   cmake --build "$build_dir" --target zig_vstgui_adapter_tests_run zig_vstgui_accessibility_tests_run zig_vstgui_visual_tests_run --parallel
 
-  env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
-      ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+  env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+      ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
       zig c++ -target x86_64-windows-gnu -std=c++17 -Wno-nullability-completeness \
       -DVSTGUI_ENABLE_XML_PARSER=0 \
       -DVSTGUI_ENABLE_DEPRECATED_METHODS=1 \
@@ -39,21 +57,61 @@ if [ "$mode" = test ]; then
       -I"$root/.vst3-sdk/vst3sdk/vstgui4" \
       -I"$root/.vst3-sdk/vst3sdk" \
       -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_windows.cpp" \
-      -o /tmp/zig_vstgui_accessibility_windows.o
+      -o "$temporary_test/zig_vstgui_accessibility_windows.o"
 
-  env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
-      ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+  env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+      ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
       zig c++ -target x86_64-linux-gnu -std=c++17 \
       -I"$root/gui-adapters/vstgui" \
       -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_atspi.cpp" \
-      -o /tmp/zig_vstgui_accessibility_atspi_linux.o
+      -o "$temporary_test/zig_vstgui_accessibility_atspi_linux.o"
 
-  env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
-      ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+  env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+      ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
       zig c++ -target aarch64-linux-gnu -std=c++17 \
       -I"$root/gui-adapters/vstgui" \
       -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_atspi.cpp" \
-      -o /tmp/zig_vstgui_accessibility_atspi_aarch64_linux.o
+      -o "$temporary_test/zig_vstgui_accessibility_atspi_aarch64_linux.o"
+
+  env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+      ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
+      zig cc -target x86_64-linux-gnu -std=c11 \
+      -I"$root/gui-adapters/vstgui" \
+      -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_wayland_clipboard.c" \
+      -o "$temporary_test/zig_vstgui_accessibility_wayland_clipboard_x86_64.o"
+
+  env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+      ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
+      zig cc -target aarch64-linux-gnu -std=c11 \
+      -I"$root/gui-adapters/vstgui" \
+      -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_wayland_clipboard.c" \
+      -o "$temporary_test/zig_vstgui_accessibility_wayland_clipboard_aarch64.o"
+
+  env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+      ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
+      zig cc -target x86_64-linux-gnu -std=c11 \
+      -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_wayland_fake.c" \
+      -o "$temporary_test/zig_vstgui_accessibility_wayland_fake_x86_64.o"
+
+  env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+      ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
+      zig cc -target aarch64-linux-gnu -std=c11 \
+      -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_wayland_fake.c" \
+      -o "$temporary_test/zig_vstgui_accessibility_wayland_fake_aarch64.o"
+
+  env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+      ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
+      zig c++ -target x86_64-linux-gnu -std=c++17 \
+      -I"$root/gui-adapters/vstgui" \
+      -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_wayland_clipboard_tests.cpp" \
+      -o "$temporary_test/zig_vstgui_accessibility_wayland_clipboard_tests_x86_64.o"
+
+  env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+      ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
+      zig c++ -target aarch64-linux-gnu -std=c++17 \
+      -I"$root/gui-adapters/vstgui" \
+      -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_wayland_clipboard_tests.cpp" \
+      -o "$temporary_test/zig_vstgui_accessibility_wayland_clipboard_tests_aarch64.o"
 
   if [ "$(uname -s)" = Linux ]; then
     clipboard_cflags=$(pkg-config --cflags glib-2.0 xcb)
@@ -62,8 +120,8 @@ if [ "$mode" = test ]; then
       printf 'xcb pkg-config metadata has no include directory\n' >&2
       exit 1
     fi
-    env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
-        ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+    env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+        ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
         zig c++ -target x86_64-linux-gnu -std=c++17 \
         -DVSTGUI_ENABLE_XML_PARSER=0 \
         -DVSTGUI_ENABLE_DEPRECATED_METHODS=1 \
@@ -74,10 +132,10 @@ if [ "$mode" = test ]; then
         -idirafter "$clipboard_system_include" \
         $clipboard_cflags \
         -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_linux_clipboard.cpp" \
-        -o /tmp/zig_vstgui_accessibility_linux_clipboard_x86_64.o
+        -o "$temporary_test/zig_vstgui_accessibility_linux_clipboard_x86_64.o"
 
-    env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
-        ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+    env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+        ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
         zig c++ -target aarch64-linux-gnu -std=c++17 \
         -DVSTGUI_ENABLE_XML_PARSER=0 \
         -DVSTGUI_ENABLE_DEPRECATED_METHODS=1 \
@@ -88,11 +146,29 @@ if [ "$mode" = test ]; then
         -idirafter "$clipboard_system_include" \
         $clipboard_cflags \
         -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_linux_clipboard.cpp" \
-        -o /tmp/zig_vstgui_accessibility_linux_clipboard_aarch64.o
+        -o "$temporary_test/zig_vstgui_accessibility_linux_clipboard_aarch64.o"
+
+    env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+        ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
+        zig c++ -target x86_64-linux-gnu -std=c++17 \
+        -I"$root/gui-adapters/vstgui" \
+        -idirafter "$clipboard_system_include" \
+        $clipboard_cflags \
+        -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_linux_clipboard_tests.cpp" \
+        -o "$temporary_test/zig_vstgui_accessibility_linux_clipboard_tests_x86_64.o"
+
+    env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+        ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
+        zig c++ -target aarch64-linux-gnu -std=c++17 \
+        -I"$root/gui-adapters/vstgui" \
+        -idirafter "$clipboard_system_include" \
+        $clipboard_cflags \
+        -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_linux_clipboard_tests.cpp" \
+        -o "$temporary_test/zig_vstgui_accessibility_linux_clipboard_tests_aarch64.o"
   fi
 
-  env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
-      ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+  env ZIG_GLOBAL_CACHE_DIR="$zig_global_cache" \
+      ZIG_LOCAL_CACHE_DIR="$zig_local_cache" \
       zig c++ -target x86_64-windows-gnu -std=c++17 -Wno-nullability-completeness \
       -DVSTGUI_ENABLE_XML_PARSER=0 \
       -DVSTGUI_ENABLE_DEPRECATED_METHODS=1 \
@@ -100,5 +176,5 @@ if [ "$mode" = test ]; then
       -I"$root/.vst3-sdk/vst3sdk/vstgui4" \
       -I"$root/.vst3-sdk/vst3sdk" \
       -c "$root/gui-adapters/vstgui/zig_vstgui_editor.cpp" \
-      -o /tmp/zig_vstgui_editor_windows.o
+      -o "$temporary_test/zig_vstgui_editor_windows.o"
 fi

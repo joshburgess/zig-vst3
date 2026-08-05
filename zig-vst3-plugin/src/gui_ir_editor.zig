@@ -174,6 +174,14 @@ pub fn Editor(comptime frame_capacity: usize) type {
             {
                 return error.InvalidSelection;
             }
+            const edited_sample_count = self.edited_frames * self.channels;
+            if (!finiteSamples(self.edited[0..edited_sample_count]))
+                return error.InvalidState;
+            if (command == .reset) {
+                const original_sample_count = self.original_frames * self.channels;
+                if (!finiteSamples(self.original[0..original_sample_count]))
+                    return error.InvalidState;
+            }
             self.saveRollback();
             errdefer self.rollbackLastEdit();
             if (command == .reset) {
@@ -189,7 +197,7 @@ pub fn Editor(comptime frame_capacity: usize) type {
                 .reverse => self.reverse(range.start, range.end),
                 .fade_in => self.fade(range.start, range.end, true),
                 .fade_out => self.fade(range.start, range.end, false),
-                .reset => unreachable,
+                .reset => return error.InvalidIrEditorCommand,
             };
             if (!changed) {
                 self.has_rollback = false;
@@ -212,6 +220,10 @@ pub fn Editor(comptime frame_capacity: usize) type {
                 return;
             }
             const sample_count = self.rollback_frames * self.channels;
+            if (!finiteSamples(self.rollback[0..sample_count])) {
+                self.has_rollback = false;
+                return;
+            }
             @memcpy(self.edited[0..sample_count], self.rollback[0..sample_count]);
             self.edited_frames = self.rollback_frames;
             self.edited_peak = self.rollback_peak;
@@ -229,6 +241,7 @@ pub fn Editor(comptime frame_capacity: usize) type {
         fn resetEdited(self: *Self) bool {
             if (self.original_frames == 0 or !self.dirty) return false;
             const sample_count = self.original_frames * self.channels;
+            if (!finiteSamples(self.original[0..sample_count])) return false;
             @memcpy(self.edited[0..sample_count], self.original[0..sample_count]);
             self.edited_frames = self.original_frames;
             self.edited_peak = self.original_peak;
@@ -280,13 +293,17 @@ pub fn Editor(comptime frame_capacity: usize) type {
             const sample_count = self.edited_frames * self.channels;
             if (sample_offset >= sample_count) return 0;
             const count = @min(output.len, sample_count - sample_offset);
-            @memcpy(output[0..count], self.edited[sample_offset .. sample_offset + count]);
+            const source = self.edited[sample_offset .. sample_offset + count];
+            if (!finiteSamples(source)) return 0;
+            @memcpy(output[0..count], source);
             return count;
         }
 
         pub fn copyPreview(self: *const Self, output: []@import("gui_audio_file_importer.zig").PreviewPoint) usize {
             if (!self.valid()) return 0;
             if (self.edited_frames == 0 or output.len == 0) return 0;
+            const sample_count = self.edited_frames * self.channels;
+            if (!finiteSamples(self.edited[0..sample_count])) return 0;
             const count = @min(output.len, preview_capacity, self.edited_frames);
             for (0..count) |index| {
                 const first = index * self.edited_frames / count;
@@ -325,6 +342,11 @@ pub fn Editor(comptime frame_capacity: usize) type {
             if (selected_peak == 0.0) return error.SilentSelection;
             if (@abs(selected_peak - 1.0) <= 1e-6) return false;
             const scale = 1.0 / selected_peak;
+            if (!std.math.isFinite(scale)) return error.NonFiniteResult;
+            for (samples) |sample| {
+                if (!std.math.isFinite(sample * scale))
+                    return error.NonFiniteResult;
+            }
             for (samples) |*sample| sample.* *= scale;
             return true;
         }
@@ -435,6 +457,13 @@ fn validPeak(value: f32) bool {
     return std.math.isFinite(value) and value >= 0.0;
 }
 
+fn finiteSamples(samples: []const f32) bool {
+    for (samples) |sample| {
+        if (!std.math.isFinite(sample)) return false;
+    }
+    return true;
+}
+
 const TestImporter = struct {
     samples: []const f32,
 
@@ -532,6 +561,21 @@ test "IR editor applies bounded fades and rejects silent normalization" {
     var silent = Editor(2){};
     try silent.loadFrom(&silent_importer);
     try std.testing.expectError(error.SilentSelection, silent.apply(.normalize, 0.0, 1.0));
+
+    const tiny_samples = [_]f32{ std.math.floatTrueMin(f32), 0.0 };
+    const tiny_importer = TestImporter{ .samples = &tiny_samples };
+    var tiny = Editor(2){};
+    try tiny.loadFrom(&tiny_importer);
+    try std.testing.expectError(
+        error.NonFiniteResult,
+        tiny.apply(.normalize, 0.0, 1.0),
+    );
+    var retained_tiny: [2]f32 = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        tiny.copyDecoded(0, &retained_tiny),
+    );
+    try std.testing.expectEqualSlices(f32, &tiny_samples, &retained_tiny);
 }
 
 test "IR editor rolls back a rejected publication" {
@@ -609,6 +653,37 @@ test "IR editor rejects malformed public bounds and clear recovers" {
     try std.testing.expect(!editor.reset());
     try std.testing.expect(editor.clear());
     try std.testing.expect(editor.valid());
+}
+
+test "IR editor contains malformed retained sample values" {
+    const samples = [_]f32{ 0.25, 0.5, -0.25, -0.5 };
+    const importer = TestImporter{ .samples = &samples };
+    var editor = Editor(4){};
+    try editor.loadFrom(&importer);
+
+    editor.edited[1] = std.math.nan(f32);
+    var decoded: [4]f32 = @splat(9.0);
+    var preview: [4]@import("gui_audio_file_importer.zig").PreviewPoint =
+        @splat(.{ .x = 9.0, .y = 9.0 });
+    try std.testing.expectEqual(@as(usize, 0), editor.copyDecoded(0, &decoded));
+    try std.testing.expectEqual(@as(f32, 9.0), decoded[0]);
+    try std.testing.expectEqual(@as(usize, 0), editor.copyPreview(&preview));
+    try std.testing.expectEqual(@as(f64, 9.0), preview[0].y);
+    try std.testing.expectError(
+        error.InvalidState,
+        editor.apply(.reverse, 0.0, 1.0),
+    );
+
+    editor.edited[1] = 0.5;
+    try std.testing.expect(try editor.apply(.reverse, 0.0, 1.0));
+    editor.rollback[0] = std.math.inf(f32);
+    editor.rollbackLastEdit();
+    try std.testing.expect(!editor.has_rollback);
+    try std.testing.expectEqual(@as(usize, 4), editor.copyDecoded(0, &decoded));
+
+    editor.original[0] = std.math.inf(f32);
+    try std.testing.expect(!editor.reset());
+    try std.testing.expectEqual(@as(usize, 4), editor.copyDecoded(0, &decoded));
 }
 
 test "IR editor snapshot rejects malformed retained state" {

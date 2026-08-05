@@ -33,7 +33,7 @@ pub const ImpulseResponseLoader = struct {
 
 test "IR loader core metadata is valid" {
     const Spec = plug.plugin.PluginSpec(ImpulseResponseLoader);
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
     try std.testing.expectEqualStrings("zig-vst3 IR Loader", Spec.name);
     try std.testing.expectEqual(@as(usize, 3), spec.parameter_set.parameterCount());
 }

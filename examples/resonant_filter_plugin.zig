@@ -20,7 +20,8 @@ const response_point_count: usize = 97;
 const preset_search_state_id: u32 = 1;
 const preset_selection_state_id: u32 = 2;
 const selected_handle_state_id: u32 = 3;
-const empty_preset_search = core.editor_state.Text.init("") catch unreachable;
+const empty_preset_search = core.editor_state.Text.init("") catch
+    @compileError("invalid empty preset search declaration");
 
 pub const FilterMode = enum { low_pass, high_pass, band_pass, notch };
 pub const FilterModeParam = core.parameters.EnumParam(FilterMode);

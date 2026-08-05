@@ -142,7 +142,7 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
                 voice.position += if (playback.reverse) -rate else rate;
                 self.advancePosition(voice, bounds, loop, playback.loop_enabled, playback.reverse);
             }
-            return .{ @floatCast(std.math.clamp(output[0], -16.0, 16.0)), @floatCast(std.math.clamp(output[1], -16.0, 16.0)) };
+            return .{ boundedOutput(output[0]), boundedOutput(output[1]) };
         }
 
         pub fn playhead(self: *const Self) ?f64 {
@@ -151,11 +151,14 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
             if (metadata.frames <= 1) return null;
             var newest: ?Voice = null;
             for (self.voices) |voice| {
-                if (voice.stage == .idle) continue;
-                if (newest == null or voice.age > newest.?.age) newest = voice;
+                if (voice.stage == .idle or !voiceValid(voice)) continue;
+                if (newest) |current| {
+                    if (voice.age > current.age) newest = voice;
+                } else {
+                    newest = voice;
+                }
             }
             const voice = newest orelse return null;
-            if (!voiceValid(voice)) return null;
             return std.math.clamp(voice.position / @as(f64, @floatFromInt(metadata.frames - 1)), 0.0, 1.0);
         }
 
@@ -184,7 +187,12 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
                 var oldest: ?usize = null;
                 for (self.voices, 0..) |voice, index| {
                     if (voice.stage == .idle or assigned[index]) continue;
-                    if (oldest == null or voice.age < self.voices[oldest.?].age) oldest = index;
+                    if (oldest) |oldest_index| {
+                        if (voice.age < self.voices[oldest_index].age)
+                            oldest = index;
+                    } else {
+                        oldest = index;
+                    }
                 }
                 const index = oldest orelse break;
                 self.voices[index].age = next;
@@ -242,7 +250,8 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
             return voice.note >= 0 and voice.note <= 127 and
                 voice.age != 0 and
                 std.math.isFinite(voice.velocity) and voice.velocity >= 0.0 and voice.velocity <= 1.0 and
-                std.math.isFinite(voice.position) and std.math.isFinite(voice.level);
+                std.math.isFinite(voice.position) and
+                std.math.isFinite(voice.level) and voice.level >= 0.0 and voice.level <= 1.0;
         }
     };
 }
@@ -271,6 +280,11 @@ fn envelopeStep(seconds: f64, sample_rate: f64) f64 {
 
 fn finiteOr(value: f64, fallback: f64) f64 {
     return if (std.math.isFinite(value)) value else fallback;
+}
+
+fn boundedOutput(value: f64) f32 {
+    if (!std.math.isFinite(value)) return 0.0;
+    return @floatCast(std.math.clamp(value, -16.0, 16.0));
 }
 
 test "sample player adopts complete media and renders interpolated notes" {
@@ -544,6 +558,18 @@ test "sample player rejects malformed retained realtime state" {
     player.noteOn(60, 1.0, .{});
     player.output_sample_rate = 0.0;
     try std.testing.expectEqual(@as([2]f32, .{ 0.0, 0.0 }), player.processFrame(.{}));
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
+
+    player.prepare(48_000.0);
+    player.noteOn(60, 1.0, .{
+        .loop_enabled = true,
+        .envelope = .{ .attack_seconds = 0.0, .sustain = 1.0 },
+    });
+    player.voices[0].level = std.math.floatMax(f64);
+    try std.testing.expectEqual(
+        @as([2]f32, .{ 0.0, 0.0 }),
+        player.processFrame(.{ .loop_enabled = true }),
+    );
     try std.testing.expectEqual(@as(?f64, null), player.playhead());
 }
 

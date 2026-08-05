@@ -16,7 +16,7 @@ pub const Status = enum {
 };
 
 pub const Path = struct {
-    bytes: [maximum_path_bytes]u8 = undefined,
+    bytes: [maximum_path_bytes]u8 = @splat(0),
     len: u16 = 0,
 
     pub fn init(value: []const u8) !Path {
@@ -51,7 +51,7 @@ pub fn DropZone(comptime file_capacity: usize, comptime extension_capacity: usiz
         extensions: [extension_capacity][maximum_extension_bytes]u8 = @splat(@splat(0)),
         extension_lengths: [extension_capacity]u8 = @splat(0),
         extension_count: u8 = 0,
-        paths: [file_capacity]Path = undefined,
+        paths: [file_capacity]Path = @splat(.{}),
         path_count: u8 = 0,
         status: Status = .idle,
 
@@ -77,17 +77,19 @@ pub fn DropZone(comptime file_capacity: usize, comptime extension_capacity: usiz
         }
 
         pub fn inspect(self: *Self, values: []const []const u8) Status {
-            self.path_count = 0;
+            self.clearPaths();
             if (values.len == 0 or values.len > file_capacity) {
                 self.status = .rejected_count;
                 return self.status;
             }
             for (values, 0..) |value, index| {
                 self.paths[index] = Path.init(value) catch {
+                    self.clearPaths();
                     self.status = .rejected_path;
                     return self.status;
                 };
                 if (!self.accepts(self.paths[index].slice())) {
+                    self.clearPaths();
                     self.status = .rejected_type;
                     return self.status;
                 }
@@ -107,8 +109,13 @@ pub fn DropZone(comptime file_capacity: usize, comptime extension_capacity: usiz
         }
 
         pub fn reset(self: *Self) void {
-            self.path_count = 0;
+            self.clearPaths();
             self.status = .idle;
+        }
+
+        fn clearPaths(self: *Self) void {
+            self.paths = @splat(.{});
+            self.path_count = 0;
         }
 
         fn accepts(self: *const Self, path: []const u8) bool {
@@ -156,8 +163,13 @@ test "drop zone filters bounded paths without retaining caller storage" {
     try std.testing.expectEqual(Status.acceptable, zone.inspect(&.{&caller}));
     caller[5] = 'X';
     try std.testing.expectEqualStrings("/tmp/Kick.WAV", zone.paths[0].slice());
+    for (zone.paths[0].bytes[zone.paths[0].len..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    try std.testing.expectEqualDeep(Path{}, zone.paths[1]);
     zone.complete(true);
     try std.testing.expectEqual(Status.accepted, zone.status);
+    zone.reset();
+    try std.testing.expectEqualDeep(@as([2]Path, @splat(.{})), zone.paths);
 }
 
 test "drop zone distinguishes count path type and handler failures" {
@@ -166,8 +178,10 @@ test "drop zone distinguishes count path type and handler failures" {
     try std.testing.expectEqual(Status.rejected_count, zone.inspect(&.{}));
     try std.testing.expectEqual(Status.rejected_count, zone.inspect(&.{ "a.wav", "b.wav" }));
     try std.testing.expectEqual(Status.rejected_type, zone.inspect(&.{"a.mid"}));
+    try std.testing.expectEqualDeep(Path{}, zone.paths[0]);
     const oversized = [_]u8{'a'} ** (maximum_path_bytes + 1);
     try std.testing.expectEqual(Status.rejected_path, zone.inspect(&.{&oversized}));
+    try std.testing.expectEqualDeep(Path{}, zone.paths[0]);
     try std.testing.expectEqual(Status.acceptable, zone.inspect(&.{"a.wav"}));
     zone.complete(false);
     try std.testing.expectEqual(Status.handler_failed, zone.status);

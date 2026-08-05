@@ -72,24 +72,24 @@ pub const Callbacks = extern struct {
     begin_edit: ?*const fn (?*anyopaque, vsttypes.ParamID) callconv(.c) void = null,
     perform_edit: ?*const fn (?*anyopaque, vsttypes.ParamID, f64) callconv(.c) types.int32 = null,
     end_edit: ?*const fn (?*anyopaque, vsttypes.ParamID) callconv(.c) void = null,
-    format_value: ?*const fn (?*anyopaque, vsttypes.ParamID, f64, [*]u8, types.uint32) callconv(.c) types.int32 = null,
-    parse_value: ?*const fn (?*anyopaque, vsttypes.ParamID, [*:0]const u8, *f64) callconv(.c) types.int32 = null,
+    format_value: ?*const fn (?*anyopaque, vsttypes.ParamID, f64, [*c]u8, types.uint32) callconv(.c) types.int32 = null,
+    parse_value: ?*const fn (?*anyopaque, vsttypes.ParamID, [*c]const u8, [*c]f64) callconv(.c) types.int32 = null,
     show_context_menu: ?*const fn (?*anyopaque, vsttypes.ParamID, types.int32, types.int32) callconv(.c) types.int32 = null,
     store_editor_index: ?*const fn (?*anyopaque, types.uint32, types.uint32) callconv(.c) types.int32 = null,
     store_editor_envelope: ?*const fn (?*anyopaque, types.uint32, ?[*]const EnvelopePoint, types.uint32) callconv(.c) types.int32 = null,
-    store_editor_text: ?*const fn (?*anyopaque, types.uint32, [*:0]const u8) callconv(.c) types.int32 = null,
+    store_editor_text: ?*const fn (?*anyopaque, types.uint32, [*c]const u8) callconv(.c) types.int32 = null,
     load_preset: ?*const fn (?*anyopaque, types.uint32) callconv(.c) types.int32 = null,
     store_editor_bool: ?*const fn (?*anyopaque, types.uint32, types.int32) callconv(.c) types.int32 = null,
     invoke_menu_action: ?*const fn (?*anyopaque, types.uint32, types.uint32, types.int32) callconv(.c) types.int32 = null,
     invoke_action: ?*const fn (?*anyopaque, types.uint32, types.uint32) callconv(.c) types.int32 = null,
     send_note: ?*const fn (?*anyopaque, types.int32, types.int32, f64, types.int32) callconv(.c) types.int32 = null,
-    drop_files: ?*const fn (?*anyopaque, types.uint32, [*]const [*:0]const u8, types.uint32) callconv(.c) types.int32 = null,
-    import_files: ?*const fn (?*anyopaque, types.uint32, FileImportEntryPoint, [*]const [*:0]const u8, types.uint32) callconv(.c) types.int32 = null,
-    load_file_import: ?*const fn (?*anyopaque, types.uint32, *FileImportSnapshot) callconv(.c) types.int32 = null,
-    command_file_import: ?*const fn (?*anyopaque, types.uint32, FileImportCommand) callconv(.c) types.int32 = null,
-    load_editor_text: ?*const fn (?*anyopaque, types.uint32, [*]u8, types.uint32) callconv(.c) types.int32 = null,
-    load_progress: ?*const fn (?*anyopaque, types.uint32, *ProgressSnapshot) callconv(.c) types.int32 = null,
-    store_editor_scalars: ?*const fn (?*anyopaque, [*]const types.uint32, [*]const f64, types.uint32) callconv(.c) types.int32 = null,
+    drop_files: ?*const fn (?*anyopaque, types.uint32, [*c]const ?[*:0]const u8, types.uint32) callconv(.c) types.int32 = null,
+    import_files: ?*const fn (?*anyopaque, types.uint32, types.int32, [*c]const ?[*:0]const u8, types.uint32) callconv(.c) types.int32 = null,
+    load_file_import: ?*const fn (?*anyopaque, types.uint32, [*c]FileImportSnapshot) callconv(.c) types.int32 = null,
+    command_file_import: ?*const fn (?*anyopaque, types.uint32, types.int32) callconv(.c) types.int32 = null,
+    load_editor_text: ?*const fn (?*anyopaque, types.uint32, [*c]u8, types.uint32) callconv(.c) types.int32 = null,
+    load_progress: ?*const fn (?*anyopaque, types.uint32, [*c]ProgressSnapshot) callconv(.c) types.int32 = null,
+    store_editor_scalars: ?*const fn (?*anyopaque, [*c]const types.uint32, [*c]const f64, types.uint32) callconv(.c) types.int32 = null,
 };
 
 pub const ParameterInfo = extern struct {
@@ -458,15 +458,44 @@ pub const RangeSelectionDescription = extern struct {
 
 const GraphCallbacks = extern struct {
     userdata: ?*anyopaque,
-    load: *const fn (?*anyopaque, types.uint32, [*]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
+    load: *const fn (?*anyopaque, types.uint32, [*c]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
 };
 
 pub const ControllerGraphCallbacks = struct {
     userdata: ?*anyopaque,
-    load: *const fn (?*anyopaque, types.uint32, [*]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
+    load: *const fn (?*anyopaque, types.uint32, [*c]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
 };
 
 pub const controller_graph_source_flag: types.uint32 = 1 << 31;
+
+pub fn cSlice(
+    comptime T: type,
+    pointer: [*c]T,
+    length: usize,
+) ?[]T {
+    if (pointer == null) return null;
+    return pointer[0..length];
+}
+
+pub fn cConstSlice(
+    comptime T: type,
+    pointer: [*c]const T,
+    length: usize,
+) ?[]const T {
+    if (pointer == null) return null;
+    return pointer[0..length];
+}
+
+pub fn cPointer(comptime T: type, pointer: [*c]T) ?*T {
+    if (pointer == null) return null;
+    return @ptrFromInt(@intFromPtr(pointer));
+}
+
+pub fn cStringBytes(pointer: [*c]const u8) ?[]const u8 {
+    if (pointer == null) return null;
+    const terminated: [*:0]const u8 = @ptrCast(pointer);
+    return std.mem.span(terminated);
+}
 
 pub const AssetFormat = enum(c_int) {
     png,
@@ -1258,21 +1287,28 @@ fn loadMeter(userdata: ?*anyopaque, source_id: types.uint32) callconv(.c) f64 {
 fn loadGraph(
     userdata: ?*anyopaque,
     source_id: types.uint32,
-    output: [*]gui_graph.Point,
+    output: [*c]gui_graph.Point,
     capacity: types.uint32,
 ) callconv(.c) types.uint32 {
     const state: *TelemetryState = @ptrCast(@alignCast(userdata orelse return 0));
+    if (capacity == 0) return 0;
+    const output_slice = cSlice(
+        gui_graph.Point,
+        output,
+        capacity,
+    ) orelse return 0;
     if (source_id & controller_graph_source_flag != 0) {
-        return state.controller_graph.load(
+        const count = state.controller_graph.load(
             state.controller_graph.userdata,
             source_id & ~controller_graph_source_flag,
-            output,
+            output_slice.ptr,
             capacity,
         );
+        return @min(count, capacity);
     }
     state.acquire();
     const source = state.source orelse return 0;
-    return @intCast(source.loadGraph(source_id, output[0..capacity]));
+    return @intCast(source.loadGraph(source_id, output_slice));
 }
 
 fn requestEditorResize(userdata: ?*anyopaque, width: types.uint32, height: types.uint32) callconv(.c) types.int32 {
@@ -1384,11 +1420,84 @@ test "view rectangle arithmetic rejects invalid and overflowing coordinates" {
     );
 }
 
+test "native callback pointer helpers reject null" {
+    try std.testing.expect(cSlice(u8, null, 1) == null);
+    try std.testing.expect(cConstSlice(u8, null, 1) == null);
+    try std.testing.expect(cPointer(u8, null) == null);
+    try std.testing.expect(cStringBytes(null) == null);
+
+    var bytes = [_]u8{ 1, 2 };
+    try std.testing.expectEqualSlices(
+        u8,
+        &bytes,
+        cSlice(u8, &bytes, bytes.len).?,
+    );
+    try std.testing.expect(cPointer(u8, &bytes).? == &bytes[0]);
+    try std.testing.expectEqualSlices(
+        u8,
+        &bytes,
+        cConstSlice(u8, &bytes, bytes.len).?,
+    );
+    try std.testing.expectEqualStrings(
+        "value",
+        cStringBytes("value").?,
+    );
+}
+
 test "native focus state rejects malformed booleans" {
     try std.testing.expectEqual(@as(?types.int32, 0), nativeFocusState(0));
     try std.testing.expectEqual(@as(?types.int32, 1), nativeFocusState(1));
     try std.testing.expectEqual(@as(?types.int32, null), nativeFocusState(2));
     try std.testing.expectEqual(@as(?types.int32, null), nativeFocusState(std.math.maxInt(types.TBool)));
+}
+
+test "controller graph callback count is bounded by output capacity" {
+    const Callback = struct {
+        fn load(
+            _: ?*anyopaque,
+            _: types.uint32,
+            _: [*c]gui_graph.Point,
+            _: types.uint32,
+        ) callconv(.c) types.uint32 {
+            return std.math.maxInt(types.uint32);
+        }
+    };
+    var state = TelemetryState{
+        .source = null,
+        .provider = null,
+        .controller_graph = .{
+            .userdata = null,
+            .load = Callback.load,
+        },
+    };
+    var output: [2]gui_graph.Point = undefined;
+    try std.testing.expectEqual(
+        @as(types.uint32, output.len),
+        loadGraph(
+            &state,
+            controller_graph_source_flag,
+            &output,
+            output.len,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(types.uint32, 0),
+        loadGraph(
+            &state,
+            controller_graph_source_flag,
+            null,
+            output.len,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(types.uint32, 0),
+        loadGraph(
+            &state,
+            controller_graph_source_flag,
+            null,
+            0,
+        ),
+    );
 }
 
 test "telemetry source can connect after the editor opens" {
@@ -1414,7 +1523,9 @@ test "telemetry source can connect after the editor opens" {
             return @ptrCast(@alignCast(ptr));
         }
 
-        fn queryInterface(_: *anyopaque, _: *const @import("tuid.zig").TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryInterface(_: *anyopaque, _: [*c]const @import("tuid.zig").TUID, out_raw: [*c]?*anyopaque) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *?*anyopaque = @ptrCast(out_raw);
             out.* = null;
             return types.kNoInterface;
         }
@@ -1443,11 +1554,13 @@ test "telemetry source can connect after the editor opens" {
             owner(ptr).closed_count += 1;
         }
 
-        fn loadGraph(_: *anyopaque, _: types.uint32, _: [*]gui_graph.Point, _: types.uint32) callconv(.c) types.uint32 {
+        fn loadGraph(_: *anyopaque, _: types.uint32, output: [*c]gui_graph.Point, _: types.uint32) callconv(.c) types.uint32 {
+            if (output == null) return 0;
             return 0;
         }
 
-        fn loadText(_: *anyopaque, _: types.uint32, _: [*]u8, _: types.uint32) callconv(.c) types.uint32 {
+        fn loadText(_: *anyopaque, _: types.uint32, output: [*c]u8, _: types.uint32) callconv(.c) types.uint32 {
+            if (output == null) return 0;
             return 0;
         }
 

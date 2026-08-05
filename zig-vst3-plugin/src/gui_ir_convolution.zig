@@ -92,6 +92,12 @@ pub fn PreparationQueue(
         consumer_cursor: usize = 0,
         latest_generation: u64 = 0,
 
+        /// Requires producer and consumer operations to be stopped.
+        pub fn valid(self: *const Self) bool {
+            self.validateQuiescent() catch return false;
+            return true;
+        }
+
         pub fn submit(
             self: *Self,
             metadata: Metadata,
@@ -141,6 +147,7 @@ pub fn PreparationQueue(
         ) !?u64 {
             try self.validateConsumerCursor();
             const slot = &self.slots[self.consumer_cursor];
+            const metadata = try readyMetadata(slot) orelse return null;
             if (slot.state.cmpxchgStrong(
                 @intFromEnum(State.ready),
                 @intFromEnum(State.reading),
@@ -149,7 +156,6 @@ pub fn PreparationQueue(
             ) != null)
                 return null;
 
-            const metadata = slot.metadata;
             const sample_count =
                 metadata.frames * metadata.channels;
             var began = false;
@@ -176,6 +182,7 @@ pub fn PreparationQueue(
         pub fn discardNext(self: *Self) !?u64 {
             try self.validateConsumerCursor();
             const slot = &self.slots[self.consumer_cursor];
+            const metadata = try readyMetadata(slot) orelse return null;
             if (slot.state.cmpxchgStrong(
                 @intFromEnum(State.ready),
                 @intFromEnum(State.free),
@@ -183,10 +190,9 @@ pub fn PreparationQueue(
                 .acquire,
             ) != null)
                 return null;
-            const generation = slot.metadata.generation;
             self.consumer_cursor =
                 (self.consumer_cursor + 1) % queue_capacity;
-            return generation;
+            return metadata.generation;
         }
 
         pub fn pendingCount(self: *const Self) !usize {
@@ -196,8 +202,10 @@ pub fn PreparationQueue(
                 const state = slot.state.load(.acquire);
                 if (state == @intFromEnum(State.ready) or
                     state == @intFromEnum(State.reading))
-                    result += 1
-                else if (state != @intFromEnum(State.free) and
+                {
+                    try slot.metadata.validate(maximum_frames);
+                    result += 1;
+                } else if (state != @intFromEnum(State.free) and
                     state != @intFromEnum(State.writing))
                     return error.InvalidQueueState;
             }
@@ -212,6 +220,75 @@ pub fn PreparationQueue(
         fn validateConsumerCursor(self: *const Self) !void {
             if (self.consumer_cursor >= queue_capacity)
                 return error.InvalidQueueState;
+        }
+
+        fn validateQuiescent(self: *const Self) !void {
+            try self.validateProducerCursor();
+            try self.validateConsumerCursor();
+
+            var ready_count: usize = 0;
+            for (&self.slots) |*slot| {
+                const state = slot.state.load(.acquire);
+                if (state == @intFromEnum(State.free)) continue;
+                if (state != @intFromEnum(State.ready))
+                    return error.InvalidQueueState;
+                ready_count += 1;
+            }
+
+            if (ready_count == 0) {
+                if (self.producer_cursor != self.consumer_cursor)
+                    return error.InvalidQueueState;
+                return;
+            }
+            const expected_ready = if (self.producer_cursor == self.consumer_cursor) queue_capacity else (self.producer_cursor + queue_capacity -
+                self.consumer_cursor) % queue_capacity;
+            if (ready_count != expected_ready)
+                return error.InvalidQueueState;
+
+            var previous_generation: ?u64 = null;
+            for (0..ready_count) |offset| {
+                const index =
+                    (self.consumer_cursor + offset) % queue_capacity;
+                const slot = &self.slots[index];
+                if (slot.state.load(.acquire) !=
+                    @intFromEnum(State.ready))
+                {
+                    return error.InvalidQueueState;
+                }
+                try slot.metadata.validate(maximum_frames);
+                if (previous_generation) |previous| {
+                    if (!serial_generation.after(
+                        slot.metadata.generation,
+                        previous,
+                    )) return error.InvalidGeneration;
+                }
+                const sample_count =
+                    slot.metadata.frames * slot.metadata.channels;
+                for (slot.samples[0..sample_count]) |sample_value| {
+                    if (!std.math.isFinite(sample_value))
+                        return error.NonFiniteSample;
+                }
+                previous_generation = slot.metadata.generation;
+            }
+            if (previous_generation) |latest| {
+                if (latest != self.latest_generation)
+                    return error.InvalidGeneration;
+            } else {
+                return error.InvalidQueueState;
+            }
+        }
+
+        fn readyMetadata(slot: *const Slot) !?Metadata {
+            const state = slot.state.load(.acquire);
+            if (state == @intFromEnum(State.free) or
+                state == @intFromEnum(State.writing))
+            {
+                return null;
+            }
+            if (state != @intFromEnum(State.ready))
+                return error.InvalidQueueState;
+            try slot.metadata.validate(maximum_frames);
+            return slot.metadata;
         }
     };
 }
@@ -335,6 +412,12 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             self.direct_index = 0;
         }
 
+        /// Requires producer, preparation, and audio processing to be stopped.
+        pub fn valid(self: *const Self) bool {
+            self.validateQuiescent() catch return false;
+            return true;
+        }
+
         fn clearSpectra(
             spectra: *[maximum_channels][partition_count][fft_size]Complex,
         ) void {
@@ -375,6 +458,7 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             else
                 self.activeSlotIndex() orelse return false;
             const source = &self.slots[source_index];
+            try validatePreparedSlot(source);
             if (source.prepared_sample_rate == sample_rate) return false;
 
             const destination_index = self.claimFreeSlot() orelse return error.Busy;
@@ -474,6 +558,10 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             const next_index = slotIndex(next) orelse return false;
             const next_slot = &self.slots[next_index];
             if (next_slot.state.load(.acquire) != @intFromEnum(SlotState.ready)) return false;
+            validatePreparedSlot(next_slot) catch {
+                next_slot.state.store(@intFromEnum(SlotState.free), .release);
+                return false;
+            };
             if (self.activeSlotIndex()) |active_index| {
                 if (active_index != next_index) {
                     self.slots[active_index].state.store(@intFromEnum(SlotState.free), .release);
@@ -491,12 +579,6 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         }
 
         pub fn processFrame(self: *Self, left: f32, right: f32) [2]f32 {
-            if (self.input_fill >= partition_size or self.output_index >= partition_size or
-                self.history_head >= partition_count or
-                self.direct_index >= partition_size)
-            {
-                self.resetProcessing();
-            }
             const finite_left = if (std.math.isFinite(left)) left else 0.0;
             const finite_right = if (std.math.isFinite(right)) right else 0.0;
             const inputs = switch (self.options.routing) {
@@ -507,6 +589,7 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
                     break :blk .{ mono, mono };
                 },
             };
+            if (!self.processingPreflight()) return .{ 0.0, 0.0 };
             var output = [2]f32{
                 self.output_block[0][self.output_index],
                 self.output_block[1][self.output_index],
@@ -515,9 +598,11 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
                 const direct = self.processDirect(inputs);
                 for (0..maximum_channels) |channel| {
                     output[channel] += direct[channel];
-                    if (!std.math.isFinite(output[channel]))
-                        output[channel] = 0.0;
                 }
+            }
+            for (0..maximum_channels) |channel| {
+                if (!std.math.isFinite(output[channel]))
+                    output[channel] = 0.0;
             }
             self.input_block[0][self.input_fill] = inputs[0];
             self.input_block[1][self.input_fill] = inputs[1];
@@ -711,18 +796,232 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         fn activeSlot(self: *const Self) ?*const Slot {
             const index = self.activeSlotIndex() orelse return null;
             const slot = &self.slots[index];
-            slot.metadata.validate(maximum_frames) catch return null;
-            if (slot.received_samples > slot.raw.len or slot.prepared_frames > maximum_frames or
-                slot.prepared_partitions > partition_count)
-            {
-                return null;
-            }
-            if (slot.prepared_frames != 0 and
-                (slot.prepared_sample_rate < 8_000 or slot.prepared_sample_rate > 384_000))
-            {
-                return null;
-            }
+            validatePreparedSlot(slot) catch return null;
             return slot;
+        }
+
+        fn validatePreparedSlot(slot: *const Slot) StageError!void {
+            try slot.metadata.validate(maximum_frames);
+            if (slot.received_samples !=
+                slot.metadata.frames * slot.metadata.channels)
+            {
+                return error.Incomplete;
+            }
+            const expected_partitions =
+                slot.prepared_frames / partition_size +
+                @intFromBool(slot.prepared_frames % partition_size != 0);
+            if (slot.prepared_frames > maximum_frames or
+                slot.prepared_partitions != expected_partitions)
+            {
+                return error.Incomplete;
+            }
+            if (slot.prepared_sample_rate < 8_000 or
+                slot.prepared_sample_rate > 384_000)
+            {
+                return error.InvalidSampleRate;
+            }
+        }
+
+        fn processingShapeValid(self: *const Self) bool {
+            if (self.input_fill >= partition_size or
+                self.output_index != self.input_fill or
+                self.history_head >= partition_count or
+                self.direct_index >= partition_size)
+            {
+                return false;
+            }
+            return switch (self.options.latency) {
+                .partitioned => self.direct_index == 0,
+                .zero => self.direct_index == self.input_fill,
+            };
+        }
+
+        fn processingPreflight(self: *const Self) bool {
+            if (!self.processingShapeValid()) return false;
+            if (self.target_sample_rate != 0 and
+                (self.target_sample_rate < 8_000 or
+                    self.target_sample_rate > 384_000))
+            {
+                return false;
+            }
+            for (0..maximum_channels) |channel| {
+                if (!std.math.isFinite(
+                    self.output_block[channel][self.output_index],
+                )) return false;
+            }
+
+            const slot = if (self.active_slot == no_slot)
+                null
+            else
+                self.activeSlot() orelse return false;
+            if (self.options.latency == .zero) {
+                if (slot) |active| {
+                    const head_frames =
+                        @min(active.prepared_frames, partition_size);
+                    for (0..maximum_channels) |channel| {
+                        const ir_channel = switch (self.options.routing) {
+                            .independent => if (active.metadata.channels == 1)
+                                0
+                            else
+                                channel,
+                            .mono => 0,
+                        };
+                        for (active.head[ir_channel][0..head_frames]) |
+                            sample_value,
+                        | {
+                            if (!std.math.isFinite(sample_value))
+                                return false;
+                        }
+                        for (self.direct_history[channel]) |sample_value| {
+                            if (!std.math.isFinite(sample_value))
+                                return false;
+                        }
+                    }
+                }
+            }
+            if (self.input_fill + 1 == partition_size) {
+                validateProcessingSamples(self) catch return false;
+                if (slot) |active|
+                    validatePreparedSlotContents(active) catch return false;
+            }
+            return true;
+        }
+
+        fn validateQuiescent(self: *const Self) StageError!void {
+            if (self.target_sample_rate != 0 and
+                (self.target_sample_rate < 8_000 or
+                    self.target_sample_rate > 384_000))
+            {
+                return error.InvalidSampleRate;
+            }
+            if (!self.processingShapeValid()) return error.Incomplete;
+
+            const pending = self.pending_slot.load(.acquire);
+            const pending_index = if (pending == no_slot)
+                null
+            else
+                slotIndex(pending) orelse return error.Incomplete;
+            const staging_index = if (self.staging_slot == no_slot)
+                null
+            else
+                slotIndex(self.staging_slot) orelse
+                    return error.Incomplete;
+            const active_index = if (self.active_slot == no_slot)
+                null
+            else
+                slotIndex(self.active_slot) orelse return error.Incomplete;
+
+            for (&self.slots, 0..) |*slot, index| {
+                const state = slot.state.load(.acquire);
+                if (state == @intFromEnum(SlotState.free)) {
+                    if (pending_index == index or staging_index == index or
+                        active_index == index)
+                    {
+                        return error.Incomplete;
+                    }
+                    continue;
+                }
+                if (state == @intFromEnum(SlotState.writing)) {
+                    if (staging_index != index) return error.Incomplete;
+                    try validateStagingSlot(slot);
+                    continue;
+                }
+                if (state == @intFromEnum(SlotState.ready)) {
+                    if (pending_index != index) return error.Incomplete;
+                    try validatePreparedSlotContents(slot);
+                    continue;
+                }
+                if (state == @intFromEnum(SlotState.reading)) {
+                    if (active_index != index) return error.Incomplete;
+                    try validatePreparedSlotContents(slot);
+                    continue;
+                }
+                return error.Incomplete;
+            }
+
+            try validateProcessingSamples(self);
+        }
+
+        fn validateStagingSlot(slot: *const Slot) StageError!void {
+            try slot.metadata.validate(maximum_frames);
+            const expected_samples =
+                slot.metadata.frames * slot.metadata.channels;
+            if (slot.received_samples > expected_samples or
+                slot.prepared_frames != 0 or
+                slot.prepared_partitions != 0 or
+                slot.prepared_sample_rate != 0)
+            {
+                return error.Incomplete;
+            }
+            for (slot.raw[0..slot.received_samples]) |sample_value| {
+                if (!std.math.isFinite(sample_value))
+                    return error.NonFiniteSample;
+            }
+        }
+
+        fn validatePreparedSlotContents(slot: *const Slot) StageError!void {
+            try validatePreparedSlot(slot);
+            for (slot.raw[0..slot.received_samples]) |sample_value| {
+                if (!std.math.isFinite(sample_value))
+                    return error.NonFiniteSample;
+            }
+            for (0..slot.metadata.channels) |channel| {
+                const head_frames =
+                    @min(slot.prepared_frames, partition_size);
+                for (slot.head[channel][0..head_frames]) |sample_value| {
+                    if (!std.math.isFinite(sample_value))
+                        return error.NonFiniteSample;
+                }
+                for (slot.spectra[channel][0..slot.prepared_partitions]) |
+                    spectrum,
+                | {
+                    for (spectrum) |value| {
+                        if (!std.math.isFinite(value.real) or
+                            !std.math.isFinite(value.imaginary))
+                        {
+                            return error.NonFiniteSample;
+                        }
+                    }
+                }
+            }
+        }
+
+        fn validateProcessingSamples(self: *const Self) StageError!void {
+            for (self.input_block) |channel| {
+                for (channel) |sample_value| {
+                    if (!std.math.isFinite(sample_value))
+                        return error.NonFiniteSample;
+                }
+            }
+            for (self.input_spectra) |channel| {
+                for (channel) |spectrum| {
+                    for (spectrum) |value| {
+                        if (!std.math.isFinite(value.real) or
+                            !std.math.isFinite(value.imaginary))
+                        {
+                            return error.NonFiniteSample;
+                        }
+                    }
+                }
+            }
+            for (self.output_block) |channel| {
+                for (channel) |sample_value| {
+                    if (!std.math.isFinite(sample_value))
+                        return error.NonFiniteSample;
+                }
+            }
+            for (self.overlap) |channel| {
+                for (channel) |sample_value| {
+                    if (!std.math.isFinite(sample_value))
+                        return error.NonFiniteSample;
+                }
+            }
+            for (self.direct_history) |channel| {
+                for (channel) |sample_value| {
+                    if (!std.math.isFinite(sample_value))
+                        return error.NonFiniteSample;
+                }
+            }
         }
 
         fn activeSlotIndex(self: *const Self) ?usize {
@@ -740,10 +1039,13 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
 test "partitioned convolver publishes an impulse without audio-thread preparation" {
     const Convolver = PartitionedConvolver(32, 8);
     var convolver = Convolver.init(48_000);
+    try std.testing.expect(convolver.valid());
     try convolver.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 3 });
     try convolver.write(1, 0, &.{ 1.0, 0.5, 0.25 });
     try convolver.commit(1);
+    try std.testing.expect(convolver.valid());
     try std.testing.expect(convolver.adoptPending());
+    try std.testing.expect(convolver.valid());
 
     var output: [24]f32 = undefined;
     for (&output, 0..) |*sample, index| {
@@ -753,6 +1055,7 @@ test "partitioned convolver publishes an impulse without audio-thread preparatio
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), output[8], 0.0001);
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), output[9], 0.0001);
     try std.testing.expectApproxEqAbs(@as(f32, 0.25), output[10], 0.0001);
+    try std.testing.expect(convolver.valid());
 }
 
 test "partitioned convolver isolates stereo IR channels" {
@@ -1017,27 +1320,115 @@ test "partitioned convolver rejects malformed public slot state" {
     try std.testing.expect(!convolver.adoptPending());
     try std.testing.expectEqual(@as(u64, 2), convolver.activeMetadata().?.generation);
 
+    try convolver.begin(.{ .generation = 3, .sample_rate = 48_000, .channels = 1, .frames = 1 });
+    try convolver.write(3, 0, &.{0.25});
+    try convolver.commit(3);
+    const incomplete = convolver.pending_slot.load(.acquire);
+    convolver.slots[incomplete].received_samples = 0;
+    try std.testing.expect(!convolver.adoptPending());
+    try std.testing.expectEqual(@as(u64, 2), convolver.activeMetadata().?.generation);
+
+    convolver.slots[convolver.active_slot].received_samples =
+        std.math.maxInt(usize);
+    try std.testing.expectError(
+        error.Incomplete,
+        convolver.reprepareForSampleRate(96_000),
+    );
+    convolver.slots[convolver.active_slot].received_samples = 1;
+
     convolver.staging_slot = 3;
     try std.testing.expectError(error.InvalidGeneration, convolver.write(3, 0, &.{0.25}));
     try std.testing.expectError(error.InvalidGeneration, convolver.commit(3));
     try std.testing.expect(!convolver.cancel(3));
 }
 
-test "partitioned convolver recovers malformed processing cursors" {
+test "partitioned convolver rejects malformed retained processing state" {
     const Convolver = PartitionedConvolver(16, 8);
     var convolver = Convolver.init(48_000);
 
     convolver.input_fill = 8;
     convolver.output_index = 8;
     convolver.history_head = Convolver.partitions;
+    try std.testing.expect(!convolver.valid());
+    const input_block = convolver.input_block;
     const output = convolver.processFrame(std.math.nan(f32), std.math.inf(f32));
 
     try std.testing.expectEqual(@as([2]f32, .{ 0.0, 0.0 }), output);
-    try std.testing.expectEqual(@as(usize, 1), convolver.input_fill);
-    try std.testing.expectEqual(@as(usize, 1), convolver.output_index);
-    try std.testing.expectEqual(@as(usize, 0), convolver.history_head);
-    try std.testing.expectEqual(@as(f32, 0.0), convolver.input_block[0][0]);
-    try std.testing.expectEqual(@as(f32, 0.0), convolver.input_block[1][0]);
+    try std.testing.expectEqual(@as(usize, 8), convolver.input_fill);
+    try std.testing.expectEqual(@as(usize, 8), convolver.output_index);
+    try std.testing.expectEqual(Convolver.partitions, convolver.history_head);
+    try std.testing.expectEqual(input_block, convolver.input_block);
+
+    convolver.resetProcessing();
+    try std.testing.expect(convolver.valid());
+    convolver.output_block[0][convolver.output_index] =
+        std.math.nan(f32);
+    convolver.output_block[1][convolver.output_index] =
+        std.math.inf(f32);
+    try std.testing.expect(!convolver.valid());
+    const input_fill = convolver.input_fill;
+    const output_index = convolver.output_index;
+    try std.testing.expectEqual(
+        @as([2]f32, .{ 0.0, 0.0 }),
+        convolver.processFrame(0.0, 0.0),
+    );
+    try std.testing.expectEqual(input_fill, convolver.input_fill);
+    try std.testing.expectEqual(output_index, convolver.output_index);
+
+    convolver.resetProcessing();
+    try convolver.begin(.{
+        .generation = 1,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = 1,
+    });
+    try convolver.write(1, 0, &.{1.0});
+    try convolver.commit(1);
+    try std.testing.expect(convolver.adoptPending());
+    convolver.input_fill = 7;
+    convolver.output_index = 7;
+    convolver.slots[convolver.active_slot].spectra[0][0][0].real =
+        std.math.nan(f32);
+    try std.testing.expect(!convolver.valid());
+    try std.testing.expectEqual(
+        @as([2]f32, .{ 0.0, 0.0 }),
+        convolver.processFrame(1.0, 0.0),
+    );
+    try std.testing.expectEqual(@as(usize, 7), convolver.input_fill);
+    try std.testing.expectEqual(@as(usize, 7), convolver.output_index);
+}
+
+test "convolution preparation queue validates retained ring state" {
+    const Queue = PreparationQueue(16, 3);
+    var queue = Queue{};
+    try std.testing.expect(queue.valid());
+
+    try queue.submit(.{
+        .generation = 1,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = 2,
+    }, &.{ 1.0, 0.5 });
+    try queue.submit(.{
+        .generation = 2,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = 1,
+    }, &.{0.25});
+    try std.testing.expect(queue.valid());
+
+    queue.slots[queue.consumer_cursor].samples[0] = std.math.nan(f32);
+    try std.testing.expect(!queue.valid());
+    queue.slots[queue.consumer_cursor].samples[0] = 1.0;
+    try std.testing.expect(queue.valid());
+
+    queue.producer_cursor = 3;
+    try std.testing.expect(!queue.valid());
+    queue.producer_cursor = 2;
+    queue.latest_generation = 1;
+    try std.testing.expect(!queue.valid());
+    queue.latest_generation = 2;
+    try std.testing.expect(queue.valid());
 }
 
 test "convolution preparation queue publishes ordered jobs" {
@@ -1045,6 +1436,7 @@ test "convolution preparation queue publishes ordered jobs" {
     const Convolver = PartitionedConvolver(16, 8);
     var queue = Queue{};
     var convolver = Convolver.init(48_000);
+    try std.testing.expect(queue.valid());
 
     try queue.submit(
         .{
@@ -1055,6 +1447,7 @@ test "convolution preparation queue publishes ordered jobs" {
         },
         &.{1.0},
     );
+    try std.testing.expect(queue.valid());
     try queue.submit(
         .{
             .generation = 2,
@@ -1064,6 +1457,7 @@ test "convolution preparation queue publishes ordered jobs" {
         },
         &.{ 0.5, 0.25 },
     );
+    try std.testing.expect(queue.valid());
     try std.testing.expectEqual(
         @as(usize, 2),
         try queue.pendingCount(),
@@ -1085,6 +1479,7 @@ test "convolution preparation queue publishes ordered jobs" {
         @as(?u64, 1),
         try queue.prepareNext(8, &convolver),
     );
+    try std.testing.expect(queue.valid());
     try std.testing.expect(convolver.adoptPending());
     try std.testing.expectEqual(
         @as(?u64, 2),
@@ -1199,6 +1594,57 @@ test "convolution preparation queue validates before mutation" {
             },
             &.{},
         ),
+    );
+
+    queue.producer_cursor = 1;
+    queue.consumer_cursor = 1;
+    try queue.submit(
+        .{
+            .generation = 2,
+            .sample_rate = 48_000,
+            .channels = 1,
+            .frames = 1,
+        },
+        &.{0.5},
+    );
+    queue.slots[1].metadata.generation = 0;
+    var convolver = PartitionedConvolver(16, 8).init(48_000);
+    try std.testing.expectError(
+        error.InvalidGeneration,
+        queue.pendingCount(),
+    );
+    try std.testing.expectError(
+        error.InvalidGeneration,
+        queue.prepareNext(8, &convolver),
+    );
+    try std.testing.expectError(
+        error.InvalidGeneration,
+        queue.discardNext(),
+    );
+    queue.slots[1].metadata.generation = 2;
+    try std.testing.expectEqual(
+        @as(?u64, 2),
+        try queue.discardNext(),
+    );
+    queue.slots[queue.consumer_cursor].state.store(
+        std.math.maxInt(u8),
+        .release,
+    );
+    try std.testing.expectError(
+        error.InvalidQueueState,
+        queue.pendingCount(),
+    );
+    try std.testing.expectError(
+        error.InvalidQueueState,
+        queue.prepareNext(8, &convolver),
+    );
+    try std.testing.expectError(
+        error.InvalidQueueState,
+        queue.discardNext(),
+    );
+    queue.slots[queue.consumer_cursor].state.store(
+        @intFromEnum(Queue.State.free),
+        .release,
     );
 }
 

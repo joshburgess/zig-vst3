@@ -3,7 +3,6 @@ set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 source_dir="$root/gui-adapters/vstgui"
-build_dir="${VSTGUI_SANITIZER_SOAK_BUILD_DIR:-$root/.vst3-sdk/vstgui-adapter-sanitizer-build}"
 repetitions="${VSTGUI_SANITIZER_SOAK_REPETITIONS:-8}"
 
 case "$repetitions" in
@@ -12,6 +11,24 @@ case "$repetitions" in
     exit 2
     ;;
 esac
+
+temporary_build=""
+cleanup_build() {
+  if [ -n "$temporary_build" ]; then
+    rm -rf -- "$temporary_build"
+  fi
+}
+trap cleanup_build EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [ -n "${VSTGUI_SANITIZER_SOAK_BUILD_DIR:-}" ]; then
+  build_dir="$VSTGUI_SANITIZER_SOAK_BUILD_DIR"
+else
+  temporary_build=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-vstgui-sanitizer-soak-build.XXXXXX")
+  build_dir="$temporary_build/build"
+fi
 
 output_root="${VSTGUI_SANITIZER_SOAK_OUTPUT_DIR:-${TMPDIR:-/tmp}/zig-vst3-vstgui-sanitizer}"
 timestamp=$(date +%Y%m%d-%H%M%S)
@@ -44,7 +61,9 @@ build_stdout="$output_dir/build.stdout"
 build_stderr="$output_dir/build.stderr"
 if [ "${VSTGUI_SANITIZER_SOAK_SKIP_BUILD:-0}" != 1 ]; then
   set +e
-  ZIG_VSTGUI_SANITIZER_BUILD_ONLY=1 "$root/scripts/test_vstgui_sanitizers.sh" > "$build_stdout" 2> "$build_stderr"
+  VSTGUI_SANITIZER_BUILD_DIR="$build_dir" \
+    ZIG_VSTGUI_SANITIZER_BUILD_ONLY=1 \
+    "$root/scripts/test_vstgui_sanitizers.sh" > "$build_stdout" 2> "$build_stderr"
   build_status=$?
   set -e
   if [ "$build_status" -ne 0 ]; then

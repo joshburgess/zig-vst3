@@ -35,7 +35,7 @@ pub const Spec = plug.plugin.PluginSpec(SamplePlayer);
 pub const parameter_set = Spec.ParameterSet.init(.{});
 
 test "sample player metadata defines a bounded MIDI instrument" {
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
     try std.testing.expectEqualStrings("zig-vst3 Sample Player", Spec.name);
     try std.testing.expectEqual(@as(usize, 16), Spec.ParameterSet.count);
     try std.testing.expect(!Spec.audio_input);

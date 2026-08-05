@@ -3,7 +3,24 @@ set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 source_dir="$root/gui-adapters/vstgui"
-build_dir="$root/.vst3-sdk/vstgui-adapter-sanitizer-build"
+temporary_build=""
+
+cleanup_build() {
+  if [ -n "$temporary_build" ]; then
+    rm -rf -- "$temporary_build"
+  fi
+}
+trap cleanup_build EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [ -n "${VSTGUI_SANITIZER_BUILD_DIR:-}" ]; then
+  build_dir="$VSTGUI_SANITIZER_BUILD_DIR"
+else
+  temporary_build=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-vstgui-sanitizer-build.XXXXXX")
+  build_dir="$temporary_build/build"
+fi
 
 cmake -S "$source_dir" -B "$build_dir" \
   -DCMAKE_BUILD_TYPE=Release \

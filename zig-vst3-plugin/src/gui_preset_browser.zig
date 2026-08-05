@@ -4,8 +4,8 @@ const editor_state = @import("editor_state.zig");
 pub const maximum_name_bytes = editor_state.maximum_text_bytes;
 
 pub const Preset = struct {
-    id: u32,
-    name: editor_state.Text,
+    id: u32 = 0,
+    name: editor_state.Text = .{},
 
     pub fn init(id: u32, name: []const u8) !Preset {
         if (id == 0) return error.InvalidPresetId;
@@ -31,7 +31,7 @@ pub fn Browser(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        presets: [capacity]Preset = undefined,
+        presets: [capacity]Preset = @splat(.{}),
         count: usize = 0,
         search: editor_state.Text = .{},
         selected_id: ?u32 = null,
@@ -39,7 +39,7 @@ pub fn Browser(comptime capacity: usize) type {
 
         pub fn add(self: *Self, preset: Preset) !void {
             if (!self.validStorage()) return error.InvalidPresetBrowserState;
-            if (preset.id == 0 or preset.name.len > maximum_name_bytes) return error.InvalidPreset;
+            if (preset.id == 0 or !preset.name.valid()) return error.InvalidPreset;
             if (self.count >= capacity) return error.PresetBrowserFull;
             if (self.indexOfId(preset.id) != null) return error.DuplicatePresetId;
             self.presets[self.count] = preset;
@@ -51,8 +51,9 @@ pub fn Browser(comptime capacity: usize) type {
             if (!self.validStorage()) return error.InvalidPresetBrowserState;
             self.search = try editor_state.Text.init(query);
             if (self.selected_id) |id| {
-                const selected = self.indexOfId(id);
-                if (selected != null and self.matches(self.presets[selected.?])) return;
+                if (self.indexOfId(id)) |selected| {
+                    if (self.matches(self.presets[selected])) return;
+                }
             }
             self.selected_id = self.firstMatchingId();
             self.load_status = .idle;
@@ -103,26 +104,28 @@ pub fn Browser(comptime capacity: usize) type {
             if (!self.validStorage()) return error.InvalidPresetBrowserState;
             const search_value = state.get(fields.search) orelse return error.UnknownEditorStateField;
             const selection_value = state.get(fields.selection) orelse return error.UnknownEditorStateField;
-            self.search = switch (search_value) {
-                .text => |text| blk: {
-                    if (text.len > maximum_name_bytes) return error.InvalidPresetBrowserState;
-                    break :blk text;
-                },
+            const next_search = switch (search_value) {
+                .text => |text| text,
                 else => return error.EditorStateTypeMismatch,
             };
+            if (!next_search.valid()) return error.InvalidPresetBrowserState;
             const selected = switch (selection_value) {
                 .index => |id| id,
                 .point_id => |id| id,
                 else => return error.EditorStateTypeMismatch,
             };
-            self.selected_id = if (selected == 0) null else selected;
-            if (self.selected_id) |id| {
-                const index = self.indexOfId(id) orelse {
-                    self.selected_id = self.firstMatchingId();
-                    return;
-                };
-                if (!self.matches(self.presets[index])) self.selected_id = self.firstMatchingId();
-            } else self.selected_id = self.firstMatchingId();
+            const next_selected = if (selected == 0)
+                self.firstMatchingIdFor(&next_search)
+            else if (self.indexOfId(selected)) |index|
+                if (matchesSearch(&next_search, self.presets[index]))
+                    selected
+                else
+                    self.firstMatchingIdFor(&next_search)
+            else
+                self.firstMatchingIdFor(&next_search);
+
+            self.search = next_search;
+            self.selected_id = next_selected;
             self.load_status = .idle;
         }
 
@@ -147,7 +150,16 @@ pub fn Browser(comptime capacity: usize) type {
 
         fn firstMatchingId(self: *const Self) ?u32 {
             if (!self.validStorage()) return null;
-            for (self.presets[0..self.count]) |preset| if (self.matches(preset)) return preset.id;
+            return self.firstMatchingIdFor(&self.search);
+        }
+
+        fn firstMatchingIdFor(
+            self: *const Self,
+            query: *const editor_state.Text,
+        ) ?u32 {
+            for (self.presets[0..self.count]) |preset| {
+                if (matchesSearch(query, preset)) return preset.id;
+            }
             return null;
         }
 
@@ -158,8 +170,15 @@ pub fn Browser(comptime capacity: usize) type {
         }
 
         fn matches(self: *const Self, preset: Preset) bool {
-            if (self.search.len > maximum_name_bytes or preset.name.len > maximum_name_bytes) return false;
-            const query = self.search.slice();
+            return matchesSearch(&self.search, preset);
+        }
+
+        fn matchesSearch(
+            search: *const editor_state.Text,
+            preset: Preset,
+        ) bool {
+            if (!search.valid() or !preset.name.valid()) return false;
+            const query = search.slice();
             if (query.len == 0) return true;
             const name = preset.name.slice();
             if (query.len > name.len) return false;
@@ -172,7 +191,7 @@ pub fn Browser(comptime capacity: usize) type {
         fn validStorage(self: *const Self) bool {
             if (self.count > capacity or self.search.len > maximum_name_bytes) return false;
             for (self.presets[0..self.count], 0..) |preset, index| {
-                if (preset.id == 0 or preset.name.len > maximum_name_bytes) return false;
+                if (preset.id == 0 or !preset.name.valid()) return false;
                 for (self.presets[0..index]) |previous| {
                     if (previous.id == preset.id) return false;
                 }
@@ -185,6 +204,8 @@ pub fn Browser(comptime capacity: usize) type {
 test "preset browser filters navigates and tracks loading" {
     const Presets = Browser(4);
     var browser = Presets{};
+    for (browser.presets) |preset|
+        try std.testing.expectEqualDeep(Preset{}, preset);
     try browser.add(try Preset.init(1, "Clean"));
     try browser.add(try Preset.init(2, "Bright Hall"));
     try browser.add(try Preset.init(3, "Dark Hall"));
@@ -222,6 +243,42 @@ test "preset browser persists search and selection through editor state" {
     try std.testing.expectEqual(@as(?u32, 3), restored.selected_id);
 }
 
+test "preset browser restoration is transactional and resets load state" {
+    const ValidState = editor_state.Store(1, &.{
+        .{ .id = 1, .default = .{ .text = editor_state.Text{} } },
+        .{ .id = 2, .default = .{ .index = 0 } },
+    });
+    const InvalidState = editor_state.Store(1, &.{
+        .{ .id = 1, .default = .{ .text = editor_state.Text{} } },
+        .{ .id = 2, .default = .{ .boolean = false } },
+    });
+    const fields = StateFields{ .search = 1, .selection = 2 };
+    const Presets = Browser(2);
+    var browser = Presets{};
+    try browser.add(try Preset.init(1, "Clean"));
+    try browser.add(try Preset.init(2, "Driven"));
+    try browser.setSearch("clean");
+    _ = try browser.beginLoad();
+
+    var invalid = InvalidState.init();
+    try invalid.set(1, .{ .text = try editor_state.Text.init("driven") });
+    try std.testing.expectError(
+        error.EditorStateTypeMismatch,
+        browser.restore(&invalid, fields),
+    );
+    try std.testing.expectEqualStrings("clean", browser.search.slice());
+    try std.testing.expectEqual(@as(?u32, 1), browser.selected_id);
+    try std.testing.expectEqual(LoadStatus.loading, browser.load_status);
+
+    var valid = ValidState.init();
+    try valid.set(1, .{ .text = try editor_state.Text.init("driven") });
+    try valid.setUnsigned(2, 99);
+    try browser.restore(&valid, fields);
+    try std.testing.expectEqualStrings("driven", browser.search.slice());
+    try std.testing.expectEqual(@as(?u32, 2), browser.selected_id);
+    try std.testing.expectEqual(LoadStatus.idle, browser.load_status);
+}
+
 test "preset browser rejects malformed direct collection state" {
     const Presets = Browser(2);
     var browser = Presets{};
@@ -241,4 +298,10 @@ test "preset browser rejects malformed direct collection state" {
     browser.search = .{};
     browser.presets[0].name.len = maximum_name_bytes + 1;
     try std.testing.expectEqual(@as(usize, 0), browser.matchingCount());
+
+    browser = Presets{};
+    var malformed = try Preset.init(1, "Clean");
+    malformed.name.bytes[0] = 0xff;
+    try std.testing.expectError(error.InvalidPreset, browser.add(malformed));
+    try std.testing.expectEqualDeep(Preset{}, browser.presets[0]);
 }

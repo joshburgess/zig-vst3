@@ -22,8 +22,8 @@ pub const Failure = enum {
 };
 
 pub const PreviewPoint = struct {
-    x: f64,
-    y: f64,
+    x: f64 = 0.0,
+    y: f64 = 0.0,
 };
 
 pub const Snapshot = struct {
@@ -180,7 +180,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         sample_rate: u32 = 0,
         channels: u8 = 0,
         sample_frames: u64 = 0,
-        preview: [preview_capacity]PreviewPoint = undefined,
+        preview: [preview_capacity]PreviewPoint = @splat(.{}),
         preview_points: usize = 0,
         decoded: [decoded_frame_capacity * maximum_channels]f32 = @splat(0.0),
         decoded_frames: usize = 0,
@@ -194,15 +194,14 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
 
         pub fn initInto(self: *Self) void {
             self.mutex = .init;
-            self.model =
-                Model.init(&.{ ".wav", ".aif", ".aiff" }) catch unreachable;
+            self.model = comptime Model.init(
+                &.{ ".wav", ".aif", ".aiff" },
+            ) catch @compileError("invalid built-in audio extensions");
             self.failure = .none;
             self.sample_rate = 0;
             self.channels = 0;
             self.sample_frames = 0;
-            self.preview_points = 0;
-            @memset(&self.decoded, 0.0);
-            self.decoded_frames = 0;
+            self.clearMediaStorage();
             self.worker = Worker.init();
         }
 
@@ -216,6 +215,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
             if (self.model.cancellationRequested()) {
                 self.model.acknowledgeCancel() catch {};
                 self.failure = .cancelled;
+                self.clearMediaStorage();
             }
             self.unlock();
         }
@@ -233,8 +233,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
             self.sample_rate = 0;
             self.channels = 0;
             self.sample_frames = 0;
-            self.preview_points = 0;
-            self.decoded_frames = 0;
+            self.clearMediaStorage();
             self.unlock();
             if (status != .validating) return false;
             return self.spawnWorker();
@@ -287,8 +286,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
             self.sample_rate = 0;
             self.channels = 0;
             self.sample_frames = 0;
-            self.preview_points = 0;
-            self.decoded_frames = 0;
+            self.clearMediaStorage();
             return true;
         }
 
@@ -311,6 +309,10 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
             defer self.unlock();
             if (self.preview_points > preview_capacity) return 0;
             const count = @min(output.len, self.preview_points);
+            for (self.preview[0..count]) |point| {
+                if (!std.math.isFinite(point.x) or
+                    !std.math.isFinite(point.y)) return 0;
+            }
             @memcpy(output[0..count], self.preview[0..count]);
             return count;
         }
@@ -325,7 +327,11 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
             if (sample_count > self.decoded.len) return 0;
             if (sample_offset >= sample_count) return 0;
             const count = @min(output.len, sample_count - sample_offset);
-            @memcpy(output[0..count], self.decoded[sample_offset .. sample_offset + count]);
+            const source = self.decoded[sample_offset .. sample_offset + count];
+            for (source) |sample| {
+                if (!std.math.isFinite(sample)) return 0;
+            }
+            @memcpy(output[0..count], source);
             return count;
         }
 
@@ -479,6 +485,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
             self.lock();
             defer self.unlock();
             self.failure = failure;
+            self.clearMediaStorage();
             const status: gui_file_importer.Status = switch (failure) {
                 .too_large => .capacity_limit,
                 .unsupported_format => .unsupported_file,
@@ -495,6 +502,13 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
 
         fn joinWorker(self: *Self) void {
             self.worker.wait();
+        }
+
+        fn clearMediaStorage(self: *Self) void {
+            self.preview = @splat(.{});
+            self.preview_points = 0;
+            @memset(&self.decoded, 0.0);
+            self.decoded_frames = 0;
         }
 
         fn lock(self: *Self) void {
@@ -848,6 +862,10 @@ test "decoded importer keeps bounded interleaved PCM for non-audio-thread handof
 
     var importer = DecodedImporter(16).init();
     defer importer.deinit();
+    for (importer.preview) |point|
+        try std.testing.expectEqualDeep(PreviewPoint{}, point);
+    for (importer.decoded) |sample|
+        try std.testing.expectEqual(@as(f32, 0.0), sample);
     try std.testing.expect(importer.begin(.picker, &.{path[0..path_length]}));
     waitForWorker(&importer);
     try std.testing.expectEqual(@as(usize, 16), importer.snapshot().decoded_frames);
@@ -856,6 +874,11 @@ test "decoded importer keeps bounded interleaved PCM for non-audio-thread handof
     try std.testing.expectEqual(samples[0], samples[1]);
     try std.testing.expectEqual(samples[30], samples[31]);
     try std.testing.expectEqual(@as(usize, 2), importer.copyDecoded(30, samples[0..4]));
+    try std.testing.expect(importer.reset());
+    for (importer.preview) |point|
+        try std.testing.expectEqualDeep(PreviewPoint{}, point);
+    for (importer.decoded) |sample|
+        try std.testing.expectEqual(@as(f32, 0.0), sample);
 
     var too_small = DecodedImporter(8).init();
     defer too_small.deinit();
@@ -1070,6 +1093,25 @@ test "audio importer copy accessors reject malformed direct counts" {
     try std.testing.expectEqual(@as(usize, 0), importer.copyDecoded(0, &decoded));
     importer.channels = 0;
     try std.testing.expectEqual(@as(usize, 0), importer.copyDecoded(0, &decoded));
+
+    importer.preview_points = 1;
+    importer.preview[0] = .{ .x = std.math.nan(f64), .y = 0.5 };
+    preview[0] = .{ .x = 9.0, .y = 9.0 };
+    try std.testing.expectEqual(@as(usize, 0), importer.copyPreview(&preview));
+    try std.testing.expectEqual(@as(f64, 9.0), preview[0].x);
+    try std.testing.expectEqual(@as(f64, 9.0), preview[0].y);
+
+    importer.decoded_frames = 1;
+    importer.channels = 1;
+    importer.decoded[0] = std.math.inf(f32);
+    decoded[0] = 9.0;
+    try std.testing.expectEqual(@as(usize, 0), importer.copyDecoded(0, &decoded));
+    try std.testing.expectEqual(@as(f32, 9.0), decoded[0]);
+
+    importer.preview[0] = .{ .x = 0.25, .y = 0.5 };
+    importer.decoded[0] = 0.75;
+    try std.testing.expectEqual(@as(usize, 1), importer.copyPreview(&preview));
+    try std.testing.expectEqual(@as(usize, 1), importer.copyDecoded(0, &decoded));
 }
 
 fn generatedAudioResultIsBounded(info: AudioInfo, file_size: usize) bool {

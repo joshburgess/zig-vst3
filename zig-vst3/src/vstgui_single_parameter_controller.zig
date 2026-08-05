@@ -628,7 +628,8 @@ fn makeRangeSelectionDescription(
     var start_step_count: types.int32 = 0;
     var end_step_count: types.int32 = 0;
     if (value.start_parameter_id) |start_id| {
-        const end_id = value.end_parameter_id.?;
+        const end_id = value.end_parameter_id orelse
+            return error.InvalidRangeSelectionState;
         var found_start = false;
         var found_end = false;
         for (parameters) |parameter| {
@@ -919,8 +920,10 @@ fn createConfiguredView(
                     ((layer.dynamic or layer.parameter_driven) and layer.points.len != 0) or
                     (!layer.dynamic and !layer.parameter_driven and layer.points.len == 0) or
                     (layer.parameter_driven and layer.source != .controller) or
-                    (layer.dynamic and layer.source != .component) or
-                    (layer.y_axis != null and !validGraphAxis(layer.y_axis.?))) return null;
+                    (layer.dynamic and layer.source != .component)) return null;
+                if (layer.y_axis) |layer_axis| {
+                    if (!validGraphAxis(layer_axis)) return null;
+                }
                 if (layer.dynamic or layer.parameter_driven) {
                     const encoded_source = layer.source_id | if (layer.source == .controller)
                         vstgui_editor_view.controller_graph_source_flag
@@ -1013,8 +1016,11 @@ fn createConfiguredView(
                     if (parameter_id == handle.x_parameter_id or parameter_id == handle.y_parameter_id) return null;
                 }
                 if (handle.enabled_parameter_id) |parameter_id| {
-                    if (parameter_id == handle.x_parameter_id or parameter_id == handle.y_parameter_id or
-                        (handle.adjustment_parameter_id != null and parameter_id == handle.adjustment_parameter_id.?)) return null;
+                    if (parameter_id == handle.x_parameter_id or parameter_id == handle.y_parameter_id)
+                        return null;
+                    if (handle.adjustment_parameter_id) |adjustment_id| {
+                        if (parameter_id == adjustment_id) return null;
+                    }
                 }
                 graph_handles[index][handle_index] = .{
                     .handle_id = handle.id,
@@ -1156,11 +1162,13 @@ fn createConfiguredView(
                             item.checked_state_id != 0) return null;
                     },
                     .action => {
-                        if (item.id == 0 or item.label == null or std.mem.span(item.label.?).len == 0 or
+                        const label = item.label orelse return null;
+                        if (item.id == 0 or std.mem.span(label).len == 0 or
                             item.checked_state_id != 0) return null;
                     },
                     .toggle => {
-                        if (item.id == 0 or item.label == null or std.mem.span(item.label.?).len == 0 or
+                        const label = item.label orelse return null;
+                        if (item.id == 0 or std.mem.span(label).len == 0 or
                             item.checked_state_id == 0 or item.destructive) return null;
                         if (comptime Controller.hasEditorState) {
                             checked = switch (Controller.editorState(controller).get(item.checked_state_id) orelse return null) {
@@ -1399,24 +1407,35 @@ fn NativeBridge(comptime Controller: type) type {
             _ = Controller.endEdit(controller(userdata) orelse return, parameter_id);
         }
 
-        fn formatValue(userdata: ?*anyopaque, parameter_id: vsttypes.ParamID, value: f64, output: [*]u8, capacity: types.uint32) callconv(.c) types.int32 {
+        fn formatValue(userdata: ?*anyopaque, parameter_id: vsttypes.ParamID, value: f64, output: [*c]u8, capacity: types.uint32) callconv(.c) types.int32 {
             if (capacity == 0) return -1;
+            const output_slice = vstgui_editor_view.cSlice(
+                u8,
+                output,
+                capacity,
+            ) orelse return -1;
             var utf16: vsttypes.String128 = @splat(0);
             const iface = controller(userdata) orelse return -1;
             if (iface.vtable.getParamStringByValue(iface, parameter_id, value, &utf16) != types.kResultOk) return -1;
             const end = std.mem.indexOfScalar(vsttypes.TChar, &utf16, 0) orelse utf16.len;
             const available: usize = @intCast(capacity - 1);
-            const written = std.unicode.utf16LeToUtf8(output[0..available], utf16[0..end]) catch return -1;
-            output[written] = 0;
+            const written = std.unicode.utf16LeToUtf8(output_slice[0..available], utf16[0..end]) catch return -1;
+            output_slice[written] = 0;
             return @intCast(written);
         }
 
-        fn parseValue(userdata: ?*anyopaque, parameter_id: vsttypes.ParamID, text: [*:0]const u8, normalized: *f64) callconv(.c) types.int32 {
+        fn parseValue(userdata: ?*anyopaque, parameter_id: vsttypes.ParamID, text: [*c]const u8, normalized: [*c]f64) callconv(.c) types.int32 {
+            const normalized_output = vstgui_editor_view.cPointer(
+                f64,
+                normalized,
+            ) orelse return -1;
+            const bytes = vstgui_editor_view.cStringBytes(text) orelse
+                return -1;
             var utf16: vsttypes.String128 = @splat(0);
-            const written = std.unicode.utf8ToUtf16Le(utf16[0 .. utf16.len - 1], std.mem.span(text)) catch return -1;
+            const written = std.unicode.utf8ToUtf16Le(utf16[0 .. utf16.len - 1], bytes) catch return -1;
             utf16[written] = 0;
             const iface = controller(userdata) orelse return -1;
-            return if (iface.vtable.getParamValueByString(iface, parameter_id, &utf16, normalized) == types.kResultOk) 0 else -1;
+            return if (iface.vtable.getParamValueByString(iface, parameter_id, &utf16, normalized_output) == types.kResultOk) 0 else -1;
         }
 
         fn showContextMenu(userdata: ?*anyopaque, parameter_id: vsttypes.ParamID, x: types.int32, y: types.int32) callconv(.c) types.int32 {
@@ -1448,10 +1467,11 @@ fn NativeBridge(comptime Controller: type) type {
             return 0;
         }
 
-        fn storeEditorText(userdata: ?*anyopaque, field_id: u32, text: [*:0]const u8) callconv(.c) types.int32 {
+        fn storeEditorText(userdata: ?*anyopaque, field_id: u32, text: [*c]const u8) callconv(.c) types.int32 {
             if (comptime !Controller.hasEditorState) return -1;
             const iface = controller(userdata) orelse return -1;
-            const bytes = std.mem.span(text);
+            const bytes = vstgui_editor_view.cStringBytes(text) orelse
+                return -1;
             if (Controller.validateEditorText(iface, field_id, bytes) != types.kResultOk) return -1;
             const value = editor_state.Text.init(bytes) catch return -1;
             Controller.editorState(iface).set(field_id, .{ .text = value }) catch return -1;
@@ -1461,11 +1481,16 @@ fn NativeBridge(comptime Controller: type) type {
         fn loadEditorText(
             userdata: ?*anyopaque,
             field_id: u32,
-            output: [*]u8,
+            output: [*c]u8,
             capacity: u32,
         ) callconv(.c) types.int32 {
             if (comptime !Controller.hasEditorState) return -1;
             if (capacity == 0) return -1;
+            const output_slice = vstgui_editor_view.cSlice(
+                u8,
+                output,
+                capacity,
+            ) orelse return -1;
             const iface = controller(userdata) orelse return -1;
             const value = Controller.editorState(iface).get(field_id) orelse return -1;
             const stored = switch (value) {
@@ -1473,20 +1498,21 @@ fn NativeBridge(comptime Controller: type) type {
                 else => return -1,
             };
             if (stored.len >= capacity) return -1;
-            @memcpy(output[0..stored.len], stored.slice());
-            output[stored.len] = 0;
+            @memcpy(output_slice[0..stored.len], stored.slice());
+            output_slice[stored.len] = 0;
             return @intCast(stored.len);
         }
 
         fn loadProgress(
             userdata: ?*anyopaque,
             source_id: u32,
-            output: *vstgui_editor_view.ProgressSnapshot,
+            output: [*c]vstgui_editor_view.ProgressSnapshot,
         ) callconv(.c) types.int32 {
+            if (output == null) return -1;
             const iface = controller(userdata) orelse return -1;
             const snapshot = Controller.loadGuiProgress(iface, source_id) orelse return -1;
             snapshot.validate() catch return -1;
-            output.* = .{
+            output[0] = .{
                 .mode = @enumFromInt(@intFromEnum(snapshot.mode)),
                 .state = @enumFromInt(@intFromEnum(snapshot.state)),
                 .value = snapshot.value,
@@ -1497,20 +1523,30 @@ fn NativeBridge(comptime Controller: type) type {
 
         fn storeEditorScalars(
             userdata: ?*anyopaque,
-            field_ids: [*]const u32,
-            values: [*]const f64,
+            field_ids: [*c]const u32,
+            values: [*c]const f64,
             count: u32,
         ) callconv(.c) types.int32 {
             if (comptime !Controller.hasEditorState) return -1;
             if (count == 0 or count > 3) return -1;
+            const bounded_field_ids = vstgui_editor_view.cConstSlice(
+                u32,
+                field_ids,
+                count,
+            ) orelse return -1;
+            const bounded_values = vstgui_editor_view.cConstSlice(
+                f64,
+                values,
+                count,
+            ) orelse return -1;
             const iface = controller(userdata) orelse return -1;
             const state = Controller.editorState(iface);
-            for (field_ids[0..count], values[0..count]) |field_id, value| {
+            for (bounded_field_ids, bounded_values) |field_id, value| {
                 if (field_id == 0 or !std.math.isFinite(value)) return -1;
                 const current = state.get(field_id) orelse return -1;
                 if (current.kind() != .scalar) return -1;
             }
-            for (field_ids[0..count], values[0..count]) |field_id, value| {
+            for (bounded_field_ids, bounded_values) |field_id, value| {
                 state.set(field_id, .{ .scalar = value }) catch return -1;
             }
             return 0;
@@ -1553,28 +1589,41 @@ fn NativeBridge(comptime Controller: type) type {
         fn dropFiles(
             userdata: ?*anyopaque,
             drop_id: types.uint32,
-            paths: [*]const [*:0]const u8,
+            paths: [*c]const ?[*:0]const u8,
             count: types.uint32,
         ) callconv(.c) types.int32 {
             if (count == 0 or count > vstgui_editor_view.max_drop_files) return -1;
+            const bounded_paths = vstgui_editor_view.cConstSlice(
+                ?[*:0]const u8,
+                paths,
+                count,
+            ) orelse return -1;
             const iface = controller(userdata) orelse return -1;
             var slices: [vstgui_editor_view.max_drop_files][]const u8 = undefined;
-            for (0..count) |index| slices[index] = std.mem.span(paths[index]);
+            for (bounded_paths, 0..) |path, index|
+                slices[index] = std.mem.span(path orelse return -1);
             return if (Controller.handleFileDrop(iface, drop_id, slices[0..count]) == types.kResultOk) 0 else -1;
         }
 
         fn importFiles(
             userdata: ?*anyopaque,
             drop_id: types.uint32,
-            entry_point: vstgui_editor_view.FileImportEntryPoint,
-            paths: [*]const [*:0]const u8,
+            entry_point: types.int32,
+            paths: [*c]const ?[*:0]const u8,
             count: types.uint32,
         ) callconv(.c) types.int32 {
             if (count == 0 or count > vstgui_editor_view.max_drop_files) return -1;
-            const decoded_entry_point = fileImportEntryPoint(@intFromEnum(entry_point)) orelse return -1;
+            const bounded_paths = vstgui_editor_view.cConstSlice(
+                ?[*:0]const u8,
+                paths,
+                count,
+            ) orelse return -1;
+            const decoded_entry_point = fileImportEntryPoint(entry_point) orelse
+                return -1;
             const iface = controller(userdata) orelse return -1;
             var slices: [vstgui_editor_view.max_drop_files][]const u8 = undefined;
-            for (0..count) |index| slices[index] = std.mem.span(paths[index]);
+            for (bounded_paths, 0..) |path, index|
+                slices[index] = std.mem.span(path orelse return -1);
             return if (Controller.handleFileImport(
                 iface,
                 drop_id,
@@ -1586,12 +1635,13 @@ fn NativeBridge(comptime Controller: type) type {
         fn loadFileImport(
             userdata: ?*anyopaque,
             drop_id: types.uint32,
-            output: *vstgui_editor_view.FileImportSnapshot,
+            output: [*c]vstgui_editor_view.FileImportSnapshot,
         ) callconv(.c) types.int32 {
+            if (output == null) return -1;
             const iface = controller(userdata) orelse return -1;
             const snapshot = Controller.loadFileImport(iface, drop_id) orelse return -1;
             snapshot.validate() catch return -1;
-            output.* = .{
+            output[0] = .{
                 .status = @enumFromInt(@intFromEnum(snapshot.import.status)),
                 .failure = @enumFromInt(@intFromEnum(snapshot.failure)),
                 .entry_point = @enumFromInt(@intFromEnum(snapshot.import.entry_point)),
@@ -1608,10 +1658,11 @@ fn NativeBridge(comptime Controller: type) type {
         fn commandFileImport(
             userdata: ?*anyopaque,
             drop_id: types.uint32,
-            command: vstgui_editor_view.FileImportCommand,
+            command: types.int32,
         ) callconv(.c) types.int32 {
             const iface = controller(userdata) orelse return -1;
-            const decoded_command = fileImportCommand(@intFromEnum(command)) orelse return -1;
+            const decoded_command = fileImportCommand(command) orelse
+                return -1;
             return if (Controller.performFileImportCommand(
                 iface,
                 drop_id,
@@ -1622,12 +1673,22 @@ fn NativeBridge(comptime Controller: type) type {
         fn loadGuiGraph(
             userdata: ?*anyopaque,
             source_id: types.uint32,
-            output: [*]gui_graph.Point,
+            output: [*c]gui_graph.Point,
             capacity: types.uint32,
         ) callconv(.c) types.uint32 {
             const iface = controller(userdata) orelse return 0;
             const bounded_capacity = @min(capacity, vstgui_editor_view.max_graph_points);
-            const count = Controller.loadGuiGraph(iface, source_id, output[0..bounded_capacity]);
+            if (bounded_capacity == 0) return 0;
+            const output_slice = vstgui_editor_view.cSlice(
+                gui_graph.Point,
+                output,
+                bounded_capacity,
+            ) orelse return 0;
+            const count = Controller.loadGuiGraph(
+                iface,
+                source_id,
+                output_slice,
+            );
             return @intCast(@min(count, bounded_capacity));
         }
 
