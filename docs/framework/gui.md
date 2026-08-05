@@ -21,6 +21,14 @@ Implement `plug.gui.Context.VTable` in the controller. It provides current value
 
 All editor, context, and adapter callbacks run on the host GUI thread. A plugin must not call them from its audio processor.
 
+`Context.requestHostValue` asks the current host to obtain an infrequently changed value such as a file path. The request uses validated absolute URI strings for its key and optional value type, so toolkit-neutral editor code does not depend on a plugin format's numeric identifiers. It reports accepted, busy, unknown, or unsupported without waiting for the value. Missing format support returns unsupported. Keys and types are limited to 4,096 bytes and reject interior NULs, malformed percent escapes, non-ASCII bytes, control bytes, and URI delimiters that are unsafe in metadata.
+
+`Context.subscribeHostPeak` and `unsubscribeHostPeak` let an editor receive standard host peak measurements by stable port symbol. The default `.dynamic` delivery asks the host to add or remove a runtime subscription. `.static` registers a source that the plugin's generated UI metadata already declares and does not invoke the dynamic host callback. The editor assigns a format-neutral source ID, which is returned with each `HostPeakMeasurement`. A measurement includes the host period start, period size, and nonnegative finite peak value. Symbols use the portable plugin-symbol grammar and are limited to 255 bytes. Each editor can retain up to 16 subscriptions without allocation. Repeating the same registration succeeds without a second host call. A port cannot be reassigned to another source ID or delivery mode, and a source ID cannot identify two ports. `Editor.hostPeakMeasurement` validates every measurement before invoking the optional adapter callback. All registration and delivery calls use the GUI thread.
+
+`Context.registerHostAtomNotification` and `unregisterHostAtomNotification` bind a statically declared event-output notification to a format-neutral source ID. The registration uses a stable port symbol and an absolute Atom type URI. Each editor retains at most 16 unique port-and-type bindings without allocation. Repeating an exact registration is idempotent, while reusing a source ID or assigning a second source to the same binding is rejected. `Editor.hostAtomMessage` passes the message body to the optional adapter callback only during the call. Backends that need the body later must copy it. Bodies larger than 64 KiB and malformed retained messages are rejected.
+
+`Context.sendPluginAtomMessage` sends one typed message from an editor to a plugin event input. The format-neutral message identifies the input by stable port symbol and its type by absolute URI. Bodies are borrowed for the duration of the call and limited to 64 KiB. The result distinguishes accepted, unsupported, and rejected delivery. Invalid symbols, URIs, or sizes return `error.InvalidParameter` before reaching a plugin-format adapter. This is an infrequent UI-thread path, not an audio-thread communication API.
+
 `ParameterAttachment` is the reusable control binding. It owns at most one active gesture and provides:
 
 - Begin, perform, end, and cancellation ordering.
@@ -33,9 +41,11 @@ All editor, context, and adapter callbacks run on the host GUI thread. A plugin 
 
 `MultiParameterAttachment(count)` composes a fixed, duplicate-free set of parameter attachments into one interaction. It begins, publishes, and ends every parameter in declaration order. If any host edit is rejected, it restores every visible value to the gesture's initial values and ends every parameter that began. Host automation can update either axis without emitting a gesture. This is the toolkit-neutral binding used by the XY pad and future linked controls.
 
-`ParameterEnvelopeAttachment(count)` associates stable envelope point IDs with pairs of parameter IDs. Point movement delegates to `MultiParameterAttachment(2)`, so both coordinates share ordered begin, perform, rollback, and end behavior. This is appropriate when an envelope handle represents automatable plugin parameters. `gui_graph.EditableEnvelope(capacity)` is the fixed-capacity transactional model for non-parameter envelopes. It owns stable IDs, selection, snapping, insertion order, rollback, and bounded point storage without a rendering dependency.
+`ParameterEnvelopeAttachment(count)` associates stable envelope point IDs with pairs of parameter IDs. Point movement delegates to `MultiParameterAttachment(2)`, so both coordinates share ordered begin, perform, rollback, and end behavior. This is appropriate when an envelope handle represents automatable plugin parameters. `gui_graph.EditableEnvelope(capacity)` is the fixed-capacity transactional model for non-parameter envelopes. It owns stable IDs, selection, snapping, insertion order, rollback, and bounded point storage without a rendering dependency. Inactive and vacated points start empty, while finishing or cancelling a transaction clears its rollback snapshot. Its borrowed point view rejects invalid ranges, points, ordering, IDs, selection, and transaction state. `gui_graph.FixedSeries(capacity)` initializes inactive points deterministically and exposes a view only while its retained count and active points are valid.
 
 `ParameterPanel(count)` creates a fixed-size development panel model from reflected parameter IDs. Adapters can use its attachments to generate ordinary float, integer, boolean, and enum controls without duplicating gesture logic.
+
+`gui_audio_sample_store.Store(maximum_frames)` publishes complete decoded mono or stereo audio through three fixed slots. Adoption validates pending metadata and received extent before replacing active audio. Malformed pending state is released without evicting the active generation. Active metadata and interpolated reads fail closed for malformed extents, non-finite samples, or non-finite derived output.
 
 ## Reference VSTGUI Adapter
 
@@ -119,7 +129,7 @@ The same harness measures repeated warm drawing of a live slider, active peak me
 
 Every VSTGUI component carries toolkit-neutral accessibility metadata. Semantic roles cover sliders, buttons, toggles, choices, text fields, meters, graphs, and groups. Nodes expose a name, description, formatted value, optional range, enabled state, focus state, toggle state, control selection state, read-only state, and optional Unicode-positioned text anchor and caret. Nodes also expose supported focus, press, increment, decrement, set-value, caret, and text-selection actions. Text positions reject malformed UTF-8 and out-of-range offsets. Shorter replacement values clamp retained positions before observers run. Read-only nodes still permit focus and text navigation when their provider supports those actions, while content mutation remains rejected. Value, focus, state, caret, and selection changes invoke a backend observer while native actions use the same component behavior as pointer and keyboard input.
 
-The reference adapter supplies native semantic bridges because the pinned VSTGUI revision does not provide them for custom controls. macOS uses an `NSAccessibilityElement` hierarchy. Windows uses a UI Automation fragment provider with RangeValue, Toggle, Invoke, and Value patterns. Linux publishes an AT-SPI application tree with component, action, value, checked single-line text-query, editable-text, cache, and event interfaces. X11 supplies clipboard exchange for editable text; pure-Wayland clipboard ownership remains open. VoiceOver, Narrator, and AT-SPI behavior still require manual verification before claiming accessible release support.
+The reference adapter supplies native semantic bridges because the pinned VSTGUI revision does not provide them for custom controls. macOS uses an `NSAccessibilityElement` hierarchy. Windows uses a UI Automation fragment provider with RangeValue, Toggle, Invoke, and Value patterns. Linux publishes an AT-SPI application tree with component, action, value, checked single-line text-query, editable-text, cache, and event interfaces. X11 supplies clipboard exchange for editable text through UTF-8 targets and conditionally advertises the legacy `STRING` target when the current value is exactly representable as Latin-1. On Wayland, the adapter loads the client library at runtime and uses the version-1 external data-control protocol when the compositor exposes it. The Wayland path retains bounded UTF-8 selections, serves three common text MIME types, rejects malformed or oversized data, limits pipe transfers to 250 milliseconds, and falls back to X11 when data control is unavailable. VoiceOver, Narrator, live Wayland clipboard behavior, and AT-SPI behavior still require manual verification before claiming accessible release support.
 
 VSTGUI dependencies remain optional at the package boundary. A plugin can implement the same framework adapter with another toolkit or a custom renderer.
 
@@ -139,13 +149,17 @@ Use these measurements before adding render threads, dirty-region bookkeeping, o
 
 Parameter controls do not need an audio-to-GUI message queue. For meters and analyzers, use `plug.gui_telemetry` and `plug.gui_graph`:
 
-- `ScalarSnapshot(f32)` or `ScalarSnapshot(f64)` stores the latest scalar without a lock.
-- `SpscQueue(T, capacity)` transports bounded visualization records from one producer to one consumer. A full queue drops new records and counts them.
+- `ScalarSnapshot(f32)` or `ScalarSnapshot(f64)` stores the latest scalar without a lock. `valid` reports a malformed retained payload while `load` continues to contain it as silence.
+- `SpscQueue(T, capacity)` transports bounded visualization records from one producer to one consumer. A full queue drops new records and counts them. Storage starts with the type's zero value. Its quiescent `valid` query checks the wrapping cursor distance, and the consumer resynchronizes malformed cursors without reading unpublished storage. After both endpoints stop, `reset` clears every slot, cursor, and drop count.
 - `RepaintCoalescer` allows only one pending repaint request.
 - `EditorActivity` lets the processor skip editor-only analysis while every editor is closed.
-- `MeterBank(Float, count)` combines fixed scalar snapshots with editor activity. `publish` is a bounded atomic store while any editor is open and a no-op while all editors are closed.
+- `MeterBank(Float, count)` combines fixed scalar snapshots with editor activity. `publish` is a bounded atomic store while any editor is open and a no-op while all editors are closed. Its `valid` query composes every retained snapshot.
 - `WaveformCapture(capacity)` performs bounded block reduction and publishes normalized sample points.
 - `SpectrumAnalyzer(fft_size)` performs one bounded radix-2 FFT at most once per process call and publishes decibel bins through a fixed snapshot.
+
+Graph snapshot publication and reading both require finite coordinates. Readers also reject a retained point count beyond fixed storage or caller output instead of exposing malformed telemetry.
+
+Quiescent graph validity composes the atomic coordinate payloads with publication phase and active point extent. Waveform capture forwards that query. Spectrum analysis also validates its sample ring, buffered phase, and fixed window while leaving transient FFT scratch outside the retained-state contract.
 
 The VSTGUI adapter provides peak, stereo, and gain-reduction meters. Meter descriptions select one or two scalar source IDs. A 33 millisecond GUI timer loads the latest snapshots, applies peak hold and decay, updates semantic value text, and invalidates only when the displayed state changes. The timer starts after attachment and stops before removal. Editors without meters create no timer.
 
@@ -157,7 +171,7 @@ The gallery and channel-strip processors both use 30 Hz views. The channel strip
 
 ## Persistent Editor State
 
-Use `plug.editor_state.Store(schema_version, fields)` for bounded state that belongs to the editor rather than the processor. A schema declares stable nonzero field IDs, types, and defaults at compile time. Supported values cover booleans, signed integers, finite scalars, indexes, selected point IDs, finite points, short text, and envelopes with up to 32 points.
+Use `plug.editor_state.Store(schema_version, fields)` for bounded state that belongs to the editor rather than the processor. A schema declares stable nonzero field IDs, types, and defaults at compile time. Supported values cover booleans, signed integers, finite scalars, indexes, selected point IDs, finite points, validated UTF-8 text up to 96 bytes, and envelopes with up to 32 points.
 
 ```zig
 const EditorState = plug.editor_state.Store(1, &.{
@@ -170,9 +184,13 @@ const EditorState = plug.editor_state.Store(1, &.{
 
 Declare `pub const EditorState = EditorStateType` on a reflected controller configuration. The VST3 controller `getState` and `setState` methods then serialize a composite with separate parameter and editor sections, while `setComponentState` continues to accept the processor's parameter-only snapshot. Editor state never enters the processor, process callback, or audio thread.
 
-The binary format carries independent wire and schema versions. Decode limits entry count and payload size, validates every known value, ignores unknown field IDs and value kinds, supports explicit field-ID migrations, and commits only after the complete payload succeeds. Malformed or truncated data leaves the live store unchanged. A controller owns one store per plugin instance, and every view created by that controller observes the same restored state.
+The binary format carries independent wire and schema versions. Decode limits entry count and payload size, validates every known value, ignores unknown field IDs and value kinds, supports explicit field-ID migrations, and commits only after the complete payload succeeds. Malformed or truncated data leaves the live store unchanged. Public text and envelope values validate their retained lengths before returning slices, and envelope views also reject invalid, non-finite, or unordered points. A controller owns one store per plugin instance, and every view created by that controller observes the same restored state.
 
-`gui_preset_browser.Browser(capacity)` supplies the bounded search, selection, keyboard navigation, and load-status model used by the native preset browser. It persists search text and selection through declared editor-state fields. Both the component gallery and channel strip exercise the shared model and native component contract.
+`gui_preset_browser.Browser(capacity)` supplies the bounded search, selection, keyboard navigation, and load-status model used by the native preset browser. Preset storage starts deterministically empty, and insertion rejects malformed retained text as well as invalid and duplicate identifiers. It persists search text and selection through declared editor-state fields. Both the component gallery and channel strip exercise the shared model and native component contract.
+
+`gui_file_drop.DropZone(file_capacity, extension_capacity)` copies accepted paths into fixed storage and filters them against validated extensions. Path arrays start at zero. Each inspection clears the previous path set before accepting a replacement, and rejected inspections or explicit reset scrub all retained path bytes.
+
+`gui_audio_file_importer.DecodedImporter(frame_capacity)` keeps preview points and optional decoded interleaved samples in fixed storage for non-audio-thread handoff. Initialization, replacement, failure, cancellation teardown, and reset clear that retained media storage before publishing an empty logical extent.
 
 ## Lifecycle Checklist
 

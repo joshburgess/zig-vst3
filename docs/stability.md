@@ -2,6 +2,12 @@
 
 This project is pre-release. It is usable for experiments, examples, and early plugin work, but it does not yet make a public compatibility promise.
 
+Host callback boundaries treat raw pointer arguments as untrusted. Public callback declarations use nullable C pointer types for host-provided buffers, structures, identifiers, events, scalar outputs, and GUI telemetry storage. Implementations reject null before dereference, output mutation, retained-reference changes, or configuration-hook dispatch. Internal hooks continue to receive typed non-null pointers after boundary validation.
+
+Direct processor-runtime calls enforce the same instrumented realtime audit used by format and standalone adapters. After context validation, `process` and `process64` report `RealtimeSafetyViolation` if the processor observes allocation, locking, file access, logging, host calls, or GUI calls inside the realtime scope. Saturated audit nesting and reference-generation exhaustion return checked failures instead of terminating.
+
+The shipped-example source gate inspects every `process` and `process64` callback plus directly named block and sample helpers. It rejects allocation, deallocation, locks, blocking waits, thread operations, file or system access, logging, host callbacks, and GUI calls in those realtime bodies.
+
 ## Toolchain
 
 The supported Zig version is the exact version in [docs/toolchain.md](toolchain.md). Toolchain upgrades are breaking work unless the changelog says otherwise. They should land as dedicated changes with the release gate passing on the new compiler.
@@ -14,6 +20,18 @@ The pinned VST3 SDK version is also part of the tested surface. SDK upgrades sho
 
 Before `zig-vst3-0.1.0`, helper APIs can still change. After `zig-vst3-0.1.0`, raw ABI declarations and checked helper behavior should change only with clear release notes and passing ABI gates.
 
+Host-facing reference-count helpers contain a saturated increment and a decrement observed at zero without panicking across the C ABI. They leave the counter unchanged and return the maximum count as the invalid-release sentinel. This does not make access through an already destroyed object pointer valid.
+
+ARA audio-reader leases contain a release observed at zero without underflowing the active-reader count. Reader shutdown still waits for every valid concurrent lease before releasing the host reader.
+
+Raw interface queries model the requested identifier and output slot as nullable C pointers. Framework query implementations reject either null argument before comparing identifiers, retaining an interface, or changing caller output.
+
+Framework-owned factory, component, processor, parameter, stream, event, and automation-queue callbacks model host-supplied output buffers and required input structures as nullable C pointers. They reject null before mutation, state transitions, collection append, or realtime dispatch.
+
+Internal conversions from native collection sizes to signed and unsigned host count fields saturate at the target field maximum. The corresponding next-count helpers also contain a maximum native index without integer overflow.
+
+Native audio callbacks reject a null channel-pointer array when the negotiated topology requires channels. A zero-channel direction may still supply null. Native editor callbacks model C buffers as nullable and reject null before producing slices, writing scalar results, or publishing snapshots.
+
 ## Plugin Framework
 
 `zig-vst3-plugin` is the plugin framework package. It is still experimental and may change names, helper organization, process hook shapes, or metadata access patterns before a stable compatibility promise.
@@ -24,7 +42,7 @@ The intended direction is stable plugin declarations, reflected parameter metada
 
 The reviewed authoring surface is `@import("zig-vst3").vstgui`. Parameter descriptions, standard controls, composition, themes, layouts, meters, graphs, assets, fonts, drawing callbacks, and the `create*View` functions are exercised by the component gallery and production editors. The Parametric EQ and IR Loader independently use the public asset, font, canvas, and drawing callback contracts. Changes to the supported subset should update its consumers and the author guide in the same commit.
 
-Native assistive-technology bridges remain experimental. macOS behavior is integration-tested, Windows support is cross-compiled, and Linux AT-SPI semantics and actions have a platform-neutral tested mapping. Linux accessibility-bus transport and native VoiceOver, Narrator, X11, Wayland, and AT-SPI workflows retain the verification limits listed in [VSTGUI Component Authoring](framework/vstgui-components.md#api-status).
+Native assistive-technology bridges remain experimental. macOS behavior is integration-tested, Windows support is cross-compiled, and the Linux AT-SPI transport passes an isolated D-Bus fixture in Debug and sanitizer builds. Linux X11 clipboard exchange passes its native fixture, while Wayland data-control exchange passes an isolated protocol fixture plus Linux x86-64 and AArch64 strict compilation. Native VoiceOver, Narrator, Orca, Accerciser, X11, Wayland, and AT-SPI workflows retain the verification limits listed in [VSTGUI Component Authoring](framework/vstgui-components.md#api-status).
 
 ## Compatibility Expectations
 

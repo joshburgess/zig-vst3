@@ -13,7 +13,7 @@ The binary format is intentionally small:
 
 Loading ignores unknown parameter ids. That lets newer plugin versions remove parameters without breaking older saved states. Missing parameters keep their current values, so newer versions can add parameters and keep descriptor defaults when loading older state.
 
-Malformed headers, unsupported versions, truncated entries, duplicate restored ids, non-finite or out-of-range normalized values, and failed writes are rejected. Failed reads do not apply partial parameter entries.
+Malformed headers, unsupported versions, truncated entries, duplicate restored ids, non-finite or out-of-range normalized values, failed internal stores, inconsistent restore accounting, and failed writes are rejected. Failed reads do not apply partial parameter entries. Restore storage and accounting checks return errors rather than relying on process assertions.
 
 ## Write And Read State
 
@@ -43,7 +43,7 @@ try plug.state.writeParameterState(Params, &set, &values, writer);
 try plug.state.readParameterState(Params, &set, &values, reader);
 ```
 
-`zig-vst3.vst_stream.FixedBufferStream` is useful for exercising the `IBStream` path without writing a stream mock.
+`zig-vst3.vst_stream.FixedBufferStream` is useful for exercising the `IBStream` path without writing a stream mock. Negative, out-of-capacity, overflowing, and target-width-incompatible stream positions are rejected without changing the retained cursor.
 
 ## Migrations
 

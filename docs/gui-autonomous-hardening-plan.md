@@ -815,6 +815,7 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Member expression supports last, lowest, highest, and all-note tracking when MIDI Mode 3 places several notes on one channel. Manager pitch bend, pressure, and timbre broadcast across the selected zone.
 - Manager-channel sustain retains note-off state until pedal-up. Capacity failure and malformed retained state fail without damaging active notes, and deterministic generated message sequences cover lifecycle invariants.
 - A separate sender-side allocator assigns one note per member channel. It selects free channels deterministically and supports explicit rejection or oldest-assignment stealing, including the displaced assignment needed for a note-off.
+- Nonzero next-ID and next-serial counters must remain newer than every active entry. Counter rollback is rejected before it can duplicate an identity or reverse serial ordering; zero remains the exhausted sentinel.
 - The installed-package consumer exercises note tracking, combined bend, allocation, and stealing through the public exports.
 - The complete deterministic gate passed 125/125 steps and 4,396/4,396 tests. The installed-package consumer passed 19/19 tests.
 - The broader Phase 1 gate passed 341/341 steps, including all raw ABI checks and all 22 native plugins passing all 47 Steinberg validator tests.
@@ -1811,3 +1812,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Controller tests exercise version-2 storage and version-1 compatibility. The integrated analyzer lifecycle exercises a full approved-state round trip, filtered restore, and corrupt-extension rollback while retaining a newer approved value.
 - The focused ARA gate remains 57/57 steps and 214/214 tests because persistence extends existing lifecycle tests rather than adding a new top-level test. The playback product remains 10/10 steps and 4/4 tests, and installed consumers remain 48/48. The complete post-wiring aggregate is recorded in `docs/open-work.md`.
 - Polyphonic note or tempo analysis, advanced transformations, and external ARA-host confirmation remain open. Manual validation must include save and reopen, partial archives, remapping, and failure containment.
+
+## 2026-08-02 Wayland Accessibility Clipboard
+
+- Added a Linux clipboard transport that discovers the Wayland client library at runtime and binds the version-1 external data-control manager when exposed by the compositor. The existing X11 implementation remains the fallback.
+- Selection sources retain their exact UTF-8 payload until compositor cancellation. External offers preserve the MIME spelling advertised by the source, and both read and write pipes use a 250 millisecond bound. Public adapter limits remain 1 MiB with malformed UTF-8 and embedded NUL rejection.
+- Added a deterministic fake Wayland client library and compositor. It covers global discovery, external offer reads, source ownership, source pipe transfer, cancellation, empty selections, bounded reads, malformed input, oversized input, and failure-safe output preservation without requiring a desktop session.
+- The isolated end-to-end suite passes natively and with address and undefined-behavior instrumentation. Strict C and C++ compilation passes for Linux x86-64 and AArch64. The VSTGUI build-mode regression passes with all new cross-build commands accounted for.
+- Live confirmation remains open under GNOME, KDE, Sway, and Weston where available. It must include exchange with native applications, ownership replacement, manager denial or absence, XWayland fallback, near-limit transfers, Orca or Accerciser editing, and teardown. Built-in visual caret and selection synchronization remains separate unfinished work.

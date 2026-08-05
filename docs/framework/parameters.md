@@ -54,11 +54,11 @@ Descriptors can also set `can_automate`, `is_read_only`, and `unit_id`. `unit_id
 - `FloatParam`: bounded `f64` values with normalized/plain conversion and text formatting/parsing.
 - `IntParam`: bounded `i64` values with normalized/plain conversion and rounded denormalization.
 - `BoolParam`: midpoint conversion with `On` and `Off` display text. `is_bypass` marks a dedicated bypass control.
-- `EnumParam(Enum)`: declaration-order list parameter for Zig enums, including enums with sparse explicit tag values.
+- `EnumParam(Enum)`: declaration-order list parameter for exhaustive Zig enums, including enums with sparse explicit tag values.
 
 Float parameters are continuous. Bool parameters report one step. Int parameters report their integer range as discrete steps. Enum parameters report one step per enum transition and set the VST3 list flag.
 
-`FloatParam.initChecked` and `IntParam.initChecked` are available when descriptor ranges come from dynamic input and should return an error instead of panicking. The shorter `init` constructors are still convenient for compile-time declarations.
+Use `FloatParam.initChecked`, `LogFloatParam.initChecked`, and `IntParam.initChecked` when constructing descriptors from runtime input. A linear floating-point range must have a finite positive span. A logarithmic range must be positive and have a finite ratio. The shorter `init` constructors accept only compile-time arguments and turn an invalid fixed declaration into a compiler error.
 
 ## Read Parameters In Process
 

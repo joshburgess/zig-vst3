@@ -6,7 +6,7 @@ The Resource Swap example exercises direct preparation and publication. The Mode
 
 ## Bounded paths
 
-`BoundedPath(capacity)` owns a path in fixed inline storage. `init` rejects empty paths, embedded NUL bytes, and paths longer than `capacity`. Use it in job requests instead of retaining a file picker or drop callback slice.
+`BoundedPath(capacity)` owns a path in fixed inline storage. `init` rejects empty paths, embedded NUL bytes, and paths longer than `capacity`. The complete array starts at zero, including capacity beyond the accepted path. Use it in job requests instead of retaining a file picker or drop callback slice.
 
 ```zig
 const plug = @import("zig-vst3-plugin");
@@ -15,11 +15,27 @@ const ModelPath = plug.resource.BoundedPath(1024);
 const path = try ModelPath.init(selected_path);
 ```
 
+## Bounded growable bytes
+
+`ByteAccumulator` owns allocator-backed byte storage up to a caller-selected maximum. It supports direct append, byte append, resizing, range replacement, capacity reservation, reuse after clearing, and ownership transfer. `writer` exposes the standard `std.Io.Writer` interface, so state and metadata serializers can grow the same buffer without a separate adapter. Limit, range, alias, malformed-state, allocation, and hostile writer-count failures preserve the accepted prefix. Construction, growth, ownership transfer, and destruction are non-real-time operations.
+
+```zig
+var output = try plug.resource.ByteAccumulator.initCapacity(
+    allocator,
+    64 * 1024,
+    256,
+);
+defer output.deinit();
+
+try processor.writeComponentState(try output.writer());
+const encoded = try output.bytes();
+```
+
 ## Resource jobs
 
 `resource.job.Job(Config)` owns one worker thread and one replaceable queued request. A configuration declares `Request`, `Result`, `Failure`, `maximum_work_units`, `maximum_result_units`, and a `run` function. It may also declare `maximum_runtime_nanoseconds` and `dispose`.
 
-Requests must own their bounded input or refer only to storage whose lifetime is guaranteed until `deinit` joins the worker. `submit` replaces queued work and advances the generation. Running work observes the newer generation through `WorkerContext.cancellationRequested` and must stop cooperatively.
+Requests must own their bounded input or refer only to storage whose lifetime is guaranteed until `deinit` joins the worker. `submit` replaces queued work and advances to a nonzero generation distinct from the independently tracked running and queued identities, including across counter rollover. Running work observes the newer generation through `WorkerContext.cancellationRequested` and must stop cooperatively.
 
 The worker operation reports its phase and bounded progress through `WorkerContext`:
 
@@ -28,13 +44,13 @@ The worker operation reports its phase and bounded progress through `WorkerConte
 - `advance` reports monotonic progress.
 - `cancellationRequested` detects replacement, explicit cancellation, teardown, and the optional deadline.
 
-`snapshot` copies status and progress without exposing the result. `takeResult` transfers an accepted result to the caller for the matching generation. Unclaimed or stale results are passed to `Config.dispose` when it is present.
+`snapshot` copies status and progress without exposing the result. Its validity check enforces the configured work bound, active generation identity, and status-specific progress, failure, cancellation, and result state. Its progress and action queries return neutral values when retained state is malformed. A requested cancellation remains a valid active snapshot but cannot be requested twice. `takeResult` transfers an accepted result to the caller for the matching generation. Unclaimed or stale results are passed to `Config.dispose` when it is present.
 
 Jobs may start during component initialization. An editor is not required. Call `deinit` before destroying any request storage or callback target. `deinit` cancels queued work, asks running work to stop, joins the worker, and disposes an unclaimed result.
 
 ## Persistent references
 
-`resource.Reference(path_capacity, metadata_capacity)` stores four bounded values:
+`resource.Reference(path_capacity, metadata_capacity)` stores four bounded values. Its bounded path and metadata arrays initialize inactive capacity to zero:
 
 - A validated path in inline storage.
 - The resource schema version.
@@ -58,7 +74,7 @@ The main entry points are:
 - `adoptPendingAtBlockBoundary` makes a fully prepared resource visible to processing.
 - `reclaim` destroys retired resources on a non-real-time thread.
 
-The worker validates identity and schema compatibility before publication and updates recovery status without an editor polling loop. Restoring component state retires the previous active resource and any older pending publication at the next process-block boundary. Processing therefore remains safe and silent until the restored generation is ready. A missing, unsupported, or changed file remains recoverable. Changed content and incompatible schemas are not published, and the expected reference remains intact. An ordinary import or relink failure leaves the last valid active resource intact.
+The worker validates identity and schema compatibility before publication and updates recovery status without an editor polling loop. Publication generations remain distinct from running preparation, current completion, restore-clear, pending exchange, and active exchange identities across counter rollover. Restoring component state retires the previous active resource and any older pending publication at the next process-block boundary. Processing therefore remains safe and silent until the restored generation is ready. A missing, unsupported, or changed file remains recoverable. Changed content and incompatible schemas are not published, and the expected reference remains intact. An ordinary import or relink failure leaves the last valid active resource intact.
 
 ### Preparation context
 
@@ -124,7 +140,7 @@ The Model Shell integration tests connect a real controller and component, impor
 
 The Model Shell also exposes recovery status, progress, cancellation and retry availability, and bounded model metadata through the retained GUI telemetry source. Numeric status and copied text snapshots remain readable after a failed replacement, while the last valid model and its metadata stay active. An editor can therefore present recovery state without sharing the recovery object, locking a runtime, or keeping the editor open during preparation. `ResourceRecovery.progressSnapshot` returns the bounded preparation job snapshot for this purpose.
 
-Prefer `ResourceRecovery.presentationSnapshot` when one editor update needs status, progress, actions, and metadata together. It copies the recovery reference and reconciles the preparation job by generation. A stale job cannot enable Cancel or Retry for a newer request. Determinate progress is reported only after the matching worker publishes a nonzero work total. Earlier queued work uses an indeterminate running snapshot. Ready, failed, and empty recovery states map to validated toolkit-neutral progress states. The returned metadata remains owned by the snapshot, so callers must not retain its slice after discarding the snapshot.
+Prefer `ResourceRecovery.presentationSnapshot` when one editor update needs status, progress, actions, and metadata together. It copies the recovery reference and reconciles the preparation job by generation. A stale job cannot enable Cancel or Retry for a newer request. Determinate progress is reported only after the matching worker publishes a nonzero work total. Earlier queued work uses an indeterminate running snapshot. Ready, failed, and empty recovery states map to validated toolkit-neutral progress states. Status text and metadata return empty slices when retained presentation state is malformed. Returned metadata remains owned by the snapshot, so callers must not retain its slice after discarding the snapshot.
 
 The recovery object can be used as processor component state through these public processor declarations:
 
@@ -158,9 +174,9 @@ The ownership sequence is:
 
 Generation comparisons use bounded serial-number ordering. A sequence may therefore advance from `maxInt(u64)` to `1` without making every later resource appear stale. Zero remains reserved for the uninitialized state, and generations separated by half the integer range are intentionally treated as unordered.
 
-The writer stores a completed pointer before publishing the slot with release ordering. Audio adoption acquires the published slot and swaps the pending index at the block boundary. Retired slots are released by audio and acquired by the reclaimer before destruction. `active_slot` is owned by the audio thread while processing is live.
+The writer stores a completed pointer before publishing the slot with release ordering. Audio adoption acquires the published slot, validates its phase, nonzero generation, and resource pointer, then swaps the pending index at the block boundary. Malformed pending state is detached before it can replace the active resource. Active views apply the same generation and pointer checks. `activeGeneration` exposes only the synchronized identity to control-side coordination; the resource pointer and active slot remain audio-thread-owned. Retired slots are released by audio and acquired by the reclaimer before destruction.
 
-`adoptPending`, `active`, and `retireActiveAtBlockBoundary` do not allocate, lock, destroy resources, access files, or call the host. `publish`, `reclaim`, and `deinit` are non-real-time operations.
+`adoptPending`, `active`, and `retireActiveAtBlockBoundary` do not allocate, lock, destroy resources, access files, or call the host. `publish`, `reclaim`, and `deinit` are non-real-time operations. After processing and publication stop, `deinit` retires and reclaims every resource-bearing slot even if retained slot metadata is malformed.
 
 ### Mutable runtimes
 
