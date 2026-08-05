@@ -536,10 +536,42 @@ const nc_nowrite: c_int = 0;
 const nc_global: c_int = -1;
 const nc_double: c_int = 6;
 
-const DynamicLibrary = if (builtin.os.tag == .windows)
-    WindowsDynamicLibrary
-else
-    std.DynLib;
+const DynamicLibrary = switch (builtin.os.tag) {
+    .windows => WindowsDynamicLibrary,
+    .linux => LinuxDynamicLibrary,
+    else => std.DynLib,
+};
+
+const LinuxDynamicLibrary = struct {
+    handle: ?*anyopaque,
+
+    fn open(name: [:0]const u8) !LinuxDynamicLibrary {
+        return .{
+            .handle = std.c.dlopen(name.ptr, .{ .NOW = true }) orelse
+                return error.LoadDynamicLibraryFailed,
+        };
+    }
+
+    fn close(self: *LinuxDynamicLibrary) void {
+        const handle = self.handle orelse return;
+        _ = std.c.dlclose(handle);
+        self.handle = null;
+    }
+
+    fn lookup(
+        self: *LinuxDynamicLibrary,
+        comptime T: type,
+        name: [:0]const u8,
+    ) ?T {
+        const handle = self.handle orelse return null;
+        const symbol = @call(
+            .never_tail,
+            std.c.dlsym,
+            .{ handle, name.ptr },
+        ) orelse return null;
+        return @ptrCast(@alignCast(symbol));
+    }
+};
 
 const WindowsDynamicLibrary = struct {
     const windows = std.os.windows;

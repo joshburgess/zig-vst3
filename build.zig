@@ -77,6 +77,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    if (target.result.os.tag == .linux)
+        zig_vst3_plugin_core.link_libc = true;
     const zig_vst3_core_audio = b.addModule("zig-vst3-coreaudio", .{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/core_audio.zig",
@@ -1076,6 +1078,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    if (target.result.os.tag == .linux)
+        zig_vst3_plugin_core_test_module.link_libc = true;
     const zig_vst3_core_audio_test_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/core_audio.zig",
@@ -3454,6 +3458,8 @@ pub fn build(b: *std.Build) void {
             .target = lv2_target,
             .optimize = .ReleaseSafe,
         });
+        if (lv2_target.result.os.tag == .linux)
+            target_core.link_libc = true;
         const target_module = b.createModule(.{
             .root_source_file = b.path("examples/mono_gain_lv2.zig"),
             .target = lv2_target,
@@ -3911,6 +3917,21 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin",
         zig_vst3_plugin,
     );
+    const mp3_pcm_reference_probe_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tools/mp3_pcm_reference_probe.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    mp3_pcm_reference_probe_tests.root_module.addImport(
+        "zig-vst3-plugin",
+        zig_vst3_plugin,
+    );
+    const run_mp3_pcm_reference_probe_tests =
+        b.addRunArtifact(mp3_pcm_reference_probe_tests);
     const mp3_external_vbri_fixture = b.addExecutable(.{
         .name = "mp3-external-vbri-fixture",
         .root_module = b.createModule(.{
@@ -3942,6 +3963,9 @@ pub fn build(b: *std.Build) void {
         b.addRunArtifact(mp3_external_vbri_fixture_tests);
     const test_mp3_interop = b.addSystemCommand(
         &.{"scripts/test_mp3_encoder_interop.sh"},
+    );
+    test_mp3_interop.step.dependOn(
+        &run_mp3_pcm_reference_probe_tests.step,
     );
     test_mp3_interop.addFileArg(mp3_interop_file);
     test_mp3_interop.addArtifactArg(mp3_decode_probe);
@@ -4202,14 +4226,17 @@ pub fn build(b: *std.Build) void {
     const resource_thread_sanitizer_step = b.step("test-resource-thread-sanitizer", "Run resource job and exchange tests with the thread sanitizer");
     resource_thread_sanitizer_step.dependOn(&b.addRunArtifact(resource_thread_sanitizer_tests).step);
 
+    const hrtf_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/hrtf_tests.zig",
+        ),
+        .target = b.graph.host,
+        .optimize = optimize,
+    });
+    if (b.graph.host.result.os.tag == .linux)
+        hrtf_test_module.link_libc = true;
     const hrtf_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path(
-                "zig-vst3-plugin/src/hrtf_tests.zig",
-            ),
-            .target = b.graph.host,
-            .optimize = optimize,
-        }),
+        .root_module = hrtf_test_module,
     });
     const hrtf_test_step = b.step(
         "test-hrtf",
@@ -4313,14 +4340,17 @@ pub fn build(b: *std.Build) void {
         }),
     };
     for (hrtf_cross_targets) |hrtf_target| {
+        const hrtf_cross_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/hrtf_tests.zig",
+            ),
+            .target = hrtf_target,
+            .optimize = .ReleaseSafe,
+        });
+        if (hrtf_target.result.os.tag == .linux)
+            hrtf_cross_module.link_libc = true;
         const hrtf_cross_tests = b.addTest(.{
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(
-                    "zig-vst3-plugin/src/hrtf_tests.zig",
-                ),
-                .target = hrtf_target,
-                .optimize = .ReleaseSafe,
-            }),
+            .root_module = hrtf_cross_module,
         });
         hrtf_test_step.dependOn(&hrtf_cross_tests.step);
     }

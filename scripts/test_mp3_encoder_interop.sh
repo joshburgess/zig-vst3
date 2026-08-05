@@ -40,16 +40,25 @@ compare_reference_pcm() {
     channels=$2
     reference_path=$3
     success_message=$4
+    reference_mode=${5-}
     ffmpeg -v error -y \
         -i "$encoded_path" \
         -map 0:a:0 \
         -f f32le \
         -acodec pcm_f32le \
         "$reference_path"
-    "$reference_probe" \
-        "$encoded_path" \
-        "$reference_path" \
-        "$channels"
+    if [ -n "$reference_mode" ]; then
+        "$reference_probe" \
+            "$encoded_path" \
+            "$reference_path" \
+            "$channels" \
+            "$reference_mode"
+    else
+        "$reference_probe" \
+            "$encoded_path" \
+            "$reference_path" \
+            "$channels"
+    fi
     printf '%s\n' "$success_message"
 }
 
@@ -215,14 +224,16 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$adaptive_gapless_fixture" \
             2 \
             "$temporary/project-adaptive-gapless-reference.f32le" \
-            'MP3 project adaptive gapless CBR FFmpeg reference passed'
+            'MP3 project adaptive gapless CBR FFmpeg reference passed' \
+            --accept-full-gapless-reference
     fi
     if [ -n "$adaptive_gapless_vbr_fixture" ]; then
         compare_reference_pcm \
             "$adaptive_gapless_vbr_fixture" \
             2 \
             "$temporary/project-adaptive-gapless-vbr-reference.f32le" \
-            'MP3 project adaptive gapless VBR FFmpeg reference passed'
+            'MP3 project adaptive gapless VBR FFmpeg reference passed' \
+            --accept-full-gapless-reference
     fi
     if [ -n "$mpeg2_protected_fixture" ]; then
         compare_reference_pcm \

@@ -69,6 +69,13 @@ chmod +x "$fake_bin/decode-probe"
 cp "$fake_bin/decode-probe" "$root/decode-probe-success"
 cat >"$fake_bin/reference-probe" <<'EOF'
 #!/bin/sh
+case "$1" in
+    *adaptive-gapless*)
+        [ "$#" -eq 4 ] || exit 2
+        [ "$4" = "--accept-full-gapless-reference" ] || exit 2
+        ;;
+    *) [ "$#" -eq 3 ] || exit 2 ;;
+esac
 count=0
 [ ! -f "$TMPDIR/reference-probe-count" ] ||
     count=$(cat "$TMPDIR/reference-probe-count")
@@ -245,6 +252,13 @@ expect_reference_probe_failure() {
     # shellcheck disable=SC2016
     printf '%s\n' \
         '#!/bin/sh' \
+        'case "$1" in' \
+        '    *adaptive-gapless*)' \
+        '        [ "$#" -eq 4 ] || exit 2' \
+        '        [ "$4" = "--accept-full-gapless-reference" ] || exit 2' \
+        '        ;;' \
+        '    *) [ "$#" -eq 3 ] || exit 2 ;;' \
+        'esac' \
         'count_file="${TMPDIR:-/tmp}/reference-probe-count"' \
         'count=0' \
         '[ ! -f "$count_file" ] || count=$(cat "$count_file")' \
