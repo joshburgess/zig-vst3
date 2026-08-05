@@ -19,6 +19,11 @@ pub const Operations = struct {
             std.Io.File,
             u64,
         ) anyerror!void,
+        sync: *const fn (
+            ?*anyopaque,
+            std.Io,
+            std.Io.File,
+        ) anyerror!void = systemSync,
     };
 
     pub fn writeAt(
@@ -62,6 +67,14 @@ pub const Operations = struct {
             length,
         );
     }
+
+    pub fn sync(
+        self: Operations,
+        io: std.Io,
+        file: std.Io.File,
+    ) !void {
+        try self.vtable.sync(self.context, io, file);
+    }
 };
 
 fn systemWriteAt(
@@ -84,9 +97,18 @@ fn systemSetLength(
     try file.setLength(io, length);
 }
 
+fn systemSync(
+    _: ?*anyopaque,
+    io: std.Io,
+    file: std.Io.File,
+) !void {
+    try file.sync(io);
+}
+
 const system_vtable = Operations.VTable{
     .write_at = systemWriteAt,
     .set_length = systemSetLength,
+    .sync = systemSync,
 };
 
 pub const Checkpoint = struct {
@@ -306,6 +328,7 @@ test "system file writer operations write and truncate positionally" {
     const operations = Operations{};
     try operations.writeAt(std.testing.io, file, 4, "abcd");
     try operations.setLength(std.testing.io, file, 6);
+    try operations.sync(std.testing.io, file);
 
     var bytes: [6]u8 = undefined;
     try std.testing.expectEqual(

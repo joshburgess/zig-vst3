@@ -10,8 +10,10 @@ const Faults = struct {
     delegate: file_writer_io.Operations = .{},
     write_calls: usize = 0,
     set_length_calls: usize = 0,
+    sync_calls: usize = 0,
     fail_write_call: ?usize = null,
     fail_set_length_call: ?usize = null,
+    fail_sync_call: ?usize = null,
     partial_write_bytes: usize = 0,
     maximum_write_bytes: usize = 0,
 
@@ -25,6 +27,7 @@ const Faults = struct {
     fn clear(self: *Faults) void {
         self.fail_write_call = null;
         self.fail_set_length_call = null;
+        self.fail_sync_call = null;
         self.partial_write_bytes = 0;
     }
 
@@ -73,9 +76,24 @@ const Faults = struct {
         try self.delegate.setLength(io, file, length);
     }
 
+    fn sync(
+        context: ?*anyopaque,
+        io: std.Io,
+        file: std.Io.File,
+    ) !void {
+        const self: *Faults = @ptrCast(@alignCast(
+            context orelse return error.MissingFaultContext,
+        ));
+        self.sync_calls += 1;
+        if (self.fail_sync_call == self.sync_calls)
+            return error.InjectedFileSyncFailure;
+        try self.delegate.sync(io, file);
+    }
+
     const vtable = file_writer_io.Operations.VTable{
         .write_at = writeAt,
         .set_length = setLength,
+        .sync = sync,
     };
 };
 
@@ -218,6 +236,16 @@ fn exerciseFaultContract(
         @as(u64, @intCast(writer.byte_count)),
         try file.length(std.testing.io),
     );
+
+    faults.maximum_write_bytes = 0;
+    faults.fail_sync_call = faults.sync_calls + 1;
+    try std.testing.expectError(
+        error.InjectedFileSyncFailure,
+        writer.finalize(),
+    );
+    try std.testing.expect(writer.recoverable());
+    faults.clear();
+    try writer.finalize();
 }
 
 fn exercisePaddingRollback(

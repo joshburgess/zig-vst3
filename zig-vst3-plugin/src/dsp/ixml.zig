@@ -402,11 +402,13 @@ fn analyze(document: []const u8) !Analysis {
             if (result.speed != null)
                 return error.DuplicateIxmlField;
             result.speed = try analyzeSpeed(child.content);
-            if (result.speed.?.note) |note| {
-                result.text_bytes = try addSize(
-                    result.text_bytes,
-                    try decodedTextBytes(note),
-                );
+            if (result.speed) |speed| {
+                if (speed.note) |note| {
+                    result.text_bytes = try addSize(
+                        result.text_bytes,
+                        try decodedTextBytes(note),
+                    );
+                }
             }
         } else if (std.mem.eql(u8, child.name, "LOUDNESS")) {
             if (result.loudness != null)
@@ -419,7 +421,8 @@ fn analyze(document: []const u8) !Analysis {
             if (result.history != null)
                 return error.DuplicateIxmlField;
             result.history = try analyzeHistory(child.content);
-            const history = result.history.?;
+            const history = result.history orelse
+                return error.InvalidIxmlField;
             try addOptionalTextBytes(&result, &.{
                 history.original_filename,
                 history.parent_filename,
@@ -429,7 +432,8 @@ fn analyze(document: []const u8) !Analysis {
             if (result.bext != null)
                 return error.DuplicateIxmlField;
             result.bext = try analyzeBext(child.content);
-            const bext = result.bext.?;
+            const bext = result.bext orelse
+                return error.InvalidIxmlField;
             try addOptionalTextBytes(&result, &.{
                 bext.description,
                 bext.originator,
@@ -445,7 +449,8 @@ fn analyze(document: []const u8) !Analysis {
             if (result.location != null)
                 return error.DuplicateIxmlField;
             result.location = try analyzeLocation(child.content);
-            const location = result.location.?;
+            const location = result.location orelse
+                return error.InvalidIxmlField;
             try addOptionalTextBytes(&result, &.{
                 location.name,
                 location.kind,
@@ -455,15 +460,18 @@ fn analyze(document: []const u8) !Analysis {
             if (result.user != null)
                 return error.DuplicateIxmlField;
             result.user = try analyzeUser(child.content);
+            const user = result.user orelse
+                return error.InvalidIxmlField;
             try addOptionalTextBytes(
                 &result,
-                &userTextFields(result.user.?),
+                &userTextFields(user),
             );
         } else if (std.mem.eql(u8, child.name, "FILE_SET")) {
             if (result.file_set != null)
                 return error.DuplicateIxmlField;
             result.file_set = try analyzeFileSet(child.content);
-            const file_set = result.file_set.?;
+            const file_set = result.file_set orelse
+                return error.InvalidIxmlField;
             const fields = [_]?[]const u8{
                 file_set.family_uid,
                 file_set.family_name,
@@ -683,7 +691,8 @@ fn analyzeSpeed(content: []const u8) !RawSpeed {
                 return error.DuplicateIxmlField;
             var value: ?u32 = null;
             try setPositiveUnsignedField(&value, element.content);
-            const bit_depth = value.?;
+            const bit_depth = value orelse
+                return error.InvalidIxmlBitDepth;
             if (bit_depth > 64)
                 return error.InvalidIxmlBitDepth;
             speed.audio_bit_depth = @intCast(bit_depth);
@@ -1305,7 +1314,8 @@ fn setUnsignedField(field: *?u32, value: []const u8) !void {
 
 fn setPositiveUnsignedField(field: *?u32, value: []const u8) !void {
     try setUnsignedField(field, value);
-    if (field.*.? == 0) return error.InvalidIxmlNumber;
+    const parsed = field.* orelse return error.InvalidIxmlNumber;
+    if (parsed == 0) return error.InvalidIxmlNumber;
 }
 
 fn setRatioField(field: *?Ratio, value: []const u8) !void {
@@ -1594,7 +1604,7 @@ const Materializer = struct {
         const required = try decodedTextBytes(encoded);
         const destination =
             self.text[self.text_offset .. self.text_offset + required];
-        decodeText(destination, encoded) catch unreachable;
+        try decodeText(destination, encoded);
         self.text_offset += required;
         return destination;
     }
@@ -1995,13 +2005,10 @@ fn writeMetadata(output: *Output, metadata: Metadata) !void {
             4,
         );
         for (metadata.tracks) |track| {
-            if ((track.channel_index != null and
-                track.channel_index.? == 0) or
-                (track.interleave_index != null and
-                    track.interleave_index.? == 0))
-            {
-                return error.InvalidIxmlTrackIndex;
-            }
+            if (track.channel_index) |index|
+                if (index == 0) return error.InvalidIxmlTrackIndex;
+            if (track.interleave_index) |index|
+                if (index == 0) return error.InvalidIxmlTrackIndex;
             try output.append("    <TRACK>\n");
             if (track.channel_index) |value|
                 try writeUnsigned(output, "CHANNEL_INDEX", value, 6);
@@ -2158,8 +2165,8 @@ fn validateSpeed(speed: Speed) !void {
         speed.timestamp_sample_rate,
     };
     for (positive_rates) |rate| {
-        if (rate != null and rate.? == 0)
-            return error.InvalidIxmlNumber;
+        if (rate) |value|
+            if (value == 0) return error.InvalidIxmlNumber;
     }
     if (speed.audio_bit_depth) |bit_depth| {
         if (bit_depth == 0 or bit_depth > 64)
@@ -2390,8 +2397,8 @@ fn writeUser(output: *Output, user: User) !void {
 }
 
 fn writeFileSet(output: *Output, file_set: FileSet) !void {
-    if (file_set.total_files != null and file_set.total_files.? == 0)
-        return error.InvalidIxmlNumber;
+    if (file_set.total_files) |total|
+        if (total == 0) return error.InvalidIxmlNumber;
     try output.append("  <FILE_SET>\n");
     try writeOptionalUnsigned(
         output,
@@ -2474,11 +2481,11 @@ fn writeOptionalRatio(
     const ratio = value orelse return;
     try ratio.validate();
     var storage: [21]u8 = undefined;
-    const text = std.fmt.bufPrint(
+    const text = try std.fmt.bufPrint(
         &storage,
         "{d}/{d}",
         .{ ratio.numerator, ratio.denominator },
-    ) catch unreachable;
+    );
     try writeOptionalText(output, name, text, indentation);
 }
 
@@ -2533,7 +2540,7 @@ fn writeUnsigned(
 ) !void {
     var storage: [20]u8 = undefined;
     const text = std.fmt.bufPrint(&storage, "{d}", .{value}) catch
-        unreachable;
+        return error.IxmlSizeOverflow;
     try writeOptionalText(output, name, text, indentation);
 }
 
@@ -3180,6 +3187,18 @@ test "iXML encoding validates before mutating output" {
             .tracks = &.{.{ .channel_index = 0 }},
         }),
     );
+    try std.testing.expectEqual(before, storage);
+}
+
+test "iXML unsigned formatting overflow preserves output" {
+    var storage: [64]u8 = @splat(0xa5);
+    const before = storage;
+    var output = Output{ .destination = &storage, .offset = 7 };
+    try std.testing.expectError(
+        error.IxmlSizeOverflow,
+        writeUnsigned(&output, "COUNT", std.math.maxInt(u128), 2),
+    );
+    try std.testing.expectEqual(@as(usize, 7), output.offset);
     try std.testing.expectEqual(before, storage);
 }
 

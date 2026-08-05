@@ -3,13 +3,22 @@ const std = @import("std");
 
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    if (args.len != 2) return error.InvalidArguments;
+    if (args.len != 2 and args.len != 4)
+        return error.InvalidArguments;
+    const psychoacoustics: plug.dsp.VorbisPsychoacousticConfig =
+        if (args.len == 4) quality: {
+            const level = try std.fmt.parseInt(u4, args[2], 10);
+            if (level > 10) return error.InvalidArguments;
+            const preset: plug.dsp.VorbisQualityPreset =
+                @enumFromInt(level);
+            break :quality preset.applyTo(.{});
+        } else .{};
 
     const identification = plug.dsp.VorbisIdentification{
         .channel_count = 1,
         .sample_rate = 48_000,
         .bitrate_maximum = -1,
-        .bitrate_nominal = 96_000,
+        .bitrate_nominal = 768_000,
         .bitrate_minimum = -1,
         .small_block_size = 64,
         .large_block_size = 64,
@@ -62,7 +71,7 @@ pub fn main(init: std.process.Init) !void {
     var sequence = try plug.dsp.VorbisPcmPacketSequence.init(
         .{
             .rate_control = .{
-                .target_bitrate = 96_000,
+                .target_bitrate = 768_000,
                 .reservoir_capacity_bits = 4_096,
                 .maximum_packet_bits = 4_096,
             },
@@ -229,7 +238,7 @@ pub fn main(init: std.process.Init) !void {
         setup,
         first_plan,
         &.{&pcm},
-        .{},
+        psychoacoustics,
         &.{1},
         .{},
         &packet_storage,
@@ -260,7 +269,7 @@ pub fn main(init: std.process.Init) !void {
         setup,
         middle_plan,
         &.{&pcm},
-        .{},
+        psychoacoustics,
         &.{1},
         .{},
         &packet_storage,
@@ -290,7 +299,7 @@ pub fn main(init: std.process.Init) !void {
         setup,
         final_plan,
         &.{&pcm},
-        .{},
+        psychoacoustics,
         &.{1},
         .{},
         &packet_storage,
@@ -305,6 +314,8 @@ pub fn main(init: std.process.Init) !void {
     );
 
     try writeFixture(init, args[1], writer.bytes());
+    if (args.len == 4)
+        try writeSourcePcm(init, args[3], &pcm);
 }
 
 fn writeFixture(
@@ -317,11 +328,66 @@ fn writeFixture(
     try file.writeStreamingAll(init.io, bytes);
 }
 
+fn writeSourcePcm(
+    init: std.process.Init,
+    path: []const u8,
+    samples: []const f32,
+) !void {
+    var file = try std.Io.Dir.cwd().createFile(init.io, path, .{});
+    defer file.close(init.io);
+    var bytes: [@sizeOf(f32)]u8 = undefined;
+    for (samples) |sample| {
+        std.mem.writeInt(u32, &bytes, @bitCast(sample), .little);
+        try file.writeStreamingAll(init.io, &bytes);
+    }
+}
+
 fn interoperabilitySetup() plug.dsp.VorbisSetup {
     const Static = struct {
-        const entries = [_]plug.dsp.VorbisCodebookEntry{
-            .{ .codeword = 0, .length = 1 },
-            .{ .codeword = 0, .length = 1 },
+        const entries = block: {
+            var values: [17]plug.dsp.VorbisCodebookEntry = undefined;
+            values[0] = .{ .codeword = 0, .length = 1 };
+            for (0..16) |index| {
+                values[index + 1] = .{
+                    .codeword = @intCast(index),
+                    .length = 4,
+                };
+            }
+            break :block values;
+        };
+        const multiplicands = block: {
+            var values: [16]u32 = undefined;
+            for (&values, 0..) |*value, index|
+                value.* = @intCast(index);
+            break :block values;
+        };
+        const huffman_nodes = block: {
+            const invalid = std.math.maxInt(u32);
+            const leaf: u32 = 1 << 31;
+            var nodes: [15]plug.dsp.VorbisHuffmanNode =
+                @splat(.{ .branches = .{ invalid, invalid } });
+            var next_node: u32 = 1;
+            for (0..16) |entry_index| {
+                var node_index: u32 = 0;
+                for (0..4) |depth| {
+                    const shift: u5 = @intCast(3 - depth);
+                    const branch_index: usize = @intCast(
+                        (entry_index >> shift) & 1,
+                    );
+                    const branch =
+                        &nodes[node_index].branches[branch_index];
+                    if (depth == 3) {
+                        branch.* = leaf | @as(u32, @intCast(entry_index));
+                    } else if (branch.* == invalid) {
+                        branch.* = next_node;
+                        node_index = next_node;
+                        next_node += 1;
+                    } else {
+                        node_index = branch.*;
+                    }
+                }
+            }
+            break :block nodes;
         };
         const codebooks = [_]plug.dsp.VorbisCodebook{
             .{
@@ -335,17 +401,17 @@ fn interoperabilitySetup() plug.dsp.VorbisSetup {
             },
             .{
                 .dimensions = 1,
-                .entries = 1,
+                .entries = 16,
                 .entry_offset = 1,
-                .active_entry_count = 1,
+                .active_entry_count = 16,
                 .tree_node_offset = 0,
-                .tree_node_count = 0,
+                .tree_node_count = 15,
                 .lookup_type = 1,
-                .minimum_value = 0,
+                .minimum_value = -8,
                 .delta_value = 1,
                 .sequence = false,
                 .multiplicand_offset = 0,
-                .multiplicand_count = 1,
+                .multiplicand_count = 16,
             },
         };
         const floor = block: {
@@ -405,20 +471,21 @@ fn interoperabilitySetup() plug.dsp.VorbisSetup {
     return .{
         .summary = .{
             .codebook_count = 2,
-            .codebook_entry_count = 2,
-            .codebook_multiplicand_count = 1,
+            .codebook_entry_count = 17,
+            .huffman_node_count = 15,
+            .codebook_multiplicand_count = 16,
             .time_count = 1,
             .floor_count = 1,
             .residue_count = 1,
             .mapping_count = 1,
             .mode_count = 1,
             .maximum_codebook_dimensions = 1,
-            .maximum_codebook_entries = 1,
+            .maximum_codebook_entries = 16,
         },
         .codebooks = &Static.codebooks,
         .codebook_entries = &Static.entries,
-        .huffman_nodes = &.{},
-        .codebook_multiplicands = &.{1},
+        .huffman_nodes = &Static.huffman_nodes,
+        .codebook_multiplicands = &Static.multiplicands,
         .floors = &Static.floors,
         .residues = &Static.residues,
         .mappings = &Static.mappings,

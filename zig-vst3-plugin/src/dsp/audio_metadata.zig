@@ -145,6 +145,9 @@ pub fn encodeRiffXml(
     const required = try requiredRiffXmlBytes(kind, document);
     if (destination.len < required)
         return error.MetadataOutputTooSmall;
+    const output = destination[0..required];
+    if (byteSlicesOverlap(output, document))
+        return error.MetadataSourceAliasesOutput;
     @memcpy(destination[0..4], &kind.id());
     std.mem.writeInt(
         u32,
@@ -317,6 +320,8 @@ pub fn encodeRiffInfo(
     const required = try requiredRiffInfoBytes(entries);
     if (destination.len < required)
         return error.MetadataOutputTooSmall;
+    const output = destination[0..required];
+    try validateEntryStorageDisjoint(output, entries);
 
     @memcpy(destination[0..4], "LIST");
     std.mem.writeInt(
@@ -434,7 +439,7 @@ pub const RiffInfoView = struct {
             .bytes = bytes,
             .offset = 12,
         };
-        while (try validator.next()) |_| {}
+        while (try validator.nextInPlace()) |_| {}
         return .{ .bytes = bytes };
     }
 
@@ -450,7 +455,29 @@ pub const RiffInfoIterator = struct {
     bytes: []const u8,
     offset: usize,
 
+    pub fn valid(self: RiffInfoIterator) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn next(self: *RiffInfoIterator) !?Entry {
+        try self.validateState();
+        return self.nextInPlace();
+    }
+
+    fn validateState(self: RiffInfoIterator) !void {
+        if (self.offset < 12 or self.offset > self.bytes.len)
+            return error.InvalidRiffInfoIteratorState;
+        const view = try RiffInfoView.init(self.bytes);
+        var canonical = view.iterator();
+        var state_seen = self.offset == canonical.offset;
+        while (try canonical.nextInPlace()) |_| {
+            if (self.offset == canonical.offset) state_seen = true;
+        }
+        if (!state_seen) return error.InvalidRiffInfoIteratorState;
+    }
+
+    fn nextInPlace(self: *RiffInfoIterator) !?Entry {
         if (self.offset == self.bytes.len) return null;
         if (self.bytes.len - self.offset < 8)
             return error.TruncatedRiffInfo;
@@ -522,6 +549,8 @@ pub fn encodeAiffText(
     const required = try requiredAiffTextBytes(entries);
     if (destination.len < required)
         return error.MetadataOutputTooSmall;
+    const output = destination[0..required];
+    try validateEntryStorageDisjoint(output, entries);
     var offset: usize = 0;
     for (entries) |entry| {
         @memcpy(destination[offset..][0..4], &entry.id);
@@ -577,11 +606,32 @@ pub const AiffTextIterator = struct {
 
     pub fn init(bytes: []const u8) !AiffTextIterator {
         var iterator = AiffTextIterator{ .bytes = bytes };
-        while (try iterator.next()) |_| {}
+        while (try iterator.nextInPlace()) |_| {}
         return .{ .bytes = bytes };
     }
 
+    pub fn valid(self: AiffTextIterator) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn next(self: *AiffTextIterator) !?Entry {
+        try self.validateState();
+        return self.nextInPlace();
+    }
+
+    fn validateState(self: AiffTextIterator) !void {
+        if (self.offset > self.bytes.len)
+            return error.InvalidAiffTextIteratorState;
+        var canonical = try AiffTextIterator.init(self.bytes);
+        var state_seen = self.offset == canonical.offset;
+        while (try canonical.nextInPlace()) |_| {
+            if (self.offset == canonical.offset) state_seen = true;
+        }
+        if (!state_seen) return error.InvalidAiffTextIteratorState;
+    }
+
+    fn nextInPlace(self: *AiffTextIterator) !?Entry {
         if (self.offset == self.bytes.len) return null;
         if (self.bytes.len - self.offset < 8)
             return error.TruncatedAiffMetadata;
@@ -635,6 +685,37 @@ fn addMetadataBytes(left: usize, right: usize) !usize {
         return error.MetadataSizeOverflow;
 }
 
+fn validateEntryStorageDisjoint(
+    output: []const u8,
+    entries: []const Entry,
+) !void {
+    if (byteSlicesOverlap(output, entries))
+        return error.MetadataSourceAliasesOutput;
+    for (entries) |entry| {
+        if (byteSlicesOverlap(output, entry.value))
+            return error.MetadataSourceAliasesOutput;
+    }
+}
+
+fn byteSlicesOverlap(first: anytype, second: anytype) bool {
+    if (first.len == 0 or second.len == 0) return false;
+    const first_bytes = std.mem.sliceAsBytes(first);
+    const second_bytes = std.mem.sliceAsBytes(second);
+    const first_start = @intFromPtr(first_bytes.ptr);
+    const second_start = @intFromPtr(second_bytes.ptr);
+    const first_end = std.math.add(
+        usize,
+        first_start,
+        first_bytes.len,
+    ) catch return true;
+    const second_end = std.math.add(
+        usize,
+        second_start,
+        second_bytes.len,
+    ) catch return true;
+    return first_start < second_end and second_start < first_end;
+}
+
 fn writeAt(
     io: std.Io,
     file: std.Io.File,
@@ -663,6 +744,15 @@ test "RIFF INFO metadata round trips known and unknown entries" {
         try std.testing.expectEqualStrings(expected.value, actual.value);
     }
     try std.testing.expect((try iterator.next()) == null);
+
+    var invalid_iterator = view.iterator();
+    invalid_iterator.offset = 13;
+    try std.testing.expect(!invalid_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidRiffInfoIteratorState,
+        invalid_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 13), invalid_iterator.offset);
 }
 
 test "RIFF INFO metadata writes directly to a file" {
@@ -729,6 +819,17 @@ test "RIFF INFO validation is transactional and rejects malformed input" {
         error.InvalidRiffInfoPadding,
         RiffInfoView.init(&malformed),
     );
+
+    var invalid_iterator = RiffInfoIterator{
+        .bytes = &.{},
+        .offset = 1,
+    };
+    try std.testing.expect(!invalid_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidRiffInfoIteratorState,
+        invalid_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 1), invalid_iterator.offset);
 }
 
 test "AIFF text metadata round trips padded chunks" {
@@ -745,6 +846,26 @@ test "AIFF text metadata round trips padded chunks" {
         try std.testing.expectEqualStrings(expected.value, actual.value);
     }
     try std.testing.expect((try iterator.next()) == null);
+
+    var middle_iterator = try AiffTextIterator.init(encoded);
+    middle_iterator.offset = 1;
+    try std.testing.expect(!middle_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidAiffTextIteratorState,
+        middle_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 1), middle_iterator.offset);
+
+    var invalid_iterator = AiffTextIterator{
+        .bytes = &.{},
+        .offset = 1,
+    };
+    try std.testing.expect(!invalid_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidAiffTextIteratorState,
+        invalid_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 1), invalid_iterator.offset);
 }
 
 test "RIFF XML metadata round trips iXML and aXML chunks" {
@@ -793,6 +914,50 @@ test "RIFF XML metadata validation is transactional" {
         error.InvalidXmlEnvelope,
         encodeRiffXml(&storage, .axml, "not XML"),
     );
+}
+
+test "memory metadata encoders reject overlapping borrowed input" {
+    var xml_storage: [32]u8 = @splat(0xa5);
+    @memcpy(xml_storage[0..4], "<x/>");
+    const xml_before = xml_storage;
+    try std.testing.expectError(
+        error.MetadataSourceAliasesOutput,
+        encodeRiffXml(
+            &xml_storage,
+            .ixml,
+            xml_storage[0..4],
+        ),
+    );
+    try std.testing.expectEqual(xml_before, xml_storage);
+
+    var info_storage: [32]u8 = @splat(0x5a);
+    @memcpy(info_storage[0..5], "Title");
+    const info_before = info_storage;
+    const info_entries = [_]Entry{.{
+        .id = title,
+        .value = info_storage[0..5],
+    }};
+    try std.testing.expectError(
+        error.MetadataSourceAliasesOutput,
+        encodeRiffInfo(&info_storage, &info_entries),
+    );
+    try std.testing.expectEqual(info_before, info_storage);
+
+    var text_storage: [64]u8 align(@alignOf(Entry)) = @splat(0x3c);
+    const text_entries = std.mem.bytesAsSlice(
+        Entry,
+        text_storage[0..@sizeOf(Entry)],
+    );
+    text_entries[0] = .{
+        .id = aiff_name,
+        .value = "Title",
+    };
+    const text_before = text_storage;
+    try std.testing.expectError(
+        error.MetadataSourceAliasesOutput,
+        encodeAiffText(&text_storage, text_entries),
+    );
+    try std.testing.expectEqual(text_before, text_storage);
 }
 
 test "composed RIFF metadata validates every chunk before file output" {

@@ -220,6 +220,14 @@ pub fn encode(
     const required = try requiredBytes(extension);
     if (destination.len < required)
         return error.BroadcastMetadataOutputTooSmall;
+    const output = destination[0..required];
+    if (slicesOverlap(output, extension.description) or
+        slicesOverlap(output, extension.originator) or
+        slicesOverlap(output, extension.originator_reference) or
+        slicesOverlap(output, extension.coding_history))
+    {
+        return error.BroadcastMetadataSourceAliasesOutput;
+    }
     const payload_bytes = fixed_payload_bytes +
         extension.coding_history.len;
     @memset(destination[0..required], 0);
@@ -311,6 +319,17 @@ pub fn writeFile(
 
 fn writeFixedText(destination: []u8, text: []const u8) void {
     @memcpy(destination[0..text.len], text);
+}
+
+fn slicesOverlap(first: []const u8, second: []const u8) bool {
+    if (first.len == 0 or second.len == 0) return false;
+    const first_start = @intFromPtr(first.ptr);
+    const second_start = @intFromPtr(second.ptr);
+    const first_end = std.math.add(usize, first_start, first.len) catch
+        return true;
+    const second_end = std.math.add(usize, second_start, second.len) catch
+        return true;
+    return first_start < second_end and second_start < first_end;
 }
 
 fn readFixedText(field: []const u8) ![]const u8 {
@@ -574,6 +593,26 @@ test "BWF validation rejects dates loudness and coding history" {
         error.InvalidCodingHistory,
         encode(&storage, .{ .coding_history = "missing terminator" }),
     );
+}
+
+test "BWF encoding rejects overlapping borrowed input" {
+    var storage: [640]u8 = @splat(0xa5);
+    @memcpy(storage[0..5], "Title");
+    const description_before = storage;
+    try std.testing.expectError(
+        error.BroadcastMetadataSourceAliasesOutput,
+        encode(&storage, .{ .description = storage[0..5] }),
+    );
+    try std.testing.expectEqual(description_before, storage);
+
+    storage = @splat(0x5a);
+    @memcpy(storage[0..3], "A\r\n");
+    const history_before = storage;
+    try std.testing.expectError(
+        error.BroadcastMetadataSourceAliasesOutput,
+        encode(&storage, .{ .coding_history = storage[0..3] }),
+    );
+    try std.testing.expectEqual(history_before, storage);
 }
 
 test "BWF parser rejects reserved bytes and padding" {

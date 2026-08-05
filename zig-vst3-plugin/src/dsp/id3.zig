@@ -261,7 +261,7 @@ pub const V23View = struct {
             .frames_end = frames_end,
         };
         var validator = view.iterator();
-        while (try validator.next()) |_| {}
+        while (try validator.nextInPlace()) |_| {}
         return view;
     }
 
@@ -274,7 +274,28 @@ pub const V23Iterator = struct {
     bytes: []const u8,
     offset: usize = 0,
 
+    pub fn valid(self: V23Iterator) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn next(self: *V23Iterator) !?V23EncodedFrame {
+        try self.validateState();
+        return self.nextInPlace();
+    }
+
+    fn validateState(self: V23Iterator) !void {
+        if (self.offset > self.bytes.len)
+            return error.InvalidId3IteratorState;
+        var canonical = V23Iterator{ .bytes = self.bytes };
+        var state_seen = self.offset == canonical.offset;
+        while (try canonical.nextInPlace()) |_| {
+            if (self.offset == canonical.offset) state_seen = true;
+        }
+        if (!state_seen) return error.InvalidId3IteratorState;
+    }
+
+    fn nextInPlace(self: *V23Iterator) !?V23EncodedFrame {
         if (self.offset == self.bytes.len) return null;
         if (self.bytes.len - self.offset < 10)
             return error.TruncatedId3Frame;
@@ -351,6 +372,8 @@ pub fn encodeV23(
     const required = try requiredV23Bytes(frames, options);
     if (destination.len < required) return error.Id3OutputTooSmall;
     const output = destination[0..required];
+    if (slicesOverlap(output, std.mem.sliceAsBytes(frames)))
+        return error.Id3SourceAliasesOutput;
     for (frames) |frame| {
         if (slicesOverlap(output, frame.payload))
             return error.Id3SourceAliasesOutput;
@@ -398,6 +421,9 @@ pub fn encodeV23TextPayload(
 ) ![]const u8 {
     const required = try requiredV23TextPayloadBytes(encoding, value);
     if (destination.len < required) return error.Id3OutputTooSmall;
+    const output = destination[0..required];
+    if (slicesOverlap(output, value))
+        return error.Id3SourceAliasesOutput;
     destination[0] = @intFromEnum(encoding);
     @memcpy(destination[1..required], value);
     return destination[0..required];
@@ -631,7 +657,7 @@ fn findV23FramesEnd(
     while (iterator.offset < iterator.bytes.len) {
         if (iterator.bytes[iterator.offset] == 0)
             return frames_start + iterator.offset;
-        _ = try iterator.next();
+        _ = try iterator.nextInPlace();
     }
     return frames_limit;
 }
@@ -804,7 +830,7 @@ pub const View = struct {
             .frames_end = frames_end,
         };
         var validator = view.iterator();
-        while (try validator.next()) |_| {}
+        while (try validator.nextInPlace()) |_| {}
         return view;
     }
 
@@ -821,7 +847,31 @@ pub const Iterator = struct {
     offset: usize = 0,
     tag_unsynchronised: bool,
 
+    pub fn valid(self: Iterator) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn next(self: *Iterator) !?EncodedFrame {
+        try self.validateState();
+        return self.nextInPlace();
+    }
+
+    fn validateState(self: Iterator) !void {
+        if (self.offset > self.bytes.len)
+            return error.InvalidId3IteratorState;
+        var canonical = Iterator{
+            .bytes = self.bytes,
+            .tag_unsynchronised = self.tag_unsynchronised,
+        };
+        var state_seen = self.offset == canonical.offset;
+        while (try canonical.nextInPlace()) |_| {
+            if (self.offset == canonical.offset) state_seen = true;
+        }
+        if (!state_seen) return error.InvalidId3IteratorState;
+    }
+
+    fn nextInPlace(self: *Iterator) !?EncodedFrame {
         if (self.offset == self.bytes.len) return null;
         if (self.bytes.len - self.offset < 10)
             return error.TruncatedId3Frame;
@@ -920,6 +970,8 @@ pub fn encode(
     const required = try requiredBytes(frames, options);
     if (destination.len < required) return error.Id3OutputTooSmall;
     const output = destination[0..required];
+    if (slicesOverlap(output, std.mem.sliceAsBytes(frames)))
+        return error.Id3SourceAliasesOutput;
     for (frames) |frame| {
         if (slicesOverlap(output, frame.payload))
             return error.Id3SourceAliasesOutput;
@@ -964,6 +1016,9 @@ pub fn encodeUtf8TextPayload(
 ) ![]const u8 {
     const required = try requiredUtf8TextPayloadBytes(value);
     if (destination.len < required) return error.Id3OutputTooSmall;
+    const output = destination[0..required];
+    if (slicesOverlap(output, value))
+        return error.Id3SourceAliasesOutput;
     destination[0] = @intFromEnum(TextEncoding.utf8);
     @memcpy(destination[1..required], value);
     return destination[0..required];
@@ -1236,7 +1291,7 @@ fn findFramesEnd(
     while (iterator.offset < iterator.bytes.len) {
         if (iterator.bytes[iterator.offset] == 0)
             return frames_start + iterator.offset;
-        _ = try iterator.next();
+        _ = try iterator.nextInPlace();
     }
     return frames_limit;
 }
@@ -1500,6 +1555,14 @@ test "ID3v2.3 validation is transactional and version-specific" {
         .{},
     );
     const view = try V23View.init(encoded, &.{});
+    var middle_iterator = view.iterator();
+    middle_iterator.offset = 1;
+    try std.testing.expect(!middle_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidId3IteratorState,
+        middle_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 1), middle_iterator.offset);
     var iterator = view.iterator();
     try std.testing.expectError(
         error.UnsupportedId3v23TextEncoding,
@@ -1518,6 +1581,17 @@ test "ID3v2.3 validation is transactional and version-specific" {
         error.InvalidId3Unsynchronisation,
         V23View.requiredDecodedBytes(&malformed_unsynchronisation),
     );
+
+    var invalid_iterator = V23Iterator{
+        .bytes = &.{},
+        .offset = 1,
+    };
+    try std.testing.expect(!invalid_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidId3IteratorState,
+        invalid_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 1), invalid_iterator.offset);
 }
 
 test "ID3v2.3 uses ordinary frame sizes and rejects storage aliasing" {
@@ -1553,6 +1627,23 @@ test "ID3v2.3 uses ordinary frame sizes and rejects storage aliasing" {
         ),
     );
     try std.testing.expectEqualSlices(u8, &before, &alias_storage);
+
+    var descriptor_storage: [96]u8 align(@alignOf(V23Frame)) =
+        @splat(0x5a);
+    const aliased_frames = std.mem.bytesAsSlice(
+        V23Frame,
+        descriptor_storage[0..@sizeOf(V23Frame)],
+    );
+    aliased_frames[0] = .{
+        .id = .{ 'X', 'B', 'I', 'N' },
+        .payload = "payload",
+    };
+    const descriptor_before = descriptor_storage;
+    try std.testing.expectError(
+        error.Id3SourceAliasesOutput,
+        encodeV23(&descriptor_storage, aliased_frames, .{}),
+    );
+    try std.testing.expectEqual(descriptor_before, descriptor_storage);
 
     var unsynchronised_storage: [64]u8 = undefined;
     const unsynchronised = try encodeV23(
@@ -1717,6 +1808,33 @@ test "ID3v2.4 UTF-8 text frames round trip with footer and padding" {
     try std.testing.expect((try iterator.next()) == null);
 }
 
+test "ID3 text payload encoders reject overlapping source" {
+    var v23_storage: [16]u8 = @splat(0xa5);
+    v23_storage[0] = 'x';
+    const v23_before = v23_storage;
+    try std.testing.expectError(
+        error.Id3SourceAliasesOutput,
+        encodeV23TextPayload(
+            &v23_storage,
+            .latin1,
+            v23_storage[0..1],
+        ),
+    );
+    try std.testing.expectEqual(v23_before, v23_storage);
+
+    var v24_storage: [16]u8 = @splat(0x5a);
+    v24_storage[0] = 'x';
+    const v24_before = v24_storage;
+    try std.testing.expectError(
+        error.Id3SourceAliasesOutput,
+        encodeUtf8TextPayload(
+            &v24_storage,
+            v24_storage[0..1],
+        ),
+    );
+    try std.testing.expectEqual(v24_before, v24_storage);
+}
+
 test "ID3v2.4 unsynchronisation crosses format fields and payload" {
     const payload = [_]u8{
         0xe1, 0xff, 0x00, 0x20, 0xff, 0x20, 0xff,
@@ -1809,6 +1927,23 @@ test "ID3v2.4 rejects source and output aliasing before mutation" {
     );
     try std.testing.expectEqualSlices(u8, &before, &storage);
 
+    var descriptor_storage: [96]u8 align(@alignOf(Frame)) =
+        @splat(0x5a);
+    const aliased_frames = std.mem.bytesAsSlice(
+        Frame,
+        descriptor_storage[0..@sizeOf(Frame)],
+    );
+    aliased_frames[0] = .{
+        .id = title,
+        .payload = &.{ 3, 'x' },
+    };
+    const descriptor_before = descriptor_storage;
+    try std.testing.expectError(
+        error.Id3SourceAliasesOutput,
+        encode(&descriptor_storage, aliased_frames, .{}),
+    );
+    try std.testing.expectEqual(descriptor_before, descriptor_storage);
+
     var encoded_storage: [64]u8 = undefined;
     const encoded = try encode(
         &encoded_storage,
@@ -1831,6 +1966,15 @@ test "ID3v2.4 parser rejects invalid padding and unsynchronisation" {
         &.{.{ .id = title, .payload = &.{ 3, 'x' } }},
         .{ .padding_bytes = 2 },
     );
+    const view = try View.init(encoded);
+    var middle_iterator = view.iterator();
+    middle_iterator.offset = 1;
+    try std.testing.expect(!middle_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidId3IteratorState,
+        middle_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 1), middle_iterator.offset);
     storage[encoded.len - 1] = 1;
     try std.testing.expectError(error.InvalidId3Padding, View.init(encoded));
 
@@ -1843,6 +1987,18 @@ test "ID3v2.4 parser rejects invalid padding and unsynchronisation" {
         error.InvalidId3Unsynchronisation,
         View.init(&malformed),
     );
+
+    var invalid_iterator = Iterator{
+        .bytes = &.{},
+        .offset = 1,
+        .tag_unsynchronised = false,
+    };
+    try std.testing.expect(!invalid_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidId3IteratorState,
+        invalid_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 1), invalid_iterator.offset);
 }
 
 test "ID3 text validation covers UTF-16 and UTF-8 failures" {

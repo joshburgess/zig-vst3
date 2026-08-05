@@ -20,8 +20,12 @@ pub fn main(init: std.process.Init) !void {
         .protected
     else if (std.mem.eql(u8, args[4], "--require-free-format"))
         .free_format
+    else if (std.mem.eql(u8, args[4], "--require-joint-stereo"))
+        .joint_stereo
     else if (std.mem.eql(u8, args[4], "--require-vbri"))
         .vbri
+    else if (std.mem.eql(u8, args[4], "--require-gapless"))
+        .gapless
     else if (std.mem.eql(u8, args[4], "--require-junk-resync"))
         .junk_resync
     else if (std.mem.eql(
@@ -57,7 +61,9 @@ pub fn main(init: std.process.Init) !void {
         },
         .protected,
         .free_format,
+        .joint_stereo,
         .vbri,
+        .gapless,
         .junk_resync,
         .trailing_junk_rejection,
         => {},
@@ -90,6 +96,14 @@ pub fn main(init: std.process.Init) !void {
         if (!first_frame.header.free_format)
             return error.MissingExpectedMp3FreeFormat;
     }
+    if (requirement == .joint_stereo) {
+        const first_frame = try plug.dsp.Mp3Frame.parse(
+            encoded,
+            summary.audio_offset,
+        );
+        if (first_frame.header.channel_mode != .joint_stereo)
+            return error.MissingExpectedMp3JointStereo;
+    }
     if (requirement == .vbri) {
         const vbri = summary.first_vbri orelse
             return error.MissingExpectedMp3Vbri;
@@ -98,6 +112,27 @@ pub fn main(init: std.process.Init) !void {
             vbri.toc_entries == 0)
         {
             return error.UnexpectedMp3VbriMetadata;
+        }
+    }
+    if (requirement == .gapless) {
+        const xing = summary.first_xing orelse
+            return error.MissingExpectedMp3GaplessMetadata;
+        const declared_frames = xing.frame_count orelse
+            return error.MissingExpectedMp3GaplessMetadata;
+        const declared_bytes = xing.stream_bytes orelse
+            return error.MissingExpectedMp3GaplessMetadata;
+        if (xing.encoder_delay == null or
+            xing.encoder_padding == null or
+            declared_frames != summary.frame_count or
+            declared_bytes != summary.audio_bytes)
+        {
+            return error.UnexpectedMp3GaplessMetadata;
+        }
+        const plan = try plug.dsp.Mp3GaplessPlan.fromSummary(summary);
+        if (plan.audible_samples == 0 or
+            plan.audible_samples >= plan.encoded_samples)
+        {
+            return error.UnexpectedMp3GaplessRange;
         }
     }
     if (args.len >= 4) {
@@ -227,7 +262,9 @@ const Requirement = enum {
     id3v2_4,
     protected,
     free_format,
+    joint_stereo,
     vbri,
+    gapless,
     junk_resync,
     trailing_junk_rejection,
 };

@@ -390,7 +390,7 @@ pub const FileWriter = struct {
     pub fn finalize(self: *FileWriter) !void {
         if (!self.recoverable()) return error.InvalidRf64FileWriterState;
         try self.recover();
-        try self.file.sync(self.io);
+        try self.operations.sync(self.io, self.file);
     }
 
     pub fn recover(self: *FileWriter) !void {
@@ -639,6 +639,7 @@ fn validateDitheredSamples(
     dither: *const pcm_dither.PcmDither,
 ) !void {
     try validateSamples(Sample, samples, spec);
+    try dither.validate();
     if (spec.encoding == .ieee_f32)
         return error.DitherRequiresIntegerPcm;
     if (dither.channelCount() != spec.channel_count)

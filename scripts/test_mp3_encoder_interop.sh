@@ -6,6 +6,13 @@ decode_probe=${2-}
 reference_probe=${3-}
 vbri_fixture=${4-}
 external_vbri_fixture=${5-}
+mpeg2_mono_fixture=${6-}
+mpeg2_intensity_fixture=${7-}
+mpeg25_intensity_fixture=${8-}
+adaptive_gapless_fixture=${9-}
+adaptive_gapless_vbr_fixture=${10-}
+mpeg2_protected_fixture=${11-}
+mpeg25_protected_fixture=${12-}
 test -f "$fixture"
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-mp3-interop.XXXXXX")
@@ -116,6 +123,47 @@ if [ -n "$decode_probe" ]; then
         "$decode_probe" "$vbri_fixture" 44100 2 --require-vbri
         printf 'MP3 project VBRI decoder probe passed\n'
     fi
+    if [ -n "$mpeg2_mono_fixture" ]; then
+        test -f "$mpeg2_mono_fixture"
+        "$decode_probe" "$mpeg2_mono_fixture" 22050 1
+        printf 'MP3 project MPEG-2 mono decoder probe passed\n'
+    fi
+    if [ -n "$mpeg2_intensity_fixture" ]; then
+        test -f "$mpeg2_intensity_fixture"
+        "$decode_probe" "$mpeg2_intensity_fixture" 22050 2 \
+            --require-joint-stereo
+        printf 'MP3 project MPEG-2 intensity-stereo decoder probe passed\n'
+    fi
+    if [ -n "$mpeg25_intensity_fixture" ]; then
+        test -f "$mpeg25_intensity_fixture"
+        "$decode_probe" "$mpeg25_intensity_fixture" 11025 2 \
+            --require-joint-stereo
+        printf 'MP3 project MPEG-2.5 intensity-stereo decoder probe passed\n'
+    fi
+    if [ -n "$adaptive_gapless_fixture" ]; then
+        test -f "$adaptive_gapless_fixture"
+        "$decode_probe" "$adaptive_gapless_fixture" 44100 2 \
+            --require-gapless
+        printf 'MP3 project adaptive gapless CBR decoder probe passed\n'
+    fi
+    if [ -n "$adaptive_gapless_vbr_fixture" ]; then
+        test -f "$adaptive_gapless_vbr_fixture"
+        "$decode_probe" "$adaptive_gapless_vbr_fixture" 44100 2 \
+            --require-gapless
+        printf 'MP3 project adaptive gapless VBR decoder probe passed\n'
+    fi
+    if [ -n "$mpeg2_protected_fixture" ]; then
+        test -f "$mpeg2_protected_fixture"
+        "$decode_probe" "$mpeg2_protected_fixture" 22050 1 \
+            --require-protected
+        printf 'MP3 project protected MPEG-2 decoder probe passed\n'
+    fi
+    if [ -n "$mpeg25_protected_fixture" ]; then
+        test -f "$mpeg25_protected_fixture"
+        "$decode_probe" "$mpeg25_protected_fixture" 11025 2 \
+            --require-protected
+        printf 'MP3 project protected MPEG-2.5 decoder probe passed\n'
+    fi
 fi
 
 if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
@@ -140,6 +188,56 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
     fi
     printf 'MP3 FFmpeg interoperability test passed\n'
     tested=1
+
+    if [ -n "$mpeg2_mono_fixture" ]; then
+        compare_reference_pcm \
+            "$mpeg2_mono_fixture" \
+            1 \
+            "$temporary/project-mpeg2-mono-reference.f32le" \
+            'MP3 project MPEG-2 mono FFmpeg reference passed'
+    fi
+    if [ -n "$mpeg2_intensity_fixture" ]; then
+        compare_reference_pcm \
+            "$mpeg2_intensity_fixture" \
+            2 \
+            "$temporary/project-mpeg2-intensity-reference.f32le" \
+            'MP3 project MPEG-2 intensity FFmpeg reference passed'
+    fi
+    if [ -n "$mpeg25_intensity_fixture" ]; then
+        compare_reference_pcm \
+            "$mpeg25_intensity_fixture" \
+            2 \
+            "$temporary/project-mpeg25-intensity-reference.f32le" \
+            'MP3 project MPEG-2.5 intensity FFmpeg reference passed'
+    fi
+    if [ -n "$adaptive_gapless_fixture" ]; then
+        compare_reference_pcm \
+            "$adaptive_gapless_fixture" \
+            2 \
+            "$temporary/project-adaptive-gapless-reference.f32le" \
+            'MP3 project adaptive gapless CBR FFmpeg reference passed'
+    fi
+    if [ -n "$adaptive_gapless_vbr_fixture" ]; then
+        compare_reference_pcm \
+            "$adaptive_gapless_vbr_fixture" \
+            2 \
+            "$temporary/project-adaptive-gapless-vbr-reference.f32le" \
+            'MP3 project adaptive gapless VBR FFmpeg reference passed'
+    fi
+    if [ -n "$mpeg2_protected_fixture" ]; then
+        compare_reference_pcm \
+            "$mpeg2_protected_fixture" \
+            1 \
+            "$temporary/project-mpeg2-protected-reference.f32le" \
+            'MP3 project protected MPEG-2 FFmpeg reference passed'
+    fi
+    if [ -n "$mpeg25_protected_fixture" ]; then
+        compare_reference_pcm \
+            "$mpeg25_protected_fixture" \
+            2 \
+            "$temporary/project-mpeg25-protected-reference.f32le" \
+            'MP3 project protected MPEG-2.5 FFmpeg reference passed'
+    fi
 
     if [ -n "$vbri_fixture" ]; then
         vbri_decoded="$temporary/ffmpeg-vbri-decoded.pcm"
@@ -318,6 +416,27 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                     'MP3 FFmpeg MPEG-2 decoded-PCM reference probe passed'
             fi
 
+            external_mpeg2_stereo="$temporary/ffmpeg-mpeg2-joint-stereo.mp3"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.23*sin(2*PI*440*t)|0.14*sin(2*PI*990*t):s=22050' \
+                -t 0.35 \
+                -c:a libmp3lame \
+                -b:a 32k \
+                -joint_stereo 1 \
+                -id3v2_version 0 \
+                "$external_mpeg2_stereo"
+            "$decode_probe" "$external_mpeg2_stereo" 22050 2 \
+                --require-joint-stereo
+            printf 'MP3 FFmpeg MPEG-2 joint-stereo decoder probe passed\n'
+            if [ -n "$reference_probe" ]; then
+                compare_reference_pcm \
+                    "$external_mpeg2_stereo" \
+                    2 \
+                    "$temporary/ffmpeg-mpeg2-joint-stereo-reference.f32le" \
+                    'MP3 FFmpeg MPEG-2 joint-stereo decoded-PCM reference probe passed'
+            fi
+
             external_mpeg25="$temporary/ffmpeg-mpeg25-mono.mp3"
             ffmpeg -v error -y \
                 -f lavfi \
@@ -335,6 +454,27 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                     1 \
                     "$temporary/ffmpeg-mpeg25-reference.f32le" \
                     'MP3 FFmpeg MPEG-2.5 decoded-PCM reference probe passed'
+            fi
+
+            external_mpeg25_stereo="$temporary/ffmpeg-mpeg25-joint-stereo.mp3"
+            ffmpeg -v error -y \
+                -f lavfi \
+                -i 'aevalsrc=0.18*sin(2*PI*510*t)|0.12*sin(2*PI*1370*t):s=11025' \
+                -t 0.35 \
+                -c:a libmp3lame \
+                -b:a 16k \
+                -joint_stereo 1 \
+                -id3v2_version 0 \
+                "$external_mpeg25_stereo"
+            "$decode_probe" "$external_mpeg25_stereo" 11025 2 \
+                --require-joint-stereo
+            printf 'MP3 FFmpeg MPEG-2.5 joint-stereo decoder probe passed\n'
+            if [ -n "$reference_probe" ]; then
+                compare_reference_pcm \
+                    "$external_mpeg25_stereo" \
+                    2 \
+                    "$temporary/ffmpeg-mpeg25-joint-stereo-reference.f32le" \
+                    'MP3 FFmpeg MPEG-2.5 joint-stereo decoded-PCM reference probe passed'
             fi
 
             external_truncated="$temporary/ffmpeg-mpeg1-truncated.mp3"

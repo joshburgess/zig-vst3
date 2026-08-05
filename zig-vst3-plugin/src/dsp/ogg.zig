@@ -41,6 +41,11 @@ pub const PageIterator = struct {
         return .{ .encoded = encoded, .allow_chaining = true };
     }
 
+    pub fn valid(self: *const PageIterator) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn next(self: *PageIterator) !?Page {
         var trial = self.*;
         const page = try trial.nextInPlace();
@@ -53,8 +58,7 @@ pub const PageIterator = struct {
         self: *PageIterator,
         maximum_skip_bytes: usize,
     ) !usize {
-        if (self.offset > self.encoded.len)
-            return error.InvalidOggReaderState;
+        try self.validateState();
         if (maximum_skip_bytes == 0)
             return error.InvalidOggResynchronizationLimit;
         if (self.offset >= self.encoded.len -| 27)
@@ -90,8 +94,7 @@ pub const PageIterator = struct {
     }
 
     fn nextInPlace(self: *PageIterator) !?Page {
-        if (self.offset > self.encoded.len)
-            return error.InvalidOggReaderState;
+        try self.validateState();
         if (self.offset == self.encoded.len) {
             if (self.packet_continues) return error.TruncatedOggPacket;
             return null;
@@ -168,6 +171,21 @@ pub const PageIterator = struct {
             .body = complete[header_bytes..],
         };
     }
+
+    fn validateState(self: *const PageIterator) !void {
+        if (self.offset > self.encoded.len or
+            !oggReaderLifecycleValid(
+                self.serial_number,
+                self.expected_sequence,
+                self.packet_continues,
+                self.ended,
+                self.allow_chaining,
+                self.logical_stream_index,
+            ))
+        {
+            return error.InvalidOggReaderState;
+        }
+    }
 };
 
 pub const Packet = struct {
@@ -213,6 +231,42 @@ pub const PacketIterator = struct {
         return packet;
     }
 
+    /// Stage a complete packet before advancing or changing bound storage.
+    pub fn nextTransactional(
+        self: *PacketIterator,
+        scratch: []u8,
+    ) !?Packet {
+        try self.validateState();
+        if (byteRangesOverlap(
+            @intFromPtr(self.storage.ptr),
+            self.storage.len,
+            @intFromPtr(scratch.ptr),
+            scratch.len,
+        )) return error.OverlappingOggPacketStorage;
+
+        const destination = self.storage;
+        var trial = self.*;
+        trial.storage = scratch;
+        const staged = try trial.next() orelse {
+            trial.storage = destination;
+            self.* = trial;
+            return null;
+        };
+        if (destination.len < staged.bytes.len)
+            return error.OggPacketBufferTooSmall;
+        @memcpy(destination[0..staged.bytes.len], staged.bytes);
+        trial.storage = destination;
+        self.* = trial;
+        var packet = staged;
+        packet.bytes = destination[0..staged.bytes.len];
+        return packet;
+    }
+
+    pub fn valid(self: *const PacketIterator) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     /// Recover only after a complete packet exhausts its page.
     pub fn resynchronize(
         self: *PacketIterator,
@@ -240,9 +294,11 @@ pub const PacketIterator = struct {
     fn nextInPlace(self: *PacketIterator) !?Packet {
         try self.validateState();
         while (true) {
-            if (self.page == null or
-                self.segment_index == self.page.?.lacing_values.len)
-            {
+            const page_exhausted = if (self.page) |page|
+                self.segment_index == page.lacing_values.len
+            else
+                true;
+            if (page_exhausted) {
                 self.page = try self.pages.next() orelse {
                     if (self.packet_bytes != 0)
                         return error.TruncatedOggPacket;
@@ -250,10 +306,12 @@ pub const PacketIterator = struct {
                 };
                 self.segment_index = 0;
                 self.body_offset = 0;
-                if (self.page.?.beginning)
+                if ((self.page orelse
+                    return error.InvalidOggPacketReaderState).beginning)
                     self.logical_stream_packet_index = 0;
             }
-            const page = self.page.?;
+            const page = self.page orelse
+                return error.InvalidOggPacketReaderState;
             if (page.lacing_values.len == 0) {
                 self.page = null;
                 continue;
@@ -303,13 +361,23 @@ pub const PacketIterator = struct {
     }
 
     fn validateState(self: *const PacketIterator) !void {
-        if (self.packet_bytes > self.storage.len)
+        try self.pages.validateState();
+        if (byteRangesOverlap(
+            @intFromPtr(self.pages.encoded.ptr),
+            self.pages.encoded.len,
+            @intFromPtr(self.storage.ptr),
+            self.storage.len,
+        )) return error.OverlappingOggPacketStorage;
+        if (self.packet_bytes > self.storage.len or
+            self.logical_stream_packet_index > self.packet_index)
             return error.InvalidOggPacketReaderState;
         const page = self.page orelse {
-            if (self.segment_index != 0 or self.body_offset != 0)
+            if (self.segment_index != 0 or self.body_offset != 0 or
+                self.packet_bytes != 0)
                 return error.InvalidOggPacketReaderState;
             return;
         };
+        try self.validateRetainedPage(page);
         if (self.segment_index > page.lacing_values.len or
             self.body_offset > page.body.len)
             return error.InvalidOggPacketReaderState;
@@ -322,7 +390,137 @@ pub const PacketIterator = struct {
         if (consumed != self.body_offset or total != page.body.len)
             return error.InvalidOggPacketReaderState;
     }
+
+    fn validateRetainedPage(self: *const PacketIterator, page: Page) !void {
+        const start = std.math.cast(usize, page.byte_offset) orelse
+            return error.InvalidOggPacketReaderState;
+        const byte_length: usize = page.byte_length;
+        if (byte_length < 27 or start > self.pages.encoded.len or
+            byte_length > self.pages.encoded.len - start)
+        {
+            return error.InvalidOggPacketReaderState;
+        }
+        const end = start + byte_length;
+        const complete = self.pages.encoded[start..end];
+        const retained = try validateRetainedOggPage(
+            page,
+            complete,
+            @intCast(start),
+        );
+        if (page.logical_stream_index != self.pages.logical_stream_index or
+            self.pages.offset != end or
+            self.pages.serial_number != retained.serial_number or
+            self.pages.expected_sequence != retained.sequence_number +% 1 or
+            self.pages.packet_continues != retained.packet_continues or
+            self.pages.ended != retained.ended)
+        {
+            return error.InvalidOggPacketReaderState;
+        }
+    }
 };
+
+const RetainedOggPageState = struct {
+    serial_number: u32,
+    sequence_number: u32,
+    packet_continues: bool,
+    ended: bool,
+};
+
+fn validateRetainedOggPage(
+    page: Page,
+    complete: []const u8,
+    byte_offset: u64,
+) !RetainedOggPageState {
+    if (complete.len < 27 or
+        page.byte_offset != byte_offset or
+        @as(usize, page.byte_length) != complete.len)
+    {
+        return error.InvalidOggPacketReaderState;
+    }
+    const header = complete[0..27];
+    if (!std.mem.eql(u8, header[0..4], "OggS") or header[4] != 0 or
+        header[5] & 0xf8 != 0)
+    {
+        return error.InvalidOggPacketReaderState;
+    }
+    const segment_count: usize = header[26];
+    const header_bytes = 27 + segment_count;
+    if (header_bytes > complete.len)
+        return error.InvalidOggPacketReaderState;
+    const lacing = complete[27..header_bytes];
+    var body_bytes: usize = 0;
+    for (lacing) |value| body_bytes += value;
+    if (body_bytes != complete.len - header_bytes)
+        return error.InvalidOggPacketReaderState;
+    const body = complete[header_bytes..];
+    if (!sameByteRange(page.lacing_values, lacing) or
+        !sameByteRange(page.body, body) or
+        pageChecksum(complete) !=
+            std.mem.readInt(u32, header[22..26], .little))
+    {
+        return error.InvalidOggPacketReaderState;
+    }
+
+    const flags = header[5];
+    const serial = std.mem.readInt(u32, header[14..18], .little);
+    const sequence = std.mem.readInt(u32, header[18..22], .little);
+    const continued = flags & 0x01 != 0;
+    const beginning = flags & 0x02 != 0;
+    const ended = flags & 0x04 != 0;
+    const packet_continues = lacing.len != 0 and
+        lacing[lacing.len - 1] == 255;
+    if (page.continued != continued or page.beginning != beginning or
+        page.end != ended or
+        page.granule_position !=
+            std.mem.readInt(u64, header[6..14], .little) or
+        page.serial_number != serial or page.sequence_number != sequence)
+    {
+        return error.InvalidOggPacketReaderState;
+    }
+    return .{
+        .serial_number = serial,
+        .sequence_number = sequence,
+        .packet_continues = packet_continues,
+        .ended = ended,
+    };
+}
+
+fn validateRetainedPageStorageRanges(
+    page: Page,
+    storage: []const u8,
+) !void {
+    if (storage.len < 27 or page.lacing_values.len > maximum_page_segments or
+        @as(usize, page.byte_length) != storage.len)
+    {
+        return error.InvalidOggPacketReaderState;
+    }
+    const storage_start = @intFromPtr(storage.ptr);
+    const lacing_start = std.math.add(
+        usize,
+        storage_start,
+        27,
+    ) catch return error.InvalidOggPacketReaderState;
+    const body_start = std.math.add(
+        usize,
+        lacing_start,
+        page.lacing_values.len,
+    ) catch return error.InvalidOggPacketReaderState;
+    const storage_end = std.math.add(
+        usize,
+        storage_start,
+        storage.len,
+    ) catch return error.InvalidOggPacketReaderState;
+    const body_end = std.math.add(
+        usize,
+        body_start,
+        page.body.len,
+    ) catch return error.InvalidOggPacketReaderState;
+    if (@intFromPtr(page.lacing_values.ptr) != lacing_start or
+        @intFromPtr(page.body.ptr) != body_start or body_end != storage_end)
+    {
+        return error.InvalidOggPacketReaderState;
+    }
+}
 
 pub const VorbisPacketLocation = struct {
     byte_offset: u64,
@@ -412,13 +610,18 @@ const VorbisSeekIndexer = struct {
             if (pcm_end < previous)
                 return error.InvalidVorbisSeekGranuleOrder;
         }
+        const packet = last_audio_packet orelse
+            return error.InvalidVorbisSeekContinuation;
+        const decode = if (self.previous_pcm_end == null)
+            self.first_audio_packet orelse
+                return error.InvalidVorbisSeekContinuation
+        else
+            decode_packet orelse
+                return error.InvalidVorbisSeekContinuation;
         const point = VorbisSeekPoint{
             .pcm_end = pcm_end,
-            .decode = if (self.previous_pcm_end == null)
-                self.first_audio_packet.?
-            else
-                decode_packet.?,
-            .packet = last_audio_packet.?,
+            .decode = decode,
+            .packet = packet,
         };
         if (self.destination) |destination| {
             if (self.count >= destination.len)
@@ -482,9 +685,11 @@ pub fn findVorbisSeekPoint(
         if (point.decode.logical_stream_index != stream)
             return error.InvalidVorbisSeekIndex;
         if (previous_stream) |previous| {
+            const previous_end = previous_pcm orelse
+                return error.InvalidVorbisSeekIndex;
             if (stream < previous or
                 (stream == previous and
-                    previous_pcm.? > point.pcm_end))
+                    previous_end > point.pcm_end))
                 return error.InvalidVorbisSeekIndex;
         }
         previous_stream = stream;
@@ -526,13 +731,17 @@ pub const FilePageReader = struct {
         return reader;
     }
 
+    pub fn valid(self: *const FilePageReader) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     /// Returned page slices borrow storage until the next read.
     pub fn next(
         self: *FilePageReader,
         storage: []u8,
     ) !?Page {
-        if (self.offset > self.file_size)
-            return error.InvalidOggFileReaderState;
+        try self.validateState();
         if (self.offset == self.file_size) {
             if (self.packet_continues) return error.TruncatedOggPacket;
             return null;
@@ -573,7 +782,8 @@ pub const FilePageReader = struct {
             .allow_chaining = self.allow_chaining,
             .logical_stream_index = self.logical_stream_index,
         };
-        var page = (try parser.next()).?;
+        var page = (try parser.next()) orelse
+            return error.TruncatedOggPage;
         page.byte_offset = self.offset;
         self.serial_number = parser.serial_number;
         self.expected_sequence = parser.expected_sequence;
@@ -584,14 +794,45 @@ pub const FilePageReader = struct {
         return page;
     }
 
+    /// Stage one complete page so failures preserve state and destination.
+    pub fn nextTransactional(
+        self: *FilePageReader,
+        storage: []u8,
+        scratch: []u8,
+    ) !?Page {
+        try self.validateState();
+        if (byteRangesOverlap(
+            @intFromPtr(storage.ptr),
+            storage.len,
+            @intFromPtr(scratch.ptr),
+            scratch.len,
+        )) return error.OverlappingOggPageStorage;
+
+        var trial = self.*;
+        const staged = try trial.next(scratch) orelse {
+            self.* = trial;
+            return null;
+        };
+        const page_bytes: usize = staged.byte_length;
+        if (storage.len < page_bytes)
+            return error.OggPageBufferTooSmall;
+        @memcpy(storage[0..page_bytes], scratch[0..page_bytes]);
+
+        const header_bytes = 27 + @as(usize, storage[26]);
+        var page = staged;
+        page.lacing_values = storage[27..header_bytes];
+        page.body = storage[header_bytes..page_bytes];
+        self.* = trial;
+        return page;
+    }
+
     /// Advances past at most `maximum_skip_bytes` to a continuous valid page.
     pub fn resynchronize(
         self: *FilePageReader,
         storage: []u8,
         maximum_skip_bytes: u64,
     ) !u64 {
-        if (self.offset > self.file_size)
-            return error.InvalidOggFileReaderState;
+        try self.validateState();
         if (storage.len < maximum_page_bytes)
             return error.OggPageBufferTooSmall;
         if (maximum_skip_bytes == 0)
@@ -662,7 +903,43 @@ pub const FilePageReader = struct {
         }
         return error.OggResynchronizationLimitReached;
     }
+
+    fn validateState(self: *const FilePageReader) !void {
+        if (self.offset > self.file_size or
+            !oggReaderLifecycleValid(
+                self.serial_number,
+                self.expected_sequence,
+                self.packet_continues,
+                self.ended,
+                self.allow_chaining,
+                self.logical_stream_index,
+            ))
+        {
+            return error.InvalidOggFileReaderState;
+        }
+    }
 };
+
+fn oggReaderLifecycleValid(
+    serial_number: ?u32,
+    expected_sequence: ?u32,
+    packet_continues: bool,
+    ended: bool,
+    allow_chaining: bool,
+    logical_stream_index: u32,
+) bool {
+    if (serial_number == null) {
+        return expected_sequence == null and
+            !packet_continues and
+            (if (ended)
+                allow_chaining
+            else
+                logical_stream_index == 0);
+    }
+    return expected_sequence != null and
+        !(ended and packet_continues) and
+        (allow_chaining or logical_stream_index == 0);
+}
 
 pub fn requiredVorbisFileSeekPoints(
     io: std.Io,
@@ -709,6 +986,54 @@ pub fn buildVorbisFileSeekIndex(
     if (indexer.count != required)
         return error.VorbisSeekIndexChanged;
     return destination[0..required];
+}
+
+/// Stage the index so file changes cannot partially replace destination.
+/// Page, destination, and index scratch storage must be pairwise disjoint.
+pub fn buildVorbisFileSeekIndexTransactional(
+    io: std.Io,
+    file: std.Io.File,
+    page_storage: []u8,
+    destination: []VorbisSeekPoint,
+    index_scratch: []VorbisSeekPoint,
+) ![]const VorbisSeekPoint {
+    const destination_bytes = std.math.mul(
+        usize,
+        destination.len,
+        @sizeOf(VorbisSeekPoint),
+    ) catch return error.VorbisSeekIndexSizeOverflow;
+    const scratch_bytes = std.math.mul(
+        usize,
+        index_scratch.len,
+        @sizeOf(VorbisSeekPoint),
+    ) catch return error.VorbisSeekIndexSizeOverflow;
+    if (byteRangesOverlap(
+        @intFromPtr(page_storage.ptr),
+        page_storage.len,
+        @intFromPtr(destination.ptr),
+        destination_bytes,
+    ) or byteRangesOverlap(
+        @intFromPtr(page_storage.ptr),
+        page_storage.len,
+        @intFromPtr(index_scratch.ptr),
+        scratch_bytes,
+    ) or byteRangesOverlap(
+        @intFromPtr(destination.ptr),
+        destination_bytes,
+        @intFromPtr(index_scratch.ptr),
+        scratch_bytes,
+    )) return error.OverlappingVorbisSeekStorage;
+
+    const staged = try buildVorbisFileSeekIndex(
+        io,
+        file,
+        page_storage,
+        index_scratch,
+    );
+    if (destination.len < staged.len)
+        return error.VorbisSeekIndexTooSmall;
+    @memcpy(destination[0..staged.len], staged);
+    return destination[0..staged.len];
 }
 
 pub const FilePacketReader = struct {
@@ -805,6 +1130,64 @@ pub const FilePacketReader = struct {
         return packet;
     }
 
+    /// Preserve output on failure; scratch buffers retain reader bindings.
+    pub fn nextTransactional(
+        self: *FilePacketReader,
+        destination: []u8,
+        page_scratch: []u8,
+        packet_scratch: []u8,
+    ) !?Packet {
+        try self.validateState(page_scratch, packet_scratch);
+        if (byteRangesOverlap(
+            @intFromPtr(destination.ptr),
+            destination.len,
+            @intFromPtr(page_scratch.ptr),
+            page_scratch.len,
+        ) or byteRangesOverlap(
+            @intFromPtr(destination.ptr),
+            destination.len,
+            @intFromPtr(packet_scratch.ptr),
+            packet_scratch.len,
+        ) or byteRangesOverlap(
+            @intFromPtr(page_scratch.ptr),
+            page_scratch.len,
+            @intFromPtr(packet_scratch.ptr),
+            packet_scratch.len,
+        )) return error.OverlappingOggPacketStorage;
+
+        var trial = self.*;
+        const staged = trial.next(
+            page_scratch,
+            packet_scratch,
+        ) catch |err| {
+            if (err == error.OggPacketBufferTooSmall)
+                self.* = trial;
+            return err;
+        } orelse {
+            self.* = trial;
+            return null;
+        };
+        if (destination.len < staged.bytes.len)
+            return error.OggPacketBufferTooSmall;
+        @memcpy(destination[0..staged.bytes.len], staged.bytes);
+        var packet = staged;
+        packet.bytes = destination[0..staged.bytes.len];
+        self.* = trial;
+        return packet;
+    }
+
+    pub fn valid(
+        self: *const FilePacketReader,
+        page_storage: []u8,
+        packet_storage: []u8,
+    ) bool {
+        self.validateState(
+            page_storage,
+            packet_storage,
+        ) catch return false;
+        return true;
+    }
+
     fn nextInPlace(
         self: *FilePacketReader,
         page_storage: []u8,
@@ -817,8 +1200,10 @@ pub const FilePacketReader = struct {
             else
                 null;
         if (self.page_storage_pointer) |pointer| {
+            const packet_pointer = self.packet_storage_pointer orelse
+                return error.InvalidOggFilePacketReaderState;
             if (pointer != page_storage.ptr or
-                self.packet_storage_pointer.? != packet_storage.ptr or
+                packet_pointer != packet_storage.ptr or
                 self.page_storage_length != page_storage.len or
                 self.packet_storage_length != packet_storage.len)
                 return error.OggReaderStorageChanged;
@@ -829,9 +1214,11 @@ pub const FilePacketReader = struct {
             self.packet_storage_length = packet_storage.len;
         }
         while (true) {
-            if (self.page == null or
-                self.segment_index == self.page.?.lacing_values.len)
-            {
+            const page_exhausted = if (self.page) |page|
+                self.segment_index == page.lacing_values.len
+            else
+                true;
+            if (page_exhausted) {
                 self.page = try self.pages.next(page_storage) orelse {
                     if (self.packet_bytes != 0)
                         return error.TruncatedOggPacket;
@@ -844,16 +1231,19 @@ pub const FilePacketReader = struct {
                 self.reload_segment_index = 0;
                 self.reload_body_offset = 0;
                 self.preserve_logical_index_on_reload = false;
+                const loaded_page = self.page orelse
+                    return error.InvalidOggFilePacketReaderState;
                 try validatePacketPageCursor(
-                    self.page.?,
+                    loaded_page,
                     self.segment_index,
                     self.body_offset,
                 );
-                if (self.page.?.beginning and
+                if (loaded_page.beginning and
                     !preserve_logical_index)
                     self.logical_stream_packet_index = 0;
             }
-            const page = self.page.?;
+            const page = self.page orelse
+                return error.InvalidOggFilePacketReaderState;
             if (page.lacing_values.len == 0) {
                 self.page = null;
                 continue;
@@ -892,6 +1282,10 @@ pub const FilePacketReader = struct {
                 .logical_stream_index = page.logical_stream_index,
             };
             self.packet_bytes = 0;
+            if (self.packet_index == std.math.maxInt(u64) or
+                self.logical_stream_packet_index ==
+                    std.math.maxInt(u64))
+                return error.OggPacketCountOverflow;
             self.packet_index += 1;
             self.logical_stream_packet_index += 1;
             if (self.packets_to_skip != 0) {
@@ -911,9 +1305,10 @@ pub const FilePacketReader = struct {
     ) !u64 {
         try self.validateState(page_storage, packet_storage);
         if (self.page_storage_pointer) |page_pointer| {
+            const packet_pointer = self.packet_storage_pointer orelse
+                return error.InvalidOggFilePacketReaderState;
             if (page_pointer != page_storage.ptr or
-                self.packet_storage_pointer.? !=
-                    packet_storage.ptr or
+                packet_pointer != packet_storage.ptr or
                 self.page_storage_length != page_storage.len or
                 self.packet_storage_length != packet_storage.len)
             {
@@ -1016,12 +1411,15 @@ pub const FilePacketReader = struct {
         page_storage: []u8,
         packet_storage: []u8,
     ) !void {
+        try self.validateStorageBinding(page_storage, packet_storage);
+        self.pages.validateState() catch
+            return error.InvalidOggFilePacketReaderState;
         if ((self.page_storage_pointer == null) !=
             (self.packet_storage_pointer == null) or
             self.packet_bytes > packet_storage.len or
-            self.packet_index == std.math.maxInt(u64) or
-            self.logical_stream_packet_index ==
-                std.math.maxInt(u64))
+            self.packets_to_skip >
+                std.math.maxInt(u64) -
+                    self.logical_stream_packet_index)
             return error.InvalidOggFilePacketReaderState;
         if (self.page_storage_pointer == null and
             (self.page_storage_length != 0 or
@@ -1047,11 +1445,70 @@ pub const FilePacketReader = struct {
             self.preserve_logical_index_on_reload or
             page_storage.len < page.byte_length)
             return error.InvalidOggFilePacketReaderState;
+        if (self.page_storage_pointer == null)
+            return error.InvalidOggFilePacketReaderState;
+        const page_bytes: usize = page.byte_length;
+        validateRetainedPageStorageRanges(
+            page,
+            page_storage[0..page_bytes],
+        ) catch return error.InvalidOggFilePacketReaderState;
+        const exhausted = self.segment_index == page.lacing_values.len;
+        if (!exhausted) {
+            _ = validateRetainedOggPage(
+                page,
+                page_storage[0..page_bytes],
+                page.byte_offset,
+            ) catch return error.InvalidOggFilePacketReaderState;
+        }
+        const expected_offset = std.math.add(
+            u64,
+            page.byte_offset,
+            @as(u64, page.byte_length),
+        ) catch return error.InvalidOggFilePacketReaderState;
+        const packet_continues = !exhausted and
+            page.lacing_values.len != 0 and
+            page.lacing_values[page.lacing_values.len - 1] == 255;
+        if (self.pages.offset < expected_offset or
+            (!exhausted and self.pages.offset != expected_offset) or
+            page.logical_stream_index != self.pages.logical_stream_index or
+            self.pages.serial_number != page.serial_number or
+            self.pages.expected_sequence != page.sequence_number +% 1 or
+            (!exhausted and
+                self.pages.packet_continues != packet_continues) or
+            self.pages.ended != page.end)
+        {
+            return error.InvalidOggFilePacketReaderState;
+        }
         try validatePacketPageCursor(
             page,
             self.segment_index,
             self.body_offset,
         );
+    }
+
+    fn validateStorageBinding(
+        self: *const FilePacketReader,
+        page_storage: []u8,
+        packet_storage: []u8,
+    ) !void {
+        const page_pointer = self.page_storage_pointer orelse {
+            if (self.packet_storage_pointer != null or
+                self.page_storage_length != 0 or
+                self.packet_storage_length != 0)
+            {
+                return error.InvalidOggFilePacketReaderState;
+            }
+            return;
+        };
+        const packet_pointer = self.packet_storage_pointer orelse
+            return error.InvalidOggFilePacketReaderState;
+        if (page_pointer != page_storage.ptr or
+            packet_pointer != packet_storage.ptr or
+            self.page_storage_length != page_storage.len or
+            self.packet_storage_length != packet_storage.len)
+        {
+            return error.OggReaderStorageChanged;
+        }
     }
 };
 
@@ -1122,6 +1579,37 @@ fn packetLayout(packet_bytes: usize) !PacketLayout {
     };
 }
 
+fn committedPageStateValid(
+    byte_count: u64,
+    sequence_number: u32,
+    began: bool,
+    ended: bool,
+) bool {
+    if (ended and !began) return false;
+    if (!began)
+        return byte_count == 0 and sequence_number == 0;
+    const minimum_page_bytes: u64 = 28;
+    const maximum_bytes: u64 = maximum_page_bytes;
+    if (byte_count < minimum_page_bytes) return false;
+    const minimum_pages = (byte_count - 1) / maximum_bytes + 1;
+    const maximum_pages = byte_count / minimum_page_bytes;
+    const sequence_period = @as(u64, 1) << 32;
+    var candidate: u64 = if (sequence_number == 0)
+        sequence_period
+    else
+        sequence_number;
+    if (candidate < minimum_pages) {
+        const delta = minimum_pages - candidate;
+        const periods = (delta - 1) / sequence_period + 1;
+        candidate = std.math.add(
+            u64,
+            candidate,
+            std.math.mul(u64, periods, sequence_period) catch return false,
+        ) catch return false;
+    }
+    return candidate <= maximum_pages;
+}
+
 pub const StreamWriter = struct {
     destination: []u8,
     serial_number: u32,
@@ -1137,6 +1625,16 @@ pub const StreamWriter = struct {
         };
     }
 
+    pub fn valid(self: *const StreamWriter) bool {
+        return self.byte_count <= self.destination.len and
+            committedPageStateValid(
+                self.byte_count,
+                self.sequence_number,
+                self.began,
+                self.ended,
+            );
+    }
+
     pub fn appendPacket(
         self: *StreamWriter,
         packet: []const u8,
@@ -1144,9 +1642,16 @@ pub const StreamWriter = struct {
         beginning: bool,
         end: bool,
     ) !void {
+        if (!self.valid()) return error.InvalidOggStreamWriterState;
         if (self.ended) return error.OggStreamAlreadyEnded;
         if (beginning != !self.began)
             return error.InvalidOggBeginningOfStream;
+        if (packet.len != 0 and byteRangesOverlap(
+            @intFromPtr(self.destination.ptr),
+            self.destination.len,
+            @intFromPtr(packet.ptr),
+            packet.len,
+        )) return error.OverlappingOggWriterStorage;
         const layout = try packetLayout(packet.len);
         if (layout.encoded_bytes >
             self.destination.len -| self.byte_count)
@@ -1195,6 +1700,7 @@ pub const StreamWriter = struct {
     }
 
     pub fn bytes(self: *const StreamWriter) []const u8 {
+        if (!self.valid()) return &.{};
         return self.destination[0..self.byte_count];
     }
 };
@@ -1346,7 +1852,7 @@ pub const FileWriter = struct {
     pub fn finalize(self: *FileWriter) !void {
         if (!self.ended) return error.OggStreamNotEnded;
         try self.recover();
-        try self.file.sync(self.io);
+        try self.operations.sync(self.io, self.file);
     }
 
     pub fn recover(self: *FileWriter) !void {
@@ -1370,11 +1876,12 @@ pub const FileWriter = struct {
     pub fn recoverable(self: *const FileWriter) bool {
         if (self.page_storage.len < maximum_page_bytes)
             return false;
-        if (self.ended and !self.began) return false;
-        if (!self.began)
-            return self.sequence_number == 0 and
-                self.byte_count == 0;
-        return self.byte_count >= 28;
+        return committedPageStateValid(
+            self.byte_count,
+            self.sequence_number,
+            self.began,
+            self.ended,
+        );
     }
 };
 
@@ -1466,8 +1973,8 @@ pub fn encodeVorbisIdentificationPacket(
         .little,
     );
     packet[28] =
-        vorbisBlockExponent(identification.small_block_size) |
-        (vorbisBlockExponent(identification.large_block_size) << 4);
+        try vorbisBlockExponent(identification.small_block_size) |
+        (try vorbisBlockExponent(identification.large_block_size) << 4);
     packet[29] = 1;
     @memcpy(destination[0..30], &packet);
     return destination[0..30];
@@ -1538,6 +2045,11 @@ pub fn encodeVorbisCommentPacket(
         @intFromPtr(vendor.ptr),
         vendor.len,
     )) return error.OverlappingVorbisCommentStorage;
+    if (vorbisSliceOverlapsBytes(
+        VorbisComment,
+        comments,
+        destination[0..required],
+    )) return error.OverlappingVorbisCommentStorage;
     for (comments) |comment| {
         if (byteRangesOverlap(
             @intFromPtr(destination.ptr),
@@ -1595,7 +2107,8 @@ pub fn encodeVorbisCommentPacket(
     }
     destination[offset] = 1;
     offset += 1;
-    std.debug.assert(offset == required);
+    if (offset != required)
+        return error.InvalidVorbisCommentSize;
     return destination[0..required];
 }
 
@@ -1606,6 +2119,13 @@ pub const VorbisCommentIterator = struct {
     remaining: u32,
 
     pub fn init(packet: []const u8) !VorbisCommentIterator {
+        const result = try initPrefix(packet);
+        var validation = result;
+        while (try validation.nextInPlace()) |_| {}
+        return result;
+    }
+
+    fn initPrefix(packet: []const u8) !VorbisCommentIterator {
         if (packet.len < 16 or packet[0] != 3 or
             !std.mem.eql(u8, packet[1..7], "vorbis"))
             return error.InvalidVorbisCommentHeader;
@@ -1616,7 +2136,7 @@ pub const VorbisCommentIterator = struct {
         const vendor_end = 11 + @as(usize, vendor_bytes);
         const vendor = packet[11..vendor_end];
         try validateVorbisCommentText(vendor);
-        const result = VorbisCommentIterator{
+        return .{
             .packet = packet,
             .vendor = vendor,
             .offset = vendor_end + 4,
@@ -1626,14 +2146,45 @@ pub const VorbisCommentIterator = struct {
                 .little,
             ),
         };
-        var validation = result;
-        while (try validation.next()) |_| {}
-        return result;
     }
 
     pub fn next(self: *VorbisCommentIterator) !?VorbisComment {
+        try self.validateState();
+        var trial = self.*;
+        const comment = try trial.nextInPlace();
+        self.* = trial;
+        return comment;
+    }
+
+    pub fn valid(self: *const VorbisCommentIterator) bool {
+        self.validateState() catch return false;
+        var trial = self.*;
+        while (trial.nextInPlace() catch return false) |_| {}
+        return true;
+    }
+
+    fn validateState(self: *const VorbisCommentIterator) !void {
+        var canonical = try initPrefix(self.packet);
+        if (!sameByteRange(self.vendor, canonical.vendor))
+            return error.InvalidVorbisCommentIteratorState;
+        while (true) {
+            if (self.offset == canonical.offset and
+                self.remaining == canonical.remaining)
+            {
+                return;
+            }
+            if (canonical.offset >= self.offset)
+                return error.InvalidVorbisCommentIteratorState;
+            _ = (try canonical.nextInPlace()) orelse
+                return error.InvalidVorbisCommentIteratorState;
+        }
+    }
+
+    fn nextInPlace(self: *VorbisCommentIterator) !?VorbisComment {
+        if (self.offset > self.packet.len)
+            return error.InvalidVorbisCommentHeader;
         if (self.remaining == 0) {
-            if (self.offset + 1 != self.packet.len or
+            if (self.packet.len - self.offset != 1 or
                 self.packet[self.offset] != 1)
                 return error.InvalidVorbisCommentHeader;
             return null;
@@ -1658,6 +2209,10 @@ pub const VorbisCommentIterator = struct {
     }
 };
 
+fn sameByteRange(first: []const u8, second: []const u8) bool {
+    return first.len == second.len and first.ptr == second.ptr;
+}
+
 fn validVorbisBitrate(bitrate: i32) bool {
     return bitrate >= -1;
 }
@@ -1668,8 +2223,9 @@ fn validVorbisBlockSize(block_size: u16) bool {
         std.math.isPowerOfTwo(block_size);
 }
 
-fn vorbisBlockExponent(block_size: u16) u8 {
-    std.debug.assert(validVorbisBlockSize(block_size));
+fn vorbisBlockExponent(block_size: u16) !u8 {
+    if (!validVorbisBlockSize(block_size))
+        return error.InvalidVorbisBlockSize;
     return @intCast(@ctz(block_size));
 }
 
@@ -1931,7 +2487,8 @@ pub fn encodeVorbisSetupPacket(
         .destination = destination[7..required],
     };
     try encoder.writeSetup(setup, channel_count);
-    std.debug.assert(try encoder.byteCount() == required);
+    if (try encoder.byteCount() != required)
+        return error.InvalidVorbisSetupState;
     @memcpy(destination[0..7], "\x05vorbis");
     return destination[0..required];
 }
@@ -2462,6 +3019,7 @@ fn rejectVorbisSetupOverlap(
     inline for (.{
         setup.codebooks,
         setup.codebook_entries,
+        setup.huffman_nodes,
         setup.codebook_multiplicands,
         setup.floors,
         setup.residues,
@@ -3194,6 +3752,16 @@ pub const VorbisPacketWriter = struct {
         return .{ .destination = destination };
     }
 
+    pub fn valid(self: *const VorbisPacketWriter) bool {
+        if (self.count_only) return self.destination.len == 0;
+        const capacity = std.math.mul(
+            usize,
+            self.destination.len,
+            8,
+        ) catch return false;
+        return self.bit_offset <= capacity;
+    }
+
     fn counting() VorbisPacketWriter {
         return .{
             .destination = &.{},
@@ -3528,7 +4096,7 @@ pub const VorbisPacketWriter = struct {
 
         entry_offset = 0;
         var ignored_bits: usize = 0;
-        walkVorbisResidueEncoding(
+        try walkVorbisResidueEncoding(
             setup,
             residue,
             shape,
@@ -3536,8 +4104,9 @@ pub const VorbisPacketWriter = struct {
             &ignored_bits,
             &entry_offset,
             self,
-        ) catch unreachable;
-        std.debug.assert(entry_offset == encoding.entries.len);
+        );
+        if (entry_offset != encoding.entries.len)
+            return error.InvalidVorbisResidueEncoding;
     }
 
     pub fn writeAudioHeader(
@@ -3585,11 +4154,13 @@ pub const VorbisPacketWriter = struct {
         self.writeBitsUnchecked(mode_number, mode_bits);
         if (mode.large_block) {
             self.writeBitsUnchecked(
-                @intFromBool(previous_window_flag.?),
+                @intFromBool(header.previous_window_flag orelse
+                    return error.MissingVorbisWindowFlag),
                 1,
             );
             self.writeBitsUnchecked(
-                @intFromBool(next_window_flag.?),
+                @intFromBool(header.next_window_flag orelse
+                    return error.MissingVorbisWindowFlag),
                 1,
             );
         }
@@ -3599,6 +4170,7 @@ pub const VorbisPacketWriter = struct {
     }
 
     pub fn bytes(self: *const VorbisPacketWriter) []const u8 {
+        if (!self.valid() or self.count_only) return &.{};
         const byte_count =
             self.bit_offset / 8 +
             @intFromBool(self.bit_offset % 8 != 0);
@@ -3609,6 +4181,7 @@ pub const VorbisPacketWriter = struct {
         self: *const VorbisPacketWriter,
         bit_count: usize,
     ) !void {
+        if (!self.valid()) return error.InvalidVorbisPacketWriterState;
         const next = std.math.add(
             usize,
             self.bit_offset,
@@ -3710,13 +4283,14 @@ pub fn encodeVorbisAudioPacket(
     var writer = VorbisPacketWriter.init(
         destination[0..required],
     );
-    const header = writeVorbisAudioPacket(
+    const header = try writeVorbisAudioPacket(
         &writer,
         identification,
         setup,
         encoding,
-    ) catch unreachable;
-    std.debug.assert(writer.bit_offset == counter.bit_offset);
+    );
+    if (writer.bit_offset != counter.bit_offset)
+        return error.InvalidVorbisPacketBitOffset;
     return .{
         .bytes = writer.bytes(),
         .bit_count = writer.bit_offset,
@@ -4234,9 +4808,19 @@ pub const VorbisPacketReader = struct {
     bit_offset: usize = 0,
 
     pub fn init(packet: []const u8, bit_offset: usize) !VorbisPacketReader {
-        if (bit_offset > packet.len * 8)
+        const reader = VorbisPacketReader{
+            .packet = packet,
+            .bit_offset = bit_offset,
+        };
+        if (!reader.valid())
             return error.InvalidVorbisPacketBitOffset;
-        return .{ .packet = packet, .bit_offset = bit_offset };
+        return reader;
+    }
+
+    pub fn valid(self: *const VorbisPacketReader) bool {
+        const bit_count = std.math.mul(usize, self.packet.len, 8) catch
+            return false;
+        return self.bit_offset <= bit_count;
     }
 
     /// Decode one scalar entry. Failures preserve the cursor.
@@ -4245,6 +4829,7 @@ pub const VorbisPacketReader = struct {
         setup: VorbisSetup,
         codebook_number: u8,
     ) !u32 {
+        if (!self.valid()) return error.InvalidVorbisPacketBitOffset;
         if (codebook_number >= setup.codebooks.len)
             return error.InvalidVorbisCodebookNumber;
         const codebook = setup.codebooks[codebook_number];
@@ -4315,6 +4900,7 @@ pub const VorbisPacketReader = struct {
     ) !void {
         if (Float != f32 and Float != f64)
             @compileError("Vorbis vectors require f32 or f64 output");
+        if (!self.valid()) return error.InvalidVorbisPacketBitOffset;
         if (codebook_number >= setup.codebooks.len)
             return error.InvalidVorbisCodebookNumber;
         const codebook = setup.codebooks[codebook_number];
@@ -4391,6 +4977,7 @@ pub const VorbisPacketReader = struct {
         floor_number: u8,
         coefficients: []f64,
     ) !VorbisFloorZeroPacket {
+        if (!self.valid()) return error.InvalidVorbisPacketBitOffset;
         if (floor_number >= setup.floors.len)
             return error.InvalidVorbisFloorNumber;
         const floor = switch (setup.floors[floor_number]) {
@@ -4452,6 +5039,7 @@ pub const VorbisPacketReader = struct {
         floor_number: u8,
         y_values: []u32,
     ) !VorbisFloorOnePacket {
+        if (!self.valid()) return error.InvalidVorbisPacketBitOffset;
         if (floor_number >= setup.floors.len)
             return error.InvalidVorbisFloorNumber;
         const floor = switch (setup.floors[floor_number]) {
@@ -4527,6 +5115,7 @@ pub const VorbisPacketReader = struct {
     ) !VorbisResiduePacket {
         if (Float != f32 and Float != f64)
             @compileError("Vorbis residue requires f32 or f64 output");
+        if (!self.valid()) return error.InvalidVorbisPacketBitOffset;
         if (residue_number >= setup.residues.len)
             return error.InvalidVorbisResidueNumber;
         if (outputs.len == 0 or outputs.len > 255 or
@@ -5006,7 +5595,7 @@ pub fn quantizeVorbisResidue(
     );
     @memcpy(classifications, planned_classifications);
     var entry_offset: usize = 0;
-    assembleVorbisResidueEntries(
+    try assembleVorbisResidueEntries(
         Float,
         setup,
         residue,
@@ -5018,8 +5607,9 @@ pub fn quantizeVorbisResidue(
         classifications,
         entries,
         &entry_offset,
-    ) catch unreachable;
-    std.debug.assert(entry_offset == entries.len);
+    );
+    if (entry_offset != entries.len)
+        return error.InvalidVorbisResidueEncoding;
     return .{
         .encoding = .{
             .do_not_encode = do_not_encode,
@@ -5243,7 +5833,7 @@ pub fn quantizeVorbisResidueAdaptive(
     const entries = entry_destination[0..entry_count];
     @memcpy(classifications, best_classifications);
     var entry_offset: usize = 0;
-    assembleVorbisResidueEntries(
+    try assembleVorbisResidueEntries(
         Float,
         setup,
         residue,
@@ -5255,8 +5845,9 @@ pub fn quantizeVorbisResidueAdaptive(
         classifications,
         entries,
         &entry_offset,
-    ) catch unreachable;
-    std.debug.assert(entry_offset == entries.len);
+    );
+    if (entry_offset != entries.len)
+        return error.InvalidVorbisResidueEncoding;
     return .{
         .encoding = .{
             .do_not_encode = do_not_encode,
@@ -5655,6 +6246,8 @@ pub fn inferVorbisMissingPacketLargeBlockFromFollowingGranule(
     following_granule_position: u64,
     following_end: bool,
 ) !bool {
+    if (!granules.valid())
+        return error.InvalidVorbisGranuleTrackerState;
     const header_inference = inferVorbisMissingPacketLargeBlock(
         identification,
         following,
@@ -5745,6 +6338,17 @@ pub const VorbisPcmBlockClassifier = struct {
         self.* = .{};
     }
 
+    pub fn valid(self: *const VorbisPcmBlockClassifier) bool {
+        if (!self.initialized) {
+            return self.smoothed_mean_square == 0 and
+                self.large_block and
+                self.short_blocks_remaining == 0;
+        }
+        return std.math.isFinite(self.smoothed_mean_square) and
+            self.smoothed_mean_square >= 0 and
+            (self.short_blocks_remaining == 0 or !self.large_block);
+    }
+
     pub fn classify(
         self: *VorbisPcmBlockClassifier,
         comptime Float: type,
@@ -5753,6 +6357,8 @@ pub const VorbisPcmBlockClassifier = struct {
         large_block_size: u16,
         config: VorbisPcmBlockClassifierConfig,
     ) !VorbisPcmBlockClassification {
+        if (!self.valid())
+            return error.InvalidVorbisPcmBlockClassifierState;
         try validateVorbisPcmBlockClassifierConfig(config);
         const analysis = try analyzeVorbisPcmBlock(
             Float,
@@ -5761,11 +6367,6 @@ pub const VorbisPcmBlockClassifier = struct {
             large_block_size,
             config.analysis,
         );
-        if (self.initialized and
-            (!std.math.isFinite(self.smoothed_mean_square) or
-                self.smoothed_mean_square < 0))
-            return error.InvalidVorbisPcmBlockClassifierState;
-
         const current_mean_square = analysis.rms * analysis.rms;
         const floor_power =
             config.analysis.minimum_rms *
@@ -5840,6 +6441,238 @@ pub const VorbisPsychoacousticConfig = struct {
     upper_spread_db_per_bark: f64 = 12,
     quality: f64 = 0.75,
     maximum_masking_relaxation_db: f64 = 18,
+};
+
+/// Select a quality request on the conventional Vorbis q0 through q10 scale.
+pub const VorbisQualityPreset = enum(u4) {
+    q0 = 0,
+    q1 = 1,
+    q2 = 2,
+    q3 = 3,
+    q4 = 4,
+    q5 = 5,
+    q6 = 6,
+    q7 = 7,
+    q8 = 8,
+    q9 = 9,
+    q10 = 10,
+
+    pub fn quality(self: VorbisQualityPreset) f64 {
+        return @as(f64, @floatFromInt(@intFromEnum(self))) / 10;
+    }
+
+    pub fn applyTo(
+        self: VorbisQualityPreset,
+        config: VorbisPsychoacousticConfig,
+    ) VorbisPsychoacousticConfig {
+        var result = config;
+        result.quality = self.quality();
+        return result;
+    }
+};
+
+pub const VorbisPcmQualityMeasurement = struct {
+    sample_count: u64,
+    reference_rms: f64,
+    candidate_rms: f64,
+    rms_error: f64,
+    normalized_rms_error: f64,
+    peak_absolute_error: f64,
+    peak_sample_index: u64,
+    optimal_candidate_gain: f64,
+    gain_aligned_normalized_rms_error: f64,
+    signal_to_noise_db: f64,
+};
+
+pub const VorbisPcmQualityMeter = struct {
+    sample_count: u64 = 0,
+    reference_energy: f128 = 0,
+    candidate_energy: f128 = 0,
+    cross_energy: f128 = 0,
+    error_energy: f128 = 0,
+    peak_absolute_error: f64 = 0,
+    peak_sample_index: u64 = 0,
+
+    pub fn valid(self: *const VorbisPcmQualityMeter) bool {
+        if (!std.math.isFinite(self.reference_energy) or
+            !std.math.isFinite(self.candidate_energy) or
+            !std.math.isFinite(self.cross_energy) or
+            !std.math.isFinite(self.error_energy) or
+            !std.math.isFinite(self.peak_absolute_error) or
+            self.reference_energy < 0 or
+            self.candidate_energy < 0 or
+            self.error_energy < 0 or
+            self.peak_absolute_error < 0)
+        {
+            return false;
+        }
+        if (self.sample_count == 0) {
+            return self.reference_energy == 0 and
+                self.candidate_energy == 0 and
+                self.cross_energy == 0 and
+                self.error_energy == 0 and
+                self.peak_absolute_error == 0 and
+                self.peak_sample_index == 0;
+        }
+        const has_error_energy = self.error_energy != 0;
+        const has_peak_error = self.peak_absolute_error != 0;
+        if (self.reference_energy == 0 and
+            (self.cross_energy != 0 or
+                self.error_energy != self.candidate_energy))
+        {
+            return false;
+        }
+        if (self.candidate_energy == 0 and
+            (self.cross_energy != 0 or
+                self.error_energy != self.reference_energy))
+        {
+            return false;
+        }
+        if (self.error_energy == 0 and
+            (self.reference_energy != self.candidate_energy or
+                self.cross_energy != self.reference_energy))
+        {
+            return false;
+        }
+        return has_error_energy == has_peak_error and
+            (has_peak_error or self.peak_sample_index == 0) and
+            self.peak_sample_index < self.sample_count;
+    }
+
+    pub fn reset(self: *VorbisPcmQualityMeter) void {
+        self.* = .{};
+    }
+
+    pub fn updateSample(
+        self: *VorbisPcmQualityMeter,
+        comptime Float: type,
+        reference: Float,
+        candidate: Float,
+    ) !void {
+        const reference_samples = [_]Float{reference};
+        const candidate_samples = [_]Float{candidate};
+        return self.update(
+            Float,
+            &.{&reference_samples},
+            &.{&candidate_samples},
+        );
+    }
+
+    pub fn update(
+        self: *VorbisPcmQualityMeter,
+        comptime Float: type,
+        reference: []const []const Float,
+        candidate: []const []const Float,
+    ) !void {
+        if (Float != f32 and Float != f64)
+            @compileError("Vorbis PCM quality measurement requires f32 or f64");
+        if (!self.valid()) return error.InvalidVorbisPcmQualityMeter;
+        if (reference.len == 0 or reference.len != candidate.len)
+            return error.InvalidVorbisPcmQualityShape;
+        const frame_count = reference[0].len;
+        if (frame_count == 0)
+            return error.InvalidVorbisPcmQualityShape;
+        for (reference, candidate) |reference_channel, candidate_channel| {
+            if (reference_channel.len != frame_count or
+                candidate_channel.len != frame_count)
+            {
+                return error.InvalidVorbisPcmQualityShape;
+            }
+            for (reference_channel, candidate_channel) |
+                reference_sample,
+                candidate_sample,
+            | {
+                if (!std.math.isFinite(reference_sample) or
+                    !std.math.isFinite(candidate_sample))
+                {
+                    return error.NonFiniteVorbisPcmQualitySample;
+                }
+            }
+        }
+        const value_count = std.math.mul(
+            usize,
+            reference.len,
+            frame_count,
+        ) catch return error.VorbisPcmQualitySampleCountOverflow;
+        const next_count = std.math.add(
+            u64,
+            self.sample_count,
+            std.math.cast(u64, value_count) orelse
+                return error.VorbisPcmQualitySampleCountOverflow,
+        ) catch return error.VorbisPcmQualitySampleCountOverflow;
+
+        var trial = self.*;
+        var local_index: u64 = 0;
+        for (reference, candidate) |reference_channel, candidate_channel| {
+            for (reference_channel, candidate_channel) |
+                reference_sample,
+                candidate_sample,
+            | {
+                const reference_wide: f128 = @floatCast(reference_sample);
+                const candidate_wide: f128 = @floatCast(candidate_sample);
+                const difference = candidate_wide - reference_wide;
+                const absolute_difference: f64 = @floatCast(@abs(difference));
+                trial.reference_energy += reference_wide * reference_wide;
+                trial.candidate_energy += candidate_wide * candidate_wide;
+                trial.cross_energy += reference_wide * candidate_wide;
+                trial.error_energy += difference * difference;
+                if (absolute_difference > trial.peak_absolute_error) {
+                    trial.peak_absolute_error = absolute_difference;
+                    trial.peak_sample_index = self.sample_count + local_index;
+                }
+                local_index += 1;
+            }
+        }
+        trial.sample_count = next_count;
+        if (!trial.valid()) return error.VorbisPcmQualityAccumulationOverflow;
+        self.* = trial;
+    }
+
+    pub fn measurement(
+        self: *const VorbisPcmQualityMeter,
+    ) !VorbisPcmQualityMeasurement {
+        if (!self.valid()) return error.InvalidVorbisPcmQualityMeter;
+        if (self.sample_count == 0)
+            return error.EmptyVorbisPcmQualityMeasurement;
+        if (self.reference_energy == 0)
+            return error.SilentVorbisPcmQualityReference;
+        const divisor: f128 = @floatFromInt(self.sample_count);
+        const reference_rms_wide = @sqrt(self.reference_energy / divisor);
+        const candidate_rms_wide = @sqrt(self.candidate_energy / divisor);
+        const rms_error_wide = @sqrt(self.error_energy / divisor);
+        const normalized_rms_error_wide =
+            rms_error_wide / reference_rms_wide;
+        const optimal_candidate_gain_wide = if (self.candidate_energy > 0)
+            self.cross_energy / self.candidate_energy
+        else
+            0;
+        const gain_aligned_energy = @max(
+            0,
+            self.reference_energy -
+                self.cross_energy * self.cross_energy /
+                    @max(self.candidate_energy, std.math.floatMin(f128)),
+        );
+        const gain_aligned_normalized_rms_error_wide =
+            @sqrt(gain_aligned_energy / divisor) / reference_rms_wide;
+        const signal_to_noise_db_wide = if (self.error_energy == 0)
+            std.math.inf(f128)
+        else
+            10 * @log10(self.reference_energy / self.error_energy);
+        return .{
+            .sample_count = self.sample_count,
+            .reference_rms = @floatCast(reference_rms_wide),
+            .candidate_rms = @floatCast(candidate_rms_wide),
+            .rms_error = @floatCast(rms_error_wide),
+            .normalized_rms_error = @floatCast(normalized_rms_error_wide),
+            .peak_absolute_error = self.peak_absolute_error,
+            .peak_sample_index = self.peak_sample_index,
+            .optimal_candidate_gain = @floatCast(optimal_candidate_gain_wide),
+            .gain_aligned_normalized_rms_error = @floatCast(
+                gain_aligned_normalized_rms_error_wide,
+            ),
+            .signal_to_noise_db = @floatCast(signal_to_noise_db_wide),
+        };
+    }
 };
 
 pub const VorbisPsychoacousticAnalysis = struct {
@@ -6408,6 +7241,270 @@ pub const VorbisAdaptiveRateDecision = struct {
     target_scale: f64,
 };
 
+pub const VorbisQualityRateControllerConfig = struct {
+    minimum_quality: f64,
+    maximum_quality: f64,
+    initial_quality: f64,
+    adjustment_per_packet: f64,
+    headroom_ratio: f64,
+};
+
+pub const VorbisQualityRateAction = enum {
+    hold,
+    increase_quality,
+    decrease_quality,
+};
+
+pub const VorbisQualityRateDecision = struct {
+    previous_quality: f64,
+    quality: f64,
+    actual_to_target_ratio: f64,
+    action: VorbisQualityRateAction,
+};
+
+pub const VorbisQualitySignalDecision = struct {
+    rate: VorbisQualityRateDecision,
+    within_mask: bool,
+    has_rate_headroom: bool,
+    audible_excess_power: f64,
+};
+
+pub const VorbisQualityRateController = struct {
+    config: VorbisQualityRateControllerConfig,
+    current_quality: f64,
+
+    pub fn init(
+        config: VorbisQualityRateControllerConfig,
+    ) !VorbisQualityRateController {
+        try validateVorbisQualityRateControllerConfig(config);
+        return .{
+            .config = config,
+            .current_quality = config.initial_quality,
+        };
+    }
+
+    pub fn valid(self: *const VorbisQualityRateController) bool {
+        validateVorbisQualityRateControllerConfig(self.config) catch
+            return false;
+        return std.math.isFinite(self.current_quality) and
+            self.current_quality >= self.config.minimum_quality and
+            self.current_quality <= self.config.maximum_quality;
+    }
+
+    pub fn quality(self: *const VorbisQualityRateController) !f64 {
+        if (!self.valid())
+            return error.InvalidVorbisQualityRateController;
+        return self.current_quality;
+    }
+
+    pub fn applyTo(
+        self: *const VorbisQualityRateController,
+        config: VorbisPsychoacousticConfig,
+    ) !VorbisPsychoacousticConfig {
+        if (!self.valid())
+            return error.InvalidVorbisQualityRateController;
+        var result = config;
+        result.quality = self.current_quality;
+        return result;
+    }
+
+    /// Adjust quality after a committed packet. A missed residue budget always
+    /// lowers quality, even when the reported total remains within target.
+    pub fn observe(
+        self: *VorbisQualityRateController,
+        target_bits: u32,
+        actual_bits: u32,
+        budget_met: bool,
+    ) !VorbisQualityRateDecision {
+        if (!self.valid())
+            return error.InvalidVorbisQualityRateController;
+        if (target_bits == 0 or actual_bits == 0)
+            return error.InvalidVorbisQualityRateObservation;
+
+        const previous = self.current_quality;
+        const target: f64 = @floatFromInt(target_bits);
+        const actual: f64 = @floatFromInt(actual_bits);
+        const ratio = actual / target;
+        const headroom_boundary = 1 - self.config.headroom_ratio;
+        const action: VorbisQualityRateAction = if (!budget_met or
+            actual_bits > target_bits)
+            .decrease_quality
+        else if (ratio <= headroom_boundary)
+            .increase_quality
+        else
+            .hold;
+        return self.applyObservation(
+            previous,
+            ratio,
+            action,
+        );
+    }
+
+    /// Raises quality only when audible excess and packet headroom coincide.
+    pub fn observeSignal(
+        self: *VorbisQualityRateController,
+        budget: VorbisPacketBitBudget,
+        commit: VorbisRateCommit,
+        submaps: []const VorbisAudioResidueSubmapResult,
+    ) !VorbisQualitySignalDecision {
+        if (!self.valid())
+            return error.InvalidVorbisQualityRateController;
+        if (budget.packet_index != commit.packet_index)
+            return error.MismatchedVorbisQualityRateObservation;
+        if (budget.target_bits == 0 or commit.actual_bits == 0 or
+            submaps.len == 0 or submaps.len > 16)
+            return error.InvalidVorbisQualitySignalObservation;
+
+        var all_budgets_met = true;
+        var target_bits: u64 = 0;
+        var encoded_bits: u64 = 0;
+        var audible_excess_power: f128 = 0;
+        for (submaps) |submap| {
+            if (submap.budget_met !=
+                (submap.encoded_bits <= submap.target_bits) or
+                !std.math.isFinite(submap.squared_error) or
+                submap.squared_error < 0 or
+                !std.math.isFinite(submap.weighted_squared_error) or
+                submap.weighted_squared_error < 0 or
+                !std.math.isFinite(submap.audible_excess_power) or
+                submap.audible_excess_power < 0 or
+                !std.math.isFinite(submap.lambda) or
+                submap.lambda < 0)
+                return error.InvalidVorbisQualitySignalObservation;
+            all_budgets_met = all_budgets_met and submap.budget_met;
+            target_bits += submap.target_bits;
+            encoded_bits += submap.encoded_bits;
+            audible_excess_power += submap.audible_excess_power;
+            if (target_bits > budget.target_bits or
+                encoded_bits > commit.actual_bits or
+                !std.math.isFinite(audible_excess_power) or
+                audible_excess_power > std.math.floatMax(f64))
+                return error.InvalidVorbisQualitySignalObservation;
+        }
+
+        const target: f64 = @floatFromInt(budget.target_bits);
+        const actual: f64 = @floatFromInt(commit.actual_bits);
+        const ratio = actual / target;
+        const has_rate_headroom =
+            ratio <= 1 - self.config.headroom_ratio;
+        const within_mask = audible_excess_power == 0;
+        const action: VorbisQualityRateAction = if (!all_budgets_met or
+            commit.actual_bits > budget.target_bits)
+            .decrease_quality
+        else if (!within_mask and has_rate_headroom)
+            .increase_quality
+        else
+            .hold;
+        const previous = self.current_quality;
+        return .{
+            .rate = self.applyObservation(previous, ratio, action),
+            .within_mask = within_mask,
+            .has_rate_headroom = has_rate_headroom,
+            .audible_excess_power = @floatCast(audible_excess_power),
+        };
+    }
+
+    pub fn observePcmPacketTrial(
+        self: *VorbisQualityRateController,
+        comptime Float: type,
+        plan: VorbisPcmPacketPlan,
+        trial: VorbisPcmPacketEncodingTrial(Float),
+    ) !VorbisQualitySignalDecision {
+        if (!self.valid())
+            return error.InvalidVorbisQualityRateController;
+        if (trial.quantization.submap_results.len == 0 or
+            trial.quantization.submap_results.len > 16)
+            return error.InvalidVorbisQualityPcmPacketTrial;
+        const allocation = trial.quantization.allocation;
+        const packet_bits = std.math.cast(
+            u32,
+            trial.packet.bit_count,
+        ) orelse return error.InvalidVorbisQualityPcmPacketTrial;
+        const packet_bytes = trial.packet.bit_count / 8 +
+            @intFromBool(trial.packet.bit_count % 8 != 0);
+        const allocated_bits = std.math.add(
+            u32,
+            allocation.fixed_packet_bits,
+            allocation.residue_bits,
+        ) catch return error.InvalidVorbisQualityPcmPacketTrial;
+        var residue_target_bits: u64 = 0;
+        for (trial.quantization.submap_results) |submap| {
+            residue_target_bits = std.math.add(
+                u64,
+                residue_target_bits,
+                submap.target_bits,
+            ) catch return error.InvalidVorbisQualityPcmPacketTrial;
+        }
+        if (!std.meta.eql(plan.frame, trial.commit.frame) or
+            !std.meta.eql(plan.frame.header, trial.packet.header) or
+            packet_bits != trial.commit.rate.actual_bits or
+            packet_bytes != trial.packet.bytes.len or
+            trial.preparation.fixed_packet_bits !=
+                allocation.fixed_packet_bits or
+            allocation.packet_target_bits != plan.budget.target_bits or
+            allocated_bits != allocation.packet_target_bits or
+            residue_target_bits != allocation.residue_bits)
+            return error.InvalidVorbisQualityPcmPacketTrial;
+        return self.observeSignal(
+            plan.budget,
+            trial.commit.rate,
+            trial.quantization.submap_results,
+        );
+    }
+
+    fn applyObservation(
+        self: *VorbisQualityRateController,
+        previous: f64,
+        ratio: f64,
+        action: VorbisQualityRateAction,
+    ) VorbisQualityRateDecision {
+        const unbounded = switch (action) {
+            .hold => previous,
+            .increase_quality => previous + self.config.adjustment_per_packet,
+            .decrease_quality => previous - self.config.adjustment_per_packet,
+        };
+        const next = std.math.clamp(
+            unbounded,
+            self.config.minimum_quality,
+            self.config.maximum_quality,
+        );
+        const applied_action: VorbisQualityRateAction = if (next > previous)
+            .increase_quality
+        else if (next < previous)
+            .decrease_quality
+        else
+            .hold;
+        self.current_quality = next;
+        return .{
+            .previous_quality = previous,
+            .quality = next,
+            .actual_to_target_ratio = ratio,
+            .action = applied_action,
+        };
+    }
+
+    pub fn observeCommit(
+        self: *VorbisQualityRateController,
+        budget: VorbisPacketBitBudget,
+        commit: VorbisRateCommit,
+        budget_met: bool,
+    ) !VorbisQualityRateDecision {
+        if (budget.packet_index != commit.packet_index)
+            return error.MismatchedVorbisQualityRateObservation;
+        return self.observe(
+            budget.target_bits,
+            commit.actual_bits,
+            budget_met,
+        );
+    }
+
+    pub fn reset(self: *VorbisQualityRateController) !void {
+        validateVorbisQualityRateControllerConfig(self.config) catch
+            return error.InvalidVorbisQualityRateController;
+        self.current_quality = self.config.initial_quality;
+    }
+};
+
 pub const VorbisPacketBitBudget = struct {
     packet_index: u64,
     nominal_bits: u32,
@@ -6431,15 +7528,9 @@ pub fn adaptVorbisPacketBitBudget(
         budget.reservoir_balance_before >
             @as(i64, rate_control.reservoir_capacity_bits))
         return error.InvalidVorbisPacketBitBudget;
-    const analysis = classification.analysis;
-    if (!std.math.isFinite(analysis.peak) or analysis.peak < 0 or
-        !std.math.isFinite(analysis.rms) or analysis.rms < 0 or
-        analysis.rms > analysis.peak or
-        !std.math.isFinite(analysis.maximum_energy_ratio) or
-        analysis.maximum_energy_ratio < 1 or
-        !std.math.isFinite(classification.cross_block_energy_ratio) or
-        classification.cross_block_energy_ratio < 1)
+    if (!vorbisPcmBlockClassificationValid(classification))
         return error.InvalidVorbisBlockAnalysis;
+    const analysis = classification.analysis;
 
     const activity = std.math.clamp(
         (analysis.rms - policy.quiet_rms) /
@@ -6890,7 +7981,8 @@ pub fn quantizeVorbisAudioResiduesAdaptive(
         classification_offset += classification_count;
         entry_offset += entry_count;
     }
-    std.debug.assert(skip_offset == requirements.do_not_encode);
+    if (skip_offset != requirements.do_not_encode)
+        return error.InvalidVorbisResidueBundle;
 
     @memcpy(retained_skips, trial_skips);
     @memcpy(
@@ -7014,22 +8106,23 @@ pub const VorbisBitReservoir = struct {
         self.pending = null;
     }
 
+    pub fn valid(self: *const VorbisBitReservoir) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn plan(
         self: *VorbisBitReservoir,
         sample_rate: u32,
         pcm_advance: u16,
     ) !VorbisPacketBitBudget {
-        try validateVorbisRateControlConfig(self.config);
+        try self.validateState();
         if (self.pending != null)
             return error.VorbisRateBudgetAlreadyPending;
         if (self.packet_index == std.math.maxInt(u64))
             return error.VorbisAudioPacketCountOverflow;
         if (sample_rate == 0 or pcm_advance == 0)
             return error.InvalidVorbisRateInterval;
-        const capacity: i64 = self.config.reservoir_capacity_bits;
-        if (self.balance_bits < -capacity or
-            self.balance_bits > capacity)
-            return error.InvalidVorbisBitReservoirState;
         const numerator =
             @as(u64, self.config.target_bitrate) * pcm_advance;
         const rounded =
@@ -7069,20 +8162,10 @@ pub const VorbisBitReservoir = struct {
         self: *VorbisBitReservoir,
         actual_bits: u32,
     ) !VorbisRateCommit {
-        try validateVorbisRateControlConfig(self.config);
+        try self.validateState();
         const budget = self.pending orelse
             return error.VorbisRateBudgetNotPending;
-        if (self.packet_index == std.math.maxInt(u64) or
-            budget.packet_index != self.packet_index or
-            budget.reservoir_balance_before != self.balance_bits or
-            budget.nominal_bits == 0 or
-            budget.target_bits < self.config.minimum_packet_bits or
-            budget.target_bits > self.config.maximum_packet_bits)
-            return error.InvalidVorbisBitReservoirState;
         const capacity: i64 = self.config.reservoir_capacity_bits;
-        if (self.balance_bits < -capacity or
-            self.balance_bits > capacity)
-            return error.InvalidVorbisBitReservoirState;
         const credited = std.math.add(
             i64,
             self.balance_bits,
@@ -7107,9 +8190,27 @@ pub const VorbisBitReservoir = struct {
     }
 
     pub fn cancel(self: *VorbisBitReservoir) !void {
+        try self.validateState();
         if (self.pending == null)
             return error.VorbisRateBudgetNotPending;
         self.pending = null;
+    }
+
+    fn validateState(self: *const VorbisBitReservoir) !void {
+        try validateVorbisRateControlConfig(self.config);
+        const capacity: i64 = self.config.reservoir_capacity_bits;
+        if (self.balance_bits < -capacity or
+            self.balance_bits > capacity)
+            return error.InvalidVorbisBitReservoirState;
+        if (self.pending) |budget| {
+            if (self.packet_index == std.math.maxInt(u64) or
+                budget.packet_index != self.packet_index or
+                budget.reservoir_balance_before != self.balance_bits or
+                budget.nominal_bits == 0 or
+                budget.target_bits < self.config.minimum_packet_bits or
+                budget.target_bits > self.config.maximum_packet_bits)
+                return error.InvalidVorbisBitReservoirState;
+        }
     }
 };
 
@@ -7146,6 +8247,26 @@ fn validateVorbisAdaptiveRatePolicyConfig(
         config.maximum_target_scale < 1 or
         config.maximum_target_scale > 8)
         return error.InvalidVorbisAdaptiveRatePolicyConfig;
+}
+
+fn validateVorbisQualityRateControllerConfig(
+    config: VorbisQualityRateControllerConfig,
+) !void {
+    if (!std.math.isFinite(config.minimum_quality) or
+        !std.math.isFinite(config.maximum_quality) or
+        config.minimum_quality < 0 or
+        config.maximum_quality > 1 or
+        config.minimum_quality > config.maximum_quality or
+        !std.math.isFinite(config.initial_quality) or
+        config.initial_quality < config.minimum_quality or
+        config.initial_quality > config.maximum_quality or
+        !std.math.isFinite(config.adjustment_per_packet) or
+        config.adjustment_per_packet <= 0 or
+        config.adjustment_per_packet > 1 or
+        !std.math.isFinite(config.headroom_ratio) or
+        config.headroom_ratio < 0 or
+        config.headroom_ratio > 1)
+        return error.InvalidVorbisQualityRateControllerConfig;
 }
 
 fn validateVorbisPcmBlockClassifierConfig(
@@ -7342,6 +8463,31 @@ pub const VorbisPcmFramePlanner = struct {
         self.* = .{ .previous_large_block = previous_large_block };
     }
 
+    pub fn valid(self: *const VorbisPcmFramePlanner) bool {
+        if (self.packet_index == 0)
+            return self.center == 0;
+        if (self.center <= 0 or @mod(self.center, 16) != 0)
+            return false;
+        const packet_count = std.math.cast(
+            i64,
+            self.packet_index,
+        ) orelse return false;
+        const minimum_pcm_advance: i64 = 32;
+        const maximum_pcm_advance: i64 = 4096;
+        const minimum_center = std.math.mul(
+            i64,
+            packet_count,
+            minimum_pcm_advance,
+        ) catch return false;
+        const maximum_center = std.math.mul(
+            i64,
+            packet_count,
+            maximum_pcm_advance,
+        ) catch std.math.maxInt(i64);
+        return self.center >= minimum_center and
+            self.center <= maximum_center;
+    }
+
     pub fn plan(
         self: *VorbisPcmFramePlanner,
         identification: VorbisIdentification,
@@ -7350,6 +8496,8 @@ pub const VorbisPcmFramePlanner = struct {
         current_large_block: bool,
         next_large_block: bool,
     ) !VorbisPcmFramePlan {
+        if (!self.valid())
+            return error.InvalidVorbisPcmFramePlannerState;
         if (self.packet_index == std.math.maxInt(u64))
             return error.VorbisAudioPacketCountOverflow;
         const header = try planVorbisEncodingBlock(
@@ -7410,10 +8558,16 @@ pub const VorbisPcmBlockLookahead = struct {
         self.* = .init(previous_large_block);
     }
 
+    pub fn valid(self: *const VorbisPcmBlockLookahead) bool {
+        return self.frames.valid();
+    }
+
     pub fn prime(
         self: *VorbisPcmBlockLookahead,
         analysis: VorbisPcmBlockAnalysis,
     ) !void {
+        if (!self.valid())
+            return error.InvalidVorbisPcmBlockLookaheadState;
         if (self.pending_large_block != null)
             return error.VorbisBlockLookaheadAlreadyPrimed;
         self.pending_large_block =
@@ -7427,6 +8581,8 @@ pub const VorbisPcmBlockLookahead = struct {
         mapping_number: u8,
         next_analysis: VorbisPcmBlockAnalysis,
     ) !VorbisPcmFramePlan {
+        if (!self.valid())
+            return error.InvalidVorbisPcmBlockLookaheadState;
         const current_large_block =
             self.pending_large_block orelse
             return error.VorbisBlockLookaheadNotPrimed;
@@ -7448,6 +8604,8 @@ pub const VorbisPcmBlockLookahead = struct {
         setup: VorbisSetup,
         mapping_number: u8,
     ) !VorbisPcmFramePlan {
+        if (!self.valid())
+            return error.InvalidVorbisPcmBlockLookaheadState;
         const current_large_block =
             self.pending_large_block orelse
             return error.VorbisBlockLookaheadNotPrimed;
@@ -7513,6 +8671,11 @@ pub const VorbisPcmPacketSequence = struct {
             .lookahead = .init(previous_large_block),
             .reservoir = try .init(config.rate_control),
         };
+    }
+
+    pub fn valid(self: *const VorbisPcmPacketSequence) bool {
+        self.validateState() catch return false;
+        return true;
     }
 
     pub fn prime(
@@ -7720,22 +8883,9 @@ pub const VorbisPcmPacketSequence = struct {
     ) !void {
         if (self.ended)
             return error.VorbisPcmPacketSequenceAlreadyEnded;
-        try validateVorbisPcmBlockClassifierConfig(
-            self.config.classifier,
-        );
-        try validateVorbisRateControlConfig(
-            self.config.rate_control,
-        );
-        if (self.config.adaptive_rate) |adaptive_rate| {
-            try validateVorbisAdaptiveRatePolicyConfig(adaptive_rate);
-        }
-        if (!std.meta.eql(
-            self.reservoir.config,
-            self.config.rate_control,
-        ) or self.reservoir.pending != null or
-            self.lookahead.frames.packet_index !=
-                self.reservoir.packet_index or
-            identification.sample_rate == 0)
+        self.validateState() catch
+            return error.InvalidVorbisPcmPacketSequenceState;
+        if (identification.sample_rate == 0)
             return error.InvalidVorbisPcmPacketSequenceState;
     }
 
@@ -7745,20 +8895,29 @@ pub const VorbisPcmPacketSequence = struct {
     ) !void {
         if (self.ended)
             return error.VorbisPcmPacketSequenceAlreadyEnded;
+        self.validateState() catch
+            return error.InvalidVorbisPcmPacketSequenceState;
         if (plan.base_revision != self.revision)
             return error.StaleVorbisPcmPacketPlan;
         if (self.revision == std.math.maxInt(u64))
             return error.VorbisPcmPacketSequenceRevisionOverflow;
-        const next_packet_index = std.math.add(
-            u64,
-            self.lookahead.frames.packet_index,
-            1,
-        ) catch return error.InvalidVorbisPcmPacketPlan;
+        const pending_budget = plan.reservoir_pending.pending orelse
+            return error.InvalidVorbisPcmPacketPlan;
+        try validateVorbisPcmFrameTransition(
+            self.lookahead,
+            plan.frame,
+            plan.lookahead_after,
+            plan.end,
+        );
+        if (!plan.reservoir_pending.valid() or
+            !plan.classifier_after.valid())
+            return error.InvalidVorbisPcmPacketPlan;
+        const maximum_granule = vorbisPcmFrameGranule(plan.frame) catch
+            return error.InvalidVorbisPcmPacketPlan;
         if (plan.frame.packet_index !=
             self.lookahead.frames.packet_index or
             plan.budget.packet_index != self.reservoir.packet_index or
             plan.frame.packet_index != plan.budget.packet_index or
-            plan.reservoir_pending.pending == null or
             plan.reservoir_pending.packet_index !=
                 self.reservoir.packet_index or
             plan.reservoir_pending.balance_bits !=
@@ -7766,28 +8925,178 @@ pub const VorbisPcmPacketSequence = struct {
             plan.budget.reservoir_balance_before !=
                 self.reservoir.balance_bits or
             !std.meta.eql(
-                plan.reservoir_pending.pending.?,
+                pending_budget,
                 plan.budget,
             ) or !std.meta.eql(
             plan.reservoir_pending.config,
             self.config.rate_control,
         ) or plan.granule_position < self.granule_position or
-            (!plan.end and
-                plan.granule_position !=
-                    vorbisPcmFrameGranule(plan.frame) catch
-                        return error.InvalidVorbisPcmPacketPlan) or
-            plan.lookahead_after.frames.packet_index !=
-                next_packet_index or
-            plan.lookahead_after.frames.center !=
-                plan.frame.next_center or
-            plan.lookahead_after.frames.previous_large_block !=
-                plan.frame.header.large_block or
+            plan.granule_position > maximum_granule or
+            (!plan.end and plan.granule_position != maximum_granule) or
             plan.end != (plan.classification == null) or
             plan.end !=
                 (plan.lookahead_after.pending_large_block == null))
             return error.InvalidVorbisPcmPacketPlan;
+
+        if (plan.end) {
+            if (!std.meta.eql(plan.classifier_after, self.classifier))
+                return error.InvalidVorbisPcmPacketPlan;
+        } else {
+            const classification = plan.classification orelse
+                return error.InvalidVorbisPcmPacketPlan;
+            if (!vorbisPcmBlockClassificationValid(classification) or
+                plan.classifier_after.large_block !=
+                    classification.recommended_large_block or
+                plan.classifier_after.short_blocks_remaining !=
+                    classification.short_blocks_remaining or
+                plan.lookahead_after.pending_large_block !=
+                    classification.recommended_large_block)
+                return error.InvalidVorbisPcmPacketPlan;
+        }
+    }
+
+    fn validateState(self: *const VorbisPcmPacketSequence) !void {
+        try validateVorbisPcmBlockClassifierConfig(
+            self.config.classifier,
+        );
+        try validateVorbisRateControlConfig(
+            self.config.rate_control,
+        );
+        if (self.config.adaptive_rate) |adaptive_rate| {
+            try validateVorbisAdaptiveRatePolicyConfig(adaptive_rate);
+        }
+        if (!self.classifier.valid() or
+            !self.lookahead.valid() or
+            !self.reservoir.valid() or
+            !std.meta.eql(
+                self.reservoir.config,
+                self.config.rate_control,
+            ) or
+            self.reservoir.pending != null or
+            self.lookahead.frames.packet_index !=
+                self.reservoir.packet_index or
+            self.lookahead.frames.center < 0 or
+            self.granule_position >
+                @as(u64, @intCast(self.lookahead.frames.center)))
+            return error.InvalidVorbisPcmPacketSequenceState;
+
+        if (self.revision == 0) {
+            if (self.ended or
+                self.granule_position != 0 or
+                self.lookahead.frames.packet_index != 0 or
+                self.lookahead.frames.center != 0 or
+                self.lookahead.pending_large_block != null or
+                self.classifier.initialized)
+                return error.InvalidVorbisPcmPacketSequenceState;
+            return;
+        }
+
+        if (!self.ended) {
+            const pending_large_block =
+                self.lookahead.pending_large_block orelse
+                return error.InvalidVorbisPcmPacketSequenceState;
+            if (self.classifier.large_block != pending_large_block)
+                return error.InvalidVorbisPcmPacketSequenceState;
+        }
+
+        if (self.lookahead.frames.packet_index != 0) {
+            const center: u64 = @intCast(self.lookahead.frames.center);
+            if (self.granule_position >= center)
+                return error.InvalidVorbisPcmPacketSequenceState;
+            const lag = center - self.granule_position;
+            const maximum_lag: u64 = if (self.ended) 8192 else 4096;
+            if (lag < 32 or lag > maximum_lag)
+                return error.InvalidVorbisPcmPacketSequenceState;
+        }
+
+        const expected_revision = std.math.add(
+            u64,
+            self.lookahead.frames.packet_index,
+            1,
+        ) catch return error.InvalidVorbisPcmPacketSequenceState;
+        if (self.revision != expected_revision or
+            !self.classifier.initialized or
+            self.ended !=
+                (self.lookahead.pending_large_block == null))
+            return error.InvalidVorbisPcmPacketSequenceState;
     }
 };
+
+fn validateVorbisPcmFrameTransition(
+    before: VorbisPcmBlockLookahead,
+    frame: VorbisPcmFramePlan,
+    after: VorbisPcmBlockLookahead,
+    end: bool,
+) !void {
+    if (!before.valid() or !after.valid())
+        return error.InvalidVorbisPcmPacketPlan;
+    const current_large_block = before.pending_large_block orelse
+        return error.InvalidVorbisPcmPacketPlan;
+    const next_large_block = if (end)
+        current_large_block
+    else
+        after.pending_large_block orelse
+            return error.InvalidVorbisPcmPacketPlan;
+    if (end != (after.pending_large_block == null) or
+        frame.header.large_block != current_large_block or
+        frame.header.block_size < 64 or
+        frame.header.block_size > 8192 or
+        !std.math.isPowerOfTwo(frame.header.block_size) or
+        frame.header.payload_bit_offset == 0 or
+        frame.header.payload_bit_offset > 11 or
+        frame.pcm_advance < 32 or
+        frame.pcm_advance > 4096 or
+        frame.pcm_advance % 16 != 0)
+        return error.InvalidVorbisPcmPacketPlan;
+
+    if (current_large_block) {
+        if (frame.header.previous_window_flag !=
+            before.frames.previous_large_block or
+            frame.header.next_window_flag != next_large_block or
+            frame.header.payload_bit_offset < 3)
+            return error.InvalidVorbisPcmPacketPlan;
+    } else if (frame.header.previous_window_flag != null or
+        frame.header.next_window_flag != null)
+        return error.InvalidVorbisPcmPacketPlan;
+
+    const source_start = std.math.sub(
+        i64,
+        before.frames.center,
+        frame.header.block_size / 2,
+    ) catch return error.InvalidVorbisPcmPacketPlan;
+    const next_center = std.math.add(
+        i64,
+        before.frames.center,
+        frame.pcm_advance,
+    ) catch return error.InvalidVorbisPcmPacketPlan;
+    const next_packet_index = std.math.add(
+        u64,
+        before.frames.packet_index,
+        1,
+    ) catch return error.InvalidVorbisPcmPacketPlan;
+    if (frame.packet_index != before.frames.packet_index or
+        frame.source_start != source_start or
+        frame.next_center != next_center or
+        after.frames.packet_index != next_packet_index or
+        after.frames.center != next_center or
+        after.frames.previous_large_block != current_large_block)
+        return error.InvalidVorbisPcmPacketPlan;
+}
+
+fn vorbisPcmBlockClassificationValid(
+    classification: VorbisPcmBlockClassification,
+) bool {
+    const analysis = classification.analysis;
+    return std.math.isFinite(analysis.peak) and
+        analysis.peak >= 0 and
+        std.math.isFinite(analysis.rms) and
+        analysis.rms >= 0 and
+        analysis.rms <= analysis.peak and
+        std.math.isFinite(analysis.maximum_energy_ratio) and
+        analysis.maximum_energy_ratio >= 1 and
+        std.math.isFinite(classification.cross_block_energy_ratio) and
+        classification.cross_block_energy_ratio >= 1;
+}
 
 fn vorbisPcmBlockDecision(
     classification: VorbisPcmBlockClassification,
@@ -8030,9 +9339,13 @@ pub fn VorbisWindowPlan(
                     packet.previous_window_flag == null or
                     packet.next_window_flag == null)
                     return error.InvalidVorbisWindowState;
+                const previous = packet.previous_window_flag orelse
+                    return error.InvalidVorbisWindowState;
+                const next = packet.next_window_flag orelse
+                    return error.InvalidVorbisWindowState;
                 return &self.large[
-                    @intFromBool(packet.previous_window_flag.?)
-                ][@intFromBool(packet.next_window_flag.?)];
+                    @intFromBool(previous)
+                ][@intFromBool(next)];
             }
             if (packet.block_size != small_block_size or
                 packet.previous_window_flag != null or
@@ -8783,20 +10096,36 @@ pub fn VorbisOverlapAdd(
     return struct {
         const Self = @This();
 
-        previous: [maximum_block_size]Float = undefined,
-        pending: [maximum_block_size / 2]Float = undefined,
+        previous: [maximum_block_size]Float = @splat(0),
+        pending: [maximum_block_size / 2]Float = @splat(0),
         previous_size: usize = 0,
 
         pub fn reset(self: *Self) void {
+            self.previous = @splat(0);
+            self.pending = @splat(0);
             self.previous_size = 0;
         }
 
         pub fn primed(self: *const Self) bool {
-            return self.previous_size != 0;
+            return self.valid() and self.previous_size != 0;
         }
 
         pub fn previousBlockSize(self: *const Self) usize {
-            return self.previous_size;
+            return if (self.valid()) self.previous_size else 0;
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.previous_size == 0) return true;
+            if (self.previous_size > maximum_block_size or
+                self.previous_size < 64 or
+                !std.math.isPowerOfTwo(self.previous_size))
+            {
+                return false;
+            }
+            for (self.previous[0..self.previous_size]) |sample| {
+                if (!std.math.isFinite(sample)) return false;
+            }
+            return true;
         }
 
         /// The first block primes state and returns no samples.
@@ -8815,6 +10144,7 @@ pub fn VorbisOverlapAdd(
             windowed_block: []const Float,
             output: []Float,
         ) !usize {
+            if (!self.valid()) return error.InvalidVorbisOverlapState;
             if (windowed_block.len < 64 or
                 windowed_block.len > maximum_block_size or
                 !std.math.isPowerOfTwo(windowed_block.len))
@@ -8826,11 +10156,6 @@ pub fn VorbisOverlapAdd(
             if (self.previous_size == 0) {
                 return 0;
             }
-            if (self.previous_size > maximum_block_size or
-                self.previous_size < 64 or
-                !std.math.isPowerOfTwo(self.previous_size))
-                return error.InvalidVorbisOverlapState;
-
             const output_count =
                 self.previous_size / 4 + windowed_block.len / 4;
             if (output.len < output_count)
@@ -8914,11 +10239,25 @@ pub fn VorbisChannelOverlapAdd(
         }
 
         pub fn primed(self: *const Self) bool {
-            if (!self.channels[0].primed()) return false;
-            for (self.channels[1..]) |channel| {
-                if (!channel.primed()) return false;
+            return self.valid() and self.channels[0].primed();
+        }
+
+        pub fn valid(self: *const Self) bool {
+            const previous_size = self.channels[0].previous_size;
+            for (&self.channels) |*channel| {
+                if (!channel.valid() or
+                    channel.previous_size != previous_size)
+                {
+                    return false;
+                }
             }
             return true;
+        }
+
+        pub fn previousBlockSize(self: *const Self) !usize {
+            if (!self.valid())
+                return error.InvalidVorbisChannelOverlapState;
+            return self.channels[0].previous_size;
         }
 
         /// Failures preserve outputs and logical overlap history.
@@ -8930,11 +10269,7 @@ pub fn VorbisChannelOverlapAdd(
             if (windowed_blocks.len != channel_count or
                 outputs.len != channel_count)
                 return error.InvalidVorbisChannelOverlapBundle;
-            const previous_size = self.channels[0].previous_size;
-            for (self.channels[1..]) |channel| {
-                if (channel.previous_size != previous_size)
-                    return error.InvalidVorbisChannelOverlapState;
-            }
+            _ = try self.previousBlockSize();
             for (windowed_blocks, 0..) |input, channel| {
                 for (outputs, 0..) |output, output_channel| {
                     if (vorbisConstSlicesOverlap(Float, input, output))
@@ -8987,14 +10322,16 @@ pub fn VorbisChannelOverlapAdd(
                     output_count = count;
                 }
             }
+            const prepared_output_count = output_count orelse
+                return error.InvalidVorbisChannelOverlapState;
             for (&self.channels, windowed_blocks, outputs) |
                 *state,
                 input,
                 output,
             | {
-                state.commitPrepared(input, output, output_count.?);
+                state.commitPrepared(input, output, prepared_output_count);
             }
-            return output_count.?;
+            return prepared_output_count;
         }
     };
 }
@@ -9015,6 +10352,22 @@ pub const VorbisGranuleTracker = struct {
         self.* = .{};
     }
 
+    pub fn valid(self: *const VorbisGranuleTracker) bool {
+        if (self.decoded_samples > std.math.maxInt(i64)) return false;
+        if (self.decoded_samples == 0) {
+            return self.position_offset == null and !self.ended;
+        }
+        if (self.position_offset) |offset| {
+            const pcm_end = std.math.add(
+                i64,
+                offset,
+                @intCast(self.decoded_samples),
+            ) catch return false;
+            if (pcm_end < 0) return false;
+        }
+        return !self.ended or self.position_offset != null;
+    }
+
     /// Return the portion of one finished overlap range that belongs to the stream.
     pub fn trim(
         self: *VorbisGranuleTracker,
@@ -9022,6 +10375,8 @@ pub const VorbisGranuleTracker = struct {
         granule_position: u64,
         end: bool,
     ) !VorbisGranuleRange {
+        if (!self.valid())
+            return error.InvalidVorbisGranuleTrackerState;
         if (self.ended) return error.VorbisGranuleStreamAlreadyEnded;
         if (nominal_sample_count == 0)
             return error.InvalidVorbisGranuleSampleCount;
@@ -9060,10 +10415,12 @@ pub const VorbisGranuleTracker = struct {
                         declared_end,
                         @intCast(decoded_after),
                     ) catch return error.VorbisGranulePositionOverflow;
-                    if (offset.? < 0) {
+                    const initial_offset = offset orelse
+                        return error.VorbisGranulePositionOverflow;
+                    if (initial_offset < 0) {
                         if (decoded_before != 0)
                             return error.LateVorbisInitialGranule;
-                        const discarded: u64 = @intCast(-offset.?);
+                        const discarded: u64 = @intCast(-initial_offset);
                         if (discarded > nominal_sample_count)
                             return error.InvalidVorbisInitialGranule;
                         source_start = @intCast(discarded);
@@ -9071,9 +10428,11 @@ pub const VorbisGranuleTracker = struct {
                     }
                 }
             } else {
+                const known_offset = offset orelse
+                    return error.VorbisGranulePositionOverflow;
                 const expected_end = std.math.add(
                     i64,
-                    offset.?,
+                    known_offset,
                     @intCast(decoded_after),
                 ) catch return error.VorbisGranulePositionOverflow;
                 if (!end) {
@@ -9082,7 +10441,7 @@ pub const VorbisGranuleTracker = struct {
                 } else {
                     const earliest_end = std.math.add(
                         i64,
-                        offset.?,
+                        known_offset,
                         @intCast(decoded_before),
                     ) catch return error.VorbisGranulePositionOverflow;
                     if (declared_end < earliest_end or
@@ -9122,6 +10481,38 @@ pub const VorbisGranuleTracker = struct {
     }
 };
 
+fn vorbisDecodedSampleTimelineValid(
+    audio_packet_count: u64,
+    decoded_samples: u64,
+) bool {
+    if (audio_packet_count == 0) return decoded_samples == 0;
+    const completed_packets = audio_packet_count - 1;
+    const minimum_samples = std.math.mul(
+        u64,
+        completed_packets,
+        32,
+    ) catch return false;
+    const maximum_samples = std.math.mul(
+        u64,
+        completed_packets,
+        4096,
+    ) catch std.math.maxInt(u64);
+    return decoded_samples >= minimum_samples and
+        decoded_samples <= maximum_samples;
+}
+
+fn vorbisGranuleOutputUpperBound(
+    granules: VorbisGranuleTracker,
+) ?u64 {
+    if (!granules.valid()) return null;
+    const offset = granules.position_offset orelse
+        return granules.decoded_samples;
+    if (offset >= 0) return granules.decoded_samples;
+    const discarded = @as(u64, @intCast(-(offset + 1))) + 1;
+    if (discarded > granules.decoded_samples) return null;
+    return granules.decoded_samples - discarded;
+}
+
 pub fn VorbisPcmStreamScratch(comptime Float: type) type {
     if (Float != f32 and Float != f64)
         @compileError("Vorbis stream decoding requires f32 or f64");
@@ -9144,6 +10535,11 @@ pub const VorbisPcmConcealmentResult = struct {
     pcm_start: ?i64,
     pcm_end: ?i64,
     concealed_packet_count: u64,
+};
+
+pub const VorbisPcmSignalConcealmentConfig = struct {
+    initial_gain: f64 = 1,
+    final_gain: f64 = 0.5,
 };
 
 pub const VorbisChainedPcmStreamResult = struct {
@@ -9243,6 +10639,10 @@ pub fn VorbisPcmStreamDecoder(
 
     return struct {
         const Self = @This();
+        const ConcealmentSource = union(enum) {
+            silence,
+            previous_signal: VorbisPcmSignalConcealmentConfig,
+        };
 
         packets: PacketDecoder,
         overlap: ChannelOverlap = .{},
@@ -9263,6 +10663,25 @@ pub fn VorbisPcmStreamDecoder(
             self.ended = false;
         }
 
+        pub fn valid(self: *const Self) bool {
+            if (!self.overlap.valid() or
+                !self.granules.valid() or
+                self.concealed_packet_count > self.audio_packet_count or
+                self.ended != self.granules.ended)
+                return false;
+            if (self.audio_packet_count == 0) {
+                return !self.overlap.primed() and
+                    self.concealed_packet_count == 0 and
+                    self.granules.decoded_samples == 0 and
+                    !self.ended;
+            }
+            return self.overlap.primed() and
+                vorbisDecodedSampleTimelineValid(
+                    self.audio_packet_count,
+                    self.granules.decoded_samples,
+                );
+        }
+
         /// Returned samples occupy the prefix of every output channel.
         pub fn decode(
             self: *Self,
@@ -9272,6 +10691,8 @@ pub fn VorbisPcmStreamDecoder(
             outputs: []const []Float,
             scratch: VorbisPcmStreamScratch(Float),
         ) !VorbisPcmStreamResult {
+            if (!self.valid())
+                return error.InvalidVorbisPcmStreamState;
             if (self.ended)
                 return error.VorbisPcmStreamAlreadyEnded;
             if (self.audio_packet_count == std.math.maxInt(u64))
@@ -9284,11 +10705,7 @@ pub fn VorbisPcmStreamDecoder(
                 setup,
             );
             const previous_size =
-                self.overlap.channels[0].previousBlockSize();
-            for (self.overlap.channels[1..]) |channel| {
-                if (channel.previousBlockSize() != previous_size)
-                    return error.InvalidVorbisChannelOverlapState;
-            }
+                try self.overlap.previousBlockSize();
             const nominal_sample_count = if (previous_size == 0)
                 0
             else
@@ -9379,6 +10796,78 @@ pub fn VorbisPcmStreamDecoder(
             outputs: []const []Float,
             windowed_scratch: []Float,
         ) !VorbisPcmConcealmentResult {
+            return self.concealMissingPacketWithSource(
+                .silence,
+                large_block,
+                granule_position,
+                end,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+        }
+
+        /// Repeats the retained windowed signal with bounded linear decay.
+        pub fn concealMissingPacketWithPreviousSignal(
+            self: *Self,
+            large_block: bool,
+            config: VorbisPcmSignalConcealmentConfig,
+            granule_position: u64,
+            end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisPcmConcealmentResult {
+            return self.concealMissingPacketWithSource(
+                .{ .previous_signal = config },
+                large_block,
+                granule_position,
+                end,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+        }
+
+        pub fn concealMissingPacketUsingPreviousBlockSignal(
+            self: *Self,
+            config: VorbisPcmSignalConcealmentConfig,
+            granule_position: u64,
+            end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisPcmConcealmentResult {
+            const previous_size =
+                try self.overlap.previousBlockSize();
+            if (previous_size == 0)
+                return error.VorbisPreviousSignalUnavailable;
+            if (previous_size != small_block_size and
+                previous_size != large_block_size)
+                return error.InvalidVorbisChannelOverlapState;
+            return self.concealMissingPacketWithPreviousSignal(
+                previous_size == large_block_size,
+                config,
+                granule_position,
+                end,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+        }
+
+        fn concealMissingPacketWithSource(
+            self: *Self,
+            source: ConcealmentSource,
+            large_block: bool,
+            granule_position: u64,
+            end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisPcmConcealmentResult {
+            if (!self.valid())
+                return error.InvalidVorbisPcmStreamState;
             if (self.ended)
                 return error.VorbisPcmStreamAlreadyEnded;
             if (self.audio_packet_count == std.math.maxInt(u64) or
@@ -9397,10 +10886,26 @@ pub fn VorbisPcmStreamDecoder(
             else
                 small_block_size;
             const previous_size =
-                self.overlap.channels[0].previousBlockSize();
-            for (self.overlap.channels[1..]) |channel| {
-                if (channel.previousBlockSize() != previous_size)
-                    return error.InvalidVorbisChannelOverlapState;
+                try self.overlap.previousBlockSize();
+            switch (source) {
+                .silence => {},
+                .previous_signal => |config| {
+                    try validateVorbisPcmSignalConcealmentConfig(config);
+                    if (previous_size == 0)
+                        return error.VorbisPreviousSignalUnavailable;
+                    if (previous_size > large_block_size or
+                        previous_size < 64 or
+                        !std.math.isPowerOfTwo(previous_size))
+                    {
+                        return error.InvalidVorbisChannelOverlapState;
+                    }
+                    for (self.overlap.channels) |channel| {
+                        for (channel.previous[0..previous_size]) |sample| {
+                            if (!std.math.isFinite(sample))
+                                return error.InvalidVorbisChannelOverlapState;
+                        }
+                    }
+                },
             }
             const nominal_sample_count = if (previous_size == 0)
                 0
@@ -9456,7 +10961,19 @@ pub fn VorbisPcmStreamDecoder(
                         granule_position,
                         end,
                     );
-            @memset(used_windowed, 0);
+            switch (source) {
+                .silence => @memset(used_windowed, 0),
+                .previous_signal => |config| {
+                    for (self.overlap.channels, 0..) |channel, index| {
+                        synthesizeVorbisPreviousSignal(
+                            Float,
+                            channel.previous[0..previous_size],
+                            used_windowed[index * block_size ..][0..block_size],
+                            config,
+                        );
+                    }
+                },
+            }
             var windowed_channels: [channel_count][]const Float = undefined;
             for (&windowed_channels, 0..) |*channel, index| {
                 channel.* = used_windowed[index * block_size ..][0..block_size];
@@ -9498,11 +11015,7 @@ pub fn VorbisPcmStreamDecoder(
             windowed_scratch: []Float,
         ) !VorbisPcmConcealmentResult {
             const previous_size =
-                self.overlap.channels[0].previousBlockSize();
-            for (self.overlap.channels[1..]) |channel| {
-                if (channel.previousBlockSize() != previous_size)
-                    return error.InvalidVorbisChannelOverlapState;
-            }
+                try self.overlap.previousBlockSize();
             if (previous_size == 0)
                 return error.VorbisPreviousBlockSizeUnavailable;
             if (previous_size != small_block_size and
@@ -9557,11 +11070,7 @@ pub fn VorbisPcmStreamDecoder(
             if (self.ended)
                 return error.VorbisPcmStreamAlreadyEnded;
             const previous_size =
-                self.overlap.channels[0].previousBlockSize();
-            for (self.overlap.channels[1..]) |channel| {
-                if (channel.previousBlockSize() != previous_size)
-                    return error.InvalidVorbisChannelOverlapState;
-            }
+                try self.overlap.previousBlockSize();
             const large_block =
                 try inferVorbisMissingPacketLargeBlockFromFollowingGranule(
                     identification,
@@ -9583,6 +11092,46 @@ pub fn VorbisPcmStreamDecoder(
     };
 }
 
+fn validateVorbisPcmSignalConcealmentConfig(
+    config: VorbisPcmSignalConcealmentConfig,
+) !void {
+    if (!std.math.isFinite(config.initial_gain) or
+        !std.math.isFinite(config.final_gain) or
+        config.initial_gain < 0 or config.initial_gain > 1 or
+        config.final_gain < 0 or
+        config.final_gain > config.initial_gain)
+    {
+        return error.InvalidVorbisPcmSignalConcealmentConfig;
+    }
+}
+
+fn synthesizeVorbisPreviousSignal(
+    comptime Float: type,
+    previous: []const Float,
+    destination: []Float,
+    config: VorbisPcmSignalConcealmentConfig,
+) void {
+    const source_offset =
+        @divExact(@as(i64, @intCast(previous.len)), 2) -
+        @divExact(@as(i64, @intCast(destination.len)), 2);
+    const denominator: f64 =
+        @floatFromInt(destination.len - 1);
+    for (destination, 0..) |*sample, index| {
+        const source_index =
+            source_offset + @as(i64, @intCast(index));
+        const retained: f64 = if (source_index >= 0 and
+            source_index < previous.len)
+            @floatCast(previous[@intCast(source_index)])
+        else
+            0;
+        const progress =
+            @as(f64, @floatFromInt(index)) / denominator;
+        const gain = config.initial_gain +
+            (config.final_gain - config.initial_gain) * progress;
+        sample.* = @floatCast(retained * gain);
+    }
+}
+
 pub fn VorbisChainedPcmStreamDecoder(
     comptime Float: type,
     comptime channel_count: usize,
@@ -9601,6 +11150,11 @@ pub fn VorbisChainedPcmStreamDecoder(
         const MissingPacketBlockSelection = union(enum) {
             explicit: bool,
             previous,
+            previous_signal: struct {
+                large_block: bool,
+                config: VorbisPcmSignalConcealmentConfig,
+            },
+            previous_block_signal: VorbisPcmSignalConcealmentConfig,
         };
 
         stream: StreamDecoder,
@@ -9623,10 +11177,38 @@ pub fn VorbisChainedPcmStreamDecoder(
             self.started = false;
         }
 
+        pub fn valid(self: *const Self) bool {
+            if (!self.stream.valid()) return false;
+            if (!self.started) {
+                return self.sample_rate == null and
+                    self.logical_stream_index == 0 and
+                    self.completed_pcm == 0 and
+                    self.current_stream_pcm == 0 and
+                    self.stream.audio_packet_count == 0;
+            }
+            const sample_rate = self.sample_rate orelse return false;
+            if (sample_rate == 0) return false;
+            const output_upper_bound =
+                vorbisGranuleOutputUpperBound(self.stream.granules) orelse
+                return false;
+            if (self.current_stream_pcm > output_upper_bound or
+                (!self.stream.ended and
+                    self.current_stream_pcm != output_upper_bound))
+                return false;
+            _ = std.math.add(
+                u64,
+                self.completed_pcm,
+                self.current_stream_pcm,
+            ) catch return false;
+            return true;
+        }
+
         pub fn beginLogicalStream(
             self: *Self,
             identification: VorbisIdentification,
         ) !void {
+            if (!self.valid())
+                return error.InvalidVorbisChainedPcmStreamState;
             try validateIdentification(identification);
             if (self.started and !self.stream.ended)
                 return error.VorbisPreviousLogicalStreamNotEnded;
@@ -9666,6 +11248,8 @@ pub fn VorbisChainedPcmStreamDecoder(
             outputs: []const []Float,
             scratch: VorbisPcmStreamScratch(Float),
         ) !VorbisChainedPcmStreamResult {
+            if (!self.valid())
+                return error.InvalidVorbisChainedPcmStreamState;
             if (!self.started)
                 return error.VorbisLogicalStreamNotStarted;
             try validateIdentification(identification);
@@ -9723,6 +11307,49 @@ pub fn VorbisChainedPcmStreamDecoder(
             );
         }
 
+        /// Repeats the retained windowed signal with bounded linear decay.
+        pub fn concealMissingPacketWithPreviousSignal(
+            self: *Self,
+            large_block: bool,
+            config: VorbisPcmSignalConcealmentConfig,
+            granule_position: u64,
+            end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisChainedPcmConcealmentResult {
+            return self.concealMissingPacketSelected(
+                .{ .previous_signal = .{
+                    .large_block = large_block,
+                    .config = config,
+                } },
+                granule_position,
+                end,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+        }
+
+        pub fn concealMissingPacketUsingPreviousBlockSignal(
+            self: *Self,
+            config: VorbisPcmSignalConcealmentConfig,
+            granule_position: u64,
+            end: bool,
+            identification: VorbisIdentification,
+            outputs: []const []Float,
+            windowed_scratch: []Float,
+        ) !VorbisChainedPcmConcealmentResult {
+            return self.concealMissingPacketSelected(
+                .{ .previous_block_signal = config },
+                granule_position,
+                end,
+                identification,
+                outputs,
+                windowed_scratch,
+            );
+        }
+
         /// Selects the missing block size from the retained preceding block.
         pub fn concealMissingPacketUsingPreviousBlockSize(
             self: *Self,
@@ -9752,6 +11379,8 @@ pub fn VorbisChainedPcmStreamDecoder(
             outputs: []const []Float,
             windowed_scratch: []Float,
         ) !VorbisChainedPcmConcealmentResult {
+            if (!self.valid())
+                return error.InvalidVorbisChainedPcmStreamState;
             if (!self.started)
                 return error.VorbisLogicalStreamNotStarted;
             const large_block = try inferVorbisMissingPacketLargeBlock(
@@ -9778,14 +11407,12 @@ pub fn VorbisChainedPcmStreamDecoder(
             outputs: []const []Float,
             windowed_scratch: []Float,
         ) !VorbisChainedPcmConcealmentResult {
+            if (!self.valid())
+                return error.InvalidVorbisChainedPcmStreamState;
             if (!self.started)
                 return error.VorbisLogicalStreamNotStarted;
             const previous_size =
-                self.stream.overlap.channels[0].previousBlockSize();
-            for (self.stream.overlap.channels[1..]) |channel| {
-                if (channel.previousBlockSize() != previous_size)
-                    return error.InvalidVorbisChannelOverlapState;
-            }
+                try self.stream.overlap.previousBlockSize();
             const large_block =
                 try inferVorbisMissingPacketLargeBlockFromFollowingGranule(
                     identification,
@@ -9814,6 +11441,8 @@ pub fn VorbisChainedPcmStreamDecoder(
             outputs: []const []Float,
             windowed_scratch: []Float,
         ) !VorbisChainedPcmConcealmentResult {
+            if (!self.valid())
+                return error.InvalidVorbisChainedPcmStreamState;
             if (!self.started)
                 return error.VorbisLogicalStreamNotStarted;
             try validateIdentification(identification);
@@ -9842,6 +11471,23 @@ pub fn VorbisChainedPcmStreamDecoder(
                     windowed_scratch,
                 ),
                 .previous => try self.stream.concealMissingPacketUsingPreviousBlockSize(
+                    granule_position,
+                    end,
+                    identification,
+                    outputs,
+                    windowed_scratch,
+                ),
+                .previous_signal => |policy| try self.stream.concealMissingPacketWithPreviousSignal(
+                    policy.large_block,
+                    policy.config,
+                    granule_position,
+                    end,
+                    identification,
+                    outputs,
+                    windowed_scratch,
+                ),
+                .previous_block_signal => |config| try self.stream.concealMissingPacketUsingPreviousBlockSignal(
+                    config,
                     granule_position,
                     end,
                     identification,
@@ -10471,12 +12117,15 @@ fn selectVorbisResidueClassificationsRateDistortion(
                     metrics.weighted_squared_error +
                     @as(f128, lambda) *
                         @as(f128, @floatFromInt(metrics.encoded_bits));
+                const earlier_entry = if (best_entry) |selected_entry|
+                    entry_number < selected_entry
+                else
+                    true;
                 if (score < best_score or
                     (score == best_score and
                         (metrics.encoded_bits < best_bits or
                             (metrics.encoded_bits == best_bits and
-                                (best_entry == null or
-                                    entry_number < best_entry.?)))))
+                                earlier_entry))))
                 {
                     best_score = score;
                     best_bits = metrics.encoded_bits;
@@ -10952,15 +12601,17 @@ fn quantizeVorbisResiduePartition(
                 codebook_number,
                 target,
             );
-            if (record_pass != null and record_pass.? == pass) {
-                const offset = entry_offset orelse
-                    return error.InvalidVorbisResidueEncoding;
-                const output_entries = entries orelse
-                    return error.InvalidVorbisResidueEncoding;
-                if (offset.* >= output_entries.len)
-                    return error.VorbisResidueEntryOutputTooSmall;
-                output_entries[offset.*] = quantized.entry;
-                offset.* += 1;
+            if (record_pass) |selected_pass| {
+                if (selected_pass == pass) {
+                    const offset = entry_offset orelse
+                        return error.InvalidVorbisResidueEncoding;
+                    const output_entries = entries orelse
+                        return error.InvalidVorbisResidueEncoding;
+                    if (offset.* >= output_entries.len)
+                        return error.VorbisResidueEntryOutputTooSmall;
+                    output_entries[offset.*] = quantized.entry;
+                    offset.* += 1;
+                }
             }
 
             const multiplicands = try vorbisSetupSlice(
@@ -11879,7 +13530,7 @@ pub fn fitVorbisAudioFloorOne(
         const floor_number = mapping.submaps[mux].floor;
         const floor = switch (setup.floors[floor_number]) {
             .one => |value| value,
-            .zero => unreachable,
+            .zero => return error.UnsupportedVorbisFloorZeroAnalysis,
         };
         const channel_y =
             trial_y[y_offset..][0..floor.point_count];
@@ -11909,7 +13560,8 @@ pub fn fitVorbisAudioFloorOne(
         total_error += fit.squared_control_point_error;
         y_offset += floor.point_count;
     }
-    std.debug.assert(y_offset == requirements.y_values);
+    if (y_offset != requirements.y_values)
+        return error.InvalidVorbisAudioFloorState;
 
     @memcpy(y_values, trial_y);
     @memcpy(curves, trial_curves);
@@ -11922,7 +13574,7 @@ pub fn fitVorbisAudioFloorOne(
         const floor_number = mapping.submaps[mux].floor;
         const floor = switch (setup.floors[floor_number]) {
             .one => |value| value,
-            .zero => unreachable,
+            .zero => return error.UnsupportedVorbisFloorZeroAnalysis,
         };
         encoding.* = .{ .one = if (channel_used)
             .{
@@ -12197,7 +13849,7 @@ pub fn prepareVorbisAudioResidue(
             mapping.submaps[mapping.channel_mux[channel]].floor;
         const floor_one = switch (setup.floors[floor_number]) {
             .one => |value| value,
-            .zero => unreachable,
+            .zero => return error.UnsupportedVorbisFloorZeroAnalysis,
         };
         const used = floor.encodings[channel].one.used;
         floor_encodings[channel] = .{ .one = if (used)
@@ -12209,7 +13861,8 @@ pub fn prepareVorbisAudioResidue(
             .{} };
         y_offset += floor_one.point_count;
     }
-    std.debug.assert(y_offset == requirements.floor_y_values);
+    if (y_offset != requirements.floor_y_values)
+        return error.InvalidVorbisAudioFloorState;
     return .{
         .floor_encodings = floor_encodings,
         .floor_y_values = floor_y_values,
@@ -12414,7 +14067,7 @@ pub fn encodeVorbisPcmPacketTrial(
         encoding,
     );
     const retained_preparation =
-        retainVorbisAudioResiduePreparation(
+        try retainVorbisAudioResiduePreparation(
             identification,
             setup,
             plan.frame.header,
@@ -12598,7 +14251,7 @@ fn retainVorbisAudioResiduePreparation(
     header: VorbisAudioPacketHeader,
     plan: anytype,
     storage: anytype,
-) @TypeOf(plan) {
+) !@TypeOf(plan) {
     @memcpy(
         storage.floor_y_values[0..plan.floor_y_values.len],
         plan.floor_y_values,
@@ -12627,7 +14280,7 @@ fn retainVorbisAudioResiduePreparation(
             mapping.submaps[mapping.channel_mux[channel]].floor;
         const floor = switch (setup.floors[floor_number]) {
             .one => |value| value,
-            .zero => unreachable,
+            .zero => return error.UnsupportedVorbisFloorZeroAnalysis,
         };
         const used = plan.floor_encodings[channel].one.used;
         storage.floor_encodings[channel] = .{
@@ -14051,9 +15704,11 @@ const OggFileFaults = struct {
     delegate: file_writer_io.Operations = .{},
     write_calls: usize = 0,
     set_length_calls: usize = 0,
+    sync_calls: usize = 0,
     maximum_write_bytes: usize = 0,
     fail_write_call: ?usize = null,
     fail_set_length_call: ?usize = null,
+    fail_sync_call: ?usize = null,
     partial_write_bytes: usize = 0,
 
     fn operations(self: *@This()) file_writer_io.Operations {
@@ -14066,6 +15721,7 @@ const OggFileFaults = struct {
     fn clearFailures(self: *@This()) void {
         self.fail_write_call = null;
         self.fail_set_length_call = null;
+        self.fail_sync_call = null;
         self.partial_write_bytes = 0;
     }
 
@@ -14114,9 +15770,24 @@ const OggFileFaults = struct {
         try self.delegate.setLength(io, file, length);
     }
 
+    fn sync(
+        context: ?*anyopaque,
+        io: std.Io,
+        file: std.Io.File,
+    ) !void {
+        const self: *@This() = @ptrCast(@alignCast(
+            context orelse return error.MissingOggFaultContext,
+        ));
+        self.sync_calls += 1;
+        if (self.fail_sync_call == self.sync_calls)
+            return error.InjectedOggSyncFailure;
+        try self.delegate.sync(io, file);
+    }
+
     const vtable = file_writer_io.Operations.VTable{
         .write_at = writeAt,
         .set_length = setLength,
+        .sync = sync,
     };
 };
 
@@ -14296,6 +15967,7 @@ test "Ogg writer and packet iterator preserve continued packets" {
     try writer.appendPacket("tail", 104, false, true);
     var packet_storage: [65_100]u8 = undefined;
     var packets = PacketIterator.init(writer.bytes(), &packet_storage);
+    try std.testing.expect(packets.valid());
     const decoded_first = (try packets.next()).?;
     try std.testing.expect(decoded_first.beginning);
     try std.testing.expectEqual(@as(u64, 100), decoded_first.granule_position);
@@ -14304,6 +15976,7 @@ test "Ogg writer and packet iterator preserve continued packets" {
     try std.testing.expect(tail.end);
     try std.testing.expectEqualStrings("tail", tail.bytes);
     try std.testing.expect((try packets.next()) == null);
+    try std.testing.expect(packets.valid());
 }
 
 test "Ogg packet iteration rolls back capacity and hostile state failures" {
@@ -14331,15 +16004,83 @@ test "Ogg packet iteration rolls back capacity and hostile state failures" {
 
     var invalid = PacketIterator.init(writer.bytes(), &complete_storage);
     invalid.packet_bytes = complete_storage.len + 1;
+    try std.testing.expect(!invalid.valid());
     try std.testing.expectError(
         error.InvalidOggPacketReaderState,
         invalid.next(),
     );
     invalid.packet_bytes = 0;
     invalid.segment_index = 1;
+    try std.testing.expect(!invalid.valid());
     try std.testing.expectError(
         error.InvalidOggPacketReaderState,
         invalid.next(),
+    );
+
+    var detached_lacing = PacketIterator.init(
+        writer.bytes(),
+        &complete_storage,
+    );
+    detached_lacing.page = (try detached_lacing.pages.next()).?;
+    var lacing_copy: [2]u8 = undefined;
+    @memcpy(&lacing_copy, detached_lacing.page.?.lacing_values);
+    detached_lacing.page.?.lacing_values = &lacing_copy;
+    try std.testing.expect(!detached_lacing.valid());
+    const detached_lacing_before = detached_lacing;
+    try std.testing.expectError(
+        error.InvalidOggPacketReaderState,
+        detached_lacing.next(),
+    );
+    try std.testing.expectEqualDeep(
+        detached_lacing_before,
+        detached_lacing,
+    );
+
+    var detached_body = PacketIterator.init(
+        writer.bytes(),
+        &complete_storage,
+    );
+    detached_body.page = (try detached_body.pages.next()).?;
+    var body_copy: [300]u8 = undefined;
+    @memcpy(&body_copy, detached_body.page.?.body);
+    detached_body.page.?.body = &body_copy;
+    try std.testing.expect(!detached_body.valid());
+    const detached_body_before = detached_body;
+    try std.testing.expectError(
+        error.InvalidOggPacketReaderState,
+        detached_body.next(),
+    );
+    try std.testing.expectEqualDeep(detached_body_before, detached_body);
+
+    var stale_page = PacketIterator.init(
+        writer.bytes(),
+        &complete_storage,
+    );
+    stale_page.page = (try stale_page.pages.next()).?;
+    stale_page.page.?.granule_position +%= 1;
+    try std.testing.expect(!stale_page.valid());
+    const stale_page_before = stale_page;
+    try std.testing.expectError(
+        error.InvalidOggPacketReaderState,
+        stale_page.next(),
+    );
+    try std.testing.expectEqualDeep(stale_page_before, stale_page);
+
+    var stale_page_reader = PacketIterator.init(
+        writer.bytes(),
+        &complete_storage,
+    );
+    stale_page_reader.page = (try stale_page_reader.pages.next()).?;
+    stale_page_reader.pages.offset -= 1;
+    try std.testing.expect(!stale_page_reader.valid());
+    const stale_page_reader_before = stale_page_reader;
+    try std.testing.expectError(
+        error.InvalidOggPacketReaderState,
+        stale_page_reader.next(),
+    );
+    try std.testing.expectEqualDeep(
+        stale_page_reader_before,
+        stale_page_reader,
     );
 
     var overflow = PacketIterator.init(writer.bytes(), &complete_storage);
@@ -14353,6 +16094,100 @@ test "Ogg packet iteration rolls back capacity and hostile state failures" {
         overflow.packet_index,
     );
     try std.testing.expectEqual(@as(usize, 0), overflow.pages.offset);
+
+    var impossible_counts =
+        PacketIterator.init(writer.bytes(), &complete_storage);
+    impossible_counts.logical_stream_packet_index = 1;
+    try std.testing.expect(!impossible_counts.valid());
+    const impossible_counts_before = impossible_counts;
+    try std.testing.expectError(
+        error.InvalidOggPacketReaderState,
+        impossible_counts.next(),
+    );
+    try std.testing.expectEqualDeep(
+        impossible_counts_before,
+        impossible_counts,
+    );
+
+    var invalid_pages = PageIterator.init(writer.bytes());
+    invalid_pages.expected_sequence = 1;
+    try std.testing.expect(!invalid_pages.valid());
+    try std.testing.expectError(
+        error.InvalidOggReaderState,
+        invalid_pages.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), invalid_pages.offset);
+}
+
+test "transactional Ogg packet iteration preserves bound storage" {
+    var encoded: [512]u8 = undefined;
+    var writer = StreamWriter.init(&encoded, 10);
+    const source = [_]u8{0x6b} ** 300;
+    try writer.appendPacket(&source, 300, true, true);
+
+    var destination: [300]u8 = @splat(0xa5);
+    const untouched = destination;
+    var short_scratch: [260]u8 = undefined;
+    var packets = PacketIterator.init(writer.bytes(), &destination);
+    const before_short_scratch = packets;
+    try std.testing.expectError(
+        error.OggPacketBufferTooSmall,
+        packets.nextTransactional(&short_scratch),
+    );
+    try std.testing.expectEqualDeep(before_short_scratch, packets);
+    try std.testing.expectEqualSlices(u8, &untouched, &destination);
+
+    try std.testing.expectError(
+        error.OverlappingOggPacketStorage,
+        packets.nextTransactional(destination[0..]),
+    );
+    try std.testing.expectEqualDeep(before_short_scratch, packets);
+    try std.testing.expectEqualSlices(u8, &untouched, &destination);
+
+    const before_encoded_scratch = packets;
+    try std.testing.expectError(
+        error.OverlappingOggPacketStorage,
+        packets.nextTransactional(encoded[0..300]),
+    );
+    try std.testing.expectEqualDeep(before_encoded_scratch, packets);
+    try std.testing.expectEqualSlices(u8, &untouched, &destination);
+
+    var scratch: [300]u8 = undefined;
+    const packet = (try packets.nextTransactional(&scratch)).?;
+    try std.testing.expectEqualSlices(u8, &source, packet.bytes);
+    try std.testing.expectEqual(
+        @intFromPtr(destination[0..].ptr),
+        @intFromPtr(packet.bytes.ptr),
+    );
+    try std.testing.expect((try packets.nextTransactional(&scratch)) == null);
+
+    var short_destination: [260]u8 = @splat(0x5a);
+    const short_untouched = short_destination;
+    var capacity_limited = PacketIterator.init(
+        writer.bytes(),
+        &short_destination,
+    );
+    const before_capacity = capacity_limited;
+    try std.testing.expectError(
+        error.OggPacketBufferTooSmall,
+        capacity_limited.nextTransactional(&scratch),
+    );
+    try std.testing.expectEqualDeep(before_capacity, capacity_limited);
+    try std.testing.expectEqualSlices(
+        u8,
+        &short_untouched,
+        &short_destination,
+    );
+
+    var aliased = PacketIterator.init(
+        writer.bytes(),
+        encoded[0..300],
+    );
+    try std.testing.expect(!aliased.valid());
+    try std.testing.expectError(
+        error.OverlappingOggPacketStorage,
+        aliased.next(),
+    );
 }
 
 test "file-backed Ogg writer streams continued packets" {
@@ -14401,6 +16236,26 @@ test "file-backed Ogg writer streams continued packets" {
     try std.testing.expect(decoded_first.beginning);
     try std.testing.expectEqual(@as(u64, 100), decoded_first.granule_position);
     try std.testing.expectEqualSlices(u8, &first, decoded_first.bytes);
+    var detached_page = reader;
+    const detached_lacing_length =
+        detached_page.page.?.lacing_values.len;
+    var detached_lacing: [maximum_page_segments]u8 = undefined;
+    @memcpy(
+        detached_lacing[0..detached_lacing_length],
+        detached_page.page.?.lacing_values,
+    );
+    detached_page.page.?.lacing_values =
+        detached_lacing[0..detached_lacing_length];
+    try std.testing.expect(!detached_page.valid(
+        &reader_page_storage,
+        &packet_storage,
+    ));
+    const detached_page_before = detached_page;
+    try std.testing.expectError(
+        error.InvalidOggFilePacketReaderState,
+        detached_page.next(&reader_page_storage, &packet_storage),
+    );
+    try std.testing.expectEqualDeep(detached_page_before, detached_page);
     const tail = (try reader.next(
         &reader_page_storage,
         &packet_storage,
@@ -14413,6 +16268,191 @@ test "file-backed Ogg writer streams continued packets" {
             &packet_storage,
         )) == null,
     );
+
+    var saturated = try FilePacketReader.init(std.testing.io, file);
+    saturated.packet_index = std.math.maxInt(u64) - 1;
+    saturated.logical_stream_packet_index =
+        std.math.maxInt(u64) - 1;
+    _ = (try saturated.next(
+        &reader_page_storage,
+        &packet_storage,
+    )).?;
+    try std.testing.expect(saturated.valid(
+        &reader_page_storage,
+        &packet_storage,
+    ));
+    try std.testing.expectEqual(
+        std.math.maxInt(u64),
+        saturated.packet_index,
+    );
+    const saturated_before = saturated;
+    try std.testing.expectError(
+        error.OggPacketCountOverflow,
+        saturated.next(&reader_page_storage, &packet_storage),
+    );
+    try std.testing.expectEqualDeep(saturated_before, saturated);
+}
+
+test "transactional file packet reader preserves destination" {
+    var encoded: [70_000]u8 = undefined;
+    var writer = StreamWriter.init(&encoded, 0x12345678);
+    const source = [_]u8{0xaa} ** 65_100;
+    try writer.appendPacket(&source, 65_100, true, true);
+    const encoded_bytes = writer.bytes().len;
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "transactional-packet.ogg",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    try file.writePositionalAll(
+        std.testing.io,
+        writer.bytes(),
+        0,
+    );
+    try file.setLength(std.testing.io, encoded_bytes);
+
+    var page_scratch: [maximum_page_bytes]u8 = undefined;
+    var packet_scratch: [65_100]u8 = undefined;
+    const sentinel: [65_100]u8 = @splat(0xa5);
+    var destination = sentinel;
+    var reader = try FilePacketReader.init(std.testing.io, file);
+    const packet = (try reader.nextTransactional(
+        &destination,
+        &page_scratch,
+        &packet_scratch,
+    )) orelse return error.TestExpectedOggPacket;
+    try std.testing.expectEqualSlices(u8, &source, packet.bytes);
+    try std.testing.expectEqual(
+        @intFromPtr(destination[0..].ptr),
+        @intFromPtr(packet.bytes.ptr),
+    );
+    try std.testing.expect(
+        (try reader.nextTransactional(
+            &destination,
+            &page_scratch,
+            &packet_scratch,
+        )) == null,
+    );
+
+    reader = try FilePacketReader.init(std.testing.io, file);
+    var short_destination: [65_000]u8 = @splat(0xa5);
+    const short_destination_before = short_destination;
+    const destination_reader_before = reader;
+    try std.testing.expectError(
+        error.OggPacketBufferTooSmall,
+        reader.nextTransactional(
+            &short_destination,
+            &page_scratch,
+            &packet_scratch,
+        ),
+    );
+    try std.testing.expectEqualDeep(destination_reader_before, reader);
+    try std.testing.expectEqualSlices(
+        u8,
+        &short_destination_before,
+        &short_destination,
+    );
+    destination = sentinel;
+    _ = (try reader.nextTransactional(
+        &destination,
+        &page_scratch,
+        &packet_scratch,
+    )).?;
+
+    reader = try FilePacketReader.init(std.testing.io, file);
+    destination = sentinel;
+    try std.testing.expectError(
+        error.OggPacketBufferTooSmall,
+        reader.nextTransactional(
+            &destination,
+            &page_scratch,
+            packet_scratch[0..65_000],
+        ),
+    );
+    try std.testing.expect(reader.page == null);
+    try std.testing.expect(reader.page_storage_pointer == null);
+    try std.testing.expect(reader.packet_storage_pointer == null);
+    try std.testing.expectEqualSlices(u8, &sentinel, &destination);
+    _ = (try reader.nextTransactional(
+        &destination,
+        &page_scratch,
+        &packet_scratch,
+    )).?;
+
+    reader = try FilePacketReader.init(std.testing.io, file);
+    destination = sentinel;
+    packet_scratch = @splat(0x3c);
+    const packet_scratch_before = packet_scratch;
+    const overlap_reader_before = reader;
+    try std.testing.expectError(
+        error.OverlappingOggPacketStorage,
+        reader.nextTransactional(
+            packet_scratch[0..],
+            &page_scratch,
+            &packet_scratch,
+        ),
+    );
+    try std.testing.expectEqualDeep(overlap_reader_before, reader);
+    try std.testing.expectEqualSlices(
+        u8,
+        &packet_scratch_before,
+        &packet_scratch,
+    );
+    try std.testing.expectError(
+        error.OverlappingOggPacketStorage,
+        reader.nextTransactional(
+            &destination,
+            &page_scratch,
+            page_scratch[0..65_100],
+        ),
+    );
+    try std.testing.expectEqualDeep(overlap_reader_before, reader);
+    try std.testing.expectEqualSlices(u8, &sentinel, &destination);
+
+    encoded[encoded_bytes - 1] ^= 1;
+    try file.writePositionalAll(
+        std.testing.io,
+        encoded[0..encoded_bytes],
+        0,
+    );
+    reader = try FilePacketReader.init(std.testing.io, file);
+    destination = sentinel;
+    const damaged_reader_before = reader;
+    try std.testing.expectError(
+        error.OggPageChecksumMismatch,
+        reader.nextTransactional(
+            &destination,
+            &page_scratch,
+            &packet_scratch,
+        ),
+    );
+    try std.testing.expectEqualDeep(damaged_reader_before, reader);
+    try std.testing.expectEqualSlices(u8, &sentinel, &destination);
+    encoded[encoded_bytes - 1] ^= 1;
+    try file.writePositionalAll(
+        std.testing.io,
+        encoded[0..encoded_bytes],
+        0,
+    );
+
+    reader = try FilePacketReader.init(std.testing.io, file);
+    try file.setLength(std.testing.io, encoded_bytes - 1);
+    destination = sentinel;
+    const truncated_reader_before = reader;
+    try std.testing.expectError(
+        error.TruncatedOggPage,
+        reader.nextTransactional(
+            &destination,
+            &page_scratch,
+            &packet_scratch,
+        ),
+    );
+    try std.testing.expectEqualDeep(truncated_reader_before, reader);
+    try std.testing.expectEqualSlices(u8, &sentinel, &destination);
 }
 
 test "file-backed Ogg packet capacity rollback reloads chained packed BOS pages" {
@@ -14539,6 +16579,29 @@ test "Ogg page readers reject invalid cursors without trapping" {
         pages.next(),
     );
 
+    var impossible_initial = PageIterator.init(writer.bytes());
+    impossible_initial.ended = true;
+    try std.testing.expect(!impossible_initial.valid());
+    const impossible_initial_before = impossible_initial;
+    try std.testing.expectError(
+        error.InvalidOggReaderState,
+        impossible_initial.next(),
+    );
+    try std.testing.expectEqual(
+        impossible_initial_before,
+        impossible_initial,
+    );
+
+    var impossible_chain = PageIterator.init(writer.bytes());
+    impossible_chain.serial_number = 7;
+    impossible_chain.expected_sequence = 1;
+    impossible_chain.logical_stream_index = 1;
+    try std.testing.expect(!impossible_chain.valid());
+    try std.testing.expectError(
+        error.InvalidOggReaderState,
+        impossible_chain.next(),
+    );
+
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();
     var file = try temporary.dir.createFile(
@@ -14548,6 +16611,7 @@ test "Ogg page readers reject invalid cursors without trapping" {
     );
     defer file.close(std.testing.io);
     var file_pages = try FilePageReader.init(std.testing.io, file);
+    try std.testing.expect(file_pages.valid());
     var storage: [27]u8 = undefined;
     file_pages.file_size = std.math.maxInt(u64);
     file_pages.offset = std.math.maxInt(u64) - 10;
@@ -14561,32 +16625,59 @@ test "Ogg page readers reject invalid cursors without trapping" {
     );
     file_pages.file_size = 4;
     file_pages.offset = 5;
+    try std.testing.expect(!file_pages.valid());
     try std.testing.expectError(
         error.InvalidOggFileReaderState,
         file_pages.next(&storage),
     );
+    file_pages.offset = 0;
+    file_pages.expected_sequence = 1;
+    try std.testing.expect(!file_pages.valid());
+    try std.testing.expectError(
+        error.InvalidOggFileReaderState,
+        file_pages.resynchronize(&storage, 1),
+    );
+    file_pages.expected_sequence = null;
+    file_pages.ended = true;
+    try std.testing.expect(!file_pages.valid());
+    const impossible_file_before = file_pages;
+    try std.testing.expectError(
+        error.InvalidOggFileReaderState,
+        file_pages.next(&storage),
+    );
+    try std.testing.expectEqual(impossible_file_before, file_pages);
 
     var file_packets = try FilePacketReader.init(std.testing.io, file);
     var packet_storage: [1]u8 = undefined;
+    try std.testing.expect(file_packets.valid(&storage, &packet_storage));
     file_packets.page_storage_pointer = storage[0..].ptr;
+    try std.testing.expect(!file_packets.valid(&storage, &packet_storage));
     try std.testing.expectError(
         error.InvalidOggFilePacketReaderState,
         file_packets.next(&storage, &packet_storage),
     );
     file_packets.page_storage_pointer = null;
     file_packets.packet_bytes = packet_storage.len + 1;
+    try std.testing.expect(!file_packets.valid(&storage, &packet_storage));
     try std.testing.expectError(
         error.InvalidOggFilePacketReaderState,
         file_packets.next(&storage, &packet_storage),
     );
     file_packets.packet_bytes = 0;
     file_packets.packet_index = std.math.maxInt(u64);
-    try std.testing.expectError(
-        error.InvalidOggFilePacketReaderState,
-        file_packets.next(&storage, &packet_storage),
+    file_packets.logical_stream_packet_index =
+        std.math.maxInt(u64);
+    try std.testing.expect(file_packets.valid(
+        &storage,
+        &packet_storage,
+    ));
+    try std.testing.expect(
+        (try file_packets.next(&storage, &packet_storage)) == null,
     );
     file_packets.packet_index = 0;
+    file_packets.logical_stream_packet_index = 0;
     file_packets.reload_segment_index = std.math.maxInt(usize);
+    try std.testing.expect(!file_packets.valid(&storage, &packet_storage));
     try std.testing.expectError(
         error.InvalidOggFilePacketReaderState,
         file_packets.next(&storage, &packet_storage),
@@ -14642,6 +16733,13 @@ test "file-backed Ogg writer recovers positional failures" {
     try writer.recover();
     try std.testing.expect(writer.valid());
     try writer.appendPacket("two", 2, false, true);
+    faults.fail_sync_call = faults.sync_calls + 1;
+    try std.testing.expectError(
+        error.InjectedOggSyncFailure,
+        writer.finalize(),
+    );
+    try std.testing.expect(writer.recoverable());
+    faults.clearFailures();
     try writer.finalize();
 
     var reader = try FilePacketReader.init(std.testing.io, file);
@@ -14701,6 +16799,16 @@ test "file-backed Ogg writer validates before file mutation" {
         &page_storage,
         1,
     );
+    writer.sequence_number = 1;
+    const impossible_initial = writer;
+    try std.testing.expect(!writer.recoverable());
+    try std.testing.expect(!writer.valid());
+    try std.testing.expectError(
+        error.InvalidOggFileWriterState,
+        writer.appendPacket("bad", 0, true, false),
+    );
+    try std.testing.expectEqualDeep(impossible_initial, writer);
+    writer.sequence_number = 0;
     try std.testing.expectError(
         error.OggStreamNotEnded,
         writer.finalize(),
@@ -14736,6 +16844,8 @@ test "file-backed Ogg writer validates before file mutation" {
         error.InvalidOggFileWriterState,
         writer.recover(),
     );
+    writer.byte_count = 28;
+    try std.testing.expect(!writer.recoverable());
 }
 
 test "Ogg parser rejects corruption and sequence gaps" {
@@ -14853,6 +16963,69 @@ test "Ogg readers reject single-bit page damage transactionally" {
     }
 }
 
+test "Ogg page parsing is transactional across checksum-valid mutations" {
+    var clean: [256]u8 = undefined;
+    var stream_bytes = try appendTestOggPage(
+        &clean,
+        0,
+        0x1020_3040,
+        0,
+        0x02,
+        4,
+        &.{4},
+        "head",
+    );
+    const second_offset = stream_bytes;
+    stream_bytes = try appendTestOggPage(
+        &clean,
+        stream_bytes,
+        0x1020_3040,
+        1,
+        0x04,
+        8,
+        &.{ 3, 6 },
+        "tail-data",
+    );
+
+    const mutation_masks = [_]u8{ 0x01, 0x80, 0xff };
+    for (second_offset..stream_bytes) |byte_index| {
+        for (mutation_masks) |mask| {
+            var candidate = clean;
+            candidate[byte_index] ^= mask;
+            const second_page = candidate[second_offset..stream_bytes];
+            std.mem.writeInt(
+                u32,
+                second_page[22..26],
+                pageChecksum(second_page),
+                .little,
+            );
+
+            var pages = PageIterator.init(candidate[0..stream_bytes]);
+            _ = try pages.next();
+            const pages_before = pages;
+            if (pages.next()) |maybe_page| {
+                const page = maybe_page orelse
+                    return error.UnexpectedOggEndOfStream;
+                try std.testing.expect(pages.offset > pages_before.offset);
+                try std.testing.expect(pages.offset <= stream_bytes);
+                try std.testing.expectEqual(
+                    @as(u64, second_offset),
+                    page.byte_offset,
+                );
+                try std.testing.expectEqual(
+                    @as(u64, pages.offset - second_offset),
+                    page.byte_length,
+                );
+                var body_bytes: usize = 0;
+                for (page.lacing_values) |value| body_bytes += value;
+                try std.testing.expectEqual(body_bytes, page.body.len);
+            } else |_| {
+                try std.testing.expectEqualDeep(pages_before, pages);
+            }
+        }
+    }
+}
+
 test "file-backed Ogg readers reject single-bit page damage transactionally" {
     var clean: [128]u8 = undefined;
     const page_bytes = try appendTestOggPage(
@@ -14875,6 +17048,34 @@ test "file-backed Ogg readers reject single-bit page damage transactionally" {
     );
     defer file.close(std.testing.io);
     var page_storage: [maximum_page_bytes]u8 = undefined;
+    const destination_sentinel: [128]u8 = @splat(0xa5);
+
+    try file.writePositionalAll(
+        std.testing.io,
+        clean[0..page_bytes],
+        0,
+    );
+    var transactional_pages = try FilePageReader.init(
+        std.testing.io,
+        file,
+    );
+    var transactional_storage = destination_sentinel;
+    const transactional_page = (try transactional_pages.nextTransactional(
+        &transactional_storage,
+        &page_storage,
+    )) orelse return error.TestExpectedOggPage;
+    try std.testing.expectEqualSlices(u8, &.{4}, transactional_page.lacing_values);
+    try std.testing.expectEqualStrings("data", transactional_page.body);
+    try std.testing.expectEqual(
+        @intFromPtr(transactional_storage[27..].ptr),
+        @intFromPtr(transactional_page.lacing_values.ptr),
+    );
+    try std.testing.expect(
+        (try transactional_pages.nextTransactional(
+            &transactional_storage,
+            &page_storage,
+        )) == null,
+    );
 
     for (0..page_bytes) |byte_index| {
         var damaged = clean;
@@ -14898,6 +17099,31 @@ test "file-backed Ogg readers reject single-bit page damage transactionally" {
                 true;
         try std.testing.expect(page_rejected);
         try std.testing.expectEqualDeep(pages_before, pages);
+
+        transactional_pages = try FilePageReader.init(
+            std.testing.io,
+            file,
+        );
+        transactional_storage = destination_sentinel;
+        const transactional_before = transactional_pages;
+        const transactional_rejected =
+            if (transactional_pages.nextTransactional(
+                &transactional_storage,
+                &page_storage,
+            )) |_|
+                false
+            else |_|
+                true;
+        try std.testing.expect(transactional_rejected);
+        try std.testing.expectEqualDeep(
+            transactional_before,
+            transactional_pages,
+        );
+        try std.testing.expectEqualSlices(
+            u8,
+            &destination_sentinel,
+            &transactional_storage,
+        );
 
         var packet_storage: [4]u8 = @splat(0xa5);
         var packets = try FilePacketReader.init(
@@ -14945,6 +17171,29 @@ test "file-backed Ogg readers reject single-bit page damage transactionally" {
         );
         try std.testing.expectEqualDeep(pages_before, pages);
 
+        transactional_pages = try FilePageReader.init(
+            std.testing.io,
+            file,
+        );
+        transactional_storage = destination_sentinel;
+        const transactional_before = transactional_pages;
+        try std.testing.expectError(
+            error.TruncatedOggPage,
+            transactional_pages.nextTransactional(
+                &transactional_storage,
+                &page_storage,
+            ),
+        );
+        try std.testing.expectEqualDeep(
+            transactional_before,
+            transactional_pages,
+        );
+        try std.testing.expectEqualSlices(
+            u8,
+            &destination_sentinel,
+            &transactional_storage,
+        );
+
         var packet_storage: [4]u8 = @splat(0xa5);
         var packets = try FilePacketReader.init(
             std.testing.io,
@@ -14968,6 +17217,24 @@ test "file-backed Ogg readers reject single-bit page damage transactionally" {
             &packet_storage,
         );
     }
+
+    transactional_pages = try FilePageReader.init(
+        std.testing.io,
+        file,
+    );
+    transactional_storage = destination_sentinel;
+    try std.testing.expectError(
+        error.OverlappingOggPageStorage,
+        transactional_pages.nextTransactional(
+            transactional_storage[0..64],
+            transactional_storage[32..96],
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &destination_sentinel,
+        &transactional_storage,
+    );
 }
 
 test "Ogg page readers resynchronize across bounded inserted junk" {
@@ -15294,14 +17561,58 @@ test "Ogg writer preserves empty packets and fails transactionally" {
     try std.testing.expectEqual(@as(usize, 0), failed_writer.byte_count);
     try std.testing.expect(!failed_writer.began);
 
+    var overlap_storage: [128]u8 = @splat(0x5a);
+    const overlap_untouched = overlap_storage;
+    var overlap_writer = StreamWriter.init(&overlap_storage, 2);
+    try std.testing.expectError(
+        error.OverlappingOggWriterStorage,
+        overlap_writer.appendPacket(
+            overlap_storage[64..68],
+            0,
+            true,
+            true,
+        ),
+    );
+    try std.testing.expectEqual(@as(usize, 0), overlap_writer.byte_count);
+    try std.testing.expect(!overlap_writer.began);
+    try std.testing.expectEqualSlices(
+        u8,
+        &overlap_untouched,
+        &overlap_storage,
+    );
+
     var encoded: [128]u8 = undefined;
     var writer = StreamWriter.init(&encoded, 2);
     try writer.appendPacket("", 0, true, false);
     try writer.appendPacket("data", 4, false, true);
+    var impossible_page_count = writer;
+    impossible_page_count.sequence_number +%= 1;
+    const impossible_page_count_before = impossible_page_count;
+    try std.testing.expect(!impossible_page_count.valid());
+    try std.testing.expectError(
+        error.InvalidOggStreamWriterState,
+        impossible_page_count.appendPacket("more", 5, false, true),
+    );
+    try std.testing.expectEqualDeep(
+        impossible_page_count_before,
+        impossible_page_count,
+    );
+    var impossible_end = StreamWriter.init(&encoded, 2);
+    impossible_end.ended = true;
+    try std.testing.expect(!impossible_end.valid());
     var storage: [4]u8 = undefined;
     var packets = PacketIterator.init(writer.bytes(), &storage);
     try std.testing.expectEqual(@as(usize, 0), (try packets.next()).?.bytes.len);
     try std.testing.expectEqualStrings("data", (try packets.next()).?.bytes);
+
+    writer.byte_count = std.math.maxInt(usize);
+    try std.testing.expect(!writer.valid());
+    try std.testing.expectEqual(@as(usize, 0), writer.bytes().len);
+    try std.testing.expectError(
+        error.InvalidOggStreamWriterState,
+        writer.appendPacket("more", 5, false, true),
+    );
+    try std.testing.expectEqual(std.math.maxInt(usize), writer.byte_count);
 }
 
 test "Ogg chained readers restart logical stream sequencing" {
@@ -15456,6 +17767,18 @@ test "Vorbis identification encoding round trips transactionally" {
         ),
     );
     try std.testing.expectEqualSlices(u8, &before, &destination);
+    try std.testing.expectError(
+        error.InvalidVorbisBlockSize,
+        vorbisBlockExponent(0),
+    );
+    try std.testing.expectError(
+        error.InvalidVorbisBlockSize,
+        vorbisBlockExponent(63),
+    );
+    try std.testing.expectError(
+        error.InvalidVorbisBlockSize,
+        vorbisBlockExponent(16_384),
+    );
 }
 
 test "Ogg Vorbis logical stream decodes to granule-trimmed PCM" {
@@ -15674,6 +17997,127 @@ test "Ogg Vorbis logical stream decodes to granule-trimmed PCM" {
         file_index,
     );
 
+    var transactional_file_seek_points: [2]VorbisSeekPoint = undefined;
+    var file_seek_scratch: [2]VorbisSeekPoint = undefined;
+    const transactional_file_index =
+        try buildVorbisFileSeekIndexTransactional(
+            std.testing.io,
+            file,
+            &page_storage,
+            &transactional_file_seek_points,
+            &file_seek_scratch,
+        );
+    try std.testing.expectEqualSlices(
+        VorbisSeekPoint,
+        seek_index,
+        transactional_file_index,
+    );
+    try std.testing.expectEqual(
+        @intFromPtr(transactional_file_seek_points[0..].ptr),
+        @intFromPtr(transactional_file_index.ptr),
+    );
+
+    const seek_sentinel = VorbisSeekPoint{
+        .pcm_end = 99,
+        .decode = seek_index[0].decode,
+        .packet = seek_index[0].packet,
+    };
+    var short_file_seek_destination = [_]VorbisSeekPoint{seek_sentinel};
+    const short_file_seek_before = short_file_seek_destination;
+    try std.testing.expectError(
+        error.VorbisSeekIndexTooSmall,
+        buildVorbisFileSeekIndexTransactional(
+            std.testing.io,
+            file,
+            &page_storage,
+            &short_file_seek_destination,
+            &file_seek_scratch,
+        ),
+    );
+    try std.testing.expectEqual(
+        short_file_seek_before,
+        short_file_seek_destination,
+    );
+
+    transactional_file_seek_points = @splat(seek_sentinel);
+    const transactional_file_seek_before =
+        transactional_file_seek_points;
+    var short_file_seek_scratch: [1]VorbisSeekPoint = undefined;
+    try std.testing.expectError(
+        error.VorbisSeekIndexTooSmall,
+        buildVorbisFileSeekIndexTransactional(
+            std.testing.io,
+            file,
+            &page_storage,
+            &transactional_file_seek_points,
+            &short_file_seek_scratch,
+        ),
+    );
+    try std.testing.expectEqual(
+        transactional_file_seek_before,
+        transactional_file_seek_points,
+    );
+
+    var aliased_file_seek_points = [_]VorbisSeekPoint{seek_sentinel} ** 3;
+    const aliased_file_seek_before = aliased_file_seek_points;
+    try std.testing.expectError(
+        error.OverlappingVorbisSeekStorage,
+        buildVorbisFileSeekIndexTransactional(
+            std.testing.io,
+            file,
+            &page_storage,
+            aliased_file_seek_points[0..2],
+            aliased_file_seek_points[1..3],
+        ),
+    );
+    try std.testing.expectEqual(
+        aliased_file_seek_before,
+        aliased_file_seek_points,
+    );
+
+    var aliased_page_storage: [maximum_page_bytes]u8 align(@alignOf(VorbisSeekPoint)) = undefined;
+    const page_aliased_seek_scratch = std.mem.bytesAsSlice(
+        VorbisSeekPoint,
+        aliased_page_storage[0 .. 2 * @sizeOf(VorbisSeekPoint)],
+    );
+    transactional_file_seek_points = @splat(seek_sentinel);
+    const page_alias_destination_before =
+        transactional_file_seek_points;
+    try std.testing.expectError(
+        error.OverlappingVorbisSeekStorage,
+        buildVorbisFileSeekIndexTransactional(
+            std.testing.io,
+            file,
+            &aliased_page_storage,
+            &transactional_file_seek_points,
+            page_aliased_seek_scratch,
+        ),
+    );
+    try std.testing.expectEqual(
+        page_alias_destination_before,
+        transactional_file_seek_points,
+    );
+
+    transactional_file_seek_points = @splat(seek_sentinel);
+    const truncated_file_seek_before = transactional_file_seek_points;
+    try file.setLength(std.testing.io, writer.bytes().len - 1);
+    try std.testing.expectError(
+        error.TruncatedOggPage,
+        buildVorbisFileSeekIndexTransactional(
+            std.testing.io,
+            file,
+            &page_storage,
+            &transactional_file_seek_points,
+            &file_seek_scratch,
+        ),
+    );
+    try std.testing.expectEqual(
+        truncated_file_seek_before,
+        transactional_file_seek_points,
+    );
+    try file.setLength(std.testing.io, writer.bytes().len);
+    try file.writePositionalAll(std.testing.io, writer.bytes(), 0);
+
     var file_packets = try FilePacketReader.init(
         std.testing.io,
         file,
@@ -15761,6 +18205,7 @@ test "Vorbis PCM concealment advances overlap and granules explicitly" {
         .large_block_size = 64,
     };
     var decoder = VorbisPcmStreamDecoder(f32, 1, 64, 64).init();
+    try std.testing.expect(decoder.valid());
     var windowed: [64]f32 = undefined;
     var empty: [0]f32 = .{};
     const empty_outputs = [_][]f32{&empty};
@@ -15775,6 +18220,47 @@ test "Vorbis PCM concealment advances overlap and granules explicitly" {
     try std.testing.expectEqual(@as(usize, 0), primed.sample_count);
     try std.testing.expectEqual(@as(u64, 1), primed.concealed_packet_count);
     try std.testing.expectEqual(@as(u64, 1), decoder.audio_packet_count);
+    try std.testing.expect(decoder.valid());
+
+    var impossible_packet_timeline = decoder;
+    impossible_packet_timeline.audio_packet_count = 2;
+    const impossible_packet_timeline_before = impossible_packet_timeline;
+    try std.testing.expect(!impossible_packet_timeline.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmStreamState,
+        impossible_packet_timeline.concealMissingPacket(
+            false,
+            unknown_granule,
+            false,
+            identification,
+            &empty_outputs,
+            &windowed,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        impossible_packet_timeline_before,
+        impossible_packet_timeline,
+    );
+
+    var corrupt_decoder = decoder;
+    corrupt_decoder.granules.decoded_samples = std.math.maxInt(u64);
+    const corrupt_decoder_before = corrupt_decoder;
+    try std.testing.expect(!corrupt_decoder.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmStreamState,
+        corrupt_decoder.concealMissingPacket(
+            false,
+            unknown_granule,
+            false,
+            identification,
+            &empty_outputs,
+            &windowed,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        corrupt_decoder_before,
+        corrupt_decoder,
+    );
 
     var output = [_]f32{99} ** 32;
     const outputs = [_][]f32{&output};
@@ -15792,6 +18278,10 @@ test "Vorbis PCM concealment advances overlap and granules explicitly" {
     try std.testing.expectEqual(@as(?i64, 32), middle.pcm_end);
     try std.testing.expectEqual(@as(u64, 2), middle.concealed_packet_count);
     try std.testing.expectEqualSlices(f32, &([_]f32{0} ** 32), &output);
+
+    var short_packet_timeline = decoder;
+    short_packet_timeline.granules.decoded_samples = 31;
+    try std.testing.expect(!short_packet_timeline.valid());
 
     output = [_]f32{99} ** 32;
     const ended = try decoder.concealMissingPacket(
@@ -15811,6 +18301,7 @@ test "Vorbis PCM concealment advances overlap and granules explicitly" {
         output[0..28],
     );
     try std.testing.expect(decoder.ended);
+    try std.testing.expect(decoder.valid());
     try std.testing.expectError(
         error.VorbisPcmStreamAlreadyEnded,
         decoder.concealMissingPacket(
@@ -15824,6 +18315,7 @@ test "Vorbis PCM concealment advances overlap and granules explicitly" {
     );
 
     decoder.reset();
+    try std.testing.expect(decoder.valid());
     const before_empty_end = decoder;
     try std.testing.expectError(
         error.VorbisStreamEndedBeforePcm,
@@ -16283,6 +18775,357 @@ test "Vorbis PCM concealment advances overlap and granules explicitly" {
     );
 }
 
+test "Vorbis signal concealment repeats and decays retained windows" {
+    const identification = VorbisIdentification{
+        .channel_count = 1,
+        .sample_rate = 48_000,
+        .bitrate_maximum = 0,
+        .bitrate_nominal = 64_000,
+        .bitrate_minimum = 0,
+        .small_block_size = 64,
+        .large_block_size = 256,
+    };
+    const retained = [_]f32{1} ** 64;
+    var empty: [0]f32 = .{};
+    const empty_outputs = [_][]f32{&empty};
+    const Decoder = VorbisPcmStreamDecoder(f32, 1, 64, 256);
+    var decoder = Decoder.init();
+    _ = try decoder.overlap.push(
+        &[_][]const f32{&retained},
+        &empty_outputs,
+    );
+    decoder.audio_packet_count = 1;
+
+    var scratch = [_]f32{99} ** 256;
+    var output = [_]f32{99} ** 80;
+    const outputs = [_][]f32{&output};
+    const first = try decoder.concealMissingPacketWithPreviousSignal(
+        false,
+        .{},
+        32,
+        false,
+        identification,
+        &outputs,
+        &scratch,
+    );
+    try std.testing.expectEqual(@as(u16, 64), first.block_size);
+    try std.testing.expectEqual(@as(usize, 32), first.sample_count);
+    try std.testing.expectEqual(@as(?i64, 0), first.pcm_start);
+    try std.testing.expectEqual(@as(?i64, 32), first.pcm_end);
+    for (0..64) |index| {
+        const progress = @as(f32, @floatFromInt(index)) / 63;
+        const expected = 1 - 0.5 * progress;
+        try std.testing.expectApproxEqAbs(
+            expected,
+            scratch[index],
+            1.0e-6,
+        );
+        if (index < 32) {
+            try std.testing.expectApproxEqAbs(
+                1 + expected,
+                output[index],
+                1.0e-6,
+            );
+        }
+    }
+
+    const first_replacement = scratch[0..64].*;
+    const second = try decoder.concealMissingPacketUsingPreviousBlockSignal(
+        .{},
+        64,
+        false,
+        identification,
+        &outputs,
+        &scratch,
+    );
+    try std.testing.expectEqual(@as(u64, 2), second.concealed_packet_count);
+    for (0..64) |index| {
+        const progress = @as(f32, @floatFromInt(index)) / 63;
+        const expected = first_replacement[index] *
+            (1 - 0.5 * progress);
+        try std.testing.expectApproxEqAbs(
+            expected,
+            scratch[index],
+            1.0e-6,
+        );
+    }
+
+    decoder.reset();
+    _ = try decoder.overlap.push(
+        &[_][]const f32{&retained},
+        &empty_outputs,
+    );
+    decoder.audio_packet_count = 1;
+    scratch = [_]f32{99} ** 256;
+    const mixed = try decoder.concealMissingPacketWithPreviousSignal(
+        true,
+        .{ .final_gain = 0 },
+        80,
+        false,
+        identification,
+        &outputs,
+        &scratch,
+    );
+    try std.testing.expectEqual(@as(u16, 256), mixed.block_size);
+    try std.testing.expectEqual(@as(usize, 80), mixed.sample_count);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0} ** 96),
+        scratch[0..96],
+    );
+    try std.testing.expect(scratch[96] > scratch[159]);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0} ** 96),
+        scratch[160..256],
+    );
+
+    var unavailable = Decoder.init();
+    const unavailable_scratch = scratch;
+    try std.testing.expectError(
+        error.VorbisPreviousSignalUnavailable,
+        unavailable.concealMissingPacketWithPreviousSignal(
+            false,
+            .{},
+            unknown_granule,
+            false,
+            identification,
+            &empty_outputs,
+            &scratch,
+        ),
+    );
+    try std.testing.expectEqual(unavailable_scratch, scratch);
+    try std.testing.expectEqual(@as(u64, 0), unavailable.audio_packet_count);
+
+    decoder.reset();
+    _ = try decoder.overlap.push(
+        &[_][]const f32{&retained},
+        &empty_outputs,
+    );
+    decoder.audio_packet_count = 1;
+    scratch = [_]f32{77} ** 256;
+    output = [_]f32{66} ** 80;
+    try std.testing.expectError(
+        error.InvalidVorbisPcmSignalConcealmentConfig,
+        decoder.concealMissingPacketWithPreviousSignal(
+            false,
+            .{ .initial_gain = 0.5, .final_gain = 0.75 },
+            32,
+            false,
+            identification,
+            &outputs,
+            &scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{77} ** 256),
+        &scratch,
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{66} ** 80),
+        &output,
+    );
+    try std.testing.expectEqual(@as(u64, 1), decoder.audio_packet_count);
+
+    decoder.overlap.channels[0].previous[7] = std.math.nan(f32);
+    try std.testing.expectError(
+        error.InvalidVorbisPcmStreamState,
+        decoder.concealMissingPacketWithPreviousSignal(
+            false,
+            .{},
+            32,
+            false,
+            identification,
+            &outputs,
+            &scratch,
+        ),
+    );
+    try std.testing.expectEqual(@as(u64, 1), decoder.audio_packet_count);
+
+    const StereoDecoder = VorbisPcmStreamDecoder(f64, 2, 64, 64);
+    var stereo = StereoDecoder.init();
+    const retained_left = [_]f64{1} ** 64;
+    const retained_right = [_]f64{-1} ** 64;
+    var empty_left: [0]f64 = .{};
+    var empty_right: [0]f64 = .{};
+    const stereo_empty_outputs =
+        [_][]f64{ &empty_left, &empty_right };
+    _ = try stereo.overlap.push(
+        &[_][]const f64{ &retained_left, &retained_right },
+        &stereo_empty_outputs,
+    );
+    stereo.audio_packet_count = 1;
+    var stereo_left: [32]f64 = undefined;
+    var stereo_right: [32]f64 = undefined;
+    const stereo_outputs = [_][]f64{ &stereo_left, &stereo_right };
+    var stereo_scratch: [128]f64 = undefined;
+    const stereo_result =
+        try stereo.concealMissingPacketUsingPreviousBlockSignal(
+            .{},
+            32,
+            false,
+            .{
+                .channel_count = 2,
+                .sample_rate = 48_000,
+                .bitrate_maximum = 0,
+                .bitrate_nominal = 128_000,
+                .bitrate_minimum = 0,
+                .small_block_size = 64,
+                .large_block_size = 64,
+            },
+            &stereo_outputs,
+            &stereo_scratch,
+        );
+    try std.testing.expectEqual(@as(usize, 32), stereo_result.sample_count);
+    for (stereo_left, stereo_right) |left, right| {
+        try std.testing.expect(left > 0);
+        try std.testing.expectApproxEqAbs(-left, right, 1.0e-12);
+    }
+
+    const Chained = VorbisChainedPcmStreamDecoder(f32, 1, 64, 256);
+    var chained = Chained.init();
+    try chained.beginLogicalStream(identification);
+    _ = try chained.stream.overlap.push(
+        &[_][]const f32{&retained},
+        &empty_outputs,
+    );
+    chained.stream.audio_packet_count = 1;
+    scratch = undefined;
+    const chained_result =
+        try chained.concealMissingPacketUsingPreviousBlockSignal(
+            .{},
+            32,
+            false,
+            identification,
+            &outputs,
+            &scratch,
+        );
+    try std.testing.expectEqual(@as(u64, 0), chained_result.global_pcm_start);
+    try std.testing.expectEqual(@as(u64, 32), chained_result.global_pcm_end);
+    try std.testing.expectEqual(
+        @as(u64, 1),
+        chained_result.stream.concealed_packet_count,
+    );
+}
+
+test "Vorbis signal concealment improves periodic loss calibration" {
+    try testVorbisSignalConcealmentQuality(f32);
+    try testVorbisSignalConcealmentQuality(f64);
+}
+
+fn testVorbisSignalConcealmentQuality(comptime Float: type) !void {
+    const identification = VorbisIdentification{
+        .channel_count = 1,
+        .sample_rate = 48_000,
+        .bitrate_maximum = 0,
+        .bitrate_nominal = 64_000,
+        .bitrate_minimum = 0,
+        .small_block_size = 64,
+        .large_block_size = 64,
+    };
+    var window: [64]Float = undefined;
+    try synthesizeVorbisWindow(
+        Float,
+        identification,
+        .{
+            .mode_number = 0,
+            .large_block = false,
+            .previous_window_flag = null,
+            .next_window_flag = null,
+            .block_size = 64,
+            .payload_bit_offset = 1,
+        },
+        &window,
+    );
+    var retained: [64]Float = undefined;
+    for (&retained, window, 0..) |*sample, window_gain, index| {
+        const phase = @as(Float, @floatFromInt(index)) *
+            @as(Float, 2.0 * std.math.pi / 16.0);
+        sample.* = @sin(phase) * window_gain * 0.75;
+    }
+
+    const Decoder = VorbisPcmStreamDecoder(Float, 1, 64, 64);
+    var clean = Decoder.init();
+    var silent = Decoder.init();
+    var signal = Decoder.init();
+    var empty: [0]Float = .{};
+    const empty_outputs = [_][]Float{&empty};
+    _ = try clean.overlap.push(
+        &[_][]const Float{&retained},
+        &empty_outputs,
+    );
+    _ = try silent.overlap.push(
+        &[_][]const Float{&retained},
+        &empty_outputs,
+    );
+    _ = try signal.overlap.push(
+        &[_][]const Float{&retained},
+        &empty_outputs,
+    );
+    silent.audio_packet_count = 1;
+    signal.audio_packet_count = 1;
+
+    var clean_output: [32]Float = undefined;
+    var silent_output: [32]Float = undefined;
+    var signal_output: [32]Float = undefined;
+    const clean_count = try clean.overlap.push(
+        &[_][]const Float{&retained},
+        &[_][]Float{&clean_output},
+    );
+    var silent_scratch: [64]Float = undefined;
+    const silent_result = try silent.concealMissingPacket(
+        false,
+        32,
+        false,
+        identification,
+        &[_][]Float{&silent_output},
+        &silent_scratch,
+    );
+    var signal_scratch: [64]Float = undefined;
+    const signal_result = try signal.concealMissingPacketWithPreviousSignal(
+        false,
+        .{ .initial_gain = 1, .final_gain = 1 },
+        32,
+        false,
+        identification,
+        &[_][]Float{&signal_output},
+        &signal_scratch,
+    );
+    try std.testing.expectEqual(@as(usize, 32), clean_count);
+    try std.testing.expectEqual(clean_count, silent_result.sample_count);
+    try std.testing.expectEqual(clean_count, signal_result.sample_count);
+
+    var silent_meter = VorbisPcmQualityMeter{};
+    try silent_meter.update(
+        Float,
+        &.{&clean_output},
+        &.{&silent_output},
+    );
+    var signal_meter = VorbisPcmQualityMeter{};
+    try signal_meter.update(
+        Float,
+        &.{&clean_output},
+        &.{&signal_output},
+    );
+    const silent_quality = try silent_meter.measurement();
+    const signal_quality = try signal_meter.measurement();
+    try std.testing.expect(silent_quality.normalized_rms_error > 0.4);
+    try std.testing.expectEqual(
+        @as(f64, 0),
+        signal_quality.normalized_rms_error,
+    );
+    try std.testing.expect(
+        signal_quality.normalized_rms_error <
+            silent_quality.normalized_rms_error,
+    );
+    try std.testing.expectEqual(
+        std.math.inf(f64),
+        signal_quality.signal_to_noise_db,
+    );
+}
+
 test "Vorbis granule loss inference covers every block geometry" {
     const decoded_positions = [_]u64{ 512, 10_000, 1_000_000 };
     const position_offsets = [_]i64{ -200, 0, 300 };
@@ -16491,16 +19334,65 @@ test "Vorbis comments validate UTF-8 fields and framing" {
     @memcpy(packet[25..35], "TITLE=Song");
     packet[35] = 1;
     var comments = try VorbisCommentIterator.init(packet[0..36]);
+    try std.testing.expect(comments.valid());
     try std.testing.expectEqualStrings("vendor", comments.vendor);
     const title = (try comments.next()).?;
     try std.testing.expectEqualStrings("TITLE", title.name);
     try std.testing.expectEqualStrings("Song", title.value);
     try std.testing.expect((try comments.next()) == null);
+    try std.testing.expect(comments.valid());
     packet[35] = 0;
     try std.testing.expectError(
         error.InvalidVorbisCommentHeader,
         VorbisCommentIterator.init(packet[0..36]),
     );
+
+    packet[35] = 1;
+    var hostile = try VorbisCommentIterator.init(packet[0..36]);
+    hostile.offset = packet.len;
+    try std.testing.expect(!hostile.valid());
+    const hostile_offset = hostile.offset;
+    try std.testing.expectError(
+        error.InvalidVorbisCommentIteratorState,
+        hostile.next(),
+    );
+    try std.testing.expectEqual(hostile_offset, hostile.offset);
+
+    var interior = try VorbisCommentIterator.init(packet[0..36]);
+    interior.offset = 26;
+    try std.testing.expect(!interior.valid());
+    const interior_before = interior;
+    try std.testing.expectError(
+        error.InvalidVorbisCommentIteratorState,
+        interior.next(),
+    );
+    try std.testing.expectEqual(interior_before.offset, interior.offset);
+    try std.testing.expectEqual(
+        interior_before.remaining,
+        interior.remaining,
+    );
+
+    var stale_count = try VorbisCommentIterator.init(packet[0..36]);
+    stale_count.remaining = 0;
+    try std.testing.expect(!stale_count.valid());
+    const stale_count_offset = stale_count.offset;
+    try std.testing.expectError(
+        error.InvalidVorbisCommentIteratorState,
+        stale_count.next(),
+    );
+    try std.testing.expectEqual(stale_count_offset, stale_count.offset);
+    try std.testing.expectEqual(@as(u32, 0), stale_count.remaining);
+
+    var stale_vendor = try VorbisCommentIterator.init(packet[0..36]);
+    stale_vendor.vendor = packet[12..18];
+    try std.testing.expect(!stale_vendor.valid());
+    const stale_vendor_offset = stale_vendor.offset;
+    try std.testing.expectError(
+        error.InvalidVorbisCommentIteratorState,
+        stale_vendor.next(),
+    );
+    try std.testing.expectEqual(stale_vendor_offset, stale_vendor.offset);
+    try std.testing.expectEqual(@intFromPtr(packet[12..18].ptr), @intFromPtr(stale_vendor.vendor.ptr));
 }
 
 test "Vorbis comment encoding preserves fields and caller storage" {
@@ -16553,7 +19445,7 @@ test "Vorbis comment encoding preserves fields and caller storage" {
     try std.testing.expectEqualSlices(u8, &before, &destination);
 }
 
-test "Vorbis comment encoding rejects overlapping borrowed fields" {
+test "Vorbis comment encoding rejects overlapping borrowed input" {
     var destination: [64]u8 = @splat(0xaa);
     @memcpy(destination[20..26], "vendor");
     const before = destination;
@@ -16566,6 +19458,28 @@ test "Vorbis comment encoding rejects overlapping borrowed fields" {
         ),
     );
     try std.testing.expectEqualSlices(u8, &before, &destination);
+
+    var descriptor_storage: [64]u8 align(@alignOf(VorbisComment)) =
+        @splat(0xaa);
+    const descriptors = std.mem.bytesAsSlice(
+        VorbisComment,
+        descriptor_storage[0..@sizeOf(VorbisComment)],
+    );
+    descriptors[0] = .{ .name = "TITLE", .value = "value" };
+    const descriptors_before = descriptor_storage;
+    try std.testing.expectError(
+        error.OverlappingVorbisCommentStorage,
+        encodeVorbisCommentPacket(
+            &descriptor_storage,
+            "",
+            descriptors,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &descriptors_before,
+        &descriptor_storage,
+    );
 }
 
 test "encoded Vorbis headers traverse Ogg and parse together" {
@@ -17040,6 +19954,26 @@ test "Vorbis setup encoding validates before destination mutation" {
         ),
     );
     try std.testing.expectEqualSlices(u8, &before, &overlapping);
+
+    var node_overlap: [256]u8 align(@alignOf(VorbisHuffmanNode)) =
+        [_]u8{0xa5} ** 256;
+    const overlapping_nodes = std.mem.bytesAsSlice(
+        VorbisHuffmanNode,
+        node_overlap[0 .. setup.huffman_nodes.len * @sizeOf(VorbisHuffmanNode)],
+    );
+    @memcpy(overlapping_nodes, setup.huffman_nodes);
+    overlapping_setup = setup;
+    overlapping_setup.huffman_nodes = overlapping_nodes;
+    const node_before = node_overlap;
+    try std.testing.expectError(
+        error.OverlappingVorbisSetupStorage,
+        encodeVorbisSetupPacket(
+            &node_overlap,
+            overlapping_setup,
+            2,
+        ),
+    );
+    try std.testing.expectEqualSlices(u8, &node_before, &node_overlap);
 }
 
 test "Vorbis setup rejects malformed structure transactionally" {
@@ -17282,6 +20216,20 @@ test "Vorbis packet writer round trips headers and canonical codewords" {
         full.writeBits(1, 1),
     );
     try std.testing.expectEqual(@as(usize, 0), full.bit_offset);
+
+    var malformed_storage: [1]u8 = .{0};
+    var malformed = VorbisPacketWriter.init(&malformed_storage);
+    malformed.bit_offset = std.math.maxInt(usize);
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectEqual(@as(usize, 0), malformed.bytes().len);
+    try std.testing.expectError(
+        error.InvalidVorbisPacketWriterState,
+        malformed.writeBits(1, 1),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        malformed.bit_offset,
+    );
 }
 
 test "Vorbis packet writer round trips both floor packet formats" {
@@ -19047,6 +21995,23 @@ test "Vorbis scalar codebook decoding preserves cursor on failure" {
         .mappings = &.{},
         .modes = &.{.{ .large_block = false, .mapping = 0 }},
     };
+    try std.testing.expectError(
+        error.InvalidVorbisPacketBitOffset,
+        VorbisPacketReader.init(&.{0}, 9),
+    );
+    var hostile = try VorbisPacketReader.init(&.{0}, 0);
+    try std.testing.expect(hostile.valid());
+    hostile.bit_offset = std.math.maxInt(usize);
+    try std.testing.expect(!hostile.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPacketBitOffset,
+        hostile.decodeScalar(setup, 0),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        hostile.bit_offset,
+    );
+
     var truncated = try VorbisPacketReader.init(&.{}, 0);
     try std.testing.expectError(
         error.TruncatedVorbisAudioPacket,
@@ -19156,6 +22121,24 @@ test "Vorbis vector codebooks reconstruct both lookup forms" {
         .mappings = &.{},
         .modes = &.{.{ .large_block = false, .mapping = 0 }},
     };
+    var hostile_reader = try VorbisPacketReader.init(&.{0b11}, 0);
+    hostile_reader.bit_offset = std.math.maxInt(usize);
+    var hostile_output = [_]f32{ 99, 99 };
+    try std.testing.expectError(
+        error.InvalidVorbisPacketBitOffset,
+        hostile_reader.decodeVector(
+            f32,
+            type_one_setup,
+            0,
+            &hostile_output,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 99, 99 },
+        &hostile_output,
+    );
+
     var type_one_reader = try VorbisPacketReader.init(&.{0b11}, 0);
     var type_one_output: [2]f32 = undefined;
     try type_one_reader.decodeVector(
@@ -20763,6 +23746,29 @@ test "Vorbis residues decode layouts transactionally with caller scratch" {
     var zero_right = [_]f32{99} ** 8;
     const zero_outputs = [_][]f32{ &zero_left, &zero_right };
     var zero_scratch: [4]u8 = undefined;
+    var hostile_reader = try VorbisPacketReader.init(&.{0x1c}, 0);
+    hostile_reader.bit_offset = std.math.maxInt(usize);
+    try std.testing.expectError(
+        error.InvalidVorbisPacketBitOffset,
+        hostile_reader.decodeResidue(
+            f32,
+            setup,
+            0,
+            &.{ false, true },
+            &zero_outputs,
+            &zero_scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 99, 99, 99, 99, 99, 99, 99, 99 },
+        &zero_left,
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(usize),
+        hostile_reader.bit_offset,
+    );
+
     var zero_reader = try VorbisPacketReader.init(&.{0x1c}, 0);
     const zero_result = try zero_reader.decodeResidue(
         f32,
@@ -21518,6 +24524,18 @@ test "Vorbis floor packets decode retained type zero and type one setup" {
             .modes = &floor_zero_modes,
         },
     );
+    var hostile_floor_zero = try VorbisPacketReader.init(&.{0}, 0);
+    hostile_floor_zero.bit_offset = std.math.maxInt(usize);
+    var hostile_coefficients = [_]f64{99};
+    try std.testing.expectError(
+        error.InvalidVorbisPacketBitOffset,
+        hostile_floor_zero.decodeFloorZero(
+            floor_zero_setup,
+            0,
+            &hostile_coefficients,
+        ),
+    );
+    try std.testing.expectEqual(@as(f64, 99), hostile_coefficients[0]);
 
     var floor_zero_audio_storage: [4]u8 = undefined;
     var floor_zero_writer =
@@ -21684,6 +24702,22 @@ test "Vorbis floor packets decode retained type zero and type one setup" {
             .modes = &floor_one_modes,
         },
     );
+    var hostile_floor_one = try VorbisPacketReader.init(&.{0}, 0);
+    hostile_floor_one.bit_offset = std.math.maxInt(usize);
+    var hostile_y_values = [_]u32{ 99, 99, 99 };
+    try std.testing.expectError(
+        error.InvalidVorbisPacketBitOffset,
+        hostile_floor_one.decodeFloorOne(
+            floor_one_setup,
+            0,
+            &hostile_y_values,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u32,
+        &.{ 99, 99, 99 },
+        &hostile_y_values,
+    );
 
     var floor_one_audio_storage: [4]u8 = undefined;
     var floor_one_writer =
@@ -21827,6 +24861,272 @@ test "Vorbis floor packets decode retained type zero and type one setup" {
 test "Vorbis psychoacoustics distinguish tonal and noise-like spectra" {
     try testVorbisPsychoacoustics(f32);
     try testVorbisPsychoacoustics(f64);
+}
+
+test "Vorbis quality presets map q0 through q10 without changing policy" {
+    const presets = [_]VorbisQualityPreset{
+        .q0,
+        .q1,
+        .q2,
+        .q3,
+        .q4,
+        .q5,
+        .q6,
+        .q7,
+        .q8,
+        .q9,
+        .q10,
+    };
+    const base = VorbisPsychoacousticConfig{
+        .band_count = 31,
+        .absolute_threshold = 0.000_002,
+        .tonal_masking_offset_db = 16,
+        .noise_masking_offset_db = 6,
+        .lower_spread_db_per_bark = 28,
+        .upper_spread_db_per_bark = 13,
+        .quality = 0.375,
+        .maximum_masking_relaxation_db = 20,
+    };
+    for (presets, 0..) |preset, level| {
+        const expected = @as(f64, @floatFromInt(level)) / 10;
+        try std.testing.expectApproxEqAbs(
+            expected,
+            preset.quality(),
+            1.0e-15,
+        );
+        const configured = preset.applyTo(base);
+        try std.testing.expectApproxEqAbs(
+            expected,
+            configured.quality,
+            1.0e-15,
+        );
+        var retained = configured;
+        retained.quality = base.quality;
+        try std.testing.expectEqualDeep(base, retained);
+    }
+
+    var spectrum = [_]f64{0} ** 32;
+    spectrum[5] = 1;
+    var floor_target: [32]f64 = undefined;
+    var noise_threshold: [32]f64 = undefined;
+    const q0 = try analyzeVorbisPsychoacoustics(
+        f64,
+        &spectrum,
+        48_000,
+        VorbisQualityPreset.q0.applyTo(.{}),
+        &floor_target,
+        &noise_threshold,
+    );
+    const q10 = try analyzeVorbisPsychoacoustics(
+        f64,
+        &spectrum,
+        48_000,
+        VorbisQualityPreset.q10.applyTo(.{}),
+        &floor_target,
+        &noise_threshold,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 18),
+        q0.masking_relaxation_db,
+        1.0e-15,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0),
+        q10.masking_relaxation_db,
+    );
+}
+
+test "Vorbis PCM quality meter measures decoded signal independently" {
+    try testVorbisPcmQualityMeter(f32);
+    try testVorbisPcmQualityMeter(f64);
+}
+
+fn testVorbisPcmQualityMeter(comptime Float: type) !void {
+    const reference = [_]Float{ 1, -1, 0.5, -0.5 };
+    const exact = reference;
+    var exact_meter = VorbisPcmQualityMeter{};
+    try exact_meter.update(
+        Float,
+        &.{&reference},
+        &.{&exact},
+    );
+    const exact_measurement = try exact_meter.measurement();
+    try std.testing.expectEqual(@as(u64, 4), exact_measurement.sample_count);
+    try std.testing.expectEqual(
+        @as(f64, 0),
+        exact_measurement.normalized_rms_error,
+    );
+    try std.testing.expectEqual(
+        std.math.inf(f64),
+        exact_measurement.signal_to_noise_db,
+    );
+    var hostile_exact_peak = exact_meter;
+    hostile_exact_peak.peak_sample_index = 1;
+    const hostile_exact_peak_before = hostile_exact_peak;
+    try std.testing.expect(!hostile_exact_peak.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmQualityMeter,
+        hostile_exact_peak.measurement(),
+    );
+    try std.testing.expectEqualDeep(
+        hostile_exact_peak_before,
+        hostile_exact_peak,
+    );
+    var hostile_exact_energy = exact_meter;
+    hostile_exact_energy.candidate_energy += 1;
+    const hostile_exact_energy_before = hostile_exact_energy;
+    try std.testing.expect(!hostile_exact_energy.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmQualityMeter,
+        hostile_exact_energy.measurement(),
+    );
+    try std.testing.expectEqualDeep(
+        hostile_exact_energy_before,
+        hostile_exact_energy,
+    );
+
+    const candidate = [_]Float{ 0.5, -0.5, 0.25, -0.25 };
+    var meter = VorbisPcmQualityMeter{};
+    try meter.update(
+        Float,
+        &.{reference[0..2]},
+        &.{candidate[0..2]},
+    );
+    try meter.update(
+        Float,
+        &.{reference[2..4]},
+        &.{candidate[2..4]},
+    );
+    const measurement = try meter.measurement();
+    try std.testing.expectEqual(@as(u64, 4), measurement.sample_count);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.5),
+        measurement.normalized_rms_error,
+        1.0e-12,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 2),
+        measurement.optimal_candidate_gain,
+        1.0e-12,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0),
+        measurement.gain_aligned_normalized_rms_error,
+        1.0e-12,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 6.020599913279624),
+        measurement.signal_to_noise_db,
+        1.0e-12,
+    );
+    try std.testing.expectEqual(@as(f64, 0.5), measurement.peak_absolute_error);
+    try std.testing.expectEqual(@as(u64, 0), measurement.peak_sample_index);
+
+    var hostile_missing_peak = meter;
+    hostile_missing_peak.peak_absolute_error = 0;
+    const hostile_missing_peak_before = hostile_missing_peak;
+    try std.testing.expect(!hostile_missing_peak.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmQualityMeter,
+        hostile_missing_peak.measurement(),
+    );
+    try std.testing.expectEqualDeep(
+        hostile_missing_peak_before,
+        hostile_missing_peak,
+    );
+
+    const silence = [_]Float{ 0, 0 };
+    const nonzero = [_]Float{ 0.25, -0.5 };
+    var silent_reference_meter = VorbisPcmQualityMeter{};
+    try silent_reference_meter.update(
+        Float,
+        &.{&silence},
+        &.{&nonzero},
+    );
+    var hostile_silent_reference = silent_reference_meter;
+    hostile_silent_reference.cross_energy = 1;
+    const hostile_silent_reference_before = hostile_silent_reference;
+    try std.testing.expect(!hostile_silent_reference.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmQualityMeter,
+        hostile_silent_reference.measurement(),
+    );
+    try std.testing.expectEqualDeep(
+        hostile_silent_reference_before,
+        hostile_silent_reference,
+    );
+    hostile_silent_reference = silent_reference_meter;
+    hostile_silent_reference.error_energy += 1;
+    try std.testing.expect(!hostile_silent_reference.valid());
+
+    var silent_candidate_meter = VorbisPcmQualityMeter{};
+    try silent_candidate_meter.update(
+        Float,
+        &.{&nonzero},
+        &.{&silence},
+    );
+    var hostile_silent_candidate = silent_candidate_meter;
+    hostile_silent_candidate.cross_energy = -1;
+    const hostile_silent_candidate_before = hostile_silent_candidate;
+    try std.testing.expect(!hostile_silent_candidate.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmQualityMeter,
+        hostile_silent_candidate.measurement(),
+    );
+    try std.testing.expectEqualDeep(
+        hostile_silent_candidate_before,
+        hostile_silent_candidate,
+    );
+    hostile_silent_candidate = silent_candidate_meter;
+    hostile_silent_candidate.error_energy += 1;
+    try std.testing.expect(!hostile_silent_candidate.valid());
+
+    const retained = meter;
+    const non_finite = [_]Float{std.math.nan(Float)};
+    try std.testing.expectError(
+        error.NonFiniteVorbisPcmQualitySample,
+        meter.update(Float, &.{reference[0..1]}, &.{&non_finite}),
+    );
+    try std.testing.expectEqualDeep(retained, meter);
+    try std.testing.expectError(
+        error.InvalidVorbisPcmQualityShape,
+        meter.update(Float, &.{reference[0..1]}, &.{candidate[0..2]}),
+    );
+    try std.testing.expectEqualDeep(retained, meter);
+
+    meter.sample_count = std.math.maxInt(u64);
+    try std.testing.expect(meter.valid());
+    const saturated = meter;
+    try std.testing.expectError(
+        error.VorbisPcmQualitySampleCountOverflow,
+        meter.update(Float, &.{reference[0..1]}, &.{candidate[0..1]}),
+    );
+    try std.testing.expectEqualDeep(saturated, meter);
+
+    meter = retained;
+    meter.reference_energy = std.math.nan(f128);
+    try std.testing.expect(!meter.valid());
+    const corrupted = meter;
+    try std.testing.expectError(
+        error.InvalidVorbisPcmQualityMeter,
+        meter.update(Float, &.{reference[0..1]}, &.{candidate[0..1]}),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        std.mem.asBytes(&corrupted),
+        std.mem.asBytes(&meter),
+    );
+    meter.reset();
+    try std.testing.expect(meter.valid());
+    try std.testing.expectError(
+        error.EmptyVorbisPcmQualityMeasurement,
+        meter.measurement(),
+    );
+    try meter.update(Float, &.{&silence}, &.{&silence});
+    try std.testing.expectError(
+        error.SilentVorbisPcmQualityReference,
+        meter.measurement(),
+    );
 }
 
 test "Vorbis multichannel psychoacoustics publish atomically" {
@@ -22336,7 +25636,9 @@ test "Vorbis bit reservoir budgets and commits packet rates" {
         .maximum_packet_bits = 256,
         .correction_window_packets = 4,
     });
+    try std.testing.expect(reservoir.valid());
     const first = try reservoir.plan(48_000, 128);
+    try std.testing.expect(reservoir.valid());
     try std.testing.expectEqual(
         VorbisPacketBitBudget{
             .packet_index = 0,
@@ -22433,6 +25735,7 @@ test "Vorbis bit reservoir budgets and commits packet rates" {
         reservoir.plan(48_000, 128),
     );
     const first_commit = try reservoir.commit(64);
+    try std.testing.expect(reservoir.valid());
     try std.testing.expectEqual(
         VorbisRateCommit{
             .packet_index = 0,
@@ -22472,11 +25775,35 @@ test "Vorbis bit reservoir budgets and commits packet rates" {
         .reservoir_balance_before = corrupt.balance_bits,
     };
     const corrupt_before = corrupt;
+    try std.testing.expect(!corrupt.valid());
     try std.testing.expectError(
         error.InvalidVorbisBitReservoirState,
         corrupt.commit(128),
     );
     try std.testing.expectEqualDeep(corrupt_before, corrupt);
+    try std.testing.expectError(
+        error.InvalidVorbisBitReservoirState,
+        corrupt.cancel(),
+    );
+    try std.testing.expectEqualDeep(corrupt_before, corrupt);
+
+    var invalid_balance = reservoir;
+    invalid_balance.balance_bits = 257;
+    const invalid_balance_before = invalid_balance;
+    try std.testing.expect(!invalid_balance.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisBitReservoirState,
+        invalid_balance.plan(48_000, 128),
+    );
+    try std.testing.expectEqualDeep(invalid_balance_before, invalid_balance);
+
+    var invalid_config = reservoir;
+    invalid_config.config.target_bitrate = 0;
+    try std.testing.expect(!invalid_config.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisRateControlConfig,
+        invalid_config.cancel(),
+    );
 
     const clamped = try VorbisBitReservoir.init(.{
         .target_bitrate = 48_000,
@@ -22505,6 +25832,7 @@ test "Vorbis bit reservoir budgets and commits packet rates" {
         reservoir.plan(0, 128),
     );
     reservoir.packet_index = std.math.maxInt(u64);
+    try std.testing.expect(reservoir.valid());
     try std.testing.expectError(
         error.VorbisAudioPacketCountOverflow,
         reservoir.plan(48_000, 128),
@@ -22707,6 +26035,418 @@ test "Vorbis adaptive rate targets are monotonic across activity and transients"
     }
 }
 
+test "Vorbis quality rate controller follows committed packet evidence" {
+    const config = VorbisQualityRateControllerConfig{
+        .minimum_quality = 0.5,
+        .maximum_quality = 0.9,
+        .initial_quality = 0.75,
+        .adjustment_per_packet = 0.1,
+        .headroom_ratio = 0.1,
+    };
+    var controller = try VorbisQualityRateController.init(config);
+
+    const over_target = try controller.observeCommit(
+        .{
+            .packet_index = 4,
+            .nominal_bits = 1_000,
+            .target_bits = 1_000,
+            .reservoir_balance_before = 0,
+        },
+        .{
+            .packet_index = 4,
+            .actual_bits = 1_100,
+            .reservoir_balance_after = -100,
+        },
+        true,
+    );
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.decrease_quality,
+        over_target.action,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.65),
+        over_target.quality,
+        1.0e-15,
+    );
+    const missed_budget = try controller.observe(1_000, 900, false);
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.decrease_quality,
+        missed_budget.action,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.55),
+        missed_budget.quality,
+        1.0e-15,
+    );
+    const spare_rate = try controller.observe(1_000, 800, true);
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.increase_quality,
+        spare_rate.action,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.65),
+        spare_rate.quality,
+        1.0e-15,
+    );
+    const deadband = try controller.observe(1_000, 950, true);
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.hold,
+        deadband.action,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.65),
+        deadband.quality,
+        1.0e-15,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.95),
+        deadband.actual_to_target_ratio,
+        1.0e-15,
+    );
+
+    const psychoacoustics = try controller.applyTo(.{});
+    try std.testing.expectApproxEqAbs(
+        try controller.quality(),
+        psychoacoustics.quality,
+        1.0e-15,
+    );
+    try controller.reset();
+    try std.testing.expectApproxEqAbs(
+        config.initial_quality,
+        try controller.quality(),
+        1.0e-15,
+    );
+}
+
+test "Vorbis quality rate controller clamps and contains invalid state" {
+    const config = VorbisQualityRateControllerConfig{
+        .minimum_quality = 0.4,
+        .maximum_quality = 0.8,
+        .initial_quality = 0.6,
+        .adjustment_per_packet = 0.25,
+        .headroom_ratio = 0.2,
+    };
+    var controller = try VorbisQualityRateController.init(config);
+    const lower_clamp = try controller.observe(1_000, 2_000, true);
+    try std.testing.expectApproxEqAbs(
+        config.minimum_quality,
+        try controller.quality(),
+        1.0e-15,
+    );
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.decrease_quality,
+        lower_clamp.action,
+    );
+    const at_lower_limit = try controller.observe(1_000, 2_000, true);
+    try std.testing.expectApproxEqAbs(
+        config.minimum_quality,
+        try controller.quality(),
+        1.0e-15,
+    );
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.hold,
+        at_lower_limit.action,
+    );
+    _ = try controller.observe(1_000, 100, true);
+    _ = try controller.observe(1_000, 100, true);
+    try std.testing.expectApproxEqAbs(
+        config.maximum_quality,
+        try controller.quality(),
+        1.0e-15,
+    );
+
+    const retained = try controller.quality();
+    try std.testing.expectError(
+        error.InvalidVorbisQualityRateObservation,
+        controller.observe(0, 100, true),
+    );
+    try std.testing.expectError(
+        error.InvalidVorbisQualityRateObservation,
+        controller.observe(100, 0, true),
+    );
+    try std.testing.expectEqual(retained, try controller.quality());
+    try std.testing.expectError(
+        error.MismatchedVorbisQualityRateObservation,
+        controller.observeCommit(
+            .{
+                .packet_index = 1,
+                .nominal_bits = 100,
+                .target_bits = 100,
+                .reservoir_balance_before = 0,
+            },
+            .{
+                .packet_index = 2,
+                .actual_bits = 100,
+                .reservoir_balance_after = 0,
+            },
+            true,
+        ),
+    );
+    try std.testing.expectEqual(retained, try controller.quality());
+
+    inline for (.{
+        VorbisQualityRateControllerConfig{
+            .minimum_quality = -0.1,
+            .maximum_quality = 0.8,
+            .initial_quality = 0.6,
+            .adjustment_per_packet = 0.1,
+            .headroom_ratio = 0.1,
+        },
+        VorbisQualityRateControllerConfig{
+            .minimum_quality = 0.5,
+            .maximum_quality = 0.4,
+            .initial_quality = 0.45,
+            .adjustment_per_packet = 0.1,
+            .headroom_ratio = 0.1,
+        },
+        VorbisQualityRateControllerConfig{
+            .minimum_quality = 0.4,
+            .maximum_quality = 0.8,
+            .initial_quality = 0.6,
+            .adjustment_per_packet = 0,
+            .headroom_ratio = 0.1,
+        },
+        VorbisQualityRateControllerConfig{
+            .minimum_quality = 0.4,
+            .maximum_quality = 0.8,
+            .initial_quality = 0.6,
+            .adjustment_per_packet = 0.1,
+            .headroom_ratio = 1.1,
+        },
+    }) |invalid| {
+        try std.testing.expectError(
+            error.InvalidVorbisQualityRateControllerConfig,
+            VorbisQualityRateController.init(invalid),
+        );
+    }
+
+    controller.current_quality = std.math.nan(f64);
+    try std.testing.expectError(
+        error.InvalidVorbisQualityRateController,
+        controller.observe(1_000, 900, true),
+    );
+    try std.testing.expectError(
+        error.InvalidVorbisQualityRateController,
+        controller.applyTo(.{}),
+    );
+    try controller.reset();
+    try std.testing.expectApproxEqAbs(
+        config.initial_quality,
+        try controller.quality(),
+        1.0e-15,
+    );
+}
+
+test "Vorbis quality controller combines signal distortion and rate evidence" {
+    const config = VorbisQualityRateControllerConfig{
+        .minimum_quality = 0.3,
+        .maximum_quality = 0.9,
+        .initial_quality = 0.6,
+        .adjustment_per_packet = 0.1,
+        .headroom_ratio = 0.2,
+    };
+    var controller = try VorbisQualityRateController.init(config);
+    const budget = VorbisPacketBitBudget{
+        .packet_index = 7,
+        .nominal_bits = 1_000,
+        .target_bits = 1_000,
+        .reservoir_balance_before = 0,
+    };
+    const clean = VorbisAudioResidueSubmapResult{
+        .target_bits = 400,
+        .encoded_bits = 300,
+        .budget_met = true,
+        .squared_error = 0.25,
+        .weighted_squared_error = 0.5,
+        .audible_excess_power = 0,
+        .lambda = 0.01,
+        .iterations = 3,
+    };
+    const audible = VorbisAudioResidueSubmapResult{
+        .target_bits = 400,
+        .encoded_bits = 300,
+        .budget_met = true,
+        .squared_error = 0.5,
+        .weighted_squared_error = 1.5,
+        .audible_excess_power = 0.25,
+        .lambda = 0.02,
+        .iterations = 4,
+    };
+
+    const clean_headroom = try controller.observeSignal(
+        budget,
+        .{
+            .packet_index = 7,
+            .actual_bits = 700,
+            .reservoir_balance_after = 300,
+        },
+        &.{clean},
+    );
+    try std.testing.expect(clean_headroom.within_mask);
+    try std.testing.expect(clean_headroom.has_rate_headroom);
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.hold,
+        clean_headroom.rate.action,
+    );
+    try std.testing.expectEqual(
+        config.initial_quality,
+        clean_headroom.rate.quality,
+    );
+
+    const audible_headroom = try controller.observeSignal(
+        budget,
+        .{
+            .packet_index = 7,
+            .actual_bits = 700,
+            .reservoir_balance_after = 300,
+        },
+        &.{ audible, audible },
+    );
+    try std.testing.expect(!audible_headroom.within_mask);
+    try std.testing.expect(audible_headroom.has_rate_headroom);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.5),
+        audible_headroom.audible_excess_power,
+        1.0e-15,
+    );
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.increase_quality,
+        audible_headroom.rate.action,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.7),
+        audible_headroom.rate.quality,
+        1.0e-15,
+    );
+
+    const no_headroom = try controller.observeSignal(
+        budget,
+        .{
+            .packet_index = 7,
+            .actual_bits = 900,
+            .reservoir_balance_after = 100,
+        },
+        &.{audible},
+    );
+    try std.testing.expect(!no_headroom.within_mask);
+    try std.testing.expect(!no_headroom.has_rate_headroom);
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.hold,
+        no_headroom.rate.action,
+    );
+
+    const over_rate = try controller.observeSignal(
+        budget,
+        .{
+            .packet_index = 7,
+            .actual_bits = 1_100,
+            .reservoir_balance_after = -100,
+        },
+        &.{clean},
+    );
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.decrease_quality,
+        over_rate.rate.action,
+    );
+    const missed = VorbisAudioResidueSubmapResult{
+        .target_bits = 100,
+        .encoded_bits = 101,
+        .budget_met = false,
+        .squared_error = 1,
+        .weighted_squared_error = 2,
+        .audible_excess_power = 1,
+        .lambda = 0.1,
+        .iterations = 8,
+    };
+    const missed_budget = try controller.observeSignal(
+        budget,
+        .{
+            .packet_index = 7,
+            .actual_bits = 700,
+            .reservoir_balance_after = 300,
+        },
+        &.{missed},
+    );
+    try std.testing.expectEqual(
+        VorbisQualityRateAction.decrease_quality,
+        missed_budget.rate.action,
+    );
+}
+
+test "Vorbis signal quality feedback rejects hostile evidence transactionally" {
+    var controller = try VorbisQualityRateController.init(.{
+        .minimum_quality = 0.3,
+        .maximum_quality = 0.9,
+        .initial_quality = 0.6,
+        .adjustment_per_packet = 0.1,
+        .headroom_ratio = 0.2,
+    });
+    const budget = VorbisPacketBitBudget{
+        .packet_index = 3,
+        .nominal_bits = 1_000,
+        .target_bits = 1_000,
+        .reservoir_balance_before = 0,
+    };
+    const commit = VorbisRateCommit{
+        .packet_index = 3,
+        .actual_bits = 700,
+        .reservoir_balance_after = 300,
+    };
+    const valid = VorbisAudioResidueSubmapResult{
+        .target_bits = 400,
+        .encoded_bits = 300,
+        .budget_met = true,
+        .squared_error = 0.25,
+        .weighted_squared_error = 0.5,
+        .audible_excess_power = 0.1,
+        .lambda = 0.01,
+        .iterations = 3,
+    };
+    const retained = try controller.quality();
+
+    try std.testing.expectError(
+        error.InvalidVorbisQualitySignalObservation,
+        controller.observeSignal(budget, commit, &.{}),
+    );
+    var inconsistent = valid;
+    inconsistent.budget_met = false;
+    try std.testing.expectError(
+        error.InvalidVorbisQualitySignalObservation,
+        controller.observeSignal(budget, commit, &.{inconsistent}),
+    );
+    var non_finite = valid;
+    non_finite.audible_excess_power = std.math.nan(f64);
+    try std.testing.expectError(
+        error.InvalidVorbisQualitySignalObservation,
+        controller.observeSignal(budget, commit, &.{ valid, non_finite }),
+    );
+    var oversized_target = valid;
+    oversized_target.target_bits = budget.target_bits + 1;
+    try std.testing.expectError(
+        error.InvalidVorbisQualitySignalObservation,
+        controller.observeSignal(budget, commit, &.{oversized_target}),
+    );
+    var oversized_encoding = valid;
+    oversized_encoding.target_bits = commit.actual_bits + 1;
+    oversized_encoding.encoded_bits = commit.actual_bits + 1;
+    try std.testing.expectError(
+        error.InvalidVorbisQualitySignalObservation,
+        controller.observeSignal(budget, commit, &.{oversized_encoding}),
+    );
+    const too_many = [_]VorbisAudioResidueSubmapResult{valid} ** 17;
+    try std.testing.expectError(
+        error.InvalidVorbisQualitySignalObservation,
+        controller.observeSignal(budget, commit, &too_many),
+    );
+    var mismatched_commit = commit;
+    mismatched_commit.packet_index += 1;
+    try std.testing.expectError(
+        error.MismatchedVorbisQualityRateObservation,
+        controller.observeSignal(budget, mismatched_commit, &.{valid}),
+    );
+    try std.testing.expectEqual(retained, try controller.quality());
+}
+
 fn complexAnalysisForVorbisRateTest() VorbisPcmBlockClassification {
     return .{
         .analysis = .{
@@ -22742,6 +26482,7 @@ fn testVorbisPcmBlockClassifier(comptime Float: type) !void {
         .minimum_short_blocks = 2,
     };
     var classifier = VorbisPcmBlockClassifier{};
+    try std.testing.expect(classifier.valid());
     const first = try classifier.classify(
         Float,
         &.{&quiet},
@@ -22749,6 +26490,7 @@ fn testVorbisPcmBlockClassifier(comptime Float: type) !void {
         256,
         config,
     );
+    try std.testing.expect(classifier.valid());
     try std.testing.expect(first.recommended_large_block);
     try std.testing.expectEqual(@as(f64, 1), first.cross_block_energy_ratio);
 
@@ -22810,6 +26552,22 @@ fn testVorbisPcmBlockClassifier(comptime Float: type) !void {
     try std.testing.expect(!attacked.recommended_large_block);
     try std.testing.expectEqual(@as(u8, 2), attacked.short_blocks_remaining);
 
+    var hostile_hold = classifier;
+    hostile_hold.large_block = true;
+    const hostile_hold_before = hostile_hold;
+    try std.testing.expect(!hostile_hold.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmBlockClassifierState,
+        hostile_hold.classify(
+            Float,
+            &.{&loud},
+            64,
+            256,
+            config,
+        ),
+    );
+    try std.testing.expectEqualDeep(hostile_hold_before, hostile_hold);
+
     const before_invalid = classifier;
     try std.testing.expectError(
         error.InvalidVorbisPcmBlockClassifierConfig,
@@ -22838,6 +26596,7 @@ fn testVorbisPcmBlockClassifier(comptime Float: type) !void {
 
     classifier.smoothed_mean_square = -1;
     const corrupt = classifier;
+    try std.testing.expect(!classifier.valid());
     try std.testing.expectError(
         error.InvalidVorbisPcmBlockClassifierState,
         classifier.classify(
@@ -22850,9 +26609,29 @@ fn testVorbisPcmBlockClassifier(comptime Float: type) !void {
     );
     try std.testing.expectEqualDeep(corrupt, classifier);
     classifier.reset();
+    try std.testing.expect(classifier.valid());
     try std.testing.expectEqualDeep(
         VorbisPcmBlockClassifier{},
         classifier,
+    );
+
+    var malformed_initial = VorbisPcmBlockClassifier{};
+    malformed_initial.large_block = false;
+    const malformed_initial_before = malformed_initial;
+    try std.testing.expect(!malformed_initial.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmBlockClassifierState,
+        malformed_initial.classify(
+            Float,
+            &.{&loud},
+            64,
+            256,
+            config,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        malformed_initial_before,
+        malformed_initial,
     );
 
     const silence = [_]Float{0} ** 256;
@@ -23106,6 +26885,7 @@ test "Vorbis encoding block plans select retained modes" {
     );
 
     var frames = VorbisPcmFramePlanner.init(true);
+    try std.testing.expect(frames.valid());
     const large_to_small = try frames.plan(
         identification,
         setup,
@@ -23113,6 +26893,7 @@ test "Vorbis encoding block plans select retained modes" {
         true,
         false,
     );
+    try std.testing.expect(frames.valid());
     try std.testing.expectEqual(
         @as(u64, 0),
         large_to_small.packet_index,
@@ -23198,7 +26979,11 @@ test "Vorbis encoding block plans select retained modes" {
         ),
     );
     try std.testing.expectEqualDeep(preserved_frames, frames);
-    frames.center = std.math.maxInt(i64);
+    frames.packet_index = @intCast(
+        @divFloor(std.math.maxInt(i64), 4096) + 1,
+    );
+    frames.center = std.math.maxInt(i64) - 15;
+    try std.testing.expect(frames.valid());
     const overflow_state = frames;
     try std.testing.expectError(
         error.VorbisPcmFramePositionOverflow,
@@ -23212,14 +26997,16 @@ test "Vorbis encoding block plans select retained modes" {
     );
     try std.testing.expectEqualDeep(overflow_state, frames);
     frames.reset(false);
+    try std.testing.expect(frames.valid());
     try std.testing.expectEqual(
         VorbisPcmFramePlanner.init(false),
         frames,
     );
     frames.packet_index = std.math.maxInt(u64);
     const exhausted_state = frames;
+    try std.testing.expect(!frames.valid());
     try std.testing.expectError(
-        error.VorbisAudioPacketCountOverflow,
+        error.InvalidVorbisPcmFramePlannerState,
         frames.plan(
             identification,
             setup,
@@ -23229,6 +27016,38 @@ test "Vorbis encoding block plans select retained modes" {
         ),
     );
     try std.testing.expectEqualDeep(exhausted_state, frames);
+
+    frames = VorbisPcmFramePlanner.init(false);
+    frames.packet_index = 1;
+    frames.center = 31;
+    try std.testing.expect(!frames.valid());
+    frames.center = 4097;
+    try std.testing.expect(!frames.valid());
+    frames.center = 32;
+    try std.testing.expect(frames.valid());
+    frames.center = 33;
+    try std.testing.expect(!frames.valid());
+    frames.center = 4096;
+    try std.testing.expect(frames.valid());
+
+    var invalid_frames = VorbisPcmFramePlanner.init(false);
+    invalid_frames.center = -1;
+    const invalid_frames_before = invalid_frames;
+    try std.testing.expect(!invalid_frames.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmFramePlannerState,
+        invalid_frames.plan(
+            identification,
+            setup,
+            0,
+            false,
+            false,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        invalid_frames_before,
+        invalid_frames,
+    );
 
     const stationary = VorbisPcmBlockAnalysis{
         .recommended_large_block = true,
@@ -23245,6 +27064,19 @@ test "Vorbis encoding block plans select retained modes" {
         .transient_segment = 2,
     };
     var lookahead = VorbisPcmBlockLookahead.init(true);
+    try std.testing.expect(lookahead.valid());
+    var invalid_lookahead = lookahead;
+    invalid_lookahead.frames.center = -1;
+    const invalid_lookahead_before = invalid_lookahead;
+    try std.testing.expect(!invalid_lookahead.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmBlockLookaheadState,
+        invalid_lookahead.prime(stationary),
+    );
+    try std.testing.expectEqualDeep(
+        invalid_lookahead_before,
+        invalid_lookahead,
+    );
     try std.testing.expectError(
         error.VorbisBlockLookaheadNotPrimed,
         lookahead.push(
@@ -23255,6 +27087,7 @@ test "Vorbis encoding block plans select retained modes" {
         ),
     );
     try lookahead.prime(stationary);
+    try std.testing.expect(lookahead.valid());
     try std.testing.expectError(
         error.VorbisBlockLookaheadAlreadyPrimed,
         lookahead.prime(transient),
@@ -23296,6 +27129,7 @@ test "Vorbis encoding block plans select retained modes" {
         setup,
         0,
     );
+    try std.testing.expect(lookahead.valid());
     try std.testing.expect(terminal.header.large_block);
     try std.testing.expectEqual(
         @as(?bool, false),
@@ -23318,6 +27152,7 @@ test "Vorbis encoding block plans select retained modes" {
         ),
     );
     lookahead.reset(false);
+    try std.testing.expect(lookahead.valid());
     try std.testing.expectEqual(
         VorbisPcmBlockLookahead.init(false),
         lookahead,
@@ -23392,14 +27227,53 @@ fn testVorbisPcmPacketSequence(comptime Float: type) !void {
         VorbisPcmPacketSequence.init(invalid_config, true),
     );
     var sequence = try VorbisPcmPacketSequence.init(config, true);
+    try std.testing.expect(sequence.valid());
     const steady = [_]Float{0.1} ** 256;
+    var corrupt_sequence = sequence;
+    corrupt_sequence.reservoir.balance_bits = 2_049;
+    const corrupt_sequence_before = corrupt_sequence;
+    try std.testing.expect(!corrupt_sequence.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmPacketSequenceState,
+        corrupt_sequence.prime(
+            Float,
+            &.{ &steady, &steady },
+            identification,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        corrupt_sequence_before,
+        corrupt_sequence,
+    );
+
     const primed = try sequence.prime(
         Float,
         &.{ &steady, &steady },
         identification,
     );
+    try std.testing.expect(sequence.valid());
     try std.testing.expect(primed.recommended_large_block);
     try std.testing.expectEqual(@as(u64, 1), sequence.revision);
+
+    var hostile_classifier_schedule = sequence;
+    hostile_classifier_schedule.classifier.large_block = false;
+    try std.testing.expect(hostile_classifier_schedule.classifier.valid());
+    const hostile_classifier_schedule_before =
+        hostile_classifier_schedule;
+    try std.testing.expect(!hostile_classifier_schedule.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmPacketSequenceState,
+        hostile_classifier_schedule.planNext(
+            Float,
+            &.{ &steady, &steady },
+            identification,
+            setup,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        hostile_classifier_schedule_before,
+        hostile_classifier_schedule,
+    );
 
     const before_plan = sequence;
     const loud = [_]Float{1} ** 256;
@@ -23434,6 +27308,41 @@ fn testVorbisPcmPacketSequence(comptime Float: type) !void {
         sequence.commit(hostile_plan, 1),
     );
     try std.testing.expectEqualDeep(before_plan, sequence);
+
+    var hostile_frame = plan;
+    hostile_frame.frame.source_start += 1;
+    try std.testing.expectError(
+        error.InvalidVorbisPcmPacketPlan,
+        sequence.commit(hostile_frame, 1),
+    );
+    try std.testing.expectEqualDeep(before_plan, sequence);
+
+    var hostile_header = plan;
+    hostile_header.frame.header.previous_window_flag = false;
+    try std.testing.expectError(
+        error.InvalidVorbisPcmPacketPlan,
+        sequence.commit(hostile_header, 1),
+    );
+    try std.testing.expectEqualDeep(before_plan, sequence);
+
+    var hostile_classifier = plan;
+    hostile_classifier.classifier_after.smoothed_mean_square =
+        std.math.nan(f64);
+    try std.testing.expectError(
+        error.InvalidVorbisPcmPacketPlan,
+        sequence.commit(hostile_classifier, 1),
+    );
+    try std.testing.expectEqualDeep(before_plan, sequence);
+
+    var hostile_classification = plan;
+    hostile_classification.classification.?.cross_block_energy_ratio =
+        std.math.nan(f64);
+    try std.testing.expectError(
+        error.InvalidVorbisPcmPacketPlan,
+        sequence.commit(hostile_classification, 1),
+    );
+    try std.testing.expectEqualDeep(before_plan, sequence);
+
     try std.testing.expectError(
         error.InvalidVorbisAudioPacketBitCount,
         sequence.commit(plan, 0),
@@ -23475,6 +27384,45 @@ fn testVorbisPcmPacketSequence(comptime Float: type) !void {
     try std.testing.expectEqual(@as(u64, 2), sequence.revision);
     try std.testing.expectEqual(@as(u64, 1), sequence.reservoir.packet_index);
     try std.testing.expectEqual(@as(u64, 0), sequence.granule_position);
+    try std.testing.expect(sequence.valid());
+
+    var hostile_hold_sequence = sequence;
+    try std.testing.expect(
+        hostile_hold_sequence.classifier.short_blocks_remaining != 0,
+    );
+    hostile_hold_sequence.classifier.large_block = true;
+    const hostile_hold_sequence_before = hostile_hold_sequence;
+    try std.testing.expect(!hostile_hold_sequence.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmPacketSequenceState,
+        hostile_hold_sequence.planFinish(
+            identification,
+            setup,
+            80,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        hostile_hold_sequence_before,
+        hostile_hold_sequence,
+    );
+
+    var impossible_granule = sequence;
+    impossible_granule.granule_position =
+        @intCast(impossible_granule.lookahead.frames.center);
+    const impossible_granule_before = impossible_granule;
+    try std.testing.expect(!impossible_granule.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisPcmPacketSequenceState,
+        impossible_granule.planFinish(
+            identification,
+            setup,
+            80,
+        ),
+    );
+    try std.testing.expectEqualDeep(
+        impossible_granule_before,
+        impossible_granule,
+    );
 
     const after_first_commit = sequence;
     try std.testing.expectError(
@@ -23505,6 +27453,23 @@ fn testVorbisPcmPacketSequence(comptime Float: type) !void {
     try std.testing.expectEqual(@as(u64, 80), finish.granule_position);
     try std.testing.expectEqualDeep(after_first_commit, sequence);
 
+    var hostile_finish_granule = finish;
+    hostile_finish_granule.granule_position += 1;
+    try std.testing.expectError(
+        error.InvalidVorbisPcmPacketPlan,
+        sequence.commit(hostile_finish_granule, 1),
+    );
+    try std.testing.expectEqualDeep(after_first_commit, sequence);
+
+    var hostile_finish_classifier = finish;
+    hostile_finish_classifier.classifier_after.large_block =
+        !hostile_finish_classifier.classifier_after.large_block;
+    try std.testing.expectError(
+        error.InvalidVorbisPcmPacketPlan,
+        sequence.commit(hostile_finish_classifier, 1),
+    );
+    try std.testing.expectEqualDeep(after_first_commit, sequence);
+
     try std.testing.expectError(
         error.InvalidVorbisAudioPacketBitCount,
         sequence.appendMemory(&writer, finish, &.{0}, 9),
@@ -23531,6 +27496,7 @@ fn testVorbisPcmPacketSequence(comptime Float: type) !void {
     );
     try std.testing.expect(terminal_commit.end);
     try std.testing.expect(sequence.ended);
+    try std.testing.expect(sequence.valid());
     try std.testing.expect(writer.ended);
     try std.testing.expectEqual(@as(u64, 80), sequence.granule_position);
 
@@ -24132,6 +28098,51 @@ fn testVorbisPcmPacketEncodingTrial(comptime Float: type) !void {
         u8,
         trial.packet.bytes,
         packet[0..trial.packet.bytes.len],
+    );
+    var quality_controller = try VorbisQualityRateController.init(.{
+        .minimum_quality = 0.4,
+        .maximum_quality = 0.9,
+        .initial_quality = 0.7,
+        .adjustment_per_packet = 0.05,
+        .headroom_ratio = 0.1,
+    });
+    const signal_decision = try quality_controller.observePcmPacketTrial(
+        Float,
+        plan,
+        trial,
+    );
+    var audible_excess_power: f64 = 0;
+    for (trial.quantization.submap_results) |result|
+        audible_excess_power += result.audible_excess_power;
+    try std.testing.expectApproxEqAbs(
+        audible_excess_power,
+        signal_decision.audible_excess_power,
+        1.0e-15,
+    );
+    const retained_quality = try quality_controller.quality();
+    var malformed_trial = trial;
+    malformed_trial.quantization.allocation.residue_bits += 1;
+    try std.testing.expectError(
+        error.InvalidVorbisQualityPcmPacketTrial,
+        quality_controller.observePcmPacketTrial(
+            Float,
+            plan,
+            malformed_trial,
+        ),
+    );
+    var malformed_packet = trial;
+    malformed_packet.packet.bit_count += 1;
+    try std.testing.expectError(
+        error.InvalidVorbisQualityPcmPacketTrial,
+        quality_controller.observePcmPacketTrial(
+            Float,
+            plan,
+            malformed_packet,
+        ),
+    );
+    try std.testing.expectEqual(
+        retained_quality,
+        try quality_controller.quality(),
     );
 
     var ogg_storage: [2_048]u8 = undefined;
@@ -25459,6 +29470,19 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
 
     var chained =
         VorbisChainedPcmStreamDecoder(f64, 2, 64, 64).init();
+    try std.testing.expect(chained.valid());
+    var corrupt_chained = chained;
+    corrupt_chained.sample_rate = 48_000;
+    const corrupt_chained_before = corrupt_chained;
+    try std.testing.expect(!corrupt_chained.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisChainedPcmStreamState,
+        corrupt_chained.beginLogicalStream(identification),
+    );
+    try std.testing.expectEqualDeep(
+        corrupt_chained_before,
+        corrupt_chained,
+    );
     try std.testing.expectError(
         error.VorbisLogicalStreamNotStarted,
         chained.decode(
@@ -25484,6 +29508,7 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
         ),
     );
     try chained.beginLogicalStream(identification);
+    try std.testing.expect(chained.valid());
     const chained_prime = try chained.decode(
         .{
             .bytes = packet,
@@ -25505,6 +29530,7 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
             .windowed = &stream_windowed,
         },
     );
+    try std.testing.expect(chained.valid());
     try std.testing.expectEqual(@as(u64, 0), chained_prime.global_pcm_start);
     try std.testing.expectEqual(@as(u64, 0), chained_prime.global_pcm_end);
     try std.testing.expectError(
@@ -25691,7 +29717,7 @@ test "Vorbis audio packet decoder composes floor residue coupling and MDCT" {
     chained.current_stream_pcm = std.math.maxInt(u64) - 31;
     @memset(&stream_left, 99);
     try std.testing.expectError(
-        error.VorbisChainedPcmPositionOverflow,
+        error.InvalidVorbisChainedPcmStreamState,
         chained.decode(
             .{
                 .bytes = packet,
@@ -26153,6 +30179,12 @@ test "Vorbis overlap-add aligns every block-size transition" {
 
     var hostile_state = VorbisOverlapAdd(f64, 256){};
     hostile_state.previous_size = 3;
+    try std.testing.expect(!hostile_state.valid());
+    try std.testing.expect(!hostile_state.primed());
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        hostile_state.previousBlockSize(),
+    );
     @memset(&output, 99);
     try std.testing.expectError(
         error.InvalidVorbisOverlapState,
@@ -26160,8 +30192,64 @@ test "Vorbis overlap-add aligns every block-size transition" {
     );
     try std.testing.expectEqual(@as(f64, 99), output[0]);
 
+    var non_finite_state = VorbisOverlapAdd(f64, 256){};
+    _ = try non_finite_state.push(&first, &.{});
+    non_finite_state.previous[0] = std.math.nan(f64);
+    try std.testing.expect(!non_finite_state.valid());
+    try std.testing.expect(!non_finite_state.primed());
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        non_finite_state.previousBlockSize(),
+    );
+    try std.testing.expectError(
+        error.InvalidVorbisOverlapState,
+        non_finite_state.push(&first, &output),
+    );
+
     state.reset();
     try std.testing.expect(!state.primed());
+    try std.testing.expectEqual(
+        [_]f64{0} ** 256,
+        state.previous,
+    );
+    try std.testing.expectEqual(
+        [_]f64{0} ** 128,
+        state.pending,
+    );
+}
+
+test "Vorbis overlap retained-size accessors fail closed" {
+    var state = VorbisOverlapAdd(f32, 256){};
+    const candidates = [_]usize{
+        0,
+        1,
+        63,
+        64,
+        65,
+        127,
+        128,
+        129,
+        255,
+        256,
+        257,
+        std.math.maxInt(usize),
+    };
+    for (candidates) |candidate| {
+        state.previous_size = candidate;
+        const expected_valid = candidate == 0 or
+            candidate == 64 or
+            candidate == 128 or
+            candidate == 256;
+        try std.testing.expectEqual(expected_valid, state.valid());
+        try std.testing.expectEqual(
+            if (expected_valid) candidate else 0,
+            state.previousBlockSize(),
+        );
+        try std.testing.expectEqual(
+            expected_valid and candidate != 0,
+            state.primed(),
+        );
+    }
 }
 
 test "Vorbis channel overlap-add commits every channel atomically" {
@@ -26235,6 +30323,12 @@ test "Vorbis channel overlap-add commits every channel atomically" {
     try std.testing.expectEqual(@as(f64, 99), shared_output[0]);
 
     state.channels[1].previous_size = 256;
+    try std.testing.expect(!state.valid());
+    try std.testing.expect(!state.primed());
+    try std.testing.expectError(
+        error.InvalidVorbisChannelOverlapState,
+        state.previousBlockSize(),
+    );
     try std.testing.expectError(
         error.InvalidVorbisChannelOverlapState,
         state.push(&valid_third, &preserved_outputs),
@@ -26243,11 +30337,23 @@ test "Vorbis channel overlap-add commits every channel atomically" {
 
     state.reset();
     try std.testing.expect(!state.primed());
+    for (state.channels) |channel| {
+        try std.testing.expectEqual(
+            [_]f64{0} ** 256,
+            channel.previous,
+        );
+        try std.testing.expectEqual(
+            [_]f64{0} ** 128,
+            channel.pending,
+        );
+    }
 }
 
 test "Vorbis granule tracking trims stream boundaries transactionally" {
     var normal = VorbisGranuleTracker{};
+    try std.testing.expect(normal.valid());
     const unknown = try normal.trim(32, unknown_granule, false);
+    try std.testing.expect(normal.valid());
     try std.testing.expectEqual(@as(usize, 0), unknown.source_start);
     try std.testing.expectEqual(@as(usize, 32), unknown.sample_count);
     try std.testing.expectEqual(@as(?i64, null), unknown.pcm_start);
@@ -26260,6 +30366,7 @@ test "Vorbis granule tracking trims stream boundaries transactionally" {
     try std.testing.expectEqual(@as(?i64, 64), final.pcm_start);
     try std.testing.expectEqual(@as(?i64, 90), final.pcm_end);
     try std.testing.expect(normal.ended);
+    try std.testing.expect(normal.valid());
     try std.testing.expectError(
         error.VorbisGranuleStreamAlreadyEnded,
         normal.trim(32, 122, true),
@@ -26320,7 +30427,36 @@ test "Vorbis granule tracking trims stream boundaries transactionally" {
     );
     try std.testing.expectEqualDeep(invalid_before, invalid);
 
+    var corrupt = VorbisGranuleTracker{
+        .decoded_samples = std.math.maxInt(u64),
+        .position_offset = 0,
+    };
+    const corrupt_before = corrupt;
+    try std.testing.expect(!corrupt.valid());
+    try std.testing.expectError(
+        error.InvalidVorbisGranuleTrackerState,
+        corrupt.trim(32, 32, false),
+    );
+    try std.testing.expectEqualDeep(corrupt_before, corrupt);
+    corrupt.reset();
+    try std.testing.expect(corrupt.valid());
+
+    const impossible_end = VorbisGranuleTracker{ .ended = true };
+    try std.testing.expect(!impossible_end.valid());
+
+    const overflowing_endpoint = VorbisGranuleTracker{
+        .decoded_samples = 1,
+        .position_offset = std.math.maxInt(i64),
+    };
+    try std.testing.expect(!overflowing_endpoint.valid());
+    const negative_endpoint = VorbisGranuleTracker{
+        .decoded_samples = 1,
+        .position_offset = -2,
+    };
+    try std.testing.expect(!negative_endpoint.valid());
+
     invalid.reset();
+    try std.testing.expect(invalid.valid());
     try std.testing.expectEqualDeep(VorbisGranuleTracker{}, invalid);
 }
 

@@ -171,15 +171,23 @@ pub const FileWriter = struct {
             return error.OverlappingFlacBuffers;
         const required_metadata =
             try requiredFileWriterMetadataBytes(metadata);
-        if (required_metadata != 0 and
-            (metadata_storage == null or
-                metadata_storage.?.len < required_metadata))
-            return error.FlacMetadataBufferTooSmall;
-        if (metadata.comments) |comments|
+        const checked_metadata_storage = if (required_metadata == 0)
+            null
+        else blk: {
+            const storage = metadata_storage orelse
+                return error.FlacMetadataBufferTooSmall;
+            if (storage.len < required_metadata)
+                return error.FlacMetadataBufferTooSmall;
+            break :blk storage;
+        };
+        if (metadata.comments) |comments| {
+            const storage = checked_metadata_storage orelse
+                return error.FlacMetadataBufferTooSmall;
             try validateCommentStorageDisjoint(
-                metadata_storage.?[0..required_metadata],
+                storage[0..required_metadata],
                 comments,
             );
+        }
         var metadata_offset: usize = 0;
         if (metadata.comments) |value| {
             const storage = metadata_storage orelse
@@ -199,7 +207,8 @@ pub const FileWriter = struct {
         }
         var seek_payload_offset: u64 = 0;
         if (metadata.seek_interval != null) {
-            const storage = metadata_storage.?;
+            const storage = metadata_storage orelse
+                return error.FlacMetadataBufferTooSmall;
             const payload_bytes =
                 @as(usize, metadata.seek_point_capacity) * 18;
             storage[metadata_offset] = 0x83;
@@ -244,7 +253,8 @@ pub const FileWriter = struct {
         try operations.setLength(io, file, initial_bytes);
         try writer.writeCurrentStreaminfo(false);
         if (metadata_bytes != 0) {
-            const storage = metadata_storage.?;
+            const storage = metadata_storage orelse
+                return error.FlacMetadataBufferTooSmall;
             try operations.writeAt(
                 io,
                 file,
@@ -343,7 +353,7 @@ pub const FileWriter = struct {
             return error.InvalidFlacFileWriterState;
         self.finalizing = true;
         try self.recover();
-        try self.file.sync(self.io);
+        try self.operations.sync(self.io, self.file);
         self.finalized = true;
     }
 
@@ -373,7 +383,7 @@ pub const FileWriter = struct {
 
     /// Reports whether the writer can accept more samples.
     pub fn valid(self: *const FileWriter) bool {
-        return !self.failed and self.recoverable();
+        return !self.failed and !self.finalizing and self.recoverable();
     }
 
     /// Reports whether retained state can be retried after an I/O failure.
@@ -436,7 +446,45 @@ pub const FileWriter = struct {
                     self.seek_point_capacity != 0 and
                     self.seek_table_payload_offset >= streaminfo_bytes and
                     seek_table_end <= audio_offset)) and
-            self.byte_count >= audio_offset;
+            self.committedFrameStateValid(audio_offset);
+    }
+
+    fn committedFrameStateValid(
+        self: *const FileWriter,
+        audio_offset: u64,
+    ) bool {
+        if (self.frame_number == 0) {
+            return self.frames_written == 0 and
+                self.byte_count == audio_offset and
+                self.minimum_frame_size == std.math.maxInt(u24) and
+                self.maximum_frame_size == 0;
+        }
+        const maximum_frames = std.math.mul(
+            u64,
+            self.frame_number,
+            self.spec.block_size,
+        ) catch return false;
+        const preceding_frames = std.math.mul(
+            u64,
+            self.frame_number - 1,
+            self.spec.block_size,
+        ) catch return false;
+        const minimum_frames = std.math.add(
+            u64,
+            preceding_frames,
+            1,
+        ) catch return false;
+        const frame_count_valid = if (!self.finalizing or
+            self.pending_frames != 0)
+            self.frames_written == maximum_frames
+        else
+            self.frames_written >= minimum_frames and
+                self.frames_written <= maximum_frames;
+        return frame_count_valid and
+            self.byte_count > audio_offset and
+            self.minimum_frame_size != 0 and
+            self.minimum_frame_size <= self.maximum_frame_size and
+            self.maximum_frame_size <= std.math.maxInt(u24);
     }
 
     fn flushPending(self: *FileWriter) !void {
@@ -655,14 +703,18 @@ pub const SeekTableIterator = struct {
     }
 
     pub fn next(self: *SeekTableIterator) ?SeekPoint {
-        if (self.offset > self.payload.len or
-            self.payload.len - self.offset < 18)
-            return null;
+        if (!self.valid() or self.offset == self.payload.len) return null;
         const point = decodeSeekPoint(
             self.payload[self.offset..][0..18],
         );
         self.offset += 18;
         return point;
+    }
+
+    pub fn valid(self: *const SeekTableIterator) bool {
+        validateSeekTablePayload(self.payload) catch return false;
+        return self.offset <= self.payload.len and
+            self.offset % 18 == 0;
     }
 };
 
@@ -710,6 +762,36 @@ pub const CommentIterator = struct {
     }
 
     pub fn next(self: *CommentIterator) !?CommentView {
+        try self.validateState();
+        var trial = self.*;
+        const comment = try trial.nextInPlace();
+        self.* = trial;
+        return comment;
+    }
+
+    pub fn valid(self: *const CommentIterator) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
+    fn validateState(self: *const CommentIterator) !void {
+        var canonical = try parseCommentPayload(self.payload);
+        if (@intFromPtr(self.vendor.ptr) !=
+            @intFromPtr(canonical.vendor.ptr) or
+            self.vendor.len != canonical.vendor.len)
+            return error.InvalidFlacVorbisComments;
+
+        var state_seen = self.offset == canonical.offset and
+            self.remaining == canonical.remaining;
+        while (try canonical.nextInPlace()) |_| {
+            if (self.offset == canonical.offset and
+                self.remaining == canonical.remaining)
+                state_seen = true;
+        }
+        if (!state_seen) return error.InvalidFlacVorbisComments;
+    }
+
+    fn nextInPlace(self: *CommentIterator) !?CommentView {
         if (self.offset > self.payload.len)
             return error.InvalidFlacVorbisComments;
         if (self.remaining == 0) {
@@ -1177,7 +1259,8 @@ pub fn encodeInterleavedWithMetadata(
             encodeInterleaved(destination, samples, spec);
     }
 
-    const interval = metadata.encoded_frames_per_seek_point.?;
+    const interval = metadata.encoded_frames_per_seek_point orelse
+        return error.InvalidFlacSeekInterval;
     const with_seek_table = try encodeInterleavedWithSeekTable(
         destination,
         samples,
@@ -1228,6 +1311,78 @@ pub fn decodeInterleavedWithWideScratch(
         destination,
         wide_side_scratch,
     );
+}
+
+/// Leaves destination unchanged on failure by decoding through caller scratch.
+pub fn decodeInterleavedTransactional(
+    encoded: []const u8,
+    destination: []i32,
+    decode_scratch: []i32,
+) !DecodeResult {
+    return decodeInterleavedTransactionalInternal(
+        encoded,
+        destination,
+        decode_scratch,
+        &.{},
+    );
+}
+
+/// Supports wide stereo side channels while preserving destination on failure.
+pub fn decodeInterleavedTransactionalWithWideScratch(
+    encoded: []const u8,
+    destination: []i32,
+    decode_scratch: []i32,
+    wide_side_scratch: []i64,
+) !DecodeResult {
+    return decodeInterleavedTransactionalInternal(
+        encoded,
+        destination,
+        decode_scratch,
+        wide_side_scratch,
+    );
+}
+
+fn decodeInterleavedTransactionalInternal(
+    encoded: []const u8,
+    destination: []i32,
+    decode_scratch: []i32,
+    wide_side_scratch: []i64,
+) !DecodeResult {
+    if (byteSlicesOverlap(encoded, destination) or
+        byteSlicesOverlap(encoded, decode_scratch) or
+        byteSlicesOverlap(encoded, wide_side_scratch) or
+        byteSlicesOverlap(destination, decode_scratch) or
+        byteSlicesOverlap(destination, wide_side_scratch) or
+        byteSlicesOverlap(decode_scratch, wide_side_scratch))
+        return error.OverlappingFlacBuffers;
+    const required_samples = try requiredDecodedSamples(encoded);
+    if (destination.len < required_samples)
+        return error.FlacDestinationTooSmall;
+    if (decode_scratch.len < required_samples)
+        return error.FlacDecodeScratchTooSmall;
+    const result = try decodeInterleavedInternal(
+        encoded,
+        decode_scratch[0..required_samples],
+        wide_side_scratch,
+    );
+    @memcpy(
+        destination[0..required_samples],
+        decode_scratch[0..required_samples],
+    );
+    return result;
+}
+
+fn requiredDecodedSamples(encoded: []const u8) !usize {
+    const parser = try Parser.init(encoded);
+    const declared_frames = std.math.cast(
+        usize,
+        parser.info.frame_count,
+    ) orelse return error.FlacSizeOverflow;
+    return std.math.mul(
+        usize,
+        declared_frames,
+        parser.info.channel_count,
+    ) catch return error.FlacSizeOverflow;
 }
 
 fn decodeInterleavedInternal(
@@ -1320,6 +1475,79 @@ pub fn decodeInterleavedRangeWithWideScratch(
         frame_scratch,
         wide_side_scratch,
     );
+}
+
+/// Leaves the requested destination range unchanged on failure.
+pub fn decodeInterleavedRangeTransactional(
+    encoded: []const u8,
+    first_frame: u64,
+    destination: []i32,
+    output_scratch: []i32,
+    frame_scratch: []i32,
+) !usize {
+    return decodeInterleavedRangeTransactionalInternal(
+        encoded,
+        first_frame,
+        destination,
+        output_scratch,
+        frame_scratch,
+        &.{},
+    );
+}
+
+/// Preserves a requested range while supporting wide stereo side channels.
+pub fn decodeInterleavedRangeTransactionalWithWideScratch(
+    encoded: []const u8,
+    first_frame: u64,
+    destination: []i32,
+    output_scratch: []i32,
+    frame_scratch: []i32,
+    wide_side_scratch: []i64,
+) !usize {
+    return decodeInterleavedRangeTransactionalInternal(
+        encoded,
+        first_frame,
+        destination,
+        output_scratch,
+        frame_scratch,
+        wide_side_scratch,
+    );
+}
+
+fn decodeInterleavedRangeTransactionalInternal(
+    encoded: []const u8,
+    first_frame: u64,
+    destination: []i32,
+    output_scratch: []i32,
+    frame_scratch: []i32,
+    wide_side_scratch: []i64,
+) !usize {
+    if (output_scratch.len < destination.len)
+        return error.FlacDecodeScratchTooSmall;
+    const staged = output_scratch[0..destination.len];
+    if (byteSlicesOverlap(encoded, destination) or
+        byteSlicesOverlap(destination, staged) or
+        byteSlicesOverlap(destination, frame_scratch) or
+        byteSlicesOverlap(destination, wide_side_scratch))
+        return error.OverlappingFlacBuffers;
+    const frames = try decodeInterleavedRangeInternal(
+        encoded,
+        first_frame,
+        staged,
+        frame_scratch,
+        wide_side_scratch,
+    );
+    const parser = try Parser.init(encoded);
+    const copied_samples = std.math.mul(
+        usize,
+        frames,
+        parser.info.channel_count,
+    ) catch return error.FlacSizeOverflow;
+    @memcpy(
+        destination[0..copied_samples],
+        staged[0..copied_samples],
+    );
+    return frames;
 }
 
 fn decodeInterleavedRangeInternal(
@@ -1501,6 +1729,81 @@ pub fn readInterleavedFile(
     );
 }
 
+/// Reads and decodes a complete bounded file with wide side scratch.
+pub fn readInterleavedFileWithWideScratch(
+    io: std.Io,
+    file: std.Io.File,
+    encoded_storage: []u8,
+    destination: []i32,
+    wide_side_scratch: []i64,
+) !DecodeResult {
+    if (byteSlicesOverlap(encoded_storage, destination) or
+        byteSlicesOverlap(encoded_storage, wide_side_scratch) or
+        byteSlicesOverlap(destination, wide_side_scratch))
+        return error.OverlappingFlacBuffers;
+    const encoded = try file_reader_io.readBoundedFile(
+        io,
+        file,
+        encoded_storage,
+        error.FlacInputBufferTooSmall,
+        error.TruncatedFlac,
+    );
+    return decodeInterleavedWithWideScratch(
+        encoded,
+        destination,
+        wide_side_scratch,
+    );
+}
+
+/// Reads and stages a complete bounded file before changing destination.
+pub fn readInterleavedFileTransactional(
+    io: std.Io,
+    file: std.Io.File,
+    encoded_storage: []u8,
+    destination: []i32,
+    output_scratch: []i32,
+) !DecodeResult {
+    return readInterleavedFileTransactionalWithWideScratch(
+        io,
+        file,
+        encoded_storage,
+        destination,
+        output_scratch,
+        &.{},
+    );
+}
+
+/// Reads and stages a complete bounded file with wide side scratch.
+pub fn readInterleavedFileTransactionalWithWideScratch(
+    io: std.Io,
+    file: std.Io.File,
+    encoded_storage: []u8,
+    destination: []i32,
+    output_scratch: []i32,
+    wide_side_scratch: []i64,
+) !DecodeResult {
+    if (byteSlicesOverlap(encoded_storage, destination) or
+        byteSlicesOverlap(encoded_storage, output_scratch) or
+        byteSlicesOverlap(encoded_storage, wide_side_scratch) or
+        byteSlicesOverlap(destination, output_scratch) or
+        byteSlicesOverlap(destination, wide_side_scratch) or
+        byteSlicesOverlap(output_scratch, wide_side_scratch))
+        return error.OverlappingFlacBuffers;
+    const encoded = try file_reader_io.readBoundedFile(
+        io,
+        file,
+        encoded_storage,
+        error.FlacInputBufferTooSmall,
+        error.TruncatedFlac,
+    );
+    return decodeInterleavedTransactionalWithWideScratch(
+        encoded,
+        destination,
+        output_scratch,
+        wide_side_scratch,
+    );
+}
+
 /// Reads the bounded file and decodes a frame range with caller scratch.
 pub fn readInterleavedFileRange(
     io: std.Io,
@@ -1557,6 +1860,67 @@ pub fn readInterleavedFileRangeWithWideScratch(
         encoded,
         first_frame,
         destination,
+        frame_scratch,
+        wide_side_scratch,
+    );
+}
+
+/// Reads and stages a bounded file range before changing destination.
+pub fn readInterleavedFileRangeTransactional(
+    io: std.Io,
+    file: std.Io.File,
+    encoded_storage: []u8,
+    first_frame: u64,
+    destination: []i32,
+    output_scratch: []i32,
+    frame_scratch: []i32,
+) !usize {
+    return readInterleavedFileRangeTransactionalWithWideScratch(
+        io,
+        file,
+        encoded_storage,
+        first_frame,
+        destination,
+        output_scratch,
+        frame_scratch,
+        &.{},
+    );
+}
+
+/// Reads and stages a bounded file range with wide side scratch.
+pub fn readInterleavedFileRangeTransactionalWithWideScratch(
+    io: std.Io,
+    file: std.Io.File,
+    encoded_storage: []u8,
+    first_frame: u64,
+    destination: []i32,
+    output_scratch: []i32,
+    frame_scratch: []i32,
+    wide_side_scratch: []i64,
+) !usize {
+    if (byteSlicesOverlap(encoded_storage, destination) or
+        byteSlicesOverlap(encoded_storage, output_scratch) or
+        byteSlicesOverlap(encoded_storage, frame_scratch) or
+        byteSlicesOverlap(encoded_storage, wide_side_scratch) or
+        byteSlicesOverlap(destination, output_scratch) or
+        byteSlicesOverlap(destination, frame_scratch) or
+        byteSlicesOverlap(destination, wide_side_scratch) or
+        byteSlicesOverlap(output_scratch, frame_scratch) or
+        byteSlicesOverlap(output_scratch, wide_side_scratch) or
+        byteSlicesOverlap(frame_scratch, wide_side_scratch))
+        return error.OverlappingFlacBuffers;
+    const encoded = try file_reader_io.readBoundedFile(
+        io,
+        file,
+        encoded_storage,
+        error.FlacInputBufferTooSmall,
+        error.TruncatedFlac,
+    );
+    return decodeInterleavedRangeTransactionalWithWideScratch(
+        encoded,
+        first_frame,
+        destination,
+        output_scratch,
         frame_scratch,
         wide_side_scratch,
     );
@@ -1662,6 +2026,8 @@ pub const FileReader = struct {
             file,
             seek_payload,
             parsed.info,
+            parsed.minimum_frame_size,
+            parsed.maximum_frame_size,
             offset,
             stat.size,
         );
@@ -1679,6 +2045,55 @@ pub const FileReader = struct {
         };
     }
 
+    /// Validate all retained metadata before replacing caller storage.
+    pub fn initTransactional(
+        io: std.Io,
+        file: std.Io.File,
+        metadata_storage: []u8,
+        metadata_scratch: []u8,
+    ) !FileReader {
+        if (byteSlicesOverlap(metadata_storage, metadata_scratch))
+            return error.OverlappingFlacBuffers;
+
+        var reader = try init(io, file, metadata_scratch);
+        const retained_bytes = std.math.add(
+            usize,
+            reader.comment_payload.len,
+            reader.seek_table_payload.len,
+        ) catch return error.FlacSizeOverflow;
+        if (metadata_storage.len < retained_bytes)
+            return error.FlacMetadataBufferTooSmall;
+
+        const scratch_start = @intFromPtr(metadata_scratch.ptr);
+        if (reader.comment_payload.len != 0) {
+            const comment_start = @intFromPtr(reader.comment_payload.ptr);
+            if (comment_start < scratch_start)
+                return error.InvalidFlacFileReaderState;
+            const comment_offset = comment_start - scratch_start;
+            if (comment_offset > retained_bytes or
+                reader.comment_payload.len > retained_bytes - comment_offset)
+                return error.InvalidFlacFileReaderState;
+            reader.comment_payload = metadata_storage[comment_offset..][0..reader.comment_payload.len];
+        }
+        if (reader.seek_table_payload.len != 0) {
+            const seek_start = @intFromPtr(reader.seek_table_payload.ptr);
+            if (seek_start < scratch_start)
+                return error.InvalidFlacFileReaderState;
+            const seek_offset = seek_start - scratch_start;
+            if (seek_offset > retained_bytes or
+                reader.seek_table_payload.len > retained_bytes - seek_offset)
+                return error.InvalidFlacFileReaderState;
+            reader.seek_table_payload = metadata_storage[seek_offset..][0..reader.seek_table_payload.len];
+        }
+        @memcpy(metadata_storage[0..retained_bytes], metadata_scratch[0..retained_bytes]);
+        return reader;
+    }
+
+    pub fn valid(self: *const FileReader) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn commentIterator(
         self: *const FileReader,
     ) !?CommentIterator {
@@ -1690,8 +2105,8 @@ pub const FileReader = struct {
     pub fn seekTableIterator(
         self: *const FileReader,
     ) ?SeekTableIterator {
+        self.validateState() catch return null;
         if (self.seek_table_payload.len == 0) return null;
-        validateSeekTablePayload(self.seek_table_payload) catch return null;
         return .{ .payload = self.seek_table_payload };
     }
 
@@ -1750,6 +2165,42 @@ pub const FileReader = struct {
         if (!allZero(&self.md5) and !std.mem.eql(u8, &digest, &self.md5))
             return error.FlacMd5Mismatch;
         return .{ .info = self.info, .frames_decoded = decoded_frames };
+    }
+
+    /// Stage a complete file decode so failures preserve the destination.
+    pub fn decodeTransactional(
+        self: *const FileReader,
+        destination: []i32,
+        output_scratch: []i32,
+        frame_storage: []u8,
+        wide_side_scratch: []i64,
+    ) !DecodeResult {
+        try self.validateState();
+        const frames = std.math.cast(
+            usize,
+            self.info.frame_count,
+        ) orelse return error.FlacSizeOverflow;
+        const required_samples = std.math.mul(
+            usize,
+            frames,
+            self.info.channel_count,
+        ) catch return error.FlacSizeOverflow;
+        if (destination.len < required_samples)
+            return error.FlacDestinationTooSmall;
+        if (output_scratch.len < required_samples)
+            return error.FlacDecodeScratchTooSmall;
+        const staged = output_scratch[0..required_samples];
+        if (byteSlicesOverlap(destination, staged) or
+            byteSlicesOverlap(destination, frame_storage) or
+            byteSlicesOverlap(destination, wide_side_scratch))
+            return error.OverlappingFlacBuffers;
+        const result = try self.decode(
+            staged,
+            frame_storage,
+            wide_side_scratch,
+        );
+        @memcpy(destination[0..required_samples], staged);
+        return result;
     }
 
     pub fn decodeRange(
@@ -1848,6 +2299,41 @@ pub const FileReader = struct {
         return produced;
     }
 
+    /// Stage a file range decode so failures preserve the destination.
+    pub fn decodeRangeTransactional(
+        self: *const FileReader,
+        first_frame: u64,
+        destination: []i32,
+        output_scratch: []i32,
+        frame_storage: []u8,
+        decoded_frame_scratch: []i32,
+        wide_side_scratch: []i64,
+    ) !usize {
+        try self.validateState();
+        if (output_scratch.len < destination.len)
+            return error.FlacDecodeScratchTooSmall;
+        const staged = output_scratch[0..destination.len];
+        if (byteSlicesOverlap(destination, staged) or
+            byteSlicesOverlap(destination, frame_storage) or
+            byteSlicesOverlap(destination, decoded_frame_scratch) or
+            byteSlicesOverlap(destination, wide_side_scratch))
+            return error.OverlappingFlacBuffers;
+        const frames = try self.decodeRange(
+            first_frame,
+            staged,
+            frame_storage,
+            decoded_frame_scratch,
+            wide_side_scratch,
+        );
+        const copied_samples = std.math.mul(
+            usize,
+            frames,
+            self.info.channel_count,
+        ) catch return error.FlacSizeOverflow;
+        @memcpy(destination[0..copied_samples], staged[0..copied_samples]);
+        return frames;
+    }
+
     fn decodeFrameAt(
         self: *const FileReader,
         file_offset: *u64,
@@ -1922,6 +2408,12 @@ pub const FileReader = struct {
             (self.info.frame_count != 0 and
                 self.audio_offset == self.file_size))
             return error.InvalidFlacFileReaderState;
+        if (!flacAudioExtentValid(
+            self.info,
+            self.minimum_frame_size,
+            self.maximum_frame_size,
+            self.file_size - self.audio_offset,
+        )) return error.InvalidFlacFileReaderState;
 
         if (self.comment_payload.len != 0)
             validateCommentPayload(self.comment_payload) catch
@@ -1946,11 +2438,157 @@ pub const FileReader = struct {
             if (point.sample_number >= self.info.frame_count or
                 point.frame_samples > self.info.maximum_block_size or
                 point_end > self.info.frame_count or
-                target > self.file_size -| 2)
+                target > self.file_size -| 2 or
+                !flacSeekPointProgressValid(
+                    self.info,
+                    self.minimum_frame_size,
+                    self.maximum_frame_size,
+                    point,
+                ))
                 return error.InvalidFlacFileReaderState;
         }
     }
 };
+
+fn flacAudioExtentValid(
+    info: Info,
+    minimum_frame_size: u32,
+    maximum_frame_size: u32,
+    audio_bytes: u64,
+) bool {
+    if (info.frame_count == 0) return audio_bytes == 0;
+    const minimum_frames = std.math.divCeil(
+        u64,
+        info.frame_count,
+        info.maximum_block_size,
+    ) catch return false;
+    const maximum_frames = std.math.divCeil(
+        u64,
+        info.frame_count,
+        info.minimum_block_size,
+    ) catch return false;
+    if (minimum_frame_size != 0) {
+        const minimum_bytes = std.math.mul(
+            u64,
+            minimum_frames,
+            minimum_frame_size,
+        ) catch return false;
+        if (audio_bytes < minimum_bytes) return false;
+    }
+    if (maximum_frame_size != 0) {
+        const maximum_bytes = std.math.mul(
+            u64,
+            maximum_frames,
+            maximum_frame_size,
+        ) catch return false;
+        if (audio_bytes > maximum_bytes) return false;
+    }
+    return true;
+}
+
+fn flacSeekPointProgressValid(
+    info: Info,
+    minimum_frame_size: u32,
+    maximum_frame_size: u32,
+    point: SeekPoint,
+) bool {
+    const point_end = std.math.add(
+        u64,
+        point.sample_number,
+        point.frame_samples,
+    ) catch return false;
+    if (point.frame_samples < info.minimum_block_size and
+        point_end != info.frame_count)
+        return false;
+    const minimum_frames = std.math.divCeil(
+        u64,
+        point.sample_number,
+        info.maximum_block_size,
+    ) catch return false;
+    const maximum_frames =
+        point.sample_number / info.minimum_block_size;
+    if (minimum_frames > maximum_frames) return false;
+    if (minimum_frame_size != 0) {
+        const minimum_bytes = std.math.mul(
+            u64,
+            minimum_frames,
+            minimum_frame_size,
+        ) catch return false;
+        if (point.byte_offset < minimum_bytes) return false;
+    }
+    if (maximum_frame_size != 0) {
+        const maximum_bytes = std.math.mul(
+            u64,
+            maximum_frames,
+            maximum_frame_size,
+        ) catch return false;
+        if (point.byte_offset > maximum_bytes) return false;
+    }
+    return true;
+}
+
+const ParsedFrameHeader = struct {
+    variable_blocking: bool,
+    coded_number: u64,
+    block_size: usize,
+    channel_code: u8,
+    encoded_size: usize,
+};
+
+fn parseFrameHeader(encoded: []const u8, info: Info) !ParsedFrameHeader {
+    if (encoded.len < 8) return error.TruncatedFlac;
+    if (encoded[0] != 0xff or
+        (encoded[1] != 0xf8 and encoded[1] != 0xf9))
+        return error.UnsupportedFlacBlockingStrategy;
+    const variable_blocking = encoded[1] == 0xf9;
+    const block_code = encoded[2] >> 4;
+    const rate_code = encoded[2] & 0x0f;
+    const channels_and_depth = encoded[3];
+    if (channels_and_depth & 1 != 0)
+        return error.InvalidFlacFrameHeader;
+    const channel_code = channels_and_depth >> 4;
+    const frame_channel_count: u8 = switch (channel_code) {
+        0...7 => channel_code + 1,
+        8...10 => 2,
+        else => return error.UnsupportedFlacChannelAssignment,
+    };
+    if (frame_channel_count != info.channel_count)
+        return error.FlacStreamPropertyChanged;
+    const depth = try decodeDepth(
+        (channels_and_depth >> 1) & 0x07,
+        info.encoding,
+    );
+    if (depth != info.encoding)
+        return error.FlacStreamPropertyChanged;
+
+    var offset: usize = 4;
+    const coded_number = try decodeCodedNumber(encoded, &offset);
+    const block_size = try decodeBlockSize(
+        encoded,
+        &offset,
+        block_code,
+    );
+    const sample_rate = try decodeSampleRate(
+        encoded,
+        &offset,
+        rate_code,
+        info.sample_rate,
+    );
+    if (sample_rate != info.sample_rate)
+        return error.FlacStreamPropertyChanged;
+    if (block_size > info.maximum_block_size)
+        return error.InvalidFlacBlockSize;
+    if (offset >= encoded.len) return error.TruncatedFlac;
+    if (crc8(encoded[0..offset]) != encoded[offset])
+        return error.FlacHeaderCrcMismatch;
+    return .{
+        .variable_blocking = variable_blocking,
+        .coded_number = coded_number,
+        .block_size = block_size,
+        .channel_code = channel_code,
+        .encoded_size = offset + 1,
+    };
+}
 
 pub fn requiredFileReaderMetadataBytes(
     io: std.Io,
@@ -2055,6 +2693,8 @@ fn validateFileSeekTable(
     file: std.Io.File,
     payload: []const u8,
     info: Info,
+    minimum_frame_size: u32,
+    maximum_frame_size: u32,
     audio_offset: u64,
     file_size: u64,
 ) !void {
@@ -2062,7 +2702,13 @@ fn validateFileSeekTable(
         const point = decodeSeekPoint(payload[index * 18 ..][0..18]);
         if (point.placeholder()) continue;
         if (point.sample_number >= info.frame_count or
-            point.frame_samples > info.maximum_block_size)
+            point.frame_samples > info.maximum_block_size or
+            !flacSeekPointProgressValid(
+                info,
+                minimum_frame_size,
+                maximum_frame_size,
+                point,
+            ))
             return error.InvalidFlacSeekTable;
         const point_end = std.math.add(
             u64,
@@ -2076,9 +2722,27 @@ fn validateFileSeekTable(
         ) catch return error.InvalidFlacSeekTable;
         if (point_end > info.frame_count or target > file_size -| 2)
             return error.InvalidFlacSeekTable;
-        var sync: [2]u8 = undefined;
-        try readFileExact(io, file, target, &sync);
-        if (sync[0] != 0xff or (sync[1] != 0xf8 and sync[1] != 0xf9))
+        var header_storage: [16]u8 = undefined;
+        const header_bytes: usize = @intCast(@min(
+            header_storage.len,
+            file_size - target,
+        ));
+        try readFileExact(
+            io,
+            file,
+            target,
+            header_storage[0..header_bytes],
+        );
+        const header = parseFrameHeader(
+            header_storage[0..header_bytes],
+            info,
+        ) catch return error.InvalidFlacSeekTable;
+        const expected_number = if (header.variable_blocking)
+            point.sample_number
+        else
+            point.sample_number / info.maximum_block_size;
+        if (header.coded_number != expected_number or
+            header.block_size != point.frame_samples)
             return error.InvalidFlacSeekTable;
     }
 }
@@ -2159,10 +2823,32 @@ const Parser = struct {
             try validateSeekTableAgainstStream(
                 payload,
                 info,
+                minimum_frame_size,
+                maximum_frame_size,
                 encoded[offset..],
             );
         if (info.frame_count == 0 and offset < encoded.len)
             return error.UnsupportedUnknownFlacFrameCount;
+        if (minimum_frame_size != 0) {
+            const minimum_frames = std.math.divCeil(
+                u64,
+                info.frame_count,
+                info.maximum_block_size,
+            ) catch return error.InvalidFlacFrameSize;
+            const minimum_bytes = std.math.mul(
+                u64,
+                minimum_frames,
+                minimum_frame_size,
+            ) catch return error.InvalidFlacFrameSize;
+            if (encoded.len - offset < minimum_bytes)
+                return error.TruncatedFlac;
+        }
+        if (!flacAudioExtentValid(
+            info,
+            minimum_frame_size,
+            maximum_frame_size,
+            encoded.len - offset,
+        )) return error.InvalidFlacFrameSize;
         return .{
             .encoded = encoded,
             .offset = offset,
@@ -2183,76 +2869,31 @@ const Parser = struct {
         wide_side_scratch: []i64,
     ) !usize {
         const frame_start = self.offset;
-        if (self.encoded.len - self.offset < 8)
-            return error.TruncatedFlac;
-        if (self.encoded[self.offset] != 0xff or
-            (self.encoded[self.offset + 1] != 0xf8 and
-                self.encoded[self.offset + 1] != 0xf9))
-            return error.UnsupportedFlacBlockingStrategy;
-        const variable_blocking = self.encoded[self.offset + 1] == 0xf9;
+        const header = try parseFrameHeader(
+            self.encoded[frame_start..],
+            self.info,
+        );
+        const variable_blocking = header.variable_blocking;
         if (self.variable_blocking) |previous| {
             if (previous != variable_blocking)
                 return error.FlacBlockingStrategyChanged;
         } else {
             self.variable_blocking = variable_blocking;
         }
-        self.offset += 2;
-        const block_and_rate = self.encoded[self.offset];
-        self.offset += 1;
-        const block_code = block_and_rate >> 4;
-        const rate_code = block_and_rate & 0x0f;
-        const channels_and_depth = self.encoded[self.offset];
-        self.offset += 1;
-        if (channels_and_depth & 1 != 0)
-            return error.InvalidFlacFrameHeader;
-        const channel_code = channels_and_depth >> 4;
-        const frame_channel_count: u8 = switch (channel_code) {
-            0...7 => channel_code + 1,
-            8...10 => 2,
-            else => return error.UnsupportedFlacChannelAssignment,
-        };
-        if (frame_channel_count != self.info.channel_count)
-            return error.FlacStreamPropertyChanged;
-        const depth = try decodeDepth(
-            (channels_and_depth >> 1) & 0x07,
-            self.info.encoding,
-        );
-        if (depth != self.info.encoding)
-            return error.FlacStreamPropertyChanged;
-
-        const coded = try decodeCodedNumber(
-            self.encoded,
-            &self.offset,
-        );
         const expected_number =
             if (variable_blocking)
                 expected_sample_number
             else
                 expected_frame_number;
-        if (coded != expected_number)
+        if (header.coded_number != expected_number)
             return error.InvalidFlacFrameNumber;
-        const block_size = try decodeBlockSize(
-            self.encoded,
-            &self.offset,
-            block_code,
-        );
-        const sample_rate = try decodeSampleRate(
-            self.encoded,
-            &self.offset,
-            rate_code,
-            self.info.sample_rate,
-        );
-        if (sample_rate != self.info.sample_rate)
-            return error.FlacStreamPropertyChanged;
-        if (block_size > self.info.maximum_block_size)
-            return error.InvalidFlacBlockSize;
-        if (self.offset >= self.encoded.len)
-            return error.TruncatedFlac;
-        const stored_header_crc = self.encoded[self.offset];
-        if (crc8(self.encoded[frame_start..self.offset]) !=
-            stored_header_crc)
-            return error.FlacHeaderCrcMismatch;
-        self.offset += 1;
+        const block_size = header.block_size;
+        const channel_code = header.channel_code;
+        self.offset = std.math.add(
+            usize,
+            frame_start,
+            header.encoded_size,
+        ) catch return error.FlacSizeOverflow;
 
         const required_samples = std.math.mul(
             usize,
@@ -2511,6 +3152,7 @@ fn validateSeekTablePayload(payload: []const u8) !void {
         return error.InvalidFlacSeekTable;
     var offset: usize = 0;
     var previous_sample: ?u64 = null;
+    var previous_byte_offset: ?u64 = null;
     var placeholders_started = false;
     while (offset < payload.len) : (offset += 18) {
         const point = decodeSeekPoint(payload[offset..][0..18]);
@@ -2526,13 +3168,20 @@ fn validateSeekTablePayload(payload: []const u8) !void {
             if (point.sample_number <= previous)
                 return error.InvalidFlacSeekTable;
         }
+        if (previous_byte_offset) |previous| {
+            if (point.byte_offset <= previous)
+                return error.InvalidFlacSeekTable;
+        }
         previous_sample = point.sample_number;
+        previous_byte_offset = point.byte_offset;
     }
 }
 
 fn validateSeekTableAgainstStream(
     payload: []const u8,
     info: Info,
+    minimum_frame_size: u32,
+    maximum_frame_size: u32,
     audio_frames: []const u8,
 ) !void {
     var offset: usize = 0;
@@ -2540,7 +3189,13 @@ fn validateSeekTableAgainstStream(
         const point = decodeSeekPoint(payload[offset..][0..18]);
         if (point.placeholder()) continue;
         if (point.sample_number >= info.frame_count or
-            point.frame_samples > info.maximum_block_size)
+            point.frame_samples > info.maximum_block_size or
+            !flacSeekPointProgressValid(
+                info,
+                minimum_frame_size,
+                maximum_frame_size,
+                point,
+            ))
             return error.InvalidFlacSeekTable;
         const point_end = std.math.add(
             u64,
@@ -2551,9 +3206,16 @@ fn validateSeekTableAgainstStream(
             point.byte_offset > audio_frames.len -| 2)
             return error.InvalidFlacSeekTable;
         const byte_offset: usize = @intCast(point.byte_offset);
-        if (audio_frames[byte_offset] != 0xff or
-            (audio_frames[byte_offset + 1] != 0xf8 and
-                audio_frames[byte_offset + 1] != 0xf9))
+        const header = parseFrameHeader(
+            audio_frames[byte_offset..],
+            info,
+        ) catch return error.InvalidFlacSeekTable;
+        const expected_number = if (header.variable_blocking)
+            point.sample_number
+        else
+            point.sample_number / info.maximum_block_size;
+        if (header.coded_number != expected_number or
+            header.block_size != point.frame_samples)
             return error.InvalidFlacSeekTable;
     }
 }
@@ -2698,17 +3360,25 @@ fn encodeSubframe(
         return;
     }
 
-    const plan = chooseFixedPlan(
+    const selected = (try chooseFixedPlan(
         samples,
         first_frame,
         block_frames,
         channel_count,
         channel,
         bit_depth,
-    );
+    )) orelse {
+        try writer.writeUnsigned(8, 2);
+        for (0..block_frames) |frame| {
+            const sample_index =
+                (first_frame + frame) * channel_count + channel;
+            try writer.writeSigned(bit_depth, samples[sample_index]);
+        }
+        return;
+    };
     const verbatim_bits =
         @as(u64, 8) + @as(u64, block_frames) * bit_depth;
-    if (plan == null or plan.?.bit_count >= verbatim_bits) {
+    if (selected.bit_count >= verbatim_bits) {
         try writer.writeUnsigned(8, 2);
         for (0..block_frames) |frame| {
             const sample_index =
@@ -2718,7 +3388,6 @@ fn encodeSubframe(
         return;
     }
 
-    const selected = plan.?;
     try writer.writeUnsigned(1, 0);
     try writer.writeUnsigned(6, 8 + @as(u64, selected.order));
     try writer.writeUnsigned(1, 0);
@@ -2731,7 +3400,7 @@ fn encodeSubframe(
     try writer.writeUnsigned(4, 0);
     try writer.writeUnsigned(4, selected.rice_parameter);
     for (selected.order..block_frames) |frame| {
-        const residual = fixedResidual(
+        const residual = try fixedResidual(
             samples,
             first_frame,
             channel_count,
@@ -2764,7 +3433,7 @@ fn chooseFixedPlan(
     channel_count: usize,
     channel: usize,
     bit_depth: u6,
-) ?FixedPlan {
+) !?FixedPlan {
     var best: ?FixedPlan = null;
     const maximum_order: u3 = @intCast(@min(block_frames - 1, 4));
     var order: u3 = 0;
@@ -2777,7 +3446,7 @@ fn chooseFixedPlan(
                 10;
             var valid = true;
             for (order..block_frames) |frame| {
-                const residual = fixedResidual(
+                const residual = try fixedResidual(
                     samples,
                     first_frame,
                     channel_count,
@@ -2801,13 +3470,15 @@ fn chooseFixedPlan(
                     break;
                 };
             }
-            if (valid and (best == null or bits < best.?.bit_count)) {
-                best = .{
-                    .order = order,
-                    .rice_parameter = parameter,
-                    .bit_count = bits,
-                };
+            if (!valid) continue;
+            if (best) |current| {
+                if (bits >= current.bit_count) continue;
             }
+            best = .{
+                .order = order,
+                .rice_parameter = parameter,
+                .bit_count = bits,
+            };
         }
     }
     return best;
@@ -2820,11 +3491,11 @@ fn fixedResidual(
     channel: usize,
     frame: usize,
     order: u3,
-) i64 {
+) !i64 {
     const current = @as(i64, samples[
         (first_frame + frame) * channel_count + channel
     ]);
-    return current - fixedPredictionFromSource(
+    return current - try fixedPredictionFromSource(
         samples,
         first_frame,
         channel_count,
@@ -2841,7 +3512,7 @@ fn fixedPredictionFromSource(
     channel: usize,
     frame: usize,
     order: u3,
-) i64 {
+) !i64 {
     const a1 = if (order >= 1)
         @as(i64, samples[
             (first_frame + frame - 1) * channel_count + channel
@@ -2872,7 +3543,7 @@ fn fixedPredictionFromSource(
         2 => 2 * a1 - a2,
         3 => 3 * a1 - 3 * a2 + a3,
         4 => 4 * a1 - 6 * a2 + 4 * a3 - a4,
-        else => unreachable,
+        else => error.InvalidFlacPredictorOrder,
     };
 }
 
@@ -2928,7 +3599,7 @@ fn decodeSubframe(
             order,
         );
         for (order..block_size) |frame| {
-            const prediction = fixedPredictionFromDecoded(
+            const prediction = try fixedPredictionFromDecoded(
                 Sample,
                 destination,
                 channel_count,
@@ -3075,7 +3746,7 @@ fn restoreStereoChannelsWide(
                     (expanded_mid - side) >> 1,
                 };
             },
-            else => unreachable,
+            else => return error.UnsupportedFlacChannelAssignment,
         };
         if (restored[0] < std.math.minInt(i32) or
             restored[0] > std.math.maxInt(i32) or
@@ -3164,7 +3835,7 @@ fn fixedPredictionFromDecoded(
     channel: usize,
     frame: usize,
     order: u3,
-) i128 {
+) !i128 {
     const a1 =
         if (order >= 1)
             @as(i128, samples[(frame - 1) * channel_count + channel])
@@ -3191,7 +3862,7 @@ fn fixedPredictionFromDecoded(
         2 => 2 * a1 - a2,
         3 => 3 * a1 - 3 * a2 + a3,
         4 => 4 * a1 - 6 * a2 + 4 * a3 - a4,
-        else => unreachable,
+        else => error.InvalidFlacPredictorOrder,
     };
 }
 
@@ -3624,6 +4295,244 @@ test "FLAC codec rejects truncated and corrupt frames" {
     );
 }
 
+test "transactional FLAC decoding contains deterministic stream mutations" {
+    const source = [_]i32{
+        -31, -29, -23, -19, -17, -13, -11, -7,
+        -5,  -3,  -2,  -1,  0,   1,   2,   3,
+        5,   7,   11,  13,  17,  19,  23,  29,
+        31,  37,  41,  43,  47,  53,  59,  61,
+        67,  71,  73,  79,  83,  89,  97,  101,
+        103, 107, 109, 113, 127, 131, 137, 139,
+        149, 151, 157, 163, 167, 173, 179, 181,
+        191, 193, 197, 199, 211, 223, 227, 229,
+    };
+    const spec = Spec{
+        .sample_rate = 48_000,
+        .channel_count = 1,
+        .encoding = .pcm_i16,
+        .block_size = 16,
+    };
+    var encoded: [4096]u8 = undefined;
+    const flac = try encodeInterleaved(&encoded, &source, spec);
+    const untouched = [_]i32{-123_456_789} ** source.len;
+    var destination = untouched;
+    var decode_scratch: [source.len]i32 = undefined;
+
+    const decoded = try decodeInterleavedTransactional(
+        flac,
+        &destination,
+        &decode_scratch,
+    );
+    try std.testing.expectEqual(source.len, decoded.frames_decoded);
+    try std.testing.expectEqualSlices(i32, &source, &destination);
+
+    var impossible_extent = encoded;
+    @memset(impossible_extent[12..15], 0);
+    impossible_extent[15] = 0;
+    impossible_extent[16] = 0;
+    impossible_extent[17] = 1;
+    destination = untouched;
+    try std.testing.expectError(
+        error.InvalidFlacFrameSize,
+        decodeInterleaved(
+            impossible_extent[0..flac.len],
+            &destination,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &untouched,
+        &destination,
+    );
+
+    destination = untouched;
+    try std.testing.expectError(
+        error.FlacDecodeScratchTooSmall,
+        decodeInterleavedTransactional(
+            flac,
+            &destination,
+            decode_scratch[0 .. source.len - 1],
+        ),
+    );
+    try std.testing.expectEqualSlices(i32, &untouched, &destination);
+
+    for (0..flac.len) |byte_index| {
+        for ([_]u8{ 0x01, 0x80, 0xff }) |mask| {
+            var candidate = encoded;
+            candidate[byte_index] ^= mask;
+            destination = untouched;
+            if (decodeInterleavedTransactional(
+                candidate[0..flac.len],
+                &destination,
+                &decode_scratch,
+            )) |result| {
+                const decoded_samples = result.frames_decoded *
+                    result.info.channel_count;
+                try std.testing.expect(decoded_samples <= destination.len);
+            } else |_| {
+                try std.testing.expectEqualSlices(
+                    i32,
+                    &untouched,
+                    &destination,
+                );
+            }
+        }
+    }
+
+    for (0..flac.len) |prefix_bytes| {
+        destination = untouched;
+        const rejected = if (decodeInterleavedTransactional(
+            flac[0..prefix_bytes],
+            &destination,
+            &decode_scratch,
+        )) |_|
+            false
+        else |_|
+            true;
+        try std.testing.expect(rejected);
+        try std.testing.expectEqualSlices(i32, &untouched, &destination);
+    }
+
+    var corrupt = encoded;
+    corrupt[flac.len - 1] ^= 1;
+    destination = untouched;
+    var output_scratch: [source.len]i32 = undefined;
+    var frame_scratch: [spec.block_size]i32 = undefined;
+    try std.testing.expectError(
+        error.FlacFrameCrcMismatch,
+        decodeInterleavedRangeTransactional(
+            corrupt[0..flac.len],
+            0,
+            &destination,
+            &output_scratch,
+            &frame_scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(i32, &untouched, &destination);
+
+    const range_frames = try decodeInterleavedRangeTransactional(
+        flac,
+        16,
+        destination[0..32],
+        output_scratch[0..32],
+        &frame_scratch,
+    );
+    try std.testing.expectEqual(@as(usize, 32), range_frames);
+    try std.testing.expectEqualSlices(
+        i32,
+        source[16..48],
+        destination[0..32],
+    );
+}
+
+test "file-backed transactional FLAC decoding contains stream mutations" {
+    const source = [_]i32{
+        -31, -29, -23, -19, -17, -13, -11, -7,
+        -5,  -3,  -2,  -1,  0,   1,   2,   3,
+        5,   7,   11,  13,  17,  19,  23,  29,
+        31,  37,  41,  43,  47,  53,  59,  61,
+    };
+    const spec = Spec{
+        .sample_rate = 48_000,
+        .channel_count = 1,
+        .encoding = .pcm_i16,
+        .block_size = 16,
+    };
+    var encoded: [2048]u8 = undefined;
+    const flac = try encodeInterleaved(&encoded, &source, spec);
+    const untouched = [_]i32{-123_456_789} ** source.len;
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "mutated.flac",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+
+    var metadata_storage: [1]u8 = undefined;
+    var frame_storage: [256]u8 = undefined;
+    var output_scratch: [source.len]i32 = undefined;
+    var destination = untouched;
+
+    for (0..flac.len) |byte_index| {
+        for ([_]u8{ 0x01, 0x80, 0xff }) |mask| {
+            var candidate = encoded;
+            candidate[byte_index] ^= mask;
+            try file.setLength(std.testing.io, flac.len);
+            try file.writePositionalAll(
+                std.testing.io,
+                candidate[0..flac.len],
+                0,
+            );
+            destination = untouched;
+            if (FileReader.init(
+                std.testing.io,
+                file,
+                &metadata_storage,
+            )) |reader| {
+                if (reader.decodeTransactional(
+                    &destination,
+                    &output_scratch,
+                    &frame_storage,
+                    &.{},
+                )) |result| {
+                    const decoded_samples = result.frames_decoded *
+                        result.info.channel_count;
+                    try std.testing.expect(
+                        decoded_samples <= destination.len,
+                    );
+                } else |_| {
+                    try std.testing.expectEqualSlices(
+                        i32,
+                        &untouched,
+                        &destination,
+                    );
+                }
+            } else |_| {
+                try std.testing.expectEqualSlices(
+                    i32,
+                    &untouched,
+                    &destination,
+                );
+            }
+        }
+    }
+
+    for (0..flac.len) |prefix_bytes| {
+        try file.setLength(std.testing.io, flac.len);
+        try file.writePositionalAll(
+            std.testing.io,
+            flac,
+            0,
+        );
+        try file.setLength(std.testing.io, prefix_bytes);
+        destination = untouched;
+        if (FileReader.init(
+            std.testing.io,
+            file,
+            &metadata_storage,
+        )) |reader| {
+            const rejected = if (reader.decodeTransactional(
+                &destination,
+                &output_scratch,
+                &frame_storage,
+                &.{},
+            )) |_|
+                false
+            else |_|
+                true;
+            try std.testing.expect(rejected);
+        } else |_| {}
+        try std.testing.expectEqualSlices(
+            i32,
+            &untouched,
+            &destination,
+        );
+    }
+}
+
 test "FLAC codec validates caller contracts" {
     const spec = Spec{
         .sample_rate = 48_000,
@@ -3729,6 +4638,14 @@ test "FLAC codec validates caller contracts" {
 test "FLAC fixed predictors and constant subframes reduce encoded size" {
     var ramp: [128]i32 = undefined;
     for (&ramp, 0..) |*sample, index| sample.* = @intCast(index * 7);
+    try std.testing.expectError(
+        error.InvalidFlacPredictorOrder,
+        fixedPredictionFromSource(&ramp, 0, 1, 0, 5, 5),
+    );
+    try std.testing.expectError(
+        error.InvalidFlacPredictorOrder,
+        fixedPredictionFromDecoded(i32, &ramp, 1, 0, 5, 5),
+    );
     const spec = Spec{
         .sample_rate = 48_000,
         .channel_count = 1,
@@ -3798,6 +4715,20 @@ test "bounded file-backed FLAC round trip" {
     );
     try std.testing.expectEqual(source.len / 2, result.frames_decoded);
     try std.testing.expectEqualSlices(i32, &source, &decoded);
+    var transactional: [source.len]i32 = undefined;
+    var output_scratch: [source.len]i32 = undefined;
+    const transactional_result = try readInterleavedFileTransactional(
+        std.testing.io,
+        file,
+        &file_storage,
+        &transactional,
+        &output_scratch,
+    );
+    try std.testing.expectEqual(
+        source.len / 2,
+        transactional_result.frames_decoded,
+    );
+    try std.testing.expectEqualSlices(i32, &source, &transactional);
     var comments =
         (try CommentIterator.init(file_storage[0..byte_count])).?;
     const title = (try comments.next()).?;
@@ -3819,6 +4750,25 @@ test "bounded file-backed FLAC round trip" {
         i32,
         source[10..24],
         &range,
+    );
+    var transactional_range: [14]i32 = undefined;
+    var range_output_scratch: [14]i32 = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 7),
+        try readInterleavedFileRangeTransactional(
+            std.testing.io,
+            file,
+            &file_storage,
+            5,
+            &transactional_range,
+            &range_output_scratch,
+            &scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        source[10..24],
+        &transactional_range,
     );
 }
 
@@ -3953,14 +4903,52 @@ test "incremental FLAC file writer validates before mutation" {
         &current_header,
     );
 
+    var mismatched_counts = writer;
+    mismatched_counts.frames_written = 1;
+    const mismatched_counts_before = mismatched_counts;
+    try std.testing.expect(!mismatched_counts.recoverable());
+    try std.testing.expect(!mismatched_counts.valid());
+    try std.testing.expectError(
+        error.InvalidFlacFileWriterState,
+        mismatched_counts.append(&.{ 1, 2 }),
+    );
+    try std.testing.expectEqualDeep(
+        mismatched_counts_before,
+        mismatched_counts,
+    );
+
+    var mismatched_extrema = writer;
+    mismatched_extrema.minimum_frame_size = 1;
+    try std.testing.expect(!mismatched_extrema.recoverable());
+    try std.testing.expect(!mismatched_extrema.valid());
+
+    var finalizing = writer;
+    finalizing.finalizing = true;
+    const finalizing_before = finalizing;
+    try std.testing.expect(finalizing.recoverable());
+    try std.testing.expect(!finalizing.valid());
+    try std.testing.expectError(
+        error.InvalidFlacFileWriterState,
+        finalizing.append(&.{ 1, 2 }),
+    );
+    try std.testing.expectEqualDeep(finalizing_before, finalizing);
+
     var overflowing = writer;
+    overflowing.frames_written = spec.block_size;
+    overflowing.frame_number = 1;
     overflowing.byte_count = std.math.maxInt(u64);
+    overflowing.minimum_frame_size = 1;
+    overflowing.maximum_frame_size = 1;
+    try std.testing.expect(overflowing.valid());
     try std.testing.expectError(
         error.FlacSizeOverflow,
         overflowing.append(&([_]i32{0} ** 32)),
     );
     try std.testing.expectEqual(@as(usize, 0), overflowing.pending_frames);
-    try std.testing.expectEqual(@as(u64, 0), overflowing.frames_written);
+    try std.testing.expectEqual(
+        @as(u64, spec.block_size),
+        overflowing.frames_written,
+    );
     try std.testing.expectEqual(
         @as(u64, streaminfo_bytes),
         try file.length(std.testing.io),
@@ -4015,8 +5003,10 @@ const FileWriterFaults = struct {
     delegate: file_writer_io.Operations = .{},
     write_calls: usize = 0,
     set_length_calls: usize = 0,
+    sync_calls: usize = 0,
     fail_write_call: ?usize = null,
     fail_set_length_call: ?usize = null,
+    fail_sync_call: ?usize = null,
     partial_write_bytes: usize = 0,
 
     fn operations(self: *@This()) file_writer_io.Operations {
@@ -4029,6 +5019,7 @@ const FileWriterFaults = struct {
     fn clear(self: *@This()) void {
         self.fail_write_call = null;
         self.fail_set_length_call = null;
+        self.fail_sync_call = null;
         self.partial_write_bytes = 0;
     }
 
@@ -4073,9 +5064,24 @@ const FileWriterFaults = struct {
         try self.delegate.setLength(io, file, length);
     }
 
+    fn sync(
+        context: ?*anyopaque,
+        io: std.Io,
+        file: std.Io.File,
+    ) !void {
+        const self: *@This() = @ptrCast(@alignCast(
+            context orelse return error.MissingFlacFaultContext,
+        ));
+        self.sync_calls += 1;
+        if (self.fail_sync_call == self.sync_calls)
+            return error.InjectedFlacSyncFailure;
+        try self.delegate.sync(io, file);
+    }
+
     const vtable = file_writer_io.Operations.VTable{
         .write_at = writeAt,
         .set_length = setLength,
+        .sync = sync,
     };
 };
 
@@ -4148,6 +5154,13 @@ test "incremental FLAC file writer contains positional I/O failures" {
 
     faults.clear();
     try writer.recover();
+    faults.fail_sync_call = faults.sync_calls + 1;
+    try std.testing.expectError(
+        error.InjectedFlacSyncFailure,
+        writer.finalize(),
+    );
+    try std.testing.expect(writer.recoverable());
+    faults.clear();
     try writer.finalize();
     var encoded: [256]u8 = undefined;
     const byte_count = try file.readPositionalAll(
@@ -4597,6 +5610,101 @@ test "incremental FLAC writer composes bounded seek metadata" {
         reordered_seek.next().?.sample_number,
     );
 
+    var transactional_metadata: [256]u8 = @splat(0xa5);
+    var transactional_scratch: [256]u8 = undefined;
+    const transactional_reader = try FileReader.initTransactional(
+        std.testing.io,
+        file,
+        transactional_metadata[0..retained_metadata_bytes],
+        transactional_scratch[0..retained_metadata_bytes],
+    );
+    try std.testing.expect(transactional_reader.valid());
+    try std.testing.expect(
+        @intFromPtr(transactional_reader.comment_payload.ptr) >=
+            @intFromPtr(transactional_metadata[0..].ptr),
+    );
+    try std.testing.expect(
+        @intFromPtr(transactional_reader.seek_table_payload.ptr) >=
+            @intFromPtr(transactional_metadata[0..].ptr),
+    );
+    var transactional_comments =
+        (try transactional_reader.commentIterator()).?;
+    try std.testing.expectEqualStrings(
+        "Incremental seek",
+        (try transactional_comments.next()).?.value,
+    );
+
+    const preserved_transactional_metadata = transactional_metadata;
+    try std.testing.expectError(
+        error.FlacMetadataBufferTooSmall,
+        FileReader.initTransactional(
+            std.testing.io,
+            file,
+            transactional_metadata[0 .. retained_metadata_bytes - 1],
+            transactional_scratch[0..retained_metadata_bytes],
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &preserved_transactional_metadata,
+        &transactional_metadata,
+    );
+    try std.testing.expectError(
+        error.FlacMetadataBufferTooSmall,
+        FileReader.initTransactional(
+            std.testing.io,
+            file,
+            transactional_metadata[0..retained_metadata_bytes],
+            transactional_scratch[0 .. retained_metadata_bytes - 1],
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &preserved_transactional_metadata,
+        &transactional_metadata,
+    );
+    try std.testing.expectError(
+        error.OverlappingFlacBuffers,
+        FileReader.initTransactional(
+            std.testing.io,
+            file,
+            transactional_metadata[0..retained_metadata_bytes],
+            transactional_metadata[1 .. retained_metadata_bytes + 1],
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &preserved_transactional_metadata,
+        &transactional_metadata,
+    );
+
+    var invalid_seek = reordered;
+    std.mem.writeInt(
+        u64,
+        invalid_seek[streaminfo_bytes + 4 ..][0..8],
+        1,
+        .big,
+    );
+    try file.writePositionalAll(
+        std.testing.io,
+        invalid_seek[0..byte_count],
+        0,
+    );
+    try std.testing.expectError(
+        error.InvalidFlacSeekTable,
+        FileReader.initTransactional(
+            std.testing.io,
+            file,
+            &transactional_metadata,
+            &transactional_scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &preserved_transactional_metadata,
+        &transactional_metadata,
+    );
+
     var malformed = reordered;
     malformed[streaminfo_bytes] = 4;
     try file.writePositionalAll(
@@ -4693,7 +5801,7 @@ test "streaming FLAC file reader decodes without whole-file storage" {
         .block_size = 16,
     };
     var encoded: [4096]u8 = undefined;
-    _ = try writeInterleavedFileWithMetadata(
+    const encoded_bytes = try writeInterleavedFileWithMetadata(
         std.testing.io,
         file,
         &encoded,
@@ -4733,6 +5841,24 @@ test "streaming FLAC file reader decodes without whole-file storage" {
     try std.testing.expectEqual(@as(usize, 100), result.frames_decoded);
     try std.testing.expectEqualSlices(i32, &source, &decoded);
 
+    var transactional_decoded: [source.len]i32 = undefined;
+    var output_scratch: [source.len]i32 = undefined;
+    const transactional_result = try reader.decodeTransactional(
+        &transactional_decoded,
+        &output_scratch,
+        &frame_storage,
+        &.{},
+    );
+    try std.testing.expectEqual(
+        @as(usize, 100),
+        transactional_result.frames_decoded,
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &source,
+        &transactional_decoded,
+    );
+
     var range: [30]i32 = undefined;
     var decoded_frame_scratch: [32]i32 = undefined;
     try std.testing.expectEqual(
@@ -4750,10 +5876,29 @@ test "streaming FLAC file reader decodes without whole-file storage" {
         source[70..100],
         &range,
     );
+    var transactional_range: [30]i32 = undefined;
+    var range_output_scratch: [30]i32 = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 15),
+        try reader.decodeRangeTransactional(
+            35,
+            &transactional_range,
+            &range_output_scratch,
+            &frame_storage,
+            &decoded_frame_scratch,
+            &.{},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        source[70..100],
+        &transactional_range,
+    );
 
     var preserved = [_]i32{ 7, 8 };
     var invalid_channels = reader;
     invalid_channels.info.channel_count = 0;
+    try std.testing.expect(!invalid_channels.valid());
     try std.testing.expectError(
         error.InvalidFlacFileReaderState,
         invalid_channels.decodeRange(
@@ -4773,6 +5918,7 @@ test "streaming FLAC file reader decodes without whole-file storage" {
     var invalid_extent = reader;
     invalid_extent.audio_offset = std.math.maxInt(u64);
     invalid_extent.file_size = std.math.maxInt(u64) - 1;
+    try std.testing.expect(!invalid_extent.valid());
     try std.testing.expectError(
         error.InvalidFlacFileReaderState,
         invalid_extent.decodeRange(
@@ -4789,8 +5935,115 @@ test "streaming FLAC file reader decodes without whole-file storage" {
         &preserved,
     );
 
+    var impossible_audio_extent = reader;
+    impossible_audio_extent.file_size =
+        impossible_audio_extent.audio_offset + 1;
+    try std.testing.expect(!impossible_audio_extent.valid());
+    try std.testing.expectError(
+        error.InvalidFlacFileReaderState,
+        impossible_audio_extent.decodeRange(
+            0,
+            &preserved,
+            &frame_storage,
+            &decoded_frame_scratch,
+            &.{},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &[_]i32{ 7, 8 },
+        &preserved,
+    );
+
+    const seek_payload_offset =
+        @intFromPtr(reader.seek_table_payload.ptr) -
+        @intFromPtr(metadata_storage[0..].ptr);
+    var impossible_seek_storage = metadata_storage;
+    var impossible_seek_progress = reader;
+    impossible_seek_progress.seek_table_payload =
+        impossible_seek_storage[seek_payload_offset..][0..reader.seek_table_payload.len];
+    std.mem.writeInt(
+        u64,
+        impossible_seek_storage[seek_payload_offset..][0..8],
+        1,
+        .big,
+    );
+    try std.testing.expect(!impossible_seek_progress.valid());
+    try std.testing.expectError(
+        error.InvalidFlacFileReaderState,
+        impossible_seek_progress.decodeRange(
+            1,
+            &preserved,
+            &frame_storage,
+            &decoded_frame_scratch,
+            &.{},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &[_]i32{ 7, 8 },
+        &preserved,
+    );
+
+    var impossible_seek_length_storage = metadata_storage;
+    var impossible_seek_length = reader;
+    impossible_seek_length.seek_table_payload =
+        impossible_seek_length_storage[seek_payload_offset..][0..reader.seek_table_payload.len];
+    std.mem.writeInt(
+        u16,
+        impossible_seek_length_storage[seek_payload_offset + 16 ..][0..2],
+        1,
+        .big,
+    );
+    try std.testing.expect(!impossible_seek_length.valid());
+    try std.testing.expectError(
+        error.InvalidFlacFileReaderState,
+        impossible_seek_length.decodeRange(
+            0,
+            &preserved,
+            &frame_storage,
+            &decoded_frame_scratch,
+            &.{},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &[_]i32{ 7, 8 },
+        &preserved,
+    );
+
+    var nonincreasing_seek_storage = metadata_storage;
+    var nonincreasing_seek = reader;
+    nonincreasing_seek.minimum_frame_size = 0;
+    nonincreasing_seek.maximum_frame_size = 0;
+    nonincreasing_seek.seek_table_payload =
+        nonincreasing_seek_storage[seek_payload_offset..][0..reader.seek_table_payload.len];
+    std.mem.writeInt(
+        u64,
+        nonincreasing_seek_storage[seek_payload_offset + 18 + 8 ..][0..8],
+        0,
+        .big,
+    );
+    try std.testing.expect(!nonincreasing_seek.valid());
+    try std.testing.expectError(
+        error.InvalidFlacFileReaderState,
+        nonincreasing_seek.decodeRange(
+            0,
+            &preserved,
+            &frame_storage,
+            &decoded_frame_scratch,
+            &.{},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &[_]i32{ 7, 8 },
+        &preserved,
+    );
+
     var invalid_seek = reader;
     invalid_seek.seek_table_payload = metadata_storage[0..1];
+    try std.testing.expect(!invalid_seek.valid());
     try std.testing.expectError(
         error.InvalidFlacFileReaderState,
         invalid_seek.decodeRange(
@@ -4828,13 +6081,73 @@ test "streaming FLAC file reader decodes without whole-file storage" {
         ),
     );
 
+    const sentinel = [_]i32{-765_432_100} ** source.len;
+    transactional_decoded = sentinel;
+    try file.writePositionalAll(
+        std.testing.io,
+        &.{encoded[encoded_bytes - 1] ^ 1},
+        encoded_bytes - 1,
+    );
+    try std.testing.expectError(
+        error.FlacFrameCrcMismatch,
+        reader.decodeTransactional(
+            &transactional_decoded,
+            &output_scratch,
+            &frame_storage,
+            &.{},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &sentinel,
+        &transactional_decoded,
+    );
+
+    transactional_decoded = sentinel;
+    try std.testing.expectError(
+        error.FlacFrameCrcMismatch,
+        reader.decodeRangeTransactional(
+            0,
+            &transactional_decoded,
+            &output_scratch,
+            &frame_storage,
+            &decoded_frame_scratch,
+            &.{},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &sentinel,
+        &transactional_decoded,
+    );
+
     var hostile_seek_iterator = SeekTableIterator{
         .payload = metadata_storage[0..1],
         .offset = 2,
     };
+    try std.testing.expect(!hostile_seek_iterator.valid());
     try std.testing.expect(hostile_seek_iterator.next() == null);
     hostile_seek_iterator.offset = 0;
+    try std.testing.expect(!hostile_seek_iterator.valid());
     try std.testing.expect(hostile_seek_iterator.next() == null);
+
+    var semantic_seek_storage: [36]u8 = @splat(0);
+    encodeSeekPoint(semantic_seek_storage[0..18], .{
+        .sample_number = 16,
+        .byte_offset = 32,
+        .frame_samples = 16,
+    });
+    encodeSeekPoint(semantic_seek_storage[18..36], .{
+        .sample_number = 32,
+        .byte_offset = 32,
+        .frame_samples = 16,
+    });
+    var semantic_seek_iterator = SeekTableIterator{
+        .payload = &semantic_seek_storage,
+    };
+    try std.testing.expect(!semantic_seek_iterator.valid());
+    try std.testing.expect(semantic_seek_iterator.next() == null);
+    try std.testing.expectEqual(@as(usize, 0), semantic_seek_iterator.offset);
 
     var hostile_comment_iterator = CommentIterator{
         .payload = metadata_storage[0..1],
@@ -4842,9 +6155,38 @@ test "streaming FLAC file reader decodes without whole-file storage" {
         .remaining = 1,
         .vendor = &.{},
     };
+    try std.testing.expect(!hostile_comment_iterator.valid());
+    const hostile_comment_offset = hostile_comment_iterator.offset;
     try std.testing.expectError(
         error.InvalidFlacVorbisComments,
         hostile_comment_iterator.next(),
+    );
+    try std.testing.expectEqual(
+        hostile_comment_offset,
+        hostile_comment_iterator.offset,
+    );
+
+    var stale_vendor = (try reader.commentIterator()).?;
+    stale_vendor.vendor = "stale";
+    try std.testing.expect(!stale_vendor.valid());
+    const stale_vendor_before = stale_vendor;
+    try std.testing.expectError(
+        error.InvalidFlacVorbisComments,
+        stale_vendor.next(),
+    );
+    try std.testing.expectEqualDeep(stale_vendor_before, stale_vendor);
+
+    var impossible_progress = (try reader.commentIterator()).?;
+    impossible_progress.remaining = 0;
+    try std.testing.expect(!impossible_progress.valid());
+    const impossible_progress_before = impossible_progress;
+    try std.testing.expectError(
+        error.InvalidFlacVorbisComments,
+        impossible_progress.next(),
+    );
+    try std.testing.expectEqualDeep(
+        impossible_progress_before,
+        impossible_progress,
     );
 }
 
@@ -4872,6 +6214,7 @@ test "FLAC Vorbis comments preserve UTF-8 fields" {
         comments,
     );
     var iterator = (try CommentIterator.init(flac_bytes)).?;
+    try std.testing.expect(iterator.valid());
     try std.testing.expectEqualStrings(comments.vendor, iterator.vendor);
     for (comments.fields) |expected| {
         const actual = (try iterator.next()).?;
@@ -4879,6 +6222,7 @@ test "FLAC Vorbis comments preserve UTF-8 fields" {
         try std.testing.expectEqualStrings(expected.value, actual.value);
     }
     try std.testing.expect((try iterator.next()) == null);
+    try std.testing.expect(iterator.valid());
 
     var decoded: [source.len]i32 = undefined;
     const parsed = try Parser.init(flac_bytes);
@@ -5256,6 +6600,29 @@ test "FLAC seek tables index bounded encoded frames" {
     _ = try decodeInterleaved(flac_bytes, &decoded);
     try std.testing.expectEqualSlices(i32, &source, &decoded);
 
+    const seek_payload_offset =
+        @intFromPtr(iterator.payload.ptr) - @intFromPtr(flac_bytes.ptr);
+    var mismatched_seek_storage = encoded;
+    @memset(mismatched_seek_storage[12..18], 0);
+    std.mem.writeInt(
+        u64,
+        mismatched_seek_storage[seek_payload_offset + 18 ..][0..8],
+        16,
+        .big,
+    );
+    decoded = @splat(-765_432);
+    try std.testing.expectError(
+        error.InvalidFlacSeekTable,
+        decodeInterleaved(
+            mismatched_seek_storage[0..flac_bytes.len],
+            &decoded,
+        ),
+    );
+    try std.testing.expectEqual(
+        [_]i32{-765_432} ** source.len,
+        decoded,
+    );
+
     var range: [50]i32 = undefined;
     var scratch: [32]i32 = undefined;
     const range_frames = try decodeInterleavedRange(
@@ -5272,7 +6639,7 @@ test "FLAC seek tables index bounded encoded frames" {
     );
 }
 
-test "FLAC seek tables reject unsorted and duplicate points" {
+test "FLAC seek tables reject non-increasing sample and byte offsets" {
     var payload: [36]u8 = undefined;
     encodeSeekPoint(
         payload[0..18],
@@ -5287,6 +6654,27 @@ test "FLAC seek tables reject unsorted and duplicate points" {
         .{
             .sample_number = 16,
             .byte_offset = 50,
+            .frame_samples = 16,
+        },
+    );
+    try std.testing.expectError(
+        error.InvalidFlacSeekTable,
+        validateSeekTablePayload(&payload),
+    );
+
+    encodeSeekPoint(
+        payload[0..18],
+        .{
+            .sample_number = 16,
+            .byte_offset = 100,
+            .frame_samples = 16,
+        },
+    );
+    encodeSeekPoint(
+        payload[18..36],
+        .{
+            .sample_number = 32,
+            .byte_offset = 100,
             .frame_samples = 16,
         },
     );

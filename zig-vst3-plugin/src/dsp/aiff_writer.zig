@@ -84,7 +84,8 @@ pub const Writer = struct {
     }
 
     pub fn bytes(self: *const Writer) []const u8 {
-        return self.destination[0..@min(self.byte_count, self.destination.len)];
+        if (!self.valid()) return &.{};
+        return self.destination[0..self.byte_count];
     }
 
     pub fn valid(self: *const Writer) bool {
@@ -341,7 +342,7 @@ pub const FileWriter = struct {
     pub fn finalize(self: *FileWriter) !void {
         if (!self.recoverable()) return error.InvalidAiffFileWriterState;
         try self.recover();
-        try self.file.sync(self.io);
+        try self.operations.sync(self.io, self.file);
     }
 
     pub fn recover(self: *FileWriter) !void {
@@ -630,6 +631,7 @@ fn validateDitheredSamples(
     dither: *const pcm_dither.PcmDither,
 ) !void {
     try validateSamples(Sample, samples, spec);
+    try dither.validate();
     if (dither.channelCount() != spec.channel_count)
         return error.DitherChannelCountMismatch;
     if (dither.bitsPerSample() != encodingBits(spec.encoding))
@@ -872,6 +874,7 @@ test "incremental AIFF writer contains malformed public state" {
     );
     writer.data_bytes = std.math.maxInt(usize);
     try std.testing.expect(!writer.valid());
+    try std.testing.expectEqual(@as(usize, 0), writer.bytes().len);
     try std.testing.expectError(
         error.InvalidAiffWriterState,
         writer.append(f32, &.{0.0}),

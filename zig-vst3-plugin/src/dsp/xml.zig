@@ -168,7 +168,32 @@ pub const AttributeIterator = struct {
         return .{ .bytes = bytes };
     }
 
+    pub fn valid(self: AttributeIterator) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn next(self: *AttributeIterator) !?Attribute {
+        try self.validateState();
+        var trial = self.*;
+        const attribute = try trial.nextInPlace();
+        self.* = trial;
+        return attribute;
+    }
+
+    fn validateState(self: AttributeIterator) !void {
+        if (self.offset > self.bytes.len)
+            return error.InvalidXmlAttributeIteratorState;
+        var canonical = AttributeIterator.init(self.bytes);
+        var state_seen = self.offset == 0;
+        while (try canonical.nextInPlace()) |_| {
+            if (self.offset == canonical.offset) state_seen = true;
+        }
+        if (self.offset == canonical.offset) state_seen = true;
+        if (!state_seen) return error.InvalidXmlAttributeIteratorState;
+    }
+
+    fn nextInPlace(self: *AttributeIterator) !?Attribute {
         self.skipWhitespace();
         if (self.offset == self.bytes.len) return null;
 
@@ -233,7 +258,33 @@ pub const EventIterator = struct {
         };
     }
 
+    pub fn valid(self: EventIterator) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn next(self: *EventIterator) !?Event {
+        try self.validateState();
+        var trial = self.*;
+        const event = try trial.nextInPlace();
+        self.* = trial;
+        return event;
+    }
+
+    fn validateState(self: EventIterator) !void {
+        if (self.offset > self.bytes.len or self.depth > max_depth)
+            return error.InvalidXmlEventIteratorState;
+        var canonical = EventIterator.init(self.bytes);
+        while (true) {
+            if (eventStatesEqual(self, canonical)) return;
+            if (canonical.offset >= self.offset)
+                return error.InvalidXmlEventIteratorState;
+            _ = (try canonical.nextInPlace()) orelse
+                return error.InvalidXmlEventIteratorState;
+        }
+    }
+
+    fn nextInPlace(self: *EventIterator) !?Event {
         while (self.offset < self.bytes.len) {
             if (self.bytes[self.offset] != '<')
                 return @as(?Event, try self.readText());
@@ -528,6 +579,41 @@ pub const EventIterator = struct {
     }
 };
 
+fn eventStatesEqual(left: EventIterator, right: EventIterator) bool {
+    if (left.offset != right.offset or left.depth != right.depth)
+        return false;
+    for (0..left.depth) |index| {
+        if (!startElementsEqual(left.elements[index], right.elements[index]))
+            return false;
+    }
+    return true;
+}
+
+fn startElementsEqual(left: StartElement, right: StartElement) bool {
+    return slicesShareRange(left.name, right.name) and
+        slicesShareRange(left.attributes, right.attributes) and
+        left.depth == right.depth and
+        left.self_closing == right.self_closing and
+        namespaceRangesEqual(left.namespace_name, right.namespace_name) and
+        left.source_start == right.source_start and
+        left.source_end == right.source_end;
+}
+
+fn namespaceRangesEqual(
+    left: ?NamespaceName,
+    right: ?NamespaceName,
+) bool {
+    if (left) |left_name| {
+        const right_name = right orelse return false;
+        return slicesShareRange(left_name.encoded, right_name.encoded);
+    }
+    return right == null;
+}
+
+fn slicesShareRange(left: []const u8, right: []const u8) bool {
+    return left.ptr == right.ptr and left.len == right.len;
+}
+
 pub fn qualifiedLocalName(qualified_name: []const u8) []const u8 {
     const separator = std.mem.lastIndexOfScalar(u8, qualified_name, ':') orelse
         return qualified_name;
@@ -698,9 +784,10 @@ fn encodedContentEql(left: []const u8, right: []const u8) !bool {
             right,
             &right_offset,
         );
-        if (left_codepoint == null or right_codepoint == null)
-            return left_codepoint == null and right_codepoint == null;
-        if (left_codepoint.? != right_codepoint.?) return false;
+        const left_value = left_codepoint orelse
+            return right_codepoint == null;
+        const right_value = right_codepoint orelse return false;
+        if (left_value != right_value) return false;
     }
 }
 
@@ -1063,6 +1150,81 @@ test "XML document rejects malformed structure attributes and entities" {
         error.InvalidXmlContent,
         Document.init("<root>invalid ]]></root>"),
     );
+
+    var invalid_iterator = AttributeIterator{
+        .bytes = &.{},
+        .offset = 1,
+    };
+    try std.testing.expect(!invalid_iterator.valid());
+    try std.testing.expectError(
+        error.InvalidXmlAttributeIteratorState,
+        invalid_iterator.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 1), invalid_iterator.offset);
+
+    var invalid_events = EventIterator.init("<root/>");
+    invalid_events.depth = max_depth + 1;
+    try std.testing.expect(!invalid_events.valid());
+    try std.testing.expectError(
+        error.InvalidXmlEventIteratorState,
+        invalid_events.next(),
+    );
+    try std.testing.expectEqual(max_depth + 1, invalid_events.depth);
+    try std.testing.expectEqual(@as(usize, 0), invalid_events.offset);
+
+    var middle_event = EventIterator.init("<root><child/></root>");
+    _ = try middle_event.next();
+    middle_event.offset += 1;
+    try std.testing.expect(!middle_event.valid());
+    try std.testing.expectError(
+        error.InvalidXmlEventIteratorState,
+        middle_event.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 7), middle_event.offset);
+    try std.testing.expectEqual(@as(usize, 1), middle_event.depth);
+
+    var stale_stack = EventIterator.init("<root><child/></root>");
+    _ = try stale_stack.next();
+    stale_stack.elements[0].source_start = 1;
+    try std.testing.expect(!stale_stack.valid());
+    try std.testing.expectError(
+        error.InvalidXmlEventIteratorState,
+        stale_stack.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 6), stale_stack.offset);
+    try std.testing.expectEqual(@as(usize, 1), stale_stack.depth);
+
+    var malformed_attributes = AttributeIterator.init(
+        "name=\"unterminated",
+    );
+    try std.testing.expect(!malformed_attributes.valid());
+    try std.testing.expectError(
+        error.InvalidXmlAttribute,
+        malformed_attributes.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), malformed_attributes.offset);
+
+    var middle_attribute = AttributeIterator.init("name=\"value\"");
+    middle_attribute.offset = 2;
+    try std.testing.expect(!middle_attribute.valid());
+    try std.testing.expectError(
+        error.InvalidXmlAttributeIteratorState,
+        middle_attribute.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 2), middle_attribute.offset);
+
+    var malformed_text = EventIterator.init(
+        "<root>broken &value;</root>",
+    );
+    _ = try malformed_text.next();
+    const text_offset = malformed_text.offset;
+    const text_depth = malformed_text.depth;
+    try std.testing.expectError(
+        error.InvalidXmlEntity,
+        malformed_text.next(),
+    );
+    try std.testing.expectEqual(text_offset, malformed_text.offset);
+    try std.testing.expectEqual(text_depth, malformed_text.depth);
 }
 
 test "XML document enforces namespace bindings and expanded attributes" {

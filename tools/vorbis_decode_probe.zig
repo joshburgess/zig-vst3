@@ -14,15 +14,19 @@ pub fn main(init: std.process.Init) !void {
         std.mem.eql(u8, args[2], "--require-junk-resync");
     const write_invalid_audio_packet = args.len == 4 and
         std.mem.eql(u8, args[2], "--write-invalid-audio-packet");
+    const measure_source = args.len == 4 and
+        std.mem.eql(u8, args[2], "--measure-source-f32le");
     const require_comment = args.len == 5 and
         std.mem.eql(u8, args[2], "--require-comment");
+    const require_format = args.len == 5 and
+        std.mem.eql(u8, args[2], "--require-format");
     const recover_invalid_audio_packet = args.len == 3 and
         std.mem.eql(
             u8,
             args[2],
             "--recover-invalid-audio-packet",
         );
-    if (args.len == 5 and !require_comment)
+    if (args.len == 5 and !require_comment and !require_format)
         return error.InvalidArguments;
     const require_midpoint_seek = args.len == 3 and
         std.mem.eql(
@@ -38,7 +42,8 @@ pub fn main(init: std.process.Init) !void {
         !require_junk_resync and
         !write_invalid_audio_packet;
     const reference_encoding: ReferenceEncoding = if (compare_reference)
-        if (std.mem.eql(u8, args[2], "--reference-f32le"))
+        if (std.mem.eql(u8, args[2], "--reference-f32le") or
+            measure_source)
             .f32le
         else if (std.mem.eql(u8, args[2], "--reference-s16le"))
             .s16le
@@ -89,6 +94,7 @@ pub fn main(init: std.process.Init) !void {
                 .limited(64 * 1024 * 1024),
             ),
             .encoding = reference_encoding,
+            .enforce_thresholds = !measure_source,
         }
     else
         null;
@@ -142,6 +148,21 @@ pub fn main(init: std.process.Init) !void {
     const identification = try plug.dsp.VorbisIdentification.parse(
         first_identification_packet.bytes,
     );
+    if (require_format) {
+        const expected_sample_rate = try std.fmt.parseInt(
+            u32,
+            args[3],
+            10,
+        );
+        const expected_channel_count = try std.fmt.parseInt(
+            u8,
+            args[4],
+            10,
+        );
+        if (identification.sample_rate != expected_sample_rate or
+            identification.channel_count != expected_channel_count)
+            return error.UnexpectedVorbisFormat;
+    }
 
     if (identification.small_block_size == 64 and
         identification.large_block_size == 64)
@@ -888,6 +909,7 @@ const ReferenceEncoding = enum {
 const ReferencePcm = struct {
     bytes: []const u8,
     encoding: ReferenceEncoding,
+    enforce_thresholds: bool = true,
 };
 
 const ReferenceComparison = struct {
@@ -895,13 +917,7 @@ const ReferenceComparison = struct {
     report: bool,
     offset: usize = 0,
     project_values: u64 = 0,
-    sample_values: u64 = 0,
-    reference_energy: f64 = 0,
-    project_energy: f64 = 0,
-    cross_energy: f64 = 0,
-    error_energy: f64 = 0,
-    peak_error: f64 = 0,
-    peak_index: u64 = 0,
+    meter: plug.dsp.VorbisPcmQualityMeter = .{},
     peak_project: f64 = 0,
     peak_reference: f64 = 0,
 
@@ -952,27 +968,21 @@ const ReferenceComparison = struct {
                 {
                     return error.NonFiniteVorbisPcmReference;
                 }
-                const difference = @as(f64, project_sample) -
-                    reference_sample;
-                const absolute_difference = @abs(difference);
-                self.reference_energy +=
-                    reference_sample * reference_sample;
-                self.project_energy +=
-                    @as(f64, project_sample) * project_sample;
-                self.cross_energy +=
-                    @as(f64, project_sample) * reference_sample;
-                self.error_energy += difference * difference;
-                if (absolute_difference > self.peak_error) {
-                    self.peak_error = absolute_difference;
-                    self.peak_index = self.sample_values;
+                const absolute_difference = @abs(
+                    @as(f64, project_sample) - reference_sample,
+                );
+                if (absolute_difference > self.meter.peak_absolute_error) {
                     self.peak_project = project_sample;
                     self.peak_reference = reference_sample;
                 }
-                self.sample_values = std.math.add(
-                    u64,
-                    self.sample_values,
-                    1,
-                ) catch return error.VorbisPcmReferenceSizeOverflow;
+                self.meter.updateSample(
+                    f64,
+                    reference_sample,
+                    project_sample,
+                ) catch |err| switch (err) {
+                    error.NonFiniteVorbisPcmQualitySample => return error.NonFiniteVorbisPcmReference,
+                    else => return err,
+                };
             }
         }
     }
@@ -992,43 +1002,34 @@ const ReferenceComparison = struct {
             }
             return error.VorbisPcmReferenceSampleCountMismatch;
         }
-        if (self.sample_values == 0 or self.reference_energy <= 0)
-            return error.SilentVorbisPcmReference;
-        const divisor: f64 = @floatFromInt(self.sample_values);
-        const error_rms = @sqrt(self.error_energy / divisor);
-        const reference_rms = @sqrt(self.reference_energy / divisor);
-        const normalized_rms_error = error_rms / reference_rms;
-        const optimal_project_gain = if (self.project_energy > 0)
-            self.cross_energy / self.project_energy
-        else
-            0;
-        const aligned_error_energy = @max(
-            0,
-            self.reference_energy -
-                self.cross_energy * self.cross_energy /
-                    @max(self.project_energy, std.math.floatMin(f64)),
-        );
-        const gain_aligned_normalized_rms =
-            @sqrt(aligned_error_energy / divisor) / reference_rms;
+        const measurement = self.meter.measurement() catch |err| switch (err) {
+            error.EmptyVorbisPcmQualityMeasurement,
+            error.SilentVorbisPcmQualityReference,
+            => return error.SilentVorbisPcmReference,
+            else => return err,
+        };
         if (self.report) {
             std.debug.print(
-                "Vorbis PCM reference samples={d} peak_error={d:.9} peak_index={d} project_at_peak={d:.9} reference_at_peak={d:.9} rms_error={d:.9} normalized_rms_error={d:.9} optimal_project_gain={d:.9} gain_aligned_normalized_rms={d:.9}\n",
+                "Vorbis PCM reference samples={d} peak_error={d:.9} peak_index={d} project_at_peak={d:.9} reference_at_peak={d:.9} rms_error={d:.9} normalized_rms_error={d:.9} optimal_project_gain={d:.9} gain_aligned_normalized_rms={d:.9} signal_to_noise_db={d:.9}\n",
                 .{
-                    self.sample_values,
-                    self.peak_error,
-                    self.peak_index,
+                    measurement.sample_count,
+                    measurement.peak_absolute_error,
+                    measurement.peak_sample_index,
                     self.peak_project,
                     self.peak_reference,
-                    error_rms,
-                    normalized_rms_error,
-                    optimal_project_gain,
-                    gain_aligned_normalized_rms,
+                    measurement.rms_error,
+                    measurement.normalized_rms_error,
+                    measurement.optimal_candidate_gain,
+                    measurement.gain_aligned_normalized_rms_error,
+                    measurement.signal_to_noise_db,
                 },
             );
         }
-        if (self.peak_error > maximum_peak_error)
+        if (!reference.enforce_thresholds) return;
+        if (measurement.peak_absolute_error > maximum_peak_error)
             return error.VorbisPcmReferencePeakErrorExceeded;
-        if (normalized_rms_error > maximum_normalized_rms_error)
+        if (measurement.normalized_rms_error >
+            maximum_normalized_rms_error)
             return error.VorbisPcmReferenceRmsErrorExceeded;
     }
 };

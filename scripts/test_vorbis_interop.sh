@@ -414,6 +414,38 @@ if [ "${VORBIS_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                             'Vorbis Xiph-encoded Xiph decoded-PCM reference passed'
                     fi
                 fi
+
+                xiph_mono_source="$temporary/xiph-mono-q0-source.wav"
+                xiph_mono_fixture="$temporary/xiph-mono-q0.ogg"
+                ffmpeg -v error -y \
+                    -f lavfi \
+                    -i 'aevalsrc=0.19*sin(2*PI*615*t):s=32000' \
+                    -t 0.35 \
+                    -c:a pcm_s16le \
+                    "$xiph_mono_source"
+                oggenc -Q -q 0 \
+                    -o "$xiph_mono_fixture" \
+                    "$xiph_mono_source"
+                "$decode_probe" "$xiph_mono_fixture" \
+                    --require-format 32000 1
+                printf 'Vorbis Xiph mono q0 encoder decode and seek test passed\n'
+                xiph_mono_ffmpeg_pcm="$temporary/ffmpeg-xiph-mono-q0.f32le"
+                ffmpeg -v error -y \
+                    -i "$xiph_mono_fixture" \
+                    -map 0:a:0 \
+                    -f f32le \
+                    -acodec pcm_f32le \
+                    "$xiph_mono_ffmpeg_pcm"
+                [ "$(wc -c <"$xiph_mono_ffmpeg_pcm")" -gt 0 ] ||
+                    fail "FFmpeg produced empty Xiph mono q0 Vorbis PCM"
+                printf 'Vorbis Xiph mono q0 FFmpeg decode passed\n'
+                if [ -n "$reference_probe" ] &&
+                    command -v oggdec >/dev/null 2>&1; then
+                    compare_xiph_reference_pcm \
+                        "$xiph_mono_fixture" \
+                        "$temporary/xiph-mono-q0-reference.s16le" \
+                        'Vorbis Xiph mono q0 decoded-PCM reference passed'
+                fi
             else
                 printf 'Vorbis Xiph encoder unavailable; test skipped\n'
             fi

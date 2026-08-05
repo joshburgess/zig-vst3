@@ -112,6 +112,11 @@ pub const FileReader = struct {
         return error.UnsupportedAudioContainer;
     }
 
+    pub fn valid(self: *const FileReader) bool {
+        self.validateState() catch return false;
+        return true;
+    }
+
     pub fn getInfo(self: *const FileReader) Info {
         return self.info;
     }
@@ -121,6 +126,7 @@ pub const FileReader = struct {
         self: *const FileReader,
         kind: MetadataKind,
     ) !?usize {
+        try self.validateState();
         if (self.info.container == .wave64)
             return scanWave64MetadataChunk(self, kind, null);
         if (self.info.container != .wav and
@@ -138,6 +144,7 @@ pub const FileReader = struct {
         kind: MetadataKind,
         destination: []u8,
     ) !?[]const u8 {
+        try self.validateState();
         const required = if (self.info.container == .wave64)
             try scanWave64MetadataChunk(self, kind, destination)
         else if (self.info.container == .wav or
@@ -146,8 +153,34 @@ pub const FileReader = struct {
             try scanRiffMetadataChunk(self, kind, destination)
         else
             return error.UnsupportedMetadataContainer;
-        if (required == null) return null;
-        return destination[0..required.?];
+        const length = required orelse return null;
+        return destination[0..length];
+    }
+
+    /// Stages one complete metadata chunk before changing the destination.
+    pub fn readMetadataChunkTransactional(
+        self: *const FileReader,
+        kind: MetadataKind,
+        destination: []u8,
+        scratch: []u8,
+    ) !?[]const u8 {
+        const required = try self.requiredMetadataChunkBytes(kind) orelse
+            return null;
+        if (destination.len < required)
+            return error.MetadataBufferTooSmall;
+        if (scratch.len < required)
+            return error.MetadataScratchTooSmall;
+        if (slicesOverlap(destination, scratch))
+            return error.OverlappingAudioFileMetadataBuffers;
+
+        const staged = (try self.readMetadataChunk(
+            kind,
+            scratch[0..required],
+        )) orelse return error.AudioFileMetadataChanged;
+        if (staged.len != required)
+            return error.AudioFileMetadataChanged;
+        @memcpy(destination[0..required], staged);
+        return destination[0..required];
     }
 
     /// Reports both buffers needed by `readAdmMetadata`.
@@ -170,6 +203,7 @@ pub const FileReader = struct {
         xml_storage: []u8,
         channel_storage: []u8,
     ) !?AdmMetadata {
+        try self.validateState();
         if (slicesOverlap(xml_storage, channel_storage))
             return error.AdmMetadataBuffersOverlap;
         const required =
@@ -187,15 +221,61 @@ pub const FileReader = struct {
             .channel_allocation,
             channel_storage[0..required.channel_allocation_bytes],
         )) orelse return error.MissingAdmChannelAllocation;
-        const xml_view =
-            try @import("audio_metadata.zig").RiffXmlView.init(encoded_xml);
-        const document = try adm_xml.Document.init(xml_view.document);
-        const channel_allocation = try adm.View.init(encoded_channels);
-        try document.validateChannelAllocationView(channel_allocation);
-        return .{
-            .document = document,
-            .channel_allocation = channel_allocation,
-        };
+        return @as(
+            ?AdmMetadata,
+            try parseAdmMetadata(encoded_xml, encoded_channels),
+        );
+    }
+
+    /// Stages and validates both ADM chunks before changing either output.
+    pub fn readAdmMetadataTransactional(
+        self: *const FileReader,
+        xml_storage: []u8,
+        channel_storage: []u8,
+        xml_scratch: []u8,
+        channel_scratch: []u8,
+    ) !?AdmMetadata {
+        if (slicesOverlap(xml_storage, channel_storage) or
+            slicesOverlap(xml_storage, xml_scratch) or
+            slicesOverlap(xml_storage, channel_scratch) or
+            slicesOverlap(channel_storage, xml_scratch) or
+            slicesOverlap(channel_storage, channel_scratch) or
+            slicesOverlap(xml_scratch, channel_scratch))
+        {
+            return error.AdmMetadataBuffersOverlap;
+        }
+        const required =
+            try self.requiredAdmMetadataBytes() orelse return null;
+        if (xml_storage.len < required.xml_bytes or
+            channel_storage.len < required.channel_allocation_bytes)
+        {
+            return error.MetadataBufferTooSmall;
+        }
+        if (xml_scratch.len < required.xml_bytes or
+            channel_scratch.len < required.channel_allocation_bytes)
+        {
+            return error.AdmMetadataScratchTooSmall;
+        }
+
+        _ = (try self.readAdmMetadata(
+            xml_scratch[0..required.xml_bytes],
+            channel_scratch[0..required.channel_allocation_bytes],
+        )) orelse return error.AudioFileMetadataChanged;
+        @memcpy(
+            xml_storage[0..required.xml_bytes],
+            xml_scratch[0..required.xml_bytes],
+        );
+        @memcpy(
+            channel_storage[0..required.channel_allocation_bytes],
+            channel_scratch[0..required.channel_allocation_bytes],
+        );
+        return @as(
+            ?AdmMetadata,
+            try parseAdmMetadata(
+                xml_storage[0..required.xml_bytes],
+                channel_storage[0..required.channel_allocation_bytes],
+            ),
+        );
     }
 
     pub fn readEmissionProfileAdmMetadata(
@@ -203,6 +283,7 @@ pub const FileReader = struct {
         xml_storage: []u8,
         channel_storage: []u8,
     ) !?AdmMetadata {
+        try self.validateState();
         if (self.info.encoding == .ieee_f32)
             return error.AdmEmissionProfileRequiresPcmEssence;
         const metadata = try self.readAdmMetadata(
@@ -218,6 +299,66 @@ pub const FileReader = struct {
         return metadata;
     }
 
+    /// Validate the complete profile before replacing either destination.
+    pub fn readEmissionProfileAdmMetadataTransactional(
+        self: *const FileReader,
+        xml_storage: []u8,
+        channel_storage: []u8,
+        xml_scratch: []u8,
+        channel_scratch: []u8,
+    ) !?AdmMetadata {
+        try self.validateState();
+        if (self.info.encoding == .ieee_f32)
+            return error.AdmEmissionProfileRequiresPcmEssence;
+        if (slicesOverlap(xml_storage, channel_storage) or
+            slicesOverlap(xml_storage, xml_scratch) or
+            slicesOverlap(xml_storage, channel_scratch) or
+            slicesOverlap(channel_storage, xml_scratch) or
+            slicesOverlap(channel_storage, channel_scratch) or
+            slicesOverlap(xml_scratch, channel_scratch))
+        {
+            return error.AdmMetadataBuffersOverlap;
+        }
+        const required =
+            try self.requiredAdmMetadataBytes() orelse return null;
+        if (xml_storage.len < required.xml_bytes or
+            channel_storage.len < required.channel_allocation_bytes)
+        {
+            return error.MetadataBufferTooSmall;
+        }
+        if (xml_scratch.len < required.xml_bytes or
+            channel_scratch.len < required.channel_allocation_bytes)
+        {
+            return error.AdmMetadataScratchTooSmall;
+        }
+
+        const metadata = (try self.readAdmMetadata(
+            xml_scratch[0..required.xml_bytes],
+            channel_scratch[0..required.channel_allocation_bytes],
+        )) orelse return error.AudioFileMetadataChanged;
+        try metadata.validateEmissionProfilePcmEssence(.{
+            .sample_rate = self.info.sample_rate,
+            .bit_depth = @intCast(bytesPerSample(self.info.encoding) * 8),
+            .channel_count = self.info.channel_count,
+            .frame_count = self.info.frame_count,
+        });
+        @memcpy(
+            xml_storage[0..required.xml_bytes],
+            xml_scratch[0..required.xml_bytes],
+        );
+        @memcpy(
+            channel_storage[0..required.channel_allocation_bytes],
+            channel_scratch[0..required.channel_allocation_bytes],
+        );
+        return @as(
+            ?AdmMetadata,
+            try parseAdmMetadata(
+                xml_storage[0..required.xml_bytes],
+                channel_storage[0..required.channel_allocation_bytes],
+            ),
+        );
+    }
+
     /// Reads complete interleaved frames and returns the number produced.
     pub fn readInterleaved(
         self: *const FileReader,
@@ -227,7 +368,7 @@ pub const FileReader = struct {
     ) !usize {
         if (Sample != f32 and Sample != f64)
             @compileError("audio file reader output must be f32 or f64");
-        try self.validateReadState();
+        try self.validateState();
         if (destination.len % self.info.channel_count != 0)
             return error.IncompleteDestinationFrame;
         if (first_frame > self.info.frame_count)
@@ -288,10 +429,49 @@ pub const FileReader = struct {
         return @intCast(frame_count);
     }
 
-    fn validateReadState(self: *const FileReader) !void {
+    /// Stages a complete range read before changing the destination.
+    pub fn readInterleavedTransactional(
+        self: *const FileReader,
+        comptime Sample: type,
+        first_frame: u64,
+        destination: []Sample,
+        output_scratch: []Sample,
+    ) !usize {
+        if (Sample != f32 and Sample != f64)
+            @compileError("audio file reader output must be f32 or f64");
+        try self.validateState();
+        if (destination.len % self.info.channel_count != 0)
+            return error.IncompleteDestinationFrame;
+        if (first_frame > self.info.frame_count)
+            return error.FrameIndexOutOfRange;
+        if (output_scratch.len < destination.len)
+            return error.AudioFileReadScratchTooSmall;
+        if (byteSlicesOverlap(destination, output_scratch))
+            return error.OverlappingAudioFileReadBuffers;
+
+        const frames = try self.readInterleaved(
+            Sample,
+            first_frame,
+            output_scratch[0..destination.len],
+        );
+        const sample_count = frames * self.info.channel_count;
+        @memcpy(
+            destination[0..sample_count],
+            output_scratch[0..sample_count],
+        );
+        return frames;
+    }
+
+    fn validateState(self: *const FileReader) !void {
         if (self.info.sample_rate == 0 or
             self.info.channel_count == 0 or
             self.frame_bytes == 0)
+            return error.InvalidAudioFileReaderState;
+        const expected_byte_order: std.builtin.Endian = switch (self.info.container) {
+            .wav, .rf64, .bw64, .wave64 => .little,
+            .aiff, .aifc => .big,
+        };
+        if (self.byte_order != expected_byte_order)
             return error.InvalidAudioFileReaderState;
         const expected_frame_bytes = std.math.mul(
             u16,
@@ -310,6 +490,21 @@ pub const FileReader = struct {
         ) catch return error.InvalidAudioFileReaderState;
     }
 };
+
+fn parseAdmMetadata(
+    encoded_xml: []const u8,
+    encoded_channels: []const u8,
+) !AdmMetadata {
+    const xml_view =
+        try @import("audio_metadata.zig").RiffXmlView.init(encoded_xml);
+    const document = try adm_xml.Document.init(xml_view.document);
+    const channel_allocation = try adm.View.init(encoded_channels);
+    try document.validateChannelAllocationView(channel_allocation);
+    return .{
+        .document = document,
+        .channel_allocation = channel_allocation,
+    };
+}
 
 const RiffChunk = struct {
     id: [4]u8,
@@ -1091,10 +1286,256 @@ fn slicesOverlap(left: []const u8, right: []const u8) bool {
     return left_start < right_end and right_start < left_end;
 }
 
+fn byteSlicesOverlap(left: anytype, right: anytype) bool {
+    return slicesOverlap(
+        std.mem.sliceAsBytes(left),
+        std.mem.sliceAsBytes(right),
+    );
+}
+
 const wav_writer = @import("wav_writer.zig");
 const aiff_writer = @import("aiff_writer.zig");
 const rf64_writer = @import("rf64_writer.zig");
 const wave64_writer = @import("wave64_writer.zig");
+
+fn testFileReaderMutationContainment(
+    file: std.Io.File,
+    baseline: []const u8,
+) !void {
+    const untouched = [_]f32{37.0} ** 8;
+    var destination = untouched;
+    var scratch: [untouched.len]f32 = undefined;
+
+    for (0..baseline.len) |byte_index| {
+        for ([_]u8{ 0x01, 0x80, 0xff }) |mask| {
+            var candidate: [512]u8 = undefined;
+            try std.testing.expect(baseline.len <= candidate.len);
+            @memcpy(candidate[0..baseline.len], baseline);
+            candidate[byte_index] ^= mask;
+            try file.setLength(std.testing.io, baseline.len);
+            try file.writePositionalAll(
+                std.testing.io,
+                candidate[0..baseline.len],
+                0,
+            );
+            destination = untouched;
+            if (FileReader.init(std.testing.io, file)) |reader| {
+                try std.testing.expect(reader.valid());
+                if (reader.readInterleavedTransactional(
+                    f32,
+                    0,
+                    &destination,
+                    &scratch,
+                )) |frames| {
+                    try std.testing.expect(
+                        frames <= destination.len / reader.info.channel_count,
+                    );
+                } else |_| {
+                    try std.testing.expectEqualSlices(
+                        f32,
+                        &untouched,
+                        &destination,
+                    );
+                }
+            } else |_| {
+                try std.testing.expectEqualSlices(
+                    f32,
+                    &untouched,
+                    &destination,
+                );
+            }
+        }
+    }
+
+    for (0..baseline.len) |prefix_bytes| {
+        try file.setLength(std.testing.io, baseline.len);
+        try file.writePositionalAll(
+            std.testing.io,
+            baseline,
+            0,
+        );
+        try file.setLength(std.testing.io, prefix_bytes);
+        const rejected = if (FileReader.init(std.testing.io, file)) |_|
+            false
+        else |_|
+            true;
+        try std.testing.expect(rejected);
+    }
+}
+
+test "file readers contain deterministic container mutations" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const samples = [_]f32{ -0.75, 0.125, 0.5, 1.0 };
+
+    {
+        const file = try temporary.dir.createFile(
+            std.testing.io,
+            "mutated.wav",
+            .{ .read = true, .truncate = true },
+        );
+        defer file.close(std.testing.io);
+        var writer = try wav_writer.FileWriter.init(
+            std.testing.io,
+            file,
+            .{
+                .sample_rate = 48_000,
+                .channel_count = 1,
+                .encoding = .pcm_i16,
+            },
+        );
+        try writer.append(f32, &samples);
+        try writer.finalize();
+        var baseline: [512]u8 = undefined;
+        const length: usize = @intCast(try file.length(std.testing.io));
+        try std.testing.expectEqual(
+            length,
+            try file.readPositionalAll(
+                std.testing.io,
+                baseline[0..length],
+                0,
+            ),
+        );
+        try testFileReaderMutationContainment(file, baseline[0..length]);
+    }
+
+    {
+        const file = try temporary.dir.createFile(
+            std.testing.io,
+            "mutated.aiff",
+            .{ .read = true, .truncate = true },
+        );
+        defer file.close(std.testing.io);
+        var writer = try aiff_writer.FileWriter.init(
+            std.testing.io,
+            file,
+            .{
+                .sample_rate = 48_000,
+                .channel_count = 1,
+                .encoding = .pcm_i16,
+            },
+        );
+        try writer.append(f32, &samples);
+        try writer.finalize();
+        var baseline: [512]u8 = undefined;
+        const length: usize = @intCast(try file.length(std.testing.io));
+        try std.testing.expectEqual(
+            length,
+            try file.readPositionalAll(
+                std.testing.io,
+                baseline[0..length],
+                0,
+            ),
+        );
+        try testFileReaderMutationContainment(file, baseline[0..length]);
+    }
+
+    {
+        const file = try temporary.dir.createFile(
+            std.testing.io,
+            "mutated.aifc",
+            .{ .read = true, .truncate = true },
+        );
+        defer file.close(std.testing.io);
+        var aiff: [62]u8 = undefined;
+        _ = try aiff_writer.writeInterleaved(
+            f32,
+            &aiff,
+            &samples,
+            .{
+                .sample_rate = 48_000,
+                .channel_count = 1,
+                .encoding = .pcm_i16,
+            },
+        );
+        var aifc: [68]u8 = @splat(0);
+        @memcpy(aifc[0..38], aiff[0..38]);
+        @memcpy(aifc[8..12], "AIFC");
+        std.mem.writeInt(u32, aifc[4..8], 60, .big);
+        std.mem.writeInt(u32, aifc[16..20], 23, .big);
+        @memcpy(aifc[38..42], "NONE");
+        aifc[42] = 0;
+        @memcpy(aifc[44..68], aiff[38..62]);
+        try file.writePositionalAll(std.testing.io, &aifc, 0);
+        try testFileReaderMutationContainment(file, &aifc);
+    }
+
+    inline for (.{
+        .{ .name = "mutated.rf64", .bw64 = false },
+        .{ .name = "mutated.bw64", .bw64 = true },
+    }) |variant| {
+        const file = try temporary.dir.createFile(
+            std.testing.io,
+            variant.name,
+            .{ .read = true, .truncate = true },
+        );
+        defer file.close(std.testing.io);
+        var writer = if (variant.bw64)
+            try rf64_writer.FileWriter.initBw64(
+                std.testing.io,
+                file,
+                .{
+                    .sample_rate = 48_000,
+                    .channel_count = 1,
+                    .encoding = .pcm_i16,
+                },
+            )
+        else
+            try rf64_writer.FileWriter.init(
+                std.testing.io,
+                file,
+                .{
+                    .sample_rate = 48_000,
+                    .channel_count = 1,
+                    .encoding = .pcm_i16,
+                },
+            );
+        try writer.append(f32, &samples);
+        try writer.finalize();
+        var baseline: [512]u8 = undefined;
+        const length: usize = @intCast(try file.length(std.testing.io));
+        try std.testing.expectEqual(
+            length,
+            try file.readPositionalAll(
+                std.testing.io,
+                baseline[0..length],
+                0,
+            ),
+        );
+        try testFileReaderMutationContainment(file, baseline[0..length]);
+    }
+
+    {
+        const file = try temporary.dir.createFile(
+            std.testing.io,
+            "mutated.w64",
+            .{ .read = true, .truncate = true },
+        );
+        defer file.close(std.testing.io);
+        var writer = try wave64_writer.FileWriter.init(
+            std.testing.io,
+            file,
+            .{
+                .sample_rate = 48_000,
+                .channel_count = 1,
+                .encoding = .pcm_i16,
+            },
+        );
+        try writer.append(f32, &samples);
+        try writer.finalize();
+        var baseline: [512]u8 = undefined;
+        const length: usize = @intCast(try file.length(std.testing.io));
+        try std.testing.expectEqual(
+            length,
+            try file.readPositionalAll(
+                std.testing.io,
+                baseline[0..length],
+                0,
+            ),
+        );
+        try testFileReaderMutationContainment(file, baseline[0..length]);
+    }
+}
 
 test "file reader decodes WAV metadata layout and random frame ranges" {
     var temporary = std.testing.tmpDir(.{});
@@ -1531,6 +1972,20 @@ test "file reader decodes BW64 ADM carriage and audio" {
         @as(usize, 0),
         typed_adm.?.document.declaration_count,
     );
+    var transactional_xml_storage: [256]u8 = undefined;
+    var transactional_channel_storage: [256]u8 = undefined;
+    var transactional_xml_scratch: [256]u8 = undefined;
+    var transactional_channel_scratch: [256]u8 = undefined;
+    const transactional_adm = try reader.readAdmMetadataTransactional(
+        &transactional_xml_storage,
+        &transactional_channel_storage,
+        &transactional_xml_scratch,
+        &transactional_channel_scratch,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 1),
+        transactional_adm.?.channel_allocation.num_tracks,
+    );
     try std.testing.expectError(
         error.MissingAdmEmissionProfileDocumentVersion,
         reader.readEmissionProfileAdmMetadata(
@@ -1538,12 +1993,136 @@ test "file reader decodes BW64 ADM carriage and audio" {
             &typed_channel_storage,
         ),
     );
+    transactional_xml_storage = @splat(0xa5);
+    transactional_channel_storage = @splat(0x5a);
+    const emission_xml_before = transactional_xml_storage;
+    const emission_channel_before = transactional_channel_storage;
+    try std.testing.expectError(
+        error.MissingAdmEmissionProfileDocumentVersion,
+        reader.readEmissionProfileAdmMetadataTransactional(
+            &transactional_xml_storage,
+            &transactional_channel_storage,
+            &transactional_xml_scratch,
+            &transactional_channel_scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &emission_xml_before,
+        &transactional_xml_storage,
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &emission_channel_before,
+        &transactional_channel_storage,
+    );
+    try std.testing.expectError(
+        error.MetadataBufferTooSmall,
+        reader.readEmissionProfileAdmMetadataTransactional(
+            transactional_xml_storage[0 .. required_adm.xml_bytes - 1],
+            &transactional_channel_storage,
+            &transactional_xml_scratch,
+            &transactional_channel_scratch,
+        ),
+    );
+    try std.testing.expectError(
+        error.AdmMetadataScratchTooSmall,
+        reader.readEmissionProfileAdmMetadataTransactional(
+            &transactional_xml_storage,
+            &transactional_channel_storage,
+            transactional_xml_scratch[0 .. required_adm.xml_bytes - 1],
+            &transactional_channel_scratch,
+        ),
+    );
+    try std.testing.expectError(
+        error.AdmMetadataBuffersOverlap,
+        reader.readEmissionProfileAdmMetadataTransactional(
+            &transactional_xml_storage,
+            &transactional_channel_storage,
+            &transactional_xml_storage,
+            &transactional_channel_scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &emission_xml_before,
+        &transactional_xml_storage,
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &emission_channel_before,
+        &transactional_channel_storage,
+    );
     try std.testing.expectError(
         error.AdmMetadataBuffersOverlap,
         reader.readAdmMetadata(
             &typed_xml_storage,
             typed_xml_storage[64..],
         ),
+    );
+
+    const bounds = try riffBounds(&reader);
+    var chunks = RiffChunkIterator{
+        .io = std.testing.io,
+        .file = file,
+        .end = bounds.end,
+        .large_data_bytes = bounds.rf64_data_bytes,
+    };
+    var channel_offset: ?u64 = null;
+    while (try chunks.next()) |chunk| {
+        if (std.mem.eql(u8, &chunk.id, "chna")) {
+            channel_offset = chunk.source_offset;
+            break;
+        }
+    }
+    const source_offset = channel_offset orelse
+        return error.MissingAdmChannelAllocation;
+    transactional_xml_storage = @splat(0xa5);
+    transactional_channel_storage = @splat(0x5a);
+    const original_xml_storage = transactional_xml_storage;
+    const original_channel_storage = transactional_channel_storage;
+    try file.setLength(
+        std.testing.io,
+        source_offset +
+            @as(u64, @intCast(required_adm.channel_allocation_bytes / 2)),
+    );
+    try std.testing.expectError(
+        error.TruncatedAudioFile,
+        reader.readAdmMetadataTransactional(
+            &transactional_xml_storage,
+            &transactional_channel_storage,
+            &transactional_xml_scratch,
+            &transactional_channel_scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &original_xml_storage,
+        &transactional_xml_storage,
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &original_channel_storage,
+        &transactional_channel_storage,
+    );
+    try std.testing.expectError(
+        error.TruncatedAudioFile,
+        reader.readEmissionProfileAdmMetadataTransactional(
+            &transactional_xml_storage,
+            &transactional_channel_storage,
+            &transactional_xml_scratch,
+            &transactional_channel_scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &original_xml_storage,
+        &transactional_xml_storage,
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &original_channel_storage,
+        &transactional_channel_storage,
     );
 }
 
@@ -1695,6 +2274,7 @@ test "file reader rejects malformed structure and invalid requests" {
     @memcpy(header[36..40], "data");
     try file.writePositionalAll(std.testing.io, &header, 0);
     const reader = try FileReader.init(std.testing.io, file);
+    try std.testing.expect(reader.valid());
     var incomplete: [1]f32 = undefined;
     try std.testing.expectError(
         error.FrameIndexOutOfRange,
@@ -1723,6 +2303,11 @@ test "file reader rejects malformed structure and invalid requests" {
     var preserved = [_]f32{ 7, 8 };
     const original_preserved = preserved;
     hostile.info.channel_count = 0;
+    try std.testing.expect(!hostile.valid());
+    try std.testing.expectError(
+        error.InvalidAudioFileReaderState,
+        hostile.requiredMetadataChunkBytes(.ixml),
+    );
     try std.testing.expectError(
         error.InvalidAudioFileReaderState,
         hostile.readInterleaved(f32, 0, &preserved),
@@ -1734,6 +2319,7 @@ test "file reader rejects malformed structure and invalid requests" {
     );
     hostile = reader;
     hostile.frame_bytes = 3;
+    try std.testing.expect(!hostile.valid());
     try std.testing.expectError(
         error.InvalidAudioFileReaderState,
         hostile.readInterleaved(f32, 0, &preserved),
@@ -1747,6 +2333,7 @@ test "file reader rejects malformed structure and invalid requests" {
     hostile.info.frame_count = 1;
     hostile.data_offset = std.math.maxInt(u64);
     hostile.data_bytes = 2;
+    try std.testing.expect(!hostile.valid());
     try std.testing.expectError(
         error.InvalidAudioFileReaderState,
         hostile.readInterleaved(f32, 0, &preserved),
@@ -1755,6 +2342,14 @@ test "file reader rejects malformed structure and invalid requests" {
         f32,
         &original_preserved,
         &preserved,
+    );
+    hostile = reader;
+    hostile.byte_order = .big;
+    try std.testing.expect(!hostile.valid());
+    var hostile_metadata: [1]u8 = undefined;
+    try std.testing.expectError(
+        error.InvalidAudioFileReaderState,
+        hostile.readMetadataChunk(.ixml, &hostile_metadata),
     );
     try std.testing.expectEqual(
         std.math.maxInt(u64) - 7,
@@ -1788,5 +2383,160 @@ test "file reader rejects malformed structure and invalid requests" {
     try std.testing.expectError(
         error.InvalidAudioFile,
         FileReader.init(std.testing.io, file),
+    );
+}
+
+test "transactional file range read preserves output after late truncation" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const file = try temporary.dir.createFile(
+        std.testing.io,
+        "transactional-truncation.wav",
+        .{ .read = true, .truncate = true },
+    );
+    defer file.close(std.testing.io);
+
+    var source: [3000]f32 = undefined;
+    for (&source, 0..) |*sample, index| {
+        sample.* = @as(f32, @floatFromInt(index % 101)) / 100.0;
+    }
+    var writer = try wav_writer.FileWriter.init(
+        std.testing.io,
+        file,
+        .{
+            .sample_rate = 48_000,
+            .channel_count = 1,
+            .encoding = .pcm_i16,
+        },
+    );
+    try writer.append(f32, &source);
+    try writer.finalize();
+
+    const reader = try FileReader.init(std.testing.io, file);
+    var destination: [3000]f32 = @splat(37.0);
+    const original_destination = destination;
+    var scratch: [3000]f32 = undefined;
+
+    try file.setLength(
+        std.testing.io,
+        reader.data_offset + 2500 * reader.frame_bytes,
+    );
+    try std.testing.expectError(
+        error.TruncatedAudioFile,
+        reader.readInterleavedTransactional(
+            f32,
+            0,
+            &destination,
+            &scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &original_destination,
+        &destination,
+    );
+
+    try std.testing.expectError(
+        error.AudioFileReadScratchTooSmall,
+        reader.readInterleavedTransactional(
+            f32,
+            0,
+            destination[0..2],
+            scratch[0..1],
+        ),
+    );
+    var overlapping: [6]f32 = undefined;
+    try std.testing.expectError(
+        error.OverlappingAudioFileReadBuffers,
+        reader.readInterleavedTransactional(
+            f32,
+            0,
+            overlapping[0..4],
+            overlapping[2..6],
+        ),
+    );
+}
+
+test "transactional metadata read preserves output after late truncation" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const file = try temporary.dir.createFile(
+        std.testing.io,
+        "transactional-metadata-truncation.wav",
+        .{ .read = true, .truncate = true },
+    );
+    defer file.close(std.testing.io);
+
+    var writer = try wav_writer.FileWriter.initWithRiffMetadata(
+        std.testing.io,
+        file,
+        .{
+            .sample_rate = 48_000,
+            .channel_count = 1,
+            .encoding = .pcm_i16,
+        },
+        .{ .broadcast = .{
+            .description = "Transactional metadata",
+            .version = .version_2,
+        } },
+    );
+    try writer.append(f32, &.{ 0.0, 0.25 });
+    try writer.finalize();
+
+    const reader = try FileReader.init(std.testing.io, file);
+    const required =
+        (try reader.requiredMetadataChunkBytes(.broadcast)).?;
+    var destination: [1024]u8 = @splat(0xa5);
+    const original_destination = destination;
+    var scratch: [1024]u8 = undefined;
+
+    const bounds = try riffBounds(&reader);
+    var chunks = RiffChunkIterator{
+        .io = std.testing.io,
+        .file = file,
+        .end = bounds.end,
+    };
+    var broadcast_offset: ?u64 = null;
+    while (try chunks.next()) |chunk| {
+        if (std.mem.eql(u8, &chunk.id, "bext")) {
+            broadcast_offset = chunk.source_offset;
+            break;
+        }
+    }
+    const source_offset = broadcast_offset orelse
+        return error.MissingBroadcastMetadata;
+    try file.setLength(
+        std.testing.io,
+        source_offset + @as(u64, @intCast(required / 2)),
+    );
+    try std.testing.expectError(
+        error.TruncatedAudioFile,
+        reader.readMetadataChunkTransactional(
+            .broadcast,
+            &destination,
+            &scratch,
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &original_destination,
+        &destination,
+    );
+
+    try std.testing.expectError(
+        error.MetadataScratchTooSmall,
+        reader.readMetadataChunkTransactional(
+            .broadcast,
+            &destination,
+            scratch[0 .. required - 1],
+        ),
+    );
+    try std.testing.expectError(
+        error.OverlappingAudioFileMetadataBuffers,
+        reader.readMetadataChunkTransactional(
+            .broadcast,
+            destination[0..required],
+            destination[0..required],
+        ),
     );
 }

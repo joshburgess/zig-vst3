@@ -60,10 +60,12 @@ printf '%s\n' \
     'if [ "${2-}" = "--recover-invalid-audio-packet" ]; then exit 0; fi' \
     'if [ "${2-}" = "--require-comment" ] && [ "${4-}" = "wrong" ]; then exit 1; fi' \
     'case "$1" in' \
+    '    *xiph-mono-q0.ogg) [ "${2-}" = "--require-format" ] && [ "${3-}" = "32000" ] && [ "${4-}" = "1" ] || exit 2 ;;' \
     '    *-corrupt.ogg|*-truncated.ogg|*-geometry-change.ogg|*-invalid-audio-packet.ogg) exit 1 ;;' \
     'esac' \
     >"$fake_bin/decode-probe"
 chmod +x "$fake_bin/decode-probe"
+cp "$fake_bin/decode-probe" "$root/decode-probe-success"
 cat >"$fake_bin/reference-probe" <<'EOF'
 #!/bin/sh
 count=0
@@ -72,6 +74,7 @@ count=0
 printf '%s\n' $((count + 1)) >"$TMPDIR/reference-probe-count"
 EOF
 chmod +x "$fake_bin/reference-probe"
+cp "$fake_bin/reference-probe" "$root/reference-probe-success"
 
 PATH="$fake_bin:$PATH" \
     TMPDIR="$root" \
@@ -151,7 +154,13 @@ grep -q 'Vorbis Xiph-encoded FFmpeg decode passed' \
     "$root/ffmpeg.txt"
 grep -q 'Vorbis Xiph-encoded Xiph decoded-PCM reference passed' \
     "$root/ffmpeg.txt"
-[ "$(cat "$reference_probe_count")" -eq 12 ] || {
+grep -q 'Vorbis Xiph mono q0 encoder decode and seek test passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis Xiph mono q0 FFmpeg decode passed' \
+    "$root/ffmpeg.txt"
+grep -q 'Vorbis Xiph mono q0 decoded-PCM reference passed' \
+    "$root/ffmpeg.txt"
+[ "$(cat "$reference_probe_count")" -eq 13 ] || {
     printf 'Vorbis runner skipped a decoded-PCM reference probe\n' >&2
     exit 1
 }
@@ -233,6 +242,42 @@ expect_probe_failure \
     15 \
     'Vorbis runner accepted a 5.1 decode failure'
 rm -f "$probe_count"
+cp "$root/decode-probe-success" "$fake_bin/decode-probe"
+
+expect_reference_probe_failure() {
+    failure_call=$1
+    rm -f "$reference_probe_count"
+    # shellcheck disable=SC2016
+    printf '%s\n' \
+        '#!/bin/sh' \
+        'count_file="${TMPDIR:-/tmp}/reference-probe-count"' \
+        'count=0' \
+        '[ ! -f "$count_file" ] || count=$(cat "$count_file")' \
+        'count=$((count + 1))' \
+        'printf "%s\n" "$count" >"$count_file"' \
+        "[ \"\$count\" -lt \"$failure_call\" ]" \
+        >"$fake_bin/reference-probe"
+    chmod +x "$fake_bin/reference-probe"
+    if PATH="$fake_bin:$PATH" \
+        TMPDIR="$root" \
+        VORBIS_INTEROP_ONLY_FFMPEG=0 \
+        scripts/test_vorbis_interop.sh \
+        "$fixture" \
+        "$fake_bin/decode-probe" \
+        "$fake_bin/reference-probe" \
+        >/dev/null 2>&1; then
+        printf 'Vorbis runner accepted PCM reference failure %s\n' \
+            "$failure_call" >&2
+        exit 1
+    fi
+}
+
+failure_call=1
+while [ "$failure_call" -le 13 ]; do
+    expect_reference_probe_failure "$failure_call"
+    failure_call=$((failure_call + 1))
+done
+cp "$root/reference-probe-success" "$fake_bin/reference-probe"
 
 printf '%s\n' \
     '#!/bin/sh' \

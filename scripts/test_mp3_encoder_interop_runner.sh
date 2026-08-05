@@ -7,8 +7,22 @@ fake_bin="$root/bin"
 mkdir "$fake_bin"
 fixture="$root/fixture.mp3"
 vbri_fixture="$root/vbri-fixture.mp3"
+mpeg2_mono_fixture="$root/project-mpeg2-mono.mp3"
+mpeg2_intensity_fixture="$root/project-mpeg2-intensity-joint-stereo.mp3"
+mpeg25_intensity_fixture="$root/project-mpeg25-intensity-joint-stereo.mp3"
+adaptive_gapless_fixture="$root/project-adaptive-gapless.mp3"
+adaptive_gapless_vbr_fixture="$root/project-adaptive-gapless-vbr.mp3"
+mpeg2_protected_fixture="$root/project-mpeg2-protected.mp3"
+mpeg25_protected_fixture="$root/project-mpeg25-protected.mp3"
 printf '\377\373\260\104' >"$fixture"
 printf '\377\373\260\104' >"$vbri_fixture"
+printf '\377\363\200\300' >"$mpeg2_mono_fixture"
+printf '\377\363\200\104' >"$mpeg2_intensity_fixture"
+printf '\377\343\200\104' >"$mpeg25_intensity_fixture"
+printf '\377\373\260\104' >"$adaptive_gapless_fixture"
+printf '\377\373\260\104' >"$adaptive_gapless_vbr_fixture"
+printf '\377\362\200\300' >"$mpeg2_protected_fixture"
+printf '\377\342\200\104' >"$mpeg25_protected_fixture"
 probe_count="$root/probe-count"
 reference_probe_count="$root/reference-probe-count"
 external_vbri_fixture="$fake_bin/external-vbri-fixture"
@@ -39,6 +53,12 @@ cat >"$fake_bin/decode-probe" <<'EOF'
 #!/bin/sh
 case "$1" in
     *-truncated.mp3|*-format-change.mp3) exit 1 ;;
+    *-protected.mp3)
+        [ "${4-}" = "--require-protected" ] || exit 2
+        ;;
+    *-joint-stereo.mp3)
+        [ "${4-}" = "--require-joint-stereo" ] || exit 2
+        ;;
 esac
 count=0
 [ ! -f "$TMPDIR/probe-count" ] || count=$(cat "$TMPDIR/probe-count")
@@ -46,6 +66,7 @@ count=$((count + 1))
 printf '%s\n' "$count" >"$TMPDIR/probe-count"
 EOF
 chmod +x "$fake_bin/decode-probe"
+cp "$fake_bin/decode-probe" "$root/decode-probe-success"
 cat >"$fake_bin/reference-probe" <<'EOF'
 #!/bin/sh
 count=0
@@ -54,6 +75,7 @@ count=0
 printf '%s\n' $((count + 1)) >"$TMPDIR/reference-probe-count"
 EOF
 chmod +x "$fake_bin/reference-probe"
+cp "$fake_bin/reference-probe" "$root/reference-probe-success"
 cat >"$external_vbri_fixture" <<'EOF'
 #!/bin/sh
 cp "$1" "$2"
@@ -69,11 +91,46 @@ scripts/test_mp3_encoder_interop.sh \
     "$fake_bin/reference-probe" \
     "$vbri_fixture" \
     "$external_vbri_fixture" \
+    "$mpeg2_mono_fixture" \
+    "$mpeg2_intensity_fixture" \
+    "$mpeg25_intensity_fixture" \
+    "$adaptive_gapless_fixture" \
+    "$adaptive_gapless_vbr_fixture" \
+    "$mpeg2_protected_fixture" \
+    "$mpeg25_protected_fixture" \
     >"$root/passed.txt"
 grep -q 'MP3 FFmpeg interoperability test passed' \
     "$root/passed.txt"
 grep -q 'MP3 project decoder probe passed' "$root/passed.txt"
 grep -q 'MP3 project VBRI decoder probe passed' "$root/passed.txt"
+grep -q 'MP3 project MPEG-2 mono decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project MPEG-2 intensity-stereo decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project MPEG-2.5 intensity-stereo decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project adaptive gapless CBR decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project adaptive gapless VBR decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project protected MPEG-2 decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project protected MPEG-2.5 decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project MPEG-2 mono FFmpeg reference passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project MPEG-2 intensity FFmpeg reference passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project MPEG-2.5 intensity FFmpeg reference passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project adaptive gapless CBR FFmpeg reference passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project adaptive gapless VBR FFmpeg reference passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project protected MPEG-2 FFmpeg reference passed' \
+    "$root/passed.txt"
+grep -q 'MP3 project protected MPEG-2.5 FFmpeg reference passed' \
+    "$root/passed.txt"
 grep -q 'MP3 VBRI FFmpeg interoperability test passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-1 stereo decoder probe passed' \
@@ -102,7 +159,15 @@ grep -q 'MP3 LAME free-format decoded-PCM reference probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-2 decoded-PCM reference probe passed' \
     "$root/passed.txt"
+grep -q 'MP3 FFmpeg MPEG-2 joint-stereo decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 FFmpeg MPEG-2 joint-stereo decoded-PCM reference probe passed' \
+    "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-2.5 decoded-PCM reference probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 FFmpeg MPEG-2.5 joint-stereo decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 FFmpeg MPEG-2.5 joint-stereo decoded-PCM reference probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg tagged multi-point seek probe passed' \
     "$root/passed.txt"
@@ -116,14 +181,106 @@ grep -q 'MP3 FFmpeg truncation rejection passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg format-change rejection passed' \
     "$root/passed.txt"
-[ "$(cat "$probe_count")" -eq 13 ] || {
+[ "$(cat "$probe_count")" -eq 22 ] || {
     printf 'MP3 runner skipped a decoder probe\n' >&2
     exit 1
 }
-[ "$(cat "$reference_probe_count")" -eq 6 ] || {
+[ "$(cat "$reference_probe_count")" -eq 15 ] || {
     printf 'MP3 runner skipped the decoded-PCM reference probe\n' >&2
     exit 1
 }
+
+expect_decode_probe_failure() {
+    failure_call=$1
+    rm -f "$probe_count" "$reference_probe_count"
+    # shellcheck disable=SC2016
+    printf '%s\n' \
+        '#!/bin/sh' \
+        'case "$1" in' \
+        '    *-truncated.mp3|*-format-change.mp3) exit 1 ;;' \
+        '    *-protected.mp3) [ "${4-}" = "--require-protected" ] || exit 2 ;;' \
+        '    *-joint-stereo.mp3) [ "${4-}" = "--require-joint-stereo" ] || exit 2 ;;' \
+        'esac' \
+        'count_file="${TMPDIR:-/tmp}/probe-count"' \
+        'count=0' \
+        '[ ! -f "$count_file" ] || count=$(cat "$count_file")' \
+        'count=$((count + 1))' \
+        'printf "%s\n" "$count" >"$count_file"' \
+        "[ \"\$count\" -lt \"$failure_call\" ]" \
+        >"$fake_bin/decode-probe"
+    chmod +x "$fake_bin/decode-probe"
+    if PATH="$fake_bin:$PATH" \
+        TMPDIR="$root" \
+        MP3_INTEROP_ONLY_FFMPEG=1 \
+        scripts/test_mp3_encoder_interop.sh \
+        "$fixture" \
+        "$fake_bin/decode-probe" \
+        "$root/reference-probe-success" \
+        "$vbri_fixture" \
+        "$external_vbri_fixture" \
+        "$mpeg2_mono_fixture" \
+        "$mpeg2_intensity_fixture" \
+        "$mpeg25_intensity_fixture" \
+        "$adaptive_gapless_fixture" \
+        "$adaptive_gapless_vbr_fixture" \
+        "$mpeg2_protected_fixture" \
+        "$mpeg25_protected_fixture" \
+        >/dev/null 2>&1; then
+        printf 'MP3 runner accepted decoder probe failure %s\n' \
+            "$failure_call" >&2
+        exit 1
+    fi
+}
+
+failure_call=1
+while [ "$failure_call" -le 22 ]; do
+    expect_decode_probe_failure "$failure_call"
+    failure_call=$((failure_call + 1))
+done
+cp "$root/decode-probe-success" "$fake_bin/decode-probe"
+
+expect_reference_probe_failure() {
+    failure_call=$1
+    rm -f "$probe_count" "$reference_probe_count"
+    # shellcheck disable=SC2016
+    printf '%s\n' \
+        '#!/bin/sh' \
+        'count_file="${TMPDIR:-/tmp}/reference-probe-count"' \
+        'count=0' \
+        '[ ! -f "$count_file" ] || count=$(cat "$count_file")' \
+        'count=$((count + 1))' \
+        'printf "%s\n" "$count" >"$count_file"' \
+        "[ \"\$count\" -lt \"$failure_call\" ]" \
+        >"$fake_bin/reference-probe"
+    chmod +x "$fake_bin/reference-probe"
+    if PATH="$fake_bin:$PATH" \
+        TMPDIR="$root" \
+        MP3_INTEROP_ONLY_FFMPEG=1 \
+        scripts/test_mp3_encoder_interop.sh \
+        "$fixture" \
+        "$fake_bin/decode-probe" \
+        "$fake_bin/reference-probe" \
+        "$vbri_fixture" \
+        "$external_vbri_fixture" \
+        "$mpeg2_mono_fixture" \
+        "$mpeg2_intensity_fixture" \
+        "$mpeg25_intensity_fixture" \
+        "$adaptive_gapless_fixture" \
+        "$adaptive_gapless_vbr_fixture" \
+        "$mpeg2_protected_fixture" \
+        "$mpeg25_protected_fixture" \
+        >/dev/null 2>&1; then
+        printf 'MP3 runner accepted PCM reference failure %s\n' \
+            "$failure_call" >&2
+        exit 1
+    fi
+}
+
+failure_call=1
+while [ "$failure_call" -le 15 ]; do
+    expect_reference_probe_failure "$failure_call"
+    failure_call=$((failure_call + 1))
+done
 
 cat >"$fake_bin/ffmpeg" <<'EOF'
 #!/bin/sh

@@ -26,23 +26,10 @@ fn patchVbriMetadata(
     const summary = try plug.dsp.Mp3Stream.summarize(encoded);
     const frame_count = std.math.cast(u32, summary.frame_count) orelse
         return error.Mp3FrameCountOverflow;
-    const stream_bytes = std.math.cast(u32, summary.audio_bytes) orelse
-        return error.Mp3ByteCountOverflow;
     if (frame_count == 0) return error.Mp3StreamHasNoFrames;
 
     const offsets = try allocator.alloc(u64, frame_count);
     defer allocator.free(offsets);
-    var stream = try plug.dsp.Mp3Stream.init(encoded);
-    var first_frame: ?plug.dsp.Mp3Frame = null;
-    var index: usize = 0;
-    while (try stream.next()) |frame| {
-        if (index >= offsets.len) return error.UnexpectedMp3FrameCount;
-        if (first_frame == null) first_frame = frame;
-        offsets[index] = frame.offset - summary.audio_offset;
-        index += 1;
-    }
-    if (index != offsets.len) return error.UnexpectedMp3FrameCount;
-
     const toc_bytes = try plug.dsp.requiredMp3VbriTocBytes(
         frame_count,
         1,
@@ -50,49 +37,27 @@ fn patchVbriMetadata(
     );
     const toc_storage = try allocator.alloc(u8, toc_bytes);
     defer allocator.free(toc_storage);
-    const toc = try plug.dsp.buildMp3VbriToc(
-        offsets,
-        frame_count,
-        stream_bytes,
+    _ = try plug.dsp.finalizeMp3VbriStreamMetadata(
+        encoded,
+        80,
         1,
         1,
         4,
+        offsets,
         toc_storage,
     );
-    const metadata_frame = first_frame orelse
-        return error.Mp3StreamHasNoFrames;
-    if (metadata_frame.xing == null)
-        return error.MissingReservedMp3MetadataFrame;
-    const staged = try allocator.dupe(u8, encoded);
-    defer allocator.free(staged);
-    const patched = try plug.dsp.encodeMp3VbriFrame(
-        metadata_frame.header,
-        .{
-            .quality = 80,
-            .stream_bytes = stream_bytes,
-            .frame_count = frame_count,
-            .toc_scale = 1,
-            .entry_bytes = 4,
-            .frames_per_entry = 1,
-            .toc = toc,
-        },
-        staged[metadata_frame.offset..],
-    );
-    if (patched.len != metadata_frame.bytes.len)
-        return error.UnexpectedMp3VbriFrameSize;
 
-    const verified = try plug.dsp.Mp3Stream.summarize(staged);
+    const verified = try plug.dsp.Mp3Stream.summarize(encoded);
     const vbri = verified.first_vbri orelse
         return error.MissingMp3VbriMetadata;
     if (verified.audio_offset != summary.audio_offset or
         verified.audio_bytes != summary.audio_bytes or
         verified.frame_count != summary.frame_count or
-        vbri.stream_bytes != stream_bytes or
+        vbri.stream_bytes != summary.audio_bytes or
         vbri.frame_count != frame_count)
     {
         return error.UnexpectedMp3VbriMetadata;
     }
-    @memcpy(encoded, staged);
 }
 
 test "patch VBRI metadata into a complete encoded stream" {
