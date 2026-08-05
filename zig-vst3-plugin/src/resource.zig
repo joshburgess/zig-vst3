@@ -4,6 +4,8 @@ pub const job = @import("resource/job.zig");
 pub const exchange = @import("resource/exchange.zig");
 pub const reference = @import("resource/reference.zig");
 pub const recovery = @import("resource/recovery.zig");
+pub const byte_accumulator = @import("resource/byte_accumulator.zig");
+pub const ByteAccumulator = byte_accumulator.ByteAccumulator;
 pub const BoundedPath = @import("resource/path.zig").BoundedPath;
 pub const BoundedMetadata = reference.BoundedMetadata;
 pub const Identity = reference.Identity;
@@ -19,5 +21,6 @@ test {
     std.testing.refAllDecls(exchange);
     std.testing.refAllDecls(reference);
     std.testing.refAllDecls(recovery);
+    std.testing.refAllDecls(byte_accumulator);
     std.testing.refAllDecls(@import("resource/path.zig"));
 }

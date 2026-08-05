@@ -24,6 +24,14 @@ jobs:
           fetch-depth: 0
       - name: Check retired comparison references
         run: scripts/check_retired_reference.sh
+      - name: Check raw callback pointers
+        run: |
+          scripts/test_raw_callback_pointer_check.sh
+          scripts/check_raw_callback_pointers.sh
+      - name: Check production termination paths
+        run: |
+          scripts/test_production_termination_path_check.sh
+          scripts/check_production_termination_paths.sh
       - name: Check prose punctuation
         run: |
           em_dash="$(printf '\342\200\224')"

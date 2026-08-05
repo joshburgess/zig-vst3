@@ -203,6 +203,7 @@ pub const HrtfFrequencyDependentRoomResponseComposer =
 pub const HrtfMotionRenderer = hrtf.MotionRenderer;
 pub const HrtfStreamingMotionRenderer = hrtf_stream.Renderer;
 pub const HrtfDirection = hrtf.Direction;
+pub const HrtfMeasurementPosition = hrtf.MeasurementPosition;
 pub const HrtfPosition = hrtf.Position;
 pub const HrtfHeadPose = hrtf.HeadPose;
 pub const HrtfMotionPoint = hrtf.MotionPoint;
@@ -211,6 +212,7 @@ pub const HrtfMotionClockObservation = hrtf.MotionClockObservation;
 pub const HrtfMotionClockCalibrator = hrtf.MotionClockCalibrator;
 pub const HrtfMotionPointQueue = hrtf.MotionPointQueue;
 pub const HrtfInterpolation = hrtf.Interpolation;
+pub const hrtfMeasurementFromPositions = hrtf.measurementFromPositions;
 pub const HrtfSofaLoader = hrtf_sofa.Loader;
 pub const maximum_adm_renderer_input_channels =
     adm_render.maximum_input_channels;
@@ -376,6 +378,24 @@ pub const Mp3PcmGranule = mp3.PcmGranule;
 pub const Mp3PcmFrame = mp3.PcmFrame;
 pub const Mp3PcmEncoder = mp3.PcmEncoder;
 pub const Mp3PcmFileEncoder = mp3.PcmFileEncoder;
+pub const Mp3PcmAdaptiveReservoirAppend =
+    mp3.PcmAdaptiveReservoirAppend;
+pub const Mp3PcmAdaptiveReservoirFinish =
+    mp3.PcmAdaptiveReservoirFinish;
+pub const Mp3PcmAdaptiveReservoirGaplessFinish =
+    mp3.PcmAdaptiveReservoirGaplessFinish;
+pub const Mp3PcmAdaptiveReservoirGaplessStreamEncoder =
+    mp3.PcmAdaptiveReservoirGaplessStreamEncoder;
+pub const Mp3PcmAdaptiveReservoirGaplessFileEncoder =
+    mp3.PcmAdaptiveReservoirGaplessFileEncoder;
+pub const Mp3PcmAdaptiveReservoirGaplessFileSummary =
+    mp3.PcmAdaptiveReservoirGaplessFileSummary;
+pub const Mp3PcmAdaptiveReservoirFileEncoder =
+    mp3.PcmAdaptiveReservoirFileEncoder;
+pub const Mp3PcmAdaptiveReservoirFileSummary =
+    mp3.PcmAdaptiveReservoirFileSummary;
+pub const Mp3PcmAdaptiveReservoirStreamEncoder =
+    mp3.PcmAdaptiveReservoirStreamEncoder;
 pub const Mp3PcmRange = mp3.PcmRange;
 pub const Mp3PcmReservoirAppend = mp3.PcmReservoirAppend;
 pub const Mp3PcmReservoirEncoder = mp3.PcmReservoirEncoder;
@@ -395,7 +415,25 @@ pub const Mp3QuantizedSpectrum = mp3.QuantizedSpectrum;
 pub const Mp3QuantizedEncoderChannel =
     mp3.QuantizedEncoderChannel;
 pub const Mp3QuantizedEncoderFrame = mp3.QuantizedEncoderFrame;
+pub const Mp3QuantizedFrameParts = mp3.QuantizedFrameParts;
 pub const Mp3RequantizedSpectrum = mp3.RequantizedSpectrum;
+pub const Mp3ReservoirCreditDecision =
+    mp3.ReservoirCreditDecision;
+pub const Mp3ReservoirCreditTracker =
+    mp3.ReservoirCreditTracker;
+pub const Mp3PcmReservoirBatchResult =
+    mp3.PcmReservoirBatchResult;
+pub const Mp3PcmReservoirBatchFileResult =
+    mp3.PcmReservoirBatchFileResult;
+pub const Mp3PcmReservoirGaplessBatchResult =
+    mp3.PcmReservoirGaplessBatchResult;
+pub const Mp3PcmReservoirGaplessBatchFileResult =
+    mp3.PcmReservoirGaplessBatchFileResult;
+pub const Mp3ReservoirRepackRequirements =
+    mp3.ReservoirRepackRequirements;
+pub const Mp3ReservoirRepackResult = mp3.ReservoirRepackResult;
+pub const Mp3ReservoirQuantizerBudget =
+    mp3.ReservoirQuantizerBudget;
 pub const Mp3StereoSpectrum = mp3.StereoSpectrum;
 pub const Mp3ScaleFactorBands = mp3.ScaleFactorBands;
 pub const Mp3ScaleFactorChannel = mp3.ScaleFactorChannel;
@@ -415,6 +453,33 @@ pub const Mp3VbrPcmEncoder = mp3.VbrPcmEncoder;
 pub const Mp3VbrPcmFileEncoder = mp3.VbrPcmFileEncoder;
 pub const Mp3VbrPcmFileSummary = mp3.VbrPcmFileSummary;
 pub const Mp3VbrPcmFrame = mp3.VbrPcmFrame;
+pub const Mp3VbrPcmFrameParts = mp3.VbrPcmFrameParts;
+pub const Mp3VbrPcmAdaptiveReservoirAppend =
+    mp3.VbrPcmAdaptiveReservoirAppend;
+pub const Mp3VbrPcmAdaptiveReservoirFinish =
+    mp3.VbrPcmAdaptiveReservoirFinish;
+pub const Mp3VbrPcmAdaptiveReservoirGaplessFinish =
+    mp3.VbrPcmAdaptiveReservoirGaplessFinish;
+pub const Mp3VbrPcmAdaptiveReservoirGaplessStreamEncoder =
+    mp3.VbrPcmAdaptiveReservoirGaplessStreamEncoder;
+pub const Mp3VbrPcmAdaptiveReservoirGaplessFileEncoder =
+    mp3.VbrPcmAdaptiveReservoirGaplessFileEncoder;
+pub const Mp3VbrPcmAdaptiveReservoirGaplessFileSummary =
+    mp3.VbrPcmAdaptiveReservoirGaplessFileSummary;
+pub const Mp3VbrPcmAdaptiveReservoirFileEncoder =
+    mp3.VbrPcmAdaptiveReservoirFileEncoder;
+pub const Mp3VbrPcmAdaptiveReservoirFileSummary =
+    mp3.VbrPcmAdaptiveReservoirFileSummary;
+pub const Mp3VbrPcmAdaptiveReservoirStreamEncoder =
+    mp3.VbrPcmAdaptiveReservoirStreamEncoder;
+pub const Mp3VbrPcmReservoirBatchResult =
+    mp3.VbrPcmReservoirBatchResult;
+pub const Mp3VbrPcmReservoirBatchFileResult =
+    mp3.VbrPcmReservoirBatchFileResult;
+pub const Mp3VbrPcmReservoirGaplessBatchResult =
+    mp3.VbrPcmReservoirGaplessBatchResult;
+pub const Mp3VbrPcmReservoirGaplessBatchFileResult =
+    mp3.VbrPcmReservoirGaplessBatchFileResult;
 pub const Mp3VbrPcmReservoirAppend =
     mp3.VbrPcmReservoirAppend;
 pub const Mp3VbrPcmReservoirEncoder =
@@ -435,14 +500,48 @@ pub const Mp3Version = mp3.Version;
 pub const Mp3Xing = mp3.Xing;
 pub const Mp3XingEncoderMetadata = mp3.XingEncoderMetadata;
 pub const Mp3XingKind = mp3.XingKind;
+pub const mp3ReservoirRepackRequirements =
+    mp3.reservoirRepackRequirements;
+pub const mp3ReservoirQuantizerBudget =
+    mp3.reservoirQuantizerBudget;
+pub const packMp3MainDataReservoir =
+    mp3.packMainDataReservoir;
+pub const encodeMp3PcmReservoirBatch =
+    mp3.encodePcmReservoirBatch;
+pub const encodeMp3PcmReservoirGaplessBatch =
+    mp3.encodePcmReservoirGaplessBatch;
+pub const encodeMp3VbrPcmReservoirBatch =
+    mp3.encodeVbrPcmReservoirBatch;
+pub const encodeMp3VbrPcmReservoirGaplessBatch =
+    mp3.encodeVbrPcmReservoirGaplessBatch;
+pub const writeMp3PcmReservoirBatchFile =
+    mp3.writePcmReservoirBatchFile;
+pub const writeMp3PcmReservoirGaplessBatchFile =
+    mp3.writePcmReservoirGaplessBatchFile;
+pub const writeMp3PcmReservoirBatchFileWithInfo =
+    mp3.writePcmReservoirBatchFileWithInfo;
+pub const writeMp3VbrPcmReservoirBatchFile =
+    mp3.writeVbrPcmReservoirBatchFile;
+pub const writeMp3VbrPcmReservoirGaplessBatchFile =
+    mp3.writeVbrPcmReservoirGaplessBatchFile;
+pub const writeMp3VbrPcmReservoirBatchFileWithXing =
+    mp3.writeVbrPcmReservoirBatchFileWithXing;
+pub const repackMp3MainDataReservoir =
+    mp3.repackMainDataReservoir;
 pub const buildMp3SeekIndex = mp3.buildSeekIndex;
 pub const buildMp3FileSeekIndex = mp3.buildFileSeekIndex;
+pub const buildMp3FileSeekIndexTransactional =
+    mp3.buildFileSeekIndexTransactional;
 pub const buildMp3VbriToc = mp3.buildVbriToc;
+pub const finalizeMp3VbriStreamMetadata =
+    mp3.finalizeVbriStreamMetadata;
 pub const appendMp3Id3v1FileTail = mp3.appendId3v1FileTail;
 pub const decodeMp3HuffmanChannel = mp3.decodeHuffmanChannel;
 pub const decodeMp3ScaleFactors = mp3.decodeScaleFactors;
 pub const encodeMp3HuffmanChannel = mp3.encodeHuffmanChannel;
 pub const encodeMp3InfoFrame = mp3.encodeInfoFrame;
+pub const encodeMp3InfoFrameWithEncoder =
+    mp3.encodeInfoFrameWithEncoder;
 pub const encodeMp3VbriFrame = mp3.encodeVbriFrame;
 pub const encodeMp3XingFrame = mp3.encodeXingFrame;
 pub const encodeMp3ScaleFactors = mp3.encodeScaleFactors;
@@ -452,7 +551,21 @@ pub const mp3HuffmanRegionEnds = mp3.huffmanRegionEnds;
 pub const mp3ScaleFactorBands = mp3.scaleFactorBands;
 pub const requiredMp3FileSeekPoints = mp3.requiredFileSeekPoints;
 pub const requiredMp3SeekPoints = mp3.requiredSeekPoints;
+pub const requiredMp3PcmReservoirBatchFrameBytes =
+    mp3.requiredPcmReservoirBatchFrameBytes;
+pub const requiredMp3PcmAdaptiveReservoirStorage =
+    mp3.requiredPcmAdaptiveReservoirStorage;
+pub const requiredMp3PcmAdaptiveReservoirGaplessFileFinishStorage =
+    mp3.requiredPcmAdaptiveReservoirGaplessFileFinishStorage;
+pub const requiredMp3VbrPcmAdaptiveReservoirStorage =
+    mp3.requiredVbrPcmAdaptiveReservoirStorage;
+pub const requiredMp3VbrPcmAdaptiveReservoirGaplessFileFinishStorage =
+    mp3.requiredVbrPcmAdaptiveReservoirGaplessFileFinishStorage;
+pub const requiredMp3VbrPcmAdaptiveReservoirGaplessFrameOffsets =
+    mp3.requiredVbrPcmAdaptiveReservoirGaplessFrameOffsets;
 pub const requiredMp3VbriTocBytes = mp3.requiredVbriTocBytes;
+pub const Mp3VbriStreamMetadataResult =
+    mp3.VbriStreamMetadataResult;
 pub const writeMp3Id3v2FilePrefix = mp3.writeId3v2FilePrefix;
 pub const requantizeMp3Channel = mp3.requantizeChannel;
 pub const processMp3Stereo = mp3.processStereo;
@@ -464,6 +577,10 @@ pub const maximumMp3FreeFormatFrameBytes =
     mp3.maximum_free_format_frame_bytes;
 pub const maximumMp3EncodedFrameBytes =
     mp3.maximum_encoded_frame_bytes;
+pub const maximumMp3EncodedMainDataBytes =
+    mp3.maximum_encoded_main_data_bytes;
+pub const defaultMp3XingEncoderIdentifier =
+    mp3.default_xing_encoder_identifier;
 pub const ConstAudioBlock = audio_block.ConstAudioBlock;
 pub const AiffEncoding = aiff_writer.Encoding;
 pub const AiffSpec = aiff_writer.Spec;
@@ -568,9 +685,17 @@ pub const FlacSpec = flac.Spec;
 pub const decodeInterleavedFlac = flac.decodeInterleaved;
 pub const decodeInterleavedFlacWithWideScratch =
     flac.decodeInterleavedWithWideScratch;
+pub const decodeInterleavedFlacTransactional =
+    flac.decodeInterleavedTransactional;
+pub const decodeInterleavedFlacTransactionalWithWideScratch =
+    flac.decodeInterleavedTransactionalWithWideScratch;
 pub const decodeInterleavedFlacRange = flac.decodeInterleavedRange;
 pub const decodeInterleavedFlacRangeWithWideScratch =
     flac.decodeInterleavedRangeWithWideScratch;
+pub const decodeInterleavedFlacRangeTransactional =
+    flac.decodeInterleavedRangeTransactional;
+pub const decodeInterleavedFlacRangeTransactionalWithWideScratch =
+    flac.decodeInterleavedRangeTransactionalWithWideScratch;
 pub const encodeInterleavedFlac = flac.encodeInterleaved;
 pub const encodeInterleavedFlacWithComments =
     flac.encodeInterleavedWithComments;
@@ -579,10 +704,20 @@ pub const encodeInterleavedFlacWithSeekTable =
 pub const encodeInterleavedFlacWithMetadata =
     flac.encodeInterleavedWithMetadata;
 pub const readInterleavedFlacFile = flac.readInterleavedFile;
+pub const readInterleavedFlacFileWithWideScratch =
+    flac.readInterleavedFileWithWideScratch;
+pub const readInterleavedFlacFileTransactional =
+    flac.readInterleavedFileTransactional;
+pub const readInterleavedFlacFileTransactionalWithWideScratch =
+    flac.readInterleavedFileTransactionalWithWideScratch;
 pub const readInterleavedFlacFileRange =
     flac.readInterleavedFileRange;
 pub const readInterleavedFlacFileRangeWithWideScratch =
     flac.readInterleavedFileRangeWithWideScratch;
+pub const readInterleavedFlacFileRangeTransactional =
+    flac.readInterleavedFileRangeTransactional;
+pub const readInterleavedFlacFileRangeTransactionalWithWideScratch =
+    flac.readInterleavedFileRangeTransactionalWithWideScratch;
 pub const requiredFlacBytes = flac.requiredBytes;
 pub const requiredFlacBytesWithComments =
     flac.requiredBytesWithComments;
@@ -628,6 +763,8 @@ pub const adaptVorbisPacketBitBudget =
     ogg.adaptVorbisPacketBitBudget;
 pub const applyVorbisFloor = ogg.applyVorbisFloor;
 pub const buildVorbisFileSeekIndex = ogg.buildVorbisFileSeekIndex;
+pub const buildVorbisFileSeekIndexTransactional =
+    ogg.buildVorbisFileSeekIndexTransactional;
 pub const buildVorbisSeekIndex = ogg.buildVorbisSeekIndex;
 pub const encodeVorbisCommentPacket = ogg.encodeVorbisCommentPacket;
 pub const encodeVorbisIdentificationPacket =
@@ -832,6 +969,8 @@ pub const VorbisChainedPcmStreamResult =
     ogg.VorbisChainedPcmStreamResult;
 pub const VorbisPcmConcealmentResult =
     ogg.VorbisPcmConcealmentResult;
+pub const VorbisPcmSignalConcealmentConfig =
+    ogg.VorbisPcmSignalConcealmentConfig;
 pub const inferVorbisMissingPacketLargeBlock =
     ogg.inferVorbisMissingPacketLargeBlock;
 pub const inferVorbisMissingPacketLargeBlockFromFollowingGranule =
@@ -843,10 +982,23 @@ pub const VorbisPsychoacousticAnalysis =
     ogg.VorbisPsychoacousticAnalysis;
 pub const VorbisPsychoacousticConfig =
     ogg.VorbisPsychoacousticConfig;
+pub const VorbisPcmQualityMeasurement =
+    ogg.VorbisPcmQualityMeasurement;
+pub const VorbisPcmQualityMeter = ogg.VorbisPcmQualityMeter;
+pub const VorbisQualityPreset = ogg.VorbisQualityPreset;
 pub const VorbisAdaptiveRateDecision =
     ogg.VorbisAdaptiveRateDecision;
 pub const VorbisAdaptiveRatePolicyConfig =
     ogg.VorbisAdaptiveRatePolicyConfig;
+pub const VorbisQualityRateAction = ogg.VorbisQualityRateAction;
+pub const VorbisQualityRateController =
+    ogg.VorbisQualityRateController;
+pub const VorbisQualityRateControllerConfig =
+    ogg.VorbisQualityRateControllerConfig;
+pub const VorbisQualityRateDecision =
+    ogg.VorbisQualityRateDecision;
+pub const VorbisQualitySignalDecision =
+    ogg.VorbisQualitySignalDecision;
 pub const VorbisRateCommit = ogg.VorbisRateCommit;
 pub const VorbisRateControlConfig = ogg.VorbisRateControlConfig;
 pub const VorbisRateDistortion = ogg.VorbisRateDistortion;
@@ -1063,15 +1215,26 @@ pub const jacobiEllipticFunction =
 pub const complexJacobiElliptic = special_functions.complexJacobiElliptic;
 pub const complexJacobiEllipticFunction =
     special_functions.complexJacobiEllipticFunction;
+pub const complexParameterJacobiElliptic =
+    special_functions.complexParameterJacobiElliptic;
+pub const complexParameterJacobiEllipticFunction =
+    special_functions.complexParameterJacobiEllipticFunction;
 pub const complexJacobiCd = special_functions.complexJacobiCd;
 pub const inverseJacobiSn = special_functions.inverseJacobiSn;
 pub const inverseJacobiCn = special_functions.inverseJacobiCn;
 pub const inverseJacobiDn = special_functions.inverseJacobiDn;
+pub const inverseJacobiSnBranch =
+    special_functions.inverseJacobiSnBranch;
+pub const inverseJacobiCnBranch =
+    special_functions.inverseJacobiCnBranch;
+pub const inverseJacobiDnBranch =
+    special_functions.inverseJacobiDnBranch;
 pub const inverseComplexJacobiSn =
     special_functions.inverseComplexJacobiSn;
 pub const JacobiValues = special_functions.JacobiValues;
 pub const ComplexJacobiValues = special_functions.ComplexJacobiValues;
 pub const JacobiFunction = special_functions.JacobiFunction;
+pub const JacobiInverseBranch = special_functions.JacobiInverseBranch;
 pub const applyKaiserWindow = window.applyKaiser;
 pub const applyWindow = window.apply;
 pub const fillKaiserWindow = window.fillKaiser;

@@ -2,21 +2,37 @@
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-cache_dir="$root/.zig-cache"
-mode="${1:-inspect}"
+cache_name=.zig-cache
+mode=inspect
 
-if [ "$#" -gt 1 ]; then
-    printf 'usage: %s [inspect|--apply]\n' "$0" >&2
+usage() {
+    printf 'usage: %s [--autonomous] [inspect|--apply]\n' "$0" >&2
     exit 2
-fi
+}
 
-case "$mode" in
-    inspect|--apply) ;;
-    *)
-        printf 'usage: %s [inspect|--apply]\n' "$0" >&2
-        exit 2
+case "$#" in
+    0) ;;
+    1)
+        case "$1" in
+            --autonomous) cache_name=.zig-cache-autonomous ;;
+            inspect|--apply) mode="$1" ;;
+            *) usage ;;
+        esac
         ;;
+    2)
+        if [ "$1" != --autonomous ]; then
+            usage
+        fi
+        cache_name=.zig-cache-autonomous
+        case "$2" in
+            inspect|--apply) mode="$2" ;;
+            *) usage ;;
+        esac
+        ;;
+    *) usage ;;
 esac
+
+cache_dir="$root/$cache_name"
 
 if [ ! -f "$root/build.zig" ]; then
     printf 'repository marker is missing: %s\n' "$root/build.zig" >&2
@@ -41,7 +57,11 @@ fi
 du -sh "$cache_dir"
 
 if [ "$mode" = inspect ]; then
-    printf 'run %s --apply to remove this rebuildable cache\n' "$0"
+    if [ "$cache_name" = .zig-cache-autonomous ]; then
+        printf 'run %s --autonomous --apply to remove this rebuildable cache\n' "$0"
+    else
+        printf 'run %s --apply to remove this rebuildable cache\n' "$0"
+    fi
     exit 0
 fi
 

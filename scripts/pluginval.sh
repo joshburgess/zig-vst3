@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC1091,SC2329
 set -eu
 
 script_dir="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"

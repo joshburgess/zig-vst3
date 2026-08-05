@@ -785,6 +785,36 @@ pub fn build(b: *std.Build) void {
         "test-ara-native",
         "Run native ARA API and VST3 companion tests",
     );
+    const ara_source_cache_test_step = b.step(
+        "test-ara-source-cache",
+        "Run native and cross-target ARA source-cache tests",
+    );
+    const ara_playback_renderer_test_step = b.step(
+        "test-ara-playback-renderer",
+        "Run native and cross-target ARA playback-renderer tests",
+    );
+    const ara_spectral_transform_test_step = b.step(
+        "test-ara-spectral-transform",
+        "Run native and cross-target ARA spectral-transform tests",
+    );
+    const run_ara_source_cache_tests =
+        b.addRunArtifact(ara_source_cache_tests);
+    ara_source_cache_test_step.dependOn(
+        &run_ara_source_cache_tests.step,
+    );
+    ara_native_test_step.dependOn(
+        &run_ara_source_cache_tests.step,
+    );
+    const run_ara_playback_renderer_tests =
+        b.addRunArtifact(ara_playback_renderer_tests);
+    ara_playback_renderer_test_step.dependOn(
+        &run_ara_playback_renderer_tests.step,
+    );
+    const run_ara_spectral_transform_tests =
+        b.addRunArtifact(ara_spectral_transform_tests);
+    ara_spectral_transform_test_step.dependOn(
+        &run_ara_spectral_transform_tests.step,
+    );
     addRunArtifactDependencies(b, ara_native_test_step, &.{
         ara_tests,
         ara_vst3_tests,
@@ -794,7 +824,6 @@ pub fn build(b: *std.Build) void {
         ara_extension_tests,
         ara_playback_renderer_tests,
         ara_content_fades_tests,
-        ara_source_cache_tests,
         ara_spectral_transform_tests,
         ara_tuning_analysis_tests,
         ara_tempo_warp_tests,
@@ -919,6 +948,9 @@ pub fn build(b: *std.Build) void {
         ara_test_step.dependOn(
             &ara_playback_renderer_cross_tests.step,
         );
+        ara_playback_renderer_test_step.dependOn(
+            &ara_playback_renderer_cross_tests.step,
+        );
         const ara_content_fades_cross_module =
             b.createModule(.{
                 .root_source_file = b.path(
@@ -959,6 +991,9 @@ pub fn build(b: *std.Build) void {
         ara_test_step.dependOn(
             &ara_source_cache_cross_tests.step,
         );
+        ara_source_cache_test_step.dependOn(
+            &ara_source_cache_cross_tests.step,
+        );
         const ara_spectral_transform_cross_module =
             b.createModule(.{
                 .root_source_file = b.path(
@@ -976,6 +1011,9 @@ pub fn build(b: *std.Build) void {
                 .root_module = ara_spectral_transform_cross_module,
             });
         ara_test_step.dependOn(
+            &ara_spectral_transform_cross_tests.step,
+        );
+        ara_spectral_transform_test_step.dependOn(
             &ara_spectral_transform_cross_tests.step,
         );
         const ara_tuning_analysis_cross_module =
@@ -2341,6 +2379,215 @@ pub fn build(b: *std.Build) void {
     const zig_vst3_plugin_core_tests = b.addTest(.{
         .root_module = zig_vst3_plugin_core_test_module,
     });
+    const matrix_test_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/dsp/matrix.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    const matrix_tests = b.addTest(.{
+        .root_module = matrix_test_module,
+    });
+    const matrix_test_step = b.step(
+        "test-matrix",
+        "Run native and cross-target matrix tests",
+    );
+    matrix_test_step.dependOn(&b.addRunArtifact(matrix_tests).step);
+    const matrix_cross_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    };
+    for (matrix_cross_targets) |matrix_target| {
+        const matrix_cross_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3-plugin/src/dsp/matrix.zig",
+                ),
+                .target = matrix_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        matrix_test_step.dependOn(&matrix_cross_tests.step);
+    }
+    const mp3_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/dsp/mp3.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const mp3_test_step = b.step(
+        "test-mp3",
+        "Run native and cross-target MP3 tests",
+    );
+    mp3_test_step.dependOn(&b.addRunArtifact(mp3_tests).step);
+    const mp3_cross_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    };
+    for (mp3_cross_targets) |mp3_target| {
+        const mp3_cross_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3-plugin/src/dsp/mp3.zig",
+                ),
+                .target = mp3_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        mp3_test_step.dependOn(&mp3_cross_tests.step);
+    }
+    const hoa_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/hoa_tests.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"HOA"},
+    });
+    const hoa_test_step = b.step(
+        "test-hoa",
+        "Run native and cross-target HOA rendering tests",
+    );
+    hoa_test_step.dependOn(&b.addRunArtifact(hoa_tests).step);
+    const hoa_reference_parity = b.addExecutable(.{
+        .name = "hoa-reference-parity",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tools/hoa_reference_parity.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+            .link_libcpp = true,
+            .sanitize_c = .off,
+        }),
+    });
+    hoa_reference_parity.root_module.addImport(
+        "zig-vst3-plugin",
+        zig_vst3_plugin,
+    );
+    hoa_reference_parity.root_module.addCSourceFile(.{
+        .file = b.path("tests/fixtures/hoa_reference.cpp"),
+        .flags = &.{
+            "-std=c++17",
+            "-ffp-contract=off",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    const run_hoa_reference = b.addRunArtifact(hoa_reference_parity);
+    const hoa_reference_step = b.step(
+        "test-hoa-reference",
+        "Compare HOA matrices and renders with a native reference",
+    );
+    hoa_reference_step.dependOn(&run_hoa_reference.step);
+    hoa_test_step.dependOn(hoa_reference_step);
+    const hoa_cross_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    };
+    for (hoa_cross_targets) |hoa_target| {
+        const hoa_cross_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3-plugin/src/hoa_tests.zig",
+                ),
+                .target = hoa_target,
+                .optimize = .ReleaseSafe,
+            }),
+            .filters = &.{"HOA"},
+        });
+        hoa_test_step.dependOn(&hoa_cross_tests.step);
+    }
+    const vorbis_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/dsp/ogg.zig",
+            ),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const vorbis_test_step = b.step(
+        "test-vorbis",
+        "Run native and cross-target Ogg Vorbis tests",
+    );
+    vorbis_test_step.dependOn(&b.addRunArtifact(vorbis_tests).step);
+    const vorbis_cross_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    };
+    for (vorbis_cross_targets) |vorbis_target| {
+        const vorbis_cross_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3-plugin/src/dsp/ogg.zig",
+                ),
+                .target = vorbis_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        vorbis_test_step.dependOn(&vorbis_cross_tests.step);
+    }
     const plugin_core_cross_build_step = b.step(
         "test-plugin-core-builds",
         "Compile plugin-core tests for supported cross targets",
@@ -3083,10 +3330,21 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
+    lv2_component_state_host_smoke.root_module.addCSourceFile(.{
+        .file = b.path("tests/abi/lv2_log_capture.c"),
+        .flags = &.{"-std=c11"},
+    });
     const run_lv2_component_state_host_smoke =
         b.addRunArtifact(lv2_component_state_host_smoke);
     run_lv2_component_state_host_smoke.addFileArg(
         component_state_lv2.getEmittedBin(),
+    );
+    const lv2_component_state_test_step = b.step(
+        "test-lv2-component-state",
+        "Run the loadable LV2 component-state host fixture",
+    );
+    lv2_component_state_test_step.dependOn(
+        &run_lv2_component_state_host_smoke.step,
     );
 
     const lv2_dynamic_topology_host_smoke = b.addExecutable(.{
@@ -3130,6 +3388,11 @@ pub fn build(b: *std.Build) void {
     run_lv2_ui_host_smoke.addFileArg(
         lv2_ui_library.getEmittedBin(),
     );
+    const lv2_ui_test_step = b.step(
+        "test-lv2-ui-host",
+        "Run the loadable toolkit-neutral LV2 UI host fixture",
+    );
+    lv2_ui_test_step.dependOn(&run_lv2_ui_host_smoke.step);
 
     const lv2_abi_object = b.addObject(.{
         .name = "lv2-core-abi-zig",
@@ -3484,6 +3747,52 @@ pub fn build(b: *std.Build) void {
     );
     const run_vorbis_decode_probe_tests =
         b.addRunArtifact(vorbis_decode_probe_tests);
+    const run_vorbis_quality_q0 = b.addRunArtifact(
+        vorbis_interop_fixture,
+    );
+    const vorbis_quality_q0_ogg =
+        run_vorbis_quality_q0.addOutputFileArg("vorbis-quality-q0.ogg");
+    run_vorbis_quality_q0.addArg("0");
+    const vorbis_quality_q0_source =
+        run_vorbis_quality_q0.addOutputFileArg("vorbis-quality-q0.f32le");
+    const run_vorbis_quality_q5 = b.addRunArtifact(
+        vorbis_interop_fixture,
+    );
+    const vorbis_quality_q5_ogg =
+        run_vorbis_quality_q5.addOutputFileArg("vorbis-quality-q5.ogg");
+    run_vorbis_quality_q5.addArg("5");
+    const vorbis_quality_q5_source =
+        run_vorbis_quality_q5.addOutputFileArg("vorbis-quality-q5.f32le");
+    const run_vorbis_quality_q10 = b.addRunArtifact(
+        vorbis_interop_fixture,
+    );
+    const vorbis_quality_q10_ogg =
+        run_vorbis_quality_q10.addOutputFileArg("vorbis-quality-q10.ogg");
+    run_vorbis_quality_q10.addArg("10");
+    const vorbis_quality_q10_source =
+        run_vorbis_quality_q10.addOutputFileArg("vorbis-quality-q10.f32le");
+    const test_vorbis_quality = b.addSystemCommand(
+        &.{"scripts/test_vorbis_quality.sh"},
+    );
+    test_vorbis_quality.addFileArg(vorbis_quality_q0_ogg);
+    test_vorbis_quality.addFileArg(vorbis_quality_q0_source);
+    test_vorbis_quality.addFileArg(vorbis_quality_q5_ogg);
+    test_vorbis_quality.addFileArg(vorbis_quality_q5_source);
+    test_vorbis_quality.addFileArg(vorbis_quality_q10_ogg);
+    test_vorbis_quality.addFileArg(vorbis_quality_q10_source);
+    test_vorbis_quality.addArtifactArg(vorbis_decode_probe);
+    const vorbis_quality_test_step = b.step(
+        "test-vorbis-quality",
+        "Measure decoded PCM across Vorbis quality presets",
+    );
+    vorbis_quality_test_step.dependOn(&test_vorbis_quality.step);
+    vorbis_quality_test_step.dependOn(&run_vorbis_decode_probe_tests.step);
+    const vorbis_quality_runner_test = b.addSystemCommand(
+        &.{"scripts/test_vorbis_quality_runner.sh"},
+    );
+    vorbis_quality_test_step.dependOn(
+        &vorbis_quality_runner_test.step,
+    );
     const vorbis_module_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path(
@@ -3538,6 +3847,34 @@ pub fn build(b: *std.Build) void {
     const mp3_vbri_interop_file =
         run_mp3_interop_fixture.addOutputFileArg(
             "mp3-vbri-interop.mp3",
+        );
+    const mp3_mpeg2_mono_interop_file =
+        run_mp3_interop_fixture.addOutputFileArg(
+            "mp3-mpeg2-mono-interop.mp3",
+        );
+    const mp3_mpeg2_intensity_interop_file =
+        run_mp3_interop_fixture.addOutputFileArg(
+            "mp3-mpeg2-intensity-interop.mp3",
+        );
+    const mp3_mpeg25_intensity_interop_file =
+        run_mp3_interop_fixture.addOutputFileArg(
+            "mp3-mpeg25-intensity-interop.mp3",
+        );
+    const mp3_adaptive_gapless_interop_file =
+        run_mp3_interop_fixture.addOutputFileArg(
+            "mp3-adaptive-gapless-interop.mp3",
+        );
+    const mp3_adaptive_gapless_vbr_interop_file =
+        run_mp3_interop_fixture.addOutputFileArg(
+            "mp3-adaptive-gapless-vbr-interop.mp3",
+        );
+    const mp3_mpeg2_protected_interop_file =
+        run_mp3_interop_fixture.addOutputFileArg(
+            "mp3-mpeg2-protected-interop.mp3",
+        );
+    const mp3_mpeg25_protected_interop_file =
+        run_mp3_interop_fixture.addOutputFileArg(
+            "mp3-mpeg25-protected-interop.mp3",
         );
     const generate_mp3_interop_step = b.step(
         "generate-mp3-interop-fixture",
@@ -3611,6 +3948,25 @@ pub fn build(b: *std.Build) void {
     test_mp3_interop.addArtifactArg(mp3_pcm_reference_probe);
     test_mp3_interop.addFileArg(mp3_vbri_interop_file);
     test_mp3_interop.addArtifactArg(mp3_external_vbri_fixture);
+    test_mp3_interop.addFileArg(mp3_mpeg2_mono_interop_file);
+    test_mp3_interop.addFileArg(
+        mp3_mpeg2_intensity_interop_file,
+    );
+    test_mp3_interop.addFileArg(
+        mp3_mpeg25_intensity_interop_file,
+    );
+    test_mp3_interop.addFileArg(
+        mp3_adaptive_gapless_interop_file,
+    );
+    test_mp3_interop.addFileArg(
+        mp3_adaptive_gapless_vbr_interop_file,
+    );
+    test_mp3_interop.addFileArg(
+        mp3_mpeg2_protected_interop_file,
+    );
+    test_mp3_interop.addFileArg(
+        mp3_mpeg25_protected_interop_file,
+    );
     const mp3_interop_test_step = b.step(
         "test-mp3-interop",
         "Run external MP3 encoder and decoder checks",
@@ -3701,6 +4057,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(wayland_window_test_step);
     test_step.dependOn(wayland_standalone_frame_test_step);
     test_step.dependOn(linux_run_loop_test_step);
+    test_step.dependOn(hoa_reference_step);
     addExamplePluginTestDependencies(b, test_step, &example_plugins);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_pluginval_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_validator_runner.sh"}).step);
@@ -3722,11 +4079,57 @@ pub fn build(b: *std.Build) void {
     );
     test_step.dependOn(
         &b.addSystemCommand(
+            &.{"scripts/test_raw_callback_pointer_check.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/check_raw_callback_pointers.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_production_termination_path_check.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/check_production_termination_paths.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
             &.{"scripts/test_clean_zig_cache_runner.sh"},
         ).step,
     );
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_zig_cache_budget_runner.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_zig_autonomous_runner.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_installed_package_runner.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_clean_installed_package_artifacts_runner.sh"},
+        ).step,
+    );
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/check_public_gui_examples.sh"}).step);
-    test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_installed_package.sh"}).step);
+    const installed_package_tests = b.addSystemCommand(
+        &.{"scripts/test_installed_package.sh"},
+    );
+    installed_package_tests.addArg(
+        b.fmt("--optimize={s}", .{@tagName(optimize)}),
+    );
+    test_step.dependOn(&installed_package_tests.step);
     test_step.dependOn(generate_fixtures_step);
     test_step.dependOn(dsp_fixture_parity_step);
     test_step.dependOn(
@@ -3735,6 +4138,8 @@ pub fn build(b: *std.Build) void {
         ).step,
     );
     test_step.dependOn(&test_vorbis_interop.step);
+    test_step.dependOn(&test_vorbis_quality.step);
+    test_step.dependOn(&vorbis_quality_runner_test.step);
     test_step.dependOn(&run_vorbis_module_tests.step);
     test_step.dependOn(
         &b.addSystemCommand(
@@ -3808,9 +4213,117 @@ pub fn build(b: *std.Build) void {
     });
     const hrtf_test_step = b.step(
         "test-hrtf",
-        "Run measured spatial rendering and dataset loader tests",
+        "Run native and cross-target spatial rendering tests",
     );
     hrtf_test_step.dependOn(&b.addRunArtifact(hrtf_tests).step);
+    const hrtf_fixture_fetch_runner = b.addSystemCommand(
+        &.{"scripts/test_hrtf_fixture_fetch_runner.sh"},
+    );
+    hrtf_test_step.dependOn(&hrtf_fixture_fetch_runner.step);
+    test_step.dependOn(&hrtf_fixture_fetch_runner.step);
+    const hrtf_reference_step = b.step(
+        "test-hrtf-reference",
+        "Compare public HRTF datasets with a native numerical reference",
+    );
+    const viking_reference_path = b.graph.environ_map.get(
+        "ZIG_VST3_VIKING_SOFA_TEST_FILE",
+    );
+    const hutubs_reference_path = b.graph.environ_map.get(
+        "ZIG_VST3_HUTUBS_SOFA_TEST_FILE",
+    );
+    const native_hrtf_reference =
+        target.result.cpu.arch == b.graph.host.result.cpu.arch and
+        target.result.os.tag == b.graph.host.result.os.tag and
+        (target.result.os.tag == .macos or
+            target.result.os.tag == .linux);
+    if (native_hrtf_reference and
+        viking_reference_path != null and
+        hutubs_reference_path != null)
+    {
+        const hrtf_reference_parity = b.addExecutable(.{
+            .name = "hrtf-reference-parity",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tools/hrtf_reference_parity.zig",
+                ),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+                .link_libc = true,
+                .link_libcpp = true,
+                .sanitize_c = .off,
+            }),
+        });
+        hrtf_reference_parity.root_module.addImport(
+            "zig-vst3-plugin",
+            zig_vst3_plugin,
+        );
+        hrtf_reference_parity.root_module.addCSourceFile(.{
+            .file = b.path("tests/fixtures/hrtf_reference.cpp"),
+            .flags = &.{
+                "-std=c++17",
+                "-ffp-contract=off",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+            },
+        });
+        hrtf_reference_parity.root_module.linkSystemLibrary(
+            "netcdf",
+            .{ .use_pkg_config = .force },
+        );
+
+        const run_viking_reference = b.addRunArtifact(
+            hrtf_reference_parity,
+        );
+        run_viking_reference.addArgs(&.{
+            "viking",
+            viking_reference_path.?,
+        });
+        const run_hutubs_reference = b.addRunArtifact(
+            hrtf_reference_parity,
+        );
+        run_hutubs_reference.addArgs(&.{
+            "hutubs",
+            hutubs_reference_path.?,
+        });
+        hrtf_reference_step.dependOn(&run_viking_reference.step);
+        hrtf_reference_step.dependOn(&run_hutubs_reference.step);
+        hrtf_test_step.dependOn(hrtf_reference_step);
+        test_step.dependOn(hrtf_reference_step);
+    } else {
+        hrtf_reference_step.dependOn(&b.addFail(
+            "test-hrtf-reference requires a native macOS or Linux target and both ZIG_VST3_VIKING_SOFA_TEST_FILE and ZIG_VST3_HUTUBS_SOFA_TEST_FILE",
+        ).step);
+    }
+    const hrtf_cross_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    };
+    for (hrtf_cross_targets) |hrtf_target| {
+        const hrtf_cross_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "zig-vst3-plugin/src/hrtf_tests.zig",
+                ),
+                .target = hrtf_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        hrtf_test_step.dependOn(&hrtf_cross_tests.step);
+    }
 
     const dsp_thread_sanitizer_tests = b.addTest(.{
         .root_module = b.createModule(.{

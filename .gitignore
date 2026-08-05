@@ -1,4 +1,5 @@
 .zig-cache/
+.zig-cache-autonomous/
 .zig-cache-global/
 .zig-global-cache/
 zig-out/

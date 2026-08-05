@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC2016
 set -eu
 
 root=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-msvc-prerequisite.XXXXXX")

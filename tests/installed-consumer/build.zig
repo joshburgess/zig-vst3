@@ -95,6 +95,11 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-waylandwindow",
         dependency.module("zig-vst3-waylandwindow"),
     );
+    core_tests.root_module.link_libc = true;
+    core_tests.root_module.addCSourceFile(.{
+        .file = b.path("lv2_log_capture.c"),
+        .flags = &.{"-std=c11"},
+    });
 
     const kernel_module = b.createModule(.{
         .root_source_file = b.path("kernel_plugin.zig"),

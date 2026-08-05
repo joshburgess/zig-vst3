@@ -290,6 +290,16 @@ const instrument_editor: ui.EditorDescription = .{
 };
 
 test "installed package builds effect and instrument editor declarations" {
+    try std.testing.expectError(
+        error.InvalidParameterRange,
+        plugin.parameters.FloatParam.initChecked(
+            99,
+            "Overflowing span",
+            -std.math.floatMax(f64),
+            std.math.floatMax(f64),
+            0.0,
+        ),
+    );
     const effect_set = plugin.parameters.ParameterSet(EffectParameters).init(.{});
     const instrument_set = plugin.parameters.ParameterSet(InstrumentParameters).init(.{});
     try std.testing.expectEqual(@as(usize, 2), @TypeOf(effect_set).count);
@@ -908,6 +918,16 @@ test "installed package exposes host-neutral processor runtimes" {
     try std.testing.expectEqualSlices(f32, &input, &output);
     try runtime.deactivate();
     try runtime.releaseResources();
+    runtime.deinit();
+    try std.testing.expectEqual(
+        plugin.plugin.RuntimeState.deinitialized,
+        runtime.runtimeState(),
+    );
+    try std.testing.expectError(
+        error.ProcessorDeinitialized,
+        runtime.reset(),
+    );
+    runtime.deinit();
 
     try std.testing.expect(
         @hasDecl(plugin.plugin, "OfflineRenderer"),
@@ -1202,6 +1222,8 @@ test "installed package exposes MPE note tracking and channel allocation" {
     );
     const Instrument = plugin.process.MpeInstrument(4);
     var instrument = try Instrument.init(layout);
+    for (instrument.notes_storage) |active_note|
+        try std.testing.expectEqualDeep(plugin.process.MpeNote{}, active_note);
     const added = try instrument.process(try plugin.process.Midi1Message.noteOn(1, 60, 100));
     try std.testing.expectEqual(plugin.process.MpeInstrumentChangeKind.note_added, added.kind);
     _ = try instrument.process(try plugin.process.Midi1Message.pitchBend(1, 16383));
@@ -1210,8 +1232,16 @@ test "installed package exposes MPE note tracking and channel allocation" {
         instrument.notes()[0].total_pitch_bend_semitones,
         0.0001,
     );
+    try std.testing.expectEqual(@as(usize, 1), instrument.allNotesOff());
+    for (instrument.notes_storage) |active_note|
+        try std.testing.expectEqualDeep(plugin.process.MpeNote{}, active_note);
 
     var allocator = try plugin.process.MpeMemberChannelAllocator.init(layout.lower);
+    for (allocator.assignments_storage) |assignment|
+        try std.testing.expectEqualDeep(
+            plugin.process.MpeMemberChannelAssignment{},
+            assignment,
+        );
     const first = try allocator.allocate(60, .reject);
     const second = try allocator.allocate(64, .reject);
     try std.testing.expectEqual(@as(u8, 1), first.assignment.channel_index);
@@ -1219,6 +1249,11 @@ test "installed package exposes MPE note tracking and channel allocation" {
     const replacement = try allocator.allocate(67, .oldest);
     try std.testing.expectEqual(first.assignment.id, replacement.stolen.?.id);
     try std.testing.expectEqual(@as(u8, 1), replacement.assignment.channel_index);
+    try std.testing.expectEqualDeep(second.assignment, allocator.release(second.assignment.id).?);
+    try std.testing.expectEqualDeep(
+        plugin.process.MpeMemberChannelAssignment{},
+        allocator.assignments_storage[1],
+    );
 }
 
 test "installed package exposes checked UMP messages and SysEx7 assembly" {
@@ -1323,10 +1358,28 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
     while (try title_packetizer.next()) |title_packet| {
         _ = try title_reassembler.push(title_packet);
     }
+    title_packetizer.emitted_empty = true;
+    try std.testing.expect(!title_packetizer.valid());
+    try std.testing.expectError(
+        error.InvalidFlexTextPacketizerState,
+        title_packetizer.next(),
+    );
+    title_packetizer.emitted_empty = false;
+    try std.testing.expect(title_packetizer.valid());
     try std.testing.expectEqualStrings(
         "Installed Composition Name",
         title_reassembler.text().?,
     );
+    title_reassembler.target = .{ .group = 4, .address = .group, .channel = 1 };
+    try std.testing.expect(!title_reassembler.valid());
+    try std.testing.expectEqual(@as(?[]const u8, null), title_reassembler.bytes());
+    title_reassembler.target = .{ .group = 4, .address = .group };
+    try std.testing.expect(title_reassembler.valid());
+    for (title_reassembler.storage[title_reassembler.count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    title_reassembler.reset();
+    for (title_reassembler.storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
 
     const mixed_metadata = plugin.process.MidiMixedDataMetadata{
         .group = 4,
@@ -1342,6 +1395,14 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         mixed_metadata,
         "Installed mixed data",
     );
+    mixed_packetizer.header.valid_byte_count += 1;
+    try std.testing.expect(!mixed_packetizer.valid());
+    try std.testing.expectError(
+        error.InvalidMixedDataPacketizerState,
+        mixed_packetizer.next(),
+    );
+    mixed_packetizer.header.valid_byte_count -= 1;
+    try std.testing.expect(mixed_packetizer.valid());
     const MixedReassembler = plugin.process.MidiMixedDataReassembler(32);
     var mixed_reassembler = MixedReassembler{};
     while (try mixed_packetizer.next()) |mixed_packet| {
@@ -1351,6 +1412,11 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         "Installed mixed data",
         mixed_reassembler.bytes().?,
     );
+    for (mixed_reassembler.storage[mixed_reassembler.count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    mixed_reassembler.reset();
+    for (mixed_reassembler.storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
 
     const sysex_source = [_]u8{ 0x7D, 1, 2, 3, 4, 5, 6, 7 };
     var packetizer = try plugin.process.Sysex7Packetizer.init(2, &sysex_source);
@@ -1359,11 +1425,22 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
     while (try packetizer.next()) |sysex_packet| {
         _ = try reassembler.push(sysex_packet);
     }
+    packetizer.emitted_empty = true;
+    try std.testing.expect(!packetizer.valid());
+    try std.testing.expectError(
+        error.InvalidSysex7PacketizerState,
+        packetizer.next(),
+    );
+    packetizer.emitted_empty = false;
+    try std.testing.expect(packetizer.valid());
     try std.testing.expectEqualSlices(
         u7,
         &.{ 0x7D, 1, 2, 3, 4, 5, 6, 7 },
         reassembler.message().?,
     );
+    reassembler.reset();
+    for (reassembler.storage) |byte|
+        try std.testing.expectEqual(@as(u7, 0), byte);
 
     const sysex8_source = [_]u8{ 0, 0x80, 0xFF, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
     var packetizer8 = try plugin.process.Sysex8Packetizer.init(3, 0xA5, &sysex8_source);
@@ -1373,6 +1450,9 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         _ = try reassembler8.push(sysex_packet);
     }
     try std.testing.expectEqualSlices(u8, &sysex8_source, reassembler8.message().?);
+    reassembler8.reset();
+    for (reassembler8.storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
 
     var name_packetizer = try plugin.process.MidiStreamTextPacketizer.init(
         .endpoint_name,
@@ -1385,6 +1465,16 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         _ = try name_reassembler.push(name_packet);
     }
     try std.testing.expectEqualStrings("Installed Endpoint Name", name_reassembler.text().?);
+    name_reassembler.storage[0] = 0;
+    try std.testing.expect(!name_reassembler.valid());
+    try std.testing.expectEqual(@as(?[]const u8, null), name_reassembler.bytes());
+    name_reassembler.storage[0] = 'I';
+    try std.testing.expect(name_reassembler.valid());
+    for (name_reassembler.storage[name_reassembler.count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    name_reassembler.reset();
+    for (name_reassembler.storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
 
     const installed_block_info = plugin.process.MidiFunctionBlockInfo{
         .block = 0,
@@ -1516,6 +1606,10 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         .process_features = .{ .midi_message_report = true },
         .simultaneous_property_requests = 2,
     });
+    for (ci_device.remotes) |slot|
+        try std.testing.expectEqualDeep(@TypeOf(slot){}, slot);
+    for (ci_device.pending_properties) |pending|
+        try std.testing.expectEqualDeep(@TypeOf(pending){}, pending);
     const remote_handle = (try ci_device.handleDiscovery(.{ .discovery = .{
         .participant = .{
             .muid = ci_responder_participant.muid,
@@ -1571,6 +1665,18 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         @as(usize, 1),
         installed_profile_delegate.requests,
     );
+    _ = try installed_profile_host.removeProfile(
+        .function_block,
+        installed_profile,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        ci_device.local_profile_count,
+    );
+    try std.testing.expectEqualDeep(
+        plugin.process.MidiCiProfileHostEntry{},
+        ci_device.local_profiles[0],
+    );
     const installed_property_responder =
         try plugin.process.MidiCiPropertyCapabilitiesResponder.init(.{
             .source = ci_responder_participant.muid,
@@ -1589,6 +1695,12 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         remote_handle,
         .{ .resource = "DeviceInfo" },
     );
+    const installed_pending =
+        ci_device.pending_properties[installed_get.request_id];
+    for (installed_pending.resource_storage[installed_pending.resource_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (installed_pending.res_id_storage[installed_pending.res_id_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     _ = try ci_device.acceptPropertyGet(
         std.testing.allocator,
         try plugin.process.MidiCiPropertyDataMessage(32, 64).init(
@@ -1602,6 +1714,10 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
             1,
             "{\"manufacturer\":\"Installed\"}",
         ),
+    );
+    try std.testing.expectEqualDeep(
+        @TypeOf(ci_device.pending_properties[installed_get.request_id]){},
+        ci_device.pending_properties[installed_get.request_id],
     );
     try std.testing.expectEqualStrings(
         "{\"manufacturer\":\"Installed\"}",
@@ -1650,11 +1766,39 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         "{\"active\":true}",
         installed_host_reply.reply.data(),
     );
+    const deterministic_property_message =
+        try plugin.process.MidiCiPropertyDataMessage(32, 64).init(
+            .notify,
+            2,
+            ci_responder_participant.muid,
+            ci_initiator.muid,
+            8,
+            "{}",
+            1,
+            1,
+            "ok",
+        );
+    for (deterministic_property_message.header_storage[2..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (deterministic_property_message.data_storage[2..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    var deterministic_reassembly =
+        plugin.process.MidiCiPropertyReassembler(32, 64){};
+    _ = try deterministic_reassembly.push(deterministic_property_message);
+    deterministic_reassembly.reset();
+    for (deterministic_reassembly.header_storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (deterministic_reassembly.data_storage) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
 
     const device_cleanup =
         (try ci_device.acceptInvalidation(ci_invalidation)).remote;
     try std.testing.expectEqual(@as(usize, 1), device_cleanup.remotes);
     try std.testing.expectEqual(@as(usize, 1), device_cleanup.cached_properties);
+    try std.testing.expectEqualDeep(
+        @TypeOf(ci_device.remotes[remote_handle]){},
+        ci_device.remotes[remote_handle],
+    );
 
     const InstalledPropertyCache =
         plugin.process.MidiCiPropertyRemoteCache(2, 36, 36, 64);
@@ -1663,7 +1807,15 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         .remote = ci_responder_participant.muid,
         .resource = "DeviceInfo",
     };
-    _ = try property_cache.put(cache_key, "{\"manufacturer\":\"Example\"}");
+    const cache_index =
+        try property_cache.put(cache_key, "{\"manufacturer\":\"Example\"}");
+    const installed_cache_slot = property_cache.slots[cache_index];
+    for (installed_cache_slot.resource_storage[installed_cache_slot.resource_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (installed_cache_slot.res_id_storage[installed_cache_slot.res_id_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (installed_cache_slot.data_storage[installed_cache_slot.data_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     try std.testing.expectEqualStrings(
         "{\"manufacturer\":\"Example\"}",
         (try property_cache.get(cache_key)).data,
@@ -1671,6 +1823,10 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
     try std.testing.expectEqual(
         @as(usize, 1),
         property_cache.releaseRemote(ci_responder_participant.muid),
+    );
+    try std.testing.expectEqualDeep(
+        @TypeOf(property_cache.slots[cache_index]){},
+        property_cache.slots[cache_index],
     );
 
     const endpoint_information_transaction =
@@ -1773,6 +1929,12 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
             .disabled = try InstalledProfileList.init(&.{}),
         },
     ));
+    const installed_profile_list = try InstalledProfileList.init(&.{profile});
+    for (installed_profile_list.storage[1..]) |item|
+        try std.testing.expectEqual(
+            @as([5]u7, @splat(0)),
+            item.bytes,
+        );
     var profile_set = try plugin.process.MidiCiProfileSetTransaction.init(.{
         .kind = .off,
         .source = ci_initiator.muid,
@@ -1832,6 +1994,10 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         &.{ 1, 2, 3 },
         parsed_profile_data.data(),
     );
+    for (profile_data.storage[3..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (parsed_profile_data.storage[3..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     const property_transaction =
         try plugin.process.MidiCiPropertyCapabilitiesTransaction.init(.{
             .source = ci_initiator.muid,
@@ -1892,11 +2058,29 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         plugin.process.MidiCiPropertyChunkResult.complete,
         try property_reassembler.push(parsed_property_get),
     );
+    property_reassembler.declared_total = 0;
+    try std.testing.expect(!property_reassembler.valid());
+    try std.testing.expectEqual(@as(usize, 0), property_reassembler.header().len);
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyReassemblyState,
+        property_reassembler.push(parsed_property_get),
+    );
+    property_reassembler.declared_total = 1;
+    try property_reassembler.validate();
     const InstalledPropertyRequestIds =
         plugin.process.MidiCiPropertyRequestIds(2);
     var property_request_ids = InstalledPropertyRequestIds{};
     const property_request_id = try property_request_ids.acquire();
     try property_request_ids.release(property_request_id);
+    property_request_ids.next = 2;
+    try std.testing.expect(!property_request_ids.valid());
+    try std.testing.expectEqual(@as(usize, 0), property_request_ids.count());
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyRequestIdsState,
+        property_request_ids.acquire(),
+    );
+    property_request_ids.next = 0;
+    try std.testing.expect(property_request_ids.valid());
     const InstalledPropertyInitiator =
         plugin.process.MidiCiPropertyInitiator(2, 32, 32);
     const InstalledPropertyResponder =
@@ -1905,9 +2089,20 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         ci_initiator.muid,
         2,
     );
+    try property_initiator.validate();
+    property_initiator.request_ids.next = 2;
+    try std.testing.expect(!property_initiator.valid());
+    try std.testing.expectEqual(@as(usize, 0), property_initiator.activeCount());
+    property_initiator.request_ids.next = 0;
+    try property_initiator.validate();
     var property_data_responder = try InstalledPropertyResponder.init(
         ci_responder_participant.muid,
     );
+    try property_data_responder.validate();
+    property_data_responder.source = plugin.process.midi_ci.Muid.broadcast();
+    try std.testing.expect(!property_data_responder.valid());
+    property_data_responder.source = ci_responder_participant.muid;
+    try property_data_responder.validate();
     const session_get = try property_initiator.begin(
         .get,
         ci_responder_participant.muid,
@@ -1938,16 +2133,35 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
     const InstalledSubscriptionRegistry =
         plugin.process.MidiCiPropertySubscriptionRegistry(2);
     var subscriptions = InstalledSubscriptionRegistry{};
+    for (subscriptions.entries) |entry|
+        try std.testing.expectEqualDeep(@TypeOf(entry){}, entry);
     const subscription_handle = try subscriptions.register(
         ci_responder_participant.muid,
         "ChannelList",
         "sub_1",
     );
+    const installed_subscription = subscriptions.entries[subscription_handle];
+    for (installed_subscription.resource_storage[installed_subscription.resource_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (installed_subscription.id_storage[installed_subscription.id_count..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     try std.testing.expectEqualStrings(
         "ChannelList",
         (try subscriptions.get(subscription_handle)).resource,
     );
+    subscriptions.entries[subscription_handle].resource_storage[0] = '_';
+    try std.testing.expect(!subscriptions.valid());
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertySubscriptionState,
+        subscriptions.get(subscription_handle),
+    );
+    subscriptions.entries[subscription_handle].resource_storage[0] = 'C';
+    try subscriptions.validate();
     try subscriptions.release(subscription_handle);
+    try std.testing.expectEqualDeep(
+        @TypeOf(subscriptions.entries[subscription_handle]){},
+        subscriptions.entries[subscription_handle],
+    );
 
     const property_header = plugin.process.MidiCiPropertyRequestHeader{
         .resource = "ChannelList",
@@ -2118,15 +2332,84 @@ test "installed package exposes toolkit-neutral GUI models" {
         .{ .id = 1, .position = .{ .x = 0.0, .y = 0.0 } },
         .{ .id = 2, .position = .{ .x = 1.0, .y = 1.0 } },
     });
+    try std.testing.expectEqualDeep(
+        plugin.gui_graph.EditablePoint{},
+        envelope.points[2],
+    );
+    for (envelope.transaction_points) |point|
+        try std.testing.expectEqualDeep(plugin.gui_graph.EditablePoint{}, point);
     try envelope.begin();
     _ = try envelope.add(.{ .x = 0.5, .y = 0.25 });
     envelope.finish();
     try std.testing.expect(envelope.valid());
+    for (envelope.transaction_points) |point|
+        try std.testing.expectEqualDeep(plugin.gui_graph.EditablePoint{}, point);
+    var malformed_envelope = envelope;
+    malformed_envelope.points[1].position.x = std.math.nan(f64);
+    try std.testing.expect(!malformed_envelope.valid());
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        malformed_envelope.slice().len,
+    );
+
+    const Series = plugin.gui_graph.FixedSeries(3);
+    var series = try Series.init(&.{
+        .{ .x = 0.0, .y = 1.0 },
+        .{ .x = 1.0, .y = 0.0 },
+    });
+    try std.testing.expectEqualDeep(plugin.gui_graph.Point{}, series.points[2]);
+    series.points[0].y = std.math.inf(f64);
+    try std.testing.expect(!series.valid());
+    try std.testing.expectEqual(@as(usize, 0), series.slice().len);
+
+    var snapshot_series = plugin.gui_graph.SnapshotSeries(2).init();
+    snapshot_series.editorOpened();
+    try std.testing.expect(snapshot_series.publish(&.{.{
+        .x = 0.25,
+        .y = 0.75,
+    }}));
+    var snapshot_points: [2]plugin.gui_graph.Point = undefined;
+    snapshot_series.points[0].y.bits.store(
+        @bitCast(std.math.inf(f64)),
+        .release,
+    );
+    try std.testing.expect(snapshot_series.read(&snapshot_points) == null);
+    snapshot_series.points[0].y.store(0.75);
+    try std.testing.expectEqual(
+        @as(?usize, 1),
+        snapshot_series.read(&snapshot_points),
+    );
+
+    var stored_envelope = try plugin.editor_state.Envelope.init(&.{.{
+        .id = 1,
+        .x = 0.5,
+        .y = 0.25,
+    }});
+    stored_envelope.points[0].x = std.math.nan(f64);
+    try std.testing.expect(!stored_envelope.valid());
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        stored_envelope.slice().len,
+    );
+    try std.testing.expectError(
+        error.InvalidEditorStateTextEncoding,
+        plugin.editor_state.Text.init(&.{ 0xc3, 0x28 }),
+    );
+    const unicode_text = try plugin.editor_state.Text.init("Hall \xe2\x98\x83");
+    try std.testing.expect(unicode_text.valid());
 
     const viewport_config = plugin.gui_viewport.Config{ .initial_zoom = 2.0 };
     var viewport = try plugin.gui_viewport.State.init(viewport_config);
     try std.testing.expect(viewport.zoomIn(viewport_config, 0.5, 0.5));
     try std.testing.expect(viewport.valid(viewport_config));
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        viewport.project(
+            viewport_config,
+            std.math.floatMax(f64),
+            true,
+        ),
+    );
 
     const selection_config = plugin.gui_range_selection.Config{
         .minimum = 0.0,
@@ -2139,13 +2422,60 @@ test "installed package exposes toolkit-neutral GUI models" {
     var selection = try plugin.gui_range_selection.State.init(selection_config);
     try std.testing.expect(selection.set(selection_config, .start, 0.3));
     try std.testing.expect(selection.valid(selection_config));
+    try std.testing.expectError(
+        error.InvalidRangeSelectionBounds,
+        (plugin.gui_range_selection.Config{
+            .minimum = -std.math.floatMax(f64),
+            .maximum = std.math.floatMax(f64),
+            .initial_start = -1.0,
+            .initial_end = 1.0,
+            .step = 1.0,
+        }).validate(),
+    );
 
-    const Presets = plugin.gui_preset_browser.Browser(2);
+    const Presets = plugin.gui_preset_browser.Browser(3);
     var presets = Presets{};
+    for (presets.presets) |preset|
+        try std.testing.expectEqualDeep(plugin.gui_preset_browser.Preset{}, preset);
     try presets.add(try plugin.gui_preset_browser.Preset.init(1, "Clean"));
     try presets.add(try plugin.gui_preset_browser.Preset.init(2, "Driven"));
+    try std.testing.expectEqualDeep(
+        plugin.gui_preset_browser.Preset{},
+        presets.presets[2],
+    );
     try presets.setSearch("drive");
     try std.testing.expectEqual(@as(usize, 1), presets.matchingCount());
+
+    const PresetState = plugin.editor_state.Store(1, &.{
+        .{ .id = 1, .default = .{ .text = plugin.editor_state.Text{} } },
+        .{ .id = 2, .default = .{ .index = 0 } },
+    });
+    var preset_state = PresetState.init();
+    try preset_state.set(1, .{
+        .text = try plugin.editor_state.Text.init("clean"),
+    });
+    try preset_state.setUnsigned(2, 99);
+    _ = try presets.beginLoad();
+    try presets.restore(&preset_state, .{ .search = 1, .selection = 2 });
+    try std.testing.expectEqualStrings("clean", presets.search.slice());
+    try std.testing.expectEqual(@as(?u32, 1), presets.selected_id);
+    try std.testing.expectEqual(
+        plugin.gui_preset_browser.LoadStatus.idle,
+        presets.load_status,
+    );
+
+    const DropZone = plugin.gui_file_drop.DropZone(2, 1);
+    var drop_zone = try DropZone.init(&.{".wav"});
+    try std.testing.expectEqual(
+        plugin.gui_file_drop.Status.acceptable,
+        drop_zone.inspect(&.{"/samples/kick.wav"}),
+    );
+    for (drop_zone.paths[0].bytes[drop_zone.paths[0].len..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    try std.testing.expectEqualDeep(plugin.gui_file_drop.Path{}, drop_zone.paths[1]);
+    drop_zone.reset();
+    for (drop_zone.paths) |path|
+        try std.testing.expectEqualDeep(plugin.gui_file_drop.Path{}, path);
 
     const reference = try plugin.resource.Reference(64, 32).init(
         "/models/example.nam",
@@ -2154,6 +2484,10 @@ test "installed package exposes toolkit-neutral GUI models" {
         "Linear",
     );
     try std.testing.expect(reference.valid());
+    for (reference.path.bytes[reference.path.length..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
+    for (reference.metadata.bytes[reference.metadata.length..]) |byte|
+        try std.testing.expectEqual(@as(u8, 0), byte);
     const reference_state = plugin.resource.ReferenceState(64, 32){ .linked = reference };
     try std.testing.expect(reference_state.valid());
     try std.testing.expectEqual(
@@ -2166,6 +2500,11 @@ test "installed package exposes bounded realtime models" {
     const Piano = plugin.gui_piano.Keyboard(24);
     var piano = try Piano.init(48, 24);
     _ = try piano.press(60, 0.75);
+    try std.testing.expect(piano.valid());
+    piano.active[0] |= @as(u64, 1) << 47;
+    try std.testing.expect(!piano.valid());
+    try std.testing.expectError(error.InvalidState, piano.release(60));
+    piano.active[0] = @as(u64, 1) << 60;
     try std.testing.expect(piano.valid());
 
     const Sequencer = plugin.gui_step_sequencer.Sequencer(8);
@@ -2184,6 +2523,12 @@ test "installed package exposes bounded realtime models" {
     var event_writer = plugin.process.EventWriter.init(&event_storage, 2);
     try event_writer.append(plugin.process.Event.noteOn(0, 0, 60, 1.0));
     try std.testing.expect(event_writer.valid());
+    event_writer.count = std.math.maxInt(usize);
+    try std.testing.expect(!event_writer.valid());
+    try std.testing.expectEqual(@as(usize, 0), event_writer.eventCount());
+    try std.testing.expectEqual(@as(usize, 0), event_writer.frameCount());
+    var invalid_event_segments = event_writer.blockSegments();
+    try std.testing.expectEqual(@as(?plugin.process.BlockSegment, null), invalid_event_segments.next());
 
     var player: plugin.gui_sample_player.Player(2, 1) = .{};
     try player.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
@@ -2192,4 +2537,10 @@ test "installed package exposes bounded realtime models" {
     try std.testing.expect(player.adoptPending());
     player.noteOn(60, 1.0, .{ .envelope = .{ .attack_seconds = 0.0, .sustain = 1.0 } });
     try std.testing.expectEqual(@as(f32, 0.5), player.processFrame(.{ .envelope = .{ .attack_seconds = 0.0, .sustain = 1.0 } })[0]);
+    player.voices[0].level = std.math.floatMax(f64);
+    try std.testing.expectEqual(
+        @as([2]f32, .{ 0.0, 0.0 }),
+        player.processFrame(.{}),
+    );
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
 }
