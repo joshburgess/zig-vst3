@@ -121,6 +121,7 @@ jobs:
           ZIG_VST3_HUTUBS_SOFA_TEST_FILE: ${{ runner.temp }}/hutubs-pp1-measured.sofa
           ZIG_VST3_VIKING_SOFA_TEST_FILE: ${{ runner.temp }}/viking-subj-A.sofa
           ZIG_VSTGUI_DIAGNOSTICS: 1
+          VORBIS_QUALITY_REQUIRE_EXTERNAL: 1
           VSTGUI_RUN_VISUAL_TESTS: OFF
         run: xvfb-run -a zig build test
       - name: Test Debug native GUI ABI

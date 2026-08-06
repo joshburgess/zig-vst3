@@ -3753,6 +3753,35 @@ pub fn build(b: *std.Build) void {
     );
     const run_vorbis_decode_probe_tests =
         b.addRunArtifact(vorbis_decode_probe_tests);
+    const vorbis_pcm_quality_probe = b.addExecutable(.{
+        .name = "vorbis-pcm-quality-probe",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tools/vorbis_pcm_quality_probe.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    vorbis_pcm_quality_probe.root_module.addImport(
+        "zig-vst3-plugin",
+        zig_vst3_plugin,
+    );
+    const vorbis_pcm_quality_probe_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tools/vorbis_pcm_quality_probe.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    vorbis_pcm_quality_probe_tests.root_module.addImport(
+        "zig-vst3-plugin",
+        zig_vst3_plugin,
+    );
+    const run_vorbis_pcm_quality_probe_tests =
+        b.addRunArtifact(vorbis_pcm_quality_probe_tests);
     const run_vorbis_quality_q0 = b.addRunArtifact(
         vorbis_interop_fixture,
     );
@@ -3787,12 +3816,16 @@ pub fn build(b: *std.Build) void {
     test_vorbis_quality.addFileArg(vorbis_quality_q10_ogg);
     test_vorbis_quality.addFileArg(vorbis_quality_q10_source);
     test_vorbis_quality.addArtifactArg(vorbis_decode_probe);
+    test_vorbis_quality.addArtifactArg(vorbis_pcm_quality_probe);
     const vorbis_quality_test_step = b.step(
         "test-vorbis-quality",
         "Measure decoded PCM across Vorbis quality presets",
     );
     vorbis_quality_test_step.dependOn(&test_vorbis_quality.step);
     vorbis_quality_test_step.dependOn(&run_vorbis_decode_probe_tests.step);
+    vorbis_quality_test_step.dependOn(
+        &run_vorbis_pcm_quality_probe_tests.step,
+    );
     const vorbis_quality_runner_test = b.addSystemCommand(
         &.{"scripts/test_vorbis_quality_runner.sh"},
     );
