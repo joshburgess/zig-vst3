@@ -973,7 +973,7 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
                         return error.NonFiniteSample;
                 }
                 for (slot.spectra[channel][0..slot.prepared_partitions]) |
-                    spectrum,
+                    *spectrum,
                 | {
                     for (spectrum) |value| {
                         if (!std.math.isFinite(value.real) or
@@ -987,14 +987,14 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         }
 
         fn validateProcessingSamples(self: *const Self) StageError!void {
-            for (self.input_block) |channel| {
+            for (&self.input_block) |*channel| {
                 for (channel) |sample_value| {
                     if (!std.math.isFinite(sample_value))
                         return error.NonFiniteSample;
                 }
             }
-            for (self.input_spectra) |channel| {
-                for (channel) |spectrum| {
+            for (&self.input_spectra) |*channel| {
+                for (channel) |*spectrum| {
                     for (spectrum) |value| {
                         if (!std.math.isFinite(value.real) or
                             !std.math.isFinite(value.imaginary))
@@ -1004,19 +1004,19 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
                     }
                 }
             }
-            for (self.output_block) |channel| {
+            for (&self.output_block) |*channel| {
                 for (channel) |sample_value| {
                     if (!std.math.isFinite(sample_value))
                         return error.NonFiniteSample;
                 }
             }
-            for (self.overlap) |channel| {
+            for (&self.overlap) |*channel| {
                 for (channel) |sample_value| {
                     if (!std.math.isFinite(sample_value))
                         return error.NonFiniteSample;
                 }
             }
-            for (self.direct_history) |channel| {
+            for (&self.direct_history) |*channel| {
                 for (channel) |sample_value| {
                     if (!std.math.isFinite(sample_value))
                         return error.NonFiniteSample;
@@ -1724,4 +1724,30 @@ test "convolution preparation queue transfers concurrent SPSC jobs" {
         @as(usize, 0),
         try shared.queue.pendingCount(),
     );
+}
+
+test "large convolver processes on a bounded worker stack" {
+    const LargeConvolver = PartitionedConvolver(131_072, 512);
+    const Worker = struct {
+        convolver: *LargeConvolver,
+        output: [2]f32 = .{ 1.0, 1.0 },
+
+        fn run(self: *@This()) void {
+            self.output = self.convolver.processFrame(0.0, 0.0);
+        }
+    };
+
+    const convolver = try std.testing.allocator.create(LargeConvolver);
+    defer std.testing.allocator.destroy(convolver);
+    convolver.initInPlace(48_000);
+
+    var worker = Worker{ .convolver = convolver };
+    const thread = try std.Thread.spawn(
+        .{ .stack_size = 512 * 1024 },
+        Worker.run,
+        .{&worker},
+    );
+    thread.join();
+
+    try std.testing.expectEqual([2]f32{ 0.0, 0.0 }, worker.output);
 }
