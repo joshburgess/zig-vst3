@@ -166,15 +166,15 @@ grep -q 'MP3 LAME free-format decoded-PCM reference probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-2 decoded-PCM reference probe passed' \
     "$root/passed.txt"
-grep -q 'MP3 FFmpeg MPEG-2 joint-stereo decoder probe passed' \
+grep -q 'MP3 LAME MPEG-2 joint-stereo decoder probe passed' \
     "$root/passed.txt"
-grep -q 'MP3 FFmpeg MPEG-2 joint-stereo decoded-PCM reference probe passed' \
+grep -q 'MP3 LAME MPEG-2 joint-stereo decoded-PCM reference probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg MPEG-2.5 decoded-PCM reference probe passed' \
     "$root/passed.txt"
-grep -q 'MP3 FFmpeg MPEG-2.5 joint-stereo decoder probe passed' \
+grep -q 'MP3 LAME MPEG-2.5 joint-stereo decoder probe passed' \
     "$root/passed.txt"
-grep -q 'MP3 FFmpeg MPEG-2.5 joint-stereo decoded-PCM reference probe passed' \
+grep -q 'MP3 LAME MPEG-2.5 joint-stereo decoded-PCM reference probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg tagged multi-point seek probe passed' \
     "$root/passed.txt"

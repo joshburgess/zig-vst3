@@ -427,25 +427,30 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                     'MP3 FFmpeg MPEG-2 decoded-PCM reference probe passed'
             fi
 
-            external_mpeg2_stereo="$temporary/ffmpeg-mpeg2-joint-stereo.mp3"
-            ffmpeg -v error -y \
-                -f lavfi \
-                -i 'aevalsrc=0.23*sin(2*PI*440*t)|0.14*sin(2*PI*990*t):s=22050' \
-                -t 0.35 \
-                -c:a libmp3lame \
-                -b:a 32k \
-                -joint_stereo 1 \
-                -id3v2_version 0 \
-                "$external_mpeg2_stereo"
-            "$decode_probe" "$external_mpeg2_stereo" 22050 2 \
-                --require-joint-stereo
-            printf 'MP3 FFmpeg MPEG-2 joint-stereo decoder probe passed\n'
-            if [ -n "$reference_probe" ]; then
-                compare_reference_pcm \
-                    "$external_mpeg2_stereo" \
-                    2 \
-                    "$temporary/ffmpeg-mpeg2-joint-stereo-reference.f32le" \
-                    'MP3 FFmpeg MPEG-2 joint-stereo decoded-PCM reference probe passed'
+            if command -v lame >/dev/null 2>&1; then
+                external_mpeg2_stereo_wav="$temporary/lame-mpeg2-joint-stereo-source.wav"
+                external_mpeg2_stereo="$temporary/lame-mpeg2-joint-stereo.mp3"
+                ffmpeg -v error -y \
+                    -f lavfi \
+                    -i 'aevalsrc=0.23*sin(2*PI*440*t)|0.14*sin(2*PI*990*t):s=22050' \
+                    -t 0.35 \
+                    -c:a pcm_s16le \
+                    "$external_mpeg2_stereo_wav"
+                lame --silent --cbr -m j --resample 22.05 -b 32 \
+                    "$external_mpeg2_stereo_wav" \
+                    "$external_mpeg2_stereo"
+                "$decode_probe" "$external_mpeg2_stereo" 22050 2 \
+                    --require-joint-stereo
+                printf 'MP3 LAME MPEG-2 joint-stereo decoder probe passed\n'
+                if [ -n "$reference_probe" ]; then
+                    compare_reference_pcm \
+                        "$external_mpeg2_stereo" \
+                        2 \
+                        "$temporary/lame-mpeg2-joint-stereo-reference.f32le" \
+                        'MP3 LAME MPEG-2 joint-stereo decoded-PCM reference probe passed'
+                fi
+            else
+                printf 'MP3 LAME MPEG-2 joint-stereo test skipped\n'
             fi
 
             external_mpeg25="$temporary/ffmpeg-mpeg25-mono.mp3"
@@ -467,25 +472,30 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                     'MP3 FFmpeg MPEG-2.5 decoded-PCM reference probe passed'
             fi
 
-            external_mpeg25_stereo="$temporary/ffmpeg-mpeg25-joint-stereo.mp3"
-            ffmpeg -v error -y \
-                -f lavfi \
-                -i 'aevalsrc=0.18*sin(2*PI*510*t)|0.12*sin(2*PI*1370*t):s=11025' \
-                -t 0.35 \
-                -c:a libmp3lame \
-                -b:a 16k \
-                -joint_stereo 1 \
-                -id3v2_version 0 \
-                "$external_mpeg25_stereo"
-            "$decode_probe" "$external_mpeg25_stereo" 11025 2 \
-                --require-joint-stereo
-            printf 'MP3 FFmpeg MPEG-2.5 joint-stereo decoder probe passed\n'
-            if [ -n "$reference_probe" ]; then
-                compare_reference_pcm \
-                    "$external_mpeg25_stereo" \
-                    2 \
-                    "$temporary/ffmpeg-mpeg25-joint-stereo-reference.f32le" \
-                    'MP3 FFmpeg MPEG-2.5 joint-stereo decoded-PCM reference probe passed'
+            if command -v lame >/dev/null 2>&1; then
+                external_mpeg25_stereo_wav="$temporary/lame-mpeg25-joint-stereo-source.wav"
+                external_mpeg25_stereo="$temporary/lame-mpeg25-joint-stereo.mp3"
+                ffmpeg -v error -y \
+                    -f lavfi \
+                    -i 'aevalsrc=0.18*sin(2*PI*510*t)|0.12*sin(2*PI*1370*t):s=11025' \
+                    -t 0.35 \
+                    -c:a pcm_s16le \
+                    "$external_mpeg25_stereo_wav"
+                lame --silent --cbr -m j --resample 11.025 -b 16 \
+                    "$external_mpeg25_stereo_wav" \
+                    "$external_mpeg25_stereo"
+                "$decode_probe" "$external_mpeg25_stereo" 11025 2 \
+                    --require-joint-stereo
+                printf 'MP3 LAME MPEG-2.5 joint-stereo decoder probe passed\n'
+                if [ -n "$reference_probe" ]; then
+                    compare_reference_pcm \
+                        "$external_mpeg25_stereo" \
+                        2 \
+                        "$temporary/lame-mpeg25-joint-stereo-reference.f32le" \
+                        'MP3 LAME MPEG-2.5 joint-stereo decoded-PCM reference probe passed'
+                fi
+            else
+                printf 'MP3 LAME MPEG-2.5 joint-stereo test skipped\n'
             fi
 
             external_truncated="$temporary/ffmpeg-mpeg1-truncated.mp3"
