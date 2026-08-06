@@ -8553,6 +8553,10 @@ fn frameMainDataOffset(header: Header) usize {
         header.sideInformationBytes();
 }
 
+fn frameXingOffset(header: Header) usize {
+    return 4 + header.sideInformationBytes();
+}
+
 pub const PcmReservoirStreamFinish = struct {
     frames: []u8,
     summary: EncoderStreamSummary,
@@ -9588,7 +9592,7 @@ fn encodeXingFrameFields(
     try validateXingEncoderIdentifier(metadata.encoder);
     const frame_bytes = header.frameBytes();
     const side_offset: usize = if (header.crc_present) 6 else 4;
-    const metadata_offset = frameMainDataOffset(header);
+    const metadata_offset = frameXingOffset(header);
     const optional_bytes: usize =
         @as(usize, @intFromBool(metadata.toc != null)) * 100 +
         @as(usize, @intFromBool(metadata.quality != null)) * 4;
@@ -15844,7 +15848,7 @@ pub fn buildFileSeekIndexTransactional(
 }
 
 fn parseXing(frame: []const u8, header: Header) !?Xing {
-    const offset = frameMainDataOffset(header);
+    const offset = frameXingOffset(header);
     if (frame.len < offset + 4) return null;
     const marker = frame[offset .. offset + 4];
     const kind: XingKind = if (std.mem.eql(u8, marker, "Xing"))
@@ -20969,7 +20973,7 @@ test "parses bounded Xing fields and LAME delay metadata" {
     var storage: [500]u8 = undefined;
     const header_bytes = testHeader(3, false, 9, 0, false, .stereo);
     const end = try appendFrame(&storage, 0, header_bytes);
-    const offset = frameMainDataOffset(try Header.parse(&header_bytes));
+    const offset = frameXingOffset(try Header.parse(&header_bytes));
     @memcpy(storage[offset..][0..4], "Xing");
     storage[offset + 7] = 0xf;
     storage[offset + 8 ..][0..4].* = .{ 0, 0, 0, 10 };
@@ -21086,16 +21090,20 @@ test "encodes truthful and validated Xing encoder identifiers" {
         },
         &storage,
     );
-    const protected_offset = frameMainDataOffset(protected_header);
+    const protected_offset = frameXingOffset(protected_header);
     try std.testing.expectEqualSlices(
         u8,
         "Xing",
         protected_encoded[protected_offset..][0..4],
     );
+    try std.testing.expectEqual(
+        protected_offset + 2,
+        frameMainDataOffset(protected_header),
+    );
     try std.testing.expect(!std.mem.eql(
         u8,
         "Xing",
-        protected_encoded[protected_offset - 2 ..][0..4],
+        protected_encoded[frameMainDataOffset(protected_header)..][0..4],
     ));
     const protected_parsed = try Frame.parse(protected_encoded, 0);
     try std.testing.expectEqual(
@@ -21105,6 +21113,14 @@ test "encodes truthful and validated Xing encoder identifiers" {
     try std.testing.expectEqual(
         @as(?u32, 19),
         protected_parsed.xing.?.frame_count,
+    );
+    try std.testing.expectEqual(
+        @as(?u12, 0x345),
+        protected_parsed.xing.?.encoder_delay,
+    );
+    try std.testing.expectEqual(
+        @as(?u12, 0x678),
+        protected_parsed.xing.?.encoder_padding,
     );
 
     const before = storage;

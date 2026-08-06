@@ -6,7 +6,7 @@ const maximum_normalized_rms_error = 0.02;
 
 const ReferencePolicy = enum {
     audible_only,
-    gapless_encoded_or_audible,
+    gapless_supported_layouts,
 };
 
 const ReferenceWindow = struct {
@@ -17,10 +17,11 @@ const ReferenceWindow = struct {
 fn referenceWindow(
     plan: plug.dsp.Mp3GaplessPlan,
     channels: u8,
+    metadata_samples: u16,
     reference_bytes: usize,
     policy: ReferencePolicy,
 ) !ReferenceWindow {
-    if (!plan.valid() or channels == 0 or
+    if (!plan.valid() or channels == 0 or metadata_samples == 0 or
         reference_bytes % @sizeOf(f32) != 0)
         return error.InvalidMp3PcmReference;
     const audible_values = std.math.mul(
@@ -36,8 +37,52 @@ fn referenceWindow(
     if (@as(u64, @intCast(reference_bytes)) == audible_bytes) {
         return .{ .start = 0, .end = reference_bytes };
     }
-    if (policy != .gapless_encoded_or_audible)
+    if (policy != .gapless_supported_layouts)
         return error.Mp3PcmReferenceSampleCountMismatch;
+
+    const audio_samples = std.math.sub(
+        u64,
+        plan.encoded_samples,
+        metadata_samples,
+    ) catch return error.InvalidMp3PcmReference;
+    const audio_values = std.math.mul(
+        u64,
+        audio_samples,
+        channels,
+    ) catch return error.Mp3PcmReferenceSizeOverflow;
+    const audio_bytes = std.math.mul(
+        u64,
+        audio_values,
+        @sizeOf(f32),
+    ) catch return error.Mp3PcmReferenceSizeOverflow;
+    if (@as(u64, @intCast(reference_bytes)) == audio_bytes) {
+        const audio_leading_samples = std.math.sub(
+            u32,
+            plan.leading_samples,
+            metadata_samples,
+        ) catch return error.InvalidMp3PcmReference;
+        const leading_values = std.math.mul(
+            u64,
+            audio_leading_samples,
+            channels,
+        ) catch return error.Mp3PcmReferenceSizeOverflow;
+        const leading_bytes = std.math.mul(
+            u64,
+            leading_values,
+            @sizeOf(f32),
+        ) catch return error.Mp3PcmReferenceSizeOverflow;
+        const end = std.math.add(
+            u64,
+            leading_bytes,
+            audible_bytes,
+        ) catch return error.Mp3PcmReferenceSizeOverflow;
+        if (end > audio_bytes)
+            return error.InvalidMp3PcmReference;
+        return .{
+            .start = @intCast(leading_bytes),
+            .end = @intCast(end),
+        };
+    }
 
     const encoded_values = std.math.mul(
         u64,
@@ -101,7 +146,7 @@ pub fn main(init: std.process.Init) !void {
         args[4],
         "--accept-full-gapless-reference",
     ))
-        .gapless_encoded_or_audible
+        .gapless_supported_layouts
     else
         return error.InvalidArguments;
 
@@ -119,6 +164,7 @@ pub fn main(init: std.process.Init) !void {
     const reference_window = referenceWindow(
         decoder.plan,
         expected_channels,
+        if (summary.sample_rate >= 32_000) 1_152 else 576,
         reference.len,
         reference_policy,
     ) catch |window_error| {
@@ -195,7 +241,7 @@ pub fn main(init: std.process.Init) !void {
         return error.Mp3PcmReferenceRmsErrorExceeded;
 }
 
-test "reference window accepts complete gapless decoder PCM explicitly" {
+test "reference window accepts supported gapless decoder PCM layouts" {
     const plan = plug.dsp.Mp3GaplessPlan{
         .encoded_samples = 5_760,
         .leading_samples = 1_728,
@@ -207,11 +253,24 @@ test "reference window accepts complete gapless decoder PCM explicitly" {
 
     try std.testing.expectEqual(
         ReferenceWindow{ .start = 0, .end = audible_bytes },
-        try referenceWindow(plan, 2, audible_bytes, .audible_only),
+        try referenceWindow(plan, 2, 1_152, audible_bytes, .audible_only),
     );
     try std.testing.expectError(
         error.Mp3PcmReferenceSampleCountMismatch,
-        referenceWindow(plan, 2, encoded_bytes, .audible_only),
+        referenceWindow(plan, 2, 1_152, encoded_bytes, .audible_only),
+    );
+    try std.testing.expectEqual(
+        ReferenceWindow{
+            .start = (1_728 - 1_152) * 2 * @sizeOf(f32),
+            .end = (1_728 - 1_152 + 3_456) * 2 * @sizeOf(f32),
+        },
+        try referenceWindow(
+            plan,
+            2,
+            1_152,
+            (5_760 - 1_152) * 2 * @sizeOf(f32),
+            .gapless_supported_layouts,
+        ),
     );
     try std.testing.expectEqual(
         ReferenceWindow{
@@ -221,8 +280,9 @@ test "reference window accepts complete gapless decoder PCM explicitly" {
         try referenceWindow(
             plan,
             2,
+            1_152,
             encoded_bytes,
-            .gapless_encoded_or_audible,
+            .gapless_supported_layouts,
         ),
     );
     try std.testing.expectEqual(
@@ -230,8 +290,9 @@ test "reference window accepts complete gapless decoder PCM explicitly" {
         try referenceWindow(
             plan,
             2,
+            1_152,
             audible_bytes,
-            .gapless_encoded_or_audible,
+            .gapless_supported_layouts,
         ),
     );
     try std.testing.expectError(
@@ -239,8 +300,9 @@ test "reference window accepts complete gapless decoder PCM explicitly" {
         referenceWindow(
             plan,
             2,
+            1_152,
             encoded_bytes - @sizeOf(f32),
-            .gapless_encoded_or_audible,
+            .gapless_supported_layouts,
         ),
     );
     try std.testing.expectError(
@@ -248,8 +310,9 @@ test "reference window accepts complete gapless decoder PCM explicitly" {
         referenceWindow(
             plan,
             2,
+            1_152,
             audible_bytes - 1,
-            .gapless_encoded_or_audible,
+            .gapless_supported_layouts,
         ),
     );
 }
