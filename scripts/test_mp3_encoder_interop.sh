@@ -13,6 +13,9 @@ adaptive_gapless_fixture=${9-}
 adaptive_gapless_vbr_fixture=${10-}
 mpeg2_protected_fixture=${11-}
 mpeg25_protected_fixture=${12-}
+androidx_vbri_fixture=${ZIG_VST3_EXTERNAL_VBRI_TEST_FILE-}
+helix_encoder=${ZIG_VST3_HELIX_MP3_ENCODER-}
+require_extended=${MP3_INTEROP_REQUIRE_EXTENDED-0}
 test -f "$fixture"
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-mp3-interop.XXXXXX")
@@ -173,6 +176,16 @@ if [ -n "$decode_probe" ]; then
             --require-protected
         printf 'MP3 project protected MPEG-2.5 decoder probe passed\n'
     fi
+    if [ -n "$androidx_vbri_fixture" ]; then
+        test -f "$androidx_vbri_fixture"
+        "$decode_probe" "$androidx_vbri_fixture" 48000 2 \
+            --require-vbri
+        printf 'MP3 AndroidX VBRI decoder and seek probe passed\n'
+    elif [ "$require_extended" = 1 ]; then
+        fail "required AndroidX VBRI fixture is unavailable"
+    else
+        printf 'MP3 AndroidX VBRI fixture unavailable; test skipped\n'
+    fi
 fi
 
 if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
@@ -249,6 +262,13 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
             "$temporary/project-mpeg25-protected-reference.f32le" \
             'MP3 project protected MPEG-2.5 FFmpeg reference passed'
     fi
+    if [ -n "$androidx_vbri_fixture" ] && [ -n "$reference_probe" ]; then
+        compare_reference_pcm \
+            "$androidx_vbri_fixture" \
+            2 \
+            "$temporary/androidx-vbri-reference.f32le" \
+            'MP3 AndroidX VBRI FFmpeg decoded-PCM reference passed'
+    fi
 
     if [ -n "$vbri_fixture" ]; then
         vbri_decoded="$temporary/ffmpeg-vbri-decoded.pcm"
@@ -309,6 +329,33 @@ if [ "${MP3_INTEROP_SKIP_FFMPEG-0}" != "1" ] &&
                     2 \
                     "$temporary/ffmpeg-mpeg1-reference.f32le" \
                     'MP3 FFmpeg MPEG-1 decoded-PCM reference probe passed'
+            fi
+
+            if [ -n "$helix_encoder" ]; then
+                test -x "$helix_encoder"
+                helix_wav="$temporary/helix-source.wav"
+                helix_mp3="$temporary/helix-vbr.mp3"
+                ffmpeg -v error -y \
+                    -f lavfi \
+                    -i 'aevalsrc=0.21*sin(2*PI*347*t)|0.16*sin(2*PI*911*t):s=44100' \
+                    -t 1.2 \
+                    -c:a pcm_s16le \
+                    "$helix_wav"
+                "$helix_encoder" "$helix_wav" "$helix_mp3" -V80
+                "$decode_probe" "$helix_mp3" 44100 2 --require-helix
+                printf 'MP3 Helix VBR decoder and metadata probe passed\n'
+                if [ -n "$reference_probe" ]; then
+                    compare_reference_pcm \
+                        "$helix_mp3" \
+                        2 \
+                        "$temporary/helix-vbr-reference.f32le" \
+                        'MP3 Helix VBR FFmpeg decoded-PCM reference passed' \
+                        --accept-full-gapless-reference
+                fi
+            elif [ "$require_extended" = 1 ]; then
+                fail "required Helix MP3 encoder is unavailable"
+            else
+                printf 'MP3 Helix encoder unavailable; test skipped\n'
             fi
 
             if ffmpeg -hide_banner -encoders 2>/dev/null |

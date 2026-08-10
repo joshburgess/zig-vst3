@@ -3994,6 +3994,9 @@ pub fn build(b: *std.Build) void {
     );
     const run_mp3_external_vbri_fixture_tests =
         b.addRunArtifact(mp3_external_vbri_fixture_tests);
+    const mp3_external_sources_runner_test = b.addSystemCommand(
+        &.{"scripts/test_mp3_external_sources_runner.sh"},
+    );
     const test_mp3_interop = b.addSystemCommand(
         &.{"scripts/test_mp3_encoder_interop.sh"},
     );
@@ -4031,6 +4034,9 @@ pub fn build(b: *std.Build) void {
     mp3_interop_test_step.dependOn(&test_mp3_interop.step);
     mp3_interop_test_step.dependOn(
         &run_mp3_external_vbri_fixture_tests.step,
+    );
+    mp3_interop_test_step.dependOn(
+        &mp3_external_sources_runner_test.step,
     );
 
     const dsp_reference_renderer = b.addExecutable(.{
@@ -4203,6 +4209,7 @@ pub fn build(b: *std.Build) void {
             &.{"scripts/test_mp3_encoder_interop_runner.sh"},
         ).step,
     );
+    test_step.dependOn(&mp3_external_sources_runner_test.step);
     test_step.dependOn(&test_mp3_interop.step);
     test_step.dependOn(dsp_fixture_builds_step);
     test_step.dependOn(lv2_test_step);

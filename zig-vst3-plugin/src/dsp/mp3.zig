@@ -12205,6 +12205,8 @@ pub const GaplessPlan = struct {
                     return error.InvalidMp3GaplessMetadata;
                 trailing = stored_padding - decoder_delay_samples;
             }
+        } else if (summary.first_vbri != null) {
+            leading = if (summary.sample_rate >= 32_000) 1152 else 576;
         }
         const trimmed = std.math.add(
             u64,
@@ -14278,7 +14280,9 @@ pub const Vbri = struct {
             self.toc_entries,
             self.frames_per_entry,
         ) catch return error.VbriFrameCoverageOverflow;
-        if (covered_frames < self.frame_count)
+        const uncovered_frames =
+            @as(u64, self.frame_count) -| covered_frames;
+        if (uncovered_frames > 1)
             return error.IncompleteVbriFrameCoverage;
 
         const target_frame_wide: u64 = target_frame;
@@ -14302,20 +14306,26 @@ pub const Vbri = struct {
                 @intCast(entry_index),
                 self.frames_per_entry,
             ) catch return error.VbriFrameCoverageOverflow;
-            const segment_end_frame = std.math.add(
+            var segment_end_frame = std.math.add(
                 u64,
                 segment_first_frame,
                 self.frames_per_entry,
             ) catch return error.VbriFrameCoverageOverflow;
+            if (entry_index + 1 == self.toc_entries and
+                uncovered_frames == 1)
+            {
+                segment_end_frame += 1;
+            }
             if (target_offset == null and
                 target_frame_wide >= segment_first_frame and
                 target_frame_wide < segment_end_frame)
             {
                 const frame_in_segment =
                     target_frame_wide - segment_first_frame;
+                const segment_frames =
+                    segment_end_frame - segment_first_frame;
                 const partial_bytes =
-                    segment_bytes * frame_in_segment /
-                    self.frames_per_entry;
+                    segment_bytes * frame_in_segment / segment_frames;
                 target_offset = std.math.add(
                     u64,
                     cumulative_bytes,
@@ -15859,7 +15869,11 @@ fn parseXing(frame: []const u8, header: Header) !?Xing {
         return null;
     if (frame.len < offset + 8) return error.TruncatedXingHeader;
     const flags = readU32(frame[offset + 4 .. offset + 8]);
-    if (flags & ~@as(u32, 0xf) != 0) return error.InvalidXingFlags;
+    if (flags & ~@as(u32, 0x7f) != 0 or
+        (flags & 0x30 != 0 and flags & 0x40 == 0))
+    {
+        return error.InvalidXingFlags;
+    }
     var cursor = offset + 8;
     var xing = Xing{
         .kind = kind,
@@ -15884,6 +15898,14 @@ fn parseXing(frame: []const u8, header: Header) !?Xing {
     }
     if (flags & 8 != 0) {
         xing.quality = try readOptionalU32(frame, &cursor);
+    }
+    if (flags & 0x10 != 0) {
+        if (frame.len -| cursor < 20) return error.TruncatedXingHeader;
+        cursor += 20;
+    }
+    if (flags & 0x20 != 0) {
+        if (frame.len -| cursor < 20) return error.TruncatedXingHeader;
+        cursor += 20;
     }
 
     if (frame.len -| cursor >= 24) {
@@ -20445,6 +20467,24 @@ test "trims MP3 decoder frames with gapless metadata" {
     try std.testing.expectEqual(@as(u64, 3456), plan.encoded_samples);
     try std.testing.expectEqual(@as(u64, 1475), plan.audible_samples);
 
+    var vbri_summary = summary;
+    vbri_summary.first_xing = null;
+    vbri_summary.first_vbri = .{
+        .version = 1,
+        .delay = 0,
+        .quality = 0,
+        .stream_bytes = 3 * 417,
+        .frame_count = 3,
+        .toc_entries = 3,
+        .toc_scale = 1,
+        .entry_bytes = 1,
+        .frames_per_entry = 1,
+        .toc = &.{ 1, 1, 1 },
+    };
+    const vbri_plan = try GaplessPlan.fromSummary(vbri_summary);
+    try std.testing.expectEqual(@as(u32, 1152), vbri_plan.leading_samples);
+    try std.testing.expectEqual(@as(u64, 2304), vbri_plan.audible_samples);
+
     var encoded: [500]u8 = undefined;
     const frame_end = try appendFrame(
         &encoded,
@@ -21006,6 +21046,15 @@ test "parses bounded Xing fields and LAME delay metadata" {
         unspecified.xing.?.encoder_padding,
     );
 
+    storage[offset + 7] = 0x4f;
+    @memcpy(storage[offset + 120 ..][0..9], "LAMEH5.24");
+    storage[offset + 141 ..][0..3].* = .{ 0x24, 0x03, 0x21 };
+    const info_tag = try Frame.parse(storage[0..end], 0);
+    try std.testing.expectEqual(
+        "LAMEH5.24".*,
+        info_tag.xing.?.encoder.?,
+    );
+
     storage[offset + 7] = 0x10;
     try std.testing.expectError(
         error.InvalidXingFlags,
@@ -21240,6 +21289,12 @@ test "parses bounded VBRI header and table" {
         @as(u32, 1024),
         try vbri.approximateByteOffsetForFrame(10),
     );
+    var one_uncovered = vbri;
+    one_uncovered.frame_count = 13;
+    try std.testing.expectEqual(
+        @as(u32, 16),
+        try one_uncovered.approximateByteOffsetForFrame(12),
+    );
 
     try std.testing.expectError(
         error.InvalidVbriTargetFrame,
@@ -21278,7 +21333,7 @@ test "parses bounded VBRI header and table" {
         Frame.parse(storage[0..end], 0),
     );
     storage[offset + 28 ..][0..2].* = .{ 0, 6 };
-    storage[offset + 14 ..][0..4].* = .{ 0, 0, 0, 13 };
+    storage[offset + 14 ..][0..4].* = .{ 0, 0, 0, 14 };
     try std.testing.expectError(
         error.IncompleteVbriFrameCoverage,
         Frame.parse(storage[0..end], 0),
@@ -21536,7 +21591,7 @@ test "encodes bounded VBRI metadata frames transactionally" {
         encodeVbriFrame(header, invalid, &storage),
     );
     invalid = base;
-    invalid.frame_count = 3;
+    invalid.frame_count = 4;
     try std.testing.expectError(
         error.IncompleteVbriFrameCoverage,
         encodeVbriFrame(header, invalid, &storage),

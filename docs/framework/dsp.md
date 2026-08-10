@@ -1124,6 +1124,8 @@ For asynchronously loaded resources, expose bounded publication metadata through
 
 The host request sink belongs to the component. Do not retain it beyond processor teardown, invoke it after component destruction, or call `dispatchPending` from `process`.
 
+MP3 VBRI parsing accepts both project-authored whole-stream counts and the external convention that excludes the leading metadata frame from byte and frame totals. A one-frame TOC coverage remainder is assigned to the final segment, and gapless stream plans remove a leading VBRI metadata frame from audible PCM. Xing parsing accepts InfoTag combinations through `0x7f`, skips both 20-byte reserved fields when present, and retains the encoder and delay fields used by Helix hmp3. Reserved fields without the InfoTag marker remain invalid so damaged metadata cannot become a resynchronization candidate.
+
 ## Reference implementation
 
 The fixed-mode public-API example is split between `examples/fixed_rate_core.zig` and `examples/fixed_rate_plugin.zig`. The context-dependent resource example is split between `examples/model_shell_core.zig` and `examples/model_shell_plugin.zig`.

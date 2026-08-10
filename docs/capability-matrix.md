@@ -100,6 +100,10 @@ The most valuable capability sequence for plugin authors is:
 
 AUv2, AUv3, AAX, and LV2 are not thin aliases for VST3. The LV2 core, Programs interfaces, UI bridge, and VSTGUI parameter backend prove one additional wrapper shape. The AUv2 runtime, component factory, state and automation dispatch, registered bundles, SDK checks, and dynamic host fixtures prove another. LV2 and AUv2 still need real-host coverage. AUv3 needs separate Apple platform integration, while AAX has external SDK and distribution requirements.
 
+## Recent Audio Evidence
+
+MP3 interoperability now includes a pinned AndroidX Media VBRI input and a pinned source build of Helix hmp3 5.2.4. The AndroidX path validates external metadata counts, memory and positional summaries, every TOC seek boundary, metadata-frame trimming, and exact-length FFmpeg PCM on Linux. The Helix path validates its defined Xing InfoTag extension, encoder identity, gapless fields, joint-stereo VBR variation, and complete FFmpeg PCM. Acquisition and every added probe have deterministic failure coverage. Additional encoder families and audition remain open.
+
 ## Scope Recommendation
 
 Plugin hosting, device management, mobile application infrastructure, and a general desktop GUI framework should remain non-goals unless the project is deliberately re-scoped. They do not improve the VST3 authoring path enough to justify their maintenance burden today.

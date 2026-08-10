@@ -24,6 +24,8 @@ pub fn main(init: std.process.Init) !void {
         .joint_stereo
     else if (std.mem.eql(u8, args[4], "--require-vbri"))
         .vbri
+    else if (std.mem.eql(u8, args[4], "--require-helix"))
+        .helix
     else if (std.mem.eql(u8, args[4], "--require-gapless"))
         .gapless
     else if (std.mem.eql(u8, args[4], "--require-junk-resync"))
@@ -63,6 +65,7 @@ pub fn main(init: std.process.Init) !void {
         .free_format,
         .joint_stereo,
         .vbri,
+        .helix,
         .gapless,
         .junk_resync,
         .trailing_junk_rejection,
@@ -107,13 +110,12 @@ pub fn main(init: std.process.Init) !void {
     if (requirement == .vbri) {
         const vbri = summary.first_vbri orelse
             return error.MissingExpectedMp3Vbri;
-        if (vbri.stream_bytes != summary.audio_bytes or
-            vbri.frame_count != summary.frame_count or
-            vbri.toc_entries == 0)
-        {
-            return error.UnexpectedMp3VbriMetadata;
-        }
+        _ = try vbriMetadataFrameLayout(encoded, summary, vbri);
+        if (vbri.toc_entries < 2)
+            return error.InsufficientMp3VbriTocEntries;
     }
+    if (requirement == .helix)
+        try verifyHelix(encoded, summary);
     if (requirement == .gapless) {
         const xing = summary.first_xing orelse
             return error.MissingExpectedMp3GaplessMetadata;
@@ -172,8 +174,7 @@ pub fn main(init: std.process.Init) !void {
         file_summary.sample_rate != summary.sample_rate or
         file_summary.channels != summary.channels or
         !std.meta.eql(file_summary.first_xing, summary.first_xing) or
-        (file_summary.first_vbri == null) !=
-            (summary.first_vbri == null))
+        !vbriSummariesEqual(file_summary.first_vbri, summary.first_vbri))
     {
         return error.Mp3MemoryAndFileSummariesDiffer;
     }
@@ -223,6 +224,8 @@ pub fn main(init: std.process.Init) !void {
         if (!std.meta.eql(memory_point, file_point))
             return error.Mp3MemoryAndFileSeekIndexesDiffer;
     }
+    if (requirement == .vbri)
+        try verifyVbriSeekBoundaries(encoded, summary, allocator);
     const midpoint = try plug.dsp.findMp3SeekPoint(
         seek_index,
         summary.sample_count / 2,
@@ -264,10 +267,129 @@ const Requirement = enum {
     free_format,
     joint_stereo,
     vbri,
+    helix,
     gapless,
     junk_resync,
     trailing_junk_rejection,
 };
+
+fn vbriSummariesEqual(
+    file_vbri: ?plug.dsp.Mp3VbriSummary,
+    memory_vbri: ?plug.dsp.Mp3Vbri,
+) bool {
+    if ((file_vbri == null) != (memory_vbri == null)) return false;
+    const file = file_vbri orelse return true;
+    const memory = memory_vbri orelse return false;
+    return file.version == memory.version and
+        file.delay == memory.delay and
+        file.quality == memory.quality and
+        file.stream_bytes == memory.stream_bytes and
+        file.frame_count == memory.frame_count and
+        file.toc_entries == memory.toc_entries and
+        file.toc_scale == memory.toc_scale and
+        file.entry_bytes == memory.entry_bytes and
+        file.frames_per_entry == memory.frames_per_entry;
+}
+
+fn verifyVbriSeekBoundaries(
+    encoded: []const u8,
+    summary: plug.dsp.Mp3Summary,
+    allocator: std.mem.Allocator,
+) !void {
+    const vbri = summary.first_vbri orelse
+        return error.MissingExpectedMp3Vbri;
+    const omits_metadata = try vbriMetadataFrameLayout(
+        encoded,
+        summary,
+        vbri,
+    );
+    const metadata_frame = try plug.dsp.Mp3Frame.parse(
+        encoded,
+        summary.audio_offset,
+    );
+    const base_frame: u32 = if (omits_metadata) 1 else 0;
+    const base_bytes: usize = if (omits_metadata)
+        metadata_frame.bytes.len
+    else
+        0;
+    const count = try plug.dsp.requiredMp3SeekPoints(encoded, 1);
+    const storage = try allocator.alloc(plug.dsp.Mp3SeekPoint, count);
+    const index = try plug.dsp.buildMp3SeekIndex(encoded, 1, storage);
+    for (0..vbri.toc_entries) |entry| {
+        const frame_index = std.math.mul(
+            u32,
+            @intCast(entry),
+            vbri.frames_per_entry,
+        ) catch return error.VbriFrameCoverageOverflow;
+        const physical_frame = frame_index + base_frame;
+        if (@as(usize, physical_frame) >= index.len)
+            return error.IncompleteVbriFrameCoverage;
+        const expected = try vbri.approximateByteOffsetForFrame(frame_index);
+        const actual = index[@intCast(physical_frame)].byte_offset -
+            summary.audio_offset;
+        if (actual != base_bytes + @as(usize, expected))
+            return error.Mp3VbriSeekBoundaryMismatch;
+    }
+}
+
+fn vbriMetadataFrameLayout(
+    encoded: []const u8,
+    summary: plug.dsp.Mp3Summary,
+    vbri: plug.dsp.Mp3Vbri,
+) !bool {
+    if (vbri.stream_bytes == summary.audio_bytes and
+        vbri.frame_count == summary.frame_count)
+    {
+        return false;
+    }
+    const first = try plug.dsp.Mp3Frame.parse(
+        encoded,
+        summary.audio_offset,
+    );
+    if (@as(u64, vbri.stream_bytes) + first.bytes.len ==
+        summary.audio_bytes and
+        @as(u64, vbri.frame_count) + 1 == summary.frame_count)
+    {
+        return true;
+    }
+    return error.UnexpectedMp3VbriCounts;
+}
+
+fn verifyHelix(encoded: []const u8, summary: plug.dsp.Mp3Summary) !void {
+    const xing = summary.first_xing orelse
+        return error.MissingExpectedHelixMetadata;
+    const encoder = xing.encoder orelse
+        return error.MissingExpectedHelixMetadata;
+    const declared_frames = xing.frame_count orelse
+        return error.MissingExpectedHelixMetadata;
+    const declared_bytes = xing.stream_bytes orelse
+        return error.MissingExpectedHelixMetadata;
+    if (xing.kind != .variable or
+        !std.mem.eql(u8, &encoder, "LAMEH5.24") or
+        xing.toc == null or
+        xing.encoder_delay == null or
+        xing.encoder_padding == null or
+        (@as(u64, declared_frames) != summary.frame_count and
+            @as(u64, declared_frames) + 1 != summary.frame_count) or
+        declared_bytes != summary.audio_bytes)
+    {
+        return error.UnexpectedHelixMetadata;
+    }
+
+    var stream = try plug.dsp.Mp3Stream.init(encoded);
+    var first_bitrate: ?u16 = null;
+    var varied = false;
+    while (try stream.next()) |frame| {
+        if (frame.header.channel_mode != .joint_stereo)
+            return error.UnexpectedHelixChannelMode;
+        if (first_bitrate) |bitrate| {
+            varied = varied or frame.header.bitrate_kbps != bitrate;
+        } else {
+            first_bitrate = frame.header.bitrate_kbps;
+        }
+    }
+    if (!varied) return error.MissingExpectedHelixVbrVariation;
+}
 
 fn hasId3v2Version(encoded: []const u8, version: u8) bool {
     return encoded.len >= 4 and

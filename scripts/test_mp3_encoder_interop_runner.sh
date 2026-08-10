@@ -14,6 +14,8 @@ adaptive_gapless_fixture="$root/project-adaptive-gapless.mp3"
 adaptive_gapless_vbr_fixture="$root/project-adaptive-gapless-vbr.mp3"
 mpeg2_protected_fixture="$root/project-mpeg2-protected.mp3"
 mpeg25_protected_fixture="$root/project-mpeg25-protected.mp3"
+androidx_vbri_fixture="$root/androidx-vbri.mp3"
+helix_encoder="$fake_bin/hmp3"
 printf '\377\373\260\104' >"$fixture"
 printf '\377\373\260\104' >"$vbri_fixture"
 printf '\377\363\200\300' >"$mpeg2_mono_fixture"
@@ -23,6 +25,7 @@ printf '\377\373\260\104' >"$adaptive_gapless_fixture"
 printf '\377\373\260\104' >"$adaptive_gapless_vbr_fixture"
 printf '\377\362\200\300' >"$mpeg2_protected_fixture"
 printf '\377\342\200\104' >"$mpeg25_protected_fixture"
+printf '\377\373\260\104' >"$androidx_vbri_fixture"
 probe_count="$root/probe-count"
 reference_probe_count="$root/reference-probe-count"
 external_vbri_fixture="$fake_bin/external-vbri-fixture"
@@ -59,6 +62,8 @@ case "$1" in
     *-joint-stereo.mp3)
         [ "${4-}" = "--require-joint-stereo" ] || exit 2
         ;;
+    *androidx-vbri.mp3) [ "${4-}" = "--require-vbri" ] || exit 2 ;;
+    *helix-vbr.mp3) [ "${4-}" = "--require-helix" ] || exit 2 ;;
 esac
 count=0
 [ ! -f "$TMPDIR/probe-count" ] || count=$(cat "$TMPDIR/probe-count")
@@ -70,7 +75,7 @@ cp "$fake_bin/decode-probe" "$root/decode-probe-success"
 cat >"$fake_bin/reference-probe" <<'EOF'
 #!/bin/sh
 case "$1" in
-    *adaptive-gapless*)
+    *adaptive-gapless*|*helix-vbr*)
         [ "$#" -eq 4 ] || exit 2
         [ "$4" = "--accept-full-gapless-reference" ] || exit 2
         ;;
@@ -83,6 +88,11 @@ printf '%s\n' $((count + 1)) >"$TMPDIR/reference-probe-count"
 EOF
 chmod +x "$fake_bin/reference-probe"
 cp "$fake_bin/reference-probe" "$root/reference-probe-success"
+cat >"$helix_encoder" <<'EOF'
+#!/bin/sh
+printf '\001\002\003\004' >"$2"
+EOF
+chmod +x "$helix_encoder"
 cat >"$external_vbri_fixture" <<'EOF'
 #!/bin/sh
 cp "$1" "$2"
@@ -92,6 +102,9 @@ chmod +x "$external_vbri_fixture"
 PATH="$fake_bin:$PATH" \
 TMPDIR="$root" \
 MP3_INTEROP_ONLY_FFMPEG=1 \
+MP3_INTEROP_REQUIRE_EXTENDED=1 \
+ZIG_VST3_EXTERNAL_VBRI_TEST_FILE="$androidx_vbri_fixture" \
+ZIG_VST3_HELIX_MP3_ENCODER="$helix_encoder" \
 scripts/test_mp3_encoder_interop.sh \
     "$fixture" \
     "$fake_bin/decode-probe" \
@@ -123,6 +136,14 @@ grep -q 'MP3 project adaptive gapless VBR decoder probe passed' \
 grep -q 'MP3 project protected MPEG-2 decoder probe passed' \
     "$root/passed.txt"
 grep -q 'MP3 project protected MPEG-2.5 decoder probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 AndroidX VBRI decoder and seek probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 AndroidX VBRI FFmpeg decoded-PCM reference passed' \
+    "$root/passed.txt"
+grep -q 'MP3 Helix VBR decoder and metadata probe passed' \
+    "$root/passed.txt"
+grep -q 'MP3 Helix VBR FFmpeg decoded-PCM reference passed' \
     "$root/passed.txt"
 grep -q 'MP3 project MPEG-2 mono FFmpeg reference passed' \
     "$root/passed.txt"
@@ -188,11 +209,11 @@ grep -q 'MP3 FFmpeg truncation rejection passed' \
     "$root/passed.txt"
 grep -q 'MP3 FFmpeg format-change rejection passed' \
     "$root/passed.txt"
-[ "$(cat "$probe_count")" -eq 22 ] || {
+[ "$(cat "$probe_count")" -eq 24 ] || {
     printf 'MP3 runner skipped a decoder probe\n' >&2
     exit 1
 }
-[ "$(cat "$reference_probe_count")" -eq 15 ] || {
+[ "$(cat "$reference_probe_count")" -eq 17 ] || {
     printf 'MP3 runner skipped the decoded-PCM reference probe\n' >&2
     exit 1
 }
@@ -207,6 +228,8 @@ expect_decode_probe_failure() {
         '    *-truncated.mp3|*-format-change.mp3) exit 1 ;;' \
         '    *-protected.mp3) [ "${4-}" = "--require-protected" ] || exit 2 ;;' \
         '    *-joint-stereo.mp3) [ "${4-}" = "--require-joint-stereo" ] || exit 2 ;;' \
+        '    *androidx-vbri.mp3) [ "${4-}" = "--require-vbri" ] || exit 2 ;;' \
+        '    *helix-vbr.mp3) [ "${4-}" = "--require-helix" ] || exit 2 ;;' \
         'esac' \
         'count_file="${TMPDIR:-/tmp}/probe-count"' \
         'count=0' \
@@ -219,6 +242,9 @@ expect_decode_probe_failure() {
     if PATH="$fake_bin:$PATH" \
         TMPDIR="$root" \
         MP3_INTEROP_ONLY_FFMPEG=1 \
+        MP3_INTEROP_REQUIRE_EXTENDED=1 \
+        ZIG_VST3_EXTERNAL_VBRI_TEST_FILE="$androidx_vbri_fixture" \
+        ZIG_VST3_HELIX_MP3_ENCODER="$helix_encoder" \
         scripts/test_mp3_encoder_interop.sh \
         "$fixture" \
         "$fake_bin/decode-probe" \
@@ -240,7 +266,7 @@ expect_decode_probe_failure() {
 }
 
 failure_call=1
-while [ "$failure_call" -le 22 ]; do
+while [ "$failure_call" -le 24 ]; do
     expect_decode_probe_failure "$failure_call"
     failure_call=$((failure_call + 1))
 done
@@ -253,7 +279,7 @@ expect_reference_probe_failure() {
     printf '%s\n' \
         '#!/bin/sh' \
         'case "$1" in' \
-        '    *adaptive-gapless*)' \
+        '    *adaptive-gapless*|*helix-vbr*)' \
         '        [ "$#" -eq 4 ] || exit 2' \
         '        [ "$4" = "--accept-full-gapless-reference" ] || exit 2' \
         '        ;;' \
@@ -270,6 +296,9 @@ expect_reference_probe_failure() {
     if PATH="$fake_bin:$PATH" \
         TMPDIR="$root" \
         MP3_INTEROP_ONLY_FFMPEG=1 \
+        MP3_INTEROP_REQUIRE_EXTENDED=1 \
+        ZIG_VST3_EXTERNAL_VBRI_TEST_FILE="$androidx_vbri_fixture" \
+        ZIG_VST3_HELIX_MP3_ENCODER="$helix_encoder" \
         scripts/test_mp3_encoder_interop.sh \
         "$fixture" \
         "$fake_bin/decode-probe" \
@@ -291,10 +320,37 @@ expect_reference_probe_failure() {
 }
 
 failure_call=1
-while [ "$failure_call" -le 15 ]; do
+while [ "$failure_call" -le 17 ]; do
     expect_reference_probe_failure "$failure_call"
     failure_call=$((failure_call + 1))
 done
+cp "$root/reference-probe-success" "$fake_bin/reference-probe"
+
+if PATH="$fake_bin:$PATH" TMPDIR="$root" \
+    MP3_INTEROP_SKIP_FFMPEG=1 \
+    MP3_INTEROP_REQUIRE_EXTENDED=1 \
+    scripts/test_mp3_encoder_interop.sh \
+        "$fixture" "$fake_bin/decode-probe" \
+        >"$root/missing-vbri.txt" 2>&1; then
+    printf 'MP3 runner accepted a missing required VBRI fixture\n' >&2
+    exit 1
+fi
+grep -q 'required AndroidX VBRI fixture is unavailable' \
+    "$root/missing-vbri.txt"
+
+if PATH="$fake_bin:$PATH" TMPDIR="$root" \
+    MP3_INTEROP_ONLY_FFMPEG=1 \
+    MP3_INTEROP_REQUIRE_EXTENDED=1 \
+    ZIG_VST3_EXTERNAL_VBRI_TEST_FILE="$androidx_vbri_fixture" \
+    scripts/test_mp3_encoder_interop.sh \
+        "$fixture" "$fake_bin/decode-probe" \
+        "$fake_bin/reference-probe" \
+        >"$root/missing-helix.txt" 2>&1; then
+    printf 'MP3 runner accepted a missing required Helix encoder\n' >&2
+    exit 1
+fi
+grep -q 'required Helix MP3 encoder is unavailable' \
+    "$root/missing-helix.txt"
 
 cat >"$fake_bin/ffmpeg" <<'EOF'
 #!/bin/sh
