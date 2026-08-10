@@ -329,6 +329,8 @@ cp "$root/reference-probe-success" "$fake_bin/reference-probe"
 if PATH="$fake_bin:$PATH" TMPDIR="$root" \
     MP3_INTEROP_SKIP_FFMPEG=1 \
     MP3_INTEROP_REQUIRE_EXTENDED=1 \
+    ZIG_VST3_EXTERNAL_VBRI_TEST_FILE='' \
+    ZIG_VST3_HELIX_MP3_ENCODER='' \
     scripts/test_mp3_encoder_interop.sh \
         "$fixture" "$fake_bin/decode-probe" \
         >"$root/missing-vbri.txt" 2>&1; then
@@ -342,6 +344,7 @@ if PATH="$fake_bin:$PATH" TMPDIR="$root" \
     MP3_INTEROP_ONLY_FFMPEG=1 \
     MP3_INTEROP_REQUIRE_EXTENDED=1 \
     ZIG_VST3_EXTERNAL_VBRI_TEST_FILE="$androidx_vbri_fixture" \
+    ZIG_VST3_HELIX_MP3_ENCODER='' \
     scripts/test_mp3_encoder_interop.sh \
         "$fixture" "$fake_bin/decode-probe" \
         "$fake_bin/reference-probe" \
