@@ -42,6 +42,7 @@ else
     test "$actual" = "$source_sha256"
 fi
 tar -xJf "$archive" -C "$temporary"
+CC='zig cc' CXX='zig c++' \
 cmake -S "$temporary/$source_directory" -B "$temporary/build" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$partial" \
