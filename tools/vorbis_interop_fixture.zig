@@ -3,8 +3,12 @@ const std = @import("std");
 
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    if (args.len != 2 and args.len != 4)
-        return error.InvalidArguments;
+    if (args.len == 3) {
+        if (!std.mem.eql(u8, args[2], "--stb-standard"))
+            return error.InvalidArguments;
+        return writeFixtureForBlock(512, init, args, .{});
+    }
+    if (args.len != 2 and args.len != 4) return error.InvalidArguments;
     const psychoacoustics: plug.dsp.VorbisPsychoacousticConfig =
         if (args.len == 4) quality: {
             const level = try std.fmt.parseInt(u4, args[2], 10);
@@ -13,17 +17,26 @@ pub fn main(init: std.process.Init) !void {
                 @enumFromInt(level);
             break :quality preset.applyTo(.{});
         } else .{};
+    return writeFixtureForBlock(64, init, args, psychoacoustics);
+}
 
+fn writeFixtureForBlock(
+    comptime block_size: usize,
+    init: std.process.Init,
+    args: []const []const u8,
+    psychoacoustics: plug.dsp.VorbisPsychoacousticConfig,
+) !void {
+    const spectrum_size = block_size / 2;
     const identification = plug.dsp.VorbisIdentification{
         .channel_count = 1,
         .sample_rate = 48_000,
         .bitrate_maximum = -1,
         .bitrate_nominal = 768_000,
         .bitrate_minimum = -1,
-        .small_block_size = 64,
-        .large_block_size = 64,
+        .small_block_size = block_size,
+        .large_block_size = block_size,
     };
-    const setup = interoperabilitySetup();
+    const setup = interoperabilitySetup(spectrum_size);
 
     var identification_storage: [30]u8 = undefined;
     const identification_packet =
@@ -48,7 +61,7 @@ pub fn main(init: std.process.Init) !void {
         identification.channel_count,
     );
 
-    var ogg_storage: [2_048]u8 = undefined;
+    var ogg_storage: [64 * 1024]u8 = undefined;
     var writer = plug.dsp.OggStreamWriter.init(
         &ogg_storage,
         0x696e_7465,
@@ -62,7 +75,7 @@ pub fn main(init: std.process.Init) !void {
     try writer.appendPacket(comment_packet, 0, false, false);
     try writer.appendPacket(setup_packet, 0, false, false);
 
-    var pcm: [64]f32 = undefined;
+    var pcm: [block_size]f32 = undefined;
     for (&pcm, 0..) |*sample, index| {
         const phase = @as(f32, @floatFromInt(index)) *
             (2.0 * std.math.pi / 16.0);
@@ -72,8 +85,14 @@ pub fn main(init: std.process.Init) !void {
         .{
             .rate_control = .{
                 .target_bitrate = 768_000,
-                .reservoir_capacity_bits = 4_096,
-                .maximum_packet_bits = 4_096,
+                .reservoir_capacity_bits = if (block_size == 64)
+                    4_096
+                else
+                    65_536,
+                .maximum_packet_bits = if (block_size == 64)
+                    4_096
+                else
+                    65_536,
             },
         },
         false,
@@ -85,68 +104,73 @@ pub fn main(init: std.process.Init) !void {
     );
 
     const Analyzer =
-        plug.dsp.VorbisPcmFrameAnalyzer(f32, 1, 64, 64);
+        plug.dsp.VorbisPcmFrameAnalyzer(
+            f32,
+            1,
+            block_size,
+            block_size,
+        );
     var analyzer = Analyzer.init();
-    var analysis_pcm: [64]f32 = undefined;
-    var analysis_transform: [32]f32 = undefined;
-    var analysis_spectrum_scratch: [32]f32 = undefined;
-    var analysis_floor_scratch: [32]f32 = undefined;
-    var analysis_threshold_scratch: [32]f32 = undefined;
-    var analysis_spectra: [32]f32 = undefined;
+    var analysis_pcm: [block_size]f32 = undefined;
+    var analysis_transform: [spectrum_size]f32 = undefined;
+    var analysis_spectrum_scratch: [spectrum_size]f32 = undefined;
+    var analysis_floor_scratch: [spectrum_size]f32 = undefined;
+    var analysis_threshold_scratch: [spectrum_size]f32 = undefined;
+    var analysis_spectra: [spectrum_size]f32 = undefined;
     var analysis_values: [1]plug.dsp.VorbisPsychoacousticAnalysis =
         undefined;
-    var analysis_floor: [32]f32 = undefined;
-    var analysis_thresholds: [32]f32 = undefined;
+    var analysis_floor: [spectrum_size]f32 = undefined;
+    var analysis_thresholds: [spectrum_size]f32 = undefined;
 
     var floor_fit_y: [65]u32 = undefined;
-    var floor_fit_curves: [32]f32 = undefined;
+    var floor_fit_curves: [spectrum_size]f32 = undefined;
     var preparation_floor_encodings: [1]plug.dsp.VorbisFloorPacketEncoding =
         undefined;
     var preparation_y: [65]u32 = undefined;
-    var preparation_curves: [32]f32 = undefined;
-    var preparation_residue: [32]f32 = undefined;
-    var preparation_thresholds: [32]f32 = undefined;
-    var coupling_values: [32]f32 = undefined;
-    var coupling_thresholds: [32]f32 = undefined;
+    var preparation_curves: [spectrum_size]f32 = undefined;
+    var preparation_residue: [spectrum_size]f32 = undefined;
+    var preparation_thresholds: [spectrum_size]f32 = undefined;
+    var coupling_values: [spectrum_size]f32 = undefined;
+    var coupling_thresholds: [spectrum_size]f32 = undefined;
     var preparation_skips: [1]bool = undefined;
     var trial_floor_encodings: [1]plug.dsp.VorbisFloorPacketEncoding =
         undefined;
     var trial_floor_y: [65]u32 = undefined;
-    var trial_floor_curves: [32]f32 = undefined;
-    var trial_residue: [32]f32 = undefined;
-    var trial_thresholds: [32]f32 = undefined;
+    var trial_floor_curves: [spectrum_size]f32 = undefined;
+    var trial_residue: [spectrum_size]f32 = undefined;
+    var trial_thresholds: [spectrum_size]f32 = undefined;
     var trial_preparation_skips: [1]bool = undefined;
 
-    var partition: [32]f32 = undefined;
-    var vector: [32]f32 = undefined;
-    var classifications: [64]u8 = undefined;
-    var best_classifications: [64]u8 = undefined;
-    var output_classifications: [64]u8 = undefined;
-    var quantization_entries: [64]u32 = undefined;
+    var partition: [spectrum_size]f32 = undefined;
+    var vector: [spectrum_size]f32 = undefined;
+    var classifications: [spectrum_size]u8 = undefined;
+    var best_classifications: [spectrum_size]u8 = undefined;
+    var output_classifications: [spectrum_size]u8 = undefined;
+    var quantization_entries: [spectrum_size]u32 = undefined;
     var quantization_skips: [1]bool = undefined;
     var trial_residue_encodings: [1]plug.dsp.VorbisResidueEncoding =
         undefined;
     var trial_submap_results: [1]plug.dsp.VorbisAudioResidueSubmapResult =
         undefined;
     var trial_quantization_skips: [1]bool = undefined;
-    var trial_classifications: [64]u8 = undefined;
-    var trial_entries: [64]u32 = undefined;
+    var trial_classifications: [spectrum_size]u8 = undefined;
+    var trial_entries: [spectrum_size]u32 = undefined;
 
     var retained_floor_encodings: [1]plug.dsp.VorbisFloorPacketEncoding =
         undefined;
     var retained_floor_y: [65]u32 = undefined;
-    var retained_floor_curves: [32]f32 = undefined;
-    var retained_residue: [32]f32 = undefined;
-    var retained_thresholds: [32]f32 = undefined;
+    var retained_floor_curves: [spectrum_size]f32 = undefined;
+    var retained_residue: [spectrum_size]f32 = undefined;
+    var retained_thresholds: [spectrum_size]f32 = undefined;
     var retained_preparation_skips: [1]bool = undefined;
     var retained_residue_encodings: [1]plug.dsp.VorbisResidueEncoding =
         undefined;
     var retained_submap_results: [1]plug.dsp.VorbisAudioResidueSubmapResult =
         undefined;
     var retained_quantization_skips: [1]bool = undefined;
-    var retained_classifications: [64]u8 = undefined;
-    var retained_entries: [64]u32 = undefined;
-    var packet_storage: [256]u8 = undefined;
+    var retained_classifications: [spectrum_size]u8 = undefined;
+    var retained_entries: [spectrum_size]u32 = undefined;
+    var packet_storage: [16 * 1024]u8 = undefined;
 
     const orchestration_scratch =
         plug.dsp.VorbisPcmPacketOrchestrationScratch(f32){
@@ -230,8 +254,8 @@ pub fn main(init: std.process.Init) !void {
     const first_audio = try plug.dsp.encodeVorbisPcmPacket(
         f32,
         1,
-        64,
-        64,
+        block_size,
+        block_size,
         &analyzer,
         &sequence,
         identification,
@@ -261,8 +285,8 @@ pub fn main(init: std.process.Init) !void {
     const middle_audio = try plug.dsp.encodeVorbisPcmPacket(
         f32,
         1,
-        64,
-        64,
+        block_size,
+        block_size,
         &analyzer,
         &sequence,
         identification,
@@ -291,8 +315,8 @@ pub fn main(init: std.process.Init) !void {
     const final_audio = try plug.dsp.encodeVorbisPcmPacket(
         f32,
         1,
-        64,
-        64,
+        block_size,
+        block_size,
         &analyzer,
         &sequence,
         identification,
@@ -342,7 +366,7 @@ fn writeSourcePcm(
     }
 }
 
-fn interoperabilitySetup() plug.dsp.VorbisSetup {
+fn interoperabilitySetup(comptime spectrum_size: usize) plug.dsp.VorbisSetup {
     const Static = struct {
         const entries = block: {
             var values: [17]plug.dsp.VorbisCodebookEntry = undefined;
@@ -416,7 +440,7 @@ fn interoperabilitySetup() plug.dsp.VorbisSetup {
         };
         const floor = block: {
             var x_list = [_]u16{0} ** 65;
-            x_list[1] = 32;
+            x_list[1] = spectrum_size;
             break :block plug.dsp.VorbisFloor{ .one = .{
                 .partition_count = 0,
                 .partition_classes = [_]u4{0} ** 31,
@@ -428,7 +452,7 @@ fn interoperabilitySetup() plug.dsp.VorbisSetup {
                     .subclass_books = [_]i16{-1} ** 8,
                 }} ** 16,
                 .multiplier = 1,
-                .range_bits = 5,
+                .range_bits = if (spectrum_size == 32) 5 else 8,
                 .point_count = 2,
                 .x_list = x_list,
             } };
@@ -442,7 +466,7 @@ fn interoperabilitySetup() plug.dsp.VorbisSetup {
             break :block [_]plug.dsp.VorbisResidue{.{
                 .kind = .one,
                 .begin = 0,
-                .end = 32,
+                .end = spectrum_size,
                 .partition_size = 1,
                 .classification_count = 1,
                 .classbook = 0,

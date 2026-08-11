@@ -3947,6 +3947,93 @@ pub fn build(b: *std.Build) void {
         ).step);
     }
 
+    const established_vorbis_decoder_step = b.step(
+        "test-established-vorbis-decoder",
+        "Compare complete PCM with pinned stb_vorbis",
+    );
+    const stb_vorbis_sources_runner = b.addSystemCommand(
+        &.{"scripts/test_stb_vorbis_source_runner.sh"},
+    );
+    established_vorbis_decoder_step.dependOn(
+        &stb_vorbis_sources_runner.step,
+    );
+    vorbis_test_step.dependOn(&stb_vorbis_sources_runner.step);
+    vorbis_interop_test_step.dependOn(&stb_vorbis_sources_runner.step);
+    const stb_vorbis_prefix = b.graph.environ_map.get(
+        "ZIG_VST3_STB_VORBIS_PREFIX",
+    );
+    if (native_xiph_vorbis_reference and stb_vorbis_prefix != null) {
+        const established_vorbis_decoder = b.addExecutable(.{
+            .name = "established-vorbis-decoder",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tools/established_vorbis_decoder.zig",
+                ),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+                .link_libc = true,
+                .sanitize_c = .off,
+            }),
+        });
+        configureStbVorbisDecoder(
+            b,
+            established_vorbis_decoder.root_module,
+            stb_vorbis_prefix.?,
+        );
+        const established_vorbis_decoder_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tools/established_vorbis_decoder.zig",
+                ),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+                .link_libc = true,
+                .sanitize_c = .off,
+            }),
+        });
+        configureStbVorbisDecoder(
+            b,
+            established_vorbis_decoder_tests.root_module,
+            stb_vorbis_prefix.?,
+        );
+        const run_established_vorbis_decoder_tests = b.addRunArtifact(
+            established_vorbis_decoder_tests,
+        );
+        const run_stb_vorbis_project_fixture = b.addRunArtifact(
+            vorbis_interop_fixture,
+        );
+        const stb_vorbis_project_ogg =
+            run_stb_vorbis_project_fixture.addOutputFileArg(
+                "stb-vorbis-project.ogg",
+            );
+        run_stb_vorbis_project_fixture.addArg("--stb-standard");
+        const test_established_vorbis_decoder = b.addSystemCommand(
+            &.{"scripts/test_stb_vorbis_interop.sh"},
+        );
+        test_established_vorbis_decoder.addFileArg(stb_vorbis_project_ogg);
+        test_established_vorbis_decoder.addArtifactArg(
+            established_vorbis_decoder,
+        );
+        test_established_vorbis_decoder.addArtifactArg(vorbis_decode_probe);
+        test_established_vorbis_decoder.addArtifactArg(
+            vorbis_pcm_quality_probe,
+        );
+        established_vorbis_decoder_step.dependOn(
+            &test_established_vorbis_decoder.step,
+        );
+        established_vorbis_decoder_step.dependOn(
+            &run_established_vorbis_decoder_tests.step,
+        );
+        vorbis_test_step.dependOn(established_vorbis_decoder_step);
+        vorbis_interop_test_step.dependOn(
+            established_vorbis_decoder_step,
+        );
+    } else {
+        established_vorbis_decoder_step.dependOn(&b.addFail(
+            "test-established-vorbis-decoder requires a native macOS or Linux target and ZIG_VST3_STB_VORBIS_PREFIX",
+        ).step);
+    }
+
     const mp3_interop_fixture = b.addExecutable(.{
         .name = "mp3-interop-fixture",
         .root_module = b.createModule(.{
@@ -4179,6 +4266,9 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&xiph_vorbis_sources_runner.step);
     if (native_xiph_vorbis_reference and xiph_vorbis_prefix != null) {
         test_step.dependOn(established_vorbis_concealment_step);
+    }
+    if (native_xiph_vorbis_reference and stb_vorbis_prefix != null) {
+        test_step.dependOn(established_vorbis_decoder_step);
     }
     addRunArtifactDependencies(b, test_step, &.{
         vst3_tests,
@@ -5685,6 +5775,28 @@ fn configureXiphVorbisReference(
     });
     module.addObjectFile(.{
         .cwd_relative = b.pathJoin(&.{ prefix, "lib/libogg.a" }),
+    });
+    module.linkSystemLibrary("m", .{});
+}
+
+fn configureStbVorbisDecoder(
+    b: *std.Build,
+    module: *std.Build.Module,
+    prefix: []const u8,
+) void {
+    module.addCSourceFile(.{
+        .file = b.path("tests/fixtures/stb_vorbis_adapter.c"),
+        .flags = &.{
+            "-std=c11",
+            "-ffp-contract=off",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-tautological-compare",
+        },
+    });
+    module.addIncludePath(.{
+        .cwd_relative = prefix,
     });
     module.linkSystemLibrary("m", .{});
 }

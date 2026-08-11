@@ -1027,6 +1027,8 @@ Use `zig build test-dsp-fixture-builds` to compile the fixture API for Linux aar
 
 Retained Ogg packet pages must match the complete encoded page, checksum, metadata, and exact lacing and body slice provenance. A file packet reader applies the same proof to an active retained page, including its reader offset and caller-owned page-storage binding. An exhausted page retains its original range and lifecycle proof even when a later failed read or bounded resynchronization has reused the shared page buffer.
 
+The second independent decoder gate pins separately authored stb_vorbis 1.22 by revision and source hash. Eleven project-, FFmpeg-, and Xiph-authored cases compare complete output across mono, stereo, low rates, low quality, both standard block families, mixed transitions, multi-page packets, and compatible chains decoded explicitly per logical link. Strict Ogg preflight and transactional publication reject checksum damage, header and audio truncation, invalid audio packet types, and incompatible chain geometry. A fixed-point decoder family and audition remain open.
+
 ## Denormal handling
 
 `DenormalScope` enables flush-to-zero behavior for the current thread on aarch64 and x86-64, then restores the exact floating-point control state it observed. On x86-64 it enables FTZ in MXCSR. On aarch64 it enables FZ in FPCR.
