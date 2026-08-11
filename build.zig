@@ -4362,6 +4362,124 @@ pub fn build(b: *std.Build) void {
             "test-hrtf-reference requires a native macOS or Linux target and both ZIG_VST3_VIKING_SOFA_TEST_FILE and ZIG_VST3_HUTUBS_SOFA_TEST_FILE",
         ).step);
     }
+    const established_spatial_renderer_step = b.step(
+        "test-established-spatial-renderers",
+        "Compare HRTF and HOA renders with pinned established renderers",
+    );
+    const spatial_renderer_sources_runner = b.addSystemCommand(
+        &.{"scripts/test_spatial_renderer_sources_runner.sh"},
+    );
+    established_spatial_renderer_step.dependOn(
+        &spatial_renderer_sources_runner.step,
+    );
+    hrtf_test_step.dependOn(&spatial_renderer_sources_runner.step);
+    hoa_test_step.dependOn(&spatial_renderer_sources_runner.step);
+    test_step.dependOn(&spatial_renderer_sources_runner.step);
+    const libmysofa_prefix = b.graph.environ_map.get(
+        "ZIG_VST3_LIBMYSOFA_PREFIX",
+    );
+    const libspatialaudio_prefix = b.graph.environ_map.get(
+        "ZIG_VST3_LIBSPATIALAUDIO_PREFIX",
+    );
+    if (native_hrtf_reference and
+        viking_reference_path != null and
+        hutubs_reference_path != null and
+        libmysofa_prefix != null and
+        libspatialaudio_prefix != null)
+    {
+        const established_spatial_renderer_parity = b.addExecutable(.{
+            .name = "established-spatial-renderer-parity",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tools/established_spatial_renderer_parity.zig",
+                ),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+                .link_libc = true,
+                .link_libcpp = true,
+                .sanitize_c = .off,
+            }),
+        });
+        established_spatial_renderer_parity.root_module.addImport(
+            "zig-vst3-plugin",
+            zig_vst3_plugin,
+        );
+        established_spatial_renderer_parity.root_module.addCSourceFile(.{
+            .file = b.path(
+                "tests/fixtures/established_spatial_renderers.cpp",
+            ),
+            .flags = &.{
+                "-std=c++17",
+                "-ffp-contract=off",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+            },
+        });
+        established_spatial_renderer_parity.root_module.addIncludePath(.{
+            .cwd_relative = b.pathJoin(&.{
+                libmysofa_prefix.?,
+                "include",
+            }),
+        });
+        established_spatial_renderer_parity.root_module.addIncludePath(.{
+            .cwd_relative = b.pathJoin(&.{
+                libspatialaudio_prefix.?,
+                "include/spatialaudio",
+            }),
+        });
+        established_spatial_renderer_parity.root_module.addLibraryPath(.{
+            .cwd_relative = b.pathJoin(&.{
+                libmysofa_prefix.?,
+                "lib",
+            }),
+        });
+        established_spatial_renderer_parity.root_module.addLibraryPath(.{
+            .cwd_relative = b.pathJoin(&.{
+                libspatialaudio_prefix.?,
+                "lib",
+            }),
+        });
+        established_spatial_renderer_parity.root_module.linkSystemLibrary(
+            "mysofa",
+            .{
+                .preferred_link_mode = .static,
+                .search_strategy = .paths_first,
+            },
+        );
+        established_spatial_renderer_parity.root_module.linkSystemLibrary(
+            "spatialaudio",
+            .{
+                .preferred_link_mode = .static,
+                .search_strategy = .paths_first,
+            },
+        );
+        established_spatial_renderer_parity.root_module.linkSystemLibrary(
+            "z",
+            .{},
+        );
+        established_spatial_renderer_parity.root_module.linkSystemLibrary(
+            "m",
+            .{},
+        );
+        const run_established_spatial_renderer = b.addRunArtifact(
+            established_spatial_renderer_parity,
+        );
+        run_established_spatial_renderer.addArgs(&.{
+            viking_reference_path.?,
+            hutubs_reference_path.?,
+        });
+        established_spatial_renderer_step.dependOn(
+            &run_established_spatial_renderer.step,
+        );
+        hrtf_test_step.dependOn(established_spatial_renderer_step);
+        hoa_test_step.dependOn(established_spatial_renderer_step);
+        test_step.dependOn(established_spatial_renderer_step);
+    } else {
+        established_spatial_renderer_step.dependOn(&b.addFail(
+            "test-established-spatial-renderers requires a native macOS or Linux target, both public SOFA fixture paths, and ZIG_VST3_LIBMYSOFA_PREFIX plus ZIG_VST3_LIBSPATIALAUDIO_PREFIX",
+        ).step);
+    }
     const hrtf_cross_targets = [_]std.Build.ResolvedTarget{
         b.resolveTargetQuery(.{
             .cpu_arch = .aarch64,

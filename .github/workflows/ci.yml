@@ -103,6 +103,11 @@ jobs:
         run: |
           scripts/fetch_hrtf_sofa_fixture.sh "$RUNNER_TEMP/viking-subj-A.sofa"
           scripts/fetch_hutubs_hrtf_sofa_fixture.sh "$RUNNER_TEMP/hutubs-pp1-measured.sofa"
+      - name: Prepare pinned spatial renderers
+        if: runner.os == 'Linux'
+        run: |
+          scripts/prepare_libmysofa_renderer.sh "$RUNNER_TEMP/libmysofa"
+          scripts/prepare_libspatialaudio_renderer.sh "$RUNNER_TEMP/libspatialaudio"
       - name: Prepare independent MP3 sources
         if: runner.os == 'Linux'
         run: |
@@ -126,6 +131,8 @@ jobs:
           ZIG_VST3_HUTUBS_SOFA_TEST_FILE: ${{ runner.temp }}/hutubs-pp1-measured.sofa
           ZIG_VST3_EXTERNAL_VBRI_TEST_FILE: ${{ runner.temp }}/androidx-vbri.mp3
           ZIG_VST3_HELIX_MP3_ENCODER: ${{ runner.temp }}/hmp3
+          ZIG_VST3_LIBMYSOFA_PREFIX: ${{ runner.temp }}/libmysofa
+          ZIG_VST3_LIBSPATIALAUDIO_PREFIX: ${{ runner.temp }}/libspatialaudio
           ZIG_VST3_VIKING_SOFA_TEST_FILE: ${{ runner.temp }}/viking-subj-A.sofa
           MP3_INTEROP_REQUIRE_EXTENDED: 1
           ZIG_VSTGUI_DIAGNOSTICS: 1
