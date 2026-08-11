@@ -3862,6 +3862,90 @@ pub fn build(b: *std.Build) void {
     vorbis_interop_test_step.dependOn(
         &run_vorbis_module_tests.step,
     );
+    const established_vorbis_concealment_step = b.step(
+        "test-established-vorbis-concealment",
+        "Compare packet-loss concealment with pinned Xiph Vorbis",
+    );
+    const xiph_vorbis_sources_runner = b.addSystemCommand(
+        &.{"scripts/test_xiph_vorbis_reference_runner.sh"},
+    );
+    established_vorbis_concealment_step.dependOn(
+        &xiph_vorbis_sources_runner.step,
+    );
+    vorbis_test_step.dependOn(&xiph_vorbis_sources_runner.step);
+    vorbis_interop_test_step.dependOn(&xiph_vorbis_sources_runner.step);
+    const xiph_vorbis_prefix = b.graph.environ_map.get(
+        "ZIG_VST3_XIPH_VORBIS_PREFIX",
+    );
+    const native_xiph_vorbis_reference =
+        target.result.cpu.arch == b.graph.host.result.cpu.arch and
+        target.result.os.tag == b.graph.host.result.os.tag and
+        (target.result.os.tag == .macos or
+            target.result.os.tag == .linux);
+    if (native_xiph_vorbis_reference and xiph_vorbis_prefix != null) {
+        const established_vorbis_concealment = b.addExecutable(.{
+            .name = "established-vorbis-concealment",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tools/established_vorbis_concealment.zig",
+                ),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+                .link_libc = true,
+                .sanitize_c = .off,
+            }),
+        });
+        established_vorbis_concealment.root_module.addImport(
+            "zig-vst3-plugin",
+            zig_vst3_plugin,
+        );
+        configureXiphVorbisReference(
+            b,
+            established_vorbis_concealment.root_module,
+            xiph_vorbis_prefix.?,
+        );
+        const run_established_vorbis_concealment = b.addRunArtifact(
+            established_vorbis_concealment,
+        );
+
+        const established_vorbis_concealment_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tools/established_vorbis_concealment.zig",
+                ),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+                .link_libc = true,
+                .sanitize_c = .off,
+            }),
+        });
+        established_vorbis_concealment_tests.root_module.addImport(
+            "zig-vst3-plugin",
+            zig_vst3_plugin,
+        );
+        configureXiphVorbisReference(
+            b,
+            established_vorbis_concealment_tests.root_module,
+            xiph_vorbis_prefix.?,
+        );
+        const run_established_vorbis_concealment_tests = b.addRunArtifact(
+            established_vorbis_concealment_tests,
+        );
+        established_vorbis_concealment_step.dependOn(
+            &run_established_vorbis_concealment.step,
+        );
+        established_vorbis_concealment_step.dependOn(
+            &run_established_vorbis_concealment_tests.step,
+        );
+        vorbis_test_step.dependOn(established_vorbis_concealment_step);
+        vorbis_interop_test_step.dependOn(
+            established_vorbis_concealment_step,
+        );
+    } else {
+        established_vorbis_concealment_step.dependOn(&b.addFail(
+            "test-established-vorbis-concealment requires a native macOS or Linux target and ZIG_VST3_XIPH_VORBIS_PREFIX",
+        ).step);
+    }
 
     const mp3_interop_fixture = b.addExecutable(.{
         .name = "mp3-interop-fixture",
@@ -4092,6 +4176,10 @@ pub fn build(b: *std.Build) void {
     }
 
     const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&xiph_vorbis_sources_runner.step);
+    if (native_xiph_vorbis_reference and xiph_vorbis_prefix != null) {
+        test_step.dependOn(established_vorbis_concealment_step);
+    }
     addRunArtifactDependencies(b, test_step, &.{
         vst3_tests,
         zig_vst3_plugin_core_tests,
@@ -5569,6 +5657,36 @@ fn validateCrossMsvcPrerequisites(
             "Use `-Dtarget=x86_64-windows-gnu` when MSVC compatibility is not required.",
         .{},
     );
+}
+
+fn configureXiphVorbisReference(
+    b: *std.Build,
+    module: *std.Build.Module,
+    prefix: []const u8,
+) void {
+    module.addCSourceFile(.{
+        .file = b.path("tests/fixtures/xiph_vorbis_concealment.c"),
+        .flags = &.{
+            "-std=c11",
+            "-ffp-contract=off",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    module.addIncludePath(.{
+        .cwd_relative = b.pathJoin(&.{ prefix, "include" }),
+    });
+    module.addObjectFile(.{
+        .cwd_relative = b.pathJoin(&.{ prefix, "lib/libvorbisenc.a" }),
+    });
+    module.addObjectFile(.{
+        .cwd_relative = b.pathJoin(&.{ prefix, "lib/libvorbis.a" }),
+    });
+    module.addObjectFile(.{
+        .cwd_relative = b.pathJoin(&.{ prefix, "lib/libogg.a" }),
+    });
+    module.linkSystemLibrary("m", .{});
 }
 
 fn createAraRawModule(

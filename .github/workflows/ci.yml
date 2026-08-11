@@ -113,6 +113,9 @@ jobs:
         run: |
           scripts/fetch_androidx_vbri_fixture.sh "$RUNNER_TEMP/androidx-vbri.mp3"
           scripts/prepare_helix_mp3_encoder.sh "$RUNNER_TEMP/hmp3"
+      - name: Prepare independent Vorbis reference
+        if: runner.os == 'Linux'
+        run: scripts/prepare_xiph_vorbis_reference.sh "$RUNNER_TEMP/xiph-vorbis"
       - name: Test Windows UMP bridge
         if: runner.os == 'Windows'
         run: zig build test-winump -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
@@ -134,6 +137,7 @@ jobs:
           ZIG_VST3_LIBMYSOFA_PREFIX: ${{ runner.temp }}/libmysofa
           ZIG_VST3_LIBSPATIALAUDIO_PREFIX: ${{ runner.temp }}/libspatialaudio
           ZIG_VST3_VIKING_SOFA_TEST_FILE: ${{ runner.temp }}/viking-subj-A.sofa
+          ZIG_VST3_XIPH_VORBIS_PREFIX: ${{ runner.temp }}/xiph-vorbis
           MP3_INTEROP_REQUIRE_EXTENDED: 1
           ZIG_VSTGUI_DIAGNOSTICS: 1
           VORBIS_QUALITY_REQUIRE_EXTERNAL: 1

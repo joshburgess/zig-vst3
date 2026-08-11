@@ -16,6 +16,8 @@ The pinned VST3 SDK version is also part of the tested surface. SDK upgrades sho
 
 The spatial interoperability gate pins libmysofa and libspatialaudio source revisions and archive hashes. Changing either renderer, its build options, the public SOFA fixtures, the declared peak or normalized RMS limits, or the delay and normalization alignment is verification-policy work and requires the focused spatial gate plus the complete release graph.
 
+The Vorbis packet-loss interoperability gate pins libogg 1.3.5 and libvorbis 1.3.7 source archives and hashes. Changing either source, the complete-packet removal contract, the synthetic Xiph overlap blocks, the case geometry, or the peak and normalized RMS limits is verification-policy work and requires the focused Vorbis gate plus the complete release graph.
+
 ## Raw VST3 API
 
 `zig-vst3` mirrors VST3 SDK ABI declarations and provides helper objects for tests and shell integration. ABI declarations are expected to track the SDK closely. When an SDK interface is covered by `zig build raw-api-abi`, changes to layout, calling convention, entry symbols, TUID bytes, or result semantics should be treated as release-blocking unless they are intentional SDK-alignment fixes.
