@@ -1392,6 +1392,71 @@ test "PipeWire split callbacks and failed start are transactional" {
     try std.testing.expect(!backend.isRunning());
 }
 
+test "PipeWire split callbacks feed the bounded capture-rate adapter" {
+    MockApi.reset();
+    const Adapter = standalone.BoundedCaptureRateCallbackAdapter(
+        f32,
+        1,
+        16,
+        2,
+        4,
+        0,
+    );
+    const Probe = struct {
+        calls: usize = 0,
+
+        fn process(
+            context: *anyopaque,
+            block: standalone.CallbackBlock(f32),
+        ) void {
+            const self: *@This() = @ptrCast(@alignCast(context));
+            self.calls += 1;
+            std.debug.assert(block.input_channels.len == 1);
+            std.debug.assert(block.output_channels.len == 1);
+            @memcpy(
+                block.output_channels[0],
+                block.input_channels[0],
+            );
+        }
+    };
+
+    var probe = Probe{};
+    var adapter = try Adapter.init(
+        .{
+            .main_input_channel_count = 1,
+            .capture_sample_rate = 48_000.0,
+            .render_sample_rate = 48_000.0,
+            .drift = .{ .target_buffer_frames = 8 },
+            .lifecycle = .{
+                .startup_buffer_frames = 2,
+                .recovery_buffer_frames = 2,
+                .control_interval_frames = 2,
+                .underflow_policy = .rebuffer,
+            },
+        },
+        .{
+            .context = &probe,
+            .process_block = Probe.process,
+        },
+    );
+    var backend = Backend(MockApi, f32){};
+    try backend.startSplit(.{
+        .sample_rate = 48_000.0,
+        .max_block_size = 4,
+        .input_channel_count = 1,
+        .output_channel_count = 1,
+    }, adapter.splitCallback());
+    try std.testing.expectEqual(@as(usize, 1), probe.calls);
+    try std.testing.expectEqual(
+        standalone.CaptureRateOperatingState.running,
+        adapter.bridge.operating_state,
+    );
+    const statistics = try adapter.statistics();
+    try std.testing.expectEqual(@as(usize, 0), statistics.capture_failures);
+    try std.testing.expectEqual(@as(usize, 0), statistics.render_failures);
+    backend.stop();
+}
+
 test "PipeWire named node selection resolves current targets" {
     MockApi.reset();
     MockApi.expect_named_targets = true;

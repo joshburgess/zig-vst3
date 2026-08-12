@@ -55,6 +55,14 @@ pub const CaptureFifoWriteReport =
     standalone.CaptureFifoWriteReport;
 pub const CaptureRateBridgeConfig =
     standalone.CaptureRateBridgeConfig;
+pub const CaptureRateLifecycleConfig =
+    standalone.CaptureRateLifecycleConfig;
+pub const CaptureRateOperatingState =
+    standalone.CaptureRateOperatingState;
+pub const CaptureRateOverflowPolicy =
+    standalone.CaptureRateOverflowPolicy;
+pub const CaptureRateUnderflowPolicy =
+    standalone.CaptureRateUnderflowPolicy;
 pub const CaptureRateRenderReport =
     standalone.CaptureRateRenderReport;
 pub const CaptureRenderBlock = standalone.CaptureRenderBlock;

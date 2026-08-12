@@ -845,6 +845,13 @@ test "installed package exposes validated DSP and telemetry state" {
         .drift = .{
             .target_buffer_frames = 8,
         },
+        .lifecycle = .{
+            .startup_buffer_frames = 4,
+            .recovery_buffer_frames = 4,
+            .control_interval_frames = 2,
+            .underflow_policy = .rebuffer,
+            .overflow_policy = .drop_newest_and_rebuffer,
+        },
     });
     _ = try capture_bridge.capture(&capture_channels);
     var bridge_left: [4]f64 = undefined;
@@ -857,6 +864,10 @@ test "installed package exposes validated DSP and telemetry state" {
     try std.testing.expectEqual(
         @as(usize, 4),
         bridge_report.output_frames,
+    );
+    try std.testing.expectEqual(
+        plugin.plugin.CaptureRateOperatingState.running,
+        bridge_report.state_after,
     );
     try std.testing.expect(bridge_report.capture_frames > 0);
     try std.testing.expect(
@@ -901,6 +912,13 @@ test "installed package exposes validated DSP and telemetry state" {
             .drift = .{
                 .target_buffer_frames = 8,
             },
+            .lifecycle = .{
+                .startup_buffer_frames = 4,
+                .recovery_buffer_frames = 4,
+                .control_interval_frames = 2,
+                .underflow_policy = .rebuffer,
+                .overflow_policy = .drop_newest_and_rebuffer,
+            },
         },
         .{
             .context = &observed_adapter_frames,
@@ -918,6 +936,10 @@ test "installed package exposes validated DSP and telemetry state" {
     try std.testing.expectEqual(
         @as(usize, 4),
         observed_adapter_frames,
+    );
+    try std.testing.expectEqual(
+        plugin.plugin.CaptureRateOperatingState.running,
+        capture_adapter.bridge.operating_state,
     );
     const adapter_statistics = try capture_adapter.statistics();
     try std.testing.expectEqual(

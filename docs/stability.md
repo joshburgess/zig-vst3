@@ -46,6 +46,8 @@ Native audio callbacks reject a null channel-pointer array when the negotiated t
 
 The intended direction is stable plugin declarations, reflected parameter metadata, state, automation, events, units, programs, and reusable VST3 shells. Until that promise is made, plugin authors should expect to update code across minor pre-1.0 releases.
 
+The standalone split-device correction API is also experimental. `CaptureRateLifecycleConfig` deliberately leaves FIFO targets, correction limits and response, priming thresholds, correction cadence, and recovery policy with the product. Its defaults preserve immediate rendering and silence substitution. Products that opt into rebuffering receive deterministic silence during priming and on the complete underflow block that begins recovery. `reset` is quiescent-only and restores the configured startup state. Review these policy names and report fields before the first compatibility-bearing tag.
+
 ### VSTGUI component API
 
 The reviewed authoring surface is `@import("zig-vst3").vstgui`. Parameter descriptions, standard controls, composition, themes, layouts, meters, graphs, assets, fonts, drawing callbacks, and the `create*View` functions are exercised by the component gallery and production editors. The Parametric EQ and IR Loader independently use the public asset, font, canvas, and drawing callback contracts. Changes to the supported subset should update its consumers and the author guide in the same commit.

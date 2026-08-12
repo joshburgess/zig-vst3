@@ -1324,6 +1324,12 @@ test "ALSA split callbacks feed the bounded capture-rate adapter" {
             .drift = .{
                 .target_buffer_frames = 8,
             },
+            .lifecycle = .{
+                .startup_buffer_frames = 8,
+                .recovery_buffer_frames = 8,
+                .control_interval_frames = 4,
+                .underflow_policy = .rebuffer,
+            },
         },
         .{
             .context = &probe,
@@ -1374,6 +1380,10 @@ test "ALSA split callbacks feed the bounded capture-rate adapter" {
         render_callback(MockApi.callback_context, 4, &outputs),
     );
     try std.testing.expectEqual(@as(usize, 1), probe.calls);
+    try std.testing.expectEqual(
+        standalone.CaptureRateOperatingState.running,
+        adapter.bridge.operating_state,
+    );
     for (output_a, output_b) |main, auxiliary| {
         try std.testing.expectApproxEqAbs(
             main * 2.0,

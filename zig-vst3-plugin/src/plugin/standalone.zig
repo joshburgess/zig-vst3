@@ -485,15 +485,57 @@ pub const CaptureRateBridgeConfig = struct {
     capture_sample_rate: f64,
     render_sample_rate: f64,
     drift: ClockDriftConfig,
+    lifecycle: CaptureRateLifecycleConfig = .{},
+};
+
+pub const CaptureRateUnderflowPolicy = enum {
+    continue_with_silence,
+    rebuffer,
+};
+
+pub const CaptureRateOverflowPolicy = enum {
+    drop_newest_and_continue,
+    drop_newest_and_rebuffer,
+};
+
+pub const CaptureRateLifecycleConfig = struct {
+    startup_buffer_frames: usize = 0,
+    recovery_buffer_frames: usize = 0,
+    control_interval_frames: usize = 0,
+    underflow_policy: CaptureRateUnderflowPolicy =
+        .continue_with_silence,
+    overflow_policy: CaptureRateOverflowPolicy =
+        .drop_newest_and_continue,
+
+    pub fn validate(
+        self: CaptureRateLifecycleConfig,
+        fifo_capacity_frames: usize,
+    ) !void {
+        if (self.startup_buffer_frames > fifo_capacity_frames or
+            self.recovery_buffer_frames > fifo_capacity_frames)
+            return error.CaptureRateBufferThresholdExceedsCapacity;
+        if ((self.underflow_policy == .rebuffer or
+            self.overflow_policy == .drop_newest_and_rebuffer) and
+            self.recovery_buffer_frames == 0)
+            return error.InvalidCaptureRateRecoveryThreshold;
+    }
+};
+
+pub const CaptureRateOperatingState = enum {
+    priming,
+    running,
 };
 
 pub const CaptureRateRenderReport = struct {
     output_frames: usize,
     capture_frames: usize,
     silent_capture_frames: usize,
+    discarded_capture_frames: usize,
     buffered_before: usize,
     buffered_after: usize,
     correction_ppm: f64,
+    state_before: CaptureRateOperatingState,
+    state_after: CaptureRateOperatingState,
 };
 
 /// Bounded disparate-clock input path for one capture callback and one render
@@ -532,6 +574,12 @@ pub fn BoundedCaptureRateBridge(
         channel_count: usize,
         capture_sample_rate: f64,
         render_sample_rate: f64,
+        lifecycle: CaptureRateLifecycleConfig,
+        operating_state: CaptureRateOperatingState,
+        priming_target_frames: usize,
+        control_frames_remaining: usize = 0,
+        overflow_recovery_requested: std.atomic.Value(bool) =
+            std.atomic.Value(bool).init(false),
         capture_scratch: [maximum_channels][maximum_capture_chunk]Sample =
             undefined,
 
@@ -545,6 +593,7 @@ pub fn BoundedCaptureRateBridge(
             if (config.drift.target_buffer_frames >
                 fifo_frame_capacity)
                 return error.ClockDriftTargetExceedsFifoCapacity;
+            try config.lifecycle.validate(fifo_frame_capacity);
             try (resampler.Config{
                 .input_rate = config.capture_sample_rate,
                 .output_rate = config.render_sample_rate,
@@ -556,6 +605,9 @@ pub fn BoundedCaptureRateBridge(
                 .channel_count = config.channel_count,
                 .capture_sample_rate = config.capture_sample_rate,
                 .render_sample_rate = config.render_sample_rate,
+                .lifecycle = config.lifecycle,
+                .operating_state = if (config.lifecycle.startup_buffer_frames == 0) .running else .priming,
+                .priming_target_frames = config.lifecycle.startup_buffer_frames,
             };
             for (result.resamplers[0..config.channel_count]) |*stream| {
                 try stream.configure(.{
@@ -578,7 +630,12 @@ pub fn BoundedCaptureRateBridge(
                 if (try self.aliasesRetainedAudio(input))
                     return error.CaptureBufferAliasesBridge;
             }
-            return self.fifo.write(input_channels);
+            const report = try self.fifo.write(input_channels);
+            if (report.dropped_frames != 0 and
+                self.lifecycle.overflow_policy ==
+                    .drop_newest_and_rebuffer)
+                self.overflow_recovery_requested.store(true, .release);
+            return report;
         }
 
         /// Called only by the render consumer.
@@ -587,73 +644,110 @@ pub fn BoundedCaptureRateBridge(
             output_channels: []const []Sample,
         ) !CaptureRateRenderReport {
             try self.validateRenderOutputs(output_channels);
-            const output_count = output_channels[0].len;
-            const buffered_before = try self.fifo.bufferedFrames();
-
-            var trial_controller = self.controller;
-            const correction = try trial_controller.update(
-                buffered_before,
-                output_count,
-                self.render_sample_rate,
-            );
-            const input_needed =
-                try self.preflightInputDemand(
-                    output_count,
-                    correction,
-                );
-
-            for (self.resamplers[0..self.channel_count]) |*stream|
-                try stream.setRateCorrectionPpm(correction);
-            self.controller = trial_controller;
-
             errdefer for (output_channels) |output|
                 @memset(output, 0.0);
+            const output_count = output_channels[0].len;
+            const buffered_before = try self.fifo.bufferedFrames();
+            const state_before = self.operating_state;
+
+            if (self.overflow_recovery_requested.swap(false, .acq_rel)) {
+                const discarded = try self.beginRecovery(true);
+                for (output_channels) |output|
+                    @memset(output, 0.0);
+                return .{
+                    .output_frames = output_count,
+                    .capture_frames = 0,
+                    .silent_capture_frames = 0,
+                    .discarded_capture_frames = discarded,
+                    .buffered_before = buffered_before,
+                    .buffered_after = try self.fifo.bufferedFrames(),
+                    .correction_ppm = self.controller.correction_ppm,
+                    .state_before = state_before,
+                    .state_after = .priming,
+                };
+            }
+            if (self.operating_state == .priming) {
+                if (buffered_before < self.priming_target_frames) {
+                    for (output_channels) |output|
+                        @memset(output, 0.0);
+                    return .{
+                        .output_frames = output_count,
+                        .capture_frames = 0,
+                        .silent_capture_frames = 0,
+                        .discarded_capture_frames = 0,
+                        .buffered_before = buffered_before,
+                        .buffered_after = buffered_before,
+                        .correction_ppm = self.controller.correction_ppm,
+                        .state_before = state_before,
+                        .state_after = .priming,
+                    };
+                }
+                self.operating_state = .running;
+            }
 
             var produced: usize = 0;
-            if (output_count != 0) {
-                produced = try self.processSynchronized(
-                    &.{},
-                    output_channels,
-                    0,
-                );
-            }
-
             var capture_frames: usize = 0;
             var silent_capture_frames: usize = 0;
-            while (capture_frames < input_needed) {
-                const chunk = @min(
-                    input_needed - capture_frames,
-                    maximum_capture_chunk,
-                );
-                var scratch_views: [maximum_channels][]Sample = undefined;
-                for (
-                    scratch_views[0..self.channel_count],
-                    self.capture_scratch[0..self.channel_count],
-                ) |*view, *storage| {
-                    view.* = storage[0..chunk];
+            var correction = self.controller.correction_ppm;
+            while (produced < output_count) {
+                const control_interval =
+                    self.lifecycle.control_interval_frames;
+                if (control_interval == 0 or
+                    self.control_frames_remaining == 0)
+                {
+                    const update_frames = if (control_interval == 0)
+                        output_count
+                    else
+                        control_interval;
+                    var trial_controller = self.controller;
+                    correction = try trial_controller.update(
+                        try self.fifo.bufferedFrames(),
+                        update_frames,
+                        self.render_sample_rate,
+                    );
+                    for (self.resamplers[0..self.channel_count]) |*stream|
+                        try stream.setRateCorrectionPpm(correction);
+                    self.controller = trial_controller;
+                    self.control_frames_remaining = if (control_interval == 0) output_count - produced else control_interval;
                 }
-                const read_report = try self.fifo.read(
-                    scratch_views[0..self.channel_count],
+                const segment_frames = @min(
+                    output_count - produced,
+                    self.control_frames_remaining,
                 );
-                silent_capture_frames +=
-                    read_report.silent_frames;
-                capture_frames += chunk;
-                produced += try self.processSynchronized(
-                    scratch_views[0..self.channel_count],
+                const segment = try self.renderSegment(
                     output_channels,
                     produced,
+                    segment_frames,
+                    correction,
                 );
+                produced += segment_frames;
+                capture_frames += segment.capture_frames;
+                silent_capture_frames += segment.silent_capture_frames;
+                self.control_frames_remaining -= segment_frames;
+                if (control_interval == 0) {
+                    self.control_frames_remaining = 0;
+                }
             }
-            if (produced != output_count)
-                return error.CaptureRateOutputUnderflow;
+
+            if (silent_capture_frames != 0 and
+                self.lifecycle.underflow_policy == .rebuffer)
+            {
+                _ = try self.beginRecovery(false);
+                for (output_channels) |output|
+                    @memset(output, 0.0);
+                correction = self.controller.correction_ppm;
+            }
 
             return .{
                 .output_frames = produced,
                 .capture_frames = capture_frames,
                 .silent_capture_frames = silent_capture_frames,
+                .discarded_capture_frames = 0,
                 .buffered_before = buffered_before,
                 .buffered_after = try self.fifo.bufferedFrames(),
                 .correction_ppm = correction,
+                .state_before = state_before,
+                .state_after = self.operating_state,
             };
         }
 
@@ -680,6 +774,11 @@ pub fn BoundedCaptureRateBridge(
             }
             self.controller.reset();
             self.fifo.reset();
+            self.operating_state = if (self.lifecycle.startup_buffer_frames == 0) .running else .priming;
+            self.priming_target_frames =
+                self.lifecycle.startup_buffer_frames;
+            self.control_frames_remaining = 0;
+            self.overflow_recovery_requested.store(false, .release);
         }
 
         pub fn valid(self: *const Self) bool {
@@ -689,8 +788,17 @@ pub fn BoundedCaptureRateBridge(
                 !self.fifo.valid() or
                 !self.controller.valid() or
                 self.controller.config.target_buffer_frames >
-                    fifo_frame_capacity)
+                    fifo_frame_capacity or
+                self.priming_target_frames > fifo_frame_capacity or
+                (self.lifecycle.control_interval_frames == 0 and
+                    self.control_frames_remaining != 0) or
+                (self.lifecycle.control_interval_frames != 0 and
+                    self.control_frames_remaining >
+                        self.lifecycle.control_interval_frames) or
+                (self.operating_state != .priming and
+                    self.operating_state != .running))
                 return false;
+            self.lifecycle.validate(fifo_frame_capacity) catch return false;
             (resampler.Config{
                 .input_rate = self.capture_sample_rate,
                 .output_rate = self.render_sample_rate,
@@ -731,6 +839,105 @@ pub fn BoundedCaptureRateBridge(
             }
             return required orelse
                 error.InvalidCaptureRateBridge;
+        }
+
+        const RenderSegmentReport = struct {
+            capture_frames: usize,
+            silent_capture_frames: usize,
+        };
+
+        fn renderSegment(
+            self: *Self,
+            output_channels: []const []Sample,
+            output_offset: usize,
+            output_count: usize,
+            correction_ppm: f64,
+        ) !RenderSegmentReport {
+            const input_needed = try self.preflightInputDemand(
+                output_count,
+                correction_ppm,
+            );
+            var segment_outputs: [maximum_channels][]Sample = undefined;
+            for (
+                segment_outputs[0..self.channel_count],
+                output_channels,
+            ) |*segment, output| {
+                segment.* = output[output_offset..][0..output_count];
+            }
+            var produced = try self.processSynchronized(
+                &.{},
+                segment_outputs[0..self.channel_count],
+                0,
+            );
+            var capture_frames: usize = 0;
+            var silent_capture_frames: usize = 0;
+            while (capture_frames < input_needed) {
+                const chunk = @min(
+                    input_needed - capture_frames,
+                    maximum_capture_chunk,
+                );
+                var scratch_views: [maximum_channels][]Sample = undefined;
+                for (
+                    scratch_views[0..self.channel_count],
+                    self.capture_scratch[0..self.channel_count],
+                ) |*view, *storage| {
+                    view.* = storage[0..chunk];
+                }
+                const read_report = try self.fifo.read(
+                    scratch_views[0..self.channel_count],
+                );
+                silent_capture_frames += read_report.silent_frames;
+                capture_frames += chunk;
+                produced += try self.processSynchronized(
+                    scratch_views[0..self.channel_count],
+                    segment_outputs[0..self.channel_count],
+                    produced,
+                );
+            }
+            if (produced != output_count)
+                return error.CaptureRateOutputUnderflow;
+            return .{
+                .capture_frames = capture_frames,
+                .silent_capture_frames = silent_capture_frames,
+            };
+        }
+
+        fn beginRecovery(self: *Self, discard_buffered: bool) !usize {
+            var discarded: usize = 0;
+            if (discard_buffered) {
+                const snapshot = try self.fifo.bufferedFrames();
+                while (discarded < snapshot) {
+                    const chunk = @min(
+                        snapshot - discarded,
+                        maximum_capture_chunk,
+                    );
+                    var scratch_views: [maximum_channels][]Sample = undefined;
+                    for (
+                        scratch_views[0..self.channel_count],
+                        self.capture_scratch[0..self.channel_count],
+                    ) |*view, *storage| {
+                        view.* = storage[0..chunk];
+                    }
+                    const report = try self.fifo.read(
+                        scratch_views[0..self.channel_count],
+                    );
+                    discarded += report.read_frames;
+                    if (report.read_frames != chunk)
+                        return error.CaptureRateRecoveryDiscardUnderflow;
+                }
+            }
+            for (self.resamplers[0..self.channel_count]) |*stream| {
+                try stream.configure(.{
+                    .input_rate = self.capture_sample_rate,
+                    .output_rate = self.render_sample_rate,
+                });
+            }
+            self.controller.reset();
+            self.operating_state = .priming;
+            self.priming_target_frames =
+                self.lifecycle.recovery_buffer_frames;
+            self.control_frames_remaining = 0;
+            return discarded;
         }
 
         fn processSynchronized(
@@ -899,6 +1106,7 @@ pub const CaptureRateCallbackAdapterConfig = struct {
     capture_sample_rate: f64,
     render_sample_rate: f64,
     drift: ClockDriftConfig,
+    lifecycle: CaptureRateLifecycleConfig = .{},
 };
 
 pub const CaptureRateCallbackStatistics = struct {
@@ -972,6 +1180,7 @@ pub fn BoundedCaptureRateCallbackAdapter(
                     .capture_sample_rate = config.capture_sample_rate,
                     .render_sample_rate = config.render_sample_rate,
                     .drift = config.drift,
+                    .lifecycle = config.lifecycle,
                 }),
                 .downstream = downstream,
                 .main_input_channel_count = config.main_input_channel_count,
@@ -1036,6 +1245,10 @@ pub fn BoundedCaptureRateCallbackAdapter(
             const report = try self.bridge.render(
                 corrected[0..self.bridge.channel_count],
             );
+            if (report.state_after == .priming) {
+                clearRenderOutputs(block);
+                return report;
+            }
             for (
                 self.corrected_input_views[0..self.bridge.channel_count],
                 corrected[0..self.bridge.channel_count],
@@ -3287,6 +3500,365 @@ test "capture rate bridge remains synchronized across changing blocks" {
     }
 }
 
+test "capture rate bridge primes and recovers under caller policy" {
+    const Bridge = BoundedCaptureRateBridge(f32, 1, 64, 8, 16);
+    var bridge = try Bridge.init(.{
+        .channel_count = 1,
+        .capture_sample_rate = 48_000.0,
+        .render_sample_rate = 48_000.0,
+        .drift = .{ .target_buffer_frames = 32 },
+        .lifecycle = .{
+            .startup_buffer_frames = 32,
+            .recovery_buffer_frames = 24,
+            .underflow_policy = .rebuffer,
+            .overflow_policy = .drop_newest_and_rebuffer,
+        },
+    });
+    const initial_position = bridge.resamplers[0].next_input_position;
+    var output: [16]f32 = @splat(9);
+    var report = try bridge.render(&.{&output});
+    try std.testing.expectEqual(
+        CaptureRateOperatingState.priming,
+        report.state_after,
+    );
+    try std.testing.expectEqual(@as(usize, 0), report.capture_frames);
+    try std.testing.expectEqualSlices(f32, &([_]f32{0} ** 16), &output);
+    try std.testing.expectEqual(
+        initial_position,
+        bridge.resamplers[0].next_input_position,
+    );
+
+    const startup: [40]f32 = @splat(0.25);
+    _ = try bridge.capture(&.{&startup});
+    report = try bridge.render(&.{&output});
+    try std.testing.expectEqual(
+        CaptureRateOperatingState.running,
+        report.state_after,
+    );
+    try std.testing.expectEqual(@as(usize, 0), report.silent_capture_frames);
+
+    while (bridge.operating_state == .running) {
+        @memset(&output, 9);
+        report = try bridge.render(&.{&output});
+    }
+    try std.testing.expect(report.silent_capture_frames != 0);
+    try std.testing.expectEqualSlices(f32, &([_]f32{0} ** 16), &output);
+    try std.testing.expectEqual(@as(f64, 0), report.correction_ppm);
+    const recovery_position = bridge.resamplers[0].next_input_position;
+    report = try bridge.render(&.{&output});
+    try std.testing.expectEqual(
+        CaptureRateOperatingState.priming,
+        report.state_after,
+    );
+    try std.testing.expectEqual(
+        recovery_position,
+        bridge.resamplers[0].next_input_position,
+    );
+
+    const refill: [24]f32 = @splat(0.5);
+    _ = try bridge.capture(&.{&refill});
+    report = try bridge.render(&.{&output});
+    try std.testing.expectEqual(
+        CaptureRateOperatingState.running,
+        report.state_after,
+    );
+
+    const overflow: [64]f32 = @splat(0.75);
+    const write = try bridge.capture(&.{&overflow});
+    try std.testing.expect(write.dropped_frames != 0);
+    @memset(&output, 9);
+    report = try bridge.render(&.{&output});
+    try std.testing.expectEqual(
+        CaptureRateOperatingState.priming,
+        report.state_after,
+    );
+    try std.testing.expect(report.discarded_capture_frames != 0);
+    try std.testing.expectEqual(@as(usize, 0), report.buffered_after);
+    try std.testing.expectEqualSlices(f32, &([_]f32{0} ** 16), &output);
+
+    try bridge.reset();
+    try std.testing.expectEqual(
+        CaptureRateOperatingState.priming,
+        bridge.operating_state,
+    );
+    try std.testing.expectEqual(@as(usize, 0), try bridge.fifo.bufferedFrames());
+    try std.testing.expectEqual(@as(f64, 0.0), bridge.controller.correction_ppm);
+}
+
+test "capture rate bridge fixed control cadence is partition independent" {
+    const Bridge = BoundedCaptureRateBridge(f64, 1, 256, 17, 64);
+    const config = CaptureRateBridgeConfig{
+        .channel_count = 1,
+        .capture_sample_rate = 48_024.0,
+        .render_sample_rate = 48_000.0,
+        .drift = .{
+            .target_buffer_frames = 128,
+            .maximum_correction_ppm = 1_000.0,
+            .proportional_gain_ppm_per_frame = 4.0,
+            .integral_gain_ppm_per_frame_second = 2.0,
+            .maximum_slew_ppm_per_second = 2_000.0,
+        },
+        .lifecycle = .{
+            .startup_buffer_frames = 128,
+            .recovery_buffer_frames = 96,
+            .control_interval_frames = 16,
+            .underflow_policy = .rebuffer,
+        },
+    };
+    var whole = try Bridge.init(config);
+    var partitioned = try Bridge.init(config);
+    var input: [224]f64 = undefined;
+    for (&input, 0..) |*sample, frame| {
+        sample.* = @sin(@as(f64, @floatFromInt(frame)) * 0.017);
+    }
+    _ = try whole.capture(&.{&input});
+    _ = try partitioned.capture(&.{&input});
+
+    var expected: [64]f64 = undefined;
+    _ = try whole.render(&.{&expected});
+    var actual: [64]f64 = undefined;
+    const partitions = [_]usize{ 7, 13, 3, 19, 22 };
+    var offset: usize = 0;
+    for (partitions) |count| {
+        _ = try partitioned.render(&.{actual[offset..][0..count]});
+        offset += count;
+    }
+    try std.testing.expectEqual(@as(usize, 64), offset);
+    try std.testing.expectEqualSlices(f64, &expected, &actual);
+    try std.testing.expectEqual(
+        whole.controller.correction_ppm,
+        partitioned.controller.correction_ppm,
+    );
+    try std.testing.expectEqual(
+        whole.resamplers[0].next_input_position,
+        partitioned.resamplers[0].next_input_position,
+    );
+    try std.testing.expectEqual(
+        try whole.statistics(),
+        try partitioned.statistics(),
+    );
+}
+
+test "capture rate bridge rejects malformed lifecycle state transactionally" {
+    const Bridge = BoundedCaptureRateBridge(f64, 1, 32, 8, 8);
+    try std.testing.expectError(
+        error.CaptureRateBufferThresholdExceedsCapacity,
+        Bridge.init(.{
+            .channel_count = 1,
+            .capture_sample_rate = 48_000.0,
+            .render_sample_rate = 48_000.0,
+            .drift = .{ .target_buffer_frames = 16 },
+            .lifecycle = .{ .startup_buffer_frames = 33 },
+        }),
+    );
+    try std.testing.expectError(
+        error.InvalidCaptureRateRecoveryThreshold,
+        Bridge.init(.{
+            .channel_count = 1,
+            .capture_sample_rate = 48_000.0,
+            .render_sample_rate = 48_000.0,
+            .drift = .{ .target_buffer_frames = 16 },
+            .lifecycle = .{ .underflow_policy = .rebuffer },
+        }),
+    );
+    var bridge = try Bridge.init(.{
+        .channel_count = 1,
+        .capture_sample_rate = 48_000.0,
+        .render_sample_rate = 48_000.0,
+        .drift = .{ .target_buffer_frames = 16 },
+        .lifecycle = .{
+            .startup_buffer_frames = 16,
+            .recovery_buffer_frames = 8,
+            .control_interval_frames = 4,
+            .underflow_policy = .rebuffer,
+        },
+    });
+    bridge.control_frames_remaining = 5;
+    var output: [8]f64 = @splat(7);
+    try std.testing.expectError(
+        error.InvalidCaptureRateBridge,
+        bridge.render(&.{&output}),
+    );
+    try std.testing.expectEqualSlices(f64, &([_]f64{7} ** 8), &output);
+    try bridge.reset();
+    try std.testing.expect(bridge.valid());
+}
+
+fn testSustainedCaptureClockDrift(
+    comptime Sample: type,
+    drift_ppm: f64,
+) !void {
+    const Bridge = BoundedCaptureRateBridge(Sample, 1, 2_048, 64, 48);
+    var bridge = try Bridge.init(.{
+        .channel_count = 1,
+        .capture_sample_rate = 48_000.0,
+        .render_sample_rate = 48_000.0,
+        .drift = .{
+            .target_buffer_frames = 1_024,
+            .maximum_correction_ppm = 1_000.0,
+            .proportional_gain_ppm_per_frame = 4.0,
+            .integral_gain_ppm_per_frame_second = 2.0,
+            .maximum_slew_ppm_per_second = 2_000.0,
+        },
+        .lifecycle = .{
+            .startup_buffer_frames = 1_024,
+            .recovery_buffer_frames = 768,
+            .control_interval_frames = 48,
+            .underflow_policy = .rebuffer,
+            .overflow_policy = .drop_newest_and_rebuffer,
+        },
+    });
+    const initial: [1_024]Sample = @splat(0.125);
+    _ = try bridge.capture(&.{&initial});
+    var capture_phase: f64 = 0.0;
+    var minimum_fill: usize = 2_048;
+    var maximum_fill: usize = 0;
+    for (0..60_000) |block_index| {
+        capture_phase += 48.0 * (1.0 + drift_ppm / 1_000_000.0);
+        const capture_count: usize = @intFromFloat(@floor(capture_phase));
+        capture_phase -= @floatFromInt(capture_count);
+        var capture: [49]Sample = @splat(0.125);
+        const write = try bridge.capture(&.{capture[0..capture_count]});
+        try std.testing.expectEqual(@as(usize, 0), write.dropped_frames);
+        var output: [48]Sample = undefined;
+        const report = try bridge.render(&.{&output});
+        try std.testing.expectEqual(@as(usize, 0), report.silent_capture_frames);
+        try std.testing.expectEqual(
+            CaptureRateOperatingState.running,
+            report.state_after,
+        );
+        minimum_fill = @min(minimum_fill, report.buffered_after);
+        maximum_fill = @max(maximum_fill, report.buffered_after);
+        for (output) |sample| {
+            try std.testing.expect(std.math.isFinite(sample));
+            if (block_index > 8) {
+                try std.testing.expectApproxEqAbs(
+                    @as(Sample, 0.125),
+                    sample,
+                    @as(Sample, 2.0e-5),
+                );
+            }
+        }
+    }
+    try std.testing.expect(minimum_fill > 512);
+    try std.testing.expect(maximum_fill < 1_536);
+    try std.testing.expectApproxEqAbs(
+        drift_ppm,
+        bridge.controller.correction_ppm,
+        50.0,
+    );
+}
+
+test "capture rate bridge controls sustained positive and negative drift" {
+    try testSustainedCaptureClockDrift(f32, 500.0);
+    try testSustainedCaptureClockDrift(f32, -500.0);
+    try testSustainedCaptureClockDrift(f64, 500.0);
+    try testSustainedCaptureClockDrift(f64, -500.0);
+}
+
+fn testJitteredCaptureClockDrift(comptime Sample: type) !void {
+    const Bridge = BoundedCaptureRateBridge(Sample, 1, 2_048, 67, 97);
+    var bridge = try Bridge.init(.{
+        .channel_count = 1,
+        .capture_sample_rate = 48_000.0,
+        .render_sample_rate = 48_000.0,
+        .drift = .{
+            .target_buffer_frames = 1_024,
+            .maximum_correction_ppm = 1_000.0,
+            .proportional_gain_ppm_per_frame = 4.0,
+            .integral_gain_ppm_per_frame_second = 2.0,
+            .maximum_slew_ppm_per_second = 2_000.0,
+        },
+        .lifecycle = .{
+            .startup_buffer_frames = 1_024,
+            .recovery_buffer_frames = 768,
+            .control_interval_frames = 32,
+            .underflow_policy = .rebuffer,
+            .overflow_policy = .drop_newest_and_rebuffer,
+        },
+    });
+    const initial: [1_024]Sample = @splat(0.25);
+    _ = try bridge.capture(&.{&initial});
+    var random = std.Random.DefaultPrng.init(0x4452_4946_544a_4954);
+    var capture_credit: f64 = 0.0;
+    var pending_capture: usize = 0;
+    var source_frame: usize = 0;
+    var total_requested_capture: usize = 0;
+    for (0..40_000) |_| {
+        const render_count = random.random().intRangeAtMost(usize, 17, 97);
+        capture_credit += @as(f64, @floatFromInt(render_count)) * 1.00035;
+        const due: usize = @intFromFloat(@floor(capture_credit));
+        capture_credit -= @floatFromInt(due);
+        pending_capture += due;
+        while (pending_capture != 0) {
+            const capture_limit = random.random().intRangeAtMost(
+                usize,
+                13,
+                67,
+            );
+            const capture_count = @min(pending_capture, capture_limit);
+            pending_capture -= capture_count;
+            var capture: [67]Sample = undefined;
+            for (capture[0..capture_count]) |*sample| {
+                sample.* = @floatCast(@sin(
+                    @as(f64, @floatFromInt(source_frame)) * 0.003,
+                ));
+                source_frame += 1;
+            }
+            const write = try bridge.capture(&.{capture[0..capture_count]});
+            try std.testing.expectEqual(
+                @as(usize, 0),
+                write.dropped_frames,
+            );
+            total_requested_capture += capture_count;
+        }
+
+        var output: [97]Sample = undefined;
+        const report = try bridge.render(&.{output[0..render_count]});
+        try std.testing.expectEqual(@as(usize, 0), report.silent_capture_frames);
+        try std.testing.expectEqual(
+            CaptureRateOperatingState.running,
+            report.state_after,
+        );
+        for (output[0..render_count]) |sample|
+            try std.testing.expect(std.math.isFinite(sample));
+    }
+    const statistics = try bridge.statistics();
+    try std.testing.expectEqual(
+        initial.len + total_requested_capture,
+        statistics.written_frames,
+    );
+    try std.testing.expectEqual(
+        statistics.written_frames,
+        statistics.read_frames + statistics.buffered_frames,
+    );
+    try std.testing.expectEqual(@as(usize, 0), statistics.dropped_frames);
+    try std.testing.expectEqual(@as(usize, 0), statistics.silent_frames);
+    try std.testing.expect(statistics.buffered_frames > 512);
+    try std.testing.expect(statistics.buffered_frames < 1_536);
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 350.0),
+        bridge.controller.correction_ppm,
+        75.0,
+    );
+    try bridge.reset();
+    try std.testing.expectEqual(
+        CaptureFifoStatistics{
+            .buffered_frames = 0,
+            .written_frames = 0,
+            .read_frames = 0,
+            .dropped_frames = 0,
+            .silent_frames = 0,
+        },
+        try bridge.statistics(),
+    );
+}
+
+test "capture rate bridge tolerates jitter and changing callback sizes" {
+    try testJitteredCaptureClockDrift(f32);
+    try testJitteredCaptureClockDrift(f64);
+}
+
 test "capture-rate callback adapter reconstructs processor buses" {
     const Probe = struct {
         main_input_count: usize = 0,
@@ -3510,6 +4082,69 @@ test "capture-rate callback adapter wrappers count and silence failures" {
     adapter.bridge.channel_count = 2;
     try adapter.reset();
     try std.testing.expect(adapter.valid());
+}
+
+test "capture-rate callback adapter bypasses processing while priming" {
+    const Probe = struct {
+        calls: usize = 0,
+
+        fn process(
+            context: *anyopaque,
+            block: CallbackBlock(f32),
+        ) void {
+            const self: *@This() = @ptrCast(@alignCast(context));
+            self.calls += 1;
+            for (block.output_channels) |output| @memset(output, 1.0);
+        }
+    };
+    const Adapter = BoundedCaptureRateCallbackAdapter(
+        f32,
+        1,
+        64,
+        8,
+        16,
+        0,
+    );
+    var probe = Probe{};
+    var adapter = try Adapter.init(.{
+        .main_input_channel_count = 1,
+        .capture_sample_rate = 48_000.0,
+        .render_sample_rate = 48_000.0,
+        .drift = .{ .target_buffer_frames = 32 },
+        .lifecycle = .{
+            .startup_buffer_frames = 32,
+            .recovery_buffer_frames = 24,
+            .control_interval_frames = 8,
+            .underflow_policy = .rebuffer,
+        },
+    }, .{
+        .context = &probe,
+        .process_block = Probe.process,
+    });
+    var output: [16]f32 = @splat(9);
+    var report = try adapter.render(.{
+        .frame_count = output.len,
+        .output_channels = &.{&output},
+    });
+    try std.testing.expectEqual(@as(usize, 0), probe.calls);
+    try std.testing.expectEqualSlices(f32, &([_]f32{0} ** 16), &output);
+    try std.testing.expectEqual(
+        CaptureRateOperatingState.priming,
+        report.state_after,
+    );
+
+    const input: [40]f32 = @splat(0.25);
+    _ = try adapter.capture(&.{&input});
+    report = try adapter.render(.{
+        .frame_count = output.len,
+        .output_channels = &.{&output},
+    });
+    try std.testing.expectEqual(@as(usize, 1), probe.calls);
+    try std.testing.expectEqual(
+        CaptureRateOperatingState.running,
+        report.state_after,
+    );
+    try std.testing.expectEqualSlices(f32, &([_]f32{1} ** 16), &output);
 }
 
 test "clock drift controller slews continuous resampler correction transactionally" {
