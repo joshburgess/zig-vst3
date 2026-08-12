@@ -4,19 +4,32 @@ const std = @import("std");
 const CandidateEncoding = enum {
     f32le,
     s16le,
+    s16le_clipped_reference,
+    s16le_reference_s16le,
 
     fn parse(argument: []const u8) !CandidateEncoding {
         if (std.mem.eql(u8, argument, "--candidate-f32le"))
             return .f32le;
         if (std.mem.eql(u8, argument, "--candidate-s16le"))
             return .s16le;
+        if (std.mem.eql(u8, argument, "--candidate-s16le-clipped-reference"))
+            return .s16le_clipped_reference;
+        if (std.mem.eql(u8, argument, "--candidate-s16le-reference-s16le"))
+            return .s16le_reference_s16le;
         return error.InvalidArguments;
     }
 
     fn sampleSize(self: CandidateEncoding) usize {
         return switch (self) {
             .f32le => @sizeOf(f32),
-            .s16le => @sizeOf(i16),
+            .s16le, .s16le_clipped_reference, .s16le_reference_s16le => @sizeOf(i16),
+        };
+    }
+
+    fn referenceSampleSize(self: CandidateEncoding) usize {
+        return switch (self) {
+            .s16le_reference_s16le => @sizeOf(i16),
+            else => @sizeOf(f32),
         };
     }
 };
@@ -60,24 +73,42 @@ fn measure(
     reference: []const u8,
 ) !plug.dsp.VorbisPcmQualityMeasurement {
     const candidate_sample_size = encoding.sampleSize();
+    const reference_sample_size = encoding.referenceSampleSize();
     if (candidate.len % candidate_sample_size != 0 or
-        reference.len % @sizeOf(f32) != 0)
+        reference.len % reference_sample_size != 0)
     {
         return error.InvalidPcmByteCount;
     }
     const candidate_count = candidate.len / candidate_sample_size;
-    const reference_count = reference.len / @sizeOf(f32);
+    const reference_count = reference.len / reference_sample_size;
     if (candidate_count == 0 or candidate_count != reference_count)
         return error.PcmSampleCountMismatch;
 
     var meter = plug.dsp.VorbisPcmQualityMeter{};
     for (0..reference_count) |index| {
-        const reference_offset = index * @sizeOf(f32);
-        const reference_sample: f32 = @bitCast(std.mem.readInt(
-            u32,
-            reference[reference_offset..][0..4],
-            .little,
-        ));
+        const reference_offset = index * reference_sample_size;
+        const raw_reference_sample: f32 = switch (encoding) {
+            .s16le_reference_s16le => @as(f32, @floatFromInt(@as(i16, @bitCast(
+                std.mem.readInt(
+                    u16,
+                    reference[reference_offset..][0..2],
+                    .little,
+                ),
+            )))) / 32_768.0,
+            else => @bitCast(std.mem.readInt(
+                u32,
+                reference[reference_offset..][0..4],
+                .little,
+            )),
+        };
+        const reference_sample = switch (encoding) {
+            .s16le_clipped_reference => std.math.clamp(
+                raw_reference_sample,
+                -1.0,
+                @as(f32, 32_767.0 / 32_768.0),
+            ),
+            else => raw_reference_sample,
+        };
         const candidate_offset = index * candidate_sample_size;
         const candidate_sample: f32 = switch (encoding) {
             .f32le => @bitCast(std.mem.readInt(
@@ -85,7 +116,7 @@ fn measure(
                 candidate[candidate_offset..][0..4],
                 .little,
             )),
-            .s16le => @as(f32, @floatFromInt(@as(i16, @bitCast(
+            .s16le, .s16le_clipped_reference, .s16le_reference_s16le => @as(f32, @floatFromInt(@as(i16, @bitCast(
                 std.mem.readInt(
                     u16,
                     candidate[candidate_offset..][0..2],
@@ -130,6 +161,42 @@ test "external PCM quality measures f32 and s16 candidates" {
     }
     const converted = try measure(.s16le, &candidate, &reference);
     try std.testing.expectEqual(@as(f64, 0), converted.normalized_rms_error);
+    const integer_reference = try measure(
+        .s16le_reference_s16le,
+        &candidate,
+        &candidate,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0),
+        integer_reference.normalized_rms_error,
+    );
+
+    const clipped_reference_samples = [_]f32{ -1.25, 1.25 };
+    var clipped_reference: [clipped_reference_samples.len * @sizeOf(f32)]u8 = undefined;
+    for (clipped_reference_samples, 0..) |sample, index| {
+        std.mem.writeInt(
+            u32,
+            clipped_reference[index * @sizeOf(f32) ..][0..4],
+            @bitCast(sample),
+            .little,
+        );
+    }
+    const clipped_candidate_samples = [_]i16{ -32_768, 32_767 };
+    var clipped_candidate: [clipped_candidate_samples.len * @sizeOf(i16)]u8 = undefined;
+    for (clipped_candidate_samples, 0..) |sample, index| {
+        std.mem.writeInt(
+            u16,
+            clipped_candidate[index * @sizeOf(i16) ..][0..2],
+            @bitCast(sample),
+            .little,
+        );
+    }
+    const clipped = try measure(
+        .s16le_clipped_reference,
+        &clipped_candidate,
+        &clipped_reference,
+    );
+    try std.testing.expectEqual(@as(f64, 0), clipped.normalized_rms_error);
 }
 
 test "external PCM quality rejects malformed shapes and samples" {

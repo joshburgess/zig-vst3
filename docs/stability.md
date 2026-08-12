@@ -20,6 +20,8 @@ The Vorbis packet-loss interoperability gate pins libogg 1.3.5 and libvorbis 1.3
 
 The second Vorbis decoder gate pins the exact stb_vorbis source revision and hash. Changing that source, its compile definitions, the strict single-link Ogg preflight, explicit chain assembly, case matrix, malformed-input contract, or PCM error limits is verification-policy work and requires the established-decoder gate plus the complete release graph.
 
+The fixed-point Vorbis decoder gate pins the exact Tremor revision, archive hash, license identity, generic C build definitions, and libogg dependency. Changing that source, its integer PCM normalization, strict single-link Ogg preflight, explicit chain assembly, failure injection, case matrix, malformed-input contract, or PCM error limits is verification-policy work and requires the established-decoder gate plus the complete release graph.
+
 ## Raw VST3 API
 
 `zig-vst3` mirrors VST3 SDK ABI declarations and provides helper objects for tests and shell integration. ABI declarations are expected to track the SDK closely. When an SDK interface is covered by `zig build raw-api-abi`, changes to layout, calling convention, entry symbols, TUID bytes, or result semantics should be treated as release-blocking unless they are intentional SDK-alignment fixes.

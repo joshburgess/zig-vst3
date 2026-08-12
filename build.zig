@@ -3949,7 +3949,7 @@ pub fn build(b: *std.Build) void {
 
     const established_vorbis_decoder_step = b.step(
         "test-established-vorbis-decoder",
-        "Compare complete PCM with pinned stb_vorbis",
+        "Compare complete PCM with pinned stb_vorbis and Tremor",
     );
     const stb_vorbis_sources_runner = b.addSystemCommand(
         &.{"scripts/test_stb_vorbis_source_runner.sh"},
@@ -3959,10 +3959,27 @@ pub fn build(b: *std.Build) void {
     );
     vorbis_test_step.dependOn(&stb_vorbis_sources_runner.step);
     vorbis_interop_test_step.dependOn(&stb_vorbis_sources_runner.step);
+    const tremor_sources_runner = b.addSystemCommand(
+        &.{"scripts/test_tremor_source_runner.sh"},
+    );
+    const tremor_interop_runner = b.addSystemCommand(
+        &.{"scripts/test_tremor_interop_runner.sh"},
+    );
+    established_vorbis_decoder_step.dependOn(&tremor_sources_runner.step);
+    established_vorbis_decoder_step.dependOn(&tremor_interop_runner.step);
+    vorbis_test_step.dependOn(&tremor_sources_runner.step);
+    vorbis_test_step.dependOn(&tremor_interop_runner.step);
+    vorbis_interop_test_step.dependOn(&tremor_sources_runner.step);
+    vorbis_interop_test_step.dependOn(&tremor_interop_runner.step);
     const stb_vorbis_prefix = b.graph.environ_map.get(
         "ZIG_VST3_STB_VORBIS_PREFIX",
     );
-    if (native_xiph_vorbis_reference and stb_vorbis_prefix != null) {
+    const tremor_prefix = b.graph.environ_map.get(
+        "ZIG_VST3_TREMOR_PREFIX",
+    );
+    if (native_xiph_vorbis_reference and stb_vorbis_prefix != null and
+        tremor_prefix != null and xiph_vorbis_prefix != null)
+    {
         const established_vorbis_decoder = b.addExecutable(.{
             .name = "established-vorbis-decoder",
             .root_module = b.createModule(.{
@@ -3979,6 +3996,44 @@ pub fn build(b: *std.Build) void {
             b,
             established_vorbis_decoder.root_module,
             stb_vorbis_prefix.?,
+        );
+        const tremor_vorbis_decoder = b.addExecutable(.{
+            .name = "tremor-vorbis-decoder",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tools/tremor_vorbis_decoder.zig",
+                ),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+                .link_libc = true,
+                .sanitize_c = .off,
+            }),
+        });
+        configureTremorVorbisDecoder(
+            b,
+            tremor_vorbis_decoder.root_module,
+            tremor_prefix.?,
+            xiph_vorbis_prefix.?,
+        );
+        const tremor_vorbis_decoder_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(
+                    "tools/tremor_vorbis_decoder.zig",
+                ),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+                .link_libc = true,
+                .sanitize_c = .off,
+            }),
+        });
+        configureTremorVorbisDecoder(
+            b,
+            tremor_vorbis_decoder_tests.root_module,
+            tremor_prefix.?,
+            xiph_vorbis_prefix.?,
+        );
+        const run_tremor_vorbis_decoder_tests = b.addRunArtifact(
+            tremor_vorbis_decoder_tests,
         );
         const established_vorbis_decoder_tests = b.addTest(.{
             .root_module = b.createModule(.{
@@ -4018,11 +4073,17 @@ pub fn build(b: *std.Build) void {
         test_established_vorbis_decoder.addArtifactArg(
             vorbis_pcm_quality_probe,
         );
+        test_established_vorbis_decoder.addArtifactArg(
+            tremor_vorbis_decoder,
+        );
         established_vorbis_decoder_step.dependOn(
             &test_established_vorbis_decoder.step,
         );
         established_vorbis_decoder_step.dependOn(
             &run_established_vorbis_decoder_tests.step,
+        );
+        established_vorbis_decoder_step.dependOn(
+            &run_tremor_vorbis_decoder_tests.step,
         );
         vorbis_test_step.dependOn(established_vorbis_decoder_step);
         vorbis_interop_test_step.dependOn(
@@ -4030,7 +4091,7 @@ pub fn build(b: *std.Build) void {
         );
     } else {
         established_vorbis_decoder_step.dependOn(&b.addFail(
-            "test-established-vorbis-decoder requires a native macOS or Linux target and ZIG_VST3_STB_VORBIS_PREFIX",
+            "test-established-vorbis-decoder requires a native macOS or Linux target plus ZIG_VST3_STB_VORBIS_PREFIX, ZIG_VST3_TREMOR_PREFIX, and ZIG_VST3_XIPH_VORBIS_PREFIX",
         ).step);
     }
 
@@ -4264,10 +4325,14 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&xiph_vorbis_sources_runner.step);
+    test_step.dependOn(&tremor_sources_runner.step);
+    test_step.dependOn(&tremor_interop_runner.step);
     if (native_xiph_vorbis_reference and xiph_vorbis_prefix != null) {
         test_step.dependOn(established_vorbis_concealment_step);
     }
-    if (native_xiph_vorbis_reference and stb_vorbis_prefix != null) {
+    if (native_xiph_vorbis_reference and stb_vorbis_prefix != null and
+        tremor_prefix != null and xiph_vorbis_prefix != null)
+    {
         test_step.dependOn(established_vorbis_decoder_step);
     }
     addRunArtifactDependencies(b, test_step, &.{
@@ -5797,6 +5862,62 @@ fn configureStbVorbisDecoder(
     });
     module.addIncludePath(.{
         .cwd_relative = prefix,
+    });
+    module.linkSystemLibrary("m", .{});
+}
+
+fn configureTremorVorbisDecoder(
+    b: *std.Build,
+    module: *std.Build.Module,
+    tremor_prefix: []const u8,
+    xiph_prefix: []const u8,
+) void {
+    const flags = &.{
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wno-unused-parameter",
+        "-Wno-sign-compare",
+        "-Wno-duplicate-decl-specifier",
+        "-Wno-absolute-value",
+        "-DLITTLE_ENDIAN=1234",
+        "-DBIG_ENDIAN=4321",
+        "-DBYTE_ORDER=1234",
+        "-DHAVE_ALLOCA_H=1",
+    };
+    module.addCSourceFile(.{
+        .file = b.path("tests/fixtures/tremor_adapter.c"),
+        .flags = flags,
+    });
+    inline for (&.{
+        "mdct.c",
+        "block.c",
+        "window.c",
+        "synthesis.c",
+        "info.c",
+        "floor1.c",
+        "floor0.c",
+        "vorbisfile.c",
+        "res012.c",
+        "mapping0.c",
+        "registry.c",
+        "codebook.c",
+        "sharedbook.c",
+    }) |source| {
+        module.addCSourceFile(.{
+            .file = .{
+                .cwd_relative = b.pathJoin(&.{ tremor_prefix, source }),
+            },
+            .flags = flags,
+        });
+    }
+    module.addIncludePath(.{ .cwd_relative = tremor_prefix });
+    module.addIncludePath(.{
+        .cwd_relative = b.pathJoin(&.{ xiph_prefix, "include" }),
+    });
+    module.addObjectFile(.{
+        .cwd_relative = b.pathJoin(&.{ xiph_prefix, "lib/libogg.a" }),
     });
     module.linkSystemLibrary("m", .{});
 }
