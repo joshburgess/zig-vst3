@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>downstream_instrument</string>
+    <string>DownstreamInstrument</string>
     <key>CFBundleIdentifier</key>
     <string>invalid.example.downstream-instrument</string>
     <key>CFBundleName</key>

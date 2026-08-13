@@ -61,8 +61,8 @@ case "$(uname -s)" in
     Darwin)
         effect_bundle=$root/effect/zig-out/bundle/DownstreamEffect.vst3/Contents
         instrument_bundle=$root/instrument/zig-out/bundle/DownstreamInstrument.vst3/Contents
-        test -x "$effect_bundle/MacOS/downstream_effect"
-        test -x "$instrument_bundle/MacOS/downstream_instrument"
+        test -x "$effect_bundle/MacOS/DownstreamEffect"
+        test -x "$instrument_bundle/MacOS/DownstreamInstrument"
         test -f "$effect_bundle/Info.plist"
         test -f "$effect_bundle/PkgInfo"
         test -f "$instrument_bundle/Info.plist"
@@ -79,14 +79,14 @@ case "$(uname -s)" in
         esac
         effect_bundle=$root/effect/zig-out/bundle/DownstreamEffect.vst3/Contents/$bundle_arch-linux
         instrument_bundle=$root/instrument/zig-out/bundle/DownstreamInstrument.vst3/Contents/$bundle_arch-linux
-        test -f "$effect_bundle/downstream_effect.so"
-        test -f "$instrument_bundle/downstream_instrument.so"
+        test -f "$effect_bundle/DownstreamEffect.so"
+        test -f "$instrument_bundle/DownstreamInstrument.so"
         ;;
     MINGW*|MSYS*|CYGWIN*)
         effect_bundle=$root/effect/zig-out/bundle/DownstreamEffect.vst3/Contents/x86_64-win
         instrument_bundle=$root/instrument/zig-out/bundle/DownstreamInstrument.vst3/Contents/x86_64-win
-        test -f "$effect_bundle/downstream_effect.vst3"
-        test -f "$instrument_bundle/downstream_instrument.vst3"
+        test -f "$effect_bundle/DownstreamEffect.vst3"
+        test -f "$instrument_bundle/DownstreamInstrument.vst3"
         ;;
     *)
         printf 'unsupported downstream bundle host: %s\n' "$(uname -s)" >&2

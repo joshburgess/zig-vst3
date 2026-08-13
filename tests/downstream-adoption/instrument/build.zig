@@ -35,13 +35,13 @@ fn addNativeBundle(
     library: *std.Build.Step.Compile,
 ) void {
     const relative_path = switch (target.result.os.tag) {
-        .macos => "bundle/DownstreamInstrument.vst3/Contents/MacOS/downstream_instrument",
+        .macos => "bundle/DownstreamInstrument.vst3/Contents/MacOS/DownstreamInstrument",
         .linux => b.fmt(
-            "bundle/DownstreamInstrument.vst3/Contents/{s}-linux/downstream_instrument.so",
+            "bundle/DownstreamInstrument.vst3/Contents/{s}-linux/DownstreamInstrument.so",
             .{@tagName(target.result.cpu.arch)},
         ),
         .windows => b.fmt(
-            "bundle/DownstreamInstrument.vst3/Contents/{s}-win/downstream_instrument.vst3",
+            "bundle/DownstreamInstrument.vst3/Contents/{s}-win/DownstreamInstrument.vst3",
             .{@tagName(target.result.cpu.arch)},
         ),
         else => @panic("downstream instrument bundle requires macOS, Linux, or Windows"),

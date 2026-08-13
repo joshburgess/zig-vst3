@@ -35,13 +35,13 @@ fn addNativeBundle(
     library: *std.Build.Step.Compile,
 ) void {
     const relative_path = switch (target.result.os.tag) {
-        .macos => "bundle/DownstreamEffect.vst3/Contents/MacOS/downstream_effect",
+        .macos => "bundle/DownstreamEffect.vst3/Contents/MacOS/DownstreamEffect",
         .linux => b.fmt(
-            "bundle/DownstreamEffect.vst3/Contents/{s}-linux/downstream_effect.so",
+            "bundle/DownstreamEffect.vst3/Contents/{s}-linux/DownstreamEffect.so",
             .{@tagName(target.result.cpu.arch)},
         ),
         .windows => b.fmt(
-            "bundle/DownstreamEffect.vst3/Contents/{s}-win/downstream_effect.vst3",
+            "bundle/DownstreamEffect.vst3/Contents/{s}-win/DownstreamEffect.vst3",
             .{@tagName(target.result.cpu.arch)},
         ),
         else => @panic("downstream effect bundle requires macOS, Linux, or Windows"),

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>downstream_effect</string>
+    <string>DownstreamEffect</string>
     <key>CFBundleIdentifier</key>
     <string>invalid.example.downstream-effect</string>
     <key>CFBundleName</key>
