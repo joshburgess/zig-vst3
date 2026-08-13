@@ -9,7 +9,7 @@ This repository has two packages:
 - `zig-vst3`: raw Zig bindings and helper objects for the VST3 COM API.
 - `zig-vst3-plugin`: a higher-level framework for writing plugins with reflected parameters, state, automation, events, and reusable VST3 shells.
 
-The project currently builds and validates example VST3 bundles for effects, analyzers, event processors, and a MIDI-driven synth. The first preview release, `zig-vst3-0.1.0`, is tagged, and the core path is covered by unit tests, ABI checks, Steinberg validator runs, and CI on Linux, macOS, and Windows. The API is still early and may change before a public compatibility promise.
+The project builds and validates example VST3 bundles for effects, analyzers, event processors, and a MIDI-driven synth. The current candidate is `zig-vst3-0.3.0-rc.1`, the first planned tag with a documented compatibility boundary for the higher-level framework. Raw ABI, framework core, and example bundles are covered by unit tests, ABI checks, Steinberg validator runs, and CI on Linux, macOS, and Windows. Integrations that still need external-host or physical-device evidence remain experimental.
 
 ## Which Package Should I Use?
 
@@ -261,6 +261,7 @@ See [docs/pluginval.md](docs/pluginval.md) for `PLUGINVAL`, strictness, and head
 
 - [docs/framework/plugin-interface.md](docs/framework/plugin-interface.md): framework plugin API.
 - [docs/framework/api-compatibility.md](docs/framework/api-compatibility.md): reviewed public surface, compatibility candidates, provisional integrations, and migrations.
+- [docs/framework/compatibility-policy.md](docs/framework/compatibility-policy.md): the `0.3.x` framework boundary, change policy, and release-note requirements.
 - [docs/framework/parameters.md](docs/framework/parameters.md): parameters, plain/normalized values, smoothing, metadata, and editors.
 - [docs/framework/state.md](docs/framework/state.md): binary state format, migration, restore reports, and debug JSON.
 - [docs/framework/gui.md](docs/framework/gui.md): toolkit-neutral editor API, VSTGUI adapter, parameter bindings, and telemetry.
@@ -293,7 +294,7 @@ The public CI workflow currently runs:
 
 ## Current Limits
 
-- The framework is pre-release. Its first public-surface review identifies compatibility candidates and provisional integrations, but no framework compatibility promise begins until a tagged release says so.
+- The framework is pre-1.0. The prepared `zig-vst3-0.3.0-rc.1` tag preserves compatibility-ready declarations through the `0.3.x` line under the documented framework policy once exact-commit public CI passes and the tag is created. Experimental integrations may still change before promotion.
 - Manual host coverage is currently macOS REAPER-heavy. MIDI-heavy and analyzer/instrument host smoke rows are still being filled in.
 - CI validates plugins headlessly with the Steinberg validator and pluginval, but real-host coverage in actual DAWs is still limited.
 - The reference editor can build the pinned VSTGUI adapter on native macOS, Windows, and Linux systems. Other toolkits remain optional adapters.

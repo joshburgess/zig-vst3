@@ -1,6 +1,6 @@
 # Release Checklist
 
-This checklist is for tagging raw API releases (most recently `zig-vst3-0.2.1`). It tracks release gates for the raw VST3 API package only. `zig-vst3-plugin` can keep evolving after a tag.
+The source archive contains the raw VST3 API and plugin framework. Raw-only maintenance releases may use the raw gate below. A compatibility-bearing framework release uses the framework candidate gate and one shared `zig-vst3-*` tag.
 
 The current release pins are Zig 0.16.0 and VST3 SDK `v3.8.0_build_66`. Keep [toolchain.md](toolchain.md), [stability.md](stability.md), and `CHANGELOG.md` aligned with any release-candidate change.
 
@@ -44,13 +44,44 @@ Public CI currently covers:
 
 ## Framework Release Candidate
 
-Do not infer framework compatibility from the raw API tag. Before the first
-compatibility-bearing `zig-vst3-plugin` tag, complete and record all automated
-gates below:
+Candidate: `zig-vst3-0.3.0-rc.1`
 
-- Review [Framework API Compatibility Inventory](framework/api-compatibility.md) and account for every installed module-root declaration.
+Package boundary: the single archive defined by `build.zig.zon`. The archive
+installs `zig-vst3`, `zig-vst3-plugin`, `zig-vst3-plugin-core`, and the optional
+platform modules. Only declarations marked compatibility-ready in the API
+inventory receive the `0.3.x` framework compatibility promise.
+
+Pins: Zig 0.16.0, VST3 SDK `v3.8.0_build_66` at commit
+`9fad9770f2ae8542ab1a548a68c1ad1ac690abe0`, and bundled ARA 2.3 headers.
+
+Run:
+
+```sh
+scripts/fetch_sdk.sh
+scripts/framework_release_candidate_check.sh
+```
+
+The candidate gate verifies the version and toolchain pins, staged package in
+Debug and ReleaseSafe, the complete ReleaseSafe graph, plugin-core and format
+cross-builds, DSP, resource, and VSTGUI sanitizer gates, raw ABI, Steinberg
+validator, all native example bundles, and benchmarks.
+
+Local result on 2026-08-13:
+
+- Staged Debug and ReleaseSafe: 16/16 steps and 89/89 tests in each mode.
+- Complete ReleaseSafe graph: 416/416 steps and 7,387/7,393 tests, with six documented environment-dependent skips.
+- Plugin-core, LV2, AUv2, and ARA gates: 164/164 steps and 1,276/1,276 tests.
+- DSP ThreadSanitizer: 5/5 steps and 149/149 tests.
+- Resource and VSTGUI sanitizers: 7/7 steps and 57/57 tests, plus four repeated VSTGUI thread-sanitizer processes.
+- Raw ABI and Steinberg validation: 229/229 steps. All 24 native example bundles pass 47/47 validator tests.
+- Benchmarks: 5/5 steps.
+
+Before tagging, also complete and record these checks:
+
+- Review [Framework API Compatibility Inventory](framework/api-compatibility.md) and [Framework Compatibility Policy](framework/compatibility-policy.md).
+- Confirm the reflected declaration manifest rejects drift and accounts for every installed framework module-root declaration.
 - Run the staged installed-package suite. Its public API fixture must compile the compatibility-ready and provisional entry points and reject retired leaks.
-- Run native tests, supported plugin-core and format cross-builds, the complete ReleaseSafe graph, the DSP, resource, and VSTGUI sanitizer gates, raw and format ABI gates, Steinberg validator, and the public GitHub Actions matrix at the exact candidate commit.
+- Run the public GitHub Actions matrix at the exact candidate commit.
 - Record every removal or behavior change in `CHANGELOG.md`, including a direct migration path.
 - Reconcile `README.md`, `docs/stability.md`, framework guides, roadmap, capability matrix, and open-work tracker with the candidate surface.
 - Confirm the source tree contains no compatibility-ready declaration still classified as internal leakage, redundant, or insufficiently documented.
@@ -89,7 +120,16 @@ For every release containing GUI changes, record these editor lifecycle checks f
 
 ## Tag
 
-After the required checks and host matrix rows are in place:
+After the framework automated checks pass, tag the release candidate. External
+rows remain explicitly experimental and do not block this core-only boundary:
+
+```sh
+git tag zig-vst3-0.3.0-rc.1
+git push origin zig-vst3-0.3.0-rc.1
+```
+
+After the raw release checks and required host matrix rows are in place for a
+raw-only maintenance release:
 
 ```sh
 git tag zig-vst3-0.2.1

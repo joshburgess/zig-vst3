@@ -1,8 +1,9 @@
 # Framework API Compatibility Inventory
 
-This inventory records the first structured review of the installed public
-framework surface. It is a release-planning classification, not a compatibility
-promise for the current development revision.
+This inventory defines the reviewed public framework surface for
+`zig-vst3-0.3.0-rc.1`. Compatibility-ready declarations follow the
+[Framework Compatibility Policy](compatibility-policy.md). Experimental
+declarations ship without that promise.
 
 The inventory unit is a public declaration in an installed module root. Public
 members of a listed generic or namespace inherit that declaration's category
@@ -16,6 +17,7 @@ types returned by a generic inherit the status of that generic.
 | --- | --- |
 | Compatibility-ready | The name, role, ownership, and failure contract are suitable for the first compatibility-bearing framework release. |
 | Experimental | Useful and tested, but product or external-host evidence can still require source changes before a compatibility promise. |
+| Mixed namespace | The root is retained, but its public descendants keep their individual compatibility-ready or experimental classification. |
 | Internal leakage | An implementation detail or duplicate path that should not be part of the installed API. |
 | Redundant | A public spelling with no distinct supported workflow. |
 | Insufficiently documented | A supported workflow whose ownership or behavioral contract is not clear enough to freeze. |
@@ -28,8 +30,10 @@ inventory were removed. Migration is recorded below.
 
 | Public declarations | Classification | Contract |
 | --- | --- | --- |
+| `core` | Mixed namespace | The root remains available. Its descendants keep the classifications listed in this inventory. |
 | `version`, `parameters`, `realtime_audit`, `dsp`, `resource`, `process`, `state`, `units` | Compatibility-ready | Format-neutral value, processing, state, resource, and DSP namespaces. Their public constructors and methods are covered by native, installed-package, retained-state, and supported cross-target tests. |
-| `plugin`, `PluginSpec`, `PluginInstance`, `ProcessorRuntime`, `OfflineRenderer`, `PrepareConfig`, `RuntimeState`, `AudioBusLayout`, `AudioBusDirection`, `AudioBusLayoutSet`, `DynamicAudioBus`, `DynamicAudioBusState`, `BoundedDynamicAudioBusSnapshot`, `BoundedDynamicAudioBusTopology`, `DynamicAudioBusSnapshot`, `DynamicAudioBusTopology`, `max_auxiliary_audio_buses`, `max_audio_buses_per_direction`, `HostRequestSink`, `HostChange`, `validateLifecycle` | Compatibility-ready | High-level declarations, lifecycle, topology, and host requests. The top-level host-request aliases are retained because shipped high-level plugin declarations use them directly. |
+| `plugin` | Mixed namespace | High-level, routing, device, MIDI, shell, and split-device declarations retain the classifications below. |
+| `PluginSpec`, `PluginInstance`, `ProcessorRuntime`, `OfflineRenderer`, `PrepareConfig`, `RuntimeState`, `AudioBusLayout`, `AudioBusDirection`, `AudioBusLayoutSet`, `DynamicAudioBus`, `DynamicAudioBusState`, `BoundedDynamicAudioBusSnapshot`, `BoundedDynamicAudioBusTopology`, `DynamicAudioBusSnapshot`, `DynamicAudioBusTopology`, `max_auxiliary_audio_buses`, `max_audio_buses_per_direction`, `HostRequestSink`, `HostChange`, `validateLifecycle` | Compatibility-ready | High-level declarations, lifecycle, topology, and host requests. The top-level host-request aliases are retained because shipped high-level plugin declarations use them directly. |
 | `Vst3Processor`, `Vst3ProcessorWithParameters`, `Vst3Effect`, `Vst3EffectWithParameters`, `Vst3Controller`, `Vst3ControllerWithParameters`, `vst3_adapter` | Compatibility-ready | The high-level VST3 construction path. Raw ABI compatibility remains governed separately by the raw API policy. |
 | `gui`, `editor_state`, `gui_preset_browser`, `gui_telemetry`, `gui_graph`, `gui_piano`, `gui_step_sequencer`, `gui_file_drop`, `gui_file_importer`, `gui_audio_file_importer`, `gui_audio_sample_store`, `gui_sample_player`, `gui_ir_convolution`, `gui_ir_editor`, `gui_progress`, `gui_range_selection`, `gui_viewport` | Experimental | Toolkit-neutral authoring and telemetry are automated, but live platform accessibility, clipboard, visual, and host lifecycle evidence is incomplete. |
 | `lv2` and every declaration rooted at `lv2`, including `metadata`, `ui`, protocol URI and status constants, ABI records, feature sinks, `Descriptor`, `CoreAdapter`, and `CoreAdapterWithParameters` | Experimental | ABI, metadata, dynamic loading, state, worker, programs, UI, and cross-target gates pass. Two-host external validation is still required. Specification constants and external records change only to follow LV2. |
@@ -97,9 +101,14 @@ editor lifecycle evidence remain external.
 
 ## Enforcement
 
+`tests/installed-consumer/framework_api_manifest.zig` uses compile-time
+reflection to require an explicit classification for every declaration in the
+two installed framework module roots. Additions, removals, and duplicate
+manifest entries fail the staged installed-package gate.
+
 `tests/installed-consumer/public_api.zig` compiles the compatibility-ready entry
 points and all provisional integration roots from a staged installed package.
-It also rejects restoration of the two removed leaks and verifies that a split
+It rejects restoration of the two removed leaks and verifies that a split
 callback retains the adapter's stable address. Existing focused tests cover
 malformed retained state, failure silence, quiescent reset, callback drain, and
 retry. ABI, validator, sanitizer, native, and cross-target gates remain separate

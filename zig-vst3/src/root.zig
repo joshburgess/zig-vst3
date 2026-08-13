@@ -69,7 +69,7 @@ pub const pluginterfaces = struct {
     pub const vst = @import("pluginterfaces/vst/root.zig");
 };
 pub const tuid = @import("tuid.zig");
-pub const version = "0.2.1-dev";
+pub const version = "0.3.0-rc.1";
 pub const vst_capability_support = @import("vst_capability_support.zig");
 pub const vstgui = @import("vstgui.zig");
 pub const vstgui_lv2_backend =
@@ -120,8 +120,8 @@ pub fn targetName() []const u8 {
     return @tagName(@import("builtin").target.os.tag);
 }
 
-test "zig-vst3 module exposes a development version" {
-    try std.testing.expect(std.mem.endsWith(u8, version, "-dev"));
+test "zig-vst3 module exposes the package version" {
+    try std.testing.expectEqualStrings("0.3.0-rc.1", version);
 }
 
 test {

@@ -59,13 +59,27 @@ trap on_term TERM
 mkdir -p "$package" "$consumer"
 cp build.zig build.zig.zon LICENSE README.md CHANGELOG.md "$package/"
 cp -R zig-vst3 zig-vst3-plugin "$package/"
+cp -R docs "$package/"
 mkdir -p "$package/tools"
 cp tools/pack_ara_bindings.zig "$package/tools/"
 mkdir -p "$package/vendor"
 cp -R vendor/ARA_API "$package/vendor/"
-cp tests/installed-consumer/build.zig tests/installed-consumer/build.zig.zon tests/installed-consumer/editors.zig tests/installed-consumer/dsp_fixture.zig tests/installed-consumer/core_consumer.zig tests/installed-consumer/public_api.zig tests/installed-consumer/kernel_plugin.zig "$consumer/"
+cp tests/installed-consumer/build.zig tests/installed-consumer/build.zig.zon tests/installed-consumer/editors.zig tests/installed-consumer/dsp_fixture.zig tests/installed-consumer/core_consumer.zig tests/installed-consumer/public_api.zig tests/installed-consumer/framework_api_manifest.zig tests/installed-consumer/kernel_plugin.zig "$consumer/"
 cp tests/abi/lv2_log_capture.c "$consumer/"
 cp -R tests/installed-consumer/kernel "$consumer/"
+
+for required_path in \
+    "$package/docs/framework/api-compatibility.md" \
+    "$package/docs/framework/compatibility-policy.md" \
+    "$package/docs/release-checklist.md" \
+    "$package/docs/stability.md" \
+    "$package/docs/toolchain.md"
+do
+    if [ ! -f "$required_path" ]; then
+        printf 'staged package is missing %s\n' "$required_path" >&2
+        exit 1
+    fi
+done
 
 if ! (
     cd "$consumer"

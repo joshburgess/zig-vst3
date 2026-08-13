@@ -1,6 +1,6 @@
 # Stability Policy
 
-This project is pre-release. It is usable for experiments, examples, and early plugin work, but it does not yet make a public compatibility promise.
+This project is pre-1.0. The raw VST3 API has carried a preview compatibility policy since `zig-vst3-0.1.0`. `zig-vst3-0.3.0-rc.1` adds the first release-candidate compatibility boundary for the higher-level plugin framework.
 
 Host callback boundaries treat raw pointer arguments as untrusted. Public callback declarations use nullable C pointer types for host-provided buffers, structures, identifiers, events, scalar outputs, and GUI telemetry storage. Implementations reject null before dereference, output mutation, retained-reference changes, or configuration-hook dispatch. Internal hooks continue to receive typed non-null pointers after boundary validation.
 
@@ -42,11 +42,11 @@ Native audio callbacks reject a null channel-pointer array when the negotiated t
 
 ## Plugin Framework
 
-`zig-vst3-plugin` is the plugin framework package. It is still experimental and may change names, helper organization, process hook shapes, or metadata access patterns before a stable compatibility promise.
+`zig-vst3-plugin` is the plugin framework package. Declarations classified compatibility-ready in the [Framework API Compatibility Inventory](framework/api-compatibility.md) follow the [Framework Compatibility Policy](framework/compatibility-policy.md) through the `0.3.x` line. Experimental declarations and optional platform modules may still change before promotion.
 
-The first structured public-surface review is recorded in [Framework API Compatibility Inventory](framework/api-compatibility.md). Compatibility-ready means the declaration is a candidate for preservation at the first framework tag. It does not change the current pre-release policy by itself. LV2, AUv2, ARA, the supported VSTGUI authoring layer, standalone shells, and split-device correction remain experimental until their listed external evidence is complete.
+The first structured public-surface review is recorded in [Framework API Compatibility Inventory](framework/api-compatibility.md). LV2, AUv2, ARA product APIs, the supported VSTGUI authoring layer, standalone shells, split-device correction, and optional platform modules remain experimental until their listed external evidence is complete.
 
-The intended direction is stable plugin declarations, reflected parameter metadata, state, automation, events, units, programs, and reusable VST3 shells. Until that promise is made, plugin authors should expect to update code across minor pre-1.0 releases.
+Within `0.3.x`, compatibility-ready plugin declarations, reflected parameter metadata, state, automation, events, units, programs, DSP and resource namespaces, standalone runtime primitives, and reusable VST3 shells preserve their documented source contracts. A later pre-1.0 minor release may make breaking changes with the deprecation and migration process in the framework policy.
 
 The standalone split-device correction API is also experimental. `CaptureRateLifecycleConfig` deliberately leaves FIFO targets, correction limits and response, priming thresholds, correction cadence, and recovery policy with the product. Its defaults preserve immediate rendering and silence substitution. Products that opt into rebuffering receive deterministic silence during priming and on the complete underflow block that begins recovery. `reset` is quiescent-only and restores the configured startup state. The policy names, defaults, report fields, callback ownership, stable-address requirements, and reset contract passed the first API review. The repository-owned policy and operating-state enums reserve unknown integer values so later additions are not ABI-exhaustive, while public operations reject unknown values transactionally.
 

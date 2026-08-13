@@ -121,6 +121,22 @@ pub fn build(b: *std.Build) void {
         dependency.module("zig-vst3"),
     );
 
+    const framework_api_manifest_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("framework_api_manifest.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    framework_api_manifest_tests.root_module.addImport(
+        "zig-vst3-plugin",
+        dependency.module("zig-vst3-plugin"),
+    );
+    framework_api_manifest_tests.root_module.addImport(
+        "zig-vst3-plugin-core",
+        dependency.module("zig-vst3-plugin-core"),
+    );
+
     const kernel_module = b.createModule(.{
         .root_source_file = b.path("kernel_plugin.zig"),
         .target = target,
@@ -150,6 +166,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(dsp_fixture_tests).step);
     test_step.dependOn(&b.addRunArtifact(core_tests).step);
     test_step.dependOn(&b.addRunArtifact(public_api_tests).step);
+    test_step.dependOn(&b.addRunArtifact(framework_api_manifest_tests).step);
     test_step.dependOn(&kernel_plugin.step);
     test_step.dependOn(&b.addRunArtifact(kernel_tests).step);
 }

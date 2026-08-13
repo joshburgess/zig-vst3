@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## zig-vst3-0.3.0-rc.1 - 2026-08-13
+
+### Release Notes
+
+- This is the first release candidate with a compatibility boundary for `zig-vst3-plugin`. Compatibility-ready declarations in the framework API inventory are preserved through the `0.3.x` line. LV2, AUv2, ARA product APIs, VSTGUI, standalone windows, split-device correction, and optional platform modules remain experimental.
+- The release is one source archive containing `zig-vst3`, `zig-vst3-plugin`, `zig-vst3-plugin-core`, `zig-vst3-ara`, and the optional platform modules. Shipping in the archive does not promote an experimental module.
+- The candidate pins Zig 0.16.0, VST3 SDK `v3.8.0_build_66` at commit `9fad9770f2ae8542ab1a548a68c1ad1ac690abe0`, and the bundled ARA 2.3 headers.
+- `scripts/framework_release_candidate_check.sh` passes locally. Staged Debug and ReleaseSafe consumers each pass 16/16 steps and 89/89 tests. The complete ReleaseSafe graph passes 416/416 steps and 7,387/7,393 tests with six documented environment-dependent skips. Plugin-core, LV2, AUv2, and ARA format and cross-target gates pass 164/164 steps and 1,276/1,276 tests. DSP ThreadSanitizer passes 149/149 tests. Resource and VSTGUI sanitizer gates pass 57/57 tests plus four repeated VSTGUI thread-sanitizer processes. Raw ABI and Steinberg validation pass 229/229 steps, with all 24 native example bundles passing 47/47 validator tests. Benchmarks pass 5/5 steps. Exact-commit public CI evidence will be recorded before the candidate is tagged.
+
+### Added
+
+- Added a compile-time declaration manifest for both installed framework module roots. The staged installed-package gate rejects unclassified additions, removals, missing entries, and duplicates.
+- Added a framework compatibility policy covering compatible additions, behavior changes, deprecations, removals, experimental promotion, state identity, migration notes, and release evidence.
+- Added a release-candidate gate covering staged consumers, the complete ReleaseSafe graph, format and cross-target checks, sanitizers, raw ABI, Steinberg validation, and benchmarks.
 
 ### Changed
 
@@ -8,6 +21,7 @@
 - Capture-rate policy and operating-state enums now reserve unknown integer values for additive evolution. Public construction rejects unknown policy values transactionally.
 - Removed the unused `zig-vst3-plugin.backendVersion()` forwarding function. Use `zig-vst3-plugin.version`.
 - Removed the unused duplicate `zig-vst3-plugin-core.lv2_metadata` path. Use `zig-vst3-plugin-core.lv2.metadata`.
+- Set the shared archive and exported package version to `0.3.0-rc.1`. Native bundle metadata uses the corresponding numeric `0.3.0` version.
 
 ### Fixed
 

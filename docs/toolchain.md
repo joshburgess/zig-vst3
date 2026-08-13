@@ -15,3 +15,9 @@ Pinned compiler version: 0.16.0
 ## Reference Projects
 
 No external reference-project revisions are pinned for the current release.
+
+## Framework Release Candidate
+
+`zig-vst3-0.3.0-rc.1` uses the Zig and VST3 SDK pins above plus the bundled ARA
+SDK 2.3 headers. A pin change requires a new release candidate and the complete
+framework candidate gate.

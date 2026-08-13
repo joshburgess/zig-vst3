@@ -30,7 +30,7 @@ pub const plugin = core.plugin;
 pub const process = core.process;
 pub const state = core.state;
 pub const units = core.units;
-pub const version = "0.2.1-dev";
+pub const version = "0.3.0-rc.1";
 pub const HostRequestSink = core.plugin.HostRequestSink;
 pub const HostChange = core.plugin.HostChange;
 pub const vst3_adapter = vst3_adapter_mod;
@@ -47,8 +47,8 @@ pub const Vst3ControllerWithParameters =
     vst3.zig_vst3_plugin_effect
         .HighLevelEditControllerWithParameters;
 
-test "zig-vst3-plugin sees zig-vst3" {
-    try std.testing.expectEqualStrings("0.2.1-dev", vst3.version);
+test "zig-vst3-plugin shares the package version" {
+    try std.testing.expectEqualStrings(version, vst3.version);
 }
 
 test "zig-vst3-plugin exposes the VST3 runtime adapter" {

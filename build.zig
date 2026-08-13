@@ -2883,7 +2883,7 @@ pub fn build(b: *std.Build) void {
         bundle_audio_unit.addArgs(&.{
             mono_gain_component_path,
             "dev.zig-vst3.mono-gain-auv2",
-            "0.2.1",
+            "0.3.0",
             "zig_vst3_mono_gain",
             "aufx",
             "ZMGn",
@@ -2931,7 +2931,7 @@ pub fn build(b: *std.Build) void {
         bundle_auxiliary_output_audio_unit.addArgs(&.{
             auxiliary_output_component_path,
             "dev.zig-vst3.aux-output-splitter-auv2",
-            "0.2.1",
+            "0.3.0",
             "zig_vst3_aux_output_splitter",
             "aufx",
             "ZAux",
@@ -6045,7 +6045,7 @@ fn addVst3BundleSteps(
         bundle.addArgs(&.{
             b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
             options.bundle_id,
-            "0.2.1",
+            "0.3.0",
             options.artifact_name,
         });
         native_step.dependOn(&bundle.step);
