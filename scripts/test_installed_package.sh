@@ -12,6 +12,14 @@ case "$keep_failed" in
 esac
 
 optimize=ReleaseSafe
+package_source=${ZIG_VST3_PACKAGE_SOURCE:-.}
+
+if [ ! -f "$package_source/build.zig.zon" ] ||
+    [ ! -d "$package_source/zig-vst3" ] ||
+    [ ! -d "$package_source/zig-vst3-plugin" ]; then
+    printf 'ZIG_VST3_PACKAGE_SOURCE does not identify a zig-vst3 package tree: %s\n' "$package_source" >&2
+    exit 2
+fi
 
 if [ "$#" -gt 1 ]; then
     printf 'usage: %s [--optimize=Debug|ReleaseSafe|ReleaseFast|ReleaseSmall]\n' "$0" >&2
@@ -57,13 +65,13 @@ trap on_int INT
 trap on_term TERM
 
 mkdir -p "$package" "$consumer"
-cp build.zig build.zig.zon LICENSE README.md CHANGELOG.md "$package/"
-cp -R zig-vst3 zig-vst3-plugin "$package/"
-cp -R docs "$package/"
+cp "$package_source/build.zig" "$package_source/build.zig.zon" "$package_source/LICENSE" "$package_source/README.md" "$package_source/CHANGELOG.md" "$package/"
+cp -R "$package_source/zig-vst3" "$package_source/zig-vst3-plugin" "$package/"
+cp -R "$package_source/docs" "$package/"
 mkdir -p "$package/tools"
-cp tools/pack_ara_bindings.zig "$package/tools/"
+cp "$package_source/tools/pack_ara_bindings.zig" "$package/tools/"
 mkdir -p "$package/vendor"
-cp -R vendor/ARA_API "$package/vendor/"
+cp -R "$package_source/vendor/ARA_API" "$package/vendor/"
 cp tests/installed-consumer/build.zig tests/installed-consumer/build.zig.zon tests/installed-consumer/editors.zig tests/installed-consumer/dsp_fixture.zig tests/installed-consumer/core_consumer.zig tests/installed-consumer/public_api.zig tests/installed-consumer/framework_api_manifest.zig tests/installed-consumer/framework_api_compatibility.zig tests/installed-consumer/rc1_api_baseline.zig tests/installed-consumer/kernel_plugin.zig "$consumer/"
 cp tests/abi/lv2_log_capture.c "$consumer/"
 cp -R tests/installed-consumer/kernel "$consumer/"

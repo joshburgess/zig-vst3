@@ -141,6 +141,20 @@ git tag -a zig-vst3-0.3.0-rc.1 7650781a5625c041ec474a5377d859a427a344f3 -m 'zig-
 git push origin zig-vst3-0.3.0-rc.1
 ```
 
+After the tag is public, verify the downloaded source archive and run the
+installed-package and independent downstream fixtures against its extracted
+package tree:
+
+```sh
+scripts/test_published_release.sh \
+  https://github.com/joshburgess/zig-vst3/archive/refs/tags/zig-vst3-0.3.0-rc.1.tar.gz
+```
+
+Record the archive URL and SHA-256 printed by the script. A later verification
+can pass that checksum as the second argument. Keep RC1 available for incidental
+feedback, but do not wait for external reports. Use the published-artifact smoke
+result and the existing candidate evidence for the stable-release decision.
+
 After the raw release checks and required host matrix rows are in place for a
 raw-only maintenance release:
 

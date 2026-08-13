@@ -3,6 +3,7 @@ set -eu
 
 optimize=ReleaseSafe
 validate=0
+package_source=${ZIG_VST3_PACKAGE_SOURCE:-.}
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --optimize=Debug) optimize=Debug ;;
@@ -18,6 +19,13 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 
+if [ ! -f "$package_source/build.zig.zon" ] ||
+    [ ! -d "$package_source/zig-vst3" ] ||
+    [ ! -d "$package_source/zig-vst3-plugin" ]; then
+    printf 'ZIG_VST3_PACKAGE_SOURCE does not identify a zig-vst3 package tree: %s\n' "$package_source" >&2
+    exit 2
+fi
+
 root=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-downstream-adoption.XXXXXX")
 package=$root/zig-vst3-package
 cache=$root/zig-global-cache
@@ -27,10 +35,10 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$package/tools" "$package/vendor"
-cp build.zig build.zig.zon LICENSE README.md CHANGELOG.md "$package/"
-cp -R zig-vst3 zig-vst3-plugin docs "$package/"
-cp tools/pack_ara_bindings.zig "$package/tools/"
-cp -R vendor/ARA_API "$package/vendor/"
+cp "$package_source/build.zig" "$package_source/build.zig.zon" "$package_source/LICENSE" "$package_source/README.md" "$package_source/CHANGELOG.md" "$package/"
+cp -R "$package_source/zig-vst3" "$package_source/zig-vst3-plugin" "$package_source/docs" "$package/"
+cp "$package_source/tools/pack_ara_bindings.zig" "$package/tools/"
+cp -R "$package_source/vendor/ARA_API" "$package/vendor/"
 
 for project in effect instrument upgrade; do
     mkdir "$root/$project"
