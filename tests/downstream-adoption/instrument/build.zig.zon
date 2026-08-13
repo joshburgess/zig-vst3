@@ -1,0 +1,10 @@
+.{
+    .name = .downstream_instrument,
+    .version = "1.0.0",
+    .fingerprint = 0x646f7fe538b30d9e,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_vst3 = .{ .path = "../zig-vst3-package" },
+    },
+    .paths = .{ "build.zig", "src", "bundle" },
+}

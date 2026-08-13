@@ -45,6 +45,8 @@ done
 
 scripts/test_installed_package.sh --optimize=Debug
 scripts/test_installed_package.sh --optimize=ReleaseSafe
+scripts/test_downstream_adoption.sh --optimize=Debug
+scripts/test_downstream_adoption.sh --optimize=ReleaseSafe --validate
 zig build test -Doptimize=ReleaseSafe --summary all
 zig build test-plugin-core-builds test-lv2 test-audio-unit test-ara --summary all
 zig build test-dsp-thread-sanitizer --summary all

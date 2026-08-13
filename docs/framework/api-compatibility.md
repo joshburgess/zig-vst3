@@ -106,6 +106,14 @@ reflection to require an explicit classification for every declaration in the
 two installed framework module roots. Additions, removals, and duplicate
 manifest entries fail the staged installed-package gate.
 
+`tests/installed-consumer/rc1_api_baseline.zig` freezes the compatibility-ready
+module-root declarations at exact candidate commit
+`7650781a5625c041ec474a5377d859a427a344f3`.
+`framework_api_compatibility.zig` compares that baseline with the current
+manifest. A silent removal or reclassification fails. An accepted later-minor
+removal must name its deprecation release, effective release, last supported
+release, replacement, and release note.
+
 `tests/installed-consumer/public_api.zig` compiles the compatibility-ready entry
 points and all provisional integration roots from a staged installed package.
 It rejects restoration of the two removed leaks and verifies that a split

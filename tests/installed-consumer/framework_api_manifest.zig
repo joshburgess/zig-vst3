@@ -2,18 +2,18 @@ const std = @import("std");
 const plug = @import("zig-vst3-plugin");
 const core = @import("zig-vst3-plugin-core");
 
-const Classification = enum {
+pub const Classification = enum {
     compatibility_ready,
     experimental,
     mixed,
 };
 
-const Entry = struct {
+pub const Entry = struct {
     name: []const u8,
     classification: Classification,
 };
 
-const plugin_api = [_]Entry{
+pub const plugin_api = [_]Entry{
     .{ .name = "core", .classification = .mixed },
     .{ .name = "gui", .classification = .experimental },
     .{ .name = "editor_state", .classification = .experimental },
@@ -53,7 +53,7 @@ const plugin_api = [_]Entry{
     .{ .name = "Vst3ControllerWithParameters", .classification = .compatibility_ready },
 };
 
-const core_api = [_]Entry{
+pub const core_api = [_]Entry{
     .{ .name = "parameters", .classification = .compatibility_ready },
     .{ .name = "realtime_audit", .classification = .compatibility_ready },
     .{ .name = "gui", .classification = .experimental },
@@ -84,7 +84,7 @@ const core_api = [_]Entry{
     .{ .name = "units", .classification = .compatibility_ready },
 };
 
-fn manifestMatches(comptime namespace: type, comptime manifest: []const Entry) bool {
+pub fn manifestMatches(comptime namespace: type, comptime manifest: []const Entry) bool {
     const declarations = @typeInfo(namespace).@"struct".decls;
     if (declarations.len != manifest.len)
         return false;

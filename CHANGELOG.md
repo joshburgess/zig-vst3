@@ -8,12 +8,15 @@
 - The release is one source archive containing `zig-vst3`, `zig-vst3-plugin`, `zig-vst3-plugin-core`, `zig-vst3-ara`, and the optional platform modules. Shipping in the archive does not promote an experimental module.
 - The candidate pins Zig 0.16.0, VST3 SDK `v3.8.0_build_66` at commit `9fad9770f2ae8542ab1a548a68c1ad1ac690abe0`, and the bundled ARA 2.3 headers.
 - `scripts/framework_release_candidate_check.sh` passes locally. Staged Debug and ReleaseSafe consumers each pass 16/16 steps and 89/89 tests. The complete ReleaseSafe graph passes 416/416 steps and 7,387/7,393 tests with six documented environment-dependent skips. Plugin-core, LV2, AUv2, and ARA format and cross-target gates pass 164/164 steps and 1,276/1,276 tests. DSP ThreadSanitizer passes 149/149 tests. Resource and VSTGUI sanitizer gates pass 57/57 tests plus four repeated VSTGUI thread-sanitizer processes. Raw ABI and Steinberg validation pass 229/229 steps, with all 24 native example bundles passing 47/47 validator tests. Benchmarks pass 5/5 steps. Public GitHub Actions run `31692950488` passes all 19 jobs at exact candidate commit `7650781a5625c041ec474a5377d859a427a344f3`.
+- Two isolated downstream plugin projects consume only the staged archive through Zig package dependencies. The effect covers preparation, stereo processing, automation, resource identity, state migration, class IDs, and a complete native bundle. The instrument covers events, automation, state, resource identity, class IDs, and a complete native bundle. Both bundles pass Steinberg validation. An older consumer fixture proves the documented source migrations, retained parameter identity, ignored retired state, defaulted new state, and preserved class IDs. No candidate defect or compatibility change was found, so the downstream evidence supports publishing `zig-vst3-0.3.0-rc.1` unchanged after public CI and explicit tag authorization.
 
 ### Added
 
 - Added a compile-time declaration manifest for both installed framework module roots. The staged installed-package gate rejects unclassified additions, removals, missing entries, and duplicates.
 - Added a framework compatibility policy covering compatible additions, behavior changes, deprecations, removals, experimental promotion, state identity, migration notes, and release evidence.
 - Added a release-candidate gate covering staged consumers, the complete ReleaseSafe graph, format and cross-target checks, sanitizers, raw ABI, Steinberg validation, and benchmarks.
+- Added a frozen `0.3.0-rc.1` compatibility baseline. It rejects removed or reclassified compatibility-ready module-root declarations unless a complete migration records deprecation, a later minor boundary, the last supported release, a replacement, and release notes.
+- Added isolated downstream effect, instrument, and upgrade projects to the complete test graph, release-candidate gate, and Linux and macOS validator CI jobs.
 
 ### Changed
 

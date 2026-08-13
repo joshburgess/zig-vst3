@@ -232,6 +232,8 @@ jobs:
         run: zig build validator
       - name: Validate example bundles
         run: zig build validate-examples
+      - name: Validate downstream adoption bundles
+        run: scripts/test_downstream_adoption.sh --optimize=ReleaseSafe --validate
       - name: Upload validated bundles
         uses: actions/upload-artifact@v7
         with:

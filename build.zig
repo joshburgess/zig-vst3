@@ -4436,6 +4436,13 @@ pub fn build(b: *std.Build) void {
         b.fmt("--optimize={s}", .{@tagName(optimize)}),
     );
     test_step.dependOn(&installed_package_tests.step);
+    const downstream_adoption_tests = b.addSystemCommand(
+        &.{"scripts/test_downstream_adoption.sh"},
+    );
+    downstream_adoption_tests.addArg(
+        b.fmt("--optimize={s}", .{@tagName(optimize)}),
+    );
+    test_step.dependOn(&downstream_adoption_tests.step);
     test_step.dependOn(generate_fixtures_step);
     test_step.dependOn(dsp_fixture_parity_step);
     test_step.dependOn(
