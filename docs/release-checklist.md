@@ -85,9 +85,9 @@ Downstream adoption result on 2026-08-13:
 
 - Two independent plugin projects acquire the staged package without repository-relative source access. Debug and ReleaseSafe effect, instrument, and upgrade tests pass, both complete native bundles pass Steinberg validation, and the older fixture preserves class IDs and migrates retained parameter state while rejecting the two retired source paths for the documented reasons.
 - The frozen candidate baseline matches exact commit `7650781a5625c041ec474a5377d859a427a344f3`. The installed gate rejects silent removal or reclassification of every compatibility-ready module-root declaration and requires policy-complete migration records for accepted later-minor removals.
-- No framework or package-boundary change was required. The release decision is to publish `zig-vst3-0.3.0-rc.1` unchanged after the downstream-evidence commit passes public CI and the tag action is explicitly authorized.
+- No framework or package-boundary change was required. The release decision is to publish `zig-vst3-0.3.0-rc.1` unchanged when the tag action is explicitly authorized.
 - Initial public run `31717621771` at commit `2099ac07dcc729944ef39f214bd49525e51ed971` passed the staged downstream projects in all three platform test jobs and passed macOS downstream Steinberg validation. Its Ubuntu validator found that the fixture's lowercase inner shared-library basename did not match the VST3 bundle directory basename. The fixtures now use `DownstreamEffect` and `DownstreamInstrument` consistently for macOS, Linux, and Windows inner binaries. This was a downstream bundle-fixture defect, not a framework or package-boundary change.
-- Exact public CI commit and run identifiers for the basename correction are pending the pushed fix and completed workflow.
+- Commit `8e70449cd1042fe8ce9f4c6497f612b7d53c6c36` contains the basename correction. Replacement GitHub Actions run `31725806430` passes all 19 jobs at that exact commit. Its Linux, macOS, and Windows test jobs pass the staged downstream projects, and its Linux and macOS validator jobs pass both downstream bundles.
 
 Before tagging, also complete and record these checks:
 
@@ -137,7 +137,7 @@ After the framework automated checks pass, tag the release candidate. External
 rows remain explicitly experimental and do not block this core-only boundary:
 
 ```sh
-git tag zig-vst3-0.3.0-rc.1
+git tag -a zig-vst3-0.3.0-rc.1 7650781a5625c041ec474a5377d859a427a344f3 -m 'zig-vst3 0.3.0-rc.1'
 git push origin zig-vst3-0.3.0-rc.1
 ```
 
