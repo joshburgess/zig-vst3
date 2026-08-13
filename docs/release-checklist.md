@@ -76,6 +76,10 @@ Local result on 2026-08-13:
 - Raw ABI and Steinberg validation: 229/229 steps. All 24 native example bundles pass 47/47 validator tests.
 - Benchmarks: 5/5 steps.
 
+Public result on 2026-08-13:
+
+- GitHub Actions run `31692950488` passes all 19 jobs at exact candidate commit `7650781a5625c041ec474a5377d859a427a344f3`.
+
 Before tagging, also complete and record these checks:
 
 - Review [Framework API Compatibility Inventory](framework/api-compatibility.md) and [Framework Compatibility Policy](framework/compatibility-policy.md).
