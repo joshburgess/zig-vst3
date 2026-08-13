@@ -42,6 +42,28 @@ Public CI currently covers:
 - Linux, macOS, and Windows pluginval checks, including a strictness 10 pass
 - Linux, macOS, and Windows cross-bundle smoke checks
 
+## Framework Release Candidate
+
+Do not infer framework compatibility from the raw API tag. Before the first
+compatibility-bearing `zig-vst3-plugin` tag, complete and record all automated
+gates below:
+
+- Review [Framework API Compatibility Inventory](framework/api-compatibility.md) and account for every installed module-root declaration.
+- Run the staged installed-package suite. Its public API fixture must compile the compatibility-ready and provisional entry points and reject retired leaks.
+- Run native tests, supported plugin-core and format cross-builds, the complete ReleaseSafe graph, the DSP, resource, and VSTGUI sanitizer gates, raw and format ABI gates, Steinberg validator, and the public GitHub Actions matrix at the exact candidate commit.
+- Record every removal or behavior change in `CHANGELOG.md`, including a direct migration path.
+- Reconcile `README.md`, `docs/stability.md`, framework guides, roadmap, capability matrix, and open-work tracker with the candidate surface.
+- Confirm the source tree contains no compatibility-ready declaration still classified as internal leakage, redundant, or insufficiently documented.
+
+The following evidence is external. Keep the affected surface experimental, or
+record fresh results before promoting it:
+
+- LV2 core and UI in at least two external hosts.
+- AUv2 in a real Apple host and ARA in a real ARA host.
+- Live assistive technology, Wayland clipboard, and native visual confirmation for VSTGUI.
+- Physical audio, MIDI, disparate-clock, recovery, and standalone-window integration.
+- Headphone and loudspeaker audition where a product claim depends on it.
+
 ## Host Matrix
 
 Record fresh Tier 3 host smoke tests in `docs/host-matrix.md` before tagging. The minimum release set is:

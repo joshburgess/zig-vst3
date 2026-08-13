@@ -488,14 +488,16 @@ pub const CaptureRateBridgeConfig = struct {
     lifecycle: CaptureRateLifecycleConfig = .{},
 };
 
-pub const CaptureRateUnderflowPolicy = enum {
+pub const CaptureRateUnderflowPolicy = enum(u8) {
     continue_with_silence,
     rebuffer,
+    _,
 };
 
-pub const CaptureRateOverflowPolicy = enum {
+pub const CaptureRateOverflowPolicy = enum(u8) {
     drop_newest_and_continue,
     drop_newest_and_rebuffer,
+    _,
 };
 
 pub const CaptureRateLifecycleConfig = struct {
@@ -511,6 +513,16 @@ pub const CaptureRateLifecycleConfig = struct {
         self: CaptureRateLifecycleConfig,
         fifo_capacity_frames: usize,
     ) !void {
+        switch (self.underflow_policy) {
+            .continue_with_silence, .rebuffer => {},
+            else => return error.InvalidCaptureRateUnderflowPolicy,
+        }
+        switch (self.overflow_policy) {
+            .drop_newest_and_continue,
+            .drop_newest_and_rebuffer,
+            => {},
+            else => return error.InvalidCaptureRateOverflowPolicy,
+        }
         if (self.startup_buffer_frames > fifo_capacity_frames or
             self.recovery_buffer_frames > fifo_capacity_frames)
             return error.CaptureRateBufferThresholdExceedsCapacity;
@@ -521,9 +533,10 @@ pub const CaptureRateLifecycleConfig = struct {
     }
 };
 
-pub const CaptureRateOperatingState = enum {
+pub const CaptureRateOperatingState = enum(u8) {
     priming,
     running,
+    _,
 };
 
 pub const CaptureRateRenderReport = struct {
@@ -3659,6 +3672,30 @@ test "capture rate bridge rejects malformed lifecycle state transactionally" {
             .render_sample_rate = 48_000.0,
             .drift = .{ .target_buffer_frames = 16 },
             .lifecycle = .{ .underflow_policy = .rebuffer },
+        }),
+    );
+    try std.testing.expectError(
+        error.InvalidCaptureRateUnderflowPolicy,
+        Bridge.init(.{
+            .channel_count = 1,
+            .capture_sample_rate = 48_000.0,
+            .render_sample_rate = 48_000.0,
+            .drift = .{ .target_buffer_frames = 16 },
+            .lifecycle = .{
+                .underflow_policy = @enumFromInt(255),
+            },
+        }),
+    );
+    try std.testing.expectError(
+        error.InvalidCaptureRateOverflowPolicy,
+        Bridge.init(.{
+            .channel_count = 1,
+            .capture_sample_rate = 48_000.0,
+            .render_sample_rate = 48_000.0,
+            .drift = .{ .target_buffer_frames = 16 },
+            .lifecycle = .{
+                .overflow_policy = @enumFromInt(255),
+            },
         }),
     );
     var bridge = try Bridge.init(.{

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Completed the first structured `zig-vst3-plugin` API review, added an installed-package compile fixture for the supported framework entry points, and documented compatibility candidates separately from integrations that still require external evidence.
+- Capture-rate policy and operating-state enums now reserve unknown integer values for additive evolution. Public construction rejects unknown policy values transactionally.
+- Removed the unused `zig-vst3-plugin.backendVersion()` forwarding function. Use `zig-vst3-plugin.version`.
+- Removed the unused duplicate `zig-vst3-plugin-core.lv2_metadata` path. Use `zig-vst3-plugin-core.lv2.metadata`.
+
+### Fixed
+
+- Fixed the streaming HRTF producer publication order so ThreadSanitizer no longer reports a race between pending-slot validation and the producer sample-rate write.
+
 ## zig-vst3-0.2.1 - 2026-06-18
 
 ### Release Notes

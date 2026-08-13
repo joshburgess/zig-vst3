@@ -136,10 +136,11 @@ pub fn Renderer(
             slot.sample_rate = database.sample_rate;
             slot.frame_count = database.frame_count;
             slot.declared_frame_count = database.frame_count;
-            self.write_index.store(write +% 1, .release);
-            self.producer_sample_rate = database.sample_rate;
+            if (self.producer_sample_rate == 0)
+                self.producer_sample_rate = database.sample_rate;
             self.last_submitted_sample = point.sample_position;
             self.has_submitted_sample = true;
+            self.write_index.store(write +% 1, .release);
             return true;
         }
 

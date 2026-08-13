@@ -260,6 +260,7 @@ See [docs/pluginval.md](docs/pluginval.md) for `PLUGINVAL`, strictness, and head
 ## Documentation
 
 - [docs/framework/plugin-interface.md](docs/framework/plugin-interface.md): framework plugin API.
+- [docs/framework/api-compatibility.md](docs/framework/api-compatibility.md): reviewed public surface, compatibility candidates, provisional integrations, and migrations.
 - [docs/framework/parameters.md](docs/framework/parameters.md): parameters, plain/normalized values, smoothing, metadata, and editors.
 - [docs/framework/state.md](docs/framework/state.md): binary state format, migration, restore reports, and debug JSON.
 - [docs/framework/gui.md](docs/framework/gui.md): toolkit-neutral editor API, VSTGUI adapter, parameter bindings, and telemetry.
@@ -292,7 +293,7 @@ The public CI workflow currently runs:
 
 ## Current Limits
 
-- The API is early. Expect some naming and organization changes before a public compatibility promise.
+- The framework is pre-release. Its first public-surface review identifies compatibility candidates and provisional integrations, but no framework compatibility promise begins until a tagged release says so.
 - Manual host coverage is currently macOS REAPER-heavy. MIDI-heavy and analyzer/instrument host smoke rows are still being filled in.
 - CI validates plugins headlessly with the Steinberg validator and pluginval, but real-host coverage in actual DAWs is still limited.
 - The reference editor can build the pinned VSTGUI adapter on native macOS, Windows, and Linux systems. Other toolkits remain optional adapters.

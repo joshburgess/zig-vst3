@@ -63,7 +63,7 @@ mkdir -p "$package/tools"
 cp tools/pack_ara_bindings.zig "$package/tools/"
 mkdir -p "$package/vendor"
 cp -R vendor/ARA_API "$package/vendor/"
-cp tests/installed-consumer/build.zig tests/installed-consumer/build.zig.zon tests/installed-consumer/editors.zig tests/installed-consumer/dsp_fixture.zig tests/installed-consumer/core_consumer.zig tests/installed-consumer/kernel_plugin.zig "$consumer/"
+cp tests/installed-consumer/build.zig tests/installed-consumer/build.zig.zon tests/installed-consumer/editors.zig tests/installed-consumer/dsp_fixture.zig tests/installed-consumer/core_consumer.zig tests/installed-consumer/public_api.zig tests/installed-consumer/kernel_plugin.zig "$consumer/"
 cp tests/abi/lv2_log_capture.c "$consumer/"
 cp -R tests/installed-consumer/kernel "$consumer/"
 

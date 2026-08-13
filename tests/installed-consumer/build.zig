@@ -101,6 +101,26 @@ pub fn build(b: *std.Build) void {
         .flags = &.{"-std=c11"},
     });
 
+    const public_api_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("public_api.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    public_api_tests.root_module.addImport(
+        "zig-vst3-plugin",
+        dependency.module("zig-vst3-plugin"),
+    );
+    public_api_tests.root_module.addImport(
+        "zig-vst3-plugin-core",
+        dependency.module("zig-vst3-plugin-core"),
+    );
+    public_api_tests.root_module.addImport(
+        "zig-vst3",
+        dependency.module("zig-vst3"),
+    );
+
     const kernel_module = b.createModule(.{
         .root_source_file = b.path("kernel_plugin.zig"),
         .target = target,
@@ -129,6 +149,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(consumer_tests).step);
     test_step.dependOn(&b.addRunArtifact(dsp_fixture_tests).step);
     test_step.dependOn(&b.addRunArtifact(core_tests).step);
+    test_step.dependOn(&b.addRunArtifact(public_api_tests).step);
     test_step.dependOn(&kernel_plugin.step);
     test_step.dependOn(&b.addRunArtifact(kernel_tests).step);
 }

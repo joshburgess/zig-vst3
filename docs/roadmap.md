@@ -13,6 +13,8 @@ Near-term work should stay focused on finishing release confidence before adding
 - Keep host smoke results in `docs/host-matrix.md`.
 - Keep public API docs synchronized with framework changes.
 
+The first framework API stabilization pass is complete. The installed entry points are classified in [Framework API Compatibility Inventory](framework/api-compatibility.md), accidental duplicate paths were removed, capture-rate lifecycle and ownership contracts were reviewed, and installed-package compile fixtures now enforce the candidate surface. The HRTF pending-slot ThreadSanitizer race is fixed. Local installed-package, native, supported cross-target, sanitizer, ABI, ARA, LV2, AUv2, Steinberg validator, and ReleaseSafe gates pass. The next autonomous framework phase is release-candidate packaging, migration discipline, and exact-commit public CI evidence. External LV2, AUv2, ARA, VSTGUI, window, and physical-device evidence remains provisional and should not be converted into compatibility claims.
+
 The [Zig NAM readiness plan](nam-zig-readiness-plan.md) uses a neural amp modeler as a production workload for the next framework phase. Configurable bus layouts, background resource jobs, immutable exchange, deferred reclamation, fixed-rate conversion, latency notification, resource persistence, C kernel integration, CPU dispatch, scoped denormal control, and headless C++-to-Zig DSP parity tooling are implemented. The NAM format and inference engine belong in a separate library.
 
 Wrapper, process-context, standalone, routing, and native PCM backend storage now retain a plugin-selected capacity from zero through 254 auxiliary buses per direction. Eight remains the source-compatible default.

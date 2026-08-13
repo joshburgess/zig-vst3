@@ -44,9 +44,11 @@ Native audio callbacks reject a null channel-pointer array when the negotiated t
 
 `zig-vst3-plugin` is the plugin framework package. It is still experimental and may change names, helper organization, process hook shapes, or metadata access patterns before a stable compatibility promise.
 
+The first structured public-surface review is recorded in [Framework API Compatibility Inventory](framework/api-compatibility.md). Compatibility-ready means the declaration is a candidate for preservation at the first framework tag. It does not change the current pre-release policy by itself. LV2, AUv2, ARA, the supported VSTGUI authoring layer, standalone shells, and split-device correction remain experimental until their listed external evidence is complete.
+
 The intended direction is stable plugin declarations, reflected parameter metadata, state, automation, events, units, programs, and reusable VST3 shells. Until that promise is made, plugin authors should expect to update code across minor pre-1.0 releases.
 
-The standalone split-device correction API is also experimental. `CaptureRateLifecycleConfig` deliberately leaves FIFO targets, correction limits and response, priming thresholds, correction cadence, and recovery policy with the product. Its defaults preserve immediate rendering and silence substitution. Products that opt into rebuffering receive deterministic silence during priming and on the complete underflow block that begins recovery. `reset` is quiescent-only and restores the configured startup state. Review these policy names and report fields before the first compatibility-bearing tag.
+The standalone split-device correction API is also experimental. `CaptureRateLifecycleConfig` deliberately leaves FIFO targets, correction limits and response, priming thresholds, correction cadence, and recovery policy with the product. Its defaults preserve immediate rendering and silence substitution. Products that opt into rebuffering receive deterministic silence during priming and on the complete underflow block that begins recovery. `reset` is quiescent-only and restores the configured startup state. The policy names, defaults, report fields, callback ownership, stable-address requirements, and reset contract passed the first API review. The repository-owned policy and operating-state enums reserve unknown integer values so later additions are not ABI-exhaustive, while public operations reject unknown values transactionally.
 
 ### VSTGUI component API
 

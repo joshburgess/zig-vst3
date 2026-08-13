@@ -47,12 +47,8 @@ pub const Vst3ControllerWithParameters =
     vst3.zig_vst3_plugin_effect
         .HighLevelEditControllerWithParameters;
 
-pub fn backendVersion() []const u8 {
-    return vst3.version;
-}
-
 test "zig-vst3-plugin sees zig-vst3" {
-    try std.testing.expectEqualStrings("0.2.1-dev", backendVersion());
+    try std.testing.expectEqualStrings("0.2.1-dev", vst3.version);
 }
 
 test "zig-vst3-plugin exposes the VST3 runtime adapter" {
