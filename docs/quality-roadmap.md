@@ -50,8 +50,8 @@ Phase 0 creates `docs/quality/` with these maintained records:
 - `invariants.md`: ownership, thread, realtime, and state-machine contracts
 - `concurrency.md`: cross-thread ownership, publication, memory-order, and
   teardown contracts plus the checked synchronization-source inventory
-- `atomic-orders.md`: checked per-source counts for explicit Zig atomic orders
-  so later synchronization changes require renewed review
+- `atomic-orders.md`: checked per-source counts for explicit Zig, C, and C++
+  atomic orders so later synchronization changes require renewed review
 - `status.md`: phase state, completed scope, and next review target
 
 Findings use `Q-<area>-<number>` identifiers and one of four severities:

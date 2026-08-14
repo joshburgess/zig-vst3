@@ -1,9 +1,9 @@
 # Atomic-Order Ledger
 
-This lexical ledger makes changes to explicit Zig atomic orders visible to the
-quality gate. The publication and teardown justification for each source family
-is recorded in `concurrency.md`. Counts include production and test code and do
-not replace semantic review.
+This lexical ledger makes changes to explicit Zig, C, and C++ atomic orders
+visible to the quality gate. The publication and teardown justification for
+each source family is recorded in `concurrency.md`. Counts include production
+and test code and do not replace semantic review.
 
 `unordered` is limited to resource-exchange generation metadata whose slot
 state provides the release-acquire publication edge. `monotonic` is limited to
@@ -72,3 +72,24 @@ are test observations, not production synchronization requirements.
 | `zig-vst3/src/vstgui_headless_host.zig` | 0 | 0 | 4 | 7 | 0 | 0 |
 | `zig-vst3/src/zig_vst3_plugin_effect.zig` | 0 | 0 | 2 | 3 | 1 | 0 |
 <!-- atomic-order-counts:end -->
+
+Native `relaxed` orders are limited to independent statistics, source-owned
+cursors, and retry loads whose successful edge has stronger order. Native
+release and acquire pairs publish callback-visible storage, shutdown, or test
+observations. No checked native source uses consume or sequentially consistent
+ordering.
+
+| Native source | Relaxed | Consume | Acquire | Release | Acquire-release | Sequentially consistent |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+<!-- native-atomic-order-counts:start -->
+| `gui-adapters/vstgui/zig_vstgui_accessibility_atspi_bridge_tests.cpp` | 0 | 0 | 144 | 56 | 12 | 0 |
+| `gui-adapters/vstgui/zig_vstgui_accessibility_linux_clipboard_tests.cpp` | 0 | 0 | 1 | 1 | 0 | 0 |
+| `gui-adapters/vstgui/zig_vstgui_adapter_tests.cpp` | 2 | 0 | 0 | 0 | 0 | 0 |
+| `gui-adapters/vstgui/zig_vstgui_editor.cpp` | 1 | 0 | 1 | 2 | 1 | 0 |
+| `zig-vst3-plugin/src/plugin/alsa_midi_shim.c` | 22 | 0 | 6 | 3 | 0 | 0 |
+| `zig-vst3-plugin/src/plugin/alsa_shim.c` | 18 | 0 | 7 | 2 | 0 | 0 |
+| `zig-vst3-plugin/src/plugin/alsa_ump_shim.c` | 21 | 0 | 6 | 3 | 0 | 0 |
+| `zig-vst3-plugin/src/plugin/core_audio_shim.c` | 7 | 0 | 11 | 3 | 1 | 0 |
+| `zig-vst3-plugin/src/plugin/pipewire_shim.c` | 15 | 0 | 2 | 2 | 0 | 0 |
+| `zig-vst3-plugin/src/plugin/win_ump_shim.cpp` | 11 | 0 | 6 | 0 | 1 | 0 |
+<!-- native-atomic-order-counts:end -->
