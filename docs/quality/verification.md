@@ -143,3 +143,32 @@ Result: passed, 3/3 build steps and 49/49 Debug tests. The focused selection
 exercises transfer, abandonment, failure preservation, cancellation, teardown,
 generation replacement, bounded state, and allocation-failure behavior without
 running unrelated codec and parser tests.
+
+## 2026-08-14: Q02 ARA Ownership
+
+| Check | Result |
+| --- | --- |
+| `zig build test-ara-native --summary all` | Passed: 28/28 steps and 424/424 Debug tests |
+| `zig build test-ara-source-cache --summary all` | Passed: 6/6 steps and 5/5 native tests, plus ReleaseSafe Linux and Windows cross-builds |
+
+The review traced factory slot ownership, release callbacks, bounded controller
+storage, host reader leases, provider contexts, fixed source-page publication,
+extension binding, and static main-factory identity. Q02 performs no dynamic
+allocation itself. Host interfaces and callback contexts are explicit borrows
+whose required lifetime is now recorded in the ownership table.
+
+## 2026-08-14: Q03 VSTGUI and Wayland Ownership
+
+Reviewed scope: VST3 VSTGUI view binding, LV2 VSTGUI backend, Wayland raw
+wrappers, standalone Wayland bridge, and the headless VSTGUI host.
+
+The audit found that accepted LV2 host peak subscriptions outlived both failed
+construction and normal backend destruction. Commit `02038b05` adds explicit
+per-subscription ownership, rollback, teardown, and regression tests.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-vstgui-native --summary all` | Passed: 4/4 native VSTGUI interaction, accessibility, and visual-test build steps |
+| `zig build test-vst3-module --summary all` | Passed: 7/7 steps and 787/787 Debug tests |
+| `zig build test-gui-lifecycle --summary all` | Passed: 40/40 steps and 2,384/2,384 Debug tests across every example editor |
+| `scripts/check_quality_inventory.sh` | Passed: 811 files and 465,791 lines classified; Q03 contains 7 files and 6,152 lines |

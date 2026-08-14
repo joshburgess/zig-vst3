@@ -25,6 +25,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Recorded Q04 component, controller, and runtime-adapter ownership contracts.
 - Closed Q-MEM-001 by making owning allocator provenance injectable and testing
   outer-object and nested processor allocation failures.
+- Recorded Q06 runtime, Q07 resource, Q02 ARA, and Q03 VSTGUI and Wayland
+  ownership contracts with focused Debug and cross-build evidence.
+- Closed Q-GUI-001 by balancing LV2 host peak subscriptions during construction
+  rollback and normal editor teardown.
 
 ## Phase 1 Scope
 
@@ -39,7 +43,6 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Phase 1 begins with Q04, the raw-to-framework VST3 adapters. It is a high-risk
-junction between host-controlled pointers, realtime processing,
-compatibility-ready framework state, resource publication, and controller
-synchronization.
+Review Q17 LV2 and AUv2 host adapters next. They own host callback contexts,
+native instance state, dynamic extension data, and format-specific teardown at
+the boundary between framework GUI and processing code.

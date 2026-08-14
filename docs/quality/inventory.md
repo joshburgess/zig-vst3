@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 811 source files and 465,719 source lines.
+The checked inventory contains 811 source files and 465,791 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -35,7 +35,7 @@ misstate review effort.
 | Q00 | Build graph, CI, release and validation scripts | 120 | 16,634 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
 | Q01 | Raw VST3 ABI mirrors and COM helpers | 114 | 28,860 | 5/5/4/5 | Elevated | Public ABI, pointers, reference counts, host callbacks | SDK layout parity, callback lifecycle, validators, sanitizers |
 | Q02 | ARA model, controller, analysis, cache, and official headers | 15 | 27,657 | 5/4/5/3 | High | Host callbacks, readers, atomics, persistence, untrusted host data | Header parity, lifecycle stress, allocator failure, TSan, state corruption |
-| Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,080 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
+| Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,152 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
 | Q04 | Raw-to-framework VST3 processor and controller adapters | 3 | 11,712 | 5/5/5/4 | High | Realtime host entry, dual state stores, resource publication | Lifecycle model, failure silence, host mutation, sanitizer stress |
 | Q05 | Raw-package example plugin declarations | 18 | 758 | 2/2/2/4 | Moderate | Factory examples and public construction patterns | Compile, validator, package examples |
 | Q06 | Framework declaration, lifecycle, topology, and runtime core | 16 | 9,518 | 5/5/5/4 | High | Public compatibility, ownership, realtime processing | API manifest, state-machine tests, allocator failure, bounded-work audit |
@@ -67,7 +67,7 @@ manual review. They include false positives and cannot establish absence.
 | Q00 | 1 | 9 | 1 | 44 | 385 | 1 |
 | Q01 | 122 | 2,162 | 91 | 1,126 | 92 | 2,429 |
 | Q02 | 6 | 437 | 40 | 190 | 174 | 316 |
-| Q03 | 38 | 271 | 8 | 194 | 32 | 280 |
+| Q03 | 39 | 272 | 8 | 194 | 32 | 280 |
 | Q04 | 72 | 370 | 4 | 128 | 138 | 505 |
 | Q05 | 0 | 2 | 0 | 0 | 0 | 114 |
 | Q06 | 23 | 10 | 0 | 14 | 167 | 1,313 |
