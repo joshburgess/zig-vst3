@@ -4958,6 +4958,7 @@ pub fn build(b: *std.Build) void {
             "sample store transfers coherent concurrent generations",
             "bounded capture FIFO publishes complete frames between threads",
             "MIDI input queue is stable under concurrent SPSC traffic",
+            "editor activity tolerates concurrent open and close pairs",
         },
     });
     phase2_thread_sanitizer_step.dependOn(

@@ -147,6 +147,7 @@ pub const EditorActivity = struct {
     pub fn closed(self: *EditorActivity) void {
         var current = self.open_count.load(.acquire);
         while (current != 0) {
+            if (current == std.math.maxInt(usize)) return;
             if (self.open_count.cmpxchgWeak(current, current - 1, .acq_rel, .acquire)) |observed| {
                 current = observed;
             } else return;
@@ -335,7 +336,7 @@ test "editor activity tracks multiple views without underflow" {
     try std.testing.expect(!activity.active());
 }
 
-test "editor activity saturates instead of wrapping inactive" {
+test "editor activity pins a saturated open count" {
     var activity = EditorActivity{};
     activity.open_count.store(std.math.maxInt(usize), .release);
     activity.opened();
@@ -343,7 +344,30 @@ test "editor activity saturates instead of wrapping inactive" {
     try std.testing.expectEqual(std.math.maxInt(usize), activity.open_count.load(.acquire));
     activity.closed();
     try std.testing.expect(activity.active());
-    try std.testing.expectEqual(std.math.maxInt(usize) - 1, activity.open_count.load(.acquire));
+    try std.testing.expectEqual(std.math.maxInt(usize), activity.open_count.load(.acquire));
+}
+
+test "editor activity tolerates concurrent open and close pairs" {
+    const worker_count = 8;
+    const iterations = 20_000;
+    const Worker = struct {
+        fn run(activity: *EditorActivity) void {
+            for (0..iterations) |_| {
+                activity.opened();
+                activity.closed();
+            }
+        }
+    };
+
+    var activity = EditorActivity{};
+    var threads: [worker_count]std.Thread = undefined;
+    for (&threads) |*thread| {
+        thread.* = try std.Thread.spawn(.{}, Worker.run, .{&activity});
+    }
+    for (threads) |thread| thread.join();
+
+    try std.testing.expect(!activity.active());
+    try std.testing.expectEqual(@as(usize, 0), activity.open_count.load(.acquire));
 }
 
 test "meter bank gates lock-free production by editor activity" {
