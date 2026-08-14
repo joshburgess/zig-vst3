@@ -129,3 +129,17 @@ The focused runtime step includes the new exhaustive allocation-failure test
 and the existing lifecycle, terminal-state, state-restore, process-mode, and
 dynamic-topology runtime tests. It completes in under a second after
 compilation and does not run unrelated parser suites.
+
+Change commit: `ca309fc700543a65b9dacf4a4e8b3e2d8cf33bff`
+
+## 2026-08-14: Q07 Resource Ownership
+
+Reviewed scope: resource job, exchange, recovery, byte accumulator, reference,
+state, parameter, unit, and migration ownership boundaries.
+
+Command: `zig build test-resource-ownership --summary all`
+
+Result: passed, 3/3 build steps and 49/49 Debug tests. The focused selection
+exercises transfer, abandonment, failure preservation, cancellation, teardown,
+generation replacement, bounded state, and allocation-failure behavior without
+running unrelated codec and parser tests.

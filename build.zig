@@ -2401,6 +2401,31 @@ pub fn build(b: *std.Build) void {
     plugin_runtime_test_step.dependOn(
         &b.addRunArtifact(plugin_runtime_tests).step,
     );
+    const resource_ownership_test_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        resource_ownership_test_module.link_libc = true;
+    const resource_ownership_tests = b.addTest(.{
+        .root_module = resource_ownership_test_module,
+        .filters = &.{
+            "byte accumulator",
+            "resource exchange",
+            "resource job",
+            "resource recovery",
+            "resource reference",
+            "resource state",
+        },
+    });
+    const resource_ownership_test_step = b.step(
+        "test-resource-ownership",
+        "Run focused resource ownership and failure tests",
+    );
+    resource_ownership_test_step.dependOn(
+        &b.addRunArtifact(resource_ownership_tests).step,
+    );
     const matrix_test_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/dsp/matrix.zig",
