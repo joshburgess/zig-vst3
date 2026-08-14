@@ -75,3 +75,5 @@ The main Debug group remained CPU-bound and made forward progress throughout
 its 47-minute run. Inspection found repeated and nested full-document scans in
 ADM XML construction and validation, with no document-size limit. Finding
 Q-ADM-001 records the production complexity risk for Phase 3.
+
+Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`

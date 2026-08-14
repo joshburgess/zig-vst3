@@ -1,10 +1,12 @@
 # Quality Program Status
 
-Current phase: Phase 0, Inventory and Risk Model
+Current phase: Phase 1, Ownership and Memory Safety
 
-Status: Phase 0 exit criteria satisfied; completion commit pending
+Status: in progress
 
 Baseline commit: `08bf883e9d2d324f3a7933fa21851bbd9ffec513`
+
+Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Completed
 
@@ -21,11 +23,16 @@ Baseline commit: `08bf883e9d2d324f3a7933fa21851bbd9ffec513`
 - Ran the complete Debug graph, repository hygiene, source inventory fixture,
   formatting, and diff checks successfully.
 
-## Phase 0 Remaining
+## Phase 1 Scope
 
-- Commit and push the verified Phase 0 evidence.
-- Record the exact completion commit and advance the local `next_goal.md` to
-  Phase 1.
+- Audit ownership and failure paths in risk order, beginning with Q04 and then
+  its Q06 and Q07 owning dependencies.
+- Record allocator provenance, ownership transfer, partial initialization,
+  teardown order, retained slices, pointer conversions, and callback context
+  lifetimes.
+- Add allocation-failure, leak, failure-atomicity, and teardown tests where the
+  contract permits deterministic injection.
+- Extend native sanitizer evidence across uncovered FFI ownership paths.
 
 ## Next Review Target
 
