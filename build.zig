@@ -4973,6 +4973,25 @@ pub fn build(b: *std.Build) void {
     });
     const resource_thread_sanitizer_step = b.step("test-resource-thread-sanitizer", "Run resource job and exchange tests with the thread sanitizer");
     resource_thread_sanitizer_step.dependOn(&b.addRunArtifact(resource_thread_sanitizer_tests).step);
+    const audio_importer_thread_sanitizer_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/gui_audio_file_importer.zig",
+        ),
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .sanitize_thread = true,
+    });
+    if (b.graph.host.result.os.tag == .linux)
+        audio_importer_thread_sanitizer_module.link_libc = true;
+    const audio_importer_thread_sanitizer_tests = b.addTest(.{
+        .root_module = audio_importer_thread_sanitizer_module,
+        .filters = &.{
+            "acknowledges cancellation before teardown joins the worker",
+        },
+    });
+    resource_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(audio_importer_thread_sanitizer_tests).step,
+    );
 
     const phase2_thread_sanitizer_step = b.step(
         "test-phase2-thread-sanitizers",
