@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -25,7 +26,8 @@
 
 namespace {
 
-std::atomic<uint32_t> editor_count {0};
+std::mutex editor_mutex;
+uint32_t editor_count {0};
 
 #if defined(_WIN32)
 const int module_anchor = 0;
@@ -95,13 +97,17 @@ ZigVstgui::RuntimeGuard::RuntimeGuard() {
     );
     com_initialized = SUCCEEDED(com_status);
 #endif
-    if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) {
+    const std::lock_guard<std::mutex> lock(editor_mutex);
+    if (editor_count++ == 0) {
         VSTGUI::init(platformInstanceHandle());
     }
 }
 
 ZigVstgui::RuntimeGuard::~RuntimeGuard() {
-    if (editor_count.fetch_sub(1, std::memory_order_acq_rel) == 1) VSTGUI::exit();
+    {
+        const std::lock_guard<std::mutex> lock(editor_mutex);
+        if (--editor_count == 0) VSTGUI::exit();
+    }
 #if defined(_WIN32)
     if (com_initialized) CoUninitialize();
 #endif
