@@ -41,6 +41,16 @@ single type. Later phases must link each invariant to code and verification.
   the platform source, drains every callback admitted before closure, and only
   then clears callback-visible state. Callback release synchronizes with the
   drain before the context can be freed.
+- Native MIDI admission uses one atomic state containing a closed bit and an
+  active count. Opening publishes callback-visible fields with release order;
+  successful admission acquires them while incrementing the same state;
+  closure and admission therefore have one atomic linearization point.
+  Callback release uses release order, and the control-thread drain observes
+  zero with acquire order before clearing the callback or parser.
+- A platform stop, disconnect, dispose, or unregister operation must prevent
+  new foreign callback entry after it returns. The local admission gate covers
+  callbacks already inside the adapter; it cannot make a platform that invokes
+  a freed callback context conform to this required platform contract.
 
 ## Input and Arithmetic
 

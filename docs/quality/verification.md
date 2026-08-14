@@ -422,3 +422,61 @@ directories. The approved unsandboxed rerun with fresh cache directories
 passed. These were environment failures, not test failures.
 
 Change commits: `8674295f`, `a27291e0`
+
+## 2026-08-14: Phase 1 Candidate Gate Interruption
+
+Candidate commit: `1f29ed00fe8d74bb7075de00025304d9fe63677f`
+
+Command:
+
+`zig build --cache-dir /private/tmp/zig-vst3-phase1-local --global-cache-dir /private/tmp/zig-vst3-phase1-global test --summary all`
+
+The run passed the repository script checks, codec probes, DSP parity checks,
+VSTGUI visual dependency, downstream effect and instrument consumers, and
+installed-package consumers reached before the long Debug group. It was then
+stopped intentionally with exit 130 after the continuing read-only audit found
+a retained CoreMIDI callback borrow and a non-indivisible callback admission
+scheme. This interrupted run is baseline evidence only and does not satisfy the
+Phase 1 exact-commit gate.
+
+The independently running focused ADM selection completed 210/210 tests before
+the candidate gate was stopped. It confirms the Q13 ownership paths execute
+successfully, while Q-ADM-001 continues to track their unbounded work risk for
+Phase 3.
+
+## 2026-08-14: Native MIDI Callback Admission
+
+Change commit: `e4910414`
+
+CoreMIDI retained its caller-borrowed callback after failed connection and
+normal stop. ALSA MIDI, Windows MIDI, and the shared ALSA and Windows UMP
+backend also depended on their platform stop behavior without a Zig-side
+admission and drain contract. The first CoreMIDI drain used separate closing
+and count atomics, so closure and admission were not one indivisible state
+transition.
+
+The shared callback gate stores a closed bit and active count in one atomic
+word. Opening publishes callback-visible fields, admission acquires that
+publication while incrementing the same word, closure prevents later
+increments, and the control thread waits for release from every admitted
+callback before clearing callback or parser state. CoreMIDI topology callbacks
+use the same gate. Its partial-open cleanup now closes admission before
+disposing foreign registrations.
+
+The audit also found that `test-alsaump` compiled its implementation as a named
+dependency but executed only the public wrapper's import test. The corrected
+build graph runs the implementation as a test root, so its backend tests now
+execute instead of remaining compile-only.
+
+| Check | Result |
+| --- | --- |
+| `zig build --cache-dir /private/tmp/zig-vst3-midi-gate-local --global-cache-dir /private/tmp/zig-vst3-midi-gate-global test-coremidi test-alsamidi test-alsaump test-winmidi test-winump --summary all` | Passed: 45/45 build steps and 60/60 tests, including Debug native behavior, TSan selections, ReleaseSafe Linux and Windows cross-builds, and link fixtures |
+| Corrected `test-alsaump` implementation root | Passed: 11/11 implementation tests plus the public wrapper test; the former graph executed only the wrapper test |
+| `for repetition in {1..16}; do zig build --cache-dir /private/tmp/zig-vst3-midi-gate-local --global-cache-dir /private/tmp/zig-vst3-midi-gate-global test-midi-thread-sanitizers --summary none \|\| exit; done` | Passed: 16/16 aggregate repetitions, 64 sanitizer process runs, and 112 selected tests |
+| `scripts/test_quality_inventory_runner.sh` | Passed |
+| `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,373 lines classified; Q18 contains 59 files and 37,403 lines |
+
+The first sandboxed focused matrix reached 25 passing tests but reported eleven
+Zig `manifest_create PermissionDenied` cache failures. The approved rerun
+outside the sandbox passed completely. These were environment failures, not
+test failures.

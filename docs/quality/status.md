@@ -80,6 +80,17 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Closed Q-CONC-003 by adding explicit callback admission and drain protocols
   to CoreAudio session and topology callbacks and CoreMIDI input callbacks.
   Deterministic overlap tests pass under TSan.
+- Closed Q-MEM-009 and Q-CONC-004 by replacing native MIDI running-flag
+  admission with one shared atomic closed-bit and active-count gate. CoreMIDI
+  now releases borrowed callbacks after connection failure and normal stop.
+- Closed Q-VER-001 by executing the ALSA UMP implementation tests directly
+  instead of treating a passing wrapper import test as runtime coverage.
+- Passed the complete focused MIDI matrix with 45/45 build steps and 60/60
+  tests, then passed 16 repeated aggregate TSan runs covering 64 processes and
+  112 selected tests.
+- Completed the focused ADM selection with 210/210 tests. The first exact
+  repository candidate gate was intentionally stopped after the callback audit
+  invalidated that candidate; it remains baseline evidence rather than a pass.
 
 ## Phase 1 Scope
 
@@ -94,6 +105,6 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Finish the 210-test focused ADM selection and the exact Phase 1 repository
-gate. Then close Phase 1 and continue the Phase 2 atomic, callback-drain, and
+Run the exact Phase 1 repository gate at the corrected candidate, close Phase 1
+only if it passes, and continue the Phase 2 atomic, callback-drain, and
 realtime-call-graph review.
