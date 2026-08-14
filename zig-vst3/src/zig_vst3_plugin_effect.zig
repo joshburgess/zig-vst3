@@ -3400,6 +3400,28 @@ test "simple effect binds dynamic topology across host metadata negotiation acti
     const host_requests =
         processor_instance.host_requests orelse
         return error.MissingHostRequests;
+    const denied_bus =
+        try plug_core.plugin.DynamicAudioBus.fixed(.mono, false);
+    var denied_snapshot: plug_core.plugin.DynamicAudioBusSnapshot = .{};
+    const realtime_topology_scope =
+        plug_core.realtime_audit.Scope.enter();
+    try std.testing.expect(
+        !Effect.audioBusTopologySnapshot(component, &denied_snapshot),
+    );
+    try std.testing.expect(
+        !Effect.setAudioBusLayout(component, .input, 0, .mono),
+    );
+    try std.testing.expect(
+        !Effect.addAuxiliaryAudioBus(component, .output, denied_bus),
+    );
+    try std.testing.expect(
+        !Effect.removeAuxiliaryAudioBus(component, .input, 0),
+    );
+    const realtime_topology_report = realtime_topology_scope.leave();
+    try std.testing.expectEqual(
+        @as(u32, 4),
+        realtime_topology_report.count(.lock),
+    );
     try std.testing.expect(
         host_requests.addAuxiliaryAudioBus(
             .output,
@@ -4726,6 +4748,7 @@ pub fn SimpleEffect(comptime Config: type) type {
             iface: *ivstcomponent.IComponent,
             out: *AudioBusSnapshot,
         ) bool {
+            if (!plug_core.realtime_audit.observe(.lock)) return false;
             const self = owner(iface);
             lockAudioBusTopology(self);
             defer unlockAudioBusTopology(self);
@@ -4741,6 +4764,7 @@ pub fn SimpleEffect(comptime Config: type) type {
         ) bool {
             if (comptime !dynamic_audio_buses)
                 return false;
+            if (!plug_core.realtime_audit.observe(.lock)) return false;
             const self = owner(iface);
             lockAudioBusTopology(self);
             defer unlockAudioBusTopology(self);
@@ -4761,6 +4785,7 @@ pub fn SimpleEffect(comptime Config: type) type {
         ) bool {
             if (comptime !dynamic_audio_buses)
                 return false;
+            if (!plug_core.realtime_audit.observe(.lock)) return false;
             const self = owner(iface);
             lockAudioBusTopology(self);
             defer unlockAudioBusTopology(self);
@@ -4781,6 +4806,7 @@ pub fn SimpleEffect(comptime Config: type) type {
         ) bool {
             if (comptime !dynamic_audio_buses)
                 return false;
+            if (!plug_core.realtime_audit.observe(.lock)) return false;
             const self = owner(iface);
             lockAudioBusTopology(self);
             defer unlockAudioBusTopology(self);
