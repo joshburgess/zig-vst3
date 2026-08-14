@@ -79,6 +79,8 @@ pub fn build(b: *std.Build) void {
     });
     if (target.result.os.tag == .linux)
         zig_vst3_plugin_core.link_libc = true;
+    const zig_vst3_native_callback_gate =
+        createNativeCallbackGateModule(b, target, optimize);
     const zig_vst3_core_audio = b.addModule("zig-vst3-coreaudio", .{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/core_audio.zig",
@@ -139,6 +141,10 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
+    zig_vst3_alsa_midi.addImport(
+        "zig-vst3-native-callback-gate",
+        zig_vst3_native_callback_gate,
+    );
     const zig_vst3_native_ump = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/plugin/alsa_ump.zig",
@@ -150,6 +156,10 @@ pub fn build(b: *std.Build) void {
     zig_vst3_native_ump.addImport(
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
+    );
+    zig_vst3_native_ump.addImport(
+        "zig-vst3-native-callback-gate",
+        zig_vst3_native_callback_gate,
     );
     const zig_vst3_alsa_ump = b.addModule("zig-vst3-alsaump", .{
         .root_source_file = b.path(
@@ -173,6 +183,10 @@ pub fn build(b: *std.Build) void {
     zig_vst3_win_midi.addImport(
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
+    );
+    zig_vst3_win_midi.addImport(
+        "zig-vst3-native-callback-gate",
+        zig_vst3_native_callback_gate,
     );
     const zig_vst3_win_ump = b.addModule("zig-vst3-winump", .{
         .root_source_file = b.path(
@@ -266,6 +280,10 @@ pub fn build(b: *std.Build) void {
     zig_vst3_core_midi.addImport(
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
+    );
+    zig_vst3_core_midi.addImport(
+        "zig-vst3-native-callback-gate",
+        zig_vst3_native_callback_gate,
     );
     zig_vst3.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
     zig_vst3.addOptions("zig-vst3-gui-options", gui_options);
@@ -1477,12 +1495,36 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
+    addNativeCallbackGateImport(
+        b,
+        zig_vst3_alsa_midi_test_module,
+        target,
+        optimize,
+    );
     const zig_vst3_alsa_midi_tests = b.addTest(.{
         .root_module = zig_vst3_alsa_midi_test_module,
     });
     const alsa_midi_test_step = b.step(
         "test-alsamidi",
         "Run ALSA RawMIDI tests and compile Linux backends",
+    );
+    const native_callback_gate_thread_sanitizer_module =
+        b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/plugin/native_callback_gate.zig",
+            ),
+            .target = target,
+            .optimize = .Debug,
+            .sanitize_thread = true,
+        });
+    const native_callback_gate_thread_sanitizer_tests =
+        b.addTest(.{
+            .root_module = native_callback_gate_thread_sanitizer_module,
+        });
+    alsa_midi_test_step.dependOn(
+        &b.addRunArtifact(
+            native_callback_gate_thread_sanitizer_tests,
+        ).step,
     );
     const alsa_midi_thread_sanitizer_module = b.createModule(.{
         .root_source_file = b.path(
@@ -1500,6 +1542,12 @@ pub fn build(b: *std.Build) void {
     alsa_midi_thread_sanitizer_module.addImport(
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
+    );
+    addNativeCallbackGateImport(
+        b,
+        alsa_midi_thread_sanitizer_module,
+        target,
+        .Debug,
     );
     const alsa_midi_thread_sanitizer_tests = b.addTest(.{
         .root_module = alsa_midi_thread_sanitizer_module,
@@ -1562,6 +1610,12 @@ pub fn build(b: *std.Build) void {
             "zig-vst3-plugin-core",
             alsa_midi_core,
         );
+        addNativeCallbackGateImport(
+            b,
+            alsa_midi_module,
+            alsa_target,
+            .ReleaseSafe,
+        );
         const alsa_midi_tests = b.addTest(.{
             .root_module = alsa_midi_module,
         });
@@ -1607,6 +1661,12 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
+    addNativeCallbackGateImport(
+        b,
+        zig_vst3_alsa_ump_implementation_tests,
+        target,
+        optimize,
+    );
     const zig_vst3_alsa_ump_test_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/alsa_ump.zig",
@@ -1642,6 +1702,12 @@ pub fn build(b: *std.Build) void {
     alsa_ump_thread_sanitizer_module.addImport(
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
+    );
+    addNativeCallbackGateImport(
+        b,
+        alsa_ump_thread_sanitizer_module,
+        target,
+        .Debug,
     );
     const alsa_ump_thread_sanitizer_tests = b.addTest(.{
         .root_module = alsa_ump_thread_sanitizer_module,
@@ -1710,6 +1776,12 @@ pub fn build(b: *std.Build) void {
             "zig-vst3-plugin-core",
             alsa_ump_core,
         );
+        addNativeCallbackGateImport(
+            b,
+            alsa_ump_implementation,
+            alsa_target,
+            .ReleaseSafe,
+        );
         const alsa_ump_module = b.createModule(.{
             .root_source_file = b.path(
                 "zig-vst3-plugin/src/alsa_ump.zig",
@@ -1767,6 +1839,12 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
+    addNativeCallbackGateImport(
+        b,
+        zig_vst3_win_midi_test_module,
+        target,
+        optimize,
+    );
     const zig_vst3_win_midi_tests = b.addTest(.{
         .root_module = zig_vst3_win_midi_test_module,
     });
@@ -1790,6 +1868,12 @@ pub fn build(b: *std.Build) void {
     win_midi_thread_sanitizer_module.addImport(
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
+    );
+    addNativeCallbackGateImport(
+        b,
+        win_midi_thread_sanitizer_module,
+        target,
+        .Debug,
     );
     const win_midi_thread_sanitizer_tests = b.addTest(.{
         .root_module = win_midi_thread_sanitizer_module,
@@ -1830,6 +1914,12 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin-core",
         win_midi_core,
     );
+    addNativeCallbackGateImport(
+        b,
+        win_midi_module,
+        win_midi_target,
+        .ReleaseSafe,
+    );
     const win_midi_tests = b.addTest(.{
         .root_module = win_midi_module,
     });
@@ -1868,6 +1958,12 @@ pub fn build(b: *std.Build) void {
     zig_vst3_win_ump_shared_tests.addImport(
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
+    );
+    addNativeCallbackGateImport(
+        b,
+        zig_vst3_win_ump_shared_tests,
+        target,
+        optimize,
     );
     const zig_vst3_win_ump_test_module = b.createModule(.{
         .root_source_file = b.path(
@@ -1914,6 +2010,12 @@ pub fn build(b: *std.Build) void {
     win_ump_shared.addImport(
         "zig-vst3-plugin-core",
         win_midi_core,
+    );
+    addNativeCallbackGateImport(
+        b,
+        win_ump_shared,
+        win_midi_target,
+        .ReleaseSafe,
     );
     const win_ump_module = b.createModule(.{
         .root_source_file = b.path(
@@ -2471,6 +2573,12 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
+    addNativeCallbackGateImport(
+        b,
+        zig_vst3_core_midi_test_module,
+        target,
+        optimize,
+    );
     const zig_vst3_core_midi_tests = b.addTest(.{
         .root_module = zig_vst3_core_midi_test_module,
     });
@@ -2498,6 +2606,12 @@ pub fn build(b: *std.Build) void {
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
     );
+    addNativeCallbackGateImport(
+        b,
+        core_midi_thread_sanitizer_module,
+        target,
+        .Debug,
+    );
     const core_midi_thread_sanitizer_tests = b.addTest(.{
         .root_module = core_midi_thread_sanitizer_module,
         .filters = &.{"input stop drains"},
@@ -2510,6 +2624,11 @@ pub fn build(b: *std.Build) void {
     const midi_thread_sanitizer_step = b.step(
         "test-midi-thread-sanitizers",
         "Run native MIDI callback overlap tests with the thread sanitizer",
+    );
+    midi_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(
+            native_callback_gate_thread_sanitizer_tests,
+        ).step,
     );
     midi_thread_sanitizer_step.dependOn(
         &b.addRunArtifact(
@@ -2571,6 +2690,12 @@ pub fn build(b: *std.Build) void {
         cross_core_midi.addImport(
             "zig-vst3-plugin-core",
             cross_core,
+        );
+        addNativeCallbackGateImport(
+            b,
+            cross_core_midi,
+            cross_target,
+            .ReleaseSafe,
         );
         const cross_tests = b.addTest(.{
             .root_module = cross_core_midi,
@@ -5381,6 +5506,32 @@ fn addZigVst3PluginTest(
     return b.addTest(.{
         .root_module = module,
     });
+}
+
+fn createNativeCallbackGateModule(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Module {
+    return b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/plugin/native_callback_gate.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+}
+
+fn addNativeCallbackGateImport(
+    b: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) void {
+    module.addImport(
+        "zig-vst3-native-callback-gate",
+        createNativeCallbackGateModule(b, target, optimize),
+    );
 }
 
 fn addCoreMidiBackend(
