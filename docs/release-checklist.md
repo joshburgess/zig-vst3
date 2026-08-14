@@ -89,6 +89,13 @@ Downstream adoption result on 2026-08-13:
 - Initial public run `31717621771` at commit `2099ac07dcc729944ef39f214bd49525e51ed971` passed the staged downstream projects in all three platform test jobs and passed macOS downstream Steinberg validation. Its Ubuntu validator found that the fixture's lowercase inner shared-library basename did not match the VST3 bundle directory basename. The fixtures now use `DownstreamEffect` and `DownstreamInstrument` consistently for macOS, Linux, and Windows inner binaries. This was a downstream bundle-fixture defect, not a framework or package-boundary change.
 - Commit `8e70449cd1042fe8ce9f4c6497f612b7d53c6c36` contains the basename correction. Replacement GitHub Actions run `31725806430` passes all 19 jobs at that exact commit. Its Linux, macOS, and Windows test jobs pass the staged downstream projects, and its Linux and macOS validator jobs pass both downstream bundles.
 
+Published result on 2026-08-14:
+
+- Annotated tag object `93a81b7eaac446882775cd6fb0230710c2125755` dereferences to exact candidate commit `7650781a5625c041ec474a5377d859a427a344f3`.
+- The public source archive is `https://github.com/joshburgess/zig-vst3/archive/refs/tags/zig-vst3-0.3.0-rc.1.tar.gz` with SHA-256 `551f3ff77f4fb63e347975ff6abb9e2e21b45e6114c62dccd8bfe47934e9fa5e`.
+- The downloaded archive reports `0.3.0-rc.1` at the package, raw API, and framework roots. It passes 18/18 installed-package steps and 96/96 tests plus all ReleaseSafe downstream effect, instrument, bundle, and upgrade fixtures.
+- RC1 remains available for incidental feedback. Stable promotion does not wait for external reports; it uses this public-artifact result and the complete internal candidate evidence.
+
 Before tagging, also complete and record these checks:
 
 - Review [Framework API Compatibility Inventory](framework/api-compatibility.md) and [Framework Compatibility Policy](framework/compatibility-policy.md).
