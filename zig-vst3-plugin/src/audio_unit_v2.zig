@@ -955,6 +955,7 @@ pub fn ComponentFactoryWithClassInfoBridge(
     return struct {
         const Self = @This();
         const Storage = struct {
+            allocator: std.mem.Allocator,
             render_adapter: RenderAdapter,
             properties: Properties,
             dispatch: Dispatch,
@@ -965,11 +966,21 @@ pub fn ComponentFactoryWithClassInfoBridge(
         pub fn create(
             requested: ?*const AudioComponentDescription,
         ) callconv(.c) ?*AudioComponentPlugInInterface {
+            return createWithAllocator(
+                requested,
+                std.heap.page_allocator,
+            );
+        }
+
+        fn createWithAllocator(
+            requested: ?*const AudioComponentDescription,
+            allocator: std.mem.Allocator,
+        ) ?*AudioComponentPlugInInterface {
             const requested_description = requested orelse return null;
             if (!matchesDescription(requested_description.*))
                 return null;
-            const allocator = std.heap.page_allocator;
             const storage = allocator.create(Storage) catch return null;
+            storage.allocator = allocator;
             storage.render_adapter = RenderAdapter.init(
                 allocator,
                 .{},
@@ -1002,7 +1013,7 @@ pub fn ComponentFactoryWithClassInfoBridge(
             const storage: *Storage =
                 @fieldParentPtr("properties", properties);
             storage.render_adapter.deinit();
-            std.heap.page_allocator.destroy(storage);
+            storage.allocator.destroy(storage);
         }
     };
 }
@@ -2585,7 +2596,20 @@ test "AUv2 component factory owns one dispatch instance through close" {
     var wrong_description = description;
     wrong_description.component_subtype = 0;
     try std.testing.expect(Factory.create(&wrong_description) == null);
-    const interface = Factory.create(&description) orelse
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expect(
+        Factory.createWithAllocator(
+            &description,
+            failing.allocator(),
+        ) == null,
+    );
+    const interface = Factory.createWithAllocator(
+        &description,
+        std.testing.allocator,
+    ) orelse
         return error.FactoryCreationFailed;
     const opaque_interface: *anyopaque = @ptrCast(interface);
     const instance: AudioComponentInstance = @ptrFromInt(1);

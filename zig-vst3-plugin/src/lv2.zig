@@ -1331,6 +1331,7 @@ pub fn CoreAdapterWithParameters(
         pub const auxiliary_output_bus_channel_counts =
             layoutChannelCounts(Spec.audio_auxiliary_output_layouts);
 
+        allocator: std.mem.Allocator,
         runtime: Runtime,
         sample_rate: f64,
         ports: [port_count]?*anyopaque = @splat(null),
@@ -1530,6 +1531,22 @@ pub fn CoreAdapterWithParameters(
             raw_bundle_path: ?[*:0]const u8,
             features: ?[*:null]const ?*const Feature,
         ) callconv(.c) Handle {
+            return instantiateWithAllocator(
+                raw_descriptor,
+                sample_rate,
+                raw_bundle_path,
+                features,
+                std.heap.page_allocator,
+            );
+        }
+
+        fn instantiateWithAllocator(
+            raw_descriptor: ?*const Descriptor,
+            sample_rate: f64,
+            raw_bundle_path: ?[*:0]const u8,
+            features: ?[*:null]const ?*const Feature,
+            allocator: std.mem.Allocator,
+        ) Handle {
             _ = raw_descriptor orelse return null;
             _ = raw_bundle_path orelse return null;
             if (!common.isPositiveFinite(sample_rate)) return null;
@@ -1546,9 +1563,9 @@ pub fn CoreAdapterWithParameters(
                 (has_log_binding and
                     featureUriCount(features, log_log_uri) > 1))
                 return null;
-            const allocator = std.heap.page_allocator;
             const self = allocator.create(Self) catch return null;
             self.* = .{
+                .allocator = allocator,
                 .runtime = Runtime.init(
                     allocator,
                     initial_parameters,
@@ -2074,7 +2091,7 @@ pub fn CoreAdapterWithParameters(
         fn cleanup(instance: Handle) callconv(.c) void {
             const self = instanceFromHandle(instance) orelse return;
             self.runtime.deinit();
-            std.heap.page_allocator.destroy(self);
+            self.allocator.destroy(self);
         }
 
         fn extensionData(
@@ -5982,11 +5999,23 @@ test "LV2 host logging binds typed and format-safe messages" {
         &log_feature,
     };
     const descriptor = &Adapter.descriptor;
-    const handle = descriptor.instantiate(
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expect(Adapter.instantiateWithAllocator(
         descriptor,
         48_000.0,
         "/tmp/lv2-log.lv2",
         features[0..].ptr,
+        failing.allocator(),
+    ) == null);
+    const handle = Adapter.instantiateWithAllocator(
+        descriptor,
+        48_000.0,
+        "/tmp/lv2-log.lv2",
+        features[0..].ptr,
+        std.testing.allocator,
     ) orelse return error.InstantiateFailed;
     defer descriptor.cleanup(handle);
     const instance = Adapter.instanceFromHandle(handle) orelse

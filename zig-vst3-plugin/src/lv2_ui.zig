@@ -298,6 +298,7 @@ pub fn Adapter(
         };
 
         const Instance = struct {
+            allocator: std.mem.Allocator,
             write_function: WriteFunction,
             controller: Controller,
             resize: ?CheckedResize,
@@ -386,6 +387,28 @@ pub fn Adapter(
             widget: ?*Widget,
             features: ?[*:null]const ?*const Feature,
         ) callconv(.c) Handle {
+            return instantiateWithAllocator(
+                raw_descriptor,
+                raw_plugin_uri,
+                raw_bundle_path,
+                write_function,
+                controller,
+                widget,
+                features,
+                std.heap.page_allocator,
+            );
+        }
+
+        fn instantiateWithAllocator(
+            raw_descriptor: ?*const Descriptor,
+            raw_plugin_uri: ?[*:0]const u8,
+            raw_bundle_path: ?[*:0]const u8,
+            write_function: ?WriteFunction,
+            controller: Controller,
+            widget: ?*Widget,
+            features: ?[*:null]const ?*const Feature,
+            allocator: std.mem.Allocator,
+        ) Handle {
             _ = raw_descriptor orelse return null;
             const requested_plugin_uri =
                 raw_plugin_uri orelse return null;
@@ -420,9 +443,9 @@ pub fn Adapter(
             else
                 0;
 
-            const allocator = std.heap.page_allocator;
             const instance = allocator.create(Instance) catch return null;
             instance.* = .{
+                .allocator = allocator,
                 .write_function = write,
                 .controller = controller,
                 .resize = checkedResize(features),
@@ -476,8 +499,8 @@ pub fn Adapter(
                 .platform = platform,
                 .handle = parent,
             }) catch {
-                releaseHostNotifications(instance);
                 instance.editor.deinit();
+                releaseHostNotifications(instance);
                 allocator.destroy(instance);
                 return null;
             };
@@ -486,8 +509,8 @@ pub fn Adapter(
                     .x = scale,
                     .y = scale,
                 }) catch {
-                    releaseHostNotifications(instance);
                     instance.editor.deinit();
+                    releaseHostNotifications(instance);
                     allocator.destroy(instance);
                     return null;
                 };
@@ -513,8 +536,8 @@ pub fn Adapter(
                     instance.foreground_rgba32,
                 );
             widget_out.* = Backend.widget(instance.editor.adapter) orelse {
-                releaseHostNotifications(instance);
                 instance.editor.deinit();
+                releaseHostNotifications(instance);
                 allocator.destroy(instance);
                 return null;
             };
@@ -523,9 +546,9 @@ pub fn Adapter(
 
         fn cleanup(handle: Handle) callconv(.c) void {
             const instance = instanceFromHandle(handle) orelse return;
-            releaseHostNotifications(instance);
             instance.editor.deinit();
-            std.heap.page_allocator.destroy(instance);
+            releaseHostNotifications(instance);
+            instance.allocator.destroy(instance);
         }
 
         fn portEvent(
@@ -2187,8 +2210,12 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
     };
     const Backend = struct {
         var create_count: usize = 0;
+        var subscribe_on_create = false;
+        var destroy_unsubscribe_status: ?gui.HostSubscriptionStatus = null;
 
         const State = struct {
+            context: gui.Context,
+            peak_subscription: ?gui.HostPeakSubscription = null,
             attached: bool = false,
             parameter: f64 = 0.5,
             size: gui.Size = .{ .width = 320, .height = 200 },
@@ -2216,7 +2243,22 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
             create_count += 1;
             const backend_state = std.heap.page_allocator.create(State) catch
                 return error.Rejected;
-            backend_state.* = .{};
+            backend_state.* = .{ .context = context };
+            if (subscribe_on_create) {
+                const subscription = gui.HostPeakSubscription{
+                    .port_symbol = "audio_in",
+                    .source_id = 99,
+                };
+                const status = context.subscribeHostPeak(subscription) catch {
+                    std.heap.page_allocator.destroy(backend_state);
+                    return error.Rejected;
+                };
+                if (status != .accepted) {
+                    std.heap.page_allocator.destroy(backend_state);
+                    return error.Rejected;
+                }
+                backend_state.peak_subscription = subscription;
+            }
             return .{
                 .context = context,
                 .adapter = .{
@@ -2320,7 +2362,13 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         }
 
         fn destroy(raw: *anyopaque) void {
-            std.heap.page_allocator.destroy(state(raw));
+            const backend = state(raw);
+            if (backend.peak_subscription) |subscription| {
+                destroy_unsubscribe_status =
+                    backend.context.unsubscribeHostPeak(subscription) catch
+                        null;
+            }
+            std.heap.page_allocator.destroy(backend);
         }
 
         const vtable = gui.Adapter.VTable{
@@ -2779,7 +2827,30 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         &missing_uri_features,
     ) == null);
     try std.testing.expectEqual(@as(usize, 0), Backend.create_count);
-    const handle = Ui.descriptor.instantiate(
+    Backend.subscribe_on_create = true;
+    Backend.destroy_unsubscribe_status = null;
+    var lifecycle_widget: Widget = null;
+    const lifecycle_handle = Ui.instantiateWithAllocator(
+        &Ui.descriptor,
+        "https://example.test/ui-probe",
+        "/tmp/ui-probe.lv2",
+        Host.write,
+        &host,
+        &lifecycle_widget,
+        &features,
+        std.testing.allocator,
+    ) orelse return error.UiInstantiationFailed;
+    Ui.descriptor.cleanup(lifecycle_handle);
+    Backend.subscribe_on_create = false;
+    try std.testing.expectEqual(
+        gui.HostSubscriptionStatus.accepted,
+        Backend.destroy_unsubscribe_status.?,
+    );
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expect(Ui.instantiateWithAllocator(
         &Ui.descriptor,
         "https://example.test/ui-probe",
         "/tmp/ui-probe.lv2",
@@ -2787,6 +2858,17 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         &host,
         &widget,
         &features,
+        failing.allocator(),
+    ) == null);
+    const handle = Ui.instantiateWithAllocator(
+        &Ui.descriptor,
+        "https://example.test/ui-probe",
+        "/tmp/ui-probe.lv2",
+        Host.write,
+        &host,
+        &widget,
+        &features,
+        std.testing.allocator,
     ) orelse return error.UiInstantiationFailed;
     defer Ui.descriptor.cleanup(handle);
     const instance = Ui.instanceFromHandle(handle) orelse
