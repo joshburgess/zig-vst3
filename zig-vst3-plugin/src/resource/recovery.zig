@@ -304,15 +304,7 @@ pub fn Recovery(comptime Config: type) type {
                 publication_metadata,
                 request.exchange,
             );
-            if (publication != .published) {
-                Config.destroy(prepared.resource);
-            } else if (has_publication_ready) {
-                Config.publicationReady(
-                    request.preparation_context,
-                    request.publication_generation,
-                    publication_metadata,
-                );
-            }
+            if (publication != .published) Config.destroy(prepared.resource);
             return .{ .success = .{ .value = request.publication_generation, .result_units = result_units } };
         }
 
@@ -462,15 +454,32 @@ pub fn Recovery(comptime Config: type) type {
             return self.submit(source.path, source.expected_reference, source.kind, source.desired);
         }
 
+        /// Collects worker completion on the calling control thread.
+        /// `Config.publicationReady`, when present, runs synchronously here.
         pub fn poll(self: *Self) void {
             const job_snapshot = self.preparation.snapshot();
             if (job_snapshot.generation == 0 or job_snapshot.generation == self.observed_job_generation) return;
-            if (job_snapshot.status == .ready) _ = self.preparation.takeResult(job_snapshot.generation);
+            if (job_snapshot.status == .ready) {
+                _ = self.preparation.takeResult(job_snapshot.generation);
+                if (has_publication_ready) {
+                    const completion = self.completion.snapshot();
+                    if (completion.status == .ready and
+                        completion.generation == job_snapshot.generation)
+                    {
+                        Config.publicationReady(
+                            self.preparation_context,
+                            completion.generation,
+                            completion.publication_metadata.?,
+                        );
+                    }
+                }
+            }
             if (job_snapshot.status == .ready or job_snapshot.status == .failed or job_snapshot.status == .cancelled) {
                 self.observed_job_generation = job_snapshot.generation;
             }
         }
 
+        /// Joins the worker and collects completion on the calling control thread.
         pub fn waitAndPoll(self: *Self) void {
             self.preparation.wait();
             self.poll();
@@ -1103,7 +1112,10 @@ test "resource recovery republishes linked content for a new preparation context
     var recovery = ContextRecovery.init();
     defer recovery.deinit();
     try std.testing.expect(recovery.importPath(path_bytes[0..path_length]));
-    recovery.waitAndPoll();
+    recovery.preparation.wait();
+    try std.testing.expectEqual(@as(u64, 0), callbacks.generation.load(.acquire));
+    try std.testing.expectEqual(@as(u32, 0), callbacks.value.load(.acquire));
+    recovery.poll();
     const first_generation = recovery.snapshot().generation;
     try std.testing.expectEqual(first_generation, callbacks.generation.load(.acquire));
     try std.testing.expectEqual(@as(u32, 7), callbacks.value.load(.acquire));
@@ -1114,7 +1126,10 @@ test "resource recovery republishes linked content for a new preparation context
     try std.testing.expectEqual(@as(u32, 7), recovery.active().?.value);
 
     try std.testing.expect(recovery.updatePreparationContext(.{ .multiplier = 3 }));
-    recovery.waitAndPoll();
+    recovery.preparation.wait();
+    try std.testing.expectEqual(first_generation, callbacks.generation.load(.acquire));
+    try std.testing.expectEqual(@as(u32, 7), callbacks.value.load(.acquire));
+    recovery.poll();
     const second_generation = recovery.snapshot().generation;
     try std.testing.expectEqual(second_generation, callbacks.generation.load(.acquire));
     try std.testing.expectEqual(@as(u32, 21), callbacks.value.load(.acquire));

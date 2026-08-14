@@ -361,7 +361,8 @@ pub const Processor = struct {
         return self.models.snapshot();
     }
 
-    pub fn guiTelemetryLoad(self: *const Processor, source_id: u32) f64 {
+    pub fn guiTelemetryLoad(self: *Processor, source_id: u32) f64 {
+        _ = self.maintain();
         const presentation = self.models.presentationSnapshot();
         return switch (source_id) {
             resource_status_source_id => @floatFromInt(@intFromEnum(presentation.status)),
@@ -373,7 +374,8 @@ pub const Processor = struct {
         };
     }
 
-    pub fn guiTelemetryLoadText(self: *const Processor, source_id: u32, output: []u8) usize {
+    pub fn guiTelemetryLoadText(self: *Processor, source_id: u32, output: []u8) usize {
+        _ = self.maintain();
         const presentation = self.models.presentationSnapshot();
         const text = switch (source_id) {
             resource_status_source_id => presentation.statusText(),
@@ -498,14 +500,14 @@ pub const RuntimeProcessor = struct {
     }
 
     pub fn guiTelemetryLoad(
-        self: *const RuntimeProcessor,
+        self: *RuntimeProcessor,
         source_id: u32,
     ) f64 {
         return self.engine.guiTelemetryLoad(source_id);
     }
 
     pub fn guiTelemetryLoadText(
-        self: *const RuntimeProcessor,
+        self: *RuntimeProcessor,
         source_id: u32,
         output: []u8,
     ) usize {
@@ -869,6 +871,7 @@ test "model shell prepares model-rate conversion before latency-approved adoptio
     const HostProbe = struct {
         var marks: usize = 0;
         var dispatches: usize = 0;
+        var callback_thread = std.atomic.Value(std.Thread.Id).init(0);
 
         fn mark(
             _: *anyopaque,
@@ -876,6 +879,7 @@ test "model shell prepares model-rate conversion before latency-approved adoptio
         ) void {
             if (change != .latency) return;
             marks += 1;
+            callback_thread.store(std.Thread.getCurrentId(), .release);
         }
 
         fn dispatch(_: *anyopaque) bool {
@@ -902,6 +906,7 @@ test "model shell prepares model-rate conversion before latency-approved adoptio
     };
     HostProbe.marks = 0;
     HostProbe.dispatches = 0;
+    HostProbe.callback_thread.store(0, .release);
     processor.bindHostRequests(&sink);
     processor.prepare(.{ .sample_rate = 44_100, .max_block_size = 1024 });
     try std.testing.expect(processor.importModel(path_bytes[0..path_length]));
@@ -909,6 +914,10 @@ test "model shell prepares model-rate conversion before latency-approved adoptio
     try std.testing.expectEqual(@as(u32, 31), processor.latencySamples());
     try std.testing.expectEqual(@as(usize, 1), HostProbe.marks);
     try std.testing.expectEqual(@as(usize, 1), HostProbe.dispatches);
+    try std.testing.expectEqual(
+        std.Thread.getCurrentId(),
+        HostProbe.callback_thread.load(.acquire),
+    );
 
     var input: [1024]f32 = @splat(0.0);
     input[0] = 1.0;
