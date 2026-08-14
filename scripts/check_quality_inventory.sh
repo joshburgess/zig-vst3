@@ -9,7 +9,7 @@ trap 'rm -f "$inventory_tmp"' EXIT
 
 is_source() {
     case "$1" in
-        build.zig|*.zig|*.zon|*.c|*.h|*.cpp|*.m|*.mm|*.sh|*.ps1|*.lua|*.yml|*.yaml|*.plist)
+        build.zig|*.zig|*.zon|*.c|*.cc|*.cpp|*.cxx|*.h|*.hpp|*.m|*.mm|*.sh|*.ps1|*.lua|*.yml|*.yaml|*.plist)
             return 0
             ;;
         *)
@@ -74,7 +74,7 @@ review_unit() {
         zig-vst3-plugin/src/lv2*.zig|zig-vst3-plugin/src/audio_unit*)
             printf '%s\n' Q17
             ;;
-        zig-vst3-plugin/src/alsa*.zig|zig-vst3-plugin/src/core_audio.zig|zig-vst3-plugin/src/core_midi.zig|zig-vst3-plugin/src/cocoa_window.zig|zig-vst3-plugin/src/pipewire.zig|zig-vst3-plugin/src/wasapi.zig|zig-vst3-plugin/src/wayland_window.zig|zig-vst3-plugin/src/win_midi.zig|zig-vst3-plugin/src/win_ump.zig|zig-vst3-plugin/src/win_window.zig|zig-vst3-plugin/src/x11_window.zig|zig-vst3-plugin/src/plugin/alsa*.zig|zig-vst3-plugin/src/plugin/core_audio.zig|zig-vst3-plugin/src/plugin/core_midi.zig|zig-vst3-plugin/src/plugin/cocoa_window.zig|zig-vst3-plugin/src/plugin/device_catalog.zig|zig-vst3-plugin/src/plugin/native_callback_gate.zig|zig-vst3-plugin/src/plugin/pipewire.zig|zig-vst3-plugin/src/plugin/standalone*.zig|zig-vst3-plugin/src/plugin/wasapi.zig|zig-vst3-plugin/src/plugin/wayland_window.zig|zig-vst3-plugin/src/plugin/win_midi.zig|zig-vst3-plugin/src/plugin/win_ump.zig|zig-vst3-plugin/src/plugin/win_window.zig|zig-vst3-plugin/src/plugin/x11_window.zig|zig-vst3-plugin/src/plugin/*_shim.c|zig-vst3-plugin/src/plugin/*_shim.cpp|zig-vst3-plugin/src/plugin/*_shim.h|zig-vst3-plugin/src/plugin/*_shim.m|zig-vst3-plugin/src/plugin/*_unavailable.c|zig-vst3-plugin/src/plugin/*_scheduler_queue.h)
+        zig-vst3-plugin/src/alsa*.zig|zig-vst3-plugin/src/core_audio.zig|zig-vst3-plugin/src/core_midi.zig|zig-vst3-plugin/src/cocoa_window.zig|zig-vst3-plugin/src/pipewire.zig|zig-vst3-plugin/src/wasapi.zig|zig-vst3-plugin/src/wayland_window.zig|zig-vst3-plugin/src/win_midi.zig|zig-vst3-plugin/src/win_ump.zig|zig-vst3-plugin/src/win_window.zig|zig-vst3-plugin/src/x11_window.zig|zig-vst3-plugin/src/plugin/alsa*.zig|zig-vst3-plugin/src/plugin/core_audio.zig|zig-vst3-plugin/src/plugin/core_midi.zig|zig-vst3-plugin/src/plugin/cocoa_window.zig|zig-vst3-plugin/src/plugin/device_catalog.zig|zig-vst3-plugin/src/plugin/native_callback_gate.zig|zig-vst3-plugin/src/plugin/pipewire.zig|zig-vst3-plugin/src/plugin/standalone*.zig|zig-vst3-plugin/src/plugin/wasapi.zig|zig-vst3-plugin/src/plugin/wayland_window.zig|zig-vst3-plugin/src/plugin/win_midi.zig|zig-vst3-plugin/src/plugin/win_ump.zig|zig-vst3-plugin/src/plugin/win_window.zig|zig-vst3-plugin/src/plugin/x11_window.zig|zig-vst3-plugin/src/plugin/*_shim.c|zig-vst3-plugin/src/plugin/*_shim.cpp|zig-vst3-plugin/src/plugin/*_shim.h|zig-vst3-plugin/src/plugin/*_shim.m|zig-vst3-plugin/src/plugin/*_unavailable.c|zig-vst3-plugin/src/plugin/*_scheduler_queue.h|zig-vst3-plugin/src/plugin/*_ref_count.hpp)
             printf '%s\n' Q18
             ;;
         zig-vst3-plugin/src/plugin/*|zig-vst3-plugin/src/common.zig|zig-vst3-plugin/src/core.zig|zig-vst3-plugin/src/plugin.zig|zig-vst3-plugin/src/realtime_audit.zig|zig-vst3-plugin/src/root.zig|zig-vst3-plugin/src/serial_generation.zig)
@@ -102,7 +102,7 @@ source_metrics() {
     awk '
         /Allocator|alloc[[:space:]]*\(|create[[:space:]]*\(|dupe[[:space:]]*\(|free[[:space:]]*\(|destroy[[:space:]]*\(/ { allocation += 1 }
         /@ptrCast|@alignCast|@ptrFromInt|\[\*c\]|\*anyopaque|\?\*anyopaque/ { pointer += 1 }
-        /std\.atomic|Atomic[[:space:]]*\(|\.atomic/ { atomic += 1 }
+        /std\.atomic|std::atomic|_Atomic|atomic_(load|store|fetch|exchange|compare|init)|Atomic[[:space:]]*\(|\.atomic/ { atomic += 1 }
         /callback|Callback|callconv/ { callback += 1 }
         /parse|Parse|decode|Decode|restore|Restore|deserialize|Deserialize/ { parser += 1 }
         /^[[:space:]]*pub[[:space:]]+(const|fn|var)/ { public_decl += 1 }

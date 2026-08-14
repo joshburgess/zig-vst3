@@ -91,5 +91,6 @@ ordering.
 | `zig-vst3-plugin/src/plugin/alsa_ump_shim.c` | 21 | 0 | 6 | 3 | 0 | 0 |
 | `zig-vst3-plugin/src/plugin/core_audio_shim.c` | 7 | 0 | 11 | 3 | 1 | 0 |
 | `zig-vst3-plugin/src/plugin/pipewire_shim.c` | 15 | 0 | 2 | 2 | 0 | 0 |
-| `zig-vst3-plugin/src/plugin/win_ump_shim.cpp` | 11 | 0 | 6 | 0 | 1 | 0 |
+| `zig-vst3-plugin/src/plugin/win_ump_ref_count.hpp` | 5 | 0 | 0 | 0 | 1 | 0 |
+| `zig-vst3-plugin/src/plugin/win_ump_shim.cpp` | 10 | 0 | 6 | 0 | 0 | 0 |
 <!-- native-atomic-order-counts:end -->

@@ -1,4 +1,5 @@
 #include "win_ump_shim.h"
+#include "win_ump_ref_count.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -23,6 +24,11 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Microsoft.Windows.Devices.Midi2.h>
+
+static_assert(
+    std::numeric_limits<ULONG>::max() ==
+    std::numeric_limits<uint32_t>::max()
+);
 
 namespace midi2 = winrt::Microsoft::Windows::Devices::Midi2;
 namespace initialization =
@@ -199,14 +205,13 @@ public:
 
     ULONG STDMETHODCALLTYPE AddRef() override
     {
-        return references_.fetch_add(1, std::memory_order_relaxed) + 1;
+        return references_.add_ref();
     }
 
     ULONG STDMETHODCALLTYPE Release() override
     {
-        const ULONG remaining =
-            references_.fetch_sub(1, std::memory_order_acq_rel) - 1;
-        if (remaining == 0) {
+        uint32_t remaining = 0;
+        if (references_.release(remaining)) {
             delete this;
         }
         return remaining;
@@ -245,7 +250,7 @@ public:
     }
 
 private:
-    std::atomic<ULONG> references_{1};
+    zv3::pinned_ref_count references_;
     std::atomic<uint64_t> failures_{0};
     void *context_;
     zv3_win_ump_receive_fn receive_;

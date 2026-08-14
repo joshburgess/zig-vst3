@@ -1997,6 +1997,31 @@ pub fn build(b: *std.Build) void {
         "test-winump",
         "Run Windows UMP tests and compile the optional backend",
     );
+    const win_ump_ref_count_test = b.addExecutable(.{
+        .name = "win-ump-ref-count-test",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+            .link_libcpp = true,
+            .sanitize_thread = true,
+        }),
+    });
+    win_ump_ref_count_test.root_module.addIncludePath(
+        b.path("zig-vst3-plugin/src/plugin"),
+    );
+    win_ump_ref_count_test.root_module.addCSourceFile(.{
+        .file = b.path("tests/win_ump_ref_count_test.cpp"),
+        .flags = &.{
+            "-std=c++20",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        },
+    });
+    win_ump_test_step.dependOn(
+        &b.addRunArtifact(win_ump_ref_count_test).step,
+    );
     win_ump_test_step.dependOn(
         &b.addRunArtifact(zig_vst3_win_ump_tests).step,
     );

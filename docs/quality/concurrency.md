@@ -115,6 +115,7 @@ until its ownership and publication family is reviewed and the path is added.
 - `zig-vst3-plugin/src/plugin/wasapi_shim.c`
 - `zig-vst3-plugin/src/plugin/win_midi.zig`
 - `zig-vst3-plugin/src/plugin/win_midi_shim.c`
+- `zig-vst3-plugin/src/plugin/win_ump_ref_count.hpp`
 - `zig-vst3-plugin/src/plugin/win_ump_shim.cpp`
 - `zig-vst3-plugin/src/resource/exchange.zig`
 - `zig-vst3-plugin/src/resource/job.zig`
