@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 811 source files and 466,001 source lines.
+The checked inventory contains 811 source files and 466,088 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -51,7 +51,7 @@ misstate review effort.
 | Q16 | Toolkit-neutral GUI state and models | 16 | 8,790 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
 | Q17 | LV2 and Audio Unit adapters | 6 | 22,409 | 5/5/5/4 | High | C ABI, host pointers, realtime entry, state and worker callbacks | ABI fixtures, dynamic hosts, sanitizers, metadata lint, failure silence |
 | Q18 | Standalone runtime and native audio, MIDI, and window backends | 58 | 36,654 | 5/5/5/3 | High | OS callbacks, devices, threads, handles, recovery | TSan, callback drain, fault injection, cross-target and physical checks |
-| Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,598 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
+| Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,685 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
 | Q20 | Product and API examples | 54 | 14,806 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
 | Q21 | Test hosts, reference adapters, and downstream fixtures | 100 | 29,657 | 3/3/4/4 | Moderate | Oracle correctness and false confidence | Mutation review, independent provenance, fixture self-tests |
 | Q22 | ABI, fixture, codec, and parity tools | 53 | 10,343 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |

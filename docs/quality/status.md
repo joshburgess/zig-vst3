@@ -42,6 +42,15 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   their documented transfer to a stream.
 - Enabled full C undefined-behavior instrumentation on all native backend test
   modules and passed the 90-step focused platform matrix.
+- Recorded Q19 editor, component-view, accessibility, platform-interface,
+  timer, asset, and callback ownership contracts.
+- Closed Q-GUI-002 by detaching retained macOS and Windows accessibility
+  objects before their borrowed editor state is released.
+- Closed Q-MEM-006 by converging partial editor construction, control
+  allocation, timer reuse, and foreign registration failure paths on matched
+  cleanup.
+- Passed 24 VSTGUI ASan/UBSan process runs, four TSan process runs, native and
+  cross-platform adapter tests, and 3,171 Zig-to-C++ lifecycle tests.
 
 ## Phase 1 Scope
 
@@ -56,6 +65,6 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review Q19 VSTGUI C++ and native platform ownership next. It owns C++ views,
-controllers, platform objects, accessibility nodes, drawing resources, and C
-bridge allocations across attach, detach, callback, and failure paths.
+Review Q08 process context and Q09 MIDI ownership next. These units carry
+host-controlled pointers, bounded event storage, stream parser state, session
+state, and callback contexts through realtime and incremental processing.

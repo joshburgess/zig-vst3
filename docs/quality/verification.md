@@ -218,3 +218,28 @@ transfers it to PipeWire.
 
 Inventory check: passed, 811 files and 466,001 lines classified. Q18 contains
 58 files and 36,654 lines.
+
+## 2026-08-14: Q19 VSTGUI Ownership
+
+Reviewed scope: the C ABI adapter, editor and component tree, control-specific
+views, timers, assets and drawing resources, Linux run-loop integration,
+native accessibility implementations, and X11 and Wayland clipboard bridges.
+
+Commit `bd48cec4` detaches retained macOS and Windows accessibility objects,
+rolls back incomplete editor frames and foreign registrations, closes a
+pre-transfer editable-label leak, and preserves one progress timer across
+reopen instead of replacing it.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-vstgui-native --summary all` | Passed: 4/4 native interaction, accessibility, visual, and cross-platform compilation steps |
+| `VSTGUI_SANITIZER_SOAK_REPETITIONS=8 scripts/vstgui_sanitizer_soak.sh` | Passed: 24/24 ASan and UBSan process runs across adapter, macOS accessibility, and visual phases |
+| `VSTGUI_THREAD_SANITIZER_REPETITIONS=4 scripts/test_vstgui_thread_sanitizer.sh` | Passed: 4/4 TSan adapter process runs |
+| `zig build test-vst3-module test-gui-lifecycle --summary all` | Passed: 43/43 build steps and 3,171/3,171 tests |
+| `scripts/check_quality_inventory.sh` | Passed: 811 files and 466,088 lines classified; Q19 contains 67 files and 32,685 lines |
+
+The macOS regression retains a native accessibility element after editor close
+and verifies that visibility, label, value, and frame queries no longer reach
+the destroyed semantic node or VSTGUI view. Windows provider detachment and
+Linux platform registration rollback are covered by Release cross-compilation;
+their real operating-system callback behavior remains part of Phase 6.
