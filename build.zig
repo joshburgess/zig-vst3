@@ -4925,7 +4925,22 @@ pub fn build(b: *std.Build) void {
 
     const phase2_thread_sanitizer_step = b.step(
         "test-phase2-thread-sanitizers",
-        "Run GUI, standalone, and ARA concurrency tests with the thread sanitizer",
+        "Run refcount, GUI, standalone, and ARA concurrency tests with the thread sanitizer",
+    );
+    const refcount_thread_sanitizer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3/src/funknown.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+            .sanitize_thread = true,
+        }),
+        .filters = &.{
+            "concurrent malformed releases cannot wrap an atomic refcount",
+            "atomic refcount tolerates concurrent add and release pairs",
+        },
+    });
+    phase2_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(refcount_thread_sanitizer_tests).step,
     );
     const phase2_core_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
