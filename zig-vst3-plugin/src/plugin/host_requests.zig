@@ -60,30 +60,36 @@ pub const HostRequestSink = struct {
         self.markChanged(.audio_io);
     }
 
+    /// Call only from a non-realtime control thread.
     pub fn setAudioBusLayout(
         self: *HostRequestSink,
         direction: audio_layout.AudioBusDirection,
         index: usize,
         layout: audio_layout.AudioBusLayout,
     ) bool {
+        if (!realtime_audit.observe(.lock)) return false;
         const set_layout = self.set_audio_bus_layout orelse return false;
         return set_layout(self.context, direction, index, layout);
     }
 
+    /// Call only from a non-realtime control thread.
     pub fn addAuxiliaryAudioBus(
         self: *HostRequestSink,
         direction: audio_layout.AudioBusDirection,
         bus_value: audio_layout.DynamicAudioBus,
     ) bool {
+        if (!realtime_audit.observe(.lock)) return false;
         const add_bus = self.add_auxiliary_audio_bus orelse return false;
         return add_bus(self.context, direction, bus_value);
     }
 
+    /// Call only from a non-realtime control thread.
     pub fn removeAuxiliaryAudioBus(
         self: *HostRequestSink,
         direction: audio_layout.AudioBusDirection,
         auxiliary_index: usize,
     ) bool {
+        if (!realtime_audit.observe(.lock)) return false;
         const remove_bus =
             self.remove_auxiliary_audio_bus orelse return false;
         return remove_bus(
@@ -177,4 +183,72 @@ test "host request sink forwards typed changes in order" {
         },
         Probe.changes[0..Probe.count],
     );
+}
+
+test "host request topology mutation is rejected in realtime scope" {
+    const Probe = struct {
+        var calls: usize = 0;
+
+        fn mark(_: *anyopaque, _: HostChange) void {}
+
+        fn setLayout(
+            _: *anyopaque,
+            _: audio_layout.AudioBusDirection,
+            _: usize,
+            _: audio_layout.AudioBusLayout,
+        ) bool {
+            calls += 1;
+            return true;
+        }
+
+        fn addBus(
+            _: *anyopaque,
+            _: audio_layout.AudioBusDirection,
+            _: audio_layout.DynamicAudioBus,
+        ) bool {
+            calls += 1;
+            return true;
+        }
+
+        fn removeBus(
+            _: *anyopaque,
+            _: audio_layout.AudioBusDirection,
+            _: usize,
+        ) bool {
+            calls += 1;
+            return true;
+        }
+
+        fn dispatch(_: *anyopaque) bool {
+            return true;
+        }
+    };
+
+    var context: u8 = 0;
+    var sink = HostRequestSink{
+        .context = &context,
+        .mark_change = Probe.mark,
+        .set_audio_bus_layout = Probe.setLayout,
+        .add_auxiliary_audio_bus = Probe.addBus,
+        .remove_auxiliary_audio_bus = Probe.removeBus,
+        .dispatch = Probe.dispatch,
+    };
+    const auxiliary = try audio_layout.DynamicAudioBus.fixed(
+        .mono,
+        false,
+    );
+
+    Probe.calls = 0;
+    const scope = realtime_audit.Scope.enter();
+    try std.testing.expect(!sink.setAudioBusLayout(.input, 0, .stereo));
+    try std.testing.expect(!sink.addAuxiliaryAudioBus(.output, auxiliary));
+    try std.testing.expect(!sink.removeAuxiliaryAudioBus(.output, 0));
+    const report = scope.leave();
+    try std.testing.expectEqual(@as(u32, 3), report.count(.lock));
+    try std.testing.expectEqual(@as(usize, 0), Probe.calls);
+
+    try std.testing.expect(sink.setAudioBusLayout(.input, 0, .stereo));
+    try std.testing.expect(sink.addAuxiliaryAudioBus(.output, auxiliary));
+    try std.testing.expect(sink.removeAuxiliaryAudioBus(.output, 0));
+    try std.testing.expectEqual(@as(usize, 3), Probe.calls);
 }
