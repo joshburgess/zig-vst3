@@ -2004,7 +2004,11 @@ pub fn build(b: *std.Build) void {
             .optimize = .ReleaseSafe,
             .link_libc = true,
             .link_libcpp = true,
-            .sanitize_thread = true,
+            .sanitize_c = if (b.graph.host.result.os.tag == .windows)
+                .full
+            else
+                .off,
+            .sanitize_thread = b.graph.host.result.os.tag != .windows,
         }),
     });
     win_ump_ref_count_test.root_module.addIncludePath(
