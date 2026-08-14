@@ -7,6 +7,8 @@
 - This is the first stable `0.3.x` release of the higher-level plugin framework. It preserves the compatibility-ready declarations frozen at `zig-vst3-0.3.0-rc.1` under the documented framework compatibility policy.
 - The package surface, toolchain pins, native bundle metadata, and compatibility classifications are unchanged from RC1. LV2, AUv2, ARA product APIs, VSTGUI, standalone windows, split-device correction, and optional platform modules remain experimental.
 - RC1 passed its complete local gate, all 19 public CI jobs, isolated downstream adoption and upgrade fixtures, and the public-archive clean-install smoke gate. Stable promotion uses that evidence without waiting for external reports.
+- Exact stable candidate commit `cf3baa5f132df16bdfa5e86d3437e4cfc3295b39` passes the complete local gate, including 417/417 ReleaseSafe steps and 7,387/7,393 tests with six documented environment-dependent skips. Public GitHub Actions run `31793492488` passes all 19 jobs at that commit.
+- Annotated tag object `64a1e0bc62926e9488799661018682812e038b37` publishes stable `0.3.0` at the exact candidate commit. The public GitHub source archive has SHA-256 `312800a89240318e29fcf397e056e3f11bf9ee4694ff99f5d6f4d77447e5d446` and passes 18/18 installed-package steps, 96/96 tests, and every ReleaseSafe downstream fixture.
 
 ### Changed
 

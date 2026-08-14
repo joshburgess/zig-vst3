@@ -184,6 +184,14 @@ scripts/test_published_release.sh \
 Record the public archive SHA-256 and both consumer-suite results before closing
 the stable release milestone.
 
+Stable result on 2026-08-14:
+
+- Exact stable candidate commit `cf3baa5f132df16bdfa5e86d3437e4cfc3295b39` passes the complete local framework gate. The ReleaseSafe graph passes 417/417 steps and 7,387/7,393 tests with six documented environment-dependent skips.
+- Public GitHub Actions run `31793492488` passes all 19 jobs at the exact stable candidate commit.
+- Annotated tag object `64a1e0bc62926e9488799661018682812e038b37` dereferences to `cf3baa5f132df16bdfa5e86d3437e4cfc3295b39`.
+- The public stable source archive is `https://github.com/joshburgess/zig-vst3/archive/refs/tags/zig-vst3-0.3.0.tar.gz` with SHA-256 `312800a89240318e29fcf397e056e3f11bf9ee4694ff99f5d6f4d77447e5d446`.
+- The downloaded archive reports `0.3.0`, contains the required package and policy files, passes 18/18 installed-package steps and 96/96 tests, and passes every ReleaseSafe downstream effect, instrument, bundle, and upgrade fixture.
+
 After the raw release checks and required host matrix rows are in place for a
 raw-only maintenance release:
 
