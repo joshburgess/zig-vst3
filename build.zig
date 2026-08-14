@@ -2383,6 +2383,24 @@ pub fn build(b: *std.Build) void {
     const zig_vst3_plugin_core_tests = b.addTest(.{
         .root_module = zig_vst3_plugin_core_test_module,
     });
+    const plugin_runtime_test_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        plugin_runtime_test_module.link_libc = true;
+    const plugin_runtime_tests = b.addTest(.{
+        .root_module = plugin_runtime_test_module,
+        .filters = &.{"processor runtime"},
+    });
+    const plugin_runtime_test_step = b.step(
+        "test-plugin-runtime",
+        "Run focused processor runtime lifecycle and ownership tests",
+    );
+    plugin_runtime_test_step.dependOn(
+        &b.addRunArtifact(plugin_runtime_tests).step,
+    );
     const matrix_test_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/dsp/matrix.zig",

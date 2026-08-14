@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 811 source files and 465,638 source lines.
+The checked inventory contains 811 source files and 465,694 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -32,13 +32,13 @@ misstate review effort.
 
 | Unit | Scope | Files | Lines | C/E/X/T | Rank | Principal exposure | Required verification |
 | --- | --- | ---: | ---: | --- | --- | --- | --- |
-| Q00 | Build graph, CI, release and validation scripts | 120 | 16,588 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
+| Q00 | Build graph, CI, release and validation scripts | 120 | 16,609 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
 | Q01 | Raw VST3 ABI mirrors and COM helpers | 114 | 28,860 | 5/5/4/5 | Elevated | Public ABI, pointers, reference counts, host callbacks | SDK layout parity, callback lifecycle, validators, sanitizers |
 | Q02 | ARA model, controller, analysis, cache, and official headers | 15 | 27,657 | 5/4/5/3 | High | Host callbacks, readers, atomics, persistence, untrusted host data | Header parity, lifecycle stress, allocator failure, TSan, state corruption |
 | Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,080 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
 | Q04 | Raw-to-framework VST3 processor and controller adapters | 3 | 11,712 | 5/5/5/4 | High | Realtime host entry, dual state stores, resource publication | Lifecycle model, failure silence, host mutation, sanitizer stress |
 | Q05 | Raw-package example plugin declarations | 18 | 758 | 2/2/2/4 | Moderate | Factory examples and public construction patterns | Compile, validator, package examples |
-| Q06 | Framework declaration, lifecycle, topology, and runtime core | 16 | 9,483 | 5/5/5/4 | High | Public compatibility, ownership, realtime processing | API manifest, state-machine tests, allocator failure, bounded-work audit |
+| Q06 | Framework declaration, lifecycle, topology, and runtime core | 16 | 9,518 | 5/5/5/4 | High | Public compatibility, ownership, realtime processing | API manifest, state-machine tests, allocator failure, bounded-work audit |
 | Q07 | Parameters, state, units, and resources | 23 | 13,649 | 5/5/4/4 | Elevated | Persistence, background work, publication, public API | Migration corpus, transactionality, allocator failure, TSan |
 | Q08 | Process context, events, changes, segmentation, and ordering | 5 | 9,112 | 5/5/5/4 | High | Host-controlled counts and pointers on realtime path | Boundary generation, malformed host data, partition invariance |
 | Q09 | MIDI 1, MIDI 2, MIDI-CI, MPE, files, streams, and sessions | 33 | 20,353 | 4/5/5/3 | High | Untrusted byte streams, bounded queues, session state | Fuzzing, truncation, progress, capacity, deterministic state models |
@@ -64,13 +64,13 @@ manual review. They include false positives and cannot establish absence.
 
 | Unit | Allocation | Pointer | Atomic | Callback | Parser | Public |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Q00 | 1 | 9 | 1 | 43 | 385 | 1 |
+| Q00 | 1 | 9 | 1 | 44 | 385 | 1 |
 | Q01 | 122 | 2,162 | 91 | 1,126 | 92 | 2,429 |
 | Q02 | 6 | 437 | 40 | 190 | 174 | 316 |
 | Q03 | 38 | 271 | 8 | 194 | 32 | 280 |
 | Q04 | 72 | 370 | 4 | 128 | 138 | 505 |
 | Q05 | 0 | 2 | 0 | 0 | 0 | 114 |
-| Q06 | 18 | 10 | 0 | 14 | 167 | 1,308 |
+| Q06 | 23 | 10 | 0 | 14 | 167 | 1,313 |
 | Q07 | 107 | 7 | 34 | 9 | 326 | 1,460 |
 | Q08 | 1 | 0 | 0 | 0 | 3 | 1,216 |
 | Q09 | 53 | 0 | 0 | 0 | 661 | 842 |

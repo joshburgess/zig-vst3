@@ -100,3 +100,32 @@ Commands:
 Result: passed. The fixture now requires a representative native shim to map to
 Q18. The corrected inventory still classifies 811 files, with 16 files in Q06
 and 58 in Q18. The source total is 465,638 lines after the Q04 allocator tests.
+
+Change commit: `dd2ec5b2bd4d200e03d922594527bc6e2cd26c9d`
+
+## 2026-08-14: Q06 Runtime Ownership
+
+Reviewed scope:
+
+- `plugin/instance.zig`
+- `plugin/runtime.zig`
+- `plugin/lifecycle.zig`
+- `plugin/offline_renderer.zig`
+
+The runtime owns exactly one successfully initialized plugin value. Its
+terminal teardown orders deactivation, reset, prepared-resource release, state
+transition, and plugin deinitialization. The offline renderer's normal and
+error cleanup converge on those state-aware operations. A new exhaustive
+allocation-failure test covers the initializer transfer boundary.
+
+Commands and results:
+
+| Check | Result |
+| --- | --- |
+| `zig build test-plugin-core-builds --summary all` | Passed: 2/2 steps; ReleaseSafe Windows test compilation |
+| `zig build test-plugin-runtime --summary all` | Passed: 3/3 steps and 12/12 Debug tests |
+
+The focused runtime step includes the new exhaustive allocation-failure test
+and the existing lifecycle, terminal-state, state-restore, process-mode, and
+dynamic-topology runtime tests. It completes in under a second after
+compilation and does not run unrelated parser suites.

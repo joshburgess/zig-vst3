@@ -515,6 +515,41 @@ test "processor runtime teardown enters a deterministic terminal state" {
     runtime.deinit();
 }
 
+test "processor runtime propagates allocation failure without ownership" {
+    const Fixture = struct {
+        const Plugin = struct {
+            allocator: std.mem.Allocator,
+            storage: []u8,
+
+            pub const name = "Fallible Runtime";
+            pub const vendor = "zig-vst3";
+            pub const Params = struct {};
+
+            pub fn init(allocator: std.mem.Allocator) !@This() {
+                return .{
+                    .allocator = allocator,
+                    .storage = try allocator.alloc(u8, 16),
+                };
+            }
+
+            pub fn deinit(self: *@This()) void {
+                self.allocator.free(self.storage);
+            }
+        };
+
+        fn initialize(allocator: std.mem.Allocator) !void {
+            var runtime = try ProcessorRuntime(Plugin).init(allocator, .{});
+            defer runtime.deinit();
+        }
+    };
+
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        Fixture.initialize,
+        .{},
+    );
+}
+
 test "processor runtime validates context and restores state only while inactive" {
     const Gain = struct {
         restored_count: usize = 0,
