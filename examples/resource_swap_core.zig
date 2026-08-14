@@ -263,6 +263,17 @@ test "resource swap runtime owns the self-referential engine at a stable address
     );
 }
 
+test "resource swap runtime reports outer allocation failure" {
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.OutOfMemory,
+        RuntimeProcessor.init(failing.allocator()),
+    );
+}
+
 test "resource swap publication generation skips retained identities" {
     var processor: Processor = undefined;
     processor.initInPlace();

@@ -584,6 +584,17 @@ pub const RuntimeProcessor = struct {
 
 pub const parameter_set = plug.parameters.ParameterSet(ModelShell.Params).init(.{});
 
+test "model shell runtime reports outer allocation failure" {
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.OutOfMemory,
+        RuntimeProcessor.init(failing.allocator()),
+    );
+}
+
 test "model shell runtime preserves stable recovery ownership and both precisions" {
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();

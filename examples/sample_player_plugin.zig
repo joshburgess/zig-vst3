@@ -418,6 +418,17 @@ const Vst3SamplePlayerProcessor =
         RuntimeProcessor,
     );
 
+test "sample player runtime reports outer allocation failure" {
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.OutOfMemory,
+        RuntimeProcessor.init(failing.allocator()),
+    );
+}
+
 const Effect =
     vst3.zig_vst3_plugin_effect.HighLevelEffect(
         RuntimeProcessor,

@@ -286,6 +286,17 @@ pub const RuntimeProcessor = struct {
 
 pub const FixedRate = RuntimeProcessor;
 
+test "fixed-rate runtime reports outer allocation failure" {
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.OutOfMemory,
+        RuntimeProcessor.init(failing.allocator()),
+    );
+}
+
 test "fixed-rate processor renders the model path at exact host latency" {
     const allocator = std.testing.allocator;
     const processor = try allocator.create(Processor);

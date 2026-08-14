@@ -484,9 +484,28 @@ pub fn build(b: *std.Build) void {
         },
     };
 
+    const example_ownership_test_step = b.step(
+        "test-example-ownership",
+        "Run focused owning example lifecycle and allocation tests",
+    );
     var example_plugins: [example_plugin_options.len]ExamplePluginSteps = undefined;
     for (example_plugin_options, 0..) |options, index| {
         example_plugins[index] = addExamplePlugin(b, target, optimize, zig_vst3, zig_vst3_plugin_core, zig_vst3_plugin, gui_options, native_vstgui, entry_symbols_step, vstgui_adapter_step, options);
+        if (std.mem.eql(u8, options.short_name, "resource-swap") or
+            std.mem.eql(u8, options.short_name, "fixed-rate") or
+            std.mem.eql(u8, options.short_name, "model-shell"))
+        {
+            example_ownership_test_step.dependOn(
+                &b.addRunArtifact(example_plugins[index].core_example_tests).step,
+            );
+        }
+        if (std.mem.eql(u8, options.short_name, "ir-loader") or
+            std.mem.eql(u8, options.short_name, "sample-player"))
+        {
+            example_ownership_test_step.dependOn(
+                &b.addRunArtifact(example_plugins[index].plugin_tests).step,
+            );
+        }
         if (options.c_kernel) {
             const c_kernel_test_step = b.step("test-c-kernel", "Run C Kernel Probe plugin and differential tests");
             c_kernel_test_step.dependOn(&b.addRunArtifact(example_plugins[index].plugin_tests).step);
