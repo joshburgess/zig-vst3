@@ -1114,7 +1114,7 @@ pub fn bindHostRequests(self: *Processor, requests: *plug.HostRequestSink) void 
 }
 ```
 
-Use `markLatencyChanged` to coalesce a pending latency notification. The same sink exposes `markIoChanged` for a prepared bus-topology change. Call `dispatchPending` only from a control, background, or UI thread. Debug and test builds reject dispatch from a real-time audit scope before making a host call. If both flags are pending, the framework sends one typed message and the controller makes one combined host restart request. A failed send restores both flags independently for retry.
+Use `markLatencyChanged` to coalesce a pending latency notification. The same sink exposes `markIoChanged` for a prepared bus-topology change. Its topology mutation methods are also non-realtime control-thread operations because the component may lock its topology model. Debug and test builds reject them before component locking. Call `dispatchPending` only from a control, background, or UI thread. Debug and test builds reject dispatch from a realtime audit scope before making a host call. If both flags are pending, the framework sends one typed message and the controller makes one combined host restart request. A failed send restores both flags independently for retry.
 
 The safe transition order is:
 

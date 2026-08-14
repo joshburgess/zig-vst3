@@ -595,3 +595,32 @@ admission CAS cannot succeed.
 | `zig build --cache-dir /private/tmp/zig-vst3-coreaudio-gate-local --global-cache-dir /private/tmp/zig-vst3-coreaudio-gate-global test-coreaudio --summary all` | Passed: 9/9 steps and 10/11 tests; the native device-discovery branch skipped because it depends on available hardware |
 | Sixteen repeated `test-coreaudio` runs using the same caches | Passed: 16/16 repetitions, including the focused native TSan callback-drain selection |
 | `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,605 lines classified |
+
+## 2026-08-14: Realtime Topology Mutation Gate
+
+Change commit: `244e1ae6`
+
+The exact Phase 1 gate at `7b2f2882` was stopped intentionally with exit 130
+after the continuing realtime call-graph audit invalidated the candidate. It
+passed the initial repository scans, VSTGUI build-mode checks, native visual
+dependency checks, and autonomous wrapper before the stop. The installed
+package and repository-root selections had started but did not complete, so
+this run is partial baseline evidence only.
+
+`HostRequestSink.dispatchPending` already rejected realtime use, but the three
+public dynamic-topology mutation methods did not. The VST3 component bindings
+behind those methods take the audio-topology mutex. Processor code retaining
+the sink could therefore perform an unbounded wait on the audio thread without
+the realtime audit reporting it.
+
+Commit `244e1ae6` classifies each mutation as a lock operation before invoking
+its component binding and documents the non-realtime control-thread contract.
+The regression enters a realtime scope, verifies that all three calls fail
+without reaching their callbacks, and then verifies that the same calls still
+succeed outside that scope.
+
+| Check | Result |
+| --- | --- |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter "host request"` | Passed: 9/9 tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-host-request-local --global-cache-dir /private/tmp/zig-vst3-host-request-global test-vst3-module --summary all` | Passed: 7/7 steps and 788/788 tests |
+| `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,679 lines classified |

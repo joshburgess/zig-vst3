@@ -37,6 +37,9 @@ single type. Later phases must link each invariant to code and verification.
   `publicationReady` callback synchronously.
 - Host restart requests run only from a host-approved control or UI callback,
   never from an audio, resource, device, or importer worker.
+- Dynamic audio-bus topology mutations through `HostRequestSink` run only on a
+  non-realtime control thread. Debug and test realtime scopes reject the call
+  before it can reach component locking.
 - Native callback teardown publishes admission closure, stops or unregisters
   the platform source, drains every callback admitted before closure, and only
   then clears callback-visible state. Callback release synchronizes with the
