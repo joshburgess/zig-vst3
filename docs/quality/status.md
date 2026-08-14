@@ -144,6 +144,9 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   its thread handle can be replaced. The worker now remains running through
   result disposal and its final queued-work check. Deterministic overlap,
   resource ThreadSanitizer, and owning-example gates pass.
+- Added a checked per-source ledger for explicit Zig atomic orders in 57 source
+  files. Any count change now fails the repository gate until the corresponding
+  publication contract and ledger entry are reviewed together.
 
 ## Phase 2 Scope
 

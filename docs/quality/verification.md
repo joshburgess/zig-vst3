@@ -829,3 +829,24 @@ until the old worker is allowed to return and the join completes.
 | `scripts/check_quality_inventory.sh` | Passed: 814 files and 468,305 lines classified |
 | `zig fmt --check zig-vst3-plugin/src/resource/job.zig` | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-14: Checked Atomic-Order Ledger
+
+Change commit: `598dbb6f`
+
+The atomic-order ledger records per-source lexical counts for every explicit
+Zig unordered, monotonic, acquire, release, acquire-release, and sequentially
+consistent order in the checked concurrency inventory. Its family-level
+semantic justifications remain in `concurrency.md`. The ledger is deliberately
+mechanical evidence: a count change fails the repository gate and requires the
+semantic review record to be revisited.
+
+| Check | Result |
+| --- | --- |
+| `scripts/check_quality_atomic_orders.sh` | Passed: 57 source files tracked |
+| `scripts/test_quality_atomic_orders_runner.sh` | Passed: baseline and changed-count rejection |
+| `bash -n scripts/check_quality_atomic_orders.sh scripts/test_quality_atomic_orders_runner.sh` | Passed |
+| `scripts/test_quality_concurrency_inventory_runner.sh` | Passed: 81 source files classified plus missing-path and stale-path rejection |
+| `scripts/check_quality_inventory.sh` | Passed: 816 files and 468,418 lines classified |
+| `zig fmt --check build.zig` | Passed |
+| `git diff --check` | Passed |
