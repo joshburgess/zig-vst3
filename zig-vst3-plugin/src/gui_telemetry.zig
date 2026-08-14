@@ -283,6 +283,38 @@ test "bounded queue drop count saturates instead of wrapping" {
     try std.testing.expectEqual(@as(?u32, 30), queue.pop());
 }
 
+test "bounded queue transfers concurrent SPSC traffic without tearing" {
+    const Queue = SpscQueue(u64, 8);
+    const Shared = struct {
+        queue: Queue = .{},
+        done: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+        fn produce(self: *@This()) void {
+            for (1..20_001) |index| {
+                const value: u64 = @intCast(index);
+                while (!self.queue.push(value))
+                    std.Thread.yield() catch {};
+            }
+            self.done.store(true, .release);
+        }
+    };
+
+    var shared = Shared{};
+    const producer = try std.Thread.spawn(.{}, Shared.produce, .{&shared});
+    var expected: u64 = 1;
+    while (!shared.done.load(.acquire) or expected != 20_001) {
+        const value = shared.queue.pop() orelse {
+            std.Thread.yield() catch {};
+            continue;
+        };
+        try std.testing.expectEqual(expected, value);
+        expected += 1;
+    }
+    producer.join();
+    try std.testing.expect(shared.queue.valid());
+    try std.testing.expectEqual(@as(?u64, null), shared.queue.pop());
+}
+
 test "repaint requests coalesce until completion" {
     var coalescer = RepaintCoalescer{};
     try std.testing.expect(coalescer.request());

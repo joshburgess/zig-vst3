@@ -8,6 +8,8 @@ pub const PublishError = error{
     RealtimeViolation,
 };
 
+/// One non-realtime producer publishes resources for one audio-thread consumer.
+/// Reclaim runs on the producer side. Teardown requires processing to stop.
 pub fn Exchange(comptime Config: type) type {
     const Resource = Config.Resource;
     const slot_capacity: usize = Config.slot_capacity;

@@ -34,6 +34,8 @@ pub const StageError = error{
     Incomplete,
 };
 
+/// One non-realtime producer stages media for one audio-thread consumer.
+/// Keep the store at a stable address until both sides have stopped.
 pub fn Store(comptime maximum_frames: usize) type {
     if (maximum_frames == 0) @compileError("sample store capacity must be positive");
     const no_slot = std.math.maxInt(u8);
@@ -457,4 +459,74 @@ test "sample store generated stale callback sequences preserve atomic generation
             }
         }
     }
+}
+
+test "sample store transfers coherent concurrent generations" {
+    const SampleStore = Store(4);
+    const Shared = struct {
+        store: SampleStore = .{},
+        done: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        failed: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+        fn produce(self: *@This()) void {
+            defer self.done.store(true, .release);
+            for (1..10_001) |index| {
+                const generation: u64 = @intCast(index);
+                while (true) {
+                    self.store.begin(.{
+                        .generation = generation,
+                        .sample_rate = 48_000,
+                        .channels = 1,
+                        .frames = 4,
+                    }) catch |err| switch (err) {
+                        error.Busy => {
+                            std.Thread.yield() catch {};
+                            continue;
+                        },
+                        else => {
+                            self.failed.store(true, .release);
+                            return;
+                        },
+                    };
+                    break;
+                }
+                const value: f32 = @floatFromInt(generation);
+                self.store.write(
+                    generation,
+                    0,
+                    &.{ value, value, value, value },
+                ) catch {
+                    self.failed.store(true, .release);
+                    return;
+                };
+                self.store.commit(generation) catch {
+                    self.failed.store(true, .release);
+                    return;
+                };
+            }
+        }
+    };
+
+    var shared = Shared{};
+    const producer = try std.Thread.spawn(.{}, Shared.produce, .{&shared});
+    var adopted: usize = 0;
+    while (true) {
+        if (!shared.store.adoptPending()) {
+            if (shared.done.load(.acquire)) break;
+            std.Thread.yield() catch {};
+            continue;
+        }
+        const metadata = shared.store.activeMetadata().?;
+        const expected: f32 = @floatFromInt(metadata.generation);
+        for (0..metadata.frames) |frame| {
+            try std.testing.expectEqual(
+                expected,
+                shared.store.sample(0, @floatFromInt(frame)),
+            );
+        }
+        adopted += 1;
+    }
+    producer.join();
+    try std.testing.expect(!shared.failed.load(.acquire));
+    try std.testing.expect(adopted != 0);
 }

@@ -4601,6 +4601,85 @@ pub fn build(b: *std.Build) void {
     const resource_thread_sanitizer_step = b.step("test-resource-thread-sanitizer", "Run resource job and exchange tests with the thread sanitizer");
     resource_thread_sanitizer_step.dependOn(&b.addRunArtifact(resource_thread_sanitizer_tests).step);
 
+    const phase2_thread_sanitizer_step = b.step(
+        "test-phase2-thread-sanitizers",
+        "Run GUI, standalone, and ARA concurrency tests with the thread sanitizer",
+    );
+    const phase2_core_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .sanitize_thread = true,
+    });
+    if (b.graph.host.result.os.tag == .linux)
+        phase2_core_module.link_libc = true;
+    const gui_thread_sanitizer_tests = b.addTest(.{
+        .root_module = phase2_core_module,
+        .filters = &.{
+            "bounded queue transfers concurrent SPSC traffic",
+            "snapshot series publishes coherent concurrent generations",
+            "sample store transfers coherent concurrent generations",
+            "bounded capture FIFO publishes complete frames between threads",
+            "MIDI input queue is stable under concurrent SPSC traffic",
+        },
+    });
+    phase2_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(gui_thread_sanitizer_tests).step,
+    );
+
+    const ara_thread_sanitizer_raw = createAraRawModule(
+        b,
+        b.graph.host,
+        .Debug,
+    );
+    const ara_thread_sanitizer_api = b.createModule(.{
+        .root_source_file = b.path("zig-vst3/src/ara_api.zig"),
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .sanitize_thread = true,
+    });
+    ara_thread_sanitizer_api.addImport(
+        "ara-raw",
+        ara_thread_sanitizer_raw,
+    );
+    const ara_controller_thread_sanitizer_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/ara_document_controller.zig",
+        ),
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .sanitize_thread = true,
+    });
+    ara_controller_thread_sanitizer_module.addImport(
+        "zig-vst3-ara",
+        ara_thread_sanitizer_api,
+    );
+    const ara_controller_thread_sanitizer_tests = b.addTest(.{
+        .root_module = ara_controller_thread_sanitizer_module,
+        .filters = &.{"reads host audio and closes readers safely"},
+    });
+    phase2_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(ara_controller_thread_sanitizer_tests).step,
+    );
+
+    const ara_cache_thread_sanitizer_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3/src/ara_source_cache.zig"),
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .sanitize_thread = true,
+    });
+    ara_cache_thread_sanitizer_module.addImport(
+        "zig-vst3-plugin-core",
+        phase2_core_module,
+    );
+    const ara_cache_thread_sanitizer_tests = b.addTest(.{
+        .root_module = ara_cache_thread_sanitizer_module,
+        .filters = &.{"readers never observe"},
+    });
+    phase2_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(ara_cache_thread_sanitizer_tests).step,
+    );
+
     const hrtf_test_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/hrtf_tests.zig",

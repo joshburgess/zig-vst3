@@ -377,6 +377,7 @@ pub fn FixedSeries(comptime capacity: usize) type {
     };
 }
 
+/// One processor thread publishes while GUI threads read bounded snapshots.
 pub fn SnapshotSeries(comptime capacity: usize) type {
     if (capacity == 0) @compileError("SnapshotSeries capacity must be positive");
     const AtomicPoint = struct {
@@ -809,6 +810,52 @@ test "snapshot series rejects malformed retained points and counts" {
     try std.testing.expectEqual(@as(?usize, 1), series.read(&output));
     try std.testing.expectEqual(@as(f64, 0.25), output[0].x);
     try std.testing.expectEqual(@as(f64, 0.75), output[0].y);
+}
+
+test "snapshot series publishes coherent concurrent generations" {
+    const Series = SnapshotSeries(2);
+    const Shared = struct {
+        series: Series,
+        done: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        failed: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+        fn produce(self: *@This()) void {
+            defer self.done.store(true, .release);
+            for (1..20_001) |index| {
+                const value: f64 = @floatFromInt(index);
+                if (!self.series.publish(&.{
+                    .{ .x = value, .y = value * 2.0 },
+                    .{ .x = value + 1.0, .y = (value + 1.0) * 2.0 },
+                })) {
+                    self.failed.store(true, .release);
+                    return;
+                }
+                if (index % 64 == 0) std.Thread.yield() catch {};
+            }
+        }
+    };
+
+    var shared = Shared{ .series = Series.init() };
+    shared.series.editorOpened();
+    defer shared.series.editorClosed();
+    const producer = try std.Thread.spawn(.{}, Shared.produce, .{&shared});
+    var successful_reads: usize = 0;
+    var output: [2]Point = undefined;
+    while (!shared.done.load(.acquire)) {
+        const count = shared.series.read(&output) orelse continue;
+        if (count == 0) continue;
+        try std.testing.expectEqual(@as(usize, 2), count);
+        try std.testing.expectEqual(output[0].x * 2.0, output[0].y);
+        try std.testing.expectEqual(output[0].x + 1.0, output[1].x);
+        try std.testing.expectEqual(output[1].x * 2.0, output[1].y);
+        successful_reads += 1;
+    }
+    producer.join();
+    try std.testing.expect(!shared.failed.load(.acquire));
+    const count = shared.series.read(&output).?;
+    try std.testing.expectEqual(@as(usize, 2), count);
+    try std.testing.expectEqual(output[0].x * 2.0, output[0].y);
+    try std.testing.expect(successful_reads != 0);
 }
 
 test "waveform capture downsamples without work while inactive" {

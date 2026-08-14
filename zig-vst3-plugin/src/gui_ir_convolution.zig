@@ -293,6 +293,8 @@ pub fn PreparationQueue(
     };
 }
 
+/// One non-realtime producer stages responses for one audio-thread consumer.
+/// Keep the convolver stable until both sides stop; reset is quiescent-only.
 pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_size: usize) type {
     if (maximum_frames == 0) @compileError("PartitionedConvolver maximum_frames must be positive");
     if (partition_size < 8 or !std.math.isPowerOfTwo(partition_size)) {
