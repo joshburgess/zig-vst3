@@ -1,5 +1,9 @@
 # Roadmap
 
+The [quality consolidation roadmap](quality-roadmap.md) is the current priority.
+Unrelated feature work remains frozen until that program reaches merge
+readiness or the project explicitly changes priorities.
+
 This file tracks current project work and release readiness.
 
 ## Current Focus
