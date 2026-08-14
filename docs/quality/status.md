@@ -136,6 +136,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   reference counts. Saturation can no longer accept an unrepresentable
   reference and then decrement toward premature destruction. Focused lifetime,
   complete VST3 module, and aggregate Phase 2 ThreadSanitizer gates pass.
+- Closed Q-CONC-008 by pinning saturated GUI editor activity. An
+  unrepresentable open can no longer be followed by decrements that eventually
+  disable editor-only processing while an editor remains. Focused telemetry,
+  complete VST3 module, and aggregate Phase 2 ThreadSanitizer gates pass.
 
 ## Phase 2 Scope
 

@@ -778,3 +778,27 @@ part of the maintained aggregate Phase 2 ThreadSanitizer gate.
 | `scripts/check_quality_inventory.sh` | Passed: 814 files and 468,186 lines classified |
 | `zig fmt --check build.zig zig-vst3/src/funknown.zig zig-vst3/src/factory.zig zig-vst3/src/vst_plugin_compatibility.zig` | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-14: Saturated GUI Editor Activity
+
+Change commit: `e4b627a5`
+
+The GUI telemetry activity count rejected wraparound at `usize` maximum, but a
+close immediately decremented that saturated state. Opens accepted after
+saturation could not be represented, so the count could eventually reach zero
+while an editor remained. That would incorrectly disable editor-only analysis.
+
+Maximum activity is now a permanent active sentinel. The focused regression
+checks the sentinel directly, and an eight-thread stress test performs 160,000
+matched open-close pairs. The concurrent regression is part of the maintained
+Phase 2 ThreadSanitizer aggregate.
+
+| Check | Result |
+| --- | --- |
+| `zig test --cache-dir /private/tmp/zig-vst3-editor-activity-local --global-cache-dir /private/tmp/zig-vst3-editor-activity-global -Mroot=zig-vst3-plugin/src/gui_telemetry.zig` | Passed: 19/19 tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-editor-activity-tsan-local --global-cache-dir /private/tmp/zig-vst3-editor-activity-tsan-global test-phase2-thread-sanitizers --summary all` | Passed outside the restricted sandbox: 10/10 steps and 17/17 tests under ThreadSanitizer |
+| `zig build --cache-dir /private/tmp/zig-vst3-editor-activity-vst3-local --global-cache-dir /private/tmp/zig-vst3-editor-activity-vst3-global test-vst3-module --summary all` | Passed outside the restricted sandbox: 7/7 steps and 791/791 tests |
+| `scripts/check_quality_concurrency_inventory.sh` | Passed: 81 source files classified |
+| `scripts/check_quality_inventory.sh` | Passed: 814 files and 468,211 lines classified |
+| `zig fmt --check build.zig zig-vst3-plugin/src/gui_telemetry.zig` | Passed |
+| `git diff --check` | Passed |
