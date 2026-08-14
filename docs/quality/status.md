@@ -129,6 +129,13 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   recovery, decoded-importer, Resource Swap, and Fixed Rate control operations
   before blocking or state mutation. Focused resource, importer, owning-example,
   VST3 module, and resource TSan gates pass.
+- Added a checked concurrency record covering 81 source files. It maps
+  cross-thread ownership, publication, memory-order, teardown, and realtime
+  contracts, and the repository gate now rejects unclassified matching files.
+- Closed critical Q-CONC-007 by pinning saturated dynamic and static COM
+  reference counts. Saturation can no longer accept an unrepresentable
+  reference and then decrement toward premature destruction. Focused lifetime,
+  complete VST3 module, and aggregate Phase 2 ThreadSanitizer gates pass.
 
 ## Phase 2 Scope
 
@@ -143,7 +150,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Complete the cross-thread publication inventory and review every non-default
-atomic order against its stated happens-before relationship. Continue the
-realtime call-graph audit across remaining GUI, device, MIDI, HRTF, host, and
-teardown paths.
+Review every atomic operation against the publication contracts and record any
+exception or defect. Continue the realtime call-graph audit across remaining
+GUI, device, MIDI, HRTF, host, and teardown paths, then establish bounded-work
+and teardown-overlap evidence for every asynchronous family.

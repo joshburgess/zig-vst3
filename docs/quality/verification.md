@@ -730,3 +730,51 @@ surface. Teardown retains its explicit post-processing lifecycle precondition.
 | `zig build --cache-dir /private/tmp/zig-vst3-rt003-vst3-local --global-cache-dir /private/tmp/zig-vst3-rt003-vst3-global test-vst3-module --summary all` | Passed outside the restricted sandbox after the same cache denial: 7/7 steps and 788/788 tests |
 | `zig build --cache-dir /private/tmp/zig-vst3-rt003-tsan-local --global-cache-dir /private/tmp/zig-vst3-rt003-tsan-global test-resource-thread-sanitizer --summary all` | Passed: 3/3 steps and 58/58 tests under ThreadSanitizer |
 | `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,993 lines classified |
+
+## 2026-08-14: Checked Concurrency Inventory
+
+Change commit: `c53790f1`
+
+The Phase 2 inventory classifies every tracked source file selected by the
+repository's synchronization-primitive scan. It records publication and
+memory-order contracts, teardown order, the permitted realtime surface, and an
+exact appendix of 81 reviewed source paths. The repository gate fails when a
+matching path is missing or when the record retains a stale path.
+
+| Check | Result |
+| --- | --- |
+| `scripts/check_quality_concurrency_inventory.sh` | Passed: 81 source files classified |
+| `scripts/test_quality_concurrency_inventory_runner.sh` | Passed: baseline, missing-path rejection, and stale-path rejection |
+| `bash -n scripts/check_quality_concurrency_inventory.sh scripts/test_quality_concurrency_inventory_runner.sh` | Passed |
+| `zig fmt --check build.zig` | Passed |
+| `scripts/check_quality_inventory.sh` | Passed at the inventory commit: 814 files and 468,112 lines classified |
+| `git diff --check` | Passed |
+
+## 2026-08-14: Saturated COM Reference Counts
+
+Change commit: `1f684081`
+
+ThreadSanitizer coverage commit: `294ea628`
+
+The shared dynamic reference-count increment saturated at `u32` maximum, but
+the release path could decrement that sentinel. Once another `addRef` had been
+accepted without a representable increment, the stored count no longer
+covered every live holder. Enough later releases could therefore reach zero
+while a holder remained. The static singleton release helpers shared the
+unstable sentinel behavior, although those objects do not own dynamic storage.
+
+Maximum count is now a permanent pinned state. Dynamic objects deliberately
+leak after saturation instead of risking premature destruction. Tests exercise
+the helper state and the complete `release` path, including a destroy callback
+that must remain uncalled. The two concurrent refcount stress tests are also
+part of the maintained aggregate Phase 2 ThreadSanitizer gate.
+
+| Check | Result |
+| --- | --- |
+| `zig test --cache-dir /private/tmp/zig-vst3-refcount-funknown-local --global-cache-dir /private/tmp/zig-vst3-refcount-funknown-global -Mroot=zig-vst3/src/funknown.zig` | Passed: 16/16 tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-refcount-vst3-local --global-cache-dir /private/tmp/zig-vst3-refcount-vst3-global test-vst3-module --summary all` | Passed outside the restricted sandbox after its `translate-c` child was denied cache access: 7/7 steps and 791/791 tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-refcount-phase2-tsan-local --global-cache-dir /private/tmp/zig-vst3-refcount-phase2-tsan-global test-phase2-thread-sanitizers --summary all` | Passed outside the restricted sandbox after the same cache denial: 10/10 steps and 16/16 tests under ThreadSanitizer |
+| `scripts/check_quality_concurrency_inventory.sh` | Passed: 81 source files classified |
+| `scripts/check_quality_inventory.sh` | Passed: 814 files and 468,186 lines classified |
+| `zig fmt --check build.zig zig-vst3/src/funknown.zig zig-vst3/src/factory.zig zig-vst3/src/vst_plugin_compatibility.zig` | Passed |
+| `git diff --check` | Passed |
