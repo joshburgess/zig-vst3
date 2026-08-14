@@ -2395,6 +2395,32 @@ pub fn build(b: *std.Build) void {
         "Run CoreMIDI backend tests and non-macOS compile checks",
     );
     core_midi_test_step.dependOn(&run_core_midi_tests.step);
+    const core_midi_thread_sanitizer_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/core_midi.zig",
+        ),
+        .target = target,
+        .optimize = .Debug,
+        .sanitize_thread = true,
+    });
+    addCoreMidiBackend(
+        b,
+        core_midi_thread_sanitizer_module,
+        target,
+    );
+    core_midi_thread_sanitizer_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const core_midi_thread_sanitizer_tests = b.addTest(.{
+        .root_module = core_midi_thread_sanitizer_module,
+        .filters = &.{"input stop drains"},
+    });
+    core_midi_test_step.dependOn(
+        &b.addRunArtifact(
+            core_midi_thread_sanitizer_tests,
+        ).step,
+    );
     const core_midi_cross_build_step = b.step(
         "test-coremidi-builds",
         "Compile the optional CoreMIDI module for non-macOS targets",

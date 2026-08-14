@@ -70,6 +70,12 @@ pub fn Backend(comptime Api: type) type {
         input_callback: ?standalone.Midi1InputCallback = null,
         input_running: std.atomic.Value(bool) =
             std.atomic.Value(bool).init(false),
+        active_input_callbacks: std.atomic.Value(u32) =
+            std.atomic.Value(u32).init(0),
+        topology_closing: std.atomic.Value(bool) =
+            std.atomic.Value(bool).init(true),
+        active_topology_callbacks: std.atomic.Value(u32) =
+            std.atomic.Value(u32).init(0),
         topology_generation: std.atomic.Value(u64) =
             std.atomic.Value(u64).init(0),
         received_count: std.atomic.Value(usize) =
@@ -96,7 +102,12 @@ pub fn Backend(comptime Api: type) type {
             const next_timebase = try Api.timebase();
             if (!next_timebase.valid())
                 return error.InvalidCoreMidiTimebase;
+            self.topology_closing.store(false, .release);
             errdefer Api.reset(&self.api_state);
+            errdefer {
+                self.topology_closing.store(true, .release);
+                self.drainCallbacks(&self.active_topology_callbacks);
+            }
             const next_client = try Api.createClient(
                 &self.api_state,
                 client_name,
@@ -126,12 +137,14 @@ pub fn Backend(comptime Api: type) type {
 
         pub fn close(self: *Self) void {
             self.stopInput();
+            self.topology_closing.store(true, .release);
             if (self.output_port) |port|
                 Api.disposePort(port);
             if (self.input_port) |port|
                 Api.disposePort(port);
             if (self.client) |client|
                 Api.disposeClient(client);
+            self.drainCallbacks(&self.active_topology_callbacks);
             self.client = null;
             self.input_port = null;
             self.output_port = null;
@@ -293,10 +306,15 @@ pub fn Backend(comptime Api: type) type {
         pub fn stopInput(self: *Self) void {
             if (!self.input_running.swap(false, .acq_rel))
                 return;
-            const port = self.input_port orelse return;
-            const endpoint = self.selected_input orelse return;
-            Api.disconnectSource(port, endpoint) catch
-                incrementSaturating(&self.disconnect_failure_count);
+            if (self.input_port) |port| {
+                if (self.selected_input) |endpoint| {
+                    Api.disconnectSource(port, endpoint) catch
+                        incrementSaturating(
+                            &self.disconnect_failure_count,
+                        );
+                }
+            }
+            self.drainCallbacks(&self.active_input_callbacks);
         }
 
         pub fn send(
@@ -409,7 +427,8 @@ pub fn Backend(comptime Api: type) type {
             length: usize,
         ) callconv(.c) void {
             const self = callbackContext(optional_context) orelse return;
-            if (!self.input_running.load(.acquire)) return;
+            if (!self.admitInputCallback()) return;
+            defer releaseCallback(&self.active_input_callbacks);
             const callback = self.input_callback orelse return;
             if (bytes_pointer == null or length == 0) {
                 incrementSaturating(&self.malformed_count);
@@ -436,7 +455,29 @@ pub fn Backend(comptime Api: type) type {
             optional_context: ?*anyopaque,
         ) callconv(.c) void {
             const self = callbackContext(optional_context) orelse return;
+            if (!admitCallback(
+                &self.topology_closing,
+                &self.active_topology_callbacks,
+            )) return;
+            defer releaseCallback(&self.active_topology_callbacks);
             incrementGeneration(&self.topology_generation);
+        }
+
+        fn admitInputCallback(self: *Self) bool {
+            if (!self.input_running.load(.acquire)) return false;
+            if (!incrementCallbackCount(&self.active_input_callbacks))
+                return false;
+            if (self.input_running.load(.acquire)) return true;
+            releaseCallback(&self.active_input_callbacks);
+            return false;
+        }
+
+        fn drainCallbacks(
+            _: *Self,
+            active_callbacks: *std.atomic.Value(u32),
+        ) void {
+            while (active_callbacks.load(.acquire) != 0)
+                std.Thread.yield() catch {};
         }
 
         fn callbackContext(
@@ -448,6 +489,49 @@ pub fn Backend(comptime Api: type) type {
             return @ptrCast(@alignCast(context));
         }
     };
+}
+
+fn admitCallback(
+    closing: *std.atomic.Value(bool),
+    active_callbacks: *std.atomic.Value(u32),
+) bool {
+    if (closing.load(.acquire) or
+        !incrementCallbackCount(active_callbacks))
+        return false;
+    if (!closing.load(.acquire)) return true;
+    releaseCallback(active_callbacks);
+    return false;
+}
+
+fn incrementCallbackCount(
+    active_callbacks: *std.atomic.Value(u32),
+) bool {
+    var current = active_callbacks.load(.acquire);
+    while (current != std.math.maxInt(u32)) {
+        if (active_callbacks.cmpxchgWeak(
+            current,
+            current + 1,
+            .acq_rel,
+            .acquire,
+        )) |observed| {
+            current = observed;
+        } else return true;
+    }
+    return false;
+}
+
+fn releaseCallback(active_callbacks: *std.atomic.Value(u32)) void {
+    var current = active_callbacks.load(.acquire);
+    while (current != 0) {
+        if (active_callbacks.cmpxchgWeak(
+            current,
+            current - 1,
+            .release,
+            .acquire,
+        )) |observed| {
+            current = observed;
+        } else return;
+    }
 }
 
 pub const CoreMidiBackend = Backend(CoreMidiSystemApi);
@@ -1325,6 +1409,72 @@ test "CoreMIDI backend enumerates selects schedules and receives" {
     try std.testing.expectEqual(
         @as(?u32, null),
         TestApi.connected_endpoint,
+    );
+}
+
+test "CoreMIDI input stop drains an admitted receive callback" {
+    const synchronization = struct {
+        var started = std.atomic.Value(bool).init(false);
+        var release = std.atomic.Value(bool).init(false);
+
+        fn receive(
+            _: *anyopaque,
+            _: standalone.TimestampedMidi1Packet,
+        ) void {
+            started.store(true, .release);
+            while (!release.load(.acquire))
+                std.Thread.yield() catch {};
+        }
+    };
+    const TestBackend = Backend(TestApi);
+    const StopContext = struct {
+        backend: *TestBackend,
+        finished: std.atomic.Value(bool) =
+            std.atomic.Value(bool).init(false),
+
+        fn run(context: *@This()) void {
+            context.backend.stopInput();
+            context.finished.store(true, .release);
+        }
+    };
+
+    TestApi.resetTestState();
+    synchronization.started.store(false, .release);
+    synchronization.release.store(false, .release);
+    var backend = TestBackend{};
+    try backend.open("Drain test");
+    defer backend.close();
+    const input_identifier = try endpointIdentifier(TestApi, 11);
+    try backend.selectInput(input_identifier);
+    var callback_context: u8 = 0;
+    try backend.startInput(.{
+        .context = &callback_context,
+        .receive = synchronization.receive,
+    });
+
+    const emit_thread = try std.Thread.spawn(.{}, struct {
+        fn run() void {
+            TestApi.emit(24, &.{ 0x90, 60, 100 });
+        }
+    }.run, .{});
+    while (!synchronization.started.load(.acquire))
+        std.Thread.yield() catch {};
+
+    var stop_context = StopContext{ .backend = &backend };
+    const stop_thread = try std.Thread.spawn(
+        .{},
+        StopContext.run,
+        .{&stop_context},
+    );
+    for (0..1000) |_| std.Thread.yield() catch {};
+    try std.testing.expect(!stop_context.finished.load(.acquire));
+    synchronization.release.store(true, .release);
+    emit_thread.join();
+    stop_thread.join();
+    try std.testing.expect(stop_context.finished.load(.acquire));
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        backend.active_input_callbacks.load(.acquire),
     );
 }
 
