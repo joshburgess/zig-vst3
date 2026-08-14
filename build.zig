@@ -3344,6 +3344,26 @@ pub fn build(b: *std.Build) void {
     });
     zig_vst3_plugin_tests.root_module.addImport("zig-vst3", zig_vst3);
     zig_vst3_plugin_tests.root_module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
+    const lv2_ui_adapter_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3-plugin/src/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"LV2 UI adapter"},
+    });
+    lv2_ui_adapter_tests.root_module.addImport("zig-vst3", zig_vst3);
+    lv2_ui_adapter_tests.root_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const lv2_ui_adapter_test_step = b.step(
+        "test-lv2-ui-adapter",
+        "Run focused toolkit-neutral LV2 UI adapter tests",
+    );
+    lv2_ui_adapter_test_step.dependOn(
+        &b.addRunArtifact(lv2_ui_adapter_tests).step,
+    );
 
     const realtime_source_audit = b.addTest(.{
         .root_module = b.createModule(.{
@@ -4019,6 +4039,7 @@ pub fn build(b: *std.Build) void {
         vst3_tests.step.dependOn(vstgui_native_test_step);
         zig_vst3_plugin_core_tests.step.dependOn(vstgui_native_test_step);
         zig_vst3_plugin_tests.step.dependOn(vstgui_native_test_step);
+        lv2_ui_adapter_tests.step.dependOn(vstgui_native_test_step);
         realtime_source_audit.step.dependOn(vstgui_native_test_step);
         gui_examples.step.dependOn(vstgui_native_test_step);
         for (example_plugins) |plugin| plugin.plugin_tests.step.dependOn(vstgui_native_test_step);

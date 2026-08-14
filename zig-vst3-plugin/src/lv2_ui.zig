@@ -2846,6 +2846,10 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
         gui.HostSubscriptionStatus.accepted,
         Backend.destroy_unsubscribe_status.?,
     );
+    try std.testing.expectEqual(@as(usize, 1), host.subscriptions);
+    try std.testing.expectEqual(@as(usize, 1), host.unsubscriptions);
+    host.subscriptions = 0;
+    host.unsubscriptions = 0;
     var failing = std.testing.FailingAllocator.init(
         std.testing.allocator,
         .{ .fail_index = 0 },
