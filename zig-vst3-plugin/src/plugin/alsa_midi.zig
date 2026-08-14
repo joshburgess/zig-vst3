@@ -68,6 +68,11 @@ pub fn Backend(comptime Api: type) type {
                 return error.InvalidAlsaMidiClientName;
             try requireAvailable(Api);
             self.opened = true;
+            errdefer {
+                self.opened = false;
+                self.topology_generation = 0;
+                self.topology_fingerprint = 0;
+            }
             _ = try self.refreshTopology();
         }
 
@@ -977,6 +982,7 @@ const MockApi = struct {
     var receive_function: ?ReceiveBytes = null;
     var fail_input = false;
     var fail_output = false;
+    var fail_device_count = false;
     var reject_output = false;
     var output_close_count: usize = 0;
     var sent: [3]u8 = @splat(0);
@@ -991,6 +997,7 @@ const MockApi = struct {
         receive_function = null;
         fail_input = false;
         fail_output = false;
+        fail_device_count = false;
         reject_output = false;
         output_close_count = 0;
         sent_length = 0;
@@ -1013,6 +1020,7 @@ const MockApi = struct {
     }
 
     fn deviceCount(direction: Direction) !usize {
+        if (fail_device_count) return error.MockDeviceQueryFailed;
         return values(direction).len;
     }
 
@@ -1357,4 +1365,21 @@ test "ALSA MIDI topology polling and failed input start are retryable" {
     MockApi.fail_input = false;
     try backend.startInput(callback);
     backend.stopInput();
+}
+
+test "ALSA MIDI failed open restores the closed state" {
+    MockApi.reset();
+    const TestBackend = Backend(MockApi);
+    var backend = TestBackend{};
+    MockApi.fail_device_count = true;
+    try std.testing.expectError(
+        error.MockDeviceQueryFailed,
+        backend.open("test"),
+    );
+    try std.testing.expect(!backend.isOpen());
+    try std.testing.expectEqual(@as(u64, 0), backend.currentTopologyGeneration());
+    MockApi.fail_device_count = false;
+    try backend.open("test");
+    defer backend.close();
+    try std.testing.expect(backend.isOpen());
 }

@@ -1086,6 +1086,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addCoreAudioBackend(
         b,
@@ -1159,6 +1160,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addWasapiBackend(
         b,
@@ -1236,6 +1238,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addAlsaBackend(b, zig_vst3_alsa_test_module, target);
     zig_vst3_alsa_test_module.addImport(
@@ -1317,6 +1320,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addPipeWireBackend(b, zig_vst3_pipewire_test_module, target);
     zig_vst3_pipewire_test_module.addImport(
@@ -1413,6 +1417,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addAlsaMidiBackend(
         b,
@@ -1533,6 +1538,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     zig_vst3_alsa_ump_test_module.addImport(
         "zig-vst3-native-ump",
@@ -1641,6 +1647,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addWinMidiBackend(
         b,
@@ -1733,6 +1740,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addWinUmpBackend(
         b,
@@ -1832,6 +1840,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addWinWindowBackend(
         b,
@@ -1906,6 +1915,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addCocoaWindowBackend(
         b,
@@ -1988,6 +1998,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addX11WindowBackend(
         b,
@@ -2098,6 +2109,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addWaylandWindowBackend(
         b,
@@ -2313,6 +2325,7 @@ pub fn build(b: *std.Build) void {
         ),
         .target = target,
         .optimize = optimize,
+        .sanitize_c = .full,
     });
     addCoreMidiBackend(
         b,

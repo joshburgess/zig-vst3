@@ -303,6 +303,7 @@ typedef struct {
     int32_t (*thread_loop_timed_wait)(zv3_pw_thread_loop *loop, int32_t seconds);
     void (*thread_loop_signal)(zv3_pw_thread_loop *loop, bool wait_for_accept);
     zv3_pw_properties *(*properties_new_string)(const char *args);
+    void (*properties_free)(zv3_pw_properties *properties);
     int32_t (*properties_set)(
         zv3_pw_properties *properties,
         const char *key,
@@ -408,6 +409,7 @@ static int32_t zv3_load_api(zv3_pipewire_api *api) {
         ZV3_LOAD(api, thread_loop_timed_wait, "pw_thread_loop_timed_wait") != 0 ||
         ZV3_LOAD(api, thread_loop_signal, "pw_thread_loop_signal") != 0 ||
         ZV3_LOAD(api, properties_new_string, "pw_properties_new_string") != 0 ||
+        ZV3_LOAD(api, properties_free, "pw_properties_free") != 0 ||
         ZV3_LOAD(api, properties_set, "pw_properties_set") != 0 ||
         ZV3_LOAD(api, stream_new_simple, "pw_stream_new_simple") != 0 ||
         ZV3_LOAD(api, stream_destroy, "pw_stream_destroy") != 0 ||
@@ -1320,8 +1322,11 @@ static int32_t zv3_start_internal(
         const zv3_spa_pod *params[] = {
             (const zv3_spa_pod *)&format
         };
-        if (zv3_set_stream_properties(&session->api, properties, true) != 0)
+        if (zv3_set_stream_properties(&session->api, properties, true) != 0) {
+            if (properties != NULL)
+                session->api.properties_free(properties);
             goto error;
+        }
         if (
             input_target_length != 0 &&
             session->api.properties_set(
@@ -1329,8 +1334,10 @@ static int32_t zv3_start_internal(
                 "target.object",
                 input_target_text
             ) < 0
-        )
+        ) {
+            session->api.properties_free(properties);
             goto error;
+        }
         session->capture_stream = session->api.stream_new_simple(
             loop,
             "zig-vst3 capture",
@@ -1364,8 +1371,11 @@ static int32_t zv3_start_internal(
         const zv3_spa_pod *params[] = {
             (const zv3_spa_pod *)&format
         };
-        if (zv3_set_stream_properties(&session->api, properties, false) != 0)
+        if (zv3_set_stream_properties(&session->api, properties, false) != 0) {
+            if (properties != NULL)
+                session->api.properties_free(properties);
             goto error;
+        }
         if (
             output_target_length != 0 &&
             session->api.properties_set(
@@ -1373,8 +1383,10 @@ static int32_t zv3_start_internal(
                 "target.object",
                 output_target_text
             ) < 0
-        )
+        ) {
+            session->api.properties_free(properties);
             goto error;
+        }
         session->playback_stream = session->api.stream_new_simple(
             loop,
             "zig-vst3 playback",
