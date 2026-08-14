@@ -128,7 +128,8 @@ pub fn decrementRefCount(
 ) uint32 {
     while (true) {
         const previous = ref_count.load(.monotonic);
-        if (previous == 0) return std.math.maxInt(uint32);
+        if (previous == 0 or previous == std.math.maxInt(uint32))
+            return std.math.maxInt(uint32);
 
         const next = previous - 1;
         if (ref_count.cmpxchgWeak(previous, next, .release, .monotonic)) |_| {
@@ -273,6 +274,14 @@ test "atomic refcount contains overflow and underflow states" {
         std.math.maxInt(uint32),
         saturated.load(.monotonic),
     );
+    try std.testing.expectEqual(
+        std.math.maxInt(uint32),
+        decrementRefCount(&saturated, "Test"),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(uint32),
+        saturated.load(.monotonic),
+    );
 
     var empty = std.atomic.Value(uint32).init(0);
     try std.testing.expectEqual(
@@ -356,6 +365,24 @@ test "release calls destroy when refcount reaches zero" {
 
     try std.testing.expectEqual(@as(uint32, 0), unknown.vtable.release(unknown));
     try std.testing.expectEqual(@as(uint32, 1), object.destroy_count);
+}
+
+test "release does not destroy a saturated object" {
+    var object = TestObject{
+        .unknown = Header.init(&test_vtable, testDestroy),
+    };
+    const unknown = object.asUnknown();
+    unknown.ref_count.store(std.math.maxInt(uint32), .monotonic);
+
+    try std.testing.expectEqual(
+        std.math.maxInt(uint32),
+        unknown.vtable.release(unknown),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(uint32),
+        object.refCount(),
+    );
+    try std.testing.expectEqual(@as(uint32, 0), object.destroy_count);
 }
 
 test "atomic refcount tolerates concurrent add and release pairs" {

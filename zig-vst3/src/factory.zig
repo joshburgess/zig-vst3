@@ -260,6 +260,7 @@ fn releaseStaticRef(ref_count: *std.atomic.Value(types.uint32)) types.uint32 {
     while (true) {
         const previous = ref_count.load(.monotonic);
         if (previous <= 1) return 1;
+        if (previous == std.math.maxInt(types.uint32)) return previous;
 
         const next = previous - 1;
         if (ref_count.cmpxchgWeak(previous, next, .release, .monotonic)) |_| {
@@ -551,6 +552,21 @@ test "static factory release keeps singleton alive" {
 
     try std.testing.expectEqual(@as(types.uint32, 1), factory.vtable.release(factory));
     try std.testing.expectEqual(@as(types.uint32, 1), factory.vtable.release(factory));
+}
+
+test "static factory release pins a saturated reference count" {
+    var ref_count = std.atomic.Value(types.uint32).init(
+        std.math.maxInt(types.uint32),
+    );
+
+    try std.testing.expectEqual(
+        std.math.maxInt(types.uint32),
+        releaseStaticRef(&ref_count),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(types.uint32),
+        ref_count.load(.monotonic),
+    );
 }
 
 test "static factory 3 exposes factory2 and factory3 metadata" {
