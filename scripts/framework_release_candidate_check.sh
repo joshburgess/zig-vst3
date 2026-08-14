@@ -2,9 +2,9 @@
 set -eu
 
 expected_zig=0.16.0
-expected_package_version=0.3.0-rc.1
-expected_raw_version=0.3.0-rc.1
-expected_framework_version=0.3.0-rc.1
+expected_package_version=0.3.0
+expected_raw_version=0.3.0
+expected_framework_version=0.3.0
 
 zig_version=$(zig version)
 if [ "$zig_version" != "$expected_zig" ]; then

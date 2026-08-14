@@ -157,10 +157,32 @@ scripts/test_published_release.sh \
   https://github.com/joshburgess/zig-vst3/archive/refs/tags/zig-vst3-0.3.0-rc.1.tar.gz
 ```
 
+When rechecking RC1 from a stable-version worktree, set
+`ZIG_VST3_EXPECTED_VERSION=0.3.0-rc.1` for this command.
+
 Record the archive URL and SHA-256 printed by the script. A later verification
 can pass that checksum as the second argument. Keep RC1 available for incidental
 feedback, but do not wait for external reports. Use the published-artifact smoke
 result and the existing candidate evidence for the stable-release decision.
+
+## Stable 0.3.0 Promotion
+
+Stable `zig-vst3-0.3.0` retains the exact RC1 compatibility baseline and changes
+only the shared release version. Run the complete framework candidate gate and
+require all 19 public CI jobs at the exact stable candidate commit. Record that
+commit before requesting authorization for the stable tag.
+
+After stable tag authorization, create an annotated `zig-vst3-0.3.0` tag at the
+recorded stable candidate commit and push only that tag. Then verify its remote
+dereference and run:
+
+```sh
+scripts/test_published_release.sh \
+  https://github.com/joshburgess/zig-vst3/archive/refs/tags/zig-vst3-0.3.0.tar.gz
+```
+
+Record the public archive SHA-256 and both consumer-suite results before closing
+the stable release milestone.
 
 After the raw release checks and required host matrix rows are in place for a
 raw-only maintenance release:

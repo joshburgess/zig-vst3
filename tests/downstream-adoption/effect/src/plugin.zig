@@ -117,7 +117,7 @@ test "downstream effect runs lifecycle, automation, resources, and state migrati
 }
 
 test "downstream effect class identifiers and installed imports remain stable" {
-    try std.testing.expectEqualStrings("0.3.0-rc.1", plug.version);
+    try std.testing.expectEqualStrings("0.3.0", plug.version);
     try std.testing.expectEqual(component_cid, vst3.tuid.inlineUid(0x57B0E4A1, 0xA130416D, 0xBB84B987, 0x33C839A2));
     try std.testing.expectEqual(controller_cid, vst3.tuid.inlineUid(0x8CB9E501, 0x11994947, 0xA3C6E453, 0x5BA0CF82));
     try std.testing.expect(@hasDecl(vst.ivstaudioprocessor, "IAudioProcessor"));

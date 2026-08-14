@@ -1,5 +1,17 @@
 # Changelog
 
+## zig-vst3-0.3.0 - 2026-08-14
+
+### Release Notes
+
+- This is the first stable `0.3.x` release of the higher-level plugin framework. It preserves the compatibility-ready declarations frozen at `zig-vst3-0.3.0-rc.1` under the documented framework compatibility policy.
+- The package surface, toolchain pins, native bundle metadata, and compatibility classifications are unchanged from RC1. LV2, AUv2, ARA product APIs, VSTGUI, standalone windows, split-device correction, and optional platform modules remain experimental.
+- RC1 passed its complete local gate, all 19 public CI jobs, isolated downstream adoption and upgrade fixtures, and the public-archive clean-install smoke gate. Stable promotion uses that evidence without waiting for external reports.
+
+### Changed
+
+- Promoted the shared package, raw API, and framework version from `0.3.0-rc.1` to `0.3.0` without changing the compatibility-ready API boundary.
+
 ## zig-vst3-0.3.0-rc.1 - 2026-08-13
 
 ### Release Notes

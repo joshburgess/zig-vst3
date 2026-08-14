@@ -69,7 +69,7 @@ pub const pluginterfaces = struct {
     pub const vst = @import("pluginterfaces/vst/root.zig");
 };
 pub const tuid = @import("tuid.zig");
-pub const version = "0.3.0-rc.1";
+pub const version = "0.3.0";
 pub const vst_capability_support = @import("vst_capability_support.zig");
 pub const vstgui = @import("vstgui.zig");
 pub const vstgui_lv2_backend =
@@ -121,7 +121,7 @@ pub fn targetName() []const u8 {
 }
 
 test "zig-vst3 module exposes the package version" {
-    try std.testing.expectEqualStrings("0.3.0-rc.1", version);
+    try std.testing.expectEqualStrings("0.3.0", version);
 }
 
 test {

@@ -102,7 +102,7 @@ test "downstream instrument handles events, automation, state, and resources" {
 }
 
 test "downstream instrument class identifiers and package version remain stable" {
-    try std.testing.expectEqualStrings("0.3.0-rc.1", plug.version);
+    try std.testing.expectEqualStrings("0.3.0", plug.version);
     try std.testing.expectEqual(component_cid, vst3.tuid.inlineUid(0x01C857D2, 0x1E8B4146, 0x99F55EA8, 0xC71F9531));
     try std.testing.expectEqual(controller_cid, vst3.tuid.inlineUid(0x2970CF42, 0xA4F34A7B, 0xBF5BBD40, 0x2A87A56F));
 }

@@ -8,7 +8,7 @@ fi
 
 archive_url=$1
 expected_sha256=${2:-}
-expected_version=0.3.0-rc.1
+expected_version=${ZIG_VST3_EXPECTED_VERSION:-0.3.0}
 root=$(mktemp -d "${TMPDIR:-/tmp}/zig-vst3-published-release.XXXXXX")
 archive=$root/zig-vst3.tar.gz
 unpacked=$root/unpacked

@@ -1,6 +1,6 @@
 # Stability Policy
 
-This project is pre-1.0. The raw VST3 API has carried a preview compatibility policy since `zig-vst3-0.1.0`. `zig-vst3-0.3.0-rc.1` adds the first release-candidate compatibility boundary for the higher-level plugin framework.
+This project is pre-1.0. The raw VST3 API has carried a preview compatibility policy since `zig-vst3-0.1.0`. `zig-vst3-0.3.0-rc.1` established the first release-candidate compatibility boundary for the higher-level plugin framework, and stable `zig-vst3-0.3.0` retains it.
 
 Host callback boundaries treat raw pointer arguments as untrusted. Public callback declarations use nullable C pointer types for host-provided buffers, structures, identifiers, events, scalar outputs, and GUI telemetry storage. Implementations reject null before dereference, output mutation, retained-reference changes, or configuration-hook dispatch. Internal hooks continue to receive typed non-null pointers after boundary validation.
 

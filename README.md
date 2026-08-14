@@ -9,7 +9,7 @@ This repository has two packages:
 - `zig-vst3`: raw Zig bindings and helper objects for the VST3 COM API.
 - `zig-vst3-plugin`: a higher-level framework for writing plugins with reflected parameters, state, automation, events, and reusable VST3 shells.
 
-The project builds and validates example VST3 bundles for effects, analyzers, event processors, and a MIDI-driven synth. The current candidate is `zig-vst3-0.3.0-rc.1`, the first planned tag with a documented compatibility boundary for the higher-level framework. Raw ABI, framework core, and example bundles are covered by unit tests, ABI checks, Steinberg validator runs, and CI on Linux, macOS, and Windows. Integrations that still need external-host or physical-device evidence remain experimental.
+The project builds and validates example VST3 bundles for effects, analyzers, event processors, and a MIDI-driven synth. The current stable version is `zig-vst3-0.3.0`, the first release with a documented compatibility boundary for the higher-level framework. Raw ABI, framework core, and example bundles are covered by unit tests, ABI checks, Steinberg validator runs, and CI on Linux, macOS, and Windows. Integrations that still need external-host or physical-device evidence remain experimental.
 
 ## Which Package Should I Use?
 
@@ -294,7 +294,7 @@ The public CI workflow currently runs:
 
 ## Current Limits
 
-- The framework is pre-1.0. The prepared `zig-vst3-0.3.0-rc.1` tag preserves compatibility-ready declarations through the `0.3.x` line under the documented framework policy once exact-commit public CI passes and the tag is created. Experimental integrations may still change before promotion.
+- The framework is pre-1.0. Stable `zig-vst3-0.3.0` preserves compatibility-ready declarations through the `0.3.x` line under the documented framework policy. Experimental integrations may still change before promotion.
 - Manual host coverage is currently macOS REAPER-heavy. MIDI-heavy and analyzer/instrument host smoke rows are still being filled in.
 - CI validates plugins headlessly with the Steinberg validator and pluginval, but real-host coverage in actual DAWs is still limited.
 - The reference editor can build the pinned VSTGUI adapter on native macOS, Windows, and Linux systems. Other toolkits remain optional adapters.

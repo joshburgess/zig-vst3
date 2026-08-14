@@ -1,6 +1,6 @@
 .{
     .name = .zig_vst3,
-    .version = "0.3.0-rc.1",
+    .version = "0.3.0",
     .fingerprint = 0x54ec852762a6511,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},

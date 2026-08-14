@@ -21,7 +21,7 @@ const CurrentDefinition = struct {
 };
 
 test "pre-candidate source paths have documented RC1 replacements" {
-    try std.testing.expectEqualStrings("0.3.0-rc.1", plug.version);
+    try std.testing.expectEqualStrings("0.3.0", plug.version);
     try std.testing.expect(@hasDecl(core.lv2.metadata, "Metadata"));
     try std.testing.expect(!@hasDecl(plug, "backendVersion"));
     try std.testing.expect(!@hasDecl(core, "lv2_metadata"));
