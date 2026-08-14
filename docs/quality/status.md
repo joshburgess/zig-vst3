@@ -22,6 +22,9 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   pinned regeneration or integrity mechanisms.
 - Ran the complete Debug graph, repository hygiene, source inventory fixture,
   formatting, and diff checks successfully.
+- Recorded Q04 component, controller, and runtime-adapter ownership contracts.
+- Closed Q-MEM-001 by making owning allocator provenance injectable and testing
+  outer-object and nested processor allocation failures.
 
 ## Phase 1 Scope
 
