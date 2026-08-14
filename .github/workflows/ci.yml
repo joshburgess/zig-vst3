@@ -32,6 +32,10 @@ jobs:
         run: |
           scripts/test_production_termination_path_check.sh
           scripts/check_production_termination_paths.sh
+      - name: Check quality inventory
+        run: |
+          scripts/test_quality_inventory_runner.sh
+          scripts/check_quality_inventory.sh
       - name: Check prose punctuation
         run: |
           em_dash="$(printf '\342\200\224')"
