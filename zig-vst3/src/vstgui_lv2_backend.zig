@@ -220,6 +220,8 @@ pub fn BackendWithApi(
             gesture: ?core.gui.Gesture = null,
             attached: bool = false,
             peaks: [peak_source_count]f64 = @splat(0.0),
+            peak_subscriptions: [peak_source_count]bool =
+                @splat(false),
         };
 
         pub fn create(
@@ -291,12 +293,16 @@ pub fn BackendWithApi(
             state.* = .{
                 .context = context,
             };
-            inline for (description.peak_sources) |source| {
-                _ = context.subscribeHostPeak(.{
+            errdefer unsubscribeHostPeaks(state);
+            inline for (description.peak_sources, 0..) |source, index| {
+                const subscription = core.gui.HostPeakSubscription{
                     .port_symbol = source.port_symbol,
                     .source_id = source.source_id,
                     .delivery = source.delivery,
-                }) catch return error.Rejected;
+                };
+                const status = context.subscribeHostPeak(subscription) catch
+                    return error.Rejected;
+                state.peak_subscriptions[index] = status == .accepted;
             }
             const native_editor = Api.create(
                 &descriptions,
@@ -459,8 +465,22 @@ pub fn BackendWithApi(
                 if (editor) |value| Api.close(value);
             }
             finishGesture(state);
+            unsubscribeHostPeaks(state);
             if (editor) |value| Api.destroy(value);
             std.heap.page_allocator.destroy(state);
+        }
+
+        fn unsubscribeHostPeaks(state: *State) void {
+            inline for (description.peak_sources, 0..) |source, index| {
+                if (state.peak_subscriptions[index]) {
+                    _ = state.context.unsubscribeHostPeak(.{
+                        .port_symbol = source.port_symbol,
+                        .source_id = source.source_id,
+                        .delivery = source.delivery,
+                    }) catch {};
+                    state.peak_subscriptions[index] = false;
+                }
+            }
         }
 
         const adapter_vtable = core.gui.Adapter.VTable{
@@ -683,6 +703,7 @@ const TestApi = struct {
     var meter_count: usize = 0;
     var meter_callbacks: MeterCallbacks = undefined;
     var description_valid = false;
+    var fail_create = false;
     var fail_open = false;
     var widget_available = true;
     var last_resize: core.gui.Size = .{
@@ -707,6 +728,7 @@ const TestApi = struct {
         meter_count = 0;
         meter_callbacks = undefined;
         description_valid = false;
+        fail_create = false;
         fail_open = false;
         widget_available = true;
         last_resize = .{ .width = 0, .height = 0 };
@@ -740,7 +762,7 @@ const TestApi = struct {
                 std.mem.span(descriptions[1].info.title),
                 "Bypass",
             );
-        return @ptrFromInt(0x1000);
+        return if (fail_create) null else @ptrFromInt(0x1000);
     }
 
     fn open(
@@ -815,6 +837,7 @@ const TestContext = struct {
     menu_count: usize = 0,
     resize_count: usize = 0,
     peak_subscription_count: usize = 0,
+    peak_unsubscription_count: usize = 0,
     peak_subscription_source: u32 = 0,
     peak_subscription_delivery: core.gui.HostPeakDelivery = .dynamic,
     last_resize: core.gui.Size = .{
@@ -949,6 +972,19 @@ const TestContext = struct {
         return .accepted;
     }
 
+    fn unsubscribeHostPeak(
+        raw: *anyopaque,
+        subscription: core.gui.HostPeakSubscription,
+    ) core.gui.HostSubscriptionStatus {
+        const self = from(raw);
+        if (!std.mem.eql(u8, subscription.port_symbol, "output"))
+            return .rejected;
+        self.peak_unsubscription_count += 1;
+        self.peak_subscription_source = subscription.source_id;
+        self.peak_subscription_delivery = subscription.delivery;
+        return .accepted;
+    }
+
     const vtable = core.gui.Context.VTable{
         .begin_edit = begin,
         .perform_edit = perform,
@@ -961,6 +997,7 @@ const TestContext = struct {
         .request_repaint = repaint,
         .open_context_menu = menu,
         .subscribe_host_peak = subscribeHostPeak,
+        .unsubscribe_host_peak = unsubscribeHostPeak,
     };
 };
 
@@ -996,7 +1033,6 @@ test "VSTGUI LV2 backend owns native lifecycle and host callbacks" {
     TestApi.reset();
     var context_state = TestContext{};
     var editor = try TestBackend.create(context_state.context());
-    defer editor.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), TestApi.create_count);
     try std.testing.expect(TestApi.description_valid);
@@ -1162,5 +1198,41 @@ test "VSTGUI LV2 backend owns native lifecycle and host callbacks" {
     try std.testing.expectEqual(@as(usize, 2), TestApi.close_count);
     try std.testing.expect(
         TestBackend.widget(editor.adapter) == null,
+    );
+    editor.deinit();
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        context_state.peak_unsubscription_count,
+    );
+    try std.testing.expectEqual(@as(usize, 1), TestApi.destroy_count);
+}
+
+test "VSTGUI LV2 backend rolls back host peak subscriptions" {
+    const TestBackend = BackendWithApi(.{
+        .controls = &.{.{ .parameter_id = 7 }},
+        .peak_sources = &.{.{
+            .port_symbol = "output",
+            .source_id = 42,
+            .delivery = .static,
+        }},
+        .meters = &.{},
+        .initial_size = .{ .width = 400, .height = 300 },
+        .resize_policy = .{ .fixed = .{ .width = 400, .height = 300 } },
+    }, TestApi);
+    TestApi.reset();
+    TestApi.fail_create = true;
+    var context_state = TestContext{};
+
+    try std.testing.expectError(
+        error.Rejected,
+        TestBackend.create(context_state.context()),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        context_state.peak_subscription_count,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        context_state.peak_unsubscription_count,
     );
 }
