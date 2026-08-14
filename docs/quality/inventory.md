@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 811 source files and 465,791 source lines.
+The checked inventory contains 811 source files and 465,926 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -49,7 +49,7 @@ misstate review effort.
 | Q14 | HRTF, HOA, and spatial matrices | 7 | 14,901 | 5/4/5/4 | High | Measured datasets, conditioning, realtime publication | Dataset corruption, numerical parity, TSan, partition invariance |
 | Q15 | DSP primitives, convolution, filters, effects, resampling, and numerics | 62 | 33,511 | 5/4/5/4 | High | Numerical stability, bounds, realtime execution and publication | Independent vectors, property tests, finite containment, TSan, benchmarks |
 | Q16 | Toolkit-neutral GUI state and models | 16 | 8,790 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
-| Q17 | LV2 and Audio Unit adapters | 6 | 22,274 | 5/5/5/4 | High | C ABI, host pointers, realtime entry, state and worker callbacks | ABI fixtures, dynamic hosts, sanitizers, metadata lint, failure silence |
+| Q17 | LV2 and Audio Unit adapters | 6 | 22,409 | 5/5/5/4 | High | C ABI, host pointers, realtime entry, state and worker callbacks | ABI fixtures, dynamic hosts, sanitizers, metadata lint, failure silence |
 | Q18 | Standalone runtime and native audio, MIDI, and window backends | 58 | 36,592 | 5/5/5/3 | High | OS callbacks, devices, threads, handles, recovery | TSan, callback drain, fault injection, cross-target and physical checks |
 | Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,598 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
 | Q20 | Product and API examples | 54 | 14,806 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
@@ -81,7 +81,7 @@ manual review. They include false positives and cannot establish absence.
 | Q14 | 132 | 13 | 18 | 14 | 71 | 223 |
 | Q15 | 2 | 12 | 32 | 0 | 63 | 1,870 |
 | Q16 | 2 | 67 | 17 | 17 | 187 | 409 |
-| Q17 | 51 | 439 | 4 | 234 | 139 | 896 |
+| Q17 | 74 | 439 | 4 | 234 | 139 | 896 |
 | Q18 | 266 | 535 | 93 | 753 | 63 | 606 |
 | Q19 | 185 | 0 | 0 | 749 | 68 | 0 |
 | Q20 | 111 | 252 | 16 | 35 | 255 | 836 |

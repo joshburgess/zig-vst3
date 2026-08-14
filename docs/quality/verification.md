@@ -172,3 +172,20 @@ per-subscription ownership, rollback, teardown, and regression tests.
 | `zig build test-vst3-module --summary all` | Passed: 7/7 steps and 787/787 Debug tests |
 | `zig build test-gui-lifecycle --summary all` | Passed: 40/40 steps and 2,384/2,384 Debug tests across every example editor |
 | `scripts/check_quality_inventory.sh` | Passed: 811 files and 465,791 lines classified; Q03 contains 7 files and 6,152 lines |
+
+## 2026-08-14: Q17 LV2 and AUv2 Ownership
+
+Reviewed scope: LV2 processing instance, LV2 UI instance and registrations,
+Audio Unit render core, AUv2 component storage and dispatch, native class-info
+bridge, and LV2 metadata generation.
+
+Commit `be81b415` adds allocator provenance and outer-allocation failure
+coverage to the three host-allocated instance types. It also corrects the LV2
+UI teardown order so editor-owned subscriptions unregister while their context
+is still valid.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-lv2 --summary all` | Passed: 56/56 steps and 570/570 tests, including ABI, native host, bundle, metadata, UI, component-state, topology, and ReleaseSafe cross-build checks |
+| `zig build test-audio-unit --summary all` | Passed: 30/30 steps and 284/284 tests, including ABI, native host, bundle, multi-output, and ReleaseSafe cross-build checks |
+| `scripts/check_quality_inventory.sh` | Passed: 811 files and 465,926 lines classified; Q17 contains 6 files and 22,409 lines |

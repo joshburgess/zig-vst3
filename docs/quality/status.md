@@ -29,6 +29,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   ownership contracts with focused Debug and cross-build evidence.
 - Closed Q-GUI-001 by balancing LV2 host peak subscriptions during construction
   rollback and normal editor teardown.
+- Recorded Q17 LV2 and AUv2 ownership, allocator provenance, host callback
+  borrows, and native Core Foundation transfer contracts.
+- Closed Q-MEM-003 with injected host-instance allocation failures, testing
+  allocator teardown, and integrated LV2 subscription-order coverage.
 
 ## Phase 1 Scope
 
@@ -43,6 +47,6 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review Q17 LV2 and AUv2 host adapters next. They own host callback contexts,
-native instance state, dynamic extension data, and format-specific teardown at
-the boundary between framework GUI and processing code.
+Review Q18 native audio, MIDI, and window backends next. They own operating
+system handles, foreign callback contexts, scheduler queues, and platform
+resources whose teardown can overlap external calls.
