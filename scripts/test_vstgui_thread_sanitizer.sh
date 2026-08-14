@@ -44,7 +44,10 @@ export TSAN_OPTIONS="halt_on_error=1:history_size=7:second_deadlock_stack=1"
   printf 'system=%s\n' "$(uname -a)"
   printf 'git_commit=%s\n' "$(git -C "$root" rev-parse HEAD 2>/dev/null || printf unknown)"
   printf 'tsan_options=%s\n' "$TSAN_OPTIONS"
-} > "$output_dir/run-metadata.txt"
+} > "$output_dir/run-metadata.txt" || {
+  printf 'failed to write VSTGUI thread sanitizer metadata\n' >&2
+  exit 1
+}
 printf 'VSTGUI thread sanitizer artifacts: %s\n' "$output_dir"
 
 if [ "${VSTGUI_THREAD_SANITIZER_SKIP_BUILD:-0}" != 1 ]; then
@@ -112,7 +115,10 @@ while [ "$iteration" -le "$repetitions" ]; do
   stderr_path="$output_dir/$iteration.stderr"
   command_path="$output_dir/$iteration.command-arguments.txt"
   started_epoch=$(date +%s)
-  printf '0=%s\n' "$build_dir/zig_vstgui_adapter_tests" > "$command_path"
+  printf '0=%s\n' "$build_dir/zig_vstgui_adapter_tests" > "$command_path" || {
+    printf 'failed to write VSTGUI thread sanitizer command record\n' >&2
+    exit 1
+  }
   printf 'iteration=%s/%s phase=adapter-thread-safety\n' "$iteration" "$repetitions"
   set +e
   "$build_dir/zig_vstgui_adapter_tests" > "$stdout_path" 2> "$stderr_path"
@@ -131,7 +137,10 @@ while [ "$iteration" -le "$repetitions" ]; do
       printf 'command_arguments=%s\n' "$command_path"
       printf 'stdout=%s\n' "$stdout_path"
       printf 'stderr=%s\n' "$stderr_path"
-    } > "$output_dir/runner-status.txt"
+    } > "$output_dir/runner-status.txt" || {
+      printf 'failed to write VSTGUI thread sanitizer failure status\n' >&2
+      exit 1
+    }
     cat "$stdout_path"
     cat "$stderr_path" >&2
     exit "$status"
@@ -146,7 +155,10 @@ while [ "$iteration" -le "$repetitions" ]; do
     printf 'command_arguments=%s\n' "$command_path"
     printf 'stdout=%s\n' "$stdout_path"
     printf 'stderr=%s\n' "$stderr_path"
-  } > "$output_dir/$iteration.status"
+  } > "$output_dir/$iteration.status" || {
+    printf 'failed to write VSTGUI thread sanitizer iteration status\n' >&2
+    exit 1
+  }
   iteration=$((iteration + 1))
 done
 
@@ -155,5 +167,8 @@ done
   printf 'status=0\n'
   printf 'repetitions=%s\n' "$repetitions"
   printf 'phase=complete\n'
-} > "$output_dir/runner-status.txt"
+} > "$output_dir/runner-status.txt" || {
+  printf 'failed to write VSTGUI thread sanitizer completion status\n' >&2
+  exit 1
+}
 printf 'VSTGUI thread sanitizer completed: %s process runs\n' "$repetitions"

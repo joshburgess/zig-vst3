@@ -9,7 +9,8 @@ fake_build="$temporary/build"
 success_output="$temporary/success"
 failure_output="$temporary/failure"
 interrupt_output="$temporary/interrupt"
-mkdir -p "$fake_build" "$success_output" "$failure_output" "$interrupt_output"
+write_failure_output="$temporary/write-failure"
+mkdir -p "$fake_build" "$success_output" "$failure_output" "$interrupt_output" "$write_failure_output"
 
 fake_tools="$temporary/tools"
 mkdir -p "$fake_tools"
@@ -73,6 +74,25 @@ grep -q '^classification=succeeded$' "$success_run/runner-status.txt"
 grep -q '^repetitions=3$' "$success_run/runner-status.txt"
 test "$(find "$success_run" -name '*.status' -type f | wc -l | tr -d ' ')" = 3
 test "$(find "$success_run" -name '*.command-arguments.txt' -type f | wc -l | tr -d ' ')" = 3
+
+printf '%s\n' \
+  '#!/bin/sh' \
+  'set -eu' \
+  'run=$(find "$VSTGUI_THREAD_SANITIZER_OUTPUT_DIR" -mindepth 1 -maxdepth 1 -type d | sed -n "1p")' \
+  'rm -rf "$run"' \
+  'printf blocked > "$run"' \
+  'exit 0' > "$fake_build/zig_vstgui_adapter_tests"
+chmod +x "$fake_build/zig_vstgui_adapter_tests"
+set +e
+VSTGUI_THREAD_SANITIZER_REPETITIONS=1 \
+VSTGUI_THREAD_SANITIZER_OUTPUT_DIR="$write_failure_output" \
+VSTGUI_THREAD_SANITIZER_BUILD_DIR="$fake_build" \
+VSTGUI_THREAD_SANITIZER_SKIP_BUILD=1 \
+  "$root/scripts/test_vstgui_thread_sanitizer.sh" > "$temporary/write-failure.stdout" 2> "$temporary/write-failure.stderr"
+write_failure_status=$?
+set -e
+test "$write_failure_status" != 0
+grep -q 'failed to write VSTGUI thread sanitizer iteration status' "$temporary/write-failure.stderr"
 
 printf '#!/bin/sh\nexit 9\n' > "$fake_build/zig_vstgui_adapter_tests"
 chmod +x "$fake_build/zig_vstgui_adapter_tests"
