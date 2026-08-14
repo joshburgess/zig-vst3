@@ -158,9 +158,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
             editor_state: EditorState,
             controller_state: ControllerState,
             parameter_observers: [parameter_observer_capacity]?ParameterObserver = @splat(null),
+            allocator: std.mem.Allocator,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
 
-            fn init(self: *Controller) void {
+            fn init(self: *Controller, allocator: std.mem.Allocator) void {
                 const initializes_controller_state_in_place =
                     has_controller_state and
                     @hasDecl(ControllerState, "initInto");
@@ -174,6 +175,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
                         ControllerState.init()
                     else
                         .{},
+                    .allocator = allocator,
                 };
                 if (comptime initializes_controller_state_in_place) {
                     self.controller_state.initInto();
@@ -186,9 +188,22 @@ pub fn ReflectedEditController(comptime Config: type) type {
         };
 
         pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
+            return createWithAllocator(
+                std.heap.page_allocator,
+                requested_iid,
+                out,
+            );
+        }
+
+        fn createWithAllocator(
+            allocator: std.mem.Allocator,
+            requested_iid: types.FIDString,
+            out: *?*anyopaque,
+        ) types.tresult {
             out.* = null;
-            const controller = std.heap.page_allocator.create(Controller) catch return types.kResultFalse;
-            controller.init();
+            const controller = allocator.create(Controller) catch
+                return types.kResultFalse;
+            controller.init(allocator);
             const result = query(&controller.iface, @ptrCast(requested_iid), out);
             _ = release(&controller.iface);
             return result;
@@ -613,7 +628,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 releaseTelemetrySource(&self.telemetry_source);
                 releaseComponentHandlers(self);
                 releaseHostApplication(&self.host_application);
-                std.heap.page_allocator.destroy(self);
+                self.allocator.destroy(self);
             }
             return next;
         }
@@ -1268,6 +1283,30 @@ test "reflected edit controller clears unsupported query outputs" {
     try std.testing.expectEqual(types.kNoInterface, unit_info.vtable.queryInterface(unit_info, &tuid.zero, &queried));
     try std.testing.expectEqual(@as(?*anyopaque, null), queried);
     try std.testing.expect(unit_info.vtable.release(unit_info) >= 1);
+}
+
+test "reflected edit controller reports outer allocation failure" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "AllocationFailureController";
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+    });
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    var out: ?*anyopaque = @ptrFromInt(1);
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        TestController.createWithAllocator(
+            failing.allocator(),
+            @ptrCast(&ivsteditcontroller.iedit_controller_iid),
+            &out,
+        ),
+    );
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
 }
 
 test "reflected edit controller owns isolated optional controller state" {
@@ -3015,6 +3054,79 @@ test "simple effect reports fallible processor construction failure" {
     try std.testing.expectEqual(@as(?*anyopaque, null), out);
 }
 
+test "simple effect cleans up allocation failures with owning allocator" {
+    const EmptyParams = struct {};
+    const Set = plug_core.parameters.ParameterSet(EmptyParams);
+    const Effect = SimpleEffect(struct {
+        pub const component_name = "AllocationFailureComponent";
+        pub const controller_cid =
+            tuid.inlineUid(
+                0x71A88001,
+                0x71A88002,
+                0x71A88003,
+                0x71A88004,
+            );
+        pub const Params = EmptyParams;
+        pub const parameter_set = &Set.init(.{});
+        pub const Processor = struct {
+            allocator: std.mem.Allocator,
+            storage: []u8,
+
+            pub fn initWithAllocator(
+                allocator: std.mem.Allocator,
+            ) !@This() {
+                return .{
+                    .allocator = allocator,
+                    .storage = try allocator.alloc(u8, 32),
+                };
+            }
+
+            pub fn deinit(self: *@This()) void {
+                self.allocator.free(self.storage);
+            }
+
+            pub fn process(
+                _: *@This(),
+                comptime Sample: type,
+                _: *plug_process.ProcessContext(Sample),
+            ) void {}
+        };
+    });
+
+    inline for (0..2) |fail_index| {
+        var failing = std.testing.FailingAllocator.init(
+            std.testing.allocator,
+            .{ .fail_index = fail_index },
+        );
+        var out: ?*anyopaque = @ptrFromInt(1);
+        try std.testing.expectEqual(
+            types.kResultFalse,
+            Effect.createWithAllocator(
+                failing.allocator(),
+                @ptrCast(&ivstcomponent.icomponent_iid),
+                &out,
+            ),
+        );
+        try std.testing.expectEqual(@as(?*anyopaque, null), out);
+    }
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.createWithAllocator(
+            std.testing.allocator,
+            @ptrCast(&ivstcomponent.icomponent_iid),
+            &out,
+        ),
+    );
+    const component: *ivstcomponent.IComponent =
+        @ptrCast(@alignCast(out.?));
+    try std.testing.expectEqual(
+        @as(types.uint32, 0),
+        component.vtable.release(component),
+    );
+}
+
 test "simple effect binds dynamic topology across host metadata negotiation activation and flush validation" {
     const vstspeaker = @import("pluginterfaces/vst/vstspeaker.zig");
     const Config = struct {
@@ -4481,12 +4593,17 @@ pub fn SimpleEffect(comptime Config: type) type {
             gui_note_seen: [128]u64 = @splat(0),
             sample_rate: f64 = 0,
             component_active: bool = false,
+            allocator: std.mem.Allocator,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
 
-            fn init(self: *Component) !void {
+            fn init(
+                self: *Component,
+                allocator: std.mem.Allocator,
+            ) !void {
                 self.* = .{
                     .parameter_state = ParameterState.init(parameter_set),
                     .processor_impl = undefined,
+                    .allocator = allocator,
                 };
                 self.audio_bus_snapshots =
                     AudioBusSnapshotPublisher.init(
@@ -4497,11 +4614,11 @@ pub fn SimpleEffect(comptime Config: type) type {
                     "initInPlaceWithAllocator",
                 )) {
                     try self.processor_impl.initInPlaceWithAllocator(
-                        std.heap.page_allocator,
+                        allocator,
                     );
                 } else if (@hasDecl(Config.Processor, "initWithAllocator")) {
                     self.processor_impl = try Config.Processor.initWithAllocator(
-                        std.heap.page_allocator,
+                        allocator,
                     );
                 } else if (@hasDecl(Config.Processor, "initInPlace")) {
                     self.processor_impl.initInPlace();
@@ -4554,10 +4671,23 @@ pub fn SimpleEffect(comptime Config: type) type {
         };
 
         pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
+            return createWithAllocator(
+                std.heap.page_allocator,
+                requested_iid,
+                out,
+            );
+        }
+
+        fn createWithAllocator(
+            allocator: std.mem.Allocator,
+            requested_iid: types.FIDString,
+            out: *?*anyopaque,
+        ) types.tresult {
             out.* = null;
-            const component = std.heap.page_allocator.create(Component) catch return types.kResultFalse;
-            component.init() catch {
-                std.heap.page_allocator.destroy(component);
+            const component = allocator.create(Component) catch
+                return types.kResultFalse;
+            component.init(allocator) catch {
+                allocator.destroy(component);
                 return types.kResultFalse;
             };
             const result = query(&component.iface, @ptrCast(requested_iid), out);
@@ -5047,7 +5177,7 @@ pub fn SimpleEffect(comptime Config: type) type {
                 releaseAutomationState(&self.automation_state);
                 releaseInfoListener(&self.info_listener);
                 releaseHostApplication(&self.host_application);
-                std.heap.page_allocator.destroy(self);
+                self.allocator.destroy(self);
             }
             return next;
         }

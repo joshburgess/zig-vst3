@@ -77,3 +77,13 @@ ADM XML construction and validation, with no document-size limit. Finding
 Q-ADM-001 records the production complexity risk for Phase 3.
 
 Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
+
+## 2026-08-14: Q04 Owning Object Allocation
+
+Command: `zig build test-vst3-module --summary all`
+
+Result: passed, 7/7 build steps and 786/786 tests. The new tests inject failure
+at controller allocation, component allocation, and processor-owned storage.
+They also release a successfully created component through the stored testing
+allocator, which gives the Debug allocator leak visibility over both ownership
+levels.
