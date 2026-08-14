@@ -267,6 +267,7 @@ pub fn Job(comptime Config: type) type {
         }
 
         pub fn retry(self: *Self) bool {
+            if (!realtime_audit.observe(.lock)) return false;
             self.lock();
             const retryable = self.status == .failed or self.status == .cancelled;
             const request = if (retryable) self.last_request else null;
@@ -275,6 +276,7 @@ pub fn Job(comptime Config: type) type {
         }
 
         pub fn requestCancel(self: *Self) bool {
+            if (!realtime_audit.observe(.lock)) return false;
             self.lock();
             defer self.unlock();
             if (self.status != .queued and self.status != .validating and self.status != .loading) return false;
@@ -283,6 +285,7 @@ pub fn Job(comptime Config: type) type {
         }
 
         pub fn reset(self: *Self) void {
+            if (!realtime_audit.observe(.lock)) return;
             self.lock();
             const abandoned = self.result;
             self.result = null;
@@ -303,6 +306,7 @@ pub fn Job(comptime Config: type) type {
         }
 
         pub fn snapshot(self: *const Self) Snapshot {
+            if (!realtime_audit.observe(.lock)) return emptySnapshot();
             const mutable: *Self = @constCast(self);
             mutable.lock();
             defer mutable.unlock();
@@ -320,6 +324,7 @@ pub fn Job(comptime Config: type) type {
         }
 
         pub fn takeResult(self: *Self, generation: u64) ?Result {
+            if (!realtime_audit.observe(.lock)) return null;
             self.lock();
             defer self.unlock();
             if (self.status != .ready or self.result_generation != generation) return null;
@@ -329,6 +334,7 @@ pub fn Job(comptime Config: type) type {
         }
 
         pub fn wait(self: *Self) void {
+            if (!realtime_audit.observe(.lock)) return;
             self.joinWorker();
         }
 
@@ -468,6 +474,19 @@ pub fn Job(comptime Config: type) type {
             return switch (outcome) {
                 .success => |success| success.value,
                 else => null,
+            };
+        }
+
+        fn emptySnapshot() Snapshot {
+            return .{
+                .status = .idle,
+                .generation = 0,
+                .completed_units = 0,
+                .total_units = 0,
+                .framework_failure = .none,
+                .failure = null,
+                .cancellation_pending = false,
+                .result_available = false,
             };
         }
 
@@ -799,4 +818,39 @@ test "resource job generation skips retained active identities" {
         resource_job.latest_generation.load(.acquire),
     );
     try std.testing.expectEqual(@as(u64, 3), resource_job.queued.?.generation);
+}
+
+test "resource job control operations reject realtime use before locking" {
+    const ControlJob = Job(struct {
+        pub const Request = u8;
+        pub const Result = u8;
+        pub const Failure = enum { unused };
+        pub const maximum_work_units = 1;
+        pub const maximum_result_units = 1;
+
+        pub fn run(request: Request, _: *WorkerContext) Outcome(Result, Failure) {
+            return .{ .success = .{ .value = request, .result_units = 1 } };
+        }
+    });
+
+    var resource_job = ControlJob.init();
+    defer resource_job.deinit();
+
+    const scope = realtime_audit.Scope.enter();
+    try std.testing.expect(!resource_job.retry());
+    try std.testing.expect(!resource_job.requestCancel());
+    resource_job.reset();
+    const snapshot = resource_job.snapshot();
+    try std.testing.expect(snapshot.valid());
+    try std.testing.expectEqual(Status.idle, snapshot.status);
+    try std.testing.expect(resource_job.takeResult(1) == null);
+    resource_job.wait();
+    try std.testing.expect(!resource_job.submit(1));
+    const report = scope.leave();
+
+    try std.testing.expectEqual(realtime_audit.Operation.lock, report.first_violation.?);
+    try std.testing.expectEqual(@as(u32, 6), report.count(.lock));
+    try std.testing.expectEqual(@as(u32, 1), report.count(.allocation));
+    try std.testing.expectEqual(@as(u64, 0), resource_job.generation);
+    try std.testing.expectEqual(Status.idle, resource_job.status);
 }

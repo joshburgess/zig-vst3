@@ -192,6 +192,12 @@ IR Loader is the reference decoded-audio migration. Its controller still imports
 
 Resource Swap is the reference stable-address background-worker migration. Its runtime allocates the engine before `initInPlace` submits a request containing the address of the engine's publication exchange. Runtime teardown stops and joins the worker, retires published resources, and only then destroys the engine. This pattern is required whenever initialization publishes or captures an internal address.
 
+Resource Swap requests are non-realtime because they allocate and submit worker
+state. Fixed Rate mode requests are non-realtime because an effective change
+publishes latency and can dispatch a host restart. Debug and test realtime
+scopes reject both example APIs before generation, desired-mode, latency, or
+pending host-request state changes.
+
 Model Shell extends the stable-address pattern to persistent resource recovery. Its high-level wrapper forwards component state, import and relink commands, latency host requests, scalar and bounded text telemetry, and typed f32 and f64 processing. The recovery worker is joined before the engine address is released.
 
 Sample Player is the combined payload reference. The high-level runtime receives decoded samples, processes MIDI events and sample-accurate parameter changes in f32 or f64, publishes its bounded playhead graph, and enables that publication only while an editor is open. Its specialized controller continues to own file decoding, waveform preview, view state, actions, and import replacement.

@@ -66,6 +66,7 @@ pub const Processor = struct {
     }
 
     pub fn requestFixedRate(self: *Processor, enabled: bool) bool {
+        if (!plug.realtime_audit.observe(.host_call)) return false;
         if (enabled and !self.supported) return false;
         const previous_desired = self.desired_fixed_rate.swap(enabled, .acq_rel);
         if (self.commitDesiredMode()) return true;
@@ -102,6 +103,7 @@ pub const Processor = struct {
     }
 
     fn commitDesiredMode(self: *Processor) bool {
+        if (!plug.realtime_audit.observe(.host_call)) return false;
         const enabled = self.desired_fixed_rate.load(.acquire);
         if (enabled and !self.supported) return false;
         const previous = self.requested_fixed_rate.load(.acquire);
@@ -408,6 +410,22 @@ test "fixed-rate processor changes prepared latency before block-boundary activa
     processor.process(&context);
     try std.testing.expectEqualSlices(f32, &input, &output);
     try std.testing.expect(processor.requestFixedRate(true));
+    try std.testing.expectEqual(@as(u32, 48), processor.latencySamples());
+}
+
+test "fixed-rate requests reject realtime use before control-state mutation" {
+    var processor: Processor = undefined;
+    processor.initInPlace();
+    processor.prepare(.{ .sample_rate = 96_000, .max_block_size = 64 });
+
+    const scope = plug.realtime_audit.Scope.enter();
+    try std.testing.expect(!processor.requestFixedRate(false));
+    const report = scope.leave();
+
+    try std.testing.expectEqual(plug.realtime_audit.Operation.host_call, report.first_violation.?);
+    try std.testing.expectEqual(@as(u32, 1), report.count(.host_call));
+    try std.testing.expect(processor.desired_fixed_rate.load(.acquire));
+    try std.testing.expect(processor.requested_fixed_rate.load(.acquire));
     try std.testing.expectEqual(@as(u32, 48), processor.latencySamples());
 }
 

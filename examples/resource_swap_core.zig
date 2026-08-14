@@ -86,6 +86,7 @@ pub const Processor = struct {
     }
 
     pub fn requestGain(self: *Processor, gain: f64, work_units: usize) bool {
+        if (!plug.realtime_audit.observe(.allocation)) return false;
         if (!std.math.isFinite(gain) or work_units == 0) return false;
         const generation = self.nextGeneration();
         self.latest_requested_generation.store(generation, .release);
@@ -231,6 +232,23 @@ test "resource swap processor adopts prepared graphs at block boundaries" {
     processor.processBlock(f32, &context);
     try std.testing.expectEqualSlices(f32, &.{ 0.5, -1.0 }, &output);
     try std.testing.expectEqual(@as(usize, 1), processor.reclaimRetired());
+}
+
+test "resource swap requests reject realtime use before generation publication" {
+    var processor: Processor = undefined;
+    processor.initInPlace();
+    defer processor.deinit();
+    try std.testing.expect(processor.waitForPreparation());
+    const generation = processor.next_generation;
+
+    const scope = plug.realtime_audit.Scope.enter();
+    try std.testing.expect(!processor.requestGain(2.0, 32));
+    const report = scope.leave();
+
+    try std.testing.expectEqual(plug.realtime_audit.Operation.allocation, report.first_violation.?);
+    try std.testing.expectEqual(@as(u32, 1), report.count(.allocation));
+    try std.testing.expectEqual(generation, processor.next_generation);
+    try std.testing.expectEqual(generation, processor.latest_requested_generation.load(.acquire));
 }
 
 test "resource swap runtime owns the self-referential engine at a stable address" {

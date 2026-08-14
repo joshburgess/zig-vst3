@@ -35,6 +35,12 @@ single type. Later phases must link each invariant to code and verification.
 - Resource workers publish completed data but do not invoke host callbacks.
   Control-thread `poll` or `waitAndPoll` collects completion and invokes any
   `publicationReady` callback synchronously.
+- Resource job, recovery, and decoded-importer control APIs reject Debug and
+  test realtime scopes before locking, waiting, allocation, file access, state
+  consumption, callback invocation, generation changes, or caller-output
+  writes. Only exchange adoption, active access, and block-boundary retirement
+  form the resource recovery realtime surface. Resource and importer teardown
+  starts only after processing stops and no realtime scope remains active.
 - Host restart requests run only from a host-approved control or UI callback,
   never from an audio, resource, device, or importer worker. Both
   `HostRequestSink.dispatchPending` and raw `SimpleEffect` dispatch reject a

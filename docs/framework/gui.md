@@ -192,6 +192,14 @@ The binary format carries independent wire and schema versions. Decode limits en
 
 `gui_audio_file_importer.DecodedImporter(frame_capacity)` keeps preview points and optional decoded interleaved samples in fixed storage for non-audio-thread handoff. Initialization, replacement, failure, cancellation teardown, and reset clear that retained media storage before publishing an empty logical extent.
 
+Importer begin, retry, cancellation, status, preview and decoded-data copies,
+reset, waiting, and teardown belong on a non-realtime controller or UI thread.
+Debug and test realtime scopes reject the public operations that could lock,
+join, allocate, or access a file before touching importer state or caller
+output. A rejected snapshot is a valid idle snapshot, and rejected copy
+operations return zero without changing the destination. Teardown requires
+processing to have stopped and no realtime scope to remain active.
+
 ## Lifecycle Checklist
 
 For every editor implementation:

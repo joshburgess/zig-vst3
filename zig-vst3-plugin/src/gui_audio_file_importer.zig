@@ -240,6 +240,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         pub fn retry(self: *Self) bool {
+            if (!realtime_audit.observe(.lock)) return false;
             if (self.workerRunning()) return false;
             self.reapWorker();
             self.lock();
@@ -253,6 +254,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         pub fn requestCancel(self: *Self) bool {
+            if (!realtime_audit.observe(.lock)) return false;
             self.lock();
             self.model.requestCancel() catch {
                 self.unlock();
@@ -264,10 +266,12 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         pub fn canReset(self: *const Self) bool {
+            if (!realtime_audit.observe(.lock)) return false;
             return !self.workerRunning();
         }
 
         pub fn workerRunning(self: *const Self) bool {
+            if (!realtime_audit.observe(.lock)) return true;
             if (!self.worker.worker_running.load(.acquire)) return false;
             const mutable: *Self = @constCast(self);
             mutable.lock();
@@ -277,6 +281,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         pub fn reset(self: *Self) bool {
+            if (!realtime_audit.observe(.lock)) return false;
             if (!self.canReset()) return false;
             self.reapWorker();
             self.lock();
@@ -291,6 +296,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         pub fn snapshot(self: *Self) Snapshot {
+            if (!realtime_audit.observe(.lock)) return emptySnapshot();
             self.lock();
             defer self.unlock();
             return .{
@@ -305,6 +311,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         pub fn copyPreview(self: *Self, output: []PreviewPoint) usize {
+            if (!realtime_audit.observe(.lock)) return 0;
             self.lock();
             defer self.unlock();
             if (self.preview_points > preview_capacity) return 0;
@@ -318,6 +325,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         pub fn copyDecoded(self: *Self, sample_offset: usize, output: []f32) usize {
+            if (!realtime_audit.observe(.lock)) return 0;
             self.lock();
             defer self.unlock();
             if (self.decoded_frames > decoded_frame_capacity or self.channels == 0 or self.channels > maximum_channels) {
@@ -509,6 +517,26 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
             self.preview_points = 0;
             @memset(&self.decoded, 0.0);
             self.decoded_frames = 0;
+        }
+
+        fn emptySnapshot() Snapshot {
+            return .{
+                .import = .{
+                    .status = .idle,
+                    .entry_point = .drop,
+                    .path_count = 0,
+                    .completed_units = 0,
+                    .total_units = 0,
+                    .generation = 0,
+                    .cancellation_pending = false,
+                },
+                .failure = .none,
+                .sample_rate = 0,
+                .channels = 0,
+                .sample_frames = 0,
+                .preview_points = 0,
+                .decoded_frames = 0,
+            };
         }
 
         fn lock(self: *Self) void {
@@ -891,14 +919,26 @@ test "decoded importer keeps bounded interleaved PCM for non-audio-thread handof
 test "decoded importer reports file, allocation, and lock use in realtime scope" {
     var importer = Importer.init();
     defer importer.deinit();
+    var preview = [_]PreviewPoint{.{ .x = 2.0, .y = 3.0 }};
+    var decoded = [_]f32{4.0};
     const scope = realtime_audit.Scope.enter();
-    _ = importer.snapshot();
+    const snapshot = importer.snapshot();
+    try std.testing.expect(snapshot.valid());
     try std.testing.expect(!importer.begin(.picker, &.{"fixture.wav"}));
+    try std.testing.expect(!importer.retry());
+    try std.testing.expect(!importer.requestCancel());
+    try std.testing.expect(!importer.canReset());
+    try std.testing.expect(importer.workerRunning());
+    try std.testing.expect(!importer.reset());
+    try std.testing.expectEqual(@as(usize, 0), importer.copyPreview(&preview));
+    try std.testing.expectEqual(@as(usize, 0), importer.copyDecoded(0, &decoded));
     const report = scope.leave();
     try std.testing.expectEqual(realtime_audit.Operation.lock, report.first_violation.?);
-    try std.testing.expectEqual(@as(u32, 1), report.count(.lock));
+    try std.testing.expectEqual(@as(u32, 8), report.count(.lock));
     try std.testing.expectEqual(@as(u32, 1), report.count(.file_access));
     try std.testing.expectEqual(@as(u32, 1), report.count(.allocation));
+    try std.testing.expectEqualDeep(PreviewPoint{ .x = 2.0, .y = 3.0 }, preview[0]);
+    try std.testing.expectEqual(@as(f32, 4.0), decoded[0]);
 }
 
 test "decoded importer normalizes PCM AIFF into the shared interleaved format" {

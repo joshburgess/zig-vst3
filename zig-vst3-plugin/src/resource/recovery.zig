@@ -2,6 +2,7 @@ const std = @import("std");
 const exchange_mod = @import("exchange.zig");
 const gui_progress = @import("../gui_progress.zig");
 const job_mod = @import("job.zig");
+const realtime_audit = @import("../realtime_audit.zig");
 const reference_mod = @import("reference.zig");
 
 pub const RequestKind = enum {
@@ -400,11 +401,13 @@ pub fn Recovery(comptime Config: type) type {
         }
 
         pub fn importPath(self: *Self, path: []const u8) bool {
+            if (!realtime_audit.observe(.lock)) return false;
             const owned_path = Path.init(path) catch return false;
             return self.submit(owned_path, null, .import, null);
         }
 
         pub fn restore(self: *Self, state: ReferenceState) void {
+            if (!realtime_audit.observe(.lock)) return;
             switch (state) {
                 .empty => {
                     _ = self.preparation.requestCancel();
@@ -422,6 +425,7 @@ pub fn Recovery(comptime Config: type) type {
         }
 
         pub fn relink(self: *Self, path: []const u8) bool {
+            if (!realtime_audit.observe(.lock)) return false;
             const current = self.completion.snapshot().reference;
             const linked = switch (current) {
                 .empty => return false,
@@ -432,10 +436,12 @@ pub fn Recovery(comptime Config: type) type {
         }
 
         pub fn requestCancel(self: *Self) bool {
+            if (!realtime_audit.observe(.lock)) return false;
             return self.preparation.requestCancel();
         }
 
         pub fn retry(self: *Self) bool {
+            if (!realtime_audit.observe(.lock)) return false;
             const job_snapshot = self.preparation.snapshot();
             if (job_snapshot.status != .failed and job_snapshot.status != .cancelled) return false;
             const generation = self.completion.snapshot().generation;
@@ -449,6 +455,7 @@ pub fn Recovery(comptime Config: type) type {
             if (!has_preparation_context) {
                 @compileError("updatePreparationContext requires Config.PreparationContext");
             }
+            if (!realtime_audit.observe(.lock)) return false;
             self.preparation_context = context;
             const source = self.latest_source_request orelse return true;
             return self.submit(source.path, source.expected_reference, source.kind, source.desired);
@@ -457,6 +464,7 @@ pub fn Recovery(comptime Config: type) type {
         /// Collects worker completion on the calling control thread.
         /// `Config.publicationReady`, when present, runs synchronously here.
         pub fn poll(self: *Self) void {
+            if (!realtime_audit.observe(.lock)) return;
             const job_snapshot = self.preparation.snapshot();
             if (job_snapshot.generation == 0 or job_snapshot.generation == self.observed_job_generation) return;
             if (job_snapshot.status == .ready) {
@@ -481,19 +489,23 @@ pub fn Recovery(comptime Config: type) type {
 
         /// Joins the worker and collects completion on the calling control thread.
         pub fn waitAndPoll(self: *Self) void {
+            if (!realtime_audit.observe(.lock)) return;
             self.preparation.wait();
             self.poll();
         }
 
         pub fn snapshot(self: *const Self) Snapshot {
+            if (!realtime_audit.observe(.lock)) return emptySnapshot();
             return self.completion.snapshot();
         }
 
         pub fn progressSnapshot(self: *const Self) ProgressSnapshot {
+            if (!realtime_audit.observe(.lock)) return emptyProgressSnapshot();
             return self.preparation.snapshot();
         }
 
         pub fn presentationSnapshot(self: *const Self) PresentationSnapshot {
+            if (!realtime_audit.observe(.lock)) return emptyPresentationSnapshot();
             const completion = self.completion.snapshot();
             const job = self.preparation.snapshot();
             const matching_job = job.generation != 0 and job.generation == completion.generation;
@@ -547,16 +559,19 @@ pub fn Recovery(comptime Config: type) type {
         }
 
         pub fn componentStateEncodedSize(self: *const Self) usize {
+            if (!realtime_audit.observe(.lock)) return 0;
             var snapshot_value = self.completion.snapshot();
             return snapshot_value.reference.encodedSize();
         }
 
         pub fn writeComponentState(self: *const Self, writer: anytype) !void {
+            if (!realtime_audit.observe(.lock)) return error.RealtimeViolation;
             var snapshot_value = self.completion.snapshot();
             try snapshot_value.reference.write(writer);
         }
 
         pub fn readComponentState(self: *Self, reader: anytype) !void {
+            if (!realtime_audit.observe(.lock)) return error.RealtimeViolation;
             const restored = try ReferenceState.read(reader);
             if (reader.seek != reader.end) return error.TrailingResourceStateData;
             self.restore(restored);
@@ -565,6 +580,47 @@ pub fn Recovery(comptime Config: type) type {
         fn submit(self: *Self, path: Path, expected_reference: ?Reference, kind: RequestKind, desired: ?ReferenceState) bool {
             const generation = self.nextGeneration();
             return self.submitGeneration(generation, path, expected_reference, kind, desired);
+        }
+
+        fn emptySnapshot() Snapshot {
+            return .{
+                .status = .empty,
+                .resolution = .empty,
+                .generation = 0,
+                .reference = .empty,
+                .failure = null,
+                .publication_metadata = null,
+            };
+        }
+
+        fn emptyProgressSnapshot() ProgressSnapshot {
+            return .{
+                .status = .idle,
+                .generation = 0,
+                .completed_units = 0,
+                .total_units = 0,
+                .framework_failure = .none,
+                .failure = null,
+                .cancellation_pending = false,
+                .result_available = false,
+            };
+        }
+
+        fn emptyPresentationSnapshot() PresentationSnapshot {
+            return .{
+                .status = .empty,
+                .resolution = .empty,
+                .generation = 0,
+                .reference = .empty,
+                .progress = .{
+                    .state = .idle,
+                    .value = 0.0,
+                    .generation = 0,
+                },
+                .can_cancel = false,
+                .can_retry = false,
+                .cancellation_pending = false,
+            };
         }
 
         fn submitGeneration(self: *Self, generation: u64, path: Path, expected_reference: ?Reference, kind: RequestKind, desired: ?ReferenceState) bool {
@@ -1125,6 +1181,13 @@ test "resource recovery republishes linked content for a new preparation context
     try std.testing.expect(recovery.adoptPendingThroughAtBlockBoundary(first_generation));
     try std.testing.expectEqual(@as(u32, 7), recovery.active().?.value);
 
+    const realtime_scope = realtime_audit.Scope.enter();
+    try std.testing.expect(!recovery.updatePreparationContext(.{ .multiplier = 9 }));
+    const realtime_report = realtime_scope.leave();
+    try std.testing.expectEqual(realtime_audit.Operation.lock, realtime_report.first_violation.?);
+    try std.testing.expectEqual(@as(u32, 1), realtime_report.count(.lock));
+    try std.testing.expectEqual(@as(u32, 1), recovery.preparation_context.multiplier);
+
     try std.testing.expect(recovery.updatePreparationContext(.{ .multiplier = 3 }));
     recovery.preparation.wait();
     try std.testing.expectEqual(first_generation, callbacks.generation.load(.acquire));
@@ -1269,4 +1332,32 @@ test "resource recovery rejects trailing component state before starting work" {
     try std.testing.expectError(error.TrailingResourceStateData, recovery.readComponentState(&reader));
     try std.testing.expectEqual(reference_mod.RecoveryStatus.empty, recovery.snapshot().status);
     try std.testing.expectEqual(@as(u64, 0), recovery.snapshot().generation);
+
+    var output_bytes: [32]u8 = @splat(0xaa);
+    var writer = std.Io.Writer.fixed(&output_bytes);
+    reader = std.Io.Reader.fixed(&bytes);
+    const scope = realtime_audit.Scope.enter();
+    try std.testing.expect(!recovery.importPath("model.fixture"));
+    recovery.restore(.empty);
+    try std.testing.expect(!recovery.relink("model.fixture"));
+    try std.testing.expect(!recovery.requestCancel());
+    try std.testing.expect(!recovery.retry());
+    recovery.poll();
+    recovery.waitAndPoll();
+    try std.testing.expect(recovery.snapshot().valid());
+    try std.testing.expect(recovery.progressSnapshot().valid());
+    try std.testing.expect(recovery.presentationSnapshot().valid());
+    try std.testing.expectEqual(@as(usize, 0), recovery.componentStateEncodedSize());
+    try std.testing.expectError(error.RealtimeViolation, recovery.writeComponentState(&writer));
+    try std.testing.expectError(error.RealtimeViolation, recovery.readComponentState(&reader));
+    try std.testing.expectEqual(@as(usize, 0), recovery.reclaim());
+    const report = scope.leave();
+
+    try std.testing.expectEqual(realtime_audit.Operation.lock, report.first_violation.?);
+    try std.testing.expectEqual(@as(u32, 13), report.count(.lock));
+    try std.testing.expectEqual(@as(u32, 1), report.count(.allocation));
+    try std.testing.expectEqual(@as(usize, 0), writer.end);
+    try std.testing.expectEqual(@as(usize, 0), reader.seek);
+    try std.testing.expectEqual(@as(u64, 0), recovery.next_publication_generation);
+    try std.testing.expect(recovery.latest_source_request == null);
 }

@@ -48,6 +48,14 @@ The worker operation reports its phase and bounded progress through `WorkerConte
 
 Jobs may start during component initialization. An editor is not required. Call `deinit` before destroying any request storage or callback target. `deinit` cancels queued work, asks running work to stop, joins the worker, and disposes an unclaimed result.
 
+Job submission, retry, cancellation, reset, snapshot, result transfer, waiting,
+and teardown are control-thread operations. They may allocate, lock, join a
+worker, or dispose a result. Debug and test realtime scopes reject submission
+and the ordinary control operations before they touch job state. Rejected
+snapshots return a valid idle value, result transfer returns `null`, and void
+operations leave the job unchanged. Teardown has the stronger lifecycle
+precondition that processing has stopped and no realtime scope is active.
+
 ## Persistent references
 
 `resource.Reference(path_capacity, metadata_capacity)` stores four bounded values. Its bounded path and metadata arrays initialize inactive capacity to zero:
@@ -73,6 +81,15 @@ The main entry points are:
 - `snapshot` reports `empty`, `restoring`, `ready`, `missing`, `moved`, `changed`, `unsupported`, or `failed`.
 - `adoptPendingAtBlockBoundary` makes a fully prepared resource visible to processing.
 - `reclaim` destroys retired resources on a non-real-time thread.
+
+Import, restore, relink, cancellation, retry, polling, snapshots, preparation
+context updates, component-state I/O, reclamation, and teardown are
+control-thread operations. Debug and test realtime scopes reject them before
+locking, waiting, consuming state input, invoking `publicationReady`, or
+changing a generation, except that teardown relies on the lifecycle precondition
+that processing has already stopped. The block-boundary adoption,
+active-resource access, and retirement methods are the realtime surface and
+remain bounded and allocation-free.
 
 The worker validates identity and schema compatibility before publication and updates recovery status without an editor polling loop. Publication generations remain distinct from running preparation, current completion, restore-clear, pending exchange, and active exchange identities across counter rollover. Restoring component state retires the previous active resource and any older pending publication at the next process-block boundary. Processing therefore remains safe and silent until the restored generation is ready. A missing, unsupported, or changed file remains recoverable. Changed content and incompatible schemas are not published, and the expected reference remains intact. An ordinary import or relink failure leaves the last valid active resource intact.
 
