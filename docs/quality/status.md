@@ -59,6 +59,18 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   these counts are evidence per command rather than a unique-test total.
 - Recorded Q-MIDI-001 for the Standard MIDI File iterator's quadratic state
   replay and missing explicit parser work limit.
+- Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
+  including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
+  GUI import workers, and owning product examples.
+- Closed Q-MEM-007 by storing generic plug-view allocator provenance and
+  injecting failure at its outer COM allocation.
+- Closed Q-MEM-008 by adding a 44-test owning-example gate with failure
+  injection for five stable-address processor engines.
+- Passed the Vorbis, MP3, matrix, HRTF, HOA, Q12 file and metadata, Q15
+  publication, Q16 GUI-model, and Q20 owning-example focused gates.
+- Began Phase 2 atomic review while the Phase 1 ADM gate runs. Closed
+  Q-CONC-001 by serializing VSTGUI global initialization and exit. Address,
+  undefined-behavior, and thread sanitizer gates passed after the fix.
 
 ## Phase 1 Scope
 
@@ -73,7 +85,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review Q10 through Q15 ownership next. These units contain borrowed codec and
-file buffers, large parser and render state, bounded spatial datasets, DSP
-publication queues, and numerical histories that cross setup and realtime
-processing.
+Finish the 210-test focused ADM selection and the exact Phase 1 repository
+gate. Rerun the native VSTGUI visual gate without competing CPU-heavy jobs.
+Then close Phase 1 and continue the Phase 2 atomic, callback-drain, and
+realtime-call-graph review.

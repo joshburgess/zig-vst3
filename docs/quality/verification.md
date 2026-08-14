@@ -271,3 +271,81 @@ arena before ownership can transfer.
 The review found no memory leak or dangling transfer in Q08 or Q09. It did find
 quadratic canonical replay in Standard MIDI File iteration. Q-MIDI-001 records
 that medium parser-complexity risk for Phase 3.
+
+## 2026-08-14: Q10–Q15 Ownership
+
+Reviewed scope: Ogg and Vorbis, MP3, FLAC, file and metadata formats, ADM,
+dynamic spatial matrices, SOFA loading, HRTF and HOA, DSP histories, and the
+partitioned-convolution publication path.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-vorbis --summary all` | Passed: 10/10 steps and 92/92 tests, including native Xiph, stb, and Tremor comparison runners plus ReleaseSafe Linux and Windows builds |
+| `zig build test-mp3 --summary all` | Passed: 6/6 steps and 129/129 tests plus ReleaseSafe Linux and Windows builds |
+| `zig build test-matrix --summary all` | Passed: 6/6 steps and 37/37 tests, including exhaustive allocation failures and ReleaseSafe cross-builds |
+| `zig build test-hrtf test-hoa --summary all` | Passed: 19/19 steps and 167/169 tests; two platform branches skipped explicitly |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter dsp.flac --test-filter dsp.audio_file_reader --test-filter dsp.audio_metadata --test-filter dsp.broadcast_metadata --test-filter dsp.id3 --test-filter dsp.ixml --test-filter dsp.xml --test-filter writer` | Passed: 164/164 tests; the broad writer filter also selects event, resource, Ogg, snapshot, and integration writer tests |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter gui_ir_convolution --test-filter realtime_snapshot --test-filter duplicator --test-filter process_context` | Passed: 52/52 tests |
+
+The HOA independent reference checked 336 basis values, 12,672 coefficients,
+and 203,544 rendered samples. Q10–Q13 use caller buffers and fixed-capacity
+state rather than owning heap allocations. Q14's dynamic matrix and SOFA paths
+pair every allocation with stored allocator teardown or lexical rollback. Q15
+uses bounded state and fixed publication slots.
+
+## 2026-08-14: Q01 Raw Plug View Ownership
+
+Command: `zig build test-vst3-module --summary all`
+
+Result: passed, 7/7 build steps and 788/788 tests. The new generic plug-view
+test rejects its outer allocation through a failing allocator and releases a
+successful final COM reference through `std.testing.allocator`.
+
+Change commit: `22a2bd65c244aa634339ecbd402085e4858df926`
+
+## 2026-08-14: Q16 GUI Model Ownership
+
+Commands and results:
+
+| Check | Result |
+| --- | --- |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter gui. --test-filter editor_state` | Passed: 36/36 tests |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter gui_` | Passed: 136/136 tests |
+
+The commands used an isolated writable Zig global cache because the execution
+sandbox denied writes to the user's default cache. Q16 owns fixed-capacity GUI
+models and one-shot adapter callbacks. Its decoded audio importer owns an
+optional worker and joins it after acknowledged cancellation. The selections
+cover transactional state, malformed retained fields, generation publication,
+import teardown, and adapter destruction.
+
+## 2026-08-14: Q20 Owning Examples
+
+Command: `zig build test-example-ownership --summary all`
+
+Result: passed, 17/17 build steps and 44/44 tests. The focused step covers the
+resource-swap, fixed-rate, model-shell, IR-loader, and sample-player owning
+runtime wrappers. Each now rejects outer allocation failure deterministically,
+and the existing successful paths release the stable-address engine through the
+same testing allocator.
+
+Change commit: `53b2118a`
+
+## 2026-08-14: VSTGUI Runtime Transition Serialization
+
+The Phase 2 atomic review found that an atomic reference count did not make the
+first runtime initialization a publication barrier. A second constructor could
+return after incrementing the count but before the first constructor completed
+`VSTGUI::init`. Commit `23ad7a26` serializes count changes, initialization, and
+exit with one non-realtime mutex.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-vstgui-sanitizers --summary all` | Passed: address and undefined-behavior sanitizer processes completed |
+| `zig build test-vstgui-thread-sanitizer --summary all` | Passed: 2/2 steps and four TSan process runs |
+| First `zig build test-vstgui-native --summary all` | Functional adapter and accessibility tests passed; visual performance process returned 6 while concurrent sanitizer and ADM jobs doubled all timing measurements |
+| Isolated retry while ADM remained active | Visual fixtures still rendered correctly, but the sample-player editor lifecycle average was 110.6 ms and exceeded its 100 ms threshold |
+
+The native performance gate remains pending until the long ADM process stops.
+The two failures are retained here because removing load-related measurements
+would overstate the evidence.

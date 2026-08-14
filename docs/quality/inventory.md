@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 811 source files and 466,088 source lines.
+The checked inventory contains 811 source files and 466,192 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -32,8 +32,8 @@ misstate review effort.
 
 | Unit | Scope | Files | Lines | C/E/X/T | Rank | Principal exposure | Required verification |
 | --- | --- | ---: | ---: | --- | --- | --- | --- |
-| Q00 | Build graph, CI, release and validation scripts | 120 | 16,647 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
-| Q01 | Raw VST3 ABI mirrors and COM helpers | 114 | 28,860 | 5/5/4/5 | Elevated | Public ABI, pointers, reference counts, host callbacks | SDK layout parity, callback lifecycle, validators, sanitizers |
+| Q00 | Build graph, CI, release and validation scripts | 120 | 16,666 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
+| Q01 | Raw VST3 ABI mirrors and COM helpers | 114 | 28,884 | 5/5/4/5 | Elevated | Public ABI, pointers, reference counts, host callbacks | SDK layout parity, callback lifecycle, validators, sanitizers |
 | Q02 | ARA model, controller, analysis, cache, and official headers | 15 | 27,657 | 5/4/5/3 | High | Host callbacks, readers, atomics, persistence, untrusted host data | Header parity, lifecycle stress, allocator failure, TSan, state corruption |
 | Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,152 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
 | Q04 | Raw-to-framework VST3 processor and controller adapters | 3 | 11,712 | 5/5/5/4 | High | Realtime host entry, dual state stores, resource publication | Lifecycle model, failure silence, host mutation, sanitizer stress |
@@ -51,8 +51,8 @@ misstate review effort.
 | Q16 | Toolkit-neutral GUI state and models | 16 | 8,790 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
 | Q17 | LV2 and Audio Unit adapters | 6 | 22,409 | 5/5/5/4 | High | C ABI, host pointers, realtime entry, state and worker callbacks | ABI fixtures, dynamic hosts, sanitizers, metadata lint, failure silence |
 | Q18 | Standalone runtime and native audio, MIDI, and window backends | 58 | 36,654 | 5/5/5/3 | High | OS callbacks, devices, threads, handles, recovery | TSan, callback drain, fault injection, cross-target and physical checks |
-| Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,685 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
-| Q20 | Product and API examples | 54 | 14,806 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
+| Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,691 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
+| Q20 | Product and API examples | 54 | 14,861 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
 | Q21 | Test hosts, reference adapters, and downstream fixtures | 100 | 29,657 | 3/3/4/4 | Moderate | Oracle correctness and false confidence | Mutation review, independent provenance, fixture self-tests |
 | Q22 | ABI, fixture, codec, and parity tools | 53 | 10,343 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
 
@@ -65,7 +65,7 @@ manual review. They include false positives and cannot establish absence.
 | Unit | Allocation | Pointer | Atomic | Callback | Parser | Public |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Q00 | 1 | 9 | 1 | 44 | 385 | 1 |
-| Q01 | 122 | 2,162 | 91 | 1,126 | 92 | 2,429 |
+| Q01 | 128 | 2,162 | 91 | 1,126 | 92 | 2,429 |
 | Q02 | 6 | 437 | 40 | 190 | 174 | 316 |
 | Q03 | 39 | 272 | 8 | 194 | 32 | 280 |
 | Q04 | 72 | 370 | 4 | 128 | 138 | 505 |
@@ -84,7 +84,7 @@ manual review. They include false positives and cannot establish absence.
 | Q17 | 74 | 439 | 4 | 234 | 139 | 896 |
 | Q18 | 270 | 535 | 93 | 753 | 65 | 606 |
 | Q19 | 185 | 0 | 0 | 749 | 68 | 0 |
-| Q20 | 111 | 252 | 16 | 35 | 255 | 836 |
+| Q20 | 116 | 252 | 16 | 35 | 255 | 836 |
 | Q21 | 63 | 211 | 8 | 136 | 451 | 268 |
 | Q22 | 78 | 37 | 3 | 27 | 206 | 58 |
 
