@@ -147,6 +147,9 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Added a checked per-source ledger for explicit Zig atomic orders in 57 source
   files. Any count change now fails the repository gate until the corresponding
   publication contract and ledger entry are reviewed together.
+- Closed Q-VER-004 by expanding the direct realtime source audit from 18 to all
+  26 production example processors and recognizing every public process entry
+  form. An exact inventory gate and negative fixture now reject omissions.
 
 ## Phase 2 Scope
 

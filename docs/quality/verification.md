@@ -850,3 +850,30 @@ semantic review record to be revisited.
 | `scripts/check_quality_inventory.sh` | Passed: 816 files and 468,418 lines classified |
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-14: Realtime Source Audit Coverage
+
+Change commit: `59bced5d`
+
+The realtime source audit previously listed 18 processors manually and
+recognized only the basic process callback forms. It omitted eight production
+processor files and the public parameter-view entry forms. The audit now
+covers all 26 example processor files discovered from six public process entry
+forms. A checked inventory keeps that source list exact, rejects duplicates,
+and includes a negative fixture that removes one path and requires rejection.
+
+This is direct callback-body evidence. It does not replace the semantic review
+of transitive helper calls or the bounded-work record required to complete
+Phase 2.
+
+| Check | Result |
+| --- | --- |
+| `scripts/check_realtime_source_inventory.sh` | Passed: 26 processor files audited |
+| `scripts/test_realtime_source_inventory_runner.sh` | Passed: baseline and missing-processor rejection |
+| `zig test --cache-dir /private/tmp/zig-vst3-realtime-source-expanded-v3-local --global-cache-dir /private/tmp/zig-vst3-realtime-source-expanded-v3-global -Mroot=examples/realtime_source_audit.zig` | Passed: 1/1 test |
+| `scripts/check_quality_inventory.sh` | Passed: 818 files and 468,496 lines classified |
+| `scripts/check_quality_atomic_orders.sh` | Passed: 57 source files tracked |
+| `scripts/check_quality_concurrency_inventory.sh` | Passed: 81 source files classified |
+| `bash -n scripts/check_realtime_source_inventory.sh scripts/test_realtime_source_inventory_runner.sh` | Passed |
+| `zig fmt --check build.zig examples/realtime_source_audit.zig` | Passed |
+| `git diff --check` | Passed |
