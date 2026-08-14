@@ -51,6 +51,14 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   cleanup.
 - Passed 24 VSTGUI ASan/UBSan process runs, four TSan process runs, native and
   cross-platform adapter tests, and 3,171 Zig-to-C++ lifecycle tests.
+- Recorded Q08 process-view and Q09 MIDI ownership contracts, including
+  caller-borrowed slices, fixed-capacity session state, JSON parse arenas, and
+  failure-atomic incremental processing.
+- Passed 98 focused Q08 test selections and 283 focused Q09 test selections.
+  Some import-root and integration tests appear in more than one selection, so
+  these counts are evidence per command rather than a unique-test total.
+- Recorded Q-MIDI-001 for the Standard MIDI File iterator's quadratic state
+  replay and missing explicit parser work limit.
 
 ## Phase 1 Scope
 
@@ -65,6 +73,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review Q08 process context and Q09 MIDI ownership next. These units carry
-host-controlled pointers, bounded event storage, stream parser state, session
-state, and callback contexts through realtime and incremental processing.
+Review Q10 through Q15 ownership next. These units contain borrowed codec and
+file buffers, large parser and render state, bounded spatial datasets, DSP
+publication queues, and numerical histories that cross setup and realtime
+processing.

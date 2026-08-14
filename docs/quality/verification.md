@@ -243,3 +243,31 @@ and verifies that visibility, label, value, and frame queries no longer reach
 the destroyed semantic node or VSTGUI view. Windows provider detachment and
 Linux platform registration rollback are covered by Release cross-compilation;
 their real operating-system callback behavior remains part of Phase 6.
+
+## 2026-08-14: Q08 and Q09 Bounded Ownership
+
+Reviewed scope: process audio views, parameter automation, events, output
+writers, process segmentation, MIDI 1 and 2, UMP, MIDI-CI, MPE, Standard MIDI
+Files, bounded packetizers, reassemblers, caches, and sessions.
+
+All commands used the plugin-core module root so relative imports and the same
+Debug allocator configuration as the repository build remained active.
+
+| Check | Result |
+| --- | --- |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter process.context` | Passed: 43/43 tests |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter process.events` | Passed: 31/31 tests |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter process.changes` | Passed: 24/24 tests |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter process.midi_` | Passed: 159/159 tests |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter MIDI` | Passed: 98/98 tests, including `midi1`, `midi2`, process-event conversion, and backend integration selected by the filter |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter process.mpe` | Passed: 26/26 tests |
+
+Q08 performs no dynamic allocation. It owns copied slice descriptors and
+borrows the referenced host buffers for one process call. Q09's persistent
+protocol state is fixed-capacity. Its dynamic parse boundary returns a caller-
+owned `std.json.Parsed` arena, and every post-parse rejection releases that
+arena before ownership can transfer.
+
+The review found no memory leak or dangling transfer in Q08 or Q09. It did find
+quadratic canonical replay in Standard MIDI File iteration. Q-MIDI-001 records
+that medium parser-complexity risk for Phase 3.
