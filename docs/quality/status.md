@@ -125,6 +125,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   sanitizers, codec and DSP references, downstream consumers, and the
   installed-package matrix without an open critical or high memory-safety
   finding.
+- Closed high-severity Q-RT-003 by rejecting realtime use of resource job,
+  recovery, decoded-importer, Resource Swap, and Fixed Rate control operations
+  before blocking or state mutation. Focused resource, importer, owning-example,
+  VST3 module, and resource TSan gates pass.
 
 ## Phase 2 Scope
 
@@ -139,7 +143,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Complete the cross-thread publication inventory, then close the remaining raw
-realtime call-graph gaps in resource jobs, resource recovery, GUI audio import,
-and owning examples. Rejected realtime calls must return without locking,
-mutating control state, invoking callbacks, or abandoning pending work.
+Complete the cross-thread publication inventory and review every non-default
+atomic order against its stated happens-before relationship. Continue the
+realtime call-graph audit across remaining GUI, device, MIDI, HRTF, host, and
+teardown paths.

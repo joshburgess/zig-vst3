@@ -703,3 +703,30 @@ Phase 1 is complete at `db511c18`. Every production review unit has a recorded
 ownership disposition, high-risk owning paths have focused allocation or
 lifecycle evidence, relevant Debug allocator and native sanitizer suites pass,
 and no critical or high memory-safety finding remains open.
+
+## 2026-08-14: Realtime Resource Control Gate
+
+Change commit: `3491f3b9`
+
+Resource job, recovery, and decoded-audio importer methods recorded forbidden
+locks only after entering helpers that still acquired the mutex. Waiting could
+also join a worker from processing. Resource Swap published a new request
+generation before its job rejected realtime allocation, while Fixed Rate could
+publish latency and mark a pending restart before host dispatch rejected the
+call.
+
+The public control boundaries now reject Debug and test realtime scopes first.
+Snapshot APIs return valid inert values, copy APIs leave caller output intact,
+state readers do not consume input, and request APIs do not advance generations
+or alter desired mode, latency, or pending host work. Resource exchange adoption,
+active access, and block-boundary retirement remain the bounded realtime
+surface. Teardown retains its explicit post-processing lifecycle precondition.
+
+| Check | Result |
+| --- | --- |
+| `zig build --cache-dir /private/tmp/zig-vst3-rt-resource-local --global-cache-dir /private/tmp/zig-vst3-rt-resource-global test-resource-ownership --summary all` | Passed: 3/3 steps and 50/50 tests |
+| `zig test --cache-dir /private/tmp/zig-vst3-rt-importer-local --global-cache-dir /private/tmp/zig-vst3-rt-importer-global -Mroot=zig-vst3-plugin/src/core.zig --test-filter 'decoded importer'` | Passed: 9/9 tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-rt-examples-local --global-cache-dir /private/tmp/zig-vst3-rt-examples-global test-example-ownership --summary all` | Passed outside the restricted sandbox after its `translate-c` child was denied cache access: 17/17 steps and 46/46 tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-rt003-vst3-local --global-cache-dir /private/tmp/zig-vst3-rt003-vst3-global test-vst3-module --summary all` | Passed outside the restricted sandbox after the same cache denial: 7/7 steps and 788/788 tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-rt003-tsan-local --global-cache-dir /private/tmp/zig-vst3-rt003-tsan-global test-resource-thread-sanitizer --summary all` | Passed: 3/3 steps and 58/58 tests under ThreadSanitizer |
+| `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,993 lines classified |
