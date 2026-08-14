@@ -1,8 +1,8 @@
 # Quality Program Status
 
-Current phase: Phase 1, Ownership and Memory Safety
+Current phase: Phase 2, Concurrency and Realtime Safety
 
-Status: in progress
+Status: in progress; Phase 1 complete
 
 Baseline commit: `08bf883e9d2d324f3a7933fa21851bbd9ffec513`
 
@@ -119,21 +119,27 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   calls. The regression rejects four control-thread host calls from processing
   while preserving realtime data-exchange block lock and free. The complete
   VST3 module gate passes.
+- Completed Phase 1 at `db511c18`. The fresh-cache exact repository gate
+  passed after an earlier environment-only attempt exhausted the shared
+  temporary volume. The successful run covered the repository checks,
+  sanitizers, codec and DSP references, downstream consumers, and the
+  installed-package matrix without an open critical or high memory-safety
+  finding.
 
-## Phase 1 Scope
+## Phase 2 Scope
 
-- Audit ownership and failure paths in risk order, beginning with Q04 and then
-  its Q06 and Q07 owning dependencies.
-- Record allocator provenance, ownership transfer, partial initialization,
-  teardown order, retained slices, pointer conversions, and callback context
-  lifetimes.
-- Add allocation-failure, leak, failure-atomicity, and teardown tests where the
-  contract permits deterministic injection.
-- Extend native sanitizer evidence across uncovered FFI ownership paths.
+- Map thread ownership and publication for processor state, GUI exchange,
+  resources, devices, MIDI, HRTF, and teardown.
+- Review every atomic operation and memory order against a stated
+  happens-before relationship.
+- Audit locks, blocking calls, allocation, logging, file access, and loop bounds
+  reachable from realtime entry points.
+- Add deterministic state-machine, callback-overlap, race-focused stress, and
+  bounded-work evidence where each contract permits it.
 
 ## Next Review Target
 
-Run the exact Phase 1 repository gate at the corrected candidate containing
-the LV2 UI, ARA reader, CoreAudio callback, and realtime topology-mutation
-repairs. Close Phase 1 only if it passes, then continue the Phase 2 atomic,
-callback-drain, and realtime-call-graph review.
+Complete the cross-thread publication inventory, then close the remaining raw
+realtime call-graph gaps in resource jobs, resource recovery, GUI audio import,
+and owning examples. Rejected realtime calls must return without locking,
+mutating control state, invoking callbacks, or abandoning pending work.

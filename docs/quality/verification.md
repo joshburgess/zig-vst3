@@ -674,3 +674,32 @@ realtime audit scope.
 | --- | --- |
 | `zig build --cache-dir /private/tmp/zig-vst3-host-thread-contract-local --global-cache-dir /private/tmp/zig-vst3-host-thread-contract-global test-vst3-module --summary all` | Passed: 7/7 steps and 788/788 tests |
 | `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,772 lines classified |
+
+## 2026-08-14: Phase 1 Completion Gate
+
+Completion candidate: `db511c18`
+
+The first fresh-cache attempt exhausted the shared temporary volume. LLVM,
+Zig cache manifests, fixture runners, and temporary-file creation all reported
+`NoSpaceLeft`. This was an environment failure rather than code evidence.
+Removing only disposable quality-program caches recovered about 12 GiB; the
+tracked worktree remained clean.
+
+The same exact commit then passed the complete release-equivalent repository
+gate from new local and global cache directories. The long Debug section was
+active ADM XML validation work at full CPU utilization, not a deadlock. The
+final installed-package selection passed all 18 build steps and 96 tests,
+including effect, instrument, core, DSP fixture, and C-kernel consumers. The
+preceding gate stages also passed repository hygiene and inventory checks,
+native visual and VSTGUI checks, codec interoperability, sanitizer runners,
+downstream consumers, and release fixtures.
+
+| Check | Result |
+| --- | --- |
+| `zig build --cache-dir /private/tmp/zig-vst3-phase1-db511-rerun-local --global-cache-dir /private/tmp/zig-vst3-phase1-db511-rerun-global test --summary all` | Passed at `db511c18`; final selection 18/18 steps and 96/96 tests, with all earlier gate stages successful |
+| `scripts/check_quality_inventory.sh` | Passed before the gate: 812 files and 467,772 lines classified |
+
+Phase 1 is complete at `db511c18`. Every production review unit has a recorded
+ownership disposition, high-risk owning paths have focused allocation or
+lifecycle evidence, relevant Debug allocator and native sanitizer suites pass,
+and no critical or high memory-safety finding remains open.
