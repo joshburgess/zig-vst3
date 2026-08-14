@@ -71,6 +71,12 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Began Phase 2 atomic review while the Phase 1 ADM gate runs. Closed
   Q-CONC-001 by serializing VSTGUI global initialization and exit. Address,
   undefined-behavior, and thread sanitizer gates passed after the fix.
+- Added a focused Phase 2 TSan gate for GUI queues and snapshots, standalone
+  MIDI and capture queues, and ARA close/read and cache publication overlap.
+  The gate passed 14 tests, and the regular concurrent selection passed 15.
+- Closed Q-CONC-002 by delivering resource publication callbacks from explicit
+  control-thread polling instead of preparation workers. Resource ownership,
+  owning-example, native VSTGUI, and resource TSan gates pass after the fix.
 
 ## Phase 1 Scope
 
@@ -86,6 +92,5 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 ## Next Review Target
 
 Finish the 210-test focused ADM selection and the exact Phase 1 repository
-gate. Rerun the native VSTGUI visual gate without competing CPU-heavy jobs.
-Then close Phase 1 and continue the Phase 2 atomic, callback-drain, and
+gate. Then close Phase 1 and continue the Phase 2 atomic, callback-drain, and
 realtime-call-graph review.

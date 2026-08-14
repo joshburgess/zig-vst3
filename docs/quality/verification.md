@@ -349,3 +349,45 @@ exit with one non-realtime mutex.
 The native performance gate remains pending until the long ADM process stops.
 The two failures are retained here because removing load-related measurements
 would overstate the evidence.
+
+## 2026-08-14: Phase 2 Publication Stress
+
+Commit `0902069b` adds ordered and coherent-generation stress for the GUI
+telemetry queue, graph snapshot series, and audio sample store. The focused
+TSan step also selects standalone bounded capture and MIDI queues, ARA audio
+reader close overlap, and ARA source-cache generation publication.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-phase2-thread-sanitizers --summary all` | Passed: 8/8 steps and 14/14 tests under TSan |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter concurrent` | Passed: 15/15 Debug tests |
+| `zig build test-resource-thread-sanitizer test-dsp-thread-sanitizer --summary all` | Passed: 8/8 steps and 206/206 tests |
+
+The new tests use ordered values or related fields from one generation, so a
+lost item, duplicate item, torn snapshot, or mixed publication becomes a
+deterministic assertion failure in addition to any sanitizer report.
+
+## 2026-08-14: Control-Thread Resource Publication
+
+The concurrency audit traced model-shell resource completion from Q07's worker
+through `publicationReady`, host-request dispatch, the VST3 connection point,
+and `IComponentHandler::restartComponent`. The pinned VST3 SDK documentation
+requires that restart callback in the UI-thread context. Commit `83b88b6e`
+makes worker completion data-only and invokes `publicationReady` synchronously
+from `poll` or `waitAndPoll` on the calling control thread. Model-shell GUI
+telemetry polling now performs that maintenance before reading presentation
+state.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-resource-ownership test-example-ownership --summary all` | Passed: 20/20 steps and 93/93 tests |
+| `zig build test-resource-thread-sanitizer --summary all` | Passed: 3/3 steps and 57/57 tests under TSan |
+| Native VSTGUI dependency of the owning-example gate | Passed after the fix; visual rendering and the 53.2 ms sample-player lifecycle measurement remained below their thresholds |
+| `scripts/check_quality_inventory.sh` | Passed: 811 files and 466,450 lines classified |
+
+The resource regression waits for worker completion and verifies that the
+publication callback remains untouched until the caller polls. The model-shell
+regression records the callback thread and verifies that latency marking and
+dispatch run on the thread that called `waitForModel`.
+
+Change commit: `83b88b6e4bdbe9aaed7c454b1d9d20c5b10ce9c8`

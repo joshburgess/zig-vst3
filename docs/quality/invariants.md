@@ -32,6 +32,11 @@ single type. Later phases must link each invariant to code and verification.
   then releases callback-visible state.
 - Atomic memory orders must follow from a written publication or ownership
   relationship. Performance alone does not justify a weaker order.
+- Resource workers publish completed data but do not invoke host callbacks.
+  Control-thread `poll` or `waitAndPoll` collects completion and invokes any
+  `publicationReady` callback synchronously.
+- Host restart requests run only from a host-approved control or UI callback,
+  never from an audio, resource, device, or importer worker.
 
 ## Input and Arithmetic
 
