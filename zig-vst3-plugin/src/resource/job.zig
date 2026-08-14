@@ -229,6 +229,10 @@ pub fn Job(comptime Config: type) type {
         pub fn submit(self: *Self, request: Request) bool {
             if (!realtime_audit.observe(.allocation)) return false;
             self.reapWorker();
+            return self.submitAfterReap(request);
+        }
+
+        fn submitAfterReap(self: *Self, request: Request) bool {
             self.lock();
             if (self.shutting_down.load(.acquire)) {
                 self.unlock();
@@ -250,6 +254,12 @@ pub fn Job(comptime Config: type) type {
             self.failure = null;
 
             if (!self.worker_running.load(.acquire)) {
+                if (self.thread != null) {
+                    if (comptime @hasDecl(Config, "beforeCompletedWorkerJoinForTest")) {
+                        Config.beforeCompletedWorkerJoinForTest();
+                    }
+                    self.joinWorker();
+                }
                 self.worker_running.store(true, .release);
                 self.thread = std.Thread.spawn(.{}, run, .{self}) catch {
                     self.worker_running.store(false, .release);
@@ -415,10 +425,21 @@ pub fn Job(comptime Config: type) type {
                     .acq_rel,
                     .acquire,
                 );
-                if (!continue_running) self.worker_running.store(false, .release);
                 self.unlock();
                 if (discarded) |value| dispose(value);
-                if (!continue_running) return;
+                if (!continue_running) {
+                    self.lock();
+                    if (self.queued != null and !self.shutting_down.load(.acquire)) {
+                        self.unlock();
+                        continue;
+                    }
+                    self.worker_running.store(false, .release);
+                    self.unlock();
+                    if (comptime @hasDecl(Config, "afterWorkerStoppedForTest")) {
+                        Config.afterWorkerStoppedForTest();
+                    }
+                    return;
+                }
             }
         }
 
@@ -614,6 +635,79 @@ test "resource job replaces work and rejects stale completion" {
     const result = resource_job.takeResult(snapshot.generation).?;
     defer ReplacementJob.dispose(result);
     try std.testing.expectEqual(@as(u32, 2), result.*);
+}
+
+test "resource job joins a completed worker before replacing its handle" {
+    const synchronization = struct {
+        var worker_stopped = std.atomic.Value(bool).init(false);
+        var release_worker_return = std.atomic.Value(bool).init(false);
+        var join_started = std.atomic.Value(bool).init(false);
+        var second_started = std.atomic.Value(bool).init(false);
+        var submit_finished = std.atomic.Value(bool).init(false);
+        var submit_succeeded = std.atomic.Value(bool).init(false);
+    };
+    const JoinJob = Job(struct {
+        pub const Request = u8;
+        pub const Result = u8;
+        pub const Failure = enum { unavailable };
+        pub const maximum_work_units = 1;
+        pub const maximum_result_units = 1;
+
+        pub fn run(request: Request, context: *WorkerContext) Outcome(Result, Failure) {
+            context.setTotalUnits(1) catch return .cancelled;
+            if (request == 1) return .{ .failure = .unavailable };
+            synchronization.second_started.store(true, .release);
+            return .{ .success = .{ .value = request, .result_units = 1 } };
+        }
+
+        pub fn afterWorkerStoppedForTest() void {
+            if (synchronization.release_worker_return.load(.acquire)) return;
+            synchronization.worker_stopped.store(true, .release);
+            while (!synchronization.release_worker_return.load(.acquire))
+                std.Thread.yield() catch {};
+        }
+
+        pub fn beforeCompletedWorkerJoinForTest() void {
+            synchronization.join_started.store(true, .release);
+        }
+    });
+    const Submitter = struct {
+        fn run(job: *JoinJob) void {
+            const succeeded = job.submitAfterReap(2);
+            synchronization.submit_succeeded.store(succeeded, .release);
+            synchronization.submit_finished.store(true, .release);
+        }
+    };
+
+    synchronization.worker_stopped.store(false, .release);
+    synchronization.release_worker_return.store(false, .release);
+    synchronization.join_started.store(false, .release);
+    synchronization.second_started.store(false, .release);
+    synchronization.submit_finished.store(false, .release);
+    synchronization.submit_succeeded.store(false, .release);
+
+    var job = JoinJob.init();
+    defer job.deinit();
+    try std.testing.expect(job.submit(1));
+    while (!synchronization.worker_stopped.load(.acquire))
+        std.Thread.yield() catch {};
+
+    const submitter = try std.Thread.spawn(.{}, Submitter.run, .{&job});
+    while (!synchronization.join_started.load(.acquire))
+        std.Thread.yield() catch {};
+    try std.testing.expect(!synchronization.second_started.load(.acquire));
+    try std.testing.expect(!synchronization.submit_finished.load(.acquire));
+
+    synchronization.release_worker_return.store(true, .release);
+    submitter.join();
+    try std.testing.expect(synchronization.submit_finished.load(.acquire));
+    try std.testing.expect(synchronization.submit_succeeded.load(.acquire));
+    job.wait();
+    try std.testing.expect(synchronization.second_started.load(.acquire));
+    const snapshot = job.snapshot();
+    const result = job.takeResult(snapshot.generation) orelse
+        return error.ExpectedResourceJobResult;
+    try std.testing.expectEqual(@as(u8, 2), result);
 }
 
 test "resource job cancellation and teardown stop cooperative workers" {

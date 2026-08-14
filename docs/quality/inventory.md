@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 814 source files and 468,211 source lines.
+The checked inventory contains 814 source files and 468,305 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -39,7 +39,7 @@ misstate review effort.
 | Q04 | Raw-to-framework VST3 processor and controller adapters | 3 | 11,760 | 5/5/5/4 | High | Realtime host entry, dual state stores, resource publication | Lifecycle model, failure silence, host mutation, sanitizer stress |
 | Q05 | Raw-package example plugin declarations | 18 | 758 | 2/2/2/4 | Moderate | Factory examples and public construction patterns | Compile, validator, package examples |
 | Q06 | Framework declaration, lifecycle, topology, and runtime core | 16 | 9,592 | 5/5/5/4 | High | Public compatibility, ownership, realtime processing | API manifest, state-machine tests, allocator failure, bounded-work audit |
-| Q07 | Parameters, state, units, and resources | 23 | 13,811 | 5/5/4/4 | Elevated | Persistence, background work, publication, public API | Migration corpus, transactionality, allocator failure, TSan |
+| Q07 | Parameters, state, units, and resources | 23 | 13,905 | 5/5/4/4 | Elevated | Persistence, background work, publication, public API | Migration corpus, transactionality, allocator failure, TSan |
 | Q08 | Process context, events, changes, segmentation, and ordering | 5 | 9,112 | 5/5/5/4 | High | Host-controlled counts and pointers on realtime path | Boundary generation, malformed host data, partition invariance |
 | Q09 | MIDI 1, MIDI 2, MIDI-CI, MPE, files, streams, and sessions | 33 | 20,353 | 4/5/5/3 | High | Untrusted byte streams, bounded queues, session state | Fuzzing, truncation, progress, capacity, deterministic state models |
 | Q10 | Ogg and Vorbis | 1 | 30,491 | 5/5/5/4 | High | Untrusted packets, checked arithmetic, codec state, seeking | Fuzzing, truncation, sanitizer runs, independent decoders |
@@ -71,7 +71,7 @@ manual review. They include false positives and cannot establish absence.
 | Q04 | 72 | 370 | 4 | 128 | 138 | 505 |
 | Q05 | 0 | 2 | 0 | 0 | 0 | 114 |
 | Q06 | 23 | 15 | 0 | 14 | 167 | 1,313 |
-| Q07 | 107 | 7 | 34 | 13 | 327 | 1,466 |
+| Q07 | 107 | 7 | 40 | 13 | 327 | 1,474 |
 | Q08 | 1 | 0 | 0 | 0 | 3 | 1,216 |
 | Q09 | 53 | 0 | 0 | 0 | 661 | 842 |
 | Q10 | 0 | 6 | 0 | 0 | 522 | 346 |
