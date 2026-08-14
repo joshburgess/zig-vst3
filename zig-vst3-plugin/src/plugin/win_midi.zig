@@ -1,6 +1,7 @@
 const builtin = @import("builtin");
 const std = @import("std");
 const core = @import("zig-vst3-plugin-core");
+const native_callback_gate = @import("native_callback_gate.zig");
 const device_catalog = core.plugin;
 const process_api = core.process;
 const standalone = core.plugin;
@@ -40,6 +41,7 @@ pub fn Backend(comptime Api: type) type {
         input_callback: ?standalone.Midi1InputCallback = null,
         input_running: std.atomic.Value(bool) =
             std.atomic.Value(bool).init(false),
+        input_callbacks: native_callback_gate.Gate = .{},
         topology_generation: u64 = 0,
         topology_fingerprint: u64 = 0,
         received_count: std.atomic.Value(usize) =
@@ -208,6 +210,10 @@ pub fn Backend(comptime Api: type) type {
             );
             self.input_callback = callback;
             self.final_driver_errors = 0;
+            self.input_callbacks.open() catch |open_error| {
+                self.input_callback = null;
+                return open_error;
+            };
             self.input_running.store(true, .release);
             self.input_session = Api.startInput(
                 index,
@@ -215,6 +221,8 @@ pub fn Backend(comptime Api: type) type {
                 receiveBytes,
             ) catch |start_error| {
                 self.input_running.store(false, .release);
+                self.input_callbacks.closeAdmission();
+                self.input_callbacks.drain();
                 self.input_callback = null;
                 return start_error;
             };
@@ -223,10 +231,12 @@ pub fn Backend(comptime Api: type) type {
         pub fn stopInput(self: *Self) void {
             if (!self.input_running.swap(false, .acq_rel))
                 return;
+            self.input_callbacks.closeAdmission();
             if (self.input_session) |session| {
                 self.final_driver_errors =
                     Api.stopInput(session).driver_errors;
             }
+            self.input_callbacks.drain();
             self.input_session = null;
             self.input_callback = null;
         }
@@ -342,7 +352,8 @@ pub fn Backend(comptime Api: type) type {
             length: usize,
         ) callconv(.c) void {
             const self = callbackContext(optional_context) orelse return;
-            if (!self.input_running.load(.acquire)) return;
+            var admission = self.input_callbacks.admit() orelse return;
+            defer admission.release();
             const callback = self.input_callback orelse return;
             if (bytes_pointer == null or
                 timestamp_nanoseconds == 0 or
@@ -970,6 +981,85 @@ test "Windows MIDI adapts short input and retains driver errors" {
     );
 }
 
+test "Windows MIDI input stop drains an admitted callback" {
+    const synchronization = struct {
+        var started = std.atomic.Value(bool).init(false);
+        var release = std.atomic.Value(bool).init(false);
+        var emit_failed = std.atomic.Value(bool).init(false);
+
+        fn receive(
+            _: *anyopaque,
+            _: standalone.TimestampedMidi1Packet,
+        ) void {
+            started.store(true, .release);
+            while (!release.load(.acquire))
+                std.Thread.yield() catch {};
+        }
+    };
+    const TestBackend = Backend(MockApi);
+    const StopContext = struct {
+        backend: *TestBackend,
+        started: std.atomic.Value(bool) =
+            std.atomic.Value(bool).init(false),
+        finished: std.atomic.Value(bool) =
+            std.atomic.Value(bool).init(false),
+
+        fn run(self: *@This()) void {
+            self.started.store(true, .release);
+            self.backend.stopInput();
+            self.finished.store(true, .release);
+        }
+    };
+
+    MockApi.reset();
+    synchronization.started.store(false, .release);
+    synchronization.release.store(false, .release);
+    synchronization.emit_failed.store(false, .release);
+    var backend = TestBackend{};
+    try backend.open("drain test");
+    defer backend.close();
+    var descriptors: [4]device_catalog.DeviceDescriptor = undefined;
+    _ = try backend.enumerate(&descriptors);
+    try backend.selectInput(descriptors[0].identifier);
+    var callback_context: u8 = 0;
+    try backend.startInput(.{
+        .context = &callback_context,
+        .receive = synchronization.receive,
+    });
+
+    const emit_thread = try std.Thread.spawn(.{}, struct {
+        fn run() void {
+            MockApi.inject(&.{ 0x90, 60, 100 }, 100) catch {
+                synchronization.emit_failed.store(true, .release);
+                synchronization.started.store(true, .release);
+            };
+        }
+    }.run, .{});
+    while (!synchronization.started.load(.acquire))
+        std.Thread.yield() catch {};
+
+    var stop_context = StopContext{ .backend = &backend };
+    const stop_thread = try std.Thread.spawn(
+        .{},
+        StopContext.run,
+        .{&stop_context},
+    );
+    while (!stop_context.started.load(.acquire))
+        std.Thread.yield() catch {};
+    for (0..1000) |_| std.Thread.yield() catch {};
+    try std.testing.expect(!stop_context.finished.load(.acquire));
+    synchronization.release.store(true, .release);
+    emit_thread.join();
+    stop_thread.join();
+    try std.testing.expect(!synchronization.emit_failed.load(.acquire));
+    try std.testing.expect(stop_context.finished.load(.acquire));
+    try std.testing.expect(backend.input_callback == null);
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        backend.input_callbacks.activeCount(),
+    );
+}
+
 test "Windows MIDI callback rejects misaligned context" {
     const TestBackend = Backend(MockApi);
     var storage: [@sizeOf(TestBackend) + 1]u8 align(@alignOf(TestBackend)) = undefined;
@@ -1094,6 +1184,8 @@ test "Windows MIDI topology polling and failed input start are retryable" {
         backend.startInput(callback),
     );
     try std.testing.expect(!backend.input_running.load(.acquire));
+    try std.testing.expect(backend.input_callback == null);
+    try std.testing.expect(!backend.input_callbacks.isOpen());
     MockApi.fail_input = false;
     try backend.startInput(callback);
     backend.stopInput();

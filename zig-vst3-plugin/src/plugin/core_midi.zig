@@ -1,6 +1,7 @@
 const builtin = @import("builtin");
 const std = @import("std");
 const core = @import("zig-vst3-plugin-core");
+const native_callback_gate = @import("native_callback_gate.zig");
 const device_catalog = core.plugin;
 const process_api = core.process;
 const standalone = core.plugin;
@@ -70,12 +71,8 @@ pub fn Backend(comptime Api: type) type {
         input_callback: ?standalone.Midi1InputCallback = null,
         input_running: std.atomic.Value(bool) =
             std.atomic.Value(bool).init(false),
-        active_input_callbacks: std.atomic.Value(u32) =
-            std.atomic.Value(u32).init(0),
-        topology_closing: std.atomic.Value(bool) =
-            std.atomic.Value(bool).init(true),
-        active_topology_callbacks: std.atomic.Value(u32) =
-            std.atomic.Value(u32).init(0),
+        input_callbacks: native_callback_gate.Gate = .{},
+        topology_callbacks: native_callback_gate.Gate = .{},
         topology_generation: std.atomic.Value(u64) =
             std.atomic.Value(u64).init(0),
         received_count: std.atomic.Value(usize) =
@@ -102,49 +99,53 @@ pub fn Backend(comptime Api: type) type {
             const next_timebase = try Api.timebase();
             if (!next_timebase.valid())
                 return error.InvalidCoreMidiTimebase;
-            self.topology_closing.store(false, .release);
-            errdefer Api.reset(&self.api_state);
+            try self.topology_callbacks.open();
+            var next_client: ?Client = null;
+            var next_input_port: ?Port = null;
+            var next_output_port: ?Port = null;
             errdefer {
-                self.topology_closing.store(true, .release);
-                self.drainCallbacks(&self.active_topology_callbacks);
+                self.topology_callbacks.closeAdmission();
+                if (next_output_port) |port| Api.disposePort(port);
+                if (next_input_port) |port| Api.disposePort(port);
+                if (next_client) |client| Api.disposeClient(client);
+                self.topology_callbacks.drain();
+                Api.reset(&self.api_state);
             }
-            const next_client = try Api.createClient(
+            next_client = try Api.createClient(
                 &self.api_state,
                 client_name,
                 self,
                 notifyTopologyChanged,
             );
-            errdefer Api.disposeClient(next_client);
-            const next_input_port = try Api.createInputPort(
+            next_input_port = try Api.createInputPort(
                 &self.api_state,
-                next_client,
+                next_client.?,
                 client_name,
                 self,
                 receiveBytes,
             );
-            errdefer Api.disposePort(next_input_port);
-            const next_output_port = try Api.createOutputPort(
-                next_client,
+            next_output_port = try Api.createOutputPort(
+                next_client.?,
                 client_name,
             );
 
-            self.client = next_client;
-            self.input_port = next_input_port;
-            self.output_port = next_output_port;
+            self.client = next_client.?;
+            self.input_port = next_input_port.?;
+            self.output_port = next_output_port.?;
             self.timebase = next_timebase;
             self.topology_generation.store(1, .release);
         }
 
         pub fn close(self: *Self) void {
             self.stopInput();
-            self.topology_closing.store(true, .release);
+            self.topology_callbacks.closeAdmission();
             if (self.output_port) |port|
                 Api.disposePort(port);
             if (self.input_port) |port|
                 Api.disposePort(port);
             if (self.client) |client|
                 Api.disposeClient(client);
-            self.drainCallbacks(&self.active_topology_callbacks);
+            self.topology_callbacks.drain();
             self.client = null;
             self.input_port = null;
             self.output_port = null;
@@ -296,9 +297,16 @@ pub fn Backend(comptime Api: type) type {
             if (self.input_running.load(.acquire))
                 return error.CoreMidiInputAlreadyRunning;
             self.input_callback = callback;
+            self.input_callbacks.open() catch |open_error| {
+                self.input_callback = null;
+                return open_error;
+            };
             self.input_running.store(true, .release);
             Api.connectSource(port, endpoint) catch |connect_error| {
                 self.input_running.store(false, .release);
+                self.input_callbacks.closeAdmission();
+                self.input_callbacks.drain();
+                self.input_callback = null;
                 return connect_error;
             };
         }
@@ -306,6 +314,7 @@ pub fn Backend(comptime Api: type) type {
         pub fn stopInput(self: *Self) void {
             if (!self.input_running.swap(false, .acq_rel))
                 return;
+            self.input_callbacks.closeAdmission();
             if (self.input_port) |port| {
                 if (self.selected_input) |endpoint| {
                     Api.disconnectSource(port, endpoint) catch
@@ -314,7 +323,8 @@ pub fn Backend(comptime Api: type) type {
                         );
                 }
             }
-            self.drainCallbacks(&self.active_input_callbacks);
+            self.input_callbacks.drain();
+            self.input_callback = null;
         }
 
         pub fn send(
@@ -427,8 +437,8 @@ pub fn Backend(comptime Api: type) type {
             length: usize,
         ) callconv(.c) void {
             const self = callbackContext(optional_context) orelse return;
-            if (!self.admitInputCallback()) return;
-            defer releaseCallback(&self.active_input_callbacks);
+            var admission = self.input_callbacks.admit() orelse return;
+            defer admission.release();
             const callback = self.input_callback orelse return;
             if (bytes_pointer == null or length == 0) {
                 incrementSaturating(&self.malformed_count);
@@ -455,29 +465,9 @@ pub fn Backend(comptime Api: type) type {
             optional_context: ?*anyopaque,
         ) callconv(.c) void {
             const self = callbackContext(optional_context) orelse return;
-            if (!admitCallback(
-                &self.topology_closing,
-                &self.active_topology_callbacks,
-            )) return;
-            defer releaseCallback(&self.active_topology_callbacks);
+            var admission = self.topology_callbacks.admit() orelse return;
+            defer admission.release();
             incrementGeneration(&self.topology_generation);
-        }
-
-        fn admitInputCallback(self: *Self) bool {
-            if (!self.input_running.load(.acquire)) return false;
-            if (!incrementCallbackCount(&self.active_input_callbacks))
-                return false;
-            if (self.input_running.load(.acquire)) return true;
-            releaseCallback(&self.active_input_callbacks);
-            return false;
-        }
-
-        fn drainCallbacks(
-            _: *Self,
-            active_callbacks: *std.atomic.Value(u32),
-        ) void {
-            while (active_callbacks.load(.acquire) != 0)
-                std.Thread.yield() catch {};
         }
 
         fn callbackContext(
@@ -489,49 +479,6 @@ pub fn Backend(comptime Api: type) type {
             return @ptrCast(@alignCast(context));
         }
     };
-}
-
-fn admitCallback(
-    closing: *std.atomic.Value(bool),
-    active_callbacks: *std.atomic.Value(u32),
-) bool {
-    if (closing.load(.acquire) or
-        !incrementCallbackCount(active_callbacks))
-        return false;
-    if (!closing.load(.acquire)) return true;
-    releaseCallback(active_callbacks);
-    return false;
-}
-
-fn incrementCallbackCount(
-    active_callbacks: *std.atomic.Value(u32),
-) bool {
-    var current = active_callbacks.load(.acquire);
-    while (current != std.math.maxInt(u32)) {
-        if (active_callbacks.cmpxchgWeak(
-            current,
-            current + 1,
-            .acq_rel,
-            .acquire,
-        )) |observed| {
-            current = observed;
-        } else return true;
-    }
-    return false;
-}
-
-fn releaseCallback(active_callbacks: *std.atomic.Value(u32)) void {
-    var current = active_callbacks.load(.acquire);
-    while (current != 0) {
-        if (active_callbacks.cmpxchgWeak(
-            current,
-            current - 1,
-            .release,
-            .acquire,
-        )) |observed| {
-            current = observed;
-        } else return;
-    }
 }
 
 pub const CoreMidiBackend = Backend(CoreMidiSystemApi);
@@ -1318,6 +1265,11 @@ test "CoreMIDI unsupported backend fails before partial open" {
         backend.open("Test client"),
     );
     try std.testing.expect(!backend.isOpen());
+    try std.testing.expect(!backend.topology_callbacks.isOpen());
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        backend.topology_callbacks.activeCount(),
+    );
     try std.testing.expectEqual(
         @as(u64, 0),
         backend.currentTopologyGeneration(),
@@ -1429,10 +1381,13 @@ test "CoreMIDI input stop drains an admitted receive callback" {
     const TestBackend = Backend(TestApi);
     const StopContext = struct {
         backend: *TestBackend,
+        started: std.atomic.Value(bool) =
+            std.atomic.Value(bool).init(false),
         finished: std.atomic.Value(bool) =
             std.atomic.Value(bool).init(false),
 
         fn run(context: *@This()) void {
+            context.started.store(true, .release);
             context.backend.stopInput();
             context.finished.store(true, .release);
         }
@@ -1466,6 +1421,8 @@ test "CoreMIDI input stop drains an admitted receive callback" {
         StopContext.run,
         .{&stop_context},
     );
+    while (!stop_context.started.load(.acquire))
+        std.Thread.yield() catch {};
     for (0..1000) |_| std.Thread.yield() catch {};
     try std.testing.expect(!stop_context.finished.load(.acquire));
     synchronization.release.store(true, .release);
@@ -1474,8 +1431,9 @@ test "CoreMIDI input stop drains an admitted receive callback" {
     try std.testing.expect(stop_context.finished.load(.acquire));
     try std.testing.expectEqual(
         @as(u32, 0),
-        backend.active_input_callbacks.load(.acquire),
+        backend.input_callbacks.activeCount(),
     );
+    try std.testing.expect(backend.input_callback == null);
 }
 
 test "CoreMIDI backend open and input failures are transactional" {
@@ -1557,6 +1515,8 @@ test "CoreMIDI connect and send failures preserve reusable state" {
     try std.testing.expect(
         !backend.input_running.load(.acquire),
     );
+    try std.testing.expect(backend.input_callback == null);
+    try std.testing.expect(!backend.input_callbacks.isOpen());
     TestApi.fail_connect = false;
     try backend.startInput(.{
         .context = &capture,
@@ -1567,6 +1527,7 @@ test "CoreMIDI connect and send failures preserve reusable state" {
         backend.resetInputStatistics(),
     );
     backend.stopInput();
+    try std.testing.expect(backend.input_callback == null);
 
     const packet = standalone.TimestampedMidi1Packet{
         .timestamp_nanoseconds = 2_000,

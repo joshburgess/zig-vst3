@@ -1484,6 +1484,32 @@ pub fn build(b: *std.Build) void {
         "test-alsamidi",
         "Run ALSA RawMIDI tests and compile Linux backends",
     );
+    const alsa_midi_thread_sanitizer_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/alsa_midi.zig",
+        ),
+        .target = target,
+        .optimize = .Debug,
+        .sanitize_thread = true,
+    });
+    addAlsaMidiBackend(
+        b,
+        alsa_midi_thread_sanitizer_module,
+        target,
+    );
+    alsa_midi_thread_sanitizer_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const alsa_midi_thread_sanitizer_tests = b.addTest(.{
+        .root_module = alsa_midi_thread_sanitizer_module,
+        .filters = &.{"input stop drains"},
+    });
+    alsa_midi_test_step.dependOn(
+        &b.addRunArtifact(
+            alsa_midi_thread_sanitizer_tests,
+        ).step,
+    );
     const midi_scheduler_queue_test = b.addExecutable(.{
         .name = "midi-scheduler-queue-test",
         .root_module = b.createModule(.{
@@ -1600,6 +1626,40 @@ pub fn build(b: *std.Build) void {
         "test-alsaump",
         "Run ALSA UMP tests and compile Linux backends",
     );
+    const alsa_ump_thread_sanitizer_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/plugin/alsa_ump.zig",
+        ),
+        .target = target,
+        .optimize = .Debug,
+        .sanitize_thread = true,
+    });
+    addAlsaUmpBackend(
+        b,
+        alsa_ump_thread_sanitizer_module,
+        target,
+    );
+    alsa_ump_thread_sanitizer_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const alsa_ump_thread_sanitizer_tests = b.addTest(.{
+        .root_module = alsa_ump_thread_sanitizer_module,
+        .filters = &.{"input stop drains"},
+    });
+    alsa_ump_test_step.dependOn(
+        &b.addRunArtifact(
+            alsa_ump_thread_sanitizer_tests,
+        ).step,
+    );
+    const zig_vst3_alsa_ump_implementation_test = b.addTest(.{
+        .root_module = zig_vst3_alsa_ump_implementation_tests,
+    });
+    alsa_ump_test_step.dependOn(
+        &b.addRunArtifact(
+            zig_vst3_alsa_ump_implementation_test,
+        ).step,
+    );
     alsa_ump_test_step.dependOn(
         &b.addRunArtifact(zig_vst3_alsa_ump_tests).step,
     );
@@ -1713,6 +1773,32 @@ pub fn build(b: *std.Build) void {
     const win_midi_test_step = b.step(
         "test-winmidi",
         "Run Windows MIDI tests and compile the WinMM backend",
+    );
+    const win_midi_thread_sanitizer_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3-plugin/src/win_midi.zig",
+        ),
+        .target = target,
+        .optimize = .Debug,
+        .sanitize_thread = true,
+    });
+    addWinMidiBackend(
+        b,
+        win_midi_thread_sanitizer_module,
+        target,
+    );
+    win_midi_thread_sanitizer_module.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    const win_midi_thread_sanitizer_tests = b.addTest(.{
+        .root_module = win_midi_thread_sanitizer_module,
+        .filters = &.{"input stop drains"},
+    });
+    win_midi_test_step.dependOn(
+        &b.addRunArtifact(
+            win_midi_thread_sanitizer_tests,
+        ).step,
     );
     win_midi_test_step.dependOn(
         &b.addRunArtifact(zig_vst3_win_midi_tests).step,
@@ -2417,6 +2503,30 @@ pub fn build(b: *std.Build) void {
         .filters = &.{"input stop drains"},
     });
     core_midi_test_step.dependOn(
+        &b.addRunArtifact(
+            core_midi_thread_sanitizer_tests,
+        ).step,
+    );
+    const midi_thread_sanitizer_step = b.step(
+        "test-midi-thread-sanitizers",
+        "Run native MIDI callback overlap tests with the thread sanitizer",
+    );
+    midi_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(
+            alsa_midi_thread_sanitizer_tests,
+        ).step,
+    );
+    midi_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(
+            alsa_ump_thread_sanitizer_tests,
+        ).step,
+    );
+    midi_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(
+            win_midi_thread_sanitizer_tests,
+        ).step,
+    );
+    midi_thread_sanitizer_step.dependOn(
         &b.addRunArtifact(
             core_midi_thread_sanitizer_tests,
         ).step,
