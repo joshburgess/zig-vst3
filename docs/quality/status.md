@@ -99,6 +99,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   host observations shared by two independent LV2 UI lifecycle scenarios. The
   test now verifies and resets the first lifecycle pair, and a dedicated LV2 UI
   adapter gate passes.
+- Closed Q-MEM-010 and critical Q-CONC-005 after the continuing ARA audit found
+  an unmatched host reader when the destroy callback was absent and a split
+  closing/count admission race. The host callback trio is now required before
+  acquisition, and one closed-bit lease word linearizes reads with teardown.
+  The full ARA matrix and 16 repeated Phase 2 TSan runs pass.
 
 ## Phase 1 Scope
 
@@ -114,5 +119,5 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 ## Next Review Target
 
 Run the exact Phase 1 repository gate at the corrected candidate containing
-the LV2 UI verification repair, close Phase 1 only if it passes, and continue
+the LV2 UI and ARA reader repairs, close Phase 1 only if it passes, and continue
 the Phase 2 atomic, callback-drain, and realtime-call-graph review.

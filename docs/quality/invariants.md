@@ -47,6 +47,13 @@ single type. Later phases must link each invariant to code and verification.
   closure and admission therefore have one atomic linearization point.
   Callback release uses release order, and the control-thread drain observes
   zero with acquire order before clearing the callback or parser.
+- ARA audio-reader slots use one atomic state containing a closed bit and a
+  lease count. Opening release-publishes the complete reader state. Read
+  admission acquires that publication while incrementing the same word. Close
+  atomically sets the closed bit, waits with acquire order for every
+  release-published lease to drain, destroys the host reader, and leaves the
+  vacant slot closed. A host reader is never created unless create, read, and
+  destroy callbacks are all present.
 - A platform stop, disconnect, dispose, or unregister operation must prevent
   new foreign callback entry after it returns. The local admission gate covers
   callbacks already inside the adapter; it cannot make a platform that invokes

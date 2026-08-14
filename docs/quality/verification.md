@@ -538,3 +538,35 @@ without the complete plugin test root.
 The first sandboxed focused attempt failed during `translate-c` with
 `manifest_create PermissionDenied`. The equivalent run with normal compiler
 cache access passed. This was an environment failure, not a test failure.
+
+## 2026-08-14: ARA Audio Reader Lifetime Gate
+
+Change commit: `bbbfb882`
+
+The continuing Q02 audit found that `openAudioReader` required the host create
+callback but not the matching destroy callback. A malformed callback table
+could therefore return a foreign reader that the controller could not release.
+The same slot used separate closing and active-read atomics. A close could see
+zero active reads and destroy the foreign reader before a thread that had
+already observed the old open flag incremented its count. Because close later
+reopened the flag, that thread's second check did not reliably reject the stale
+admission.
+
+The slot now stores a closed bit and lease count in one atomic word. Opening
+publishes the complete slot with release order. Admission increments only while
+that same word is open and acquires the published state. Close atomically sets
+the closed bit, drains all release-published leases with acquire order, destroys
+the foreign reader, and leaves the vacant slot closed. Creation requires the
+host create, read, and destroy callbacks before invoking any of them.
+
+The exact gate at `3790e177` was stopped intentionally with exit 130 after this
+audit invalidated the candidate. Before interruption it passed the inventory,
+codec probes, native VSTGUI visual dependency, and VSTGUI TSan runner. It is
+partial baseline evidence only.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-ara-native test-phase2-thread-sanitizers --summary all` | Passed: 36/36 steps and 438/438 tests, including 14 TSan-selected tests |
+| `zig build test-ara --summary all` | Passed: 77/77 steps and 424/424 tests across Debug native behavior, ReleaseSafe Linux and Windows cross-builds, and the ARA VST3 ABI fixture |
+| `for repetition in {1..16}; do zig build test-phase2-thread-sanitizers --summary none \|\| exit 1; done` | Passed: 16/16 repetitions, 48 sanitizer process runs, and 224 selected tests |
+| `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,606 lines classified |
