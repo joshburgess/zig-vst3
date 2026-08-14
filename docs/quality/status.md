@@ -140,6 +140,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   unrepresentable open can no longer be followed by decrements that eventually
   disable editor-only processing while an editor remains. Focused telemetry,
   complete VST3 module, and aggregate Phase 2 ThreadSanitizer gates pass.
+- Closed high-severity Q-CONC-009 by joining a completed resource worker before
+  its thread handle can be replaced. The worker now remains running through
+  result disposal and its final queued-work check. Deterministic overlap,
+  resource ThreadSanitizer, and owning-example gates pass.
 
 ## Phase 2 Scope
 

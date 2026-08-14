@@ -802,3 +802,30 @@ Phase 2 ThreadSanitizer aggregate.
 | `scripts/check_quality_inventory.sh` | Passed: 814 files and 468,211 lines classified |
 | `zig fmt --check build.zig zig-vst3-plugin/src/gui_telemetry.zig` | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-14: Resource Worker Handle Handoff
+
+Change commit: `1ef12711`
+
+Resource submission checked `worker_running` and reaped before taking the job
+mutex. The current worker could publish stopped after that check but before
+submit acquired the mutex. The submit path then observed no running worker and
+assigned a newly spawned handle over the old joinable handle without joining
+it. Repetition could exhaust native thread resources.
+
+The worker now retains running ownership through result disposal and one final
+mutex-protected queued-work check. A submit that encounters a stopped worker
+joins it before assigning a replacement handle. The regression holds the old
+worker after stopped publication but before return, enters the post-reap submit
+path, and verifies that the second worker neither starts nor returns from submit
+until the old worker is allowed to return and the join completes.
+
+| Check | Result |
+| --- | --- |
+| `zig build --cache-dir /private/tmp/zig-vst3-job-handoff-v2-local --global-cache-dir /private/tmp/zig-vst3-job-handoff-v2-global test-resource-ownership --summary all` | Passed: 3/3 steps and 51/51 tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-job-handoff-v2-tsan-local --global-cache-dir /private/tmp/zig-vst3-job-handoff-v2-tsan-global test-resource-thread-sanitizer --summary all` | Passed: 3/3 steps and 59/59 tests under ThreadSanitizer |
+| `zig build --cache-dir /private/tmp/zig-vst3-job-handoff-examples-local --global-cache-dir /private/tmp/zig-vst3-job-handoff-examples-global test-example-ownership --summary all` | Passed outside the restricted sandbox: 17/17 steps and 46/46 tests |
+| `scripts/check_quality_concurrency_inventory.sh` | Passed: 81 source files classified |
+| `scripts/check_quality_inventory.sh` | Passed: 814 files and 468,305 lines classified |
+| `zig fmt --check zig-vst3-plugin/src/resource/job.zig` | Passed |
+| `git diff --check` | Passed |
