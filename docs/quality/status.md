@@ -114,6 +114,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   could bypass the sink's host-call guard. Realtime audit scopes now reject
   these operations before component locking or host invocation. The focused
   host-request tests and the complete VST3 module gate pass.
+- Closed high-severity Q-RT-002 by enforcing the pinned VST3 thread contracts
+  for raw channel-context, automation-state, and data-exchange queue lifecycle
+  calls. The regression rejects four control-thread host calls from processing
+  while preserving realtime data-exchange block lock and free. The complete
+  VST3 module gate passes.
 
 ## Phase 1 Scope
 

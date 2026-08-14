@@ -43,6 +43,10 @@ single type. Later phases must link each invariant to code and verification.
   `HostRequestSink` or the raw `SimpleEffect` API run only on a non-realtime
   control thread. Debug and test realtime scopes reject the call before it can
   reach component locking.
+- Raw VST3 channel-context and automation-state delegation runs only on the UI
+  thread. Data-exchange queues open and close only on the main thread while the
+  component is inactive. Data-exchange block lock and free remain permitted
+  inside `IAudioProcessor::process`, as required by the pinned interface.
 - Native callback teardown publishes admission closure, stops or unregisters
   the platform source, drains every callback admitted before closure, and only
   then clears callback-visible state. Callback release synchronizes with the

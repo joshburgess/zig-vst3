@@ -651,3 +651,26 @@ and successful later delivery of the preserved pending request.
 | `scripts/check_quality_inventory.sh` before the raw API refinement | Passed: 812 files and 467,679 lines classified |
 | `scripts/check_quality_inventory.sh` after the raw API refinement | Passed: 812 files and 467,705 lines classified |
 | `scripts/check_quality_inventory.sh` after the raw dispatch refinement | Passed: 812 files and 467,719 lines classified |
+
+## 2026-08-14: VST3 Host Thread Contracts
+
+Change commit: `5b0f9271`
+
+The lower-boundary review identified four public raw operations with explicit
+non-audio-thread contracts in the pinned VST3 interfaces. Channel-context and
+automation-state delegation require the UI thread. Data-exchange queue open and
+close require the main thread while the component is inactive. None recorded a
+realtime violation before delegating to the host.
+
+The block lifecycle differs intentionally. `IDataExchangeHandler.lockBlock`
+and `freeBlock` are specified for use inside `IAudioProcessor::process`, so the
+fix must not classify those host calls as forbidden. Commit `5b0f9271` guards
+only the four control-thread operations. The combined host regression verifies
+four rejections without callback delivery, deterministic invalid queue output,
+successful control-thread delegation, and clean block lock and free within a
+realtime audit scope.
+
+| Check | Result |
+| --- | --- |
+| `zig build --cache-dir /private/tmp/zig-vst3-host-thread-contract-local --global-cache-dir /private/tmp/zig-vst3-host-thread-contract-global test-vst3-module --summary all` | Passed: 7/7 steps and 788/788 tests |
+| `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,772 lines classified |
