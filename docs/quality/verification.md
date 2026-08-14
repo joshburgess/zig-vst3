@@ -877,3 +877,53 @@ Phase 2.
 | `bash -n scripts/check_realtime_source_inventory.sh scripts/test_realtime_source_inventory_runner.sh` | Passed |
 | `zig fmt --check build.zig examples/realtime_source_audit.zig` | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-14: Native Atomic-Order Ledger
+
+Change commit: `a2e87365`
+
+The checked order-token ledger now covers explicit C and C++ memory orders in
+the native sources selected by the concurrency inventory. The native table
+tracks relaxed, consume, acquire, release, acquire-release, and sequentially
+consistent tokens separately from Zig orders. Its fixture mutates a native
+count independently of the existing Zig mutation.
+
+| Check | Result |
+| --- | --- |
+| `scripts/check_quality_atomic_orders.sh` | Passed after Q-CONC-010: 57 Zig and 11 native source files tracked |
+| `scripts/test_quality_atomic_orders_runner.sh` | Passed: changed Zig and changed native counts rejected |
+| `bash -n scripts/check_quality_atomic_orders.sh scripts/test_quality_atomic_orders_runner.sh` | Passed |
+| `scripts/check_quality_concurrency_inventory.sh` | Passed after Q-CONC-010: 82 source files classified |
+| `scripts/check_quality_inventory.sh` | Passed after Q-CONC-010: 820 files and 468,716 lines classified |
+| `git diff --check` | Passed |
+
+## 2026-08-14: Windows UMP Callback Reference Count
+
+Behavior commit: `71b7c997`
+
+Sanitizer portability commit: `01df6b3b`
+
+The Windows UMP receive callback used wrapping COM reference increments and
+decrements. It now delegates to a portable pinned counter. Maximum count is a
+permanent sentinel, so an unrepresentable reference cannot be followed by a
+decrement toward deletion. The regression checks ordinary destruction,
+deterministic saturation, stable release after saturation, and 160,000 matched
+concurrent add-release pairs while retaining one owner.
+
+The host gate runs the concurrent primitive under ThreadSanitizer on macOS and
+Linux. Windows uses full C and C++ sanitizer instrumentation because Zig does
+not provide ThreadSanitizer there. CI run `31847011935` failed in the first new
+Windows UMP step with the unconditional ThreadSanitizer configuration. Commit
+`01df6b3b` corrects that configuration; the native Windows rerun is pending.
+
+| Check | Result |
+| --- | --- |
+| `zig build --cache-dir /private/tmp/zig-vst3-winump-refcount-tsan-local --global-cache-dir /private/tmp/zig-vst3-winump-refcount-tsan-global test-winump --summary all` | Passed: 7/7 steps and 4/4 tests; portable concurrent refcount ran under ThreadSanitizer, and Windows GNU fallback tests cross-built |
+| `scripts/check_quality_atomic_orders.sh` | Passed: 57 Zig and 11 native source files tracked |
+| `scripts/test_quality_atomic_orders_runner.sh` | Passed |
+| `scripts/check_quality_concurrency_inventory.sh` | Passed: 82 source files classified |
+| `scripts/test_quality_concurrency_inventory_runner.sh` | Passed |
+| `scripts/test_quality_inventory_runner.sh` | Passed with native-header and native-atomic assertions |
+| `scripts/check_quality_inventory.sh` | Passed: 820 files and 468,716 lines classified |
+| `zig fmt --check build.zig` | Passed |
+| `git diff --check` | Passed |

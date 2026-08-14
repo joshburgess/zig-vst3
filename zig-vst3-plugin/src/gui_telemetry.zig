@@ -118,7 +118,7 @@ pub fn SpscQueue(comptime T: type, comptime capacity: usize) type {
     };
 }
 
-/// Coalesces many invalidations into one pending GUI-thread repaint.
+/// Coalesces invalidations until a scheduled GUI-thread repaint begins.
 pub const RepaintCoalescer = struct {
     pending: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
@@ -126,6 +126,7 @@ pub const RepaintCoalescer = struct {
         return self.pending.cmpxchgStrong(false, true, .acq_rel, .acquire) == null;
     }
 
+    /// Clear before reading the state rendered by the scheduled repaint.
     pub fn complete(self: *RepaintCoalescer) void {
         self.pending.store(false, .release);
     }

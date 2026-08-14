@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 820 source files and 468,715 source lines.
+The checked inventory contains 820 source files and 468,716 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -48,7 +48,7 @@ misstate review effort.
 | Q13 | ADM parsing and rendering | 15 | 33,388 | 5/4/5/4 | High | XML, timed metadata, matrix construction, exclusion rules | Fuzzing, numerical oracles, bounded inputs, partition invariance |
 | Q14 | HRTF, HOA, and spatial matrices | 7 | 14,901 | 5/4/5/4 | High | Measured datasets, conditioning, realtime publication | Dataset corruption, numerical parity, TSan, partition invariance |
 | Q15 | DSP primitives, convolution, filters, effects, resampling, and numerics | 62 | 33,513 | 5/4/5/4 | High | Numerical stability, bounds, realtime execution and publication | Independent vectors, property tests, finite containment, TSan, benchmarks |
-| Q16 | Toolkit-neutral GUI state and models | 16 | 9,005 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
+| Q16 | Toolkit-neutral GUI state and models | 16 | 9,006 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
 | Q17 | LV2 and Audio Unit adapters | 6 | 22,413 | 5/5/5/4 | High | C ABI, host pointers, realtime entry, state and worker callbacks | ABI fixtures, dynamic hosts, sanitizers, metadata lint, failure silence |
 | Q18 | Standalone runtime and native audio, MIDI, and window backends | 60 | 37,463 | 5/5/5/3 | High | OS callbacks, devices, threads, handles, recovery | TSan, callback drain, fault injection, cross-target and physical checks |
 | Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,691 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |

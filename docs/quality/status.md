@@ -150,6 +150,14 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Closed Q-VER-004 by expanding the direct realtime source audit from 18 to all
   26 production example processors and recognizing every public process entry
   form. An exact inventory gate and negative fixture now reject omissions.
+- Closed Q-VER-005 by extending the atomic-order ledger to 11 native C and C++
+  sources in addition to 57 Zig sources. Independent negative fixtures reject
+  changed counts in either language family.
+- Recorded critical Q-CONC-010 after native-order review found wrapping COM
+  references in the Windows UMP callback. Pinned saturation and deterministic
+  plus concurrent regressions pass locally; native Windows CI is pending.
+- Closed Q-INV-002 by classifying `.cc`, `.cxx`, and `.hpp` sources and counting
+  C and C++ atomic syntax in the source inventory.
 
 ## Phase 2 Scope
 
@@ -164,7 +172,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review every atomic operation against the publication contracts and record any
-exception or defect. Continue the realtime call-graph audit across remaining
-GUI, device, MIDI, HRTF, host, and teardown paths, then establish bounded-work
-and teardown-overlap evidence for every asynchronous family.
+Close Q-CONC-010 after the native Windows SDK-backed gate passes. Continue the
+realtime call-graph audit across GUI, device, MIDI, HRTF, host, and teardown
+paths, then establish bounded-work and teardown-overlap evidence for every
+asynchronous family.
