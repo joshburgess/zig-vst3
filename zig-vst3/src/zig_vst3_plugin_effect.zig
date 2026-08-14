@@ -55,8 +55,10 @@ fn optionalChildOrSelf(comptime T: type) type {
     };
 }
 
-const process_parameter_change_capacity = 64;
-const process_event_capacity = 64;
+const process_parameter_change_capacity =
+    zig_vst3_plugin_bridge.input_parameter_change_capacity;
+const process_event_capacity =
+    zig_vst3_plugin_bridge.input_event_capacity;
 const process_output_event_capacity = 64;
 const parameter_observer_capacity = 8;
 
@@ -2401,8 +2403,8 @@ test "simple stereo effect processes with setup sample rate when process context
     };
     try std.testing.expectEqual(types.kResultOk, processor.vtable.setupProcessing(processor, &setup));
 
-    var input_samples = [_]f32{ 1.0, 2.0 };
-    var output_samples = [_]f32{ 9.0, 9.0 };
+    var input_samples = [_]f32{ 1.0, 2.0, 3.0 };
+    var output_samples = [_]f32{ 9.0, 9.0, 9.0 };
     var input_channel_ptrs = [_][*]f32{&input_samples};
     var output_channel_ptrs = [_][*]f32{&output_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
@@ -2418,13 +2420,26 @@ test "simple stereo effect processes with setup sample rate when process context
         .numOutputs = 1,
         .inputs = &inputs,
         .outputs = &outputs,
-        .numSamples = input_samples.len,
+        .numSamples = 2,
         .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
     };
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqual(@as(f32, 44_100.0), output_samples[0]);
     try std.testing.expectEqual(@as(f32, 44_100.0), output_samples[1]);
+    try std.testing.expectEqual(@as(f32, 9.0), output_samples[2]);
+
+    @memset(&output_samples, 9.0);
+    data.numSamples = input_samples.len;
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        processor.vtable.process(processor, &data),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 9.0, 9.0, 9.0 },
+        &output_samples,
+    );
 }
 
 test "simple stereo effect exposes offset zero state and persists the final queue value" {
@@ -4626,6 +4641,7 @@ pub fn SimpleEffect(comptime Config: type) type {
             gui_notes: gui_note_transport.Mailbox = .{},
             gui_note_seen: [128]u64 = @splat(0),
             sample_rate: f64 = 0,
+            maximum_block_frames: usize = 0,
             component_active: bool = false,
             allocator: std.mem.Allocator,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
@@ -5901,7 +5917,6 @@ pub fn SimpleEffect(comptime Config: type) type {
                 return types.kInvalidArgument;
             };
 
-            self.sample_rate = setup.sampleRate;
             if (comptime @hasDecl(Config.Processor, "prepareChecked")) {
                 self.processor_impl.prepareChecked(.{
                     .sample_rate = setup.sampleRate,
@@ -5915,6 +5930,9 @@ pub fn SimpleEffect(comptime Config: type) type {
                     .process_mode = process_mode,
                 });
             }
+            self.sample_rate = setup.sampleRate;
+            self.maximum_block_frames =
+                @intCast(setup.maxSamplesPerBlock);
             resetProcessState(self);
             return types.kResultOk;
         }
@@ -5930,6 +5948,12 @@ pub fn SimpleEffect(comptime Config: type) type {
             const data: *ivstaudioprocessor.ProcessData =
                 @ptrCast(data_raw);
             const self = ownerFromProcessor(ptr);
+            const frame_count =
+                vst_index.nonNegativeCount(data.numSamples) orelse
+                return types.kInvalidArgument;
+            if (self.maximum_block_frames != 0 and
+                frame_count > self.maximum_block_frames)
+                return types.kInvalidArgument;
             const Processor = struct {
                 component: *Component,
                 parameter_changes: plug_process.ParameterChanges,
@@ -5976,7 +6000,6 @@ pub fn SimpleEffect(comptime Config: type) type {
             }
             const host_events = zig_vst3_plugin_bridge.collectInputEvents(data, &event_storage);
             var event_count = host_events.items.len;
-            const frame_count = zig_vst3_plugin_bridge.frameCountOrZero(data);
             if (comptime gui_note_input) {
                 if (frame_count != 0 and event_count < event_storage.len) {
                     var commands: [process_event_capacity]gui_note_transport.Command = undefined;

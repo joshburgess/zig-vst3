@@ -16,6 +16,9 @@ const events_helper = @import("pluginterfaces/vst/vsteventshelper.zig");
 const fixed_string = @import("fixed_string.zig");
 const vstspeaker = @import("pluginterfaces/vst/vstspeaker.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+
+pub const input_parameter_change_capacity: usize = 64;
+pub const input_event_capacity: usize = 64;
 const string128 = @import("string128.zig");
 const tuid = @import("tuid.zig");
 const vst_event_list = @import("vst_event_list.zig");
@@ -2111,6 +2114,29 @@ fn BoundedCollector(comptime T: type) type {
         storage: []T,
         count: usize = 0,
         frame_count: usize,
+        source_visits: usize = 0,
+        item_visits: usize = 0,
+
+        fn visitSource(self: *@This()) bool {
+            if (self.source_visits == input_parameter_change_capacity)
+                return false;
+            self.source_visits += 1;
+            return true;
+        }
+
+        fn visitItem(self: *@This(), limit: usize) bool {
+            if (self.item_visits == limit) return false;
+            self.item_visits += 1;
+            return true;
+        }
+
+        fn canVisitSource(self: *const @This()) bool {
+            return self.source_visits < input_parameter_change_capacity;
+        }
+
+        fn canVisitItem(self: *const @This(), limit: usize) bool {
+            return self.item_visits < limit;
+        }
 
         fn append(self: *@This(), item: T) bool {
             if (!self.hasCapacity()) return false;
@@ -2134,22 +2160,31 @@ const ParameterChangeCollector = BoundedCollector(plug.process.ParameterChange);
 const EventCollector = BoundedCollector(plug.process.Event);
 
 fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *ivstparameterchanges.IParamValueQueue) bool {
+    if (!collector.visitSource()) return false;
     audio_processor_algo.forEachParamValueQueueUntil(queue, collector, collectParameterPoint);
-    return collector.hasCapacity();
+    return collector.hasCapacity() and
+        collector.canVisitSource() and
+        collector.canVisitItem(input_parameter_change_capacity);
 }
 
 fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.ParamID, sample_offset: types.int32, value: vsttypes.ParamValue) bool {
-    const offset = sampleOffsetInBlock(sample_offset, collector.frame_count) orelse return true;
-    if (!isNormalizedValue(value)) return true;
-    return collector.append(.{
+    if (!collector.visitItem(input_parameter_change_capacity)) return false;
+    const offset = sampleOffsetInBlock(sample_offset, collector.frame_count) orelse
+        return collector.canVisitItem(input_parameter_change_capacity);
+    if (!isNormalizedValue(value))
+        return collector.canVisitItem(input_parameter_change_capacity);
+    if (!collector.append(.{
         .id = id,
         .sample_offset = offset,
         .normalized = value,
-    });
+    })) return false;
+    return collector.canVisitItem(input_parameter_change_capacity);
 }
 
 fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) bool {
-    const offset = sampleOffsetInBlock(event.sampleOffset, collector.frame_count) orelse return true;
+    if (!collector.visitItem(input_event_capacity)) return false;
+    const offset = sampleOffsetInBlock(event.sampleOffset, collector.frame_count) orelse
+        return collector.canVisitItem(input_event_capacity);
     const converted: ?plug.process.Event = switch (event.type) {
         @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isNormalizedValue(event.data.noteOn.velocity))
             plug.process.Event.noteOn(offset, event.data.noteOn.channel, event.data.noteOn.pitch, event.data.noteOn.velocity).withBusIndex(event.busIndex)
@@ -2176,9 +2211,12 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) bool
         @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent) => plug.process.Event.noteExpressionText(offset, event.data.noteExpressionText.noteId, event.data.noteExpressionText.typeId).withBusIndex(event.busIndex),
         else => plug.process.Event.other(offset).withBusIndex(event.busIndex),
     };
-    const output = converted orelse return true;
-    output.validate(collector.frame_count) catch return true;
-    return collector.append(output);
+    const output = converted orelse
+        return collector.canVisitItem(input_event_capacity);
+    output.validate(collector.frame_count) catch
+        return collector.canVisitItem(input_event_capacity);
+    if (!collector.append(output)) return false;
+    return collector.canVisitItem(input_event_capacity);
 }
 
 fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.process.Event {
@@ -2787,6 +2825,68 @@ test "zig-vst3-plugin bridge parameter state stores ids and persists streams" {
 
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), restored.getNormalizedById(0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), restored.getNormalizedById(1));
+}
+
+test "zig-vst3-plugin bridge bounds invalid host collection visits" {
+    var event_storage: [1]plug.process.Event = undefined;
+    var event_collector = EventCollector{
+        .storage = &event_storage,
+        .frame_count = 4,
+    };
+    const invalid_event = ivstevents.Event{ .sampleOffset = -1 };
+    for (0..input_event_capacity - 1) |_|
+        try std.testing.expect(collectEvent(
+            &event_collector,
+            &invalid_event,
+        ));
+    try std.testing.expect(!collectEvent(
+        &event_collector,
+        &invalid_event,
+    ));
+    try std.testing.expectEqual(
+        input_event_capacity,
+        event_collector.item_visits,
+    );
+
+    var change_storage: [1]plug.process.ParameterChange = undefined;
+    var change_collector = ParameterChangeCollector{
+        .storage = &change_storage,
+        .frame_count = 4,
+    };
+    for (0..input_parameter_change_capacity - 1) |_|
+        try std.testing.expect(collectParameterPoint(
+            &change_collector,
+            7,
+            -1,
+            0.5,
+        ));
+    try std.testing.expect(!collectParameterPoint(
+        &change_collector,
+        7,
+        -1,
+        0.5,
+    ));
+    try std.testing.expectEqual(
+        input_parameter_change_capacity,
+        change_collector.item_visits,
+    );
+
+    const Queue = vst_parameter_changes.ParamValueQueue(1);
+    var empty_queue = Queue.init(7);
+    change_collector.item_visits = 0;
+    for (0..input_parameter_change_capacity - 1) |_|
+        try std.testing.expect(collectParameterQueue(
+            &change_collector,
+            empty_queue.asInterface(),
+        ));
+    try std.testing.expect(!collectParameterQueue(
+        &change_collector,
+        empty_queue.asInterface(),
+    ));
+    try std.testing.expectEqual(
+        input_parameter_change_capacity,
+        change_collector.source_visits,
+    );
 }
 
 test "zig-vst3-plugin bridge collects VST3 parameter changes" {
