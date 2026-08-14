@@ -17,6 +17,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         iface: iplugview.IPlugView = .{ .vtable = &vtable },
         scale_iface: scale_support.IPlugViewContentScaleSupport = .{ .vtable = &scale_vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        allocator: std.mem.Allocator = std.heap.page_allocator,
         platforms: [max_platforms]types.FIDString = [_]types.FIDString{iplugview.PlatformType.kPlatformTypeNSView} ** max_platforms,
         platform_count: types.uint32 = 0,
         frame: ?*iplugview.IPlugFrame = null,
@@ -40,8 +41,12 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         scale_factor: scale_support.ScaleFactor = 1.0,
 
         pub fn create() ?*Self {
-            const self = std.heap.page_allocator.create(Self) catch return null;
-            self.* = .{ .owned = true };
+            return createWithAllocator(std.heap.page_allocator) catch null;
+        }
+
+        fn createWithAllocator(allocator: std.mem.Allocator) !*Self {
+            const self = try allocator.create(Self);
+            self.* = .{ .allocator = allocator, .owned = true };
             return self;
         }
 
@@ -136,8 +141,9 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             const next = funknown.decrementRefCount(&self.ref_count, "IPlugView");
             if (next == 0 and self.owned) {
                 _ = self.ref_count.load(.acquire);
+                const allocator = self.allocator;
                 if (@hasDecl(Config, "destroy")) Config.destroy(self);
-                std.heap.page_allocator.destroy(self);
+                allocator.destroy(self);
             }
             return next;
         }
@@ -322,6 +328,24 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             .setContentScaleFactor = setContentScaleFactor,
         };
     };
+}
+
+test "plug view allocation preserves allocator ownership" {
+    const View = PlugView(1, struct {});
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.OutOfMemory,
+        View.createWithAllocator(failing.allocator()),
+    );
+
+    const view = try View.createWithAllocator(std.testing.allocator);
+    try std.testing.expectEqual(
+        @as(types.uint32, 0),
+        view.iface.vtable.release(&view.iface),
+    );
 }
 
 test "plug view stores platform attachment and removal" {
