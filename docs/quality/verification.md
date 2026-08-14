@@ -506,3 +506,35 @@ coverage.
 
 The `6f32eea0` repository gate was stopped with exit 130 after this deterministic
 installed-consumer failure. It is not Phase 1 completion evidence.
+
+## 2026-08-14: LV2 UI Lifecycle Accounting
+
+Candidate commit: `8d93103a8c3ade237c469b965ab1c15270ae01f0`
+
+The fresh-cache exact Phase 1 gate completed 431/433 build steps. It passed
+7,455/7,460 tests, with four explicit skips and one failure. The failure was
+`LV2 UI adapter bridges lifecycle automation touch idle and resize`: the fake
+host reported two subscriptions where the later scenario expected one.
+
+The same test first constructs an editor that subscribes during creation and
+unsubscribes during cleanup. It then reuses the fake host for an independent
+subscription scenario, but its cumulative counters were not verified or reset
+between the two. Production code made the expected matched host calls. The
+test's later absolute count was stale.
+
+Commit `719e82da` asserts that the lifecycle probe made exactly one subscribe
+and one unsubscribe call, resets those observations, and preserves the later
+scenario's independent absolute assertions. It also adds a named
+`test-lv2-ui-adapter` gate so this integrated adapter coverage can be selected
+without the complete plugin test root.
+
+| Check | Result |
+| --- | --- |
+| Exact `zig build test --summary all` at `8d93103a` with fresh caches | Failed as valid baseline evidence: 431/433 steps succeeded and 7,455/7,460 tests passed, with four skips and the one stale LV2 UI host-count assertion |
+| `zig build test-vst3-module --summary all` after the repair | Passed: 7/7 steps and 788/788 tests |
+| `zig build test-lv2-ui-adapter --summary all` after the repair | Passed: 9/9 steps; the filtered LV2 UI adapter test and its native VSTGUI dependency succeeded |
+| `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,549 lines classified |
+
+The first sandboxed focused attempt failed during `translate-c` with
+`manifest_create PermissionDenied`. The equivalent run with normal compiler
+cache access passed. This was an environment failure, not a test failure.

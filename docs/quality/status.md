@@ -95,6 +95,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   shared callback gate collided when several installed backend modules were
   compiled together. The named-module fix passes the focused and installed
   consumer gates.
+- Closed Q-VER-003 after the exact gate at `8d93103a` exposed cumulative fake
+  host observations shared by two independent LV2 UI lifecycle scenarios. The
+  test now verifies and resets the first lifecycle pair, and a dedicated LV2 UI
+  adapter gate passes.
 
 ## Phase 1 Scope
 
@@ -109,6 +113,6 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Run the exact Phase 1 repository gate at the corrected candidate, close Phase 1
-only if it passes, and continue the Phase 2 atomic, callback-drain, and
-realtime-call-graph review.
+Run the exact Phase 1 repository gate at the corrected candidate containing
+the LV2 UI verification repair, close Phase 1 only if it passes, and continue
+the Phase 2 atomic, callback-drain, and realtime-call-graph review.
