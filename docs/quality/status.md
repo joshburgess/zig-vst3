@@ -168,6 +168,13 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Recorded the transitive processing chains, shared-state access, failure
   behavior, and concrete work bounds for all 26 production example processors.
   The checked realtime inventory now rejects an omitted contract entry.
+- Added decoded-audio importer cancellation and worker join to the focused
+  resource ThreadSanitizer gate. The expanded gate passes 60/60 tests.
+- Closed Q-VER-006 by making every VSTGUI ThreadSanitizer evidence write
+  failure fatal and proving the former false-pass case with a negative fixture.
+- Completed the Phase 2 teardown matrix across native callbacks, standalone
+  devices, workers, immutable publishers, ARA, HRTF, VSTGUI, and VST3 lifetime
+  families. Repeated TSan gates and focused lifecycle suites pass.
 
 ## Phase 2 Scope
 
@@ -182,5 +189,5 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Audit teardown and callback overlap coverage for every asynchronous family,
-then run the Phase 2 completion gate at one exact commit.
+Run the Phase 2 completion gate at one exact commit and close the phase only if
+all public CI jobs and exit criteria pass.

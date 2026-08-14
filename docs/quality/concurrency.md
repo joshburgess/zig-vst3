@@ -71,6 +71,29 @@ VST table fields named `release`; a changed count still requires renewed review.
 | VSTGUI editor | Stop timers and publications, detach parameter and native accessibility callbacks, unregister editor, release global runtime user | Native VSTGUI lifecycle, ASan, UBSan, and TSan gates |
 | COM object | Prevent new uncounted borrows, release retained interfaces, release final reference, acquire-observe zero before freeing storage | Raw ABI lifecycle tests, component and controller teardown tests, ARA lifecycle tests |
 
+## Teardown Coverage Matrix
+
+This matrix is exhaustive over the asynchronous publication families above.
+It separates owners that must stop or drain work from bounded transports whose
+caller owns both endpoint lifetimes.
+
+| ID | Asynchronous family | Closure or lifetime boundary | Deterministic overlap evidence | Sanitizer evidence |
+| --- | --- | --- | --- | --- |
+| T01 | Native callback admission: CoreAudio session and topology, CoreMIDI, ALSA MIDI and UMP, Windows MIDI and UMP | Close the indivisible admission word, unregister or stop the platform source, drain admitted callbacks, then clear callback-visible state | The callback-gate stale-admission and blocking-drain tests; each MIDI backend's `input stop drains` test; CoreAudio native callback admission test; Windows UMP pinned-reference stress | `test-midi-thread-sanitizers`, CoreAudio's focused TSan module, and the portable UMP TSan executable. Native Windows CI executes the SDK-backed UMP module. |
+| T02 | Standalone audio, capture-rate bridge, MIDI queue, and application device ownership | Stop the device callback source before runtime and queue teardown; restart reinitializes callback-visible configuration | `standalone application contains callbacks across stop and restart`, device lifecycle tests, and bounded capture and MIDI SPSC stress | The aggregate Phase 2 TSan gate selects bounded capture and MIDI queue transfers. Backend C shims run with full C undefined-behavior instrumentation. |
+| T03 | Resource jobs, recovery, decoded-audio importers, Model Shell, and Resource Swap | Publish cancellation, join the worker, dispose any unclaimed result, stop processing, then retire exchange slots and destroy stable owners | Job replacement and cancellation tests, decoded importer cancellation acknowledgment, repeated Model Shell preparation teardown, and owning-example lifecycle tests | `test-resource-thread-sanitizer` covers job, recovery, exchange, and decoded importer cancellation plus join. |
+| T04 | Immutable snapshots, graph and telemetry publications, sample and IR stores, and resource exchange | Stop the writer or processing endpoint, prevent new leases where required, observe every release, then reclaim retired slots | Realtime-reference release and malformed-copy tests, coherent-generation stress, resource replacement stress, and IR preparation queue stress | `test-phase2-thread-sanitizers`, `test-resource-thread-sanitizer`, and `test-dsp-thread-sanitizer`. |
+| T05 | ARA host readers, source cache, and spectral publications | Close lease admission, drain active readers, destroy the foreign reader, then reclaim cache or transform generations | `ARA controller reads host audio and closes readers safely`, cache generation stress, and spectral coherent-read stress | The aggregate Phase 2 TSan gate runs the reader close and cache overlap selections. Spectral publication runs in the ARA and DSP concurrency suites. |
+| T06 | HRTF motion and prepared-filter streams | The caller stops and joins its producer before renderer or database storage ends. The transport itself owns no thread or heap allocation. | Motion-point and prepared-filter producer tests join before scope teardown and verify ordered complete transfer | `test-dsp-thread-sanitizer` runs both HRTF concurrent transfer families. No internal worker teardown exists. |
+| T07 | VSTGUI runtime users, editor callbacks, timers, native accessibility objects, and foreign registrations | Stop timers and publications, detach parameter and accessibility callbacks, unregister the editor, destroy views, then release the serialized global runtime user | Concurrent headless editor lifecycle tests, retained accessibility object tests, registration rollback tests, and runtime transition tests | Four repeated native VSTGUI TSan processes plus ASan and UBSan lifecycle suites. The runner now fails if any evidence artifact cannot be written. |
+| T08 | VST3 COM lifetimes and connection peers | Prevent new uncounted borrows, retain a peer across each unlocked host call, disconnect under the peer mutex, then release the final component reference | Saturated and concurrent COM reference tests, replaced-peer release tests, disconnect and reconnect host-request lifecycle | The aggregate Phase 2 TSan gate runs concurrent reference changes. VST3 module lifecycle tests exercise peer retention and release. |
+
+ALSA, PipeWire, WASAPI, and CoreAudio audio backends delegate callback-source
+quiescence to their synchronous platform stop or destroy contracts. T02 covers
+the framework-owned state transition independently of hardware. Phase 6 retains
+the native ABI and platform-contract audit; it is not treated as an untested
+framework teardown interval here.
+
 ## Realtime Surface
 
 Permitted processing-thread synchronization is deliberately narrow:

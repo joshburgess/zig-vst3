@@ -960,3 +960,36 @@ Windows job `94920244792`, passed the native UMP step.
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
 | GitHub Actions run `31848681596`, Windows job `94920244792`, `Test Windows UMP bridge` | Passed: native Windows SDK-backed module compiled and executed |
+
+## 2026-08-14: Phase 2 Teardown and Callback Overlap
+
+Importer TSan commit: `256087f4`
+
+VSTGUI runner commit: `8f5f1154`
+
+The teardown audit maps every asynchronous publication family to its closure
+order, deterministic overlap regression, and sanitizer evidence. Decoded-audio
+importer cancellation and worker join now run inside the resource TSan gate.
+The VSTGUI TSan runner now treats any metadata or status write failure as a
+failed verification run. Its negative fixture recreates the missing-artifact
+condition without exhausting the disk.
+
+The first attempt ran three new TSan compilations concurrently with separate
+global caches. It exhausted `/private/tmp`; Zig reported `NoSpaceLeft`, and the
+VSTGUI runner exposed Q-VER-006. Removing only regenerable repository and test
+caches recovered space. Sequential reruns shared one global cache and passed.
+
+| Check | Result |
+| --- | --- |
+| `zig build --cache-dir /private/tmp/zig-vst3-teardown-phase2-local --global-cache-dir /private/tmp/zig-vst3-teardown-shared-global test-phase2-thread-sanitizers --summary all` | Passed outside the restricted sandbox: 10/10 steps and 17/17 tests |
+| Sixteen repeated aggregate Phase 2 TSan runs | Passed: 16/16 repetitions, 64 sanitizer processes, and 272 selected tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-teardown-midi-local --global-cache-dir /private/tmp/zig-vst3-teardown-shared-global test-midi-thread-sanitizers --summary all` | Passed: 11/11 steps and 9/9 tests |
+| Sixteen repeated native MIDI TSan runs | Passed: 16/16 repetitions, 80 sanitizer processes, and 144 selected tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-teardown-resource-local --global-cache-dir /private/tmp/zig-vst3-teardown-shared-global test-resource-thread-sanitizer --summary all` | Passed: 5/5 steps and 60/60 tests |
+| Eight repeated resource and importer TSan runs | Passed: 8/8 repetitions, 16 sanitizer processes, and 480 selected tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-teardown-dsp-local --global-cache-dir /private/tmp/zig-vst3-teardown-shared-global test-dsp-thread-sanitizer --summary all` | Passed: 5/5 steps and 149/149 tests |
+| Eight repeated DSP, HRTF, and snapshot TSan runs | Passed: 8/8 repetitions, 16 sanitizer processes, and 1,192 selected tests |
+| `VSTGUI_THREAD_SANITIZER_REPETITIONS=4 VSTGUI_THREAD_SANITIZER_OUTPUT_DIR=/private/tmp/zig-vst3-teardown-vstgui-artifacts scripts/test_vstgui_thread_sanitizer.sh` | Passed: 4/4 process runs with complete evidence artifacts |
+| `scripts/test_vstgui_thread_sanitizer_runner.sh` | Passed: success, test failure, interruption, invalid configuration, owned-build cleanup, and artifact-write failure cases |
+| `zig build --cache-dir /private/tmp/zig-vst3-teardown-coreaudio-local --global-cache-dir /private/tmp/zig-vst3-teardown-shared-global test-coreaudio --summary all` | Passed outside the restricted sandbox: 9/9 steps and 10/11 tests; one hardware-dependent discovery test skipped |
+| `zig build --cache-dir /private/tmp/zig-vst3-teardown-examples-local --global-cache-dir /private/tmp/zig-vst3-teardown-shared-global test-example-ownership --summary all` | Passed outside the restricted sandbox: 17/17 steps and 46/46 tests |
