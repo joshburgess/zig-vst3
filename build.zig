@@ -4807,6 +4807,11 @@ pub fn build(b: *std.Build) void {
     );
     test_step.dependOn(
         &b.addSystemCommand(
+            &.{"scripts/check_realtime_source_inventory.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
             &.{"scripts/test_quality_inventory_runner.sh"},
         ).step,
     );
@@ -4818,6 +4823,11 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(
         &b.addSystemCommand(
             &.{"scripts/test_quality_atomic_orders_runner.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_realtime_source_inventory_runner.sh"},
         ).step,
     );
     test_step.dependOn(
