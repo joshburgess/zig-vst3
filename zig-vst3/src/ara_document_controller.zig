@@ -193,13 +193,15 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             use_64_bit_samples: bool,
         };
 
+        const audio_reader_closed_bit: u32 = 1 << 31;
+        const audio_reader_count_mask: u32 =
+            audio_reader_closed_bit - 1;
+
         const AudioReaderSlot = struct {
             generation: u32 = 1,
             value: ?AudioReaderState = null,
-            closing: std.atomic.Value(bool) =
-                std.atomic.Value(bool).init(false),
-            active_reads: std.atomic.Value(u32) =
-                std.atomic.Value(u32).init(0),
+            leases: std.atomic.Value(u32) =
+                std.atomic.Value(u32).init(audio_reader_closed_bit),
         };
 
         const AudioReadLease = struct {
@@ -574,6 +576,10 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             const callback =
                 host_interface.createAudioReaderForSource orelse
                 return error.MissingHostInterface;
+            _ = host_interface.readAudioSamples orelse
+                return error.MissingHostInterface;
+            const destroy = host_interface.destroyAudioReader orelse
+                return error.MissingHostInterface;
             const host_source: raw.ARAAudioSourceHostRef =
                 if (source.host_ref) |pointer|
                     @ptrCast(pointer)
@@ -591,11 +597,25 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 .index = @intCast(reader_index),
                 .generation = self.audio_readers[reader_index].generation,
             };
-            self.audio_readers[reader_index].value = .{
+            const slot = &self.audio_readers[reader_index];
+            slot.value = .{
                 .source_id = source_id,
                 .host_reader = host_reader,
                 .use_64_bit_samples = use_64_bit_samples,
             };
+            if (slot.leases.cmpxchgStrong(
+                audio_reader_closed_bit,
+                0,
+                .acq_rel,
+                .acquire,
+            ) != null) {
+                slot.value = null;
+                destroy(
+                    self.host.audioAccessControllerHostRef,
+                    host_reader,
+                );
+                return error.AudioReaderUnavailable;
+            }
             return .{
                 .controller = self,
                 .reader_id = reader_id,
@@ -2880,26 +2900,25 @@ pub fn Controller(comptime limits: model_api.Limits) type {
             if (reader_id.index >= self.audio_readers.len)
                 return null;
             const slot = &self.audio_readers[reader_id.index];
-            if (slot.closing.load(.acquire)) return null;
-            var active_reads =
-                slot.active_reads.load(.acquire);
+            var leases = slot.leases.load(.acquire);
             while (true) {
-                if (active_reads == std.math.maxInt(u32))
+                if (leases & audio_reader_closed_bit != 0)
                     return null;
-                if (slot.active_reads.cmpxchgWeak(
-                    active_reads,
-                    active_reads + 1,
+                if (leases & audio_reader_count_mask ==
+                    audio_reader_count_mask)
+                    return null;
+                if (slot.leases.cmpxchgWeak(
+                    leases,
+                    leases + 1,
                     .acquire,
                     .acquire,
                 )) |observed| {
-                    active_reads = observed;
+                    leases = observed;
                     continue;
                 }
                 break;
             }
-            if (slot.closing.load(.acquire) or
-                slot.generation != reader_id.generation)
-            {
+            if (slot.generation != reader_id.generation) {
                 _ = releaseAudioRead(slot);
                 return null;
             }
@@ -2916,15 +2935,15 @@ pub fn Controller(comptime limits: model_api.Limits) type {
         }
 
         fn releaseAudioRead(slot: *AudioReaderSlot) bool {
-            var active_reads = slot.active_reads.load(.acquire);
-            while (active_reads != 0) {
-                if (slot.active_reads.cmpxchgWeak(
-                    active_reads,
-                    active_reads - 1,
+            var leases = slot.leases.load(.acquire);
+            while (leases & audio_reader_count_mask != 0) {
+                if (slot.leases.cmpxchgWeak(
+                    leases,
+                    leases - 1,
                     .release,
                     .acquire,
                 )) |observed| {
-                    active_reads = observed;
+                    leases = observed;
                     continue;
                 }
                 return true;
@@ -2947,17 +2966,18 @@ pub fn Controller(comptime limits: model_api.Limits) type {
         ) void {
             if (reader_index >= self.audio_readers.len) return;
             const slot = &self.audio_readers[reader_index];
-            if (slot.closing.cmpxchgStrong(
-                false,
-                true,
+            const previous = slot.leases.fetchOr(
+                audio_reader_closed_bit,
                 .acq_rel,
-                .acquire,
-            ) != null)
-                return;
-            defer slot.closing.store(false, .release);
-            if (slot.generation != expected_generation) return;
-            while (slot.active_reads.load(.acquire) != 0)
+            );
+            if (previous & audio_reader_closed_bit != 0) return;
+            while (slot.leases.load(.acquire) &
+                audio_reader_count_mask != 0)
                 std.Thread.yield() catch {};
+            if (slot.generation != expected_generation) {
+                slot.leases.store(0, .release);
+                return;
+            }
             const state = slot.value orelse return;
             const host_interface =
                 self.audioAccessInterface();
@@ -4502,14 +4522,31 @@ test "ARA controller reads host audio and closes readers safely" {
     const inactive_slot = &controller.audio_readers[0];
     try std.testing.expect(!TestController.releaseAudioRead(inactive_slot));
     try std.testing.expectEqual(
-        @as(u32, 0),
-        inactive_slot.active_reads.load(.acquire),
+        TestController.audio_reader_closed_bit,
+        inactive_slot.leases.load(.acquire),
     );
-    inactive_slot.active_reads.store(1, .release);
+    inactive_slot.leases.store(
+        TestController.audio_reader_closed_bit | 1,
+        .release,
+    );
     try std.testing.expect(TestController.releaseAudioRead(inactive_slot));
     try std.testing.expectEqual(
-        @as(u32, 0),
-        inactive_slot.active_reads.load(.acquire),
+        TestController.audio_reader_closed_bit,
+        inactive_slot.leases.load(.acquire),
+    );
+    inactive_slot.leases.store(
+        TestController.audio_reader_count_mask,
+        .release,
+    );
+    try std.testing.expect(
+        controller.acquireAudioReader(.{
+            .index = 0,
+            .generation = inactive_slot.generation,
+        }) == null,
+    );
+    inactive_slot.leases.store(
+        TestController.audio_reader_closed_bit,
+        .release,
     );
     try controller.document.beginEditing();
     const source = try controller.document.createAudioSource(
@@ -4524,7 +4561,23 @@ test "ARA controller reads host audio and closes readers safely" {
     );
     _ = try controller.document.endEditing();
     try controller.setAudioSourceSamplesAccess(source, true);
+    var incomplete_audio_interface =
+        controller.audioAccessInterface().?.*;
+    incomplete_audio_interface.destroyAudioReader = null;
+    controller.host.audioAccessControllerInterface =
+        &incomplete_audio_interface;
+    try std.testing.expectError(
+        error.MissingHostInterface,
+        controller.openAudioReader(source, false),
+    );
+    try std.testing.expectEqual(@as(usize, 0), audio.reader_open_count);
+    controller.host.audioAccessControllerInterface =
+        host.audioAccessControllerInterface;
     var reader = try controller.openAudioReader(source, false);
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        controller.audio_readers[0].leases.load(.acquire),
+    );
     var left: [3]f32 = @splat(0);
     var right: [3]f32 = @splat(0);
     const buffers = [_][]f32{ &left, &right };
@@ -4544,6 +4597,10 @@ test "ARA controller reads host audio and closes readers safely" {
     try concurrent_reader.readF32(2, &buffers);
     reader.close();
     try std.testing.expectEqual(@as(usize, 1), audio.destroy_count);
+    try std.testing.expectEqual(
+        TestController.audio_reader_closed_bit,
+        controller.audio_readers[0].leases.load(.acquire),
+    );
 
     const ReadContext = struct {
         reader: *TestController.AudioReader,
