@@ -91,6 +91,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Completed the focused ADM selection with 210/210 tests. The first exact
   repository candidate gate was intentionally stopped after the callback audit
   invalidated that candidate; it remains baseline evidence rather than a pass.
+- Closed Q-VER-002 after the next exact gate found that relative imports of the
+  shared callback gate collided when several installed backend modules were
+  compiled together. The named-module fix passes the focused and installed
+  consumer gates.
 
 ## Phase 1 Scope
 

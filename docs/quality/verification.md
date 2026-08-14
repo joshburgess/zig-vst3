@@ -480,3 +480,29 @@ The first sandboxed focused matrix reached 25 passing tests but reported eleven
 Zig `manifest_create PermissionDenied` cache failures. The approved rerun
 outside the sandbox passed completely. These were environment failures, not
 test failures.
+
+## 2026-08-14: Installed MIDI Module Identity
+
+Change commit: `42257ac2`
+
+The exact Phase 1 gate at `6f32eea0` found that a relative import of
+`native_callback_gate.zig` worked when each backend compiled alone but failed
+when the installed consumer imported CoreMIDI, ALSA MIDI, Windows MIDI, and UMP
+together. Zig correctly rejected assigning the same source file to several
+module identities.
+
+The build now creates one named callback-gate module shared by the public
+backend graph. Isolated native, TSan, and cross-target compilations receive a
+target-matched instance of that named module. The gate's own tests run as a
+dedicated TSan root, so changing the import boundary does not reduce its direct
+coverage.
+
+| Check | Result |
+| --- | --- |
+| `zig build --cache-dir /private/tmp/zig-vst3-midi-module-local --global-cache-dir /private/tmp/zig-vst3-midi-module-global test-coremidi test-alsamidi test-alsaump test-winmidi test-winump --summary all` | Passed: 47/47 build steps and 54/54 tests |
+| `scripts/test_installed_package.sh --optimize=Debug` | Passed: 18/18 build steps and 96/96 downstream tests across effect, instrument, core, DSP fixture, and C kernel consumers |
+| `for repetition in {1..16}; do zig build --cache-dir /private/tmp/zig-vst3-midi-module-local --global-cache-dir /private/tmp/zig-vst3-midi-module-global test-midi-thread-sanitizers --summary none \|\| exit; done` | Passed: 16/16 aggregate repetitions, 80 sanitizer process runs, and 144 selected tests |
+| `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,524 lines classified |
+
+The `6f32eea0` repository gate was stopped with exit 130 after this deterministic
+installed-consumer failure. It is not Phase 1 completion evidence.
