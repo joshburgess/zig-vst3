@@ -189,3 +189,32 @@ is still valid.
 | `zig build test-lv2 --summary all` | Passed: 56/56 steps and 570/570 tests, including ABI, native host, bundle, metadata, UI, component-state, topology, and ReleaseSafe cross-build checks |
 | `zig build test-audio-unit --summary all` | Passed: 30/30 steps and 284/284 tests, including ABI, native host, bundle, multi-output, and ReleaseSafe cross-build checks |
 | `scripts/check_quality_inventory.sh` | Passed: 811 files and 465,926 lines classified; Q17 contains 6 files and 22,409 lines |
+
+## 2026-08-14: Q18 Native Backend Ownership
+
+Reviewed scope: CoreAudio, WASAPI, ALSA, PipeWire, CoreMIDI, ALSA MIDI and
+UMP, Windows MIDI and UMP, scheduler queues, device catalogs, and standalone
+Win32, Cocoa, X11, and Wayland windows, including their native shims.
+
+Commit `d28816e4` makes ALSA and Windows MIDI initialization failure-atomic and
+closes a PipeWire properties leak on errors before stream construction. Native
+test modules now compile their host-platform C or Objective-C shims with Zig's
+full C undefined-behavior instrumentation.
+
+Command:
+
+`zig build test-coreaudio test-wasapi test-alsa test-pipewire test-alsamidi test-alsaump test-winmidi test-winump test-coremidi test-winwindow test-cocoawindow test-x11window test-waylandwindow --summary all`
+
+Result: passed, 90/90 build steps and 87/89 tests. The two skips are explicit
+opposite-platform branches: unsupported CoreAudio on macOS and native PipeWire
+on non-Linux. The matrix also completed ReleaseSafe Linux and Windows cross
+compilation and link fixtures for the applicable backends.
+
+The ALSA and Windows MIDI tests inject initial device-query failure, verify a
+closed state with zero topology generation, and then reopen the same backend.
+PipeWire property ownership follows the upstream contract: the shim frees the
+object before stream construction, while a call to `pw_stream_new_simple`
+transfers it to PipeWire.
+
+Inventory check: passed, 811 files and 466,001 lines classified. Q18 contains
+58 files and 36,654 lines.

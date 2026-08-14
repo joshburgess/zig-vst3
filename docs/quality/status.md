@@ -33,6 +33,15 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   borrows, and native Core Foundation transfer contracts.
 - Closed Q-MEM-003 with injected host-instance allocation failures, testing
   allocator teardown, and integrated LV2 subscription-order coverage.
+- Recorded Q18 native audio, MIDI, window, scheduler, and dynamic-library
+  ownership and teardown contracts.
+- Closed Q-MEM-004 by making ALSA and Windows MIDI initialization
+  failure-atomic, including successful retry after an injected device-query
+  failure.
+- Closed Q-MEM-005 by releasing PipeWire properties on every failure before
+  their documented transfer to a stream.
+- Enabled full C undefined-behavior instrumentation on all native backend test
+  modules and passed the 90-step focused platform matrix.
 
 ## Phase 1 Scope
 
@@ -47,6 +56,6 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review Q18 native audio, MIDI, and window backends next. They own operating
-system handles, foreign callback contexts, scheduler queues, and platform
-resources whose teardown can overlap external calls.
+Review Q19 VSTGUI C++ and native platform ownership next. It owns C++ views,
+controllers, platform objects, accessibility nodes, drawing resources, and C
+bridge allocations across attach, detach, callback, and failure paths.
