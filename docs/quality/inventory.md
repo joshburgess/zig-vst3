@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked Phase 0 inventory contains 811 source files and 465,508 source lines.
+The checked inventory contains 811 source files and 465,638 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -36,9 +36,9 @@ misstate review effort.
 | Q01 | Raw VST3 ABI mirrors and COM helpers | 114 | 28,860 | 5/5/4/5 | Elevated | Public ABI, pointers, reference counts, host callbacks | SDK layout parity, callback lifecycle, validators, sanitizers |
 | Q02 | ARA model, controller, analysis, cache, and official headers | 15 | 27,657 | 5/4/5/3 | High | Host callbacks, readers, atomics, persistence, untrusted host data | Header parity, lifecycle stress, allocator failure, TSan, state corruption |
 | Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,080 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
-| Q04 | Raw-to-framework VST3 processor and controller adapters | 3 | 11,582 | 5/5/5/4 | High | Realtime host entry, dual state stores, resource publication | Lifecycle model, failure silence, host mutation, sanitizer stress |
+| Q04 | Raw-to-framework VST3 processor and controller adapters | 3 | 11,712 | 5/5/5/4 | High | Realtime host entry, dual state stores, resource publication | Lifecycle model, failure silence, host mutation, sanitizer stress |
 | Q05 | Raw-package example plugin declarations | 18 | 758 | 2/2/2/4 | Moderate | Factory examples and public construction patterns | Compile, validator, package examples |
-| Q06 | Framework declaration, lifecycle, topology, and runtime core | 45 | 23,110 | 5/5/5/4 | High | Public compatibility, ownership, realtime processing | API manifest, state-machine tests, allocator failure, bounded-work audit |
+| Q06 | Framework declaration, lifecycle, topology, and runtime core | 16 | 9,483 | 5/5/5/4 | High | Public compatibility, ownership, realtime processing | API manifest, state-machine tests, allocator failure, bounded-work audit |
 | Q07 | Parameters, state, units, and resources | 23 | 13,649 | 5/5/4/4 | Elevated | Persistence, background work, publication, public API | Migration corpus, transactionality, allocator failure, TSan |
 | Q08 | Process context, events, changes, segmentation, and ordering | 5 | 9,112 | 5/5/5/4 | High | Host-controlled counts and pointers on realtime path | Boundary generation, malformed host data, partition invariance |
 | Q09 | MIDI 1, MIDI 2, MIDI-CI, MPE, files, streams, and sessions | 33 | 20,353 | 4/5/5/3 | High | Untrusted byte streams, bounded queues, session state | Fuzzing, truncation, progress, capacity, deterministic state models |
@@ -50,7 +50,7 @@ misstate review effort.
 | Q15 | DSP primitives, convolution, filters, effects, resampling, and numerics | 62 | 33,511 | 5/4/5/4 | High | Numerical stability, bounds, realtime execution and publication | Independent vectors, property tests, finite containment, TSan, benchmarks |
 | Q16 | Toolkit-neutral GUI state and models | 16 | 8,790 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
 | Q17 | LV2 and Audio Unit adapters | 6 | 22,274 | 5/5/5/4 | High | C ABI, host pointers, realtime entry, state and worker callbacks | ABI fixtures, dynamic hosts, sanitizers, metadata lint, failure silence |
-| Q18 | Standalone runtime and native audio, MIDI, and window backends | 29 | 22,965 | 5/5/5/3 | High | OS callbacks, devices, threads, handles, recovery | TSan, callback drain, fault injection, cross-target and physical checks |
+| Q18 | Standalone runtime and native audio, MIDI, and window backends | 58 | 36,592 | 5/5/5/3 | High | OS callbacks, devices, threads, handles, recovery | TSan, callback drain, fault injection, cross-target and physical checks |
 | Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,598 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
 | Q20 | Product and API examples | 54 | 14,806 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
 | Q21 | Test hosts, reference adapters, and downstream fixtures | 100 | 29,657 | 3/3/4/4 | Moderate | Oracle correctness and false confidence | Mutation review, independent provenance, fixture self-tests |
@@ -68,9 +68,9 @@ manual review. They include false positives and cannot establish absence.
 | Q01 | 122 | 2,162 | 91 | 1,126 | 92 | 2,429 |
 | Q02 | 6 | 437 | 40 | 190 | 174 | 316 |
 | Q03 | 38 | 271 | 8 | 194 | 32 | 280 |
-| Q04 | 52 | 359 | 4 | 128 | 138 | 494 |
+| Q04 | 72 | 370 | 4 | 128 | 138 | 505 |
 | Q05 | 0 | 2 | 0 | 0 | 0 | 114 |
-| Q06 | 239 | 10 | 0 | 131 | 174 | 1,308 |
+| Q06 | 18 | 10 | 0 | 14 | 167 | 1,308 |
 | Q07 | 107 | 7 | 34 | 9 | 326 | 1,460 |
 | Q08 | 1 | 0 | 0 | 0 | 3 | 1,216 |
 | Q09 | 53 | 0 | 0 | 0 | 661 | 842 |
@@ -82,7 +82,7 @@ manual review. They include false positives and cannot establish absence.
 | Q15 | 2 | 12 | 32 | 0 | 63 | 1,870 |
 | Q16 | 2 | 67 | 17 | 17 | 187 | 409 |
 | Q17 | 51 | 439 | 4 | 234 | 139 | 896 |
-| Q18 | 45 | 535 | 93 | 636 | 56 | 606 |
+| Q18 | 266 | 535 | 93 | 753 | 63 | 606 |
 | Q19 | 185 | 0 | 0 | 749 | 68 | 0 |
 | Q20 | 111 | 252 | 16 | 35 | 255 | 836 |
 | Q21 | 63 | 211 | 8 | 136 | 451 | 268 |

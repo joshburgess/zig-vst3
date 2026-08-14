@@ -89,3 +89,14 @@ allocator, which gives the Debug allocator leak visibility over both ownership
 levels.
 
 Change commit: `8158b82d60ea22171e338824861329331423dc01`
+
+## 2026-08-14: Native Shim Inventory Correction
+
+Commands:
+
+- `scripts/test_quality_inventory_runner.sh`
+- `scripts/check_quality_inventory.sh`
+
+Result: passed. The fixture now requires a representative native shim to map to
+Q18. The corrected inventory still classifies 811 files, with 16 files in Q06
+and 58 in Q18. The source total is 465,638 lines after the Q04 allocator tests.
