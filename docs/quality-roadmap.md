@@ -52,6 +52,8 @@ Phase 0 creates `docs/quality/` with these maintained records:
   teardown contracts plus the checked synchronization-source inventory
 - `atomic-orders.md`: checked per-source counts for explicit Zig, C, and C++
   atomic orders so later synchronization changes require renewed review
+- `realtime.md`: checked processing entry points, transitive helper chains,
+  permitted operations, work bounds, and failure behavior
 - `status.md`: phase state, completed scope, and next review target
 
 Findings use `Q-<area>-<number>` identifiers and one of four severities:

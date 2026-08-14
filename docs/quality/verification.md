@@ -851,6 +851,35 @@ semantic review record to be revisited.
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
 
+## 2026-08-14: VST3 Realtime Bounds and Transitive Call Chains
+
+Behavior commit: `10ea05e6`
+
+The VST3 adapter now retains the maximum block from successful preparation and
+rejects a negative or oversized block before it traverses host input or invokes
+the processor. Parameter queue visits, parameter point attempts, and event
+attempts are independently capped at 64. Invalid host entries consume those
+budgets, so a large invalid host count cannot create unbounded callback work.
+
+The maintained realtime record maps the transitive helper chains for all 26
+production example processors. It distinguishes host-negotiated block bounds
+from fixed internal limits, records shared-state operations and failure paths,
+and is checked against both the direct source audit and source discovery.
+
+| Check | Result |
+| --- | --- |
+| `zig build --cache-dir /private/tmp/zig-vst3-vst3-rt-limits-local --global-cache-dir /private/tmp/zig-vst3-vst3-rt-limits-global test-vst3-module --summary all` | Passed: 7/7 steps and 792/792 tests |
+| `scripts/check_realtime_source_inventory.sh` | Passed: 26 processor files audited and documented |
+| `scripts/test_realtime_source_inventory_runner.sh` | Passed: missing audit and missing contract entries rejected |
+| `scripts/check_quality_inventory.sh` | Passed: 820 files and 468,867 lines classified |
+| `scripts/test_quality_inventory_runner.sh` | Passed |
+| `scripts/check_quality_concurrency_inventory.sh` | Passed: 82 source files classified |
+| `scripts/test_quality_concurrency_inventory_runner.sh` | Passed |
+| `scripts/check_quality_atomic_orders.sh` | Passed: 57 Zig and 11 native source files tracked |
+| `scripts/test_quality_atomic_orders_runner.sh` | Passed |
+| `bash -n scripts/check_realtime_source_inventory.sh scripts/test_realtime_source_inventory_runner.sh` | Passed |
+| `git diff --check` | Passed |
+
 ## 2026-08-14: Realtime Source Audit Coverage
 
 Change commit: `59bced5d`
@@ -901,7 +930,7 @@ count independently of the existing Zig mutation.
 
 Behavior commit: `71b7c997`
 
-Sanitizer portability commit: `01df6b3b`
+Sanitizer portability commits: `01df6b3b`, `4750d23d`
 
 The Windows UMP receive callback used wrapping COM reference increments and
 decrements. It now delegates to a portable pinned counter. Maximum count is a
@@ -914,7 +943,10 @@ The host gate runs the concurrent primitive under ThreadSanitizer on macOS and
 Linux. Windows uses full C and C++ sanitizer instrumentation because Zig does
 not provide ThreadSanitizer there. CI run `31847011935` failed in the first new
 Windows UMP step with the unconditional ThreadSanitizer configuration. Commit
-`01df6b3b` corrects that configuration; the native Windows rerun is pending.
+`01df6b3b` selects the supported sanitizer set. Commit `4750d23d` keeps the
+portable libc++ stress executable on TSan-capable hosts while Windows compiles
+and executes the actual SDK-backed module. GitHub Actions run `31848681596`,
+Windows job `94920244792`, passed the native UMP step.
 
 | Check | Result |
 | --- | --- |
@@ -927,3 +959,4 @@ Windows UMP step with the unconditional ThreadSanitizer configuration. Commit
 | `scripts/check_quality_inventory.sh` | Passed: 820 files and 468,716 lines classified |
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
+| GitHub Actions run `31848681596`, Windows job `94920244792`, `Test Windows UMP bridge` | Passed: native Windows SDK-backed module compiled and executed |

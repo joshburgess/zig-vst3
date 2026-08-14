@@ -155,9 +155,19 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   changed counts in either language family.
 - Recorded critical Q-CONC-010 after native-order review found wrapping COM
   references in the Windows UMP callback. Pinned saturation and deterministic
-  plus concurrent regressions pass locally; native Windows CI is pending.
+  plus concurrent regressions pass locally.
 - Closed Q-INV-002 by classifying `.cc`, `.cxx`, and `.hpp` sources and counting
   C and C++ atomic syntax in the source inventory.
+- Closed critical Q-CONC-010 after GitHub Actions compiled and executed the
+  Windows SDK-backed UMP gate successfully in run `31848681596`, Windows job
+  `94920244792`.
+- Closed high-severity Q-RT-004 by enforcing the successful VST3 negotiated
+  maximum block before host input collection or processor invocation.
+- Closed high-severity Q-RT-005 by capping parameter queue, parameter point,
+  and event host-interface visits even when every reported entry is invalid.
+- Recorded the transitive processing chains, shared-state access, failure
+  behavior, and concrete work bounds for all 26 production example processors.
+  The checked realtime inventory now rejects an omitted contract entry.
 
 ## Phase 2 Scope
 
@@ -172,7 +182,5 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Close Q-CONC-010 after the native Windows SDK-backed gate passes. Continue the
-realtime call-graph audit across GUI, device, MIDI, HRTF, host, and teardown
-paths, then establish bounded-work and teardown-overlap evidence for every
-asynchronous family.
+Audit teardown and callback overlap coverage for every asynchronous family,
+then run the Phase 2 completion gate at one exact commit.
