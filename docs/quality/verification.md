@@ -598,7 +598,7 @@ admission CAS cannot succeed.
 
 ## 2026-08-14: Realtime Topology Mutation Gate
 
-Change commit: `244e1ae6`
+Change commits: `244e1ae6`, `c4aeda04`
 
 The exact Phase 1 gate at `7b2f2882` was stopped intentionally with exit 130
 after the continuing realtime call-graph audit invalidated the candidate. It
@@ -619,8 +619,24 @@ The regression enters a realtime scope, verifies that all three calls fail
 without reaching their callbacks, and then verifies that the same calls still
 succeed outside that scope.
 
+The next exact gate at `8c82ba27` was stopped intentionally with exit 130 when
+the continuing audit found that the documented raw `SimpleEffect` snapshot and
+mutation functions reached the same topology mutex without passing through the
+guarded sink. Before the stop, the candidate passed the repository scans,
+native visual checks, codec interoperability probes, downstream consumers, and
+the installed-package runner reached by the gate. This is partial baseline
+evidence only.
+
+Commit `c4aeda04` applies the audit guard at all four raw entry points. Its
+integration regression verifies that the snapshot and three mutations record
+four lock violations without touching topology state in a realtime scope.
+Normal control-thread topology publication and processing behavior continue in
+the same test.
+
 | Check | Result |
 | --- | --- |
 | `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter "host request"` | Passed: 9/9 tests |
-| `zig build --cache-dir /private/tmp/zig-vst3-host-request-local --global-cache-dir /private/tmp/zig-vst3-host-request-global test-vst3-module --summary all` | Passed: 7/7 steps and 788/788 tests |
-| `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,679 lines classified |
+| `zig build --cache-dir /private/tmp/zig-vst3-host-request-local --global-cache-dir /private/tmp/zig-vst3-host-request-global test-vst3-module --summary all` | Passed before the raw API refinement: 7/7 steps and 788/788 tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-raw-topology-local --global-cache-dir /private/tmp/zig-vst3-raw-topology-global test-vst3-module --summary all` | Passed after the raw API refinement: 7/7 steps and 788/788 tests |
+| `scripts/check_quality_inventory.sh` before the raw API refinement | Passed: 812 files and 467,679 lines classified |
+| `scripts/check_quality_inventory.sh` after the raw API refinement | Passed: 812 files and 467,705 lines classified |
