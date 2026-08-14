@@ -36,7 +36,9 @@ single type. Later phases must link each invariant to code and verification.
   Control-thread `poll` or `waitAndPoll` collects completion and invokes any
   `publicationReady` callback synchronously.
 - Host restart requests run only from a host-approved control or UI callback,
-  never from an audio, resource, device, or importer worker.
+  never from an audio, resource, device, or importer worker. Both
+  `HostRequestSink.dispatchPending` and raw `SimpleEffect` dispatch reject a
+  realtime audit scope before connection locking or host invocation.
 - Dynamic audio-bus topology snapshots and mutations through
   `HostRequestSink` or the raw `SimpleEffect` API run only on a non-realtime
   control thread. Debug and test realtime scopes reject the call before it can

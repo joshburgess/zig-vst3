@@ -598,7 +598,7 @@ admission CAS cannot succeed.
 
 ## 2026-08-14: Realtime Topology Mutation Gate
 
-Change commits: `244e1ae6`, `c4aeda04`
+Change commits: `244e1ae6`, `c4aeda04`, `13b28faf`
 
 The exact Phase 1 gate at `7b2f2882` was stopped intentionally with exit 130
 after the continuing realtime call-graph audit invalidated the candidate. It
@@ -633,10 +633,21 @@ four lock violations without touching topology state in a realtime scope.
 Normal control-thread topology publication and processing behavior continue in
 the same test.
 
+The exact gate at `b467ff83` was stopped intentionally with exit 130 when the
+lower-boundary review found that raw `SimpleEffect.dispatchHostRequests` still
+bypassed the sink's host-call guard. The run had reached initial repository and
+dependency preparation checks only, so it is partial baseline evidence.
+Commit `13b28faf` guards the shared dispatch implementation before it swaps
+pending bits, locks the connection peer, or invokes the host. The regression
+verifies rejection, one recorded host-call violation, no callback delivery,
+and successful later delivery of the preserved pending request.
+
 | Check | Result |
 | --- | --- |
 | `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter "host request"` | Passed: 9/9 tests |
 | `zig build --cache-dir /private/tmp/zig-vst3-host-request-local --global-cache-dir /private/tmp/zig-vst3-host-request-global test-vst3-module --summary all` | Passed before the raw API refinement: 7/7 steps and 788/788 tests |
 | `zig build --cache-dir /private/tmp/zig-vst3-raw-topology-local --global-cache-dir /private/tmp/zig-vst3-raw-topology-global test-vst3-module --summary all` | Passed after the raw API refinement: 7/7 steps and 788/788 tests |
+| `zig build --cache-dir /private/tmp/zig-vst3-raw-dispatch-local --global-cache-dir /private/tmp/zig-vst3-raw-dispatch-global test-vst3-module --summary all` | Passed after the raw dispatch refinement: 7/7 steps and 788/788 tests |
 | `scripts/check_quality_inventory.sh` before the raw API refinement | Passed: 812 files and 467,679 lines classified |
 | `scripts/check_quality_inventory.sh` after the raw API refinement | Passed: 812 files and 467,705 lines classified |
+| `scripts/check_quality_inventory.sh` after the raw dispatch refinement | Passed: 812 files and 467,719 lines classified |

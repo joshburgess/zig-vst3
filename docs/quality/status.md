@@ -110,9 +110,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   use one closed-bit/count gate. The focused matrix and 16 repeated runs pass.
 - Closed high-severity Q-RT-001 after the continuing realtime call-graph audit
   found that public host-request and raw `SimpleEffect` topology operations
-  could reach the VST3 topology mutex from processing. Realtime audit scopes
-  now reject snapshot and mutation operations before component locking. The
-  focused host-request tests and the complete VST3 module gate pass.
+  could reach the VST3 topology mutex from processing, while raw host dispatch
+  could bypass the sink's host-call guard. Realtime audit scopes now reject
+  these operations before component locking or host invocation. The focused
+  host-request tests and the complete VST3 module gate pass.
 
 ## Phase 1 Scope
 
