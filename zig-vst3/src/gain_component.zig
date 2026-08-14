@@ -880,6 +880,48 @@ test "gain component delegates combined advanced host integration lifecycle" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.automation_add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.data_exchange_add_ref_count);
 
+    var denied_queue_id: ivstdataexchange.DataExchangeQueueID = 123;
+    const denied_scope =
+        @import("zig-vst3-plugin-core").realtime_audit.Scope.enter();
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        setChannelContextInfos(component_iface, null),
+    );
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        setAutomationState(
+            component_iface,
+            ivstautomationstate.AutomationStates.kReadWriteState,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        openDataExchangeQueue(
+            component_iface,
+            256,
+            3,
+            16,
+            99,
+            &denied_queue_id,
+        ),
+    );
+    try std.testing.expectEqual(
+        ivstdataexchange.InvalidDataExchangeQueueID,
+        denied_queue_id,
+    );
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        closeDataExchangeQueue(component_iface, 44),
+    );
+    const denied_report = denied_scope.leave();
+    try std.testing.expectEqual(
+        @as(u32, 4),
+        denied_report.count(.host_call),
+    );
+    try std.testing.expectEqual(@as(u32, 0), host.channel_context_count);
+    try std.testing.expectEqual(@as(u32, 0), host.open_count);
+    try std.testing.expectEqual(@as(u32, 0), host.close_count);
+
     try std.testing.expectEqual(types.kResultOk, setChannelContextInfos(component_iface, null));
     try std.testing.expectEqual(@as(types.uint32, 1), host.channel_context_count);
     try std.testing.expectEqual(types.kResultOk, setAutomationState(component_iface, ivstautomationstate.AutomationStates.kReadWriteState));
@@ -891,11 +933,14 @@ test "gain component delegates combined advanced host integration lifecycle" {
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeUserContextID, 99), host.last_user_context_id);
 
     var block = ivstdataexchange.DataExchangeBlock{};
+    const data_exchange_scope =
+        @import("zig-vst3-plugin-core").realtime_audit.Scope.enter();
     try std.testing.expectEqual(types.kResultOk, lockDataExchangeBlock(component_iface, queue_id, &block));
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 12), block.blockID);
     try std.testing.expectEqual(@as(types.uint32, 256), block.size);
     try std.testing.expectEqual(@as(?*anyopaque, @ptrFromInt(0x1000)), block.data);
     try std.testing.expectEqual(types.kResultOk, freeDataExchangeBlock(component_iface, queue_id, block.blockID, 1));
+    try std.testing.expect(data_exchange_scope.leave().clean());
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 12), host.freed_block_id);
     try std.testing.expectEqual(types.kResultOk, closeDataExchangeQueue(component_iface, queue_id));
     try std.testing.expectEqual(@as(types.uint32, 1), host.open_count);

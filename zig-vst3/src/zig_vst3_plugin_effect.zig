@@ -4841,11 +4841,15 @@ pub fn SimpleEffect(comptime Config: type) type {
 
         pub fn setChannelContextInfos(iface: *ivstcomponent.IComponent, attributes: ?*ivstattributes.IAttributeList) types.tresult {
             const info_listener = owner(iface).info_listener orelse return types.kResultFalse;
+            if (!plug_core.realtime_audit.observe(.host_call))
+                return types.kResultFalse;
             return info_listener.vtable.setChannelContextInfos(info_listener, attributes);
         }
 
         pub fn setAutomationState(iface: *ivstcomponent.IComponent, state: types.int32) types.tresult {
             const automation_state = owner(iface).automation_state orelse return types.kResultFalse;
+            if (!plug_core.realtime_audit.observe(.host_call))
+                return types.kResultFalse;
             return automation_state.vtable.setAutomationState(automation_state, state);
         }
 
@@ -4855,6 +4859,8 @@ pub fn SimpleEffect(comptime Config: type) type {
             const handler = self.data_exchange_handler orelse {
                 return failOpenedDataExchangeQueue(out, types.kResultFalse);
             };
+            if (!plug_core.realtime_audit.observe(.host_call))
+                return failOpenedDataExchangeQueue(out, types.kResultFalse);
             const result = handler.vtable.openQueue(handler, &self.processor, block_size, num_blocks, alignment, user_context_id, out);
             if (result != types.kResultOk) return failOpenedDataExchangeQueue(out, result);
             if (out.* == ivstdataexchange.InvalidDataExchangeQueueID) return failOpenedDataExchangeQueue(out, types.kResultFalse);
@@ -4864,6 +4870,8 @@ pub fn SimpleEffect(comptime Config: type) type {
         pub fn closeDataExchangeQueue(iface: *ivstcomponent.IComponent, queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
             if (queue_id == ivstdataexchange.InvalidDataExchangeQueueID) return types.kInvalidArgument;
             const handler = owner(iface).data_exchange_handler orelse return types.kResultFalse;
+            if (!plug_core.realtime_audit.observe(.host_call))
+                return types.kResultFalse;
             return handler.vtable.closeQueue(handler, queue_id);
         }
 
