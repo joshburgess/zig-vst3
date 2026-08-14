@@ -77,6 +77,9 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Closed Q-CONC-002 by delivering resource publication callbacks from explicit
   control-thread polling instead of preparation workers. Resource ownership,
   owning-example, native VSTGUI, and resource TSan gates pass after the fix.
+- Closed Q-CONC-003 by adding explicit callback admission and drain protocols
+  to CoreAudio session and topology callbacks and CoreMIDI input callbacks.
+  Deterministic overlap tests pass under TSan.
 
 ## Phase 1 Scope
 

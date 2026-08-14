@@ -391,3 +391,34 @@ regression records the callback thread and verifies that latency marking and
 dispatch run on the thread that called `waitForModel`.
 
 Change commit: `83b88b6e4bdbe9aaed7c454b1d9d20c5b10ce9c8`
+
+## 2026-08-14: Native Callback Drain
+
+The Q18 teardown audit found that CoreAudio relied on platform stop and removal
+calls before freeing session and topology-observer contexts, but did not make
+callback admission or draining explicit. CoreMIDI input stop could also race a
+receive callback that had already observed `input_running` before `close`
+cleared its non-atomic callback and timebase fields.
+
+Commit `8674295f` adds lock-free admission and active-callback counters around
+all CoreAudio audio and topology callbacks. Teardown publishes closure, stops
+or unregisters the platform source, waits for release from admitted callbacks,
+and then frees the context. Commit `a27291e0` applies the corresponding input
+stop and topology-close protocol to CoreMIDI. Both changes use a second state
+check after incrementing the active count so a callback racing closure either
+withdraws or becomes part of the drain.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-coreaudio --summary all` | Passed: 9/9 steps and 10/11 tests; one native device-discovery branch skipped because it depends on available hardware |
+| CoreAudio TSan selection inside `test-coreaudio` | Passed: 2/2 selected tests, including the C admission and drain overlap helper |
+| `zig build test-coremidi --summary all` | Passed: 9/9 steps and 13/13 tests |
+| CoreMIDI TSan selection inside `test-coremidi` | Passed: the blocking receive callback remained admitted until release, and input stop did not return early |
+| `scripts/check_quality_inventory.sh` | Passed: 811 files and 466,897 lines classified |
+
+Two sandboxed CoreAudio attempts failed before compilation with Zig
+`manifest_create PermissionDenied`, including one attempt with new cache
+directories. The approved unsandboxed rerun with fresh cache directories
+passed. These were environment failures, not test failures.
+
+Change commits: `8674295f`, `a27291e0`

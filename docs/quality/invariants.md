@@ -37,6 +37,10 @@ single type. Later phases must link each invariant to code and verification.
   `publicationReady` callback synchronously.
 - Host restart requests run only from a host-approved control or UI callback,
   never from an audio, resource, device, or importer worker.
+- Native callback teardown publishes admission closure, stops or unregisters
+  the platform source, drains every callback admitted before closure, and only
+  then clears callback-visible state. Callback release synchronizes with the
+  drain before the context can be freed.
 
 ## Input and Arithmetic
 
