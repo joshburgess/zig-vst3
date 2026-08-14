@@ -98,6 +98,7 @@ public:
         if (remaining == 0) delete this;
         return remaining;
     }
+    void detach() { state = nullptr; }
     HRESULT STDMETHODCALLTYPE get_ProviderOptions(ProviderOptions* result) override {
         if (!result) return E_INVALIDARG;
         *result = ProviderOptions_ServerSideProvider;
@@ -153,6 +154,8 @@ struct WindowsState {
 
     ~WindowsState() {
         for (const auto& observer : observers) observer->node->setObserver(nullptr, nullptr);
+        for (auto* child : children) child->detach();
+        if (root) root->detach();
         for (auto* child : children) child->Release();
         if (root) root->Release();
     }
@@ -271,6 +274,7 @@ HRESULT Provider::get_HostRawElementProvider(IRawElementProviderSimple** result)
 HRESULT Provider::Navigate(NavigateDirection direction, IRawElementProviderFragment** result) {
     if (!result) return E_INVALIDARG;
     *result = nullptr;
+    if (!state) return static_cast<HRESULT>(UIA_E_ELEMENTNOTAVAILABLE);
     Provider* destination = nullptr;
     if (root) {
         if (direction == NavigateDirection_FirstChild && !state->children.empty()) destination = state->children.front();
@@ -511,6 +515,8 @@ bool NativeAccessibilityBridge::open(
     for (const auto& item : entries) {
         if (item.node && item.view) state.entries.push_back(item);
     }
+    state.children.reserve(state.entries.size());
+    state.observers.reserve(state.entries.size());
     state.root = new Provider(&state, 0, true);
     for (std::size_t index = 0; index < state.entries.size(); ++index) {
         auto* child = new Provider(&state, index, false);

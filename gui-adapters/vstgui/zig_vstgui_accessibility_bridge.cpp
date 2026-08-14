@@ -352,6 +352,8 @@ public:
         }
         bus_name = unique;
 
+        if (entries.size() > (registrations.max_size() - 5) / 7) return false;
+        registrations.reserve(5 + entries.size() * 7);
         if (!registerObjects()) {
             diagnostic("could not publish the accessible object tree");
             return false;

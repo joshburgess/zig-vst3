@@ -72,7 +72,13 @@ public:
             entry->release();
             return false;
         }
-        event_handlers.push_back(entry);
+        try {
+            event_handlers.push_back(entry);
+        } catch (...) {
+            run_loop->unregisterEventHandler(entry);
+            entry->release();
+            return false;
+        }
         return true;
     }
 
@@ -96,7 +102,13 @@ public:
             entry->release();
             return false;
         }
-        timer_handlers.push_back(entry);
+        try {
+            timer_handlers.push_back(entry);
+        } catch (...) {
+            run_loop->unregisterTimer(entry);
+            entry->release();
+            return false;
+        }
         return true;
     }
 

@@ -226,6 +226,10 @@ int main() {
         editor.close();
         if (native_view.accessibilityChildren.count != 0 || editor.nativeAccessibilityActive()) return 15;
         if (nativeFramePointer(native_view)) return 36;
+        if ([gain isAccessibilityElement] ||
+            ![[gain accessibilityLabel] isEqualToString:@""] ||
+            [gain accessibilityValue] != nil ||
+            !NSEqualRects([gain accessibilityFrameInParentSpace], NSZeroRect)) return 42;
 
         auto* retained_views = [NSMutableArray arrayWithObject:native_view];
         const uint32_t initial_draw_count = state.draw_count;

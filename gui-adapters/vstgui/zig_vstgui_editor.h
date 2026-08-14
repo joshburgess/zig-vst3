@@ -138,7 +138,9 @@ struct ZigVstguiEditor {
     VSTGUI::CFrame* frameView() const;
 
 private:
-    void buildFrame();
+    bool buildFrame();
+    bool buildFrameContents();
+    void discardUnopenedFrame();
     void clearControls();
     void clearFrameReferences();
     void layout();
@@ -187,6 +189,7 @@ private:
 
     ZigVstgui::RuntimeGuard runtime;
     VSTGUI::CFrame* frame {nullptr};
+    bool frame_complete {false};
     VSTGUI::CScrollView* scroll_view {nullptr};
     ZigVstgui::ProfiledContainer* content {nullptr};
     VSTGUI::CTextLabel* title {nullptr};

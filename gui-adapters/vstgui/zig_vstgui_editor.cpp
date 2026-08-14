@@ -480,7 +480,7 @@ ZigVstguiEditor::ZigVstguiEditor(
         }, 16, false
     );
     if (!parameter_update_timer) return;
-    buildFrame();
+    if (!buildFrame()) return;
 }
 
 ZigVstguiEditor::~ZigVstguiEditor() {
@@ -500,7 +500,7 @@ ZigVstguiEditor::~ZigVstguiEditor() {
 
 bool ZigVstguiEditor::valid() const {
     const bool complete =
-        parameter_count > 0 && frame && parameter_update_timer;
+        parameter_count > 0 && frame && frame_complete && parameter_update_timer;
     if (!complete && std::getenv("ZIG_VSTGUI_DIAGNOSTICS")) {
         std::fprintf(
             stderr,
@@ -514,7 +514,8 @@ bool ZigVstguiEditor::valid() const {
 }
 
 bool ZigVstguiEditor::open(void* parent, ZigVstguiPlatform platform) {
-    if (!frame) buildFrame();
+    if (!frame && !buildFrame()) return false;
+    if (!frame_complete) return false;
     if (!ZigVstgui::openFrame(frame, parent, platform, plug_frame, wayland_host)) return false;
     flushParameterUpdates();
     parameter_update_timer->start();
@@ -1209,8 +1210,19 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
     return entries;
 }
 
-void ZigVstguiEditor::buildFrame() {
-    if (frame) return;
+bool ZigVstguiEditor::buildFrame() {
+    if (frame) return frame_complete;
+    try {
+        if (buildFrameContents()) return true;
+    } catch (...) {
+        discardUnopenedFrame();
+        throw;
+    }
+    discardUnopenedFrame();
+    return false;
+}
+
+bool ZigVstguiEditor::buildFrameContents() {
     const auto editor_style = theme_resolver.resolve(ZigVstgui::ComponentKind::editor);
     const auto title_style = theme_resolver.resolve(ZigVstgui::ComponentKind::title);
     const auto help_style = theme_resolver.resolve(ZigVstgui::ComponentKind::help);
@@ -1302,6 +1314,7 @@ void ZigVstguiEditor::buildFrame() {
             &asset_store,
             drawing_callbacks
         );
+        if (!parameter_controls[index]->focusView()) return false;
     }
     for (uint32_t index = 0; index < meter_count; ++index) {
         const auto& description = meter_descriptions[index];
@@ -1317,6 +1330,7 @@ void ZigVstguiEditor::buildFrame() {
             {meter_callbacks.userdata, meter_callbacks.load},
             stylesForMeter(index)
         );
+        if (!meter_controls[index]->focusView()) return false;
     }
     for (uint32_t index = 0; index < graph_count; ++index) {
         if (!graph_controls[index]->build(
@@ -1326,9 +1340,10 @@ void ZigVstguiEditor::buildFrame() {
                 parameter_callbacks,
                 stylesForGraph(index),
                 this,
-                graphSelectionChanged)) return;
+                graphSelectionChanged)) return false;
     }
     resize_control.build(content, theme_resolver);
+    if (!resize_control.focusView()) return false;
     resize_control.setSize(width, height);
     for (uint32_t index = 0; index < preset_browser_count; ++index) {
         if (!preset_browser_controls[index]->build(
@@ -1336,10 +1351,11 @@ void ZigVstguiEditor::buildFrame() {
             preset_browser_descriptions[index],
             parameter_callbacks,
             theme_resolver
-        )) return;
+        )) return false;
     }
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         xy_pad_controls[index]->build(content, stylesForXYPad(index));
+        if (!xy_pad_controls[index]->focusView()) return false;
     }
     for (uint32_t index = 0; index < action_menu_count; ++index) {
         if (!action_menu_controls[index]->build(
@@ -1347,17 +1363,20 @@ void ZigVstguiEditor::buildFrame() {
             action_menu_descriptions[index],
             parameter_callbacks,
             theme_resolver
-        )) return;
+        )) return false;
         action_menu_controls[index]->setOpenCoordinator(this, actionMenuWillOpen);
     }
     for (uint32_t index = 0; index < piano_count; ++index) {
         piano_controls[index]->build(content, theme_resolver);
+        if (!piano_controls[index]->focusView()) return false;
     }
     for (uint32_t index = 0; index < step_sequencer_count; ++index) {
         step_sequencer_controls[index]->build(content, theme_resolver);
+        if (!step_sequencer_controls[index]->focusView()) return false;
     }
     for (uint32_t index = 0; index < file_drop_count; ++index) {
         file_drop_controls[index]->build(content, theme_resolver);
+        if (!file_drop_controls[index]->focusView()) return false;
     }
     for (uint32_t index = 0; index < action_button_count; ++index) {
         if (!action_button_controls[index]->build(
@@ -1366,22 +1385,32 @@ void ZigVstguiEditor::buildFrame() {
             parameter_callbacks,
             theme_resolver,
             [this](uint32_t importer_id) { actionAccepted(importer_id); }
-        )) return;
+        )) return false;
     }
     updateActionButtonStates();
     for (uint32_t index = 0; index < editable_label_count; ++index) {
         if (!editable_label_controls[index]->build(
-            content, editable_label_descriptions[index], parameter_callbacks, theme_resolver)) return;
+            content, editable_label_descriptions[index], parameter_callbacks, theme_resolver)) return false;
     }
     for (uint32_t index = 0; index < progress_indicator_count; ++index) {
         if (!progress_controls[index]->build(
-            content, progress_descriptions[index], parameter_callbacks, theme_resolver)) return;
+            content, progress_descriptions[index], parameter_callbacks, theme_resolver)) return false;
     }
     layout();
+    frame_complete = true;
+    return true;
+}
+
+void ZigVstguiEditor::discardUnopenedFrame() {
+    if (!frame) return;
+    clearControls();
+    frame->forget();
+    clearFrameReferences();
 }
 
 void ZigVstguiEditor::clearFrameReferences() {
     frame = nullptr;
+    frame_complete = false;
     scroll_view = nullptr;
     content = nullptr;
     title = nullptr;

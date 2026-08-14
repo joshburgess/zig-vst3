@@ -32,7 +32,15 @@ bool EditableLabelControl::build(VSTGUI::CViewContainer* parent,
     label = new (std::nothrow) VSTGUI::CTextLabel(VSTGUI::CRect(), description.label);
     edit = new (std::nothrow) VSTGUI::CTextEdit(VSTGUI::CRect(), this, 0, accepted_text.c_str());
     message = new (std::nothrow) VSTGUI::CTextLabel(VSTGUI::CRect(), error_text.c_str());
-    if (!label || !edit || !message) return false;
+    if (!label || !edit || !message) {
+        if (label) label->forget();
+        if (edit) edit->forget();
+        if (message) message->forget();
+        label = nullptr;
+        edit = nullptr;
+        message = nullptr;
+        return false;
+    }
 
     label->setFont(styles.font(TypographyRole::body));
     label->setFontColor(label_style.foreground);
@@ -343,8 +351,10 @@ bool ProgressIndicatorControl::build(VSTGUI::CViewContainer* parent,
     parent->addView(progress);
     progress_component.bind(progress);
     const uint32_t interval = std::max<uint32_t>(1, 1000 / description.maximum_refresh_hz);
-    timer = new (std::nothrow) VSTGUI::CVSTGUITimer(
-        [this](VSTGUI::CVSTGUITimer*) { tick(); }, interval, false);
+    if (!timer) {
+        timer = new (std::nothrow) VSTGUI::CVSTGUITimer(
+            [this](VSTGUI::CVSTGUITimer*) { tick(); }, interval, false);
+    }
     tick();
     return timer != nullptr;
 }

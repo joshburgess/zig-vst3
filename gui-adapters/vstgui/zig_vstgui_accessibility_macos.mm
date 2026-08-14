@@ -210,6 +210,23 @@ NSAccessibilityElement* makeAccessibilityElement(
     return element;
 }
 
+void detachAccessibilityElement(NSAccessibilityElement* element) {
+    if (!element) return;
+    objc_setAssociatedObject(
+        element,
+        &semantic_node_key,
+        nil,
+        OBJC_ASSOCIATION_ASSIGN
+    );
+    objc_setAssociatedObject(
+        element,
+        &vstgui_view_key,
+        nil,
+        OBJC_ASSOCIATION_ASSIGN
+    );
+    element.accessibilityParent = nil;
+}
+
 }
 
 namespace ZigVstgui {
@@ -253,6 +270,7 @@ bool NativeAccessibilityBridge::open(
     if (!native_view) return false;
     auto next = std::make_unique<Impl>();
     next->root = native_view;
+    next->observers.reserve(entries.size());
     NSMutableArray<NSAccessibilityElement*>* elements =
         [[NSMutableArray alloc] initWithCapacity:entries.size()];
     for (const auto& entry : entries) {
@@ -276,6 +294,9 @@ bool NativeAccessibilityBridge::open(
 void NativeAccessibilityBridge::close() {
     if (!impl) return;
     for (const auto& observer : impl->observers) observer->node->setObserver(nullptr, nullptr);
+    for (NSAccessibilityElement* element in impl->elements) {
+        detachAccessibilityElement(element);
+    }
     if (impl->root) {
         impl->root.accessibilityChildren = nil;
         NSAccessibilityPostNotification(impl->root, NSAccessibilityLayoutChangedNotification);
