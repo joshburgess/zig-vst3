@@ -3588,6 +3588,18 @@ test "simple effect binds dynamic topology across host metadata negotiation acti
         types.kResultFalse,
         Effect.dispatchHostRequests(restored_component),
     );
+    const realtime_dispatch_scope =
+        plug_core.realtime_audit.Scope.enter();
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        Effect.dispatchHostRequests(component),
+    );
+    const realtime_dispatch_report = realtime_dispatch_scope.leave();
+    try std.testing.expectEqual(
+        @as(u32, 1),
+        realtime_dispatch_report.count(.host_call),
+    );
+    try std.testing.expectEqual(@as(u32, 0), handler.restart_count);
     try std.testing.expectEqual(
         types.kResultOk,
         Effect.dispatchHostRequests(component),
@@ -4969,6 +4981,8 @@ pub fn SimpleEffect(comptime Config: type) type {
         }
 
         fn dispatchPendingHostRequests(self: *Component) types.tresult {
+            if (!plug_core.realtime_audit.observe(.host_call))
+                return types.kResultFalse;
             const pending =
                 self.pending_host_changes.swap(0, .acq_rel);
             if (pending == 0) return types.kResultOk;
