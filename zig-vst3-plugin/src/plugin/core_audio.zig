@@ -979,6 +979,7 @@ const ChannelCounts = extern struct {
 const MacOsCoreAudioApi = if (builtin.os.tag == .macos) struct {
     const supported = true;
     const c = @cImport({
+        if (builtin.is_test) @cDefine("ZIG_VST3_CORE_AUDIO_TESTING", "1");
         @cInclude("core_audio_shim.h");
     });
     const Device = u32;
@@ -1983,4 +1984,12 @@ test "native CoreAudio discovery exposes valid device records" {
         const info = try backend.runtimeInfo(descriptor.identifier);
         try std.testing.expect(info.valid());
     }
+}
+
+test "native CoreAudio callback admission drains before teardown" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    try std.testing.expectEqual(
+        @as(i32, 0),
+        MacOsCoreAudioApi.c.zv3_core_audio_test_callback_drain(),
+    );
 }

@@ -5,6 +5,10 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <limits.h>
 #include <math.h>
+#if defined(ZIG_VST3_CORE_AUDIO_TESTING)
+#include <pthread.h>
+#endif
+#include <sched.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,11 +32,17 @@ struct zv3_core_audio_session {
     _Atomic unsigned long long device_failures;
     _Atomic unsigned long long input_device_failures;
     _Atomic unsigned long long output_device_failures;
+    _Atomic unsigned int stopping;
+    _Atomic unsigned int active_callbacks;
 };
 
 _Static_assert(
     ATOMIC_LLONG_LOCK_FREE == 2,
     "CoreAudio requires lock-free 64-bit counters"
+);
+_Static_assert(
+    ATOMIC_INT_LOCK_FREE == 2,
+    "CoreAudio requires lock-free callback counters"
 );
 _Static_assert(
     ULLONG_MAX == UINT64_MAX,
@@ -43,7 +53,143 @@ struct zv3_core_audio_observer {
     void *context;
     zv3_core_audio_topology_fn callback;
     uint32_t installed;
+    _Atomic unsigned int stopping;
+    _Atomic unsigned int active_callbacks;
 };
+
+static int admit_callback(
+    _Atomic unsigned int *stopping,
+    _Atomic unsigned int *active_callbacks
+) {
+    if (atomic_load_explicit(stopping, memory_order_acquire) != 0) {
+        return 0;
+    }
+    (void)atomic_fetch_add_explicit(
+        active_callbacks,
+        1,
+        memory_order_acquire
+    );
+    if (atomic_load_explicit(stopping, memory_order_acquire) == 0) {
+        return 1;
+    }
+    (void)atomic_fetch_sub_explicit(
+        active_callbacks,
+        1,
+        memory_order_release
+    );
+    return 0;
+}
+
+static void release_callback(
+    _Atomic unsigned int *active_callbacks
+) {
+    (void)atomic_fetch_sub_explicit(
+        active_callbacks,
+        1,
+        memory_order_release
+    );
+}
+
+static void stop_callback_admission(
+    _Atomic unsigned int *stopping
+) {
+    atomic_store_explicit(stopping, 1, memory_order_release);
+}
+
+static void drain_callbacks(
+    _Atomic unsigned int *active_callbacks
+) {
+    while (atomic_load_explicit(
+        active_callbacks,
+        memory_order_acquire
+    ) != 0) {
+        (void)sched_yield();
+    }
+}
+
+#if defined(ZIG_VST3_CORE_AUDIO_TESTING)
+struct callback_drain_test_context {
+    _Atomic unsigned int stopping;
+    _Atomic unsigned int active_callbacks;
+    _Atomic unsigned int worker_state;
+};
+
+static void *callback_drain_test_worker(void *raw_context) {
+    struct callback_drain_test_context *context =
+        (struct callback_drain_test_context *)raw_context;
+    if (!admit_callback(
+            &context->stopping,
+            &context->active_callbacks
+        )) {
+        atomic_store_explicit(
+            &context->worker_state,
+            2,
+            memory_order_release
+        );
+        return NULL;
+    }
+    atomic_store_explicit(
+        &context->worker_state,
+        1,
+        memory_order_release
+    );
+    while (atomic_load_explicit(
+        &context->stopping,
+        memory_order_acquire
+    ) == 0) {
+        (void)sched_yield();
+    }
+    for (unsigned int attempt = 0; attempt < 1000; ++attempt) {
+        (void)sched_yield();
+    }
+    release_callback(&context->active_callbacks);
+    return NULL;
+}
+
+int32_t zv3_core_audio_test_callback_drain(void) {
+    struct callback_drain_test_context context;
+    atomic_init(&context.stopping, 0);
+    atomic_init(&context.active_callbacks, 0);
+    atomic_init(&context.worker_state, 0);
+    pthread_t worker;
+    if (pthread_create(
+            &worker,
+            NULL,
+            callback_drain_test_worker,
+            &context
+        ) != 0) {
+        return -1;
+    }
+    unsigned int worker_state = 0;
+    while ((worker_state = atomic_load_explicit(
+        &context.worker_state,
+        memory_order_acquire
+    )) == 0) {
+        (void)sched_yield();
+    }
+    if (worker_state != 1) {
+        (void)pthread_join(worker, NULL);
+        return -1;
+    }
+    stop_callback_admission(&context.stopping);
+    if (admit_callback(
+            &context.stopping,
+            &context.active_callbacks
+        )) {
+        release_callback(&context.active_callbacks);
+        (void)pthread_join(worker, NULL);
+        return -1;
+    }
+    drain_callbacks(&context.active_callbacks);
+    if (pthread_join(worker, NULL) != 0) {
+        return -1;
+    }
+    return atomic_load_explicit(
+        &context.active_callbacks,
+        memory_order_acquire
+    ) == 0 ? 0 : -1;
+}
+#endif
 
 static AudioObjectPropertyAddress property_address(
     AudioObjectPropertySelector selector,
@@ -359,9 +505,17 @@ static OSStatus topology_changed(
     (void)addresses;
     zv3_core_audio_observer *observer =
         (zv3_core_audio_observer *)context;
-    if (observer != NULL && observer->callback != NULL) {
+    if (observer == NULL ||
+        !admit_callback(
+            &observer->stopping,
+            &observer->active_callbacks
+        )) {
+        return noErr;
+    }
+    if (observer->callback != NULL) {
         observer->callback(observer->context);
     }
+    release_callback(&observer->active_callbacks);
     return noErr;
 }
 
@@ -394,6 +548,18 @@ static void remove_topology_listeners(
     observer->installed = 0;
 }
 
+static void dispose_observer(
+    zv3_core_audio_observer *observer
+) {
+    if (observer == NULL) {
+        return;
+    }
+    stop_callback_admission(&observer->stopping);
+    remove_topology_listeners(observer);
+    drain_callbacks(&observer->active_callbacks);
+    free(observer);
+}
+
 int32_t zv3_core_audio_observe_topology(
     void *context,
     zv3_core_audio_topology_fn callback,
@@ -409,6 +575,8 @@ int32_t zv3_core_audio_observe_topology(
     }
     observer->context = context;
     observer->callback = callback;
+    atomic_init(&observer->stopping, 0);
+    atomic_init(&observer->active_callbacks, 0);
     const uint32_t count = (uint32_t)(
         sizeof(topology_selectors) / sizeof(topology_selectors[0])
     );
@@ -424,8 +592,7 @@ int32_t zv3_core_audio_observe_topology(
             observer
         );
         if (status != noErr) {
-            remove_topology_listeners(observer);
-            free(observer);
+            dispose_observer(observer);
             return status;
         }
         observer->installed += 1;
@@ -437,8 +604,7 @@ int32_t zv3_core_audio_observe_topology(
 void zv3_core_audio_stop_observing(
     zv3_core_audio_observer *observer
 ) {
-    remove_topology_listeners(observer);
-    free(observer);
+    dispose_observer(observer);
 }
 
 static void clear_outputs(
@@ -587,13 +753,25 @@ static OSStatus output_callback(
     AudioBufferList *output
 ) {
     (void)bus;
-    return process_callback(
-        (zv3_core_audio_session *)context,
+    zv3_core_audio_session *session =
+        (zv3_core_audio_session *)context;
+    if (session == NULL ||
+        !admit_callback(
+            &session->stopping,
+            &session->active_callbacks
+        )) {
+        clear_outputs(output);
+        return noErr;
+    }
+    const OSStatus status = process_callback(
+        session,
         flags,
         timestamp,
         frame_count,
         output
     );
+    release_callback(&session->active_callbacks);
+    return status;
 }
 
 static OSStatus input_callback(
@@ -606,13 +784,24 @@ static OSStatus input_callback(
 ) {
     (void)bus;
     (void)output;
-    return process_callback(
-        (zv3_core_audio_session *)context,
+    zv3_core_audio_session *session =
+        (zv3_core_audio_session *)context;
+    if (session == NULL ||
+        !admit_callback(
+            &session->stopping,
+            &session->active_callbacks
+        )) {
+        return noErr;
+    }
+    const OSStatus status = process_callback(
+        session,
         flags,
         timestamp,
         frame_count,
         NULL
     );
+    release_callback(&session->active_callbacks);
+    return status;
 }
 
 static OSStatus split_input_callback(
@@ -627,9 +816,18 @@ static OSStatus split_input_callback(
     (void)output;
     zv3_core_audio_session *session =
         (zv3_core_audio_session *)context;
+    if (session == NULL ||
+        !admit_callback(
+            &session->stopping,
+            &session->active_callbacks
+        )) {
+        return noErr;
+    }
+    OSStatus result = noErr;
     if (frame_count > session->maximum_frames) {
         record_input_device_failure(session);
-        return kAudio_ParamError;
+        result = kAudio_ParamError;
+        goto finished;
     }
     OSStatus status = render_input(
         session,
@@ -640,16 +838,19 @@ static OSStatus split_input_callback(
     );
     if (status != noErr) {
         record_input_device_failure(session);
-        return status;
+        result = status;
+        goto finished;
     }
     if (session->capture(
         session->context,
         frame_count,
         (const void *const *)session->input_views
     ) != 0) {
-        return kAudio_ParamError;
+        result = kAudio_ParamError;
     }
-    return noErr;
+finished:
+    release_callback(&session->active_callbacks);
+    return result;
 }
 
 static OSStatus split_output_callback(
@@ -665,12 +866,22 @@ static OSStatus split_output_callback(
     (void)bus;
     zv3_core_audio_session *session =
         (zv3_core_audio_session *)context;
+    if (session == NULL ||
+        !admit_callback(
+            &session->stopping,
+            &session->active_callbacks
+        )) {
+        clear_outputs(output);
+        return noErr;
+    }
+    OSStatus result = noErr;
     if (frame_count > session->maximum_frames ||
         output == NULL ||
         output->mNumberBuffers < session->output_channels) {
         record_output_device_failure(session);
         clear_outputs(output);
-        return kAudio_ParamError;
+        result = kAudio_ParamError;
+        goto finished;
     }
     for (uint32_t index = 0;
          index < session->output_channels;
@@ -682,7 +893,8 @@ static OSStatus split_output_callback(
                 frame_count * session->sample_bytes) {
             record_output_device_failure(session);
             clear_outputs(output);
-            return kAudio_ParamError;
+            result = kAudio_ParamError;
+            goto finished;
         }
         session->output_views[index] = buffer->mData;
     }
@@ -692,9 +904,11 @@ static OSStatus split_output_callback(
         session->output_views
     ) != 0) {
         clear_outputs(output);
-        return kAudio_ParamError;
+        result = kAudio_ParamError;
     }
-    return noErr;
+finished:
+    release_callback(&session->active_callbacks);
+    return result;
 }
 
 static AudioStreamBasicDescription stream_format(
@@ -733,9 +947,11 @@ static void dispose_session(zv3_core_audio_session *session) {
     if (session == NULL) {
         return;
     }
+    stop_callback_admission(&session->stopping);
     dispose_unit(&session->output_unit);
     dispose_unit(&session->input_unit);
     dispose_unit(&session->unit);
+    drain_callbacks(&session->active_callbacks);
     free(session->input_list);
     free(session->input_views);
     free(session->output_views);
@@ -850,6 +1066,8 @@ int32_t zv3_core_audio_start(
     atomic_init(&session->device_failures, 0);
     atomic_init(&session->input_device_failures, 0);
     atomic_init(&session->output_device_failures, 0);
+    atomic_init(&session->stopping, 0);
+    atomic_init(&session->active_callbacks, 0);
     session->sample_bytes = sample_bytes;
     session->maximum_frames = maximum_frames;
     session->input_channels = input_channels;
@@ -1245,6 +1463,8 @@ int32_t zv3_core_audio_start_split(
     atomic_init(&session->device_failures, 0);
     atomic_init(&session->input_device_failures, 0);
     atomic_init(&session->output_device_failures, 0);
+    atomic_init(&session->stopping, 0);
+    atomic_init(&session->active_callbacks, 0);
     session->sample_bytes = sample_bytes;
     session->maximum_frames = maximum_frames;
     session->input_channels = input_channels;

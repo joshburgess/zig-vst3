@@ -86,7 +86,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    addCoreAudioBackend(b, zig_vst3_core_audio, target);
+    addCoreAudioBackend(b, zig_vst3_core_audio, target, false);
     zig_vst3_core_audio.addImport(
         "zig-vst3-plugin-core",
         zig_vst3_plugin_core,
@@ -1111,6 +1111,7 @@ pub fn build(b: *std.Build) void {
         b,
         zig_vst3_core_audio_test_module,
         target,
+        true,
     );
     zig_vst3_core_audio_test_module.addImport(
         "zig-vst3-plugin-core",
@@ -1126,6 +1127,35 @@ pub fn build(b: *std.Build) void {
         "Run CoreAudio backend tests and non-macOS compile checks",
     );
     core_audio_test_step.dependOn(&run_core_audio_tests.step);
+    if (target.result.os.tag == .macos) {
+        const core_audio_thread_sanitizer_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core_audio.zig",
+            ),
+            .target = target,
+            .optimize = .Debug,
+            .sanitize_thread = true,
+        });
+        addCoreAudioBackend(
+            b,
+            core_audio_thread_sanitizer_module,
+            target,
+            true,
+        );
+        core_audio_thread_sanitizer_module.addImport(
+            "zig-vst3-plugin-core",
+            zig_vst3_plugin_core,
+        );
+        const core_audio_thread_sanitizer_tests = b.addTest(.{
+            .root_module = core_audio_thread_sanitizer_module,
+            .filters = &.{"callback admission drains"},
+        });
+        core_audio_test_step.dependOn(
+            &b.addRunArtifact(
+                core_audio_thread_sanitizer_tests,
+            ).step,
+        );
+    }
     const core_audio_cross_build_step = b.step(
         "test-coreaudio-builds",
         "Compile the optional CoreAudio module for non-macOS targets",
@@ -5263,6 +5293,7 @@ fn addCoreAudioBackend(
     b: *std.Build,
     module: *std.Build.Module,
     target: std.Build.ResolvedTarget,
+    testing: bool,
 ) void {
     if (target.result.os.tag != .macos) return;
     module.link_libc = true;
@@ -5271,7 +5302,14 @@ fn addCoreAudioBackend(
         .file = b.path(
             "zig-vst3-plugin/src/plugin/core_audio_shim.c",
         ),
-        .flags = &.{
+        .flags = if (testing) &.{
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-deprecated-declarations",
+            "-DZIG_VST3_CORE_AUDIO_TESTING=1",
+        } else &.{
             "-std=c11",
             "-Wall",
             "-Wextra",

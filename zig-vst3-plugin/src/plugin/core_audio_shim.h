@@ -100,4 +100,8 @@ uint64_t zv3_core_audio_output_device_failures(
 );
 void zv3_core_audio_stop(zv3_core_audio_session *session);
 
+#if defined(ZIG_VST3_CORE_AUDIO_TESTING)
+int32_t zv3_core_audio_test_callback_drain(void);
+#endif
+
 #endif
