@@ -2023,9 +2023,11 @@ pub fn build(b: *std.Build) void {
             "-Werror",
         },
     });
-    win_ump_test_step.dependOn(
-        &b.addRunArtifact(win_ump_ref_count_test).step,
-    );
+    if (b.graph.host.result.os.tag != .windows) {
+        win_ump_test_step.dependOn(
+            &b.addRunArtifact(win_ump_ref_count_test).step,
+        );
+    }
     win_ump_test_step.dependOn(
         &b.addRunArtifact(zig_vst3_win_ump_tests).step,
     );
