@@ -570,3 +570,28 @@ partial baseline evidence only.
 | `zig build test-ara --summary all` | Passed: 77/77 steps and 424/424 tests across Debug native behavior, ReleaseSafe Linux and Windows cross-builds, and the ARA VST3 ABI fixture |
 | `for repetition in {1..16}; do zig build test-phase2-thread-sanitizers --summary none \|\| exit 1; done` | Passed: 16/16 repetitions, 48 sanitizer process runs, and 224 selected tests |
 | `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,606 lines classified |
+
+## 2026-08-14: CoreAudio Callback Admission Gate
+
+Change commit: `4283284e`
+
+The exact Phase 1 gate at `dee0da68` was stopped intentionally with exit 130
+after the continuing atomic review invalidated the candidate. Before the stop,
+it passed the repository script checks, codec and DSP reference checks, native
+VSTGUI checks, downstream consumers, and the installed-package matrix. The
+installed-package selection passed 18/18 steps and 96/96 tests. This run is
+partial baseline evidence only.
+
+CoreAudio session and topology callbacks used separate closure and active-count
+atomics. A callback could read the old open flag, teardown could close and
+observe zero, and the callback could increment after the drain. Commit
+`4283284e` replaces both fields with one closed-bit/count word. Admission and
+closure now conflict on one atomic modification order. The regression preserves
+a stale pre-closure observation, closes the gate, and verifies that the stale
+admission CAS cannot succeed.
+
+| Check | Result |
+| --- | --- |
+| `zig build --cache-dir /private/tmp/zig-vst3-coreaudio-gate-local --global-cache-dir /private/tmp/zig-vst3-coreaudio-gate-global test-coreaudio --summary all` | Passed: 9/9 steps and 10/11 tests; the native device-discovery branch skipped because it depends on available hardware |
+| Sixteen repeated `test-coreaudio` runs using the same caches | Passed: 16/16 repetitions, including the focused native TSan callback-drain selection |
+| `scripts/check_quality_inventory.sh` | Passed: 812 files and 467,605 lines classified |

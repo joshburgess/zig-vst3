@@ -47,6 +47,12 @@ single type. Later phases must link each invariant to code and verification.
   closure and admission therefore have one atomic linearization point.
   Callback release uses release order, and the control-thread drain observes
   zero with acquire order before clearing the callback or parser.
+- CoreAudio session and topology callbacks use one atomic state containing a
+  closed bit and an active count. Admission and closure modify that same word,
+  so a callback that observed an open gate before teardown cannot increment
+  after teardown has observed zero. Callback release uses release order, and
+  teardown drains with acquire order after stopping or unregistering the
+  platform source and before freeing callback-visible state.
 - ARA audio-reader slots use one atomic state containing a closed bit and a
   lease count. Opening release-publishes the complete reader state. Read
   admission acquires that publication while incrementing the same word. Close

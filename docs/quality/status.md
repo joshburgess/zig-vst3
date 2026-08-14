@@ -104,6 +104,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   closing/count admission race. The host callback trio is now required before
   acquisition, and one closed-bit lease word linearizes reads with teardown.
   The full ARA matrix and 16 repeated Phase 2 TSan runs pass.
+- Closed critical Q-CONC-006 after the continuing callback audit found that
+  CoreAudio's separate closure and active-count atomics still allowed a late
+  admission after teardown observed zero. Session and topology callbacks now
+  use one closed-bit/count gate. The focused matrix and 16 repeated runs pass.
 
 ## Phase 1 Scope
 
@@ -119,5 +123,6 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 ## Next Review Target
 
 Run the exact Phase 1 repository gate at the corrected candidate containing
-the LV2 UI and ARA reader repairs, close Phase 1 only if it passes, and continue
-the Phase 2 atomic, callback-drain, and realtime-call-graph review.
+the LV2 UI, ARA reader, and CoreAudio callback repairs. Close Phase 1 only if it
+passes, then continue the Phase 2 atomic, callback-drain, and realtime-call-graph
+review.
