@@ -32,7 +32,7 @@ split.
 | `zig-vst3-plugin/src/dsp/kernel_dispatch.zig` | 1,527 / 787 | Detects CPU features and binds scalar or SIMD kernels into immutable dispatcher values. | KEEP. Backend selection and function tables form one dispatch contract. |
 | `zig-vst3-plugin/src/dsp/matrix.zig` | 1,436 / 1,986 | Provides fixed-size vectors and matrices plus fixed-storage LU, QR, and SVD decompositions. | KEEP. Dimensions and workspace sizes are compile-time invariants shared by the fixed family. |
 | `zig-vst3-plugin/src/dsp/matrix/dynamic.zig` | 2,076 / 0 | Owns runtime-shaped matrix allocation and reusable LU, QR, and SVD workspaces through the caller allocator. | KEEP. Public matrix convenience methods return the factorization types and each factorization accepts the matrix type, so their exact identities form one mutually dependent contract. |
-| `zig-vst3-plugin/src/dsp/mp3.zig` | 16,000 / 12,720 | Owns MPEG Layer III bit reservoirs, scale-factor and Huffman coding, encoding, decoding, seeking, and positional I/O behind the current public module. Headers, side information, and passive spectral values live in `mp3/syntax.zig`. | SPLIT. Move the remaining shared scale-factor, Huffman, and reservoir vocabulary behind the syntax boundary, then separate decoder state from encoder and file-writing state while preserving exact public identities. |
+| `zig-vst3-plugin/src/dsp/mp3.zig` | 14,827 / 12,720 | Owns MPEG Layer III bit reservoirs, encoding, decoding, seeking, and positional I/O behind the current public module. Headers, side information, scale-factor coding, Huffman coding, and passive spectral values live in `mp3/syntax.zig`. | SPLIT. Separate reservoir ownership and decoder state from encoder and file-writing state while preserving exact public identities. |
 | `zig-vst3-plugin/src/dsp/ogg.zig` | 20,969 / 10,120 | Owns Ogg pages, packets, streams, files, and the complete Vorbis header, encode, decode, seek, rate-control, and concealment stack. | SPLIT. Separate the Ogg container from the Vorbis codec and retain all current `dsp.ogg` names as exact aliases. |
 | `zig-vst3-plugin/src/dsp/special_functions.zig` | 1,062 / 1,235 | Implements the elliptic, Jacobi, and Bessel functions used by DSP design code with shared domain and convergence handling. | KEEP. These functions share numerical primitives and one error policy; the file is test-heavy rather than production-heavy. |
 | `zig-vst3-plugin/src/lv2.zig` | 5,523 / 4,608 | Owns plugin instance, feature negotiation, worker, state, programs, dynamic ports, and bounded host-owned path lifecycles. C layouts and callbacks live in `lv2/abi.zig`; URI constants live in `lv2/uris.zig`. | KEEP. The remaining values belong to one plugin instance, and all moved public names retain exact type and value identity. |
@@ -73,7 +73,7 @@ decisions.
 - `zig-vst3-plugin/src/dsp/kernel_dispatch.zig` | 2314 | 1527 | 787 | KEEP
 - `zig-vst3-plugin/src/dsp/matrix.zig` | 3422 | 1436 | 1986 | KEEP
 - `zig-vst3-plugin/src/dsp/matrix/dynamic.zig` | 2076 | 2076 | 0 | KEEP
-- `zig-vst3-plugin/src/dsp/mp3.zig` | 28720 | 16000 | 12720 | SPLIT
+- `zig-vst3-plugin/src/dsp/mp3.zig` | 27547 | 14827 | 12720 | SPLIT
 - `zig-vst3-plugin/src/dsp/ogg.zig` | 31089 | 20969 | 10120 | SPLIT
 - `zig-vst3-plugin/src/dsp/special_functions.zig` | 2297 | 1062 | 1235 | KEEP
 - `zig-vst3-plugin/src/lv2.zig` | 10131 | 5523 | 4608 | KEEP
