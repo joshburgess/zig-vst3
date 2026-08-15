@@ -1367,3 +1367,31 @@ decoded sample count and declared frame count within caller capacity.
 | `scripts/check_quality_inventory.sh` | Passed: 823 files and 472,667 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded Direct Audio Metadata Parsing
+
+Behavior commit: `6551a601`
+
+Direct ID3v2.3, ID3v2.4, RIFF INFO, AIFF text, and RIFF XML entry points now
+apply one `Id3Limits` or `AudioMetadataLimits` encoded-byte policy. Existing
+constructors use a 256 MiB default, while public `WithLimits` variants accept a
+caller-selected policy. Iterators retain the policy, and ID3 iterators retain
+the complete encoded tag extent separately from their frame-only slice.
+Hostile mutation cannot reset that retained extent to the compatibility
+default. XML elements accept at most 1,024 attributes and 256 KiB of attribute
+source, jointly bounding pairwise qualified-name and expanded-name validation.
+
+The dedicated native fuzz target seeds valid ID3v2.3, ID3v2.4, RIFF INFO, AIFF
+text, and RIFF XML inputs. It parses arbitrary inputs through every bounded
+entry point and requires accepted iterators to make strict cursor progress.
+
+| Check | Result |
+| --- | --- |
+| Focused ID3, audio-metadata, and XML selection | Passed: 41/41 tests, including exact byte limits, hostile retained policy and extent mutation, XML attribute count and byte limits, and both ID3 versions |
+| Broad Q12 file, metadata, XML, and writer selection | Passed: 174/174 tests |
+| `zig build test-audio-metadata-fuzz --fuzz=100K` | Passed: 100,017 executions and 141 of 22,043 instrumented branches without a failure |
+| `zig build test-plugin-core-builds -Dtarget=x86_64-windows-gnu -Doptimize=ReleaseSafe --summary all` | Passed: 2/2 steps and Windows x86-64 ReleaseSafe cross-compilation |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including every public custom-limit API |
+| `scripts/check_quality_inventory.sh` | Passed: 823 files and 473,068 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

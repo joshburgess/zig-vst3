@@ -99,6 +99,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   across memory and positional-file FLAC decoding. The 169-test Q12 selection,
   100,488-run native fuzz campaign, installed-package matrix, and Windows
   ReleaseSafe cross-build pass.
+- Closed Q-META-001 with bounded default and caller-selected encoded-byte
+  policies across direct ID3v2.3, ID3v2.4, RIFF INFO, AIFF text, and RIFF XML
+  parsing. XML attributes now have independent count and source-byte limits.
+  The 174-test Q12 selection, 100,017-run native fuzz campaign,
+  installed-package matrix, and Windows ReleaseSafe cross-build pass.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.

@@ -119,6 +119,11 @@ single type. Later phases must link each invariant to code and verification.
   metadata-block, metadata-byte, PCM-frame, and decoded-frame-block policy.
   File metadata preflight rejects determinable limits before retained storage
   changes. Transactional decode preserves caller PCM after any later failure.
+- Direct ID3v2.3, ID3v2.4, RIFF INFO, AIFF text, and RIFF XML parsing applies
+  one retained encoded-byte policy. ID3 iterators retain the complete tag
+  extent independently of their frame slice. XML elements accept at most
+  1,024 attributes and 256 KiB of attribute source before pairwise name and
+  expanded-name validation.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the
