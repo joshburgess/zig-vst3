@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 
 pub fn ProcessorDuplicator(
     comptime Sample: type,
@@ -63,6 +64,8 @@ pub fn ProcessorDuplicator(
         ) !void {
             if (input.len != output.len)
                 return error.ProcessorDuplicatorBufferLengthMismatch;
+            if (!buffer_regions.exactOrDisjoint(Sample, input, output))
+                return error.ProcessorDuplicatorBufferOverlap;
             _ = try self.get(channel);
             for (input, output) |input_sample, *output_sample|
                 output_sample.* = try self.processSample(channel, input_sample);
@@ -145,5 +148,26 @@ test "processor duplicator rejects bounds and reports invalid members" {
     try std.testing.expectError(
         error.ProcessorDuplicatorChannelOutOfRange,
         duplicator.processSample(0, 1.0),
+    );
+}
+
+test "processor duplicator permits in-place buffers and rejects shifted overlap" {
+    const Duplicator = ProcessorDuplicator(f32, Scale, 2);
+    var duplicator = try Duplicator.init(.{ .gain = 0.5 }, 1);
+    var storage = [_]f32{ 1.0, 2.0, 3.0, 4.0 };
+    const retained = storage;
+    const duplicator_before = duplicator;
+    try std.testing.expectError(
+        error.ProcessorDuplicatorBufferOverlap,
+        duplicator.processChannel(0, storage[0..3], storage[1..4]),
+    );
+    try std.testing.expectEqualDeep(duplicator_before, duplicator);
+    try std.testing.expectEqualSlices(f32, &retained, &storage);
+
+    try duplicator.processChannel(0, &storage, &storage);
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 0.5, 1.0, 1.5, 2.0 },
+        &storage,
     );
 }

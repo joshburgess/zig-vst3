@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 
 pub fn ProcessorChain(
     comptime Sample: type,
@@ -69,6 +70,8 @@ pub fn ProcessorChain(
         ) !void {
             if (input.len != output.len)
                 return error.ProcessorChainBufferLengthMismatch;
+            if (!buffer_regions.exactOrDisjoint(Sample, input, output))
+                return error.ProcessorChainBufferOverlap;
             for (input, output) |input_sample, *output_sample|
                 output_sample.* = self.processSample(input_sample);
         }
@@ -151,4 +154,28 @@ test "processor chain reports invalid members and contains non-finite output" {
     chain.get(0).value = std.math.nan(f32);
     try std.testing.expect(!chain.valid());
     try std.testing.expectEqual(@as(f32, 0.0), chain.processSample(1.0));
+}
+
+test "processor chain permits in-place buffers and rejects shifted overlap" {
+    const Chain = ProcessorChain(f32, struct { Gain, Bias });
+    var chain = Chain.init(.{
+        .{ .value = 2.0 },
+        .{ .value = 0.25 },
+    });
+    var storage = [_]f32{ 0.0, 0.5, 1.0, 2.0 };
+    const retained = storage;
+    const chain_before = chain;
+    try std.testing.expectError(
+        error.ProcessorChainBufferOverlap,
+        chain.process(storage[0..3], storage[1..4]),
+    );
+    try std.testing.expectEqualDeep(chain_before, chain);
+    try std.testing.expectEqualSlices(f32, &retained, &storage);
+
+    try chain.process(&storage, &storage);
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 0.25, 1.25, 2.25, 4.25 },
+        &storage,
+    );
 }
