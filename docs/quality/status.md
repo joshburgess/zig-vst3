@@ -362,6 +362,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   transactional mutation, exact control-state restoration, and Debug plus
   ReleaseSafe tests are sound. The ledger now has 55 evidence, 28 review, and
   18 excluded records.
+- Closed medium Q-NUM-001 after normalized window application could overflow
+  an extreme finite input. Generation and application now preflight every
+  derived value and preserve caller storage on failure. Window symmetry,
+  normalization, Kaiser references, and both optimized-mode gates pass. The
+  ledger now has 56 evidence, 27 review, and 18 excluded records.
 
 ## Phase 5 Scope
 
@@ -376,7 +381,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the 28 `REVIEW` records in `numerics.md`, continuing with foundational
+Review the 27 `REVIEW` records in `numerics.md`, continuing with foundational
 Q15 primitives before composite effects.
 Move a source to `EVIDENCE` only after its reference or identity, tolerance,
 finite containment, latency, channel, and transactional contracts are sound.

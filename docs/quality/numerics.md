@@ -135,7 +135,7 @@ Q15	zig-vst3-plugin/src/dsp/stereo_modulation.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/vibrato.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/wave64_metadata.zig	EXCLUDED	passive metadata values
 Q15	zig-vst3-plugin/src/dsp/waveshaper.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/window.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/window.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/gui_ir_convolution.zig	EXCLUDED	public compatibility alias
 <!-- numerical-files:end -->
 

@@ -2179,3 +2179,23 @@ contracts.
 | Direct ReleaseSafe repetitions of all four tests | Passed: the same 13/13 tests |
 | `scripts/check_quality_numerics_inventory.sh` | Passed after disposition updates: 55 evidence, 28 review, and 18 excluded sources |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Window Finite-Output Safety
+
+Behavior commit: `87b80e0b`
+
+The foundational window review found that finite inputs did not guarantee
+finite applied output. Normalization can raise a coefficient above one, so an
+extreme finite sample could overflow. Window generation and application now
+preflight all derived values and reject non-finite scales or products before
+changing caller storage. Existing symmetry, endpoint, periodicity, unit-sum,
+unit-peak, and Kaiser evidence remains intact.
+
+| Check | Result |
+| --- | --- |
+| Direct Debug window test | Passed: 33/33 tests |
+| Direct ReleaseSafe window test | Passed: 33/33 tests |
+| Extreme finite normalized flat-top application | Passed: non-finite output rejected with the complete input retained |
+| `scripts/check_quality_numerics_inventory.sh` | Passed after disposition update: 56 evidence, 27 review, and 18 excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 869 source files and 478,997 lines classified |
+| `git diff --check` | Passed |
