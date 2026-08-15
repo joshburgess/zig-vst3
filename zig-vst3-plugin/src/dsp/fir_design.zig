@@ -115,12 +115,19 @@ pub fn Designer(comptime Sample: type) type {
                     var row: [maximum_least_squares_taps / 2 + 1]f64 =
                         undefined;
                     row[0] = scale;
-                    for (1..basis_count) |index| {
-                        row[index] = scale * @cos(
-                            std.math.tau *
-                                frequency *
-                                @as(f64, @floatFromInt(index)),
-                        );
+                    if (basis_count > 1) {
+                        const cosine = @cos(std.math.tau * frequency);
+                        row[1] = scale * cosine;
+                        var previous_previous: f64 = 1.0;
+                        var previous = cosine;
+                        for (2..basis_count) |index| {
+                            const current =
+                                2.0 * cosine * previous -
+                                previous_previous;
+                            row[index] = scale * current;
+                            previous_previous = previous;
+                            previous = current;
+                        }
                     }
                     try updateQr(
                         triangular[0..basis_count],
