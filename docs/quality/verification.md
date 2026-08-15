@@ -1739,3 +1739,46 @@ rejected packet.
 | `scripts/check_quality_inventory.sh` | Passed: 827 files and 475,456 lines classified |
 | `zig fmt --check` over changed Zig and build sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded Configuration Inputs and Phase 3 Completion
+
+Behavior commit: `5aa87178`
+
+The final P-CONFIG review found two runtime input forms. Device identifiers
+and display names accept at most 128 UTF-8 bytes, reject embedded zero bytes,
+and copy into fixed storage. A versioned device-selection record contains at
+most five identifiers and occupies at most 656 bytes. Restore reads into a
+temporary value, requires complete input consumption, and publishes only
+after every field passes validation. VST3 textual IDs accept exactly 32
+hexadecimal bytes and decode into 16 fixed bytes without allocation.
+
+The new exact-bound test constructs a maximum-size record, verifies its 656
+byte extent, rejects every one of its 656 truncated prefixes, rejects trailing
+bytes and invalid presence, length, zero-byte, and UTF-8 encodings, and proves
+that each failure preserves the prior selection. The dedicated gate also
+covers numeric preparation configuration, the standalone window event budget,
+textual VST3 IDs, and compile-time compatibility JSON output. Its Windows
+portion compiles in ReleaseSafe mode.
+
+The inventory review corrected three false classifications. The framework has
+no standalone argument parser. Preparation configuration accepts typed numeric
+values, the standalone shell processes typed events under a caller-provided
+positive budget, and compatibility JSON is compile-time output. These sources
+are now recorded as reviewed non-input or output paths instead of P-CONFIG.
+
+The first complete gate caught stale acquire counts for the ALSA MIDI 1 and
+UMP shims in the checked atomic-order ledger. Commit `02e0a43c` refreshed both
+counts. The checker and its mutation fixture then passed, followed by a clean
+complete repository rerun. This closes Q-CONFIG-001, Q-VER-010, P-CONFIG, and
+Phase 3.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-config-inputs --summary all` | Passed: 8/8 steps and 38/38 tests, including native execution and ReleaseSafe Windows compilation |
+| `scripts/check_quality_atomic_orders.sh` | Passed: 57 Zig and 11 native source files tracked |
+| `scripts/test_quality_atomic_orders_runner.sh` | Passed: baseline and mutation fixture checks |
+| `scripts/check_parser_inventory.sh` | Passed: 178 production sources classified |
+| `scripts/check_quality_inventory.sh` | Passed: 827 files and 475,578 lines classified |
+| `zig build test --summary all` | Passed: 446/446 steps with 7,647 tests passed and six expected platform skips |
+| `zig fmt --check` over changed Zig and build sources | Passed |
+| `git diff --check` | Passed |

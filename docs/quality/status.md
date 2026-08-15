@@ -1,8 +1,8 @@
 # Quality Program Status
 
-Current phase: Phase 3, Parsers, Codecs, and Persistent State
+Current phase: Phase 4, Architecture and API Refinement
 
-Status: in progress; Phases 0 through 2 complete
+Status: in progress; Phases 0 through 3 complete
 
 Baseline commit: `08bf883e9d2d324f3a7933fa21851bbd9ffec513`
 
@@ -285,21 +285,34 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Closed Q-EDITOR-002 by replacing the editor-state mutation helper's
   compile-time termination fallback with error propagation. The production
   termination-path scan and focused editor-state gate pass.
+- Closed Q-CONFIG-001 and P-CONFIG with exact 128-byte device text limits,
+  exhaustive truncation of the maximum 656-byte selection record,
+  failure-atomic restore, exact 32-byte VST3 textual IDs, and a dedicated
+  native plus ReleaseSafe Windows gate.
+- Corrected the parser ledger to remove a nonexistent standalone argument
+  parser and classify typed preparation configuration, the bounded event pump,
+  and compile-time compatibility JSON output accurately.
+- Closed Q-VER-010 after the first completion gate found two stale ALSA acquire
+  counts in the atomic-order ledger. The corrected checker, mutation fixture,
+  and repeated complete repository gate pass.
+- Completed Phase 3 with all parser families closed, no open critical or high
+  parser finding, and 446/446 repository steps passing with 7,647 tests passed
+  and six expected platform skips.
 
-## Phase 3 Scope
+## Phase 4 Scope
 
-- Audit every untrusted-input parser for explicit size and work limits,
-  checked arithmetic, progress, transactionality, truncation, and corruption.
-- Add dedicated fuzz targets and checked-in seed corpora for the highest-risk
-  parsers, and preserve reproducible cases for every discovered defect.
-- Verify persistent-state restore and migration are failure-atomic and retain
-  stable public identifiers.
-- Compare codecs with independent implementations and record tolerances where
-  licensing and available tooling permit.
+- Review dependency direction, module boundaries, public surface area,
+  duplicated mechanisms, naming, error sets, and file cohesion.
+- Record one cohesion decision for every large handwritten source and split it
+  only when the result creates a clearer contract.
+- Review public APIs, examples, and documentation as consumer code, including
+  ownership, thread, realtime, lifecycle, and error contracts.
+- Preserve compatibility or record and verify every intentional public change.
 
 ## Next Review Target
 
-Audit the remaining P-CONFIG family from the checked parser inventory. Record
-device identifier, standalone argument, compatibility JSON, textual ID, byte,
-count, allocation, progress, and publication limits with focused malformed
-input and cross-target evidence.
+Resolve Q-ARCH-002. Move the shared partitioned convolution and realtime
+publication contract out of the GUI-named module and into the DSP layer.
+Preserve the public GUI-facing name through a compatible alias where practical,
+then verify HRTF, GUI impulse-response processing, installed-package consumers,
+dependency direction, and public compatibility.

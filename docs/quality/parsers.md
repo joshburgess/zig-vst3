@@ -27,7 +27,7 @@ candidate fails the gate.
 | P-ADM | ADM XML, time forms, document construction, render planning, and bounded render delegates | XML source, document capacities, reference resolution, interpolation, and render work have explicit limits. Validation and construction are transactional. | Closed by Q-ADM-001. Fuzz, sanitizer, independent libear comparison, and installed-package evidence are recorded. |
 | P-SOFA | NetCDF SOFA HRTF containers | The public default is 1 GiB with a caller-selected override. The file is checked before NetCDF opens it, dimensions are bounded by fixed capacities, and destination publication is transactional. | Closed by Q-SOFA-001 with two public datasets and independent NetCDF, libmysofa, and libspatialaudio comparisons. |
 | P-ARA | ARA host archives, tuning-analysis archives, audio-source caches, transforms, and model delegates | Controller archives use a compile-time buffer derived from model limits. Host filter counts are capped before pointer traversal, strings and extensions are bounded, and the complete envelope is decoded before extension callbacks. Tuning analysis restores into staged fixed-capacity slots and publishes only after all records pass wire, count, range, and finiteness checks. Source caches, renderers, and transforms use fixed capacities and checked ranges. | Closed by Q-ARA-001. Exact limit regressions, two archive fuzz targets, the complete ARA gate, TSan, cross-compilation, and installed-package evidence are recorded. |
-| P-CONFIG | Device identifiers, standalone arguments, compatibility JSON, and textual IDs | Individual representations are bounded, but limits and failure behavior have not yet been recorded together. | Open review family. |
+| P-CONFIG | Device-selection records and textual VST3 IDs | Device identifiers and names accept at most 128 UTF-8 bytes without allocation. Device-selection records accept exactly one complete versioned record of at most 656 bytes, decode into temporary fixed storage, reject trailing bytes, and publish only after complete validation. VST3 textual IDs accept exactly 32 hexadecimal bytes and decode into 16 fixed bytes without allocation. | Closed by Q-CONFIG-001. Every truncation of a maximum-size record, invalid encodings, exact textual-ID lengths, native execution, and ReleaseSafe Windows compilation pass. Numeric preparation configuration and the bounded standalone event pump are reviewed non-parser inputs. Compatibility JSON is compile-time output. |
 | N-OUTPUT | Encoders, writers, writer fault injection, and output I/O adapters | These sources produce data and do not accept a structured untrusted-input format. Short-write and transactional-output evidence remains tracked by the owning review units. | Reviewed exclusion from the parser set. |
 | N-TEST | Production-located fixtures or test support selected by lexical heuristics | No shipping untrusted-input entry point. | Reviewed exclusion from the parser set. |
 | N-DELEGATE | Export surfaces, GUI transport, import routing, and views that delegate validation to an inventoried family | No independent structured parser. Any external bytes cross an inventoried downstream boundary. | Reviewed delegate. |
@@ -107,7 +107,7 @@ P-MIDI zig-vst3-plugin/src/plugin/alsa_ump.zig
 P-MIDI zig-vst3-plugin/src/plugin/alsa_ump_shim.c
 P-MIDI zig-vst3-plugin/src/plugin/alsa_ump_shim.h
 N-NONINPUT zig-vst3-plugin/src/plugin/audio_layout.zig
-P-CONFIG zig-vst3-plugin/src/plugin/config.zig
+N-NONINPUT zig-vst3-plugin/src/plugin/config.zig
 P-MIDI zig-vst3-plugin/src/plugin/core_midi.zig
 P-MIDI zig-vst3-plugin/src/plugin/core_midi_shim.c
 P-MIDI zig-vst3-plugin/src/plugin/core_midi_shim.h
@@ -118,7 +118,7 @@ P-MIDI zig-vst3-plugin/src/plugin/midi_scheduler_queue.h
 N-NONINPUT zig-vst3-plugin/src/plugin/pipewire_shim.c
 P-STATE zig-vst3-plugin/src/plugin/runtime.zig
 N-NONINPUT zig-vst3-plugin/src/plugin/spec.zig
-P-CONFIG zig-vst3-plugin/src/plugin/standalone_shell.zig
+N-NONINPUT zig-vst3-plugin/src/plugin/standalone_shell.zig
 N-TEST zig-vst3-plugin/src/plugin/tests.zig
 P-MIDI zig-vst3-plugin/src/plugin/ump_scheduler_queue.h
 P-MIDI zig-vst3-plugin/src/plugin/win_midi.zig
@@ -210,7 +210,7 @@ P-RESOURCE zig-vst3/src/resource_path_transport.zig
 P-CONFIG zig-vst3/src/tuid.zig
 N-NONINPUT zig-vst3/src/vst_parameter_changes.zig
 N-NONINPUT zig-vst3/src/vst_parameter_finder.zig
-P-CONFIG zig-vst3/src/vst_plugin_compatibility.zig
+N-OUTPUT zig-vst3/src/vst_plugin_compatibility.zig
 N-DELEGATE zig-vst3/src/vstgui.zig
 N-DELEGATE zig-vst3/src/vstgui_editor_view.zig
 N-DELEGATE zig-vst3/src/vstgui_lv2_backend.zig
