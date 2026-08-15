@@ -2809,6 +2809,24 @@ pub fn build(b: *std.Build) void {
     mp3_fuzz_step.dependOn(
         &b.addRunArtifact(mp3_fuzz_tests).step,
     );
+    const ogg_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        ogg_fuzz_module.link_libc = true;
+    const ogg_fuzz_tests = b.addTest(.{
+        .root_module = ogg_fuzz_module,
+        .filters = &.{"fuzz bounded Ogg page and packet parsing"},
+    });
+    const ogg_fuzz_step = b.step(
+        "test-ogg-fuzz",
+        "Run or fuzz bounded Ogg page and packet parsing",
+    );
+    ogg_fuzz_step.dependOn(
+        &b.addRunArtifact(ogg_fuzz_tests).step,
+    );
     const midi_file_benchmark_core = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = b.graph.host,

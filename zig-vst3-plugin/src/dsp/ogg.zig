@@ -8,6 +8,24 @@ pub const maximum_page_segments = 255;
 pub const maximum_page_body_bytes = 255 * 255;
 pub const maximum_page_bytes = 27 + maximum_page_segments +
     maximum_page_body_bytes;
+pub const Limits = struct {
+    max_stream_bytes: u64 = std.math.maxInt(u32),
+    max_pages: u64 = 10_000_000,
+    max_packets: u64 = 10_000_000,
+    max_logical_streams: u32 = 65_536,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_stream_bytes < 27 or
+            self.max_pages == 0 or
+            self.max_packets == 0 or
+            self.max_logical_streams == 0)
+        {
+            return error.InvalidOggLimits;
+        }
+    }
+};
+
+pub const default_limits = Limits{};
 
 pub const Page = struct {
     continued: bool,
@@ -32,13 +50,39 @@ pub const PageIterator = struct {
     ended: bool = false,
     allow_chaining: bool = false,
     logical_stream_index: u32 = 0,
+    pages_read: u64 = 0,
+    limits: Limits = default_limits,
 
     pub fn init(encoded: []const u8) PageIterator {
-        return .{ .encoded = encoded };
+        return .{ .encoded = encoded, .limits = default_limits };
+    }
+
+    pub fn initWithLimits(
+        encoded: []const u8,
+        limits: Limits,
+    ) !PageIterator {
+        try validateEncodedLimits(encoded, limits);
+        return .{ .encoded = encoded, .limits = limits };
     }
 
     pub fn initChained(encoded: []const u8) PageIterator {
-        return .{ .encoded = encoded, .allow_chaining = true };
+        return .{
+            .encoded = encoded,
+            .allow_chaining = true,
+            .limits = default_limits,
+        };
+    }
+
+    pub fn initChainedWithLimits(
+        encoded: []const u8,
+        limits: Limits,
+    ) !PageIterator {
+        try validateEncodedLimits(encoded, limits);
+        return .{
+            .encoded = encoded,
+            .allow_chaining = true,
+            .limits = limits,
+        };
     }
 
     pub fn valid(self: *const PageIterator) bool {
@@ -59,6 +103,14 @@ pub const PageIterator = struct {
         maximum_skip_bytes: usize,
     ) !usize {
         try self.validateState();
+        if (self.pages_read == self.limits.max_pages)
+            return error.OggPageLimitExceeded;
+        if (self.ended and self.allow_chaining and
+            self.logical_stream_index + 1 >=
+                self.limits.max_logical_streams)
+        {
+            return error.OggLogicalStreamLimitExceeded;
+        }
         if (maximum_skip_bytes == 0)
             return error.InvalidOggResynchronizationLimit;
         if (self.offset >= self.encoded.len -| 27)
@@ -99,11 +151,14 @@ pub const PageIterator = struct {
             if (self.packet_continues) return error.TruncatedOggPacket;
             return null;
         }
+        if (self.pages_read == self.limits.max_pages)
+            return error.OggPageLimitExceeded;
         if (self.ended) {
             if (!self.allow_chaining)
                 return error.OggDataAfterEndOfStream;
-            if (self.logical_stream_index == std.math.maxInt(u32))
-                return error.OggLogicalStreamCountOverflow;
+            if (self.logical_stream_index + 1 >=
+                self.limits.max_logical_streams)
+                return error.OggLogicalStreamLimitExceeded;
             self.serial_number = null;
             self.expected_sequence = null;
             self.ended = false;
@@ -157,6 +212,7 @@ pub const PageIterator = struct {
             return error.InvalidOggEndOfStream;
         self.ended = end;
         self.offset += page_bytes;
+        self.pages_read += 1;
         return .{
             .continued = continued,
             .beginning = beginning,
@@ -173,7 +229,14 @@ pub const PageIterator = struct {
     }
 
     fn validateState(self: *const PageIterator) !void {
-        if (self.offset > self.encoded.len or
+        self.limits.validate() catch return error.InvalidOggReaderState;
+        const encoded_bytes = std.math.cast(u64, self.encoded.len) orelse
+            return error.InvalidOggReaderState;
+        if (encoded_bytes > self.limits.max_stream_bytes)
+            return error.OggStreamLimitExceeded;
+        if (self.pages_read > self.limits.max_pages or
+            self.logical_stream_index >= self.limits.max_logical_streams or
+            self.offset > self.encoded.len or
             !oggReaderLifecycleValid(
                 self.serial_number,
                 self.expected_sequence,
@@ -187,6 +250,14 @@ pub const PageIterator = struct {
         }
     }
 };
+
+fn validateEncodedLimits(encoded: []const u8, limits: Limits) !void {
+    try limits.validate();
+    const encoded_bytes = std.math.cast(u64, encoded.len) orelse
+        return error.OggStreamLimitExceeded;
+    if (encoded_bytes > limits.max_stream_bytes)
+        return error.OggStreamLimitExceeded;
+}
 
 pub const Packet = struct {
     bytes: []const u8,
@@ -214,12 +285,34 @@ pub const PacketIterator = struct {
         };
     }
 
+    pub fn initWithLimits(
+        encoded: []const u8,
+        storage: []u8,
+        limits: Limits,
+    ) !PacketIterator {
+        return .{
+            .pages = try PageIterator.initWithLimits(encoded, limits),
+            .storage = storage,
+        };
+    }
+
     pub fn initChained(
         encoded: []const u8,
         storage: []u8,
     ) PacketIterator {
         return .{
             .pages = PageIterator.initChained(encoded),
+            .storage = storage,
+        };
+    }
+
+    pub fn initChainedWithLimits(
+        encoded: []const u8,
+        storage: []u8,
+        limits: Limits,
+    ) !PacketIterator {
+        return .{
+            .pages = try PageIterator.initChainedWithLimits(encoded, limits),
             .storage = storage,
         };
     }
@@ -293,6 +386,19 @@ pub const PacketIterator = struct {
 
     fn nextInPlace(self: *PacketIterator) !?Packet {
         try self.validateState();
+        if (self.packet_index == self.pages.limits.max_packets and
+            self.packet_index != std.math.maxInt(u64))
+        {
+            if (self.packet_bytes == 0 and
+                self.pages.offset == self.pages.encoded.len and
+                (self.page == null or
+                    self.segment_index ==
+                        (self.page orelse unreachable).lacing_values.len))
+            {
+                return null;
+            }
+            return error.OggPacketLimitExceeded;
+        }
         while (true) {
             const page_exhausted = if (self.page) |page|
                 self.segment_index == page.lacing_values.len
@@ -351,8 +457,7 @@ pub const PacketIterator = struct {
             };
             self.packet_bytes = 0;
             if (self.packet_index == std.math.maxInt(u64) or
-                self.logical_stream_packet_index ==
-                    std.math.maxInt(u64))
+                self.logical_stream_packet_index == std.math.maxInt(u64))
                 return error.OggPacketCountOverflow;
             self.packet_index += 1;
             self.logical_stream_packet_index += 1;
@@ -369,6 +474,7 @@ pub const PacketIterator = struct {
             self.storage.len,
         )) return error.OverlappingOggPacketStorage;
         if (self.packet_bytes > self.storage.len or
+            self.packet_index > self.pages.limits.max_packets or
             self.logical_stream_packet_index > self.packet_index)
             return error.InvalidOggPacketReaderState;
         const page = self.page orelse {
@@ -377,6 +483,8 @@ pub const PacketIterator = struct {
                 return error.InvalidOggPacketReaderState;
             return;
         };
+        if (self.pages.pages_read == 0)
+            return error.InvalidOggPacketReaderState;
         try self.validateRetainedPage(page);
         if (self.segment_index > page.lacing_values.len or
             self.body_offset > page.body.len)
@@ -650,7 +758,14 @@ fn vorbisPacketLocation(
 }
 
 pub fn requiredVorbisSeekPoints(encoded: []const u8) !usize {
-    var pages = PageIterator.initChained(encoded);
+    return requiredVorbisSeekPointsWithLimits(encoded, default_limits);
+}
+
+pub fn requiredVorbisSeekPointsWithLimits(
+    encoded: []const u8,
+    limits: Limits,
+) !usize {
+    var pages = try PageIterator.initChainedWithLimits(encoded, limits);
     var indexer = VorbisSeekIndexer{ .destination = null };
     while (try pages.next()) |page| try indexer.consume(page);
     return indexer.count;
@@ -660,10 +775,22 @@ pub fn buildVorbisSeekIndex(
     encoded: []const u8,
     destination: []VorbisSeekPoint,
 ) ![]const VorbisSeekPoint {
-    const required = try requiredVorbisSeekPoints(encoded);
+    return buildVorbisSeekIndexWithLimits(
+        encoded,
+        destination,
+        default_limits,
+    );
+}
+
+pub fn buildVorbisSeekIndexWithLimits(
+    encoded: []const u8,
+    destination: []VorbisSeekPoint,
+    limits: Limits,
+) ![]const VorbisSeekPoint {
+    const required = try requiredVorbisSeekPointsWithLimits(encoded, limits);
     if (destination.len < required)
         return error.VorbisSeekIndexTooSmall;
-    var pages = PageIterator.initChained(encoded);
+    var pages = try PageIterator.initChainedWithLimits(encoded, limits);
     var indexer = VorbisSeekIndexer{ .destination = destination };
     while (try pages.next()) |page| try indexer.consume(page);
     if (indexer.count != required)
@@ -713,12 +840,27 @@ pub const FilePageReader = struct {
     ended: bool = false,
     allow_chaining: bool = false,
     logical_stream_index: u32 = 0,
+    pages_read: u64 = 0,
+    limits: Limits = default_limits,
 
     pub fn init(io: std.Io, file: std.Io.File) !FilePageReader {
+        return initWithLimits(io, file, default_limits);
+    }
+
+    pub fn initWithLimits(
+        io: std.Io,
+        file: std.Io.File,
+        limits: Limits,
+    ) !FilePageReader {
+        try limits.validate();
+        const file_size = (try file.stat(io)).size;
+        if (file_size > limits.max_stream_bytes)
+            return error.OggStreamLimitExceeded;
         return .{
             .io = io,
             .file = file,
-            .file_size = (try file.stat(io)).size,
+            .file_size = file_size,
+            .limits = limits,
         };
     }
 
@@ -727,6 +869,16 @@ pub const FilePageReader = struct {
         file: std.Io.File,
     ) !FilePageReader {
         var reader = try init(io, file);
+        reader.allow_chaining = true;
+        return reader;
+    }
+
+    pub fn initChainedWithLimits(
+        io: std.Io,
+        file: std.Io.File,
+        limits: Limits,
+    ) !FilePageReader {
+        var reader = try initWithLimits(io, file, limits);
         reader.allow_chaining = true;
         return reader;
     }
@@ -745,6 +897,14 @@ pub const FilePageReader = struct {
         if (self.offset == self.file_size) {
             if (self.packet_continues) return error.TruncatedOggPacket;
             return null;
+        }
+        if (self.pages_read == self.limits.max_pages)
+            return error.OggPageLimitExceeded;
+        if (self.ended and self.allow_chaining and
+            self.logical_stream_index + 1 >=
+                self.limits.max_logical_streams)
+        {
+            return error.OggLogicalStreamLimitExceeded;
         }
         const remaining = self.file_size - self.offset;
         if (remaining < 27) return error.TruncatedOggPage;
@@ -781,6 +941,8 @@ pub const FilePageReader = struct {
             .ended = self.ended,
             .allow_chaining = self.allow_chaining,
             .logical_stream_index = self.logical_stream_index,
+            .pages_read = self.pages_read,
+            .limits = self.limits,
         };
         var page = (try parser.next()) orelse
             return error.TruncatedOggPage;
@@ -790,6 +952,7 @@ pub const FilePageReader = struct {
         self.packet_continues = parser.packet_continues;
         self.ended = parser.ended;
         self.logical_stream_index = parser.logical_stream_index;
+        self.pages_read = parser.pages_read;
         self.offset += page_bytes;
         return page;
     }
@@ -833,6 +996,14 @@ pub const FilePageReader = struct {
         maximum_skip_bytes: u64,
     ) !u64 {
         try self.validateState();
+        if (self.pages_read == self.limits.max_pages)
+            return error.OggPageLimitExceeded;
+        if (self.ended and self.allow_chaining and
+            self.logical_stream_index + 1 >=
+                self.limits.max_logical_streams)
+        {
+            return error.OggLogicalStreamLimitExceeded;
+        }
         if (storage.len < maximum_page_bytes)
             return error.OggPageBufferTooSmall;
         if (maximum_skip_bytes == 0)
@@ -895,6 +1066,8 @@ pub const FilePageReader = struct {
                 .ended = self.ended,
                 .allow_chaining = self.allow_chaining,
                 .logical_stream_index = self.logical_stream_index,
+                .pages_read = self.pages_read,
+                .limits = self.limits,
             };
             _ = parser.next() catch continue;
             const skipped = candidate - self.offset;
@@ -905,7 +1078,12 @@ pub const FilePageReader = struct {
     }
 
     fn validateState(self: *const FilePageReader) !void {
-        if (self.offset > self.file_size or
+        self.limits.validate() catch
+            return error.InvalidOggFileReaderState;
+        if (self.file_size > self.limits.max_stream_bytes or
+            self.pages_read > self.limits.max_pages or
+            self.logical_stream_index >= self.limits.max_logical_streams or
+            self.offset > self.file_size or
             !oggReaderLifecycleValid(
                 self.serial_number,
                 self.expected_sequence,
@@ -946,7 +1124,21 @@ pub fn requiredVorbisFileSeekPoints(
     file: std.Io.File,
     page_storage: []u8,
 ) !usize {
-    var pages = try FilePageReader.initChained(io, file);
+    return requiredVorbisFileSeekPointsWithLimits(
+        io,
+        file,
+        page_storage,
+        default_limits,
+    );
+}
+
+pub fn requiredVorbisFileSeekPointsWithLimits(
+    io: std.Io,
+    file: std.Io.File,
+    page_storage: []u8,
+    limits: Limits,
+) !usize {
+    var pages = try FilePageReader.initChainedWithLimits(io, file, limits);
     var indexer = VorbisSeekIndexer{ .destination = null };
     while (try pages.next(page_storage)) |page| {
         try indexer.consume(page);
@@ -960,6 +1152,22 @@ pub fn buildVorbisFileSeekIndex(
     page_storage: []u8,
     destination: []VorbisSeekPoint,
 ) ![]const VorbisSeekPoint {
+    return buildVorbisFileSeekIndexWithLimits(
+        io,
+        file,
+        page_storage,
+        destination,
+        default_limits,
+    );
+}
+
+pub fn buildVorbisFileSeekIndexWithLimits(
+    io: std.Io,
+    file: std.Io.File,
+    page_storage: []u8,
+    destination: []VorbisSeekPoint,
+    limits: Limits,
+) ![]const VorbisSeekPoint {
     const destination_bytes = std.math.mul(
         usize,
         destination.len,
@@ -971,14 +1179,15 @@ pub fn buildVorbisFileSeekIndex(
         @intFromPtr(destination.ptr),
         destination_bytes,
     )) return error.OverlappingVorbisSeekStorage;
-    const required = try requiredVorbisFileSeekPoints(
+    const required = try requiredVorbisFileSeekPointsWithLimits(
         io,
         file,
         page_storage,
+        limits,
     );
     if (destination.len < required)
         return error.VorbisSeekIndexTooSmall;
-    var pages = try FilePageReader.initChained(io, file);
+    var pages = try FilePageReader.initChainedWithLimits(io, file, limits);
     var indexer = VorbisSeekIndexer{ .destination = destination };
     while (try pages.next(page_storage)) |page| {
         try indexer.consume(page);
@@ -996,6 +1205,24 @@ pub fn buildVorbisFileSeekIndexTransactional(
     page_storage: []u8,
     destination: []VorbisSeekPoint,
     index_scratch: []VorbisSeekPoint,
+) ![]const VorbisSeekPoint {
+    return buildVorbisFileSeekIndexTransactionalWithLimits(
+        io,
+        file,
+        page_storage,
+        destination,
+        index_scratch,
+        default_limits,
+    );
+}
+
+pub fn buildVorbisFileSeekIndexTransactionalWithLimits(
+    io: std.Io,
+    file: std.Io.File,
+    page_storage: []u8,
+    destination: []VorbisSeekPoint,
+    index_scratch: []VorbisSeekPoint,
+    limits: Limits,
 ) ![]const VorbisSeekPoint {
     const destination_bytes = std.math.mul(
         usize,
@@ -1024,11 +1251,12 @@ pub fn buildVorbisFileSeekIndexTransactional(
         scratch_bytes,
     )) return error.OverlappingVorbisSeekStorage;
 
-    const staged = try buildVorbisFileSeekIndex(
+    const staged = try buildVorbisFileSeekIndexWithLimits(
         io,
         file,
         page_storage,
         index_scratch,
+        limits,
     );
     if (destination.len < staged.len)
         return error.VorbisSeekIndexTooSmall;
@@ -1057,11 +1285,35 @@ pub const FilePacketReader = struct {
         return .{ .pages = try FilePageReader.init(io, file) };
     }
 
+    pub fn initWithLimits(
+        io: std.Io,
+        file: std.Io.File,
+        limits: Limits,
+    ) !FilePacketReader {
+        return .{
+            .pages = try FilePageReader.initWithLimits(io, file, limits),
+        };
+    }
+
     pub fn initChained(
         io: std.Io,
         file: std.Io.File,
     ) !FilePacketReader {
         return .{ .pages = try FilePageReader.initChained(io, file) };
+    }
+
+    pub fn initChainedWithLimits(
+        io: std.Io,
+        file: std.Io.File,
+        limits: Limits,
+    ) !FilePacketReader {
+        return .{
+            .pages = try FilePageReader.initChainedWithLimits(
+                io,
+                file,
+                limits,
+            ),
+        };
     }
 
     /// Reposition to the preceding audio packet retained by a seek point.
@@ -1071,9 +1323,16 @@ pub const FilePacketReader = struct {
     ) !void {
         const location = point.decode;
         if (location.byte_offset > self.pages.file_size -| 27 or
+            location.logical_stream_index >=
+                self.pages.limits.max_logical_streams or
             location.logical_packet_index <
                 location.completed_packets_before)
             return error.InvalidVorbisSeekPoint;
+        if (location.completed_packets_before >=
+            self.pages.limits.max_packets)
+        {
+            return error.OggPacketLimitExceeded;
+        }
         var header: [27]u8 = undefined;
         try readExactAt(
             self.pages.io,
@@ -1097,6 +1356,7 @@ pub const FilePacketReader = struct {
         self.pages.ended = false;
         self.pages.logical_stream_index =
             location.logical_stream_index;
+        self.pages.pages_read = 0;
         self.page = null;
         self.segment_index = 0;
         self.body_offset = 0;
@@ -1194,6 +1454,25 @@ pub const FilePacketReader = struct {
         packet_storage: []u8,
     ) !?Packet {
         try self.validateState(page_storage, packet_storage);
+        if (self.packet_index == self.pages.limits.max_packets and
+            self.packet_index != std.math.maxInt(u64))
+        {
+            if (self.packet_bytes == 0 and
+                self.pages.offset == self.pages.file_size and
+                (self.page == null or
+                    self.segment_index ==
+                        (self.page orelse unreachable).lacing_values.len))
+            {
+                return null;
+            }
+            return error.OggPacketLimitExceeded;
+        }
+        if (self.packet_index != std.math.maxInt(u64) and
+            self.packets_to_skip >=
+                self.pages.limits.max_packets - self.packet_index)
+        {
+            return error.OggPacketLimitExceeded;
+        }
         const checkpoint: ?FilePacketCheckpoint =
             if (self.packet_bytes == 0)
                 self.packetCheckpoint()
@@ -1283,8 +1562,7 @@ pub const FilePacketReader = struct {
             };
             self.packet_bytes = 0;
             if (self.packet_index == std.math.maxInt(u64) or
-                self.logical_stream_packet_index ==
-                    std.math.maxInt(u64))
+                self.logical_stream_packet_index == std.math.maxInt(u64))
                 return error.OggPacketCountOverflow;
             self.packet_index += 1;
             self.logical_stream_packet_index += 1;
@@ -1356,6 +1634,7 @@ pub const FilePacketReader = struct {
         };
 
         var pages = self.pages;
+        pages.pages_read -= 1;
         pages.offset = page.byte_offset;
         pages.ended = false;
         pages.logical_stream_index = page.logical_stream_index;
@@ -1417,6 +1696,7 @@ pub const FilePacketReader = struct {
         if ((self.page_storage_pointer == null) !=
             (self.packet_storage_pointer == null) or
             self.packet_bytes > packet_storage.len or
+            self.packet_index > self.pages.limits.max_packets or
             self.packets_to_skip >
                 std.math.maxInt(u64) -
                     self.logical_stream_packet_index)
@@ -1443,7 +1723,8 @@ pub const FilePacketReader = struct {
         if (self.reload_segment_index != 0 or
             self.reload_body_offset != 0 or
             self.preserve_logical_index_on_reload or
-            page_storage.len < page.byte_length)
+            page_storage.len < page.byte_length or
+            self.pages.pages_read == 0)
             return error.InvalidOggFilePacketReaderState;
         if (self.page_storage_pointer == null)
             return error.InvalidOggFilePacketReaderState;
@@ -16002,6 +16283,205 @@ test "Ogg writer and packet iterator preserve continued packets" {
     try std.testing.expect(packets.valid());
 }
 
+test "Ogg memory and file readers enforce whole-stream limits" {
+    var encoded: [256]u8 = undefined;
+    var writer = StreamWriter.init(&encoded, 0x12345678);
+    try writer.appendPacket("first", 5, true, false);
+    try writer.appendPacket("second", 11, false, true);
+    const bytes = writer.bytes();
+
+    try std.testing.expectError(
+        error.InvalidOggLimits,
+        PageIterator.initWithLimits(bytes, .{ .max_pages = 0 }),
+    );
+    try std.testing.expectError(
+        error.OggStreamLimitExceeded,
+        PageIterator.initWithLimits(bytes, .{
+            .max_stream_bytes = bytes.len - 1,
+        }),
+    );
+
+    var page_limited = try PageIterator.initWithLimits(bytes, .{
+        .max_stream_bytes = bytes.len,
+        .max_pages = 1,
+        .max_packets = 2,
+    });
+    _ = (try page_limited.next()).?;
+    const page_limited_before = page_limited;
+    try std.testing.expectError(
+        error.OggPageLimitExceeded,
+        page_limited.next(),
+    );
+    try std.testing.expectEqualDeep(page_limited_before, page_limited);
+    try std.testing.expectError(
+        error.OggPageLimitExceeded,
+        requiredVorbisSeekPointsWithLimits(bytes, .{
+            .max_stream_bytes = bytes.len,
+            .max_pages = 1,
+            .max_packets = 2,
+        }),
+    );
+
+    var exact_pages = try PageIterator.initWithLimits(bytes, .{
+        .max_stream_bytes = bytes.len,
+        .max_pages = 2,
+        .max_packets = 2,
+    });
+    _ = (try exact_pages.next()).?;
+    _ = (try exact_pages.next()).?;
+    try std.testing.expect((try exact_pages.next()) == null);
+
+    var packet_storage: [16]u8 = undefined;
+    var packet_limited = try PacketIterator.initWithLimits(
+        bytes,
+        &packet_storage,
+        .{
+            .max_stream_bytes = bytes.len,
+            .max_pages = 2,
+            .max_packets = 1,
+        },
+    );
+    _ = (try packet_limited.next()).?;
+    const packet_limited_before = packet_limited;
+    const packet_storage_before = packet_storage;
+    try std.testing.expectError(
+        error.OggPacketLimitExceeded,
+        packet_limited.next(),
+    );
+    try std.testing.expectEqualDeep(packet_limited_before, packet_limited);
+    try std.testing.expectEqualSlices(
+        u8,
+        &packet_storage_before,
+        &packet_storage,
+    );
+
+    var chained: [128]u8 = undefined;
+    var first_writer = StreamWriter.init(&chained, 1);
+    try first_writer.appendPacket("a", 1, true, true);
+    const first_bytes = first_writer.bytes().len;
+    var second_writer = StreamWriter.init(chained[first_bytes..], 2);
+    try second_writer.appendPacket("b", 1, true, true);
+    const chained_bytes = chained[0 .. first_bytes + second_writer.bytes().len];
+    var stream_limited = try PageIterator.initChainedWithLimits(
+        chained_bytes,
+        .{
+            .max_stream_bytes = chained_bytes.len,
+            .max_pages = 2,
+            .max_packets = 2,
+            .max_logical_streams = 1,
+        },
+    );
+    _ = (try stream_limited.next()).?;
+    const stream_limited_before = stream_limited;
+    try std.testing.expectError(
+        error.OggLogicalStreamLimitExceeded,
+        stream_limited.next(),
+    );
+    try std.testing.expectEqualDeep(stream_limited_before, stream_limited);
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var file = try temporary.dir.createFile(
+        std.testing.io,
+        "bounded.ogg",
+        .{ .read = true },
+    );
+    defer file.close(std.testing.io);
+    try file.writePositionalAll(std.testing.io, bytes, 0);
+    try file.setLength(std.testing.io, bytes.len);
+    try std.testing.expectError(
+        error.OggStreamLimitExceeded,
+        FilePageReader.initWithLimits(std.testing.io, file, .{
+            .max_stream_bytes = bytes.len - 1,
+        }),
+    );
+
+    var file_page_limited = try FilePageReader.initWithLimits(
+        std.testing.io,
+        file,
+        .{
+            .max_stream_bytes = bytes.len,
+            .max_pages = 1,
+            .max_packets = 2,
+        },
+    );
+    var page_storage: [maximum_page_bytes]u8 = undefined;
+    _ = (try file_page_limited.next(&page_storage)).?;
+    const file_page_before = file_page_limited;
+    const page_storage_before = page_storage;
+    try std.testing.expectError(
+        error.OggPageLimitExceeded,
+        file_page_limited.next(&page_storage),
+    );
+    try std.testing.expectEqualDeep(file_page_before, file_page_limited);
+    try std.testing.expectEqualSlices(u8, &page_storage_before, &page_storage);
+    try std.testing.expectError(
+        error.OggPageLimitExceeded,
+        requiredVorbisFileSeekPointsWithLimits(
+            std.testing.io,
+            file,
+            &page_storage,
+            .{
+                .max_stream_bytes = bytes.len,
+                .max_pages = 1,
+                .max_packets = 2,
+            },
+        ),
+    );
+
+    var file_packet_limited = try FilePacketReader.initWithLimits(
+        std.testing.io,
+        file,
+        .{
+            .max_stream_bytes = bytes.len,
+            .max_pages = 2,
+            .max_packets = 1,
+        },
+    );
+    _ = (try file_packet_limited.next(
+        &page_storage,
+        &packet_storage,
+    )).?;
+    const file_packet_before = file_packet_limited;
+    const file_packet_storage_before = packet_storage;
+    try std.testing.expectError(
+        error.OggPacketLimitExceeded,
+        file_packet_limited.next(&page_storage, &packet_storage),
+    );
+    try std.testing.expectEqualDeep(file_packet_before, file_packet_limited);
+    try std.testing.expectEqualSlices(
+        u8,
+        &file_packet_storage_before,
+        &packet_storage,
+    );
+
+    try file.writePositionalAll(std.testing.io, chained_bytes, 0);
+    try file.setLength(std.testing.io, chained_bytes.len);
+    var file_stream_limited = try FilePageReader.initChainedWithLimits(
+        std.testing.io,
+        file,
+        .{
+            .max_stream_bytes = chained_bytes.len,
+            .max_pages = 2,
+            .max_packets = 2,
+            .max_logical_streams = 1,
+        },
+    );
+    _ = (try file_stream_limited.next(&page_storage)).?;
+    const file_stream_before = file_stream_limited;
+    const file_stream_storage_before = page_storage;
+    try std.testing.expectError(
+        error.OggLogicalStreamLimitExceeded,
+        file_stream_limited.next(&page_storage),
+    );
+    try std.testing.expectEqualDeep(file_stream_before, file_stream_limited);
+    try std.testing.expectEqualSlices(
+        u8,
+        &file_stream_storage_before,
+        &page_storage,
+    );
+}
+
 test "Ogg packet iteration rolls back capacity and hostile state failures" {
     var encoded: [512]u8 = undefined;
     var writer = StreamWriter.init(&encoded, 9);
@@ -16107,6 +16587,7 @@ test "Ogg packet iteration rolls back capacity and hostile state failures" {
     );
 
     var overflow = PacketIterator.init(writer.bytes(), &complete_storage);
+    overflow.pages.limits.max_packets = std.math.maxInt(u64);
     overflow.packet_index = std.math.maxInt(u64);
     try std.testing.expectError(
         error.OggPacketCountOverflow,
@@ -16293,6 +16774,7 @@ test "file-backed Ogg writer streams continued packets" {
     );
 
     var saturated = try FilePacketReader.init(std.testing.io, file);
+    saturated.pages.limits.max_packets = std.math.maxInt(u64);
     saturated.packet_index = std.math.maxInt(u64) - 1;
     saturated.logical_stream_packet_index =
         std.math.maxInt(u64) - 1;
@@ -16636,6 +17118,7 @@ test "Ogg page readers reject invalid cursors without trapping" {
     var file_pages = try FilePageReader.init(std.testing.io, file);
     try std.testing.expect(file_pages.valid());
     var storage: [27]u8 = undefined;
+    file_pages.limits.max_stream_bytes = std.math.maxInt(u64);
     file_pages.file_size = std.math.maxInt(u64);
     file_pages.offset = std.math.maxInt(u64) - 10;
     try std.testing.expectError(
@@ -16687,6 +17170,7 @@ test "Ogg page readers reject invalid cursors without trapping" {
         file_packets.next(&storage, &packet_storage),
     );
     file_packets.packet_bytes = 0;
+    file_packets.pages.limits.max_packets = std.math.maxInt(u64);
     file_packets.packet_index = std.math.maxInt(u64);
     file_packets.logical_stream_packet_index =
         std.math.maxInt(u64);
@@ -30512,4 +30996,90 @@ test "file-backed Ogg packet reader streams continued packets" {
     try std.testing.expect(
         (try reader.next(&page_storage, &packet_storage)) == null,
     );
+}
+
+const ogg_fuzz_seed = "OggS";
+
+test "fuzz bounded Ogg page and packet parsing" {
+    try std.testing.fuzz({}, fuzzOgg, .{
+        .corpus = &.{ogg_fuzz_seed},
+    });
+}
+
+fn fuzzOgg(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var encoded: [64 * 1024]u8 = undefined;
+    var length: usize = switch (smith.valueRangeAtMost(u8, 0, 1)) {
+        0 => smith.slice(&encoded),
+        1 => generated: {
+            var writer = StreamWriter.init(&encoded, smith.value(u32));
+            var payload: [512]u8 = undefined;
+            const packet_count = smith.valueRangeAtMost(u8, 1, 8);
+            for (0..packet_count) |packet_index| {
+                const packet_length = smith.slice(&payload);
+                writer.appendPacket(
+                    payload[0..packet_length],
+                    smith.value(u64),
+                    packet_index == 0,
+                    packet_index + 1 == packet_count,
+                ) catch break;
+            }
+            break :generated writer.bytes().len;
+        },
+        else => unreachable,
+    };
+    if (length != 0 and smith.value(bool)) {
+        const mutation_count = smith.valueRangeAtMost(u8, 1, 32);
+        for (0..mutation_count) |_|
+            encoded[smith.index(length)] ^= smith.value(u8);
+    }
+    if (smith.value(bool)) {
+        const maximum: u16 = @intCast(@min(length, std.math.maxInt(u16)));
+        length = smith.valueRangeAtMost(u16, 0, maximum);
+    } else if (length < encoded.len and smith.value(bool)) {
+        const maximum_append: u16 = @intCast(@min(
+            encoded.len - length,
+            std.math.maxInt(u16),
+        ));
+        const append_length = smith.valueRangeAtMost(u16, 0, maximum_append);
+        smith.bytes(encoded[length..][0..append_length]);
+        length += append_length;
+    }
+
+    const limits = Limits{
+        .max_stream_bytes = encoded.len,
+        .max_pages = 256,
+        .max_packets = 256,
+        .max_logical_streams = 16,
+    };
+    var pages = PageIterator.initChainedWithLimits(
+        encoded[0..length],
+        limits,
+    ) catch return;
+    var previous_offset: usize = 0;
+    while (pages.next() catch return) |_| {
+        if (pages.offset <= previous_offset)
+            return error.OggFuzzPageParserDidNotAdvance;
+        previous_offset = pages.offset;
+    }
+
+    var packet_storage: [64 * 1024]u8 = undefined;
+    var packets = PacketIterator.initChainedWithLimits(
+        encoded[0..length],
+        &packet_storage,
+        limits,
+    ) catch return;
+    while (true) {
+        const before = packets;
+        const packet = packets.next() catch {
+            if (!std.meta.eql(before, packets))
+                return error.OggFuzzPacketFailureWasNotTransactional;
+            return;
+        } orelse break;
+        if (packet.bytes.len > packet_storage.len or
+            packets.packet_index != before.packet_index + 1)
+        {
+            return error.OggFuzzInvalidPacketProgress;
+        }
+    }
 }

@@ -8,6 +8,7 @@
 - Added `dsp.AdmXmlLimits`, `default_adm_xml_limits`, and `AdmXmlDocument.initWithLimits` for explicit ADM document, event, metadata-count, and graph-validation work policies.
 - Added `dsp.IxmlLimits`, `default_ixml_limits`, `requiredIxmlParseStorageWithLimits`, and `parseIxmlMetadataWithLimits` for explicit iXML document, structural-work, decoded-text, track, and sync-point policies.
 - Added `dsp.Mp3Limits`, `default_mp3_limits`, `Mp3Stream.initWithLimits`, `Mp3Stream.summarizeWithLimits`, `Mp3FileReader.initWithLimits`, and `Mp3FileReader.summarizeWithLimits` for explicit encoded-byte and frame-count policies.
+- Added `dsp.OggLimits`, bounded Ogg reader constructors, and bounded Vorbis seek-index helpers for explicit encoded-byte, page, packet, and chained-stream policies.
 
 ### Changed
 
@@ -15,6 +16,7 @@
 - `AdmXmlDocument.init` now applies bounded defaults. XML event and attribute iterators retain exact validated-state witnesses, and ADM graph validation uses fixed-storage indexes instead of replaying prefixes and nested declaration, reference, and block scans.
 - iXML parsing now applies documented default limits. Vorbis-comment, FLAC-comment, ID3v2.3, ID3v2.4, RIFF INFO, and AIFF text iterators retain exact validated-state witnesses instead of replaying their complete prefixes during ordinary traversal.
 - MP3 memory and positional-file scans now reject streams larger than the documented default byte policy or longer than the default frame-count policy. Frame-limit rejection leaves the iterator or reader unchanged.
+- Ogg memory and positional-file readers now apply documented whole-stream defaults in addition to the existing page, packet-storage, and resynchronization bounds. Count-limit rejection leaves reader state unchanged.
 
 ## zig-vst3-0.3.0 - 2026-08-14
 

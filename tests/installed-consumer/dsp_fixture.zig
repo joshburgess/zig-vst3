@@ -379,9 +379,16 @@ test "installed package exposes file-backed Ogg streaming" {
     try writer.appendPacket("installed", 8, true, true);
     try writer.finalize();
 
-    var page_reader = try plugin.dsp.OggFilePageReader.init(
+    const ogg_limits = plugin.dsp.OggLimits{
+        .max_stream_bytes = (try file.stat(std.testing.io)).size,
+        .max_pages = 1,
+        .max_packets = 1,
+        .max_logical_streams = 1,
+    };
+    var page_reader = try plugin.dsp.OggFilePageReader.initWithLimits(
         std.testing.io,
         file,
+        ogg_limits,
     );
     var transactional_page_storage: [64]u8 = undefined;
     var transactional_page_scratch: [64]u8 = undefined;
@@ -396,9 +403,10 @@ test "installed package exposes file-backed Ogg streaming" {
     );
 
     var transactional_packet_reader =
-        try plugin.dsp.OggFilePacketReader.init(
+        try plugin.dsp.OggFilePacketReader.initWithLimits(
             std.testing.io,
             file,
+            ogg_limits,
         );
     var transactional_packet_destination: [9]u8 = undefined;
     var transactional_packet_scratch: [9]u8 = undefined;

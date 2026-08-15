@@ -747,6 +747,8 @@ pub const writeInterleavedFlacFileWithMetadata =
 pub const OggFilePacketReader = ogg.FilePacketReader;
 pub const OggFilePageReader = ogg.FilePageReader;
 pub const OggFileWriter = ogg.FileWriter;
+pub const OggLimits = ogg.Limits;
+pub const default_ogg_limits = ogg.default_limits;
 pub const OggPacket = ogg.Packet;
 pub const OggPacketIterator = ogg.PacketIterator;
 pub const OggPage = ogg.Page;
@@ -767,9 +769,15 @@ pub const adaptVorbisPacketBitBudget =
     ogg.adaptVorbisPacketBitBudget;
 pub const applyVorbisFloor = ogg.applyVorbisFloor;
 pub const buildVorbisFileSeekIndex = ogg.buildVorbisFileSeekIndex;
+pub const buildVorbisFileSeekIndexWithLimits =
+    ogg.buildVorbisFileSeekIndexWithLimits;
 pub const buildVorbisFileSeekIndexTransactional =
     ogg.buildVorbisFileSeekIndexTransactional;
+pub const buildVorbisFileSeekIndexTransactionalWithLimits =
+    ogg.buildVorbisFileSeekIndexTransactionalWithLimits;
 pub const buildVorbisSeekIndex = ogg.buildVorbisSeekIndex;
+pub const buildVorbisSeekIndexWithLimits =
+    ogg.buildVorbisSeekIndexWithLimits;
 pub const encodeVorbisCommentPacket = ogg.encodeVorbisCommentPacket;
 pub const encodeVorbisIdentificationPacket =
     ogg.encodeVorbisIdentificationPacket;
@@ -836,7 +844,11 @@ pub const requiredVorbisSetupPacketBytes =
     ogg.requiredVorbisSetupPacketBytes;
 pub const requiredVorbisFileSeekPoints =
     ogg.requiredVorbisFileSeekPoints;
+pub const requiredVorbisFileSeekPointsWithLimits =
+    ogg.requiredVorbisFileSeekPointsWithLimits;
 pub const requiredVorbisSeekPoints = ogg.requiredVorbisSeekPoints;
+pub const requiredVorbisSeekPointsWithLimits =
+    ogg.requiredVorbisSeekPointsWithLimits;
 pub const selectVorbisEncodingMode = ogg.selectVorbisEncodingMode;
 pub const synthesizeVorbisFloorZero = ogg.synthesizeVorbisFloorZero;
 pub const synthesizeVorbisFloorOne = ogg.synthesizeVorbisFloorOne;
