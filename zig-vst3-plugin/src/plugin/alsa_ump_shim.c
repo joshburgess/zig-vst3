@@ -24,7 +24,8 @@ enum {
     ZV3_SND_UMP_DIR_INPUT = 0x01,
     ZV3_SND_UMP_DIR_OUTPUT = 0x02,
     ZV3_SND_UMP_DIR_BIDIRECTION = 0x03,
-    ZV3_SND_RAWMIDI_NONBLOCK = 0x0002
+    ZV3_SND_RAWMIDI_NONBLOCK = 0x0002,
+    ZV3_ALSA_UMP_MAX_READ_BATCHES = 64
 };
 
 typedef struct {
@@ -733,16 +734,18 @@ static void *input_thread(void *context)
         if ((revents & POLLIN) == 0) {
             continue;
         }
+        size_t read_batches = 0;
         while (!atomic_load_explicit(
             &input->stop_requested,
             memory_order_acquire
-        )) {
+        ) && read_batches < ZV3_ALSA_UMP_MAX_READ_BATCHES) {
             ssize_t count = input->api.ump_read(
                 input->handle,
                 words,
                 sizeof(words)
             );
             if (count > 0 && (size_t)count % sizeof(words[0]) == 0) {
+                read_batches += 1;
                 uint64_t timestamp = zv3_alsa_ump_now_nanoseconds();
                 if (timestamp == 0) {
                     atomic_fetch_add_explicit(

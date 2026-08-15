@@ -15,6 +15,10 @@
 
 typedef struct _snd_rawmidi snd_rawmidi_t;
 
+enum {
+    ZV3_ALSA_MIDI_MAX_READ_BATCHES = 64
+};
+
 typedef struct {
     void *library;
     int (*device_name_hint)(int, const char *, void ***);
@@ -448,16 +452,18 @@ static void *input_thread(void *context)
         if ((revents & POLLIN) == 0) {
             continue;
         }
+        size_t read_batches = 0;
         while (!atomic_load_explicit(
             &input->stop_requested,
             memory_order_acquire
-        )) {
+        ) && read_batches < ZV3_ALSA_MIDI_MAX_READ_BATCHES) {
             ssize_t count = input->api.rawmidi_read(
                 input->handle,
                 bytes,
                 sizeof(bytes)
             );
             if (count > 0) {
+                read_batches += 1;
                 input->receive(
                     input->context,
                     zv3_alsa_midi_now_nanoseconds(),
