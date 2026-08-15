@@ -6,11 +6,13 @@
 
 - Added `process.MidiFileLimits`, `default_midi_file_limits`, and `MidiFile.parseWithLimits` for applications that need an explicit Standard MIDI File byte, track, event, or payload policy.
 - Added `dsp.AdmXmlLimits`, `default_adm_xml_limits`, and `AdmXmlDocument.initWithLimits` for explicit ADM document, event, metadata-count, and graph-validation work policies.
+- Added `dsp.IxmlLimits`, `default_ixml_limits`, `requiredIxmlParseStorageWithLimits`, and `parseIxmlMetadataWithLimits` for explicit iXML document, structural-work, decoded-text, track, and sync-point policies.
 
 ### Changed
 
 - `MidiFile.parse` now applies documented default limits and validates normal event traversal in linear time. Applications that intentionally accept files beyond those defaults can call `parseWithLimits` with a larger policy.
 - `AdmXmlDocument.init` now applies bounded defaults. XML event and attribute iterators retain exact validated-state witnesses, and ADM graph validation uses fixed-storage indexes instead of replaying prefixes and nested declaration, reference, and block scans.
+- iXML parsing now applies documented default limits. Vorbis-comment, FLAC-comment, ID3v2.3, ID3v2.4, RIFF INFO, and AIFF text iterators retain exact validated-state witnesses instead of replaying their complete prefixes during ordinary traversal.
 
 ## zig-vst3-0.3.0 - 2026-08-14
 

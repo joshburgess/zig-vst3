@@ -8822,19 +8822,30 @@ test "installed package exposes file-backed audio writers" {
         plugin.dsp.RiffXmlKind.ixml,
         ixml_view.kind,
     );
+    const ixml_limits = plugin.dsp.IxmlLimits{
+        .max_document_bytes = 4 * 1024,
+        .max_structural_work = 512 * 1024,
+        .max_text_bytes = 512,
+        .max_tracks = 1,
+        .max_sync_points = 1,
+    };
     const ixml_requirements =
-        try plugin.dsp.requiredIxmlParseStorage(ixml_view.document);
+        try plugin.dsp.requiredIxmlParseStorageWithLimits(
+            ixml_view.document,
+            ixml_limits,
+        );
     var parsed_ixml_tracks: [1]plugin.dsp.IxmlTrack = undefined;
     var parsed_ixml_sync_points: [1]plugin.dsp.IxmlSyncPoint =
         undefined;
     var parsed_ixml_text: [512]u8 = undefined;
-    const parsed_ixml = try plugin.dsp.parseIxmlMetadata(
+    const parsed_ixml = try plugin.dsp.parseIxmlMetadataWithLimits(
         ixml_view.document,
         .{
             .tracks = &parsed_ixml_tracks,
             .sync_points = &parsed_ixml_sync_points,
             .text = &parsed_ixml_text,
         },
+        ixml_limits,
     );
     try std.testing.expectEqual(
         @as(usize, 1),

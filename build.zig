@@ -2773,6 +2773,24 @@ pub fn build(b: *std.Build) void {
     adm_xml_fuzz_step.dependOn(
         &b.addRunArtifact(adm_xml_fuzz_tests).step,
     );
+    const ixml_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        ixml_fuzz_module.link_libc = true;
+    const ixml_fuzz_tests = b.addTest(.{
+        .root_module = ixml_fuzz_module,
+        .filters = &.{"fuzz bounded iXML parsing and materialization"},
+    });
+    const ixml_fuzz_step = b.step(
+        "test-ixml-fuzz",
+        "Run or fuzz the bounded iXML parser",
+    );
+    ixml_fuzz_step.dependOn(
+        &b.addRunArtifact(ixml_fuzz_tests).step,
+    );
     const midi_file_benchmark_core = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = b.graph.host,

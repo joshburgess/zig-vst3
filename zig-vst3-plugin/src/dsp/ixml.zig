@@ -3,6 +3,23 @@ const std = @import("std");
 const xml_declaration =
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
 
+const maximum_structural_work_per_byte: usize = 128;
+
+pub const Limits = struct {
+    max_document_bytes: usize = 16 * 1024 * 1024,
+    max_structural_work: usize = 2 * 1024 * 1024 * 1024,
+    max_text_bytes: usize = 16 * 1024 * 1024,
+    max_tracks: usize = 65_536,
+    max_sync_points: usize = 65_536,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_document_bytes == 0 or self.max_structural_work == 0)
+            return error.InvalidIxmlLimits;
+    }
+};
+
+pub const default_limits = Limits{};
+
 pub const Track = struct {
     channel_index: ?u32 = null,
     interleave_index: ?u32 = null,
@@ -204,7 +221,14 @@ pub fn encode(
 }
 
 pub fn requirements(document: []const u8) !Requirements {
-    const analysis = try analyze(document);
+    return requirementsWithLimits(document, default_limits);
+}
+
+pub fn requirementsWithLimits(
+    document: []const u8,
+    limits: Limits,
+) !Requirements {
+    const analysis = try analyze(document, limits);
     return .{
         .text_bytes = analysis.text_bytes,
         .sync_point_count = analysis.sync_point_count,
@@ -216,7 +240,15 @@ pub fn parse(
     document: []const u8,
     storage: ParseStorage,
 ) !View {
-    const analysis = try analyze(document);
+    return parseWithLimits(document, storage, default_limits);
+}
+
+pub fn parseWithLimits(
+    document: []const u8,
+    storage: ParseStorage,
+    limits: Limits,
+) !View {
+    const analysis = try analyze(document, limits);
     if (storage.tracks.len < analysis.track_count)
         return error.IxmlTrackStorageTooSmall;
     if (storage.sync_points.len < analysis.sync_point_count)
@@ -355,7 +387,17 @@ const RawSyncPoint = struct {
     event_duration: ?u64 = null,
 };
 
-fn analyze(document: []const u8) !Analysis {
+fn analyze(document: []const u8, limits: Limits) !Analysis {
+    try limits.validate();
+    if (document.len > limits.max_document_bytes)
+        return error.IxmlDocumentLimitExceeded;
+    const structural_work = std.math.mul(
+        usize,
+        document.len,
+        maximum_structural_work_per_byte,
+    ) catch return error.IxmlWorkLimitExceeded;
+    if (structural_work > limits.max_structural_work)
+        return error.IxmlWorkLimitExceeded;
     if (!std.unicode.utf8ValidateSlice(document))
         return error.InvalidIxmlEncoding;
     if (std.mem.indexOfScalar(u8, document, 0) != null)
@@ -511,6 +553,12 @@ fn analyze(document: []const u8) !Analysis {
             );
         }
     }
+    if (result.text_bytes > limits.max_text_bytes)
+        return error.IxmlTextLimitExceeded;
+    if (result.track_count > limits.max_tracks)
+        return error.IxmlTrackLimitExceeded;
+    if (result.sync_point_count > limits.max_sync_points)
+        return error.IxmlSyncPointLimitExceeded;
     return result;
 }
 
@@ -3269,4 +3317,138 @@ test "iXML parse capacity checks preserve caller storage" {
     );
     try std.testing.expectEqual(tracks_before, tracks);
     try std.testing.expectEqual(text_before, text);
+}
+
+test "iXML parser enforces independent input limits" {
+    const document =
+        "<BWFXML><PROJECT>Feature</PROJECT>" ++
+        "<SYNC_POINT_LIST><SYNC_POINT/></SYNC_POINT_LIST>" ++
+        "<TRACK_LIST><TRACK/></TRACK_LIST></BWFXML>";
+    try std.testing.expectError(
+        error.InvalidIxmlLimits,
+        requirementsWithLimits(document, .{ .max_document_bytes = 0 }),
+    );
+    try std.testing.expectError(
+        error.IxmlDocumentLimitExceeded,
+        requirementsWithLimits(document, .{
+            .max_document_bytes = document.len - 1,
+        }),
+    );
+    try std.testing.expectError(
+        error.IxmlWorkLimitExceeded,
+        requirementsWithLimits(document, .{
+            .max_structural_work = document.len * maximum_structural_work_per_byte - 1,
+        }),
+    );
+    try std.testing.expectError(
+        error.IxmlTextLimitExceeded,
+        requirementsWithLimits(document, .{ .max_text_bytes = 6 }),
+    );
+    try std.testing.expectError(
+        error.IxmlTrackLimitExceeded,
+        requirementsWithLimits(document, .{ .max_tracks = 0 }),
+    );
+    try std.testing.expectError(
+        error.IxmlSyncPointLimitExceeded,
+        requirementsWithLimits(document, .{ .max_sync_points = 0 }),
+    );
+
+    var tracks: [1]Track = @splat(.{ .channel_index = 99 });
+    var sync_points: [1]SyncPoint = @splat(.{ .low = 99 });
+    var text: [16]u8 = @splat(0xa5);
+    const tracks_before = tracks;
+    const sync_points_before = sync_points;
+    const text_before = text;
+    try std.testing.expectError(
+        error.IxmlTextLimitExceeded,
+        parseWithLimits(
+            document,
+            .{
+                .tracks = &tracks,
+                .sync_points = &sync_points,
+                .text = &text,
+            },
+            .{ .max_text_bytes = 6 },
+        ),
+    );
+    try std.testing.expectEqual(tracks_before, tracks);
+    try std.testing.expectEqual(sync_points_before, sync_points);
+    try std.testing.expectEqual(text_before, text);
+}
+
+const ixml_fuzz_minimal = "<BWFXML/>";
+const ixml_fuzz_structured =
+    "<BWFXML><PROJECT>Feature</PROJECT>" ++
+    "<SYNC_POINT_LIST><SYNC_POINT_COUNT>1</SYNC_POINT_COUNT>" ++
+    "<SYNC_POINT><SYNC_POINT_TYPE>RELATIVE</SYNC_POINT_TYPE>" ++
+    "</SYNC_POINT></SYNC_POINT_LIST>" ++
+    "<TRACK_LIST><TRACK_COUNT>1</TRACK_COUNT>" ++
+    "<TRACK><CHANNEL_INDEX>1</CHANNEL_INDEX><NAME>Boom</NAME>" ++
+    "</TRACK></TRACK_LIST></BWFXML>";
+
+test "fuzz bounded iXML parsing and materialization" {
+    try std.testing.fuzz({}, fuzzIxml, .{
+        .corpus = &.{ ixml_fuzz_minimal, ixml_fuzz_structured },
+    });
+}
+
+fn fuzzIxml(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var storage: [64 * 1024]u8 = undefined;
+    var length: usize = switch (smith.valueRangeAtMost(u8, 0, 2)) {
+        0 => smith.slice(&storage),
+        1 => seed: {
+            @memcpy(storage[0..ixml_fuzz_minimal.len], ixml_fuzz_minimal);
+            break :seed ixml_fuzz_minimal.len;
+        },
+        2 => seed: {
+            @memcpy(storage[0..ixml_fuzz_structured.len], ixml_fuzz_structured);
+            break :seed ixml_fuzz_structured.len;
+        },
+        else => unreachable,
+    };
+    if (length != 0 and smith.value(bool)) {
+        const mutation_count = smith.valueRangeAtMost(u8, 1, 32);
+        for (0..mutation_count) |_|
+            storage[smith.index(length)] ^= smith.value(u8);
+    }
+    if (smith.value(bool)) {
+        const maximum: u16 = @intCast(@min(length, std.math.maxInt(u16)));
+        length = smith.valueRangeAtMost(u16, 0, maximum);
+    } else if (length < storage.len and smith.value(bool)) {
+        const maximum_append: u16 = @intCast(@min(
+            storage.len - length,
+            std.math.maxInt(u16),
+        ));
+        const append_length = smith.valueRangeAtMost(u16, 0, maximum_append);
+        smith.bytes(storage[length..][0..append_length]);
+        length += append_length;
+    }
+
+    const limits = Limits{
+        .max_document_bytes = storage.len,
+        .max_structural_work = storage.len * maximum_structural_work_per_byte,
+        .max_text_bytes = 4 * 1024,
+        .max_tracks = 32,
+        .max_sync_points = 32,
+    };
+    const document = storage[0..length];
+    const needed = requirementsWithLimits(document, limits) catch return;
+    var tracks: [32]Track = undefined;
+    var sync_points: [32]SyncPoint = undefined;
+    var text: [4 * 1024]u8 = undefined;
+    const parsed = try parseWithLimits(
+        document,
+        .{
+            .tracks = tracks[0..needed.track_count],
+            .sync_points = sync_points[0..needed.sync_point_count],
+            .text = text[0..needed.text_bytes],
+        },
+        limits,
+    );
+    if (parsed.tracks.len != needed.track_count or
+        parsed.sync_points.len != needed.sync_point_count)
+    {
+        return error.IxmlFuzzMaterializationMismatch;
+    }
 }
