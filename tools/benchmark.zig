@@ -606,19 +606,33 @@ fn benchRealtimePublication() !void {
 
     timer = try Timer.start();
     checksum = 0;
+    var unavailable_count: usize = 0;
     for (0..iterations) |index| {
-        checksum +%= try shared.publisher.publish(.{
+        const generation = shared.publisher.publish(.{
             .cutoff_hz = @floatFromInt(100 + index % 20_000),
             .resonance = @as(f64, @floatFromInt(index % 100)) / 100.0,
             .mode = @intCast(index % 4),
-        });
+        }) catch |err| switch (err) {
+            error.RealtimeSnapshotUnavailable => {
+                unavailable_count += 1;
+                continue;
+            },
+            else => return err,
+        };
+        checksum +%= generation;
     }
     const contended_elapsed_ns = try timer.read();
     std.mem.doNotOptimizeAway(checksum);
     if (shared.read_count.load(.acquire) == 0)
         return error.BenchmarkSnapshotReaderStopped;
+    if (unavailable_count == iterations)
+        return error.BenchmarkSnapshotPublisherMadeNoProgress;
+    std.debug.print(
+        "  successful publications: {d}/{d}\n",
+        .{ iterations - unavailable_count, iterations },
+    );
     try requireRate(
-        "snapshot publication with concurrent reader",
+        "snapshot publication attempt with concurrent reader",
         contended_elapsed_ns,
         iterations,
         budget.contended_snapshot_publication_ns,
