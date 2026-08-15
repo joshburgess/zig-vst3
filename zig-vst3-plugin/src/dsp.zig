@@ -682,6 +682,8 @@ pub const FlacComments = flac.Comments;
 pub const FlacEncoding = flac.Encoding;
 pub const FlacFileReader = flac.FileReader;
 pub const FlacInfo = flac.Info;
+pub const FlacLimits = flac.Limits;
+pub const default_flac_limits = flac.default_limits;
 pub const FlacFileWriter = flac.FileWriter;
 pub const FlacFileWriterMetadata = flac.FileWriterMetadata;
 pub const FlacMetadata = flac.Metadata;
@@ -691,17 +693,25 @@ pub const FlacSpec = flac.Spec;
 pub const decodeInterleavedFlac = flac.decodeInterleaved;
 pub const decodeInterleavedFlacWithWideScratch =
     flac.decodeInterleavedWithWideScratch;
+pub const decodeInterleavedFlacWithLimits =
+    flac.decodeInterleavedWithLimits;
 pub const decodeInterleavedFlacTransactional =
     flac.decodeInterleavedTransactional;
 pub const decodeInterleavedFlacTransactionalWithWideScratch =
     flac.decodeInterleavedTransactionalWithWideScratch;
+pub const decodeInterleavedFlacTransactionalWithLimits =
+    flac.decodeInterleavedTransactionalWithLimits;
 pub const decodeInterleavedFlacRange = flac.decodeInterleavedRange;
 pub const decodeInterleavedFlacRangeWithWideScratch =
     flac.decodeInterleavedRangeWithWideScratch;
+pub const decodeInterleavedFlacRangeWithLimits =
+    flac.decodeInterleavedRangeWithLimits;
 pub const decodeInterleavedFlacRangeTransactional =
     flac.decodeInterleavedRangeTransactional;
 pub const decodeInterleavedFlacRangeTransactionalWithWideScratch =
     flac.decodeInterleavedRangeTransactionalWithWideScratch;
+pub const decodeInterleavedFlacRangeTransactionalWithLimits =
+    flac.decodeInterleavedRangeTransactionalWithLimits;
 pub const encodeInterleavedFlac = flac.encodeInterleaved;
 pub const encodeInterleavedFlacWithComments =
     flac.encodeInterleavedWithComments;
@@ -739,6 +749,8 @@ pub const requiredFlacFileWriterMetadataBytes =
     flac.requiredFileWriterMetadataBytes;
 pub const requiredFlacFileReaderMetadataBytes =
     flac.requiredFileReaderMetadataBytes;
+pub const requiredFlacFileReaderMetadataBytesWithLimits =
+    flac.requiredFileReaderMetadataBytesWithLimits;
 pub const requiredFlacPendingSamples =
     flac.requiredPendingSamples;
 pub const writeInterleavedFlacFile = flac.writeInterleavedFile;

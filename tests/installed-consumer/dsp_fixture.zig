@@ -2313,9 +2313,13 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         stale_flac_vendor,
     );
     var flac_decoded: [flac_source.len]i32 = undefined;
-    const flac_result = try plugin.dsp.decodeInterleavedFlac(
+    const installed_flac_limits: plugin.dsp.FlacLimits =
+        plugin.dsp.default_flac_limits;
+    const flac_result = try plugin.dsp.decodeInterleavedFlacWithLimits(
         flac,
         &flac_decoded,
+        &.{},
+        installed_flac_limits,
     );
     try std.testing.expectEqual(
         flac_source.len / 2,
@@ -2492,9 +2496,10 @@ test "installed package exposes DSP blocks contexts and math primitives" {
     try flac_writer.finalize();
     var streaming_metadata: [128]u8 = undefined;
     const streaming_metadata_bytes =
-        try plugin.dsp.requiredFlacFileReaderMetadataBytes(
+        try plugin.dsp.requiredFlacFileReaderMetadataBytesWithLimits(
             std.testing.io,
             flac_file,
+            installed_flac_limits,
         );
     try std.testing.expectEqual(
         streaming_metadata_bytes,
@@ -2504,11 +2509,12 @@ test "installed package exposes DSP blocks contexts and math primitives" {
         ),
     );
     var streaming_metadata_scratch: [128]u8 = undefined;
-    const streaming_reader = try plugin.dsp.FlacFileReader.initTransactional(
+    const streaming_reader = try plugin.dsp.FlacFileReader.initTransactionalWithLimits(
         std.testing.io,
         flac_file,
         streaming_metadata[0..streaming_metadata_bytes],
         streaming_metadata_scratch[0..streaming_metadata_bytes],
+        installed_flac_limits,
     );
     try std.testing.expect(streaming_reader.valid());
     const published_streaming_metadata = streaming_metadata;

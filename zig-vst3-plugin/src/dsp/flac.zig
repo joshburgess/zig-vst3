@@ -33,6 +33,27 @@ pub const Info = struct {
     maximum_block_size: u16,
 };
 
+pub const Limits = struct {
+    max_stream_bytes: u64 = 1024 * 1024 * 1024 * 1024,
+    max_metadata_blocks: u64 = 1_000_000,
+    max_metadata_bytes: u64 = 256 * 1024 * 1024,
+    max_pcm_frames: u64 = 10_000_000_000,
+    max_frame_blocks: u64 = 10_000_000,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_stream_bytes < streaminfo_bytes or
+            self.max_metadata_blocks == 0 or
+            self.max_metadata_bytes < 38 or
+            self.max_pcm_frames == 0 or
+            self.max_frame_blocks == 0)
+        {
+            return error.InvalidFlacLimits;
+        }
+    }
+};
+
+pub const default_limits = Limits{};
+
 pub const DecodeResult = struct {
     info: Info,
     frames_decoded: usize,
@@ -1324,6 +1345,7 @@ pub fn decodeInterleaved(
         encoded,
         destination,
         &.{},
+        default_limits,
     );
 }
 
@@ -1337,6 +1359,21 @@ pub fn decodeInterleavedWithWideScratch(
         encoded,
         destination,
         wide_side_scratch,
+        default_limits,
+    );
+}
+
+pub fn decodeInterleavedWithLimits(
+    encoded: []const u8,
+    destination: []i32,
+    wide_side_scratch: []i64,
+    limits: Limits,
+) !DecodeResult {
+    return decodeInterleavedInternal(
+        encoded,
+        destination,
+        wide_side_scratch,
+        limits,
     );
 }
 
@@ -1351,6 +1388,7 @@ pub fn decodeInterleavedTransactional(
         destination,
         decode_scratch,
         &.{},
+        default_limits,
     );
 }
 
@@ -1366,6 +1404,23 @@ pub fn decodeInterleavedTransactionalWithWideScratch(
         destination,
         decode_scratch,
         wide_side_scratch,
+        default_limits,
+    );
+}
+
+pub fn decodeInterleavedTransactionalWithLimits(
+    encoded: []const u8,
+    destination: []i32,
+    decode_scratch: []i32,
+    wide_side_scratch: []i64,
+    limits: Limits,
+) !DecodeResult {
+    return decodeInterleavedTransactionalInternal(
+        encoded,
+        destination,
+        decode_scratch,
+        wide_side_scratch,
+        limits,
     );
 }
 
@@ -1374,6 +1429,7 @@ fn decodeInterleavedTransactionalInternal(
     destination: []i32,
     decode_scratch: []i32,
     wide_side_scratch: []i64,
+    limits: Limits,
 ) !DecodeResult {
     if (byteSlicesOverlap(encoded, destination) or
         byteSlicesOverlap(encoded, decode_scratch) or
@@ -1382,7 +1438,7 @@ fn decodeInterleavedTransactionalInternal(
         byteSlicesOverlap(destination, wide_side_scratch) or
         byteSlicesOverlap(decode_scratch, wide_side_scratch))
         return error.OverlappingFlacBuffers;
-    const required_samples = try requiredDecodedSamples(encoded);
+    const required_samples = try requiredDecodedSamples(encoded, limits);
     if (destination.len < required_samples)
         return error.FlacDestinationTooSmall;
     if (decode_scratch.len < required_samples)
@@ -1391,6 +1447,7 @@ fn decodeInterleavedTransactionalInternal(
         encoded,
         decode_scratch[0..required_samples],
         wide_side_scratch,
+        limits,
     );
     @memcpy(
         destination[0..required_samples],
@@ -1399,8 +1456,8 @@ fn decodeInterleavedTransactionalInternal(
     return result;
 }
 
-fn requiredDecodedSamples(encoded: []const u8) !usize {
-    const parser = try Parser.init(encoded);
+fn requiredDecodedSamples(encoded: []const u8, limits: Limits) !usize {
+    const parser = try Parser.initWithLimits(encoded, limits);
     const declared_frames = std.math.cast(
         usize,
         parser.info.frame_count,
@@ -1416,12 +1473,13 @@ fn decodeInterleavedInternal(
     encoded: []const u8,
     destination: []i32,
     wide_side_scratch: []i64,
+    limits: Limits,
 ) !DecodeResult {
     if (byteSlicesOverlap(encoded, destination) or
         byteSlicesOverlap(encoded, wide_side_scratch) or
         byteSlicesOverlap(destination, wide_side_scratch))
         return error.OverlappingFlacBuffers;
-    var parser = try Parser.init(encoded);
+    var parser = try Parser.initWithLimits(encoded, limits);
     const channel_count: usize = parser.info.channel_count;
     const declared_frames = std.math.cast(
         usize,
@@ -1484,6 +1542,7 @@ pub fn decodeInterleavedRange(
         destination,
         frame_scratch,
         &.{},
+        default_limits,
     );
 }
 
@@ -1501,6 +1560,25 @@ pub fn decodeInterleavedRangeWithWideScratch(
         destination,
         frame_scratch,
         wide_side_scratch,
+        default_limits,
+    );
+}
+
+pub fn decodeInterleavedRangeWithLimits(
+    encoded: []const u8,
+    first_frame: u64,
+    destination: []i32,
+    frame_scratch: []i32,
+    wide_side_scratch: []i64,
+    limits: Limits,
+) !usize {
+    return decodeInterleavedRangeInternal(
+        encoded,
+        first_frame,
+        destination,
+        frame_scratch,
+        wide_side_scratch,
+        limits,
     );
 }
 
@@ -1519,6 +1597,7 @@ pub fn decodeInterleavedRangeTransactional(
         output_scratch,
         frame_scratch,
         &.{},
+        default_limits,
     );
 }
 
@@ -1538,6 +1617,27 @@ pub fn decodeInterleavedRangeTransactionalWithWideScratch(
         output_scratch,
         frame_scratch,
         wide_side_scratch,
+        default_limits,
+    );
+}
+
+pub fn decodeInterleavedRangeTransactionalWithLimits(
+    encoded: []const u8,
+    first_frame: u64,
+    destination: []i32,
+    output_scratch: []i32,
+    frame_scratch: []i32,
+    wide_side_scratch: []i64,
+    limits: Limits,
+) !usize {
+    return decodeInterleavedRangeTransactionalInternal(
+        encoded,
+        first_frame,
+        destination,
+        output_scratch,
+        frame_scratch,
+        wide_side_scratch,
+        limits,
     );
 }
 
@@ -1548,6 +1648,7 @@ fn decodeInterleavedRangeTransactionalInternal(
     output_scratch: []i32,
     frame_scratch: []i32,
     wide_side_scratch: []i64,
+    limits: Limits,
 ) !usize {
     if (output_scratch.len < destination.len)
         return error.FlacDecodeScratchTooSmall;
@@ -1563,8 +1664,9 @@ fn decodeInterleavedRangeTransactionalInternal(
         staged,
         frame_scratch,
         wide_side_scratch,
+        limits,
     );
-    const parser = try Parser.init(encoded);
+    const parser = try Parser.initWithLimits(encoded, limits);
     const copied_samples = std.math.mul(
         usize,
         frames,
@@ -1583,6 +1685,7 @@ fn decodeInterleavedRangeInternal(
     destination: []i32,
     frame_scratch: []i32,
     wide_side_scratch: []i64,
+    limits: Limits,
 ) !usize {
     if (byteSlicesOverlap(encoded, destination) or
         byteSlicesOverlap(encoded, frame_scratch) or
@@ -1591,7 +1694,7 @@ fn decodeInterleavedRangeInternal(
         byteSlicesOverlap(destination, wide_side_scratch) or
         byteSlicesOverlap(frame_scratch, wide_side_scratch))
         return error.OverlappingFlacBuffers;
-    var parser = try Parser.init(encoded);
+    var parser = try Parser.initWithLimits(encoded, limits);
     const channel_count: usize = parser.info.channel_count;
     if (destination.len % channel_count != 0)
         return error.IncompleteDestinationFrame;
@@ -1964,6 +2067,9 @@ pub const FileReader = struct {
     file_size: u64,
     comment_payload: []const u8,
     seek_table_payload: []const u8,
+    metadata_blocks: u64,
+    metadata_bytes: u64,
+    limits: Limits,
 
     pub fn requiredMetadataBytes(
         io: std.Io,
@@ -1972,13 +2078,37 @@ pub const FileReader = struct {
         return requiredFileReaderMetadataBytes(io, file);
     }
 
+    pub fn requiredMetadataBytesWithLimits(
+        io: std.Io,
+        file: std.Io.File,
+        limits: Limits,
+    ) !usize {
+        return requiredFileReaderMetadataBytesWithLimits(io, file, limits);
+    }
+
     /// Retains Vorbis comments and seek points in caller storage.
     pub fn init(
         io: std.Io,
         file: std.Io.File,
         metadata_storage: []u8,
     ) !FileReader {
+        return initWithLimits(io, file, metadata_storage, default_limits);
+    }
+
+    pub fn initWithLimits(
+        io: std.Io,
+        file: std.Io.File,
+        metadata_storage: []u8,
+        limits: Limits,
+    ) !FileReader {
+        try limits.validate();
+        const required_metadata =
+            try requiredFileReaderMetadataBytesWithLimits(io, file, limits);
+        if (metadata_storage.len < required_metadata)
+            return error.FlacMetadataBufferTooSmall;
         const stat = try file.stat(io);
+        if (stat.size > limits.max_stream_bytes)
+            return error.FlacStreamLimitExceeded;
         if (stat.size < streaminfo_bytes) return error.TruncatedFlac;
         var signature: [4]u8 = undefined;
         try readFileExact(io, file, 0, &signature);
@@ -1992,7 +2122,11 @@ pub const FileReader = struct {
         var metadata_used: usize = 0;
         var comment_payload: []const u8 = &.{};
         var seek_payload: []const u8 = &.{};
+        var metadata_blocks: u64 = 0;
+        var metadata_bytes: u64 = 0;
         while (true) {
+            if (metadata_blocks == limits.max_metadata_blocks)
+                return error.FlacMetadataBlockLimitExceeded;
             var header: [4]u8 = undefined;
             try readFileExact(io, file, offset, &header);
             offset += 4;
@@ -2003,6 +2137,19 @@ pub const FileReader = struct {
                 (@as(usize, header[1]) << 16) |
                 (@as(usize, header[2]) << 8) |
                 header[3];
+            const block_bytes = std.math.add(
+                u64,
+                4,
+                @as(u64, @intCast(payload_size)),
+            ) catch return error.FlacSizeOverflow;
+            metadata_bytes = std.math.add(
+                u64,
+                metadata_bytes,
+                block_bytes,
+            ) catch return error.FlacSizeOverflow;
+            if (metadata_bytes > limits.max_metadata_bytes)
+                return error.FlacMetadataLimitExceeded;
+            metadata_blocks += 1;
             const payload_end = std.math.add(
                 u64,
                 offset,
@@ -2014,7 +2161,10 @@ pub const FileReader = struct {
                     return error.InvalidFlacStreaminfo;
                 var streaminfo: [34]u8 = undefined;
                 try readFileExact(io, file, offset, &streaminfo);
-                parsed_streaminfo = try parseStreaminfo(&streaminfo);
+                const parsed = try parseStreaminfo(&streaminfo);
+                if (parsed.info.frame_count > limits.max_pcm_frames)
+                    return error.FlacPcmFrameLimitExceeded;
+                parsed_streaminfo = parsed;
             } else if (block_type == 0) {
                 return error.DuplicateFlacStreaminfo;
             } else if (block_type == 4) {
@@ -2069,6 +2219,9 @@ pub const FileReader = struct {
             .file_size = stat.size,
             .comment_payload = comment_payload,
             .seek_table_payload = seek_payload,
+            .metadata_blocks = metadata_blocks,
+            .metadata_bytes = metadata_bytes,
+            .limits = limits,
         };
     }
 
@@ -2079,10 +2232,26 @@ pub const FileReader = struct {
         metadata_storage: []u8,
         metadata_scratch: []u8,
     ) !FileReader {
+        return initTransactionalWithLimits(
+            io,
+            file,
+            metadata_storage,
+            metadata_scratch,
+            default_limits,
+        );
+    }
+
+    pub fn initTransactionalWithLimits(
+        io: std.Io,
+        file: std.Io.File,
+        metadata_storage: []u8,
+        metadata_scratch: []u8,
+        limits: Limits,
+    ) !FileReader {
         if (byteSlicesOverlap(metadata_storage, metadata_scratch))
             return error.OverlappingFlacBuffers;
 
-        var reader = try init(io, file, metadata_scratch);
+        var reader = try initWithLimits(io, file, metadata_scratch, limits);
         const retained_bytes = std.math.add(
             usize,
             reader.comment_payload.len,
@@ -2163,8 +2332,11 @@ pub const FileReader = struct {
         var file_offset = self.audio_offset;
         var decoded_frames: usize = 0;
         var frame_number: u64 = 0;
+        var frame_blocks: u64 = 0;
         var variable_blocking: ?bool = null;
         while (file_offset < self.file_size) : (frame_number += 1) {
+            if (frame_blocks == self.limits.max_frame_blocks)
+                return error.FlacFrameBlockLimitExceeded;
             const decoded = try self.decodeFrameAt(
                 &file_offset,
                 destination[decoded_frames * channels ..],
@@ -2174,6 +2346,7 @@ pub const FileReader = struct {
                 &variable_blocking,
                 wide_side_scratch,
             );
+            frame_blocks += 1;
             decoded_frames = std.math.add(
                 usize,
                 decoded_frames,
@@ -2282,8 +2455,11 @@ pub const FileReader = struct {
             0;
         const requested = destination.len / channels;
         var produced: usize = 0;
+        var frame_blocks: u64 = 0;
         var variable_blocking: ?bool = null;
         while (produced < requested and file_offset < self.file_size) {
+            if (frame_blocks == self.limits.max_frame_blocks)
+                return error.FlacFrameBlockLimitExceeded;
             const block_frames = try self.decodeFrameAt(
                 &file_offset,
                 decoded_frame_scratch,
@@ -2293,6 +2469,7 @@ pub const FileReader = struct {
                 &variable_blocking,
                 wide_side_scratch,
             );
+            frame_blocks += 1;
             const block_end = std.math.add(
                 u64,
                 current_sample,
@@ -2396,6 +2573,7 @@ pub const FileReader = struct {
             .variable_blocking = variable_blocking.*,
             .audio_offset = 0,
             .seek_table_payload = null,
+            .limits = self.limits,
         };
         const frames = try parser.decodeFrame(
             destination,
@@ -2416,8 +2594,29 @@ pub const FileReader = struct {
     }
 
     fn validateState(self: *const FileReader) !void {
+        self.limits.validate() catch
+            return error.InvalidFlacFileReaderState;
+        const expected_audio_offset = std.math.add(
+            u64,
+            4,
+            self.metadata_bytes,
+        ) catch return error.InvalidFlacFileReaderState;
+        const retained_metadata_bytes = std.math.add(
+            usize,
+            self.comment_payload.len,
+            self.seek_table_payload.len,
+        ) catch return error.InvalidFlacFileReaderState;
         const encoding = @intFromEnum(self.info.encoding);
-        if (self.info.sample_rate == 0 or
+        if (self.file_size < streaminfo_bytes or
+            self.file_size > self.limits.max_stream_bytes or
+            self.metadata_blocks == 0 or
+            self.metadata_blocks > self.limits.max_metadata_blocks or
+            self.metadata_bytes < 38 or
+            self.metadata_bytes > self.limits.max_metadata_bytes or
+            retained_metadata_bytes > self.metadata_bytes or
+            self.audio_offset != expected_audio_offset or
+            self.info.frame_count > self.limits.max_pcm_frames or
+            self.info.sample_rate == 0 or
             self.info.channel_count == 0 or
             self.info.channel_count > 8 or
             (encoding != 8 and
@@ -2621,7 +2820,22 @@ pub fn requiredFileReaderMetadataBytes(
     io: std.Io,
     file: std.Io.File,
 ) !usize {
+    return requiredFileReaderMetadataBytesWithLimits(
+        io,
+        file,
+        default_limits,
+    );
+}
+
+pub fn requiredFileReaderMetadataBytesWithLimits(
+    io: std.Io,
+    file: std.Io.File,
+    limits: Limits,
+) !usize {
+    try limits.validate();
     const stat = try file.stat(io);
+    if (stat.size > limits.max_stream_bytes)
+        return error.FlacStreamLimitExceeded;
     if (stat.size < streaminfo_bytes) return error.TruncatedFlac;
     var signature: [4]u8 = undefined;
     try readFileExact(io, file, 0, &signature);
@@ -2633,7 +2847,11 @@ pub fn requiredFileReaderMetadataBytes(
     var comments_found = false;
     var seek_found = false;
     var required: usize = 0;
+    var metadata_blocks: u64 = 0;
+    var metadata_bytes: u64 = 0;
     while (true) {
+        if (metadata_blocks == limits.max_metadata_blocks)
+            return error.FlacMetadataBlockLimitExceeded;
         var header: [4]u8 = undefined;
         try readFileExact(io, file, offset, &header);
         offset += 4;
@@ -2644,6 +2862,19 @@ pub fn requiredFileReaderMetadataBytes(
             (@as(usize, header[1]) << 16) |
             (@as(usize, header[2]) << 8) |
             header[3];
+        const block_bytes = std.math.add(
+            u64,
+            4,
+            @as(u64, @intCast(payload_size)),
+        ) catch return error.FlacSizeOverflow;
+        metadata_bytes = std.math.add(
+            u64,
+            metadata_bytes,
+            block_bytes,
+        ) catch return error.FlacSizeOverflow;
+        if (metadata_bytes > limits.max_metadata_bytes)
+            return error.FlacMetadataLimitExceeded;
+        metadata_blocks += 1;
         const payload_end = std.math.add(
             u64,
             offset,
@@ -2654,6 +2885,11 @@ pub fn requiredFileReaderMetadataBytes(
         if (first_block) {
             if (block_type != 0 or payload_size != 34)
                 return error.InvalidFlacStreaminfo;
+            var streaminfo: [34]u8 = undefined;
+            try readFileExact(io, file, offset, &streaminfo);
+            const parsed = try parseStreaminfo(&streaminfo);
+            if (parsed.info.frame_count > limits.max_pcm_frames)
+                return error.FlacPcmFrameLimitExceeded;
             first_block = false;
         } else if (block_type == 0) {
             return error.DuplicateFlacStreaminfo;
@@ -2784,8 +3020,17 @@ const Parser = struct {
     variable_blocking: ?bool = null,
     audio_offset: usize,
     seek_table_payload: ?[]const u8,
+    limits: Limits,
+    frame_blocks_decoded: u64 = 0,
 
     fn init(encoded: []const u8) !Parser {
+        return initWithLimits(encoded, default_limits);
+    }
+
+    fn initWithLimits(encoded: []const u8, limits: Limits) !Parser {
+        try limits.validate();
+        if (encoded.len > limits.max_stream_bytes)
+            return error.FlacStreamLimitExceeded;
         if (encoded.len < streaminfo_bytes)
             return error.TruncatedFlac;
         if (!std.mem.eql(u8, encoded[0..4], "fLaC"))
@@ -2799,7 +3044,11 @@ const Parser = struct {
         var md5: [16]u8 = undefined;
         var minimum_frame_size: u32 = 0;
         var maximum_frame_size: u32 = 0;
+        var metadata_blocks: u64 = 0;
+        var metadata_bytes: u64 = 0;
         while (true) {
+            if (metadata_blocks == limits.max_metadata_blocks)
+                return error.FlacMetadataBlockLimitExceeded;
             if (encoded.len - offset < 4) return error.TruncatedFlac;
             const header = encoded[offset];
             const is_last = header & 0x80 != 0;
@@ -2809,6 +3058,19 @@ const Parser = struct {
                 (@as(usize, encoded[offset + 1]) << 16) |
                 (@as(usize, encoded[offset + 2]) << 8) |
                 encoded[offset + 3];
+            const block_bytes = std.math.add(
+                u64,
+                4,
+                payload_size,
+            ) catch return error.FlacSizeOverflow;
+            metadata_bytes = std.math.add(
+                u64,
+                metadata_bytes,
+                block_bytes,
+            ) catch return error.FlacSizeOverflow;
+            if (metadata_bytes > limits.max_metadata_bytes)
+                return error.FlacMetadataLimitExceeded;
+            metadata_blocks += 1;
             offset += 4;
             if (payload_size > encoded.len - offset)
                 return error.TruncatedFlac;
@@ -2819,6 +3081,8 @@ const Parser = struct {
                     encoded[offset..][0..34],
                 );
                 info = parsed.info;
+                if (info.frame_count > limits.max_pcm_frames)
+                    return error.FlacPcmFrameLimitExceeded;
                 md5 = parsed.md5;
                 minimum_frame_size = parsed.minimum_frame_size;
                 maximum_frame_size = parsed.maximum_frame_size;
@@ -2885,6 +3149,7 @@ const Parser = struct {
             .maximum_frame_size = maximum_frame_size,
             .audio_offset = offset,
             .seek_table_payload = seek_table_payload,
+            .limits = limits,
         };
     }
 
@@ -2895,6 +3160,8 @@ const Parser = struct {
         expected_sample_number: u64,
         wide_side_scratch: []i64,
     ) !usize {
+        if (self.frame_blocks_decoded == self.limits.max_frame_blocks)
+            return error.FlacFrameBlockLimitExceeded;
         const frame_start = self.offset;
         const header = try parseFrameHeader(
             self.encoded[frame_start..],
@@ -3010,6 +3277,7 @@ const Parser = struct {
         if (block_size < self.info.minimum_block_size and
             self.offset != self.encoded.len)
             return error.InvalidFlacBlockSize;
+        self.frame_blocks_decoded += 1;
         return block_size;
     }
 };
@@ -4274,6 +4542,99 @@ fn allZero(bytes: []const u8) bool {
     return true;
 }
 
+const flac_fuzz_seed = "fLaC";
+
+test "fuzz bounded FLAC parsing and decoding" {
+    try std.testing.fuzz({}, fuzzFlac, .{
+        .corpus = &.{flac_fuzz_seed},
+    });
+}
+
+fn fuzzFlac(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var encoded: [64 * 1024]u8 = undefined;
+    var length: usize = switch (smith.valueRangeAtMost(u8, 0, 1)) {
+        0 => smith.slice(&encoded),
+        1 => generated: {
+            const channels: u8 = if (smith.value(bool)) 1 else 2;
+            const frame_count = smith.valueRangeAtMost(u8, 1, 128);
+            var samples: [256]i32 = undefined;
+            const sample_count = @as(usize, frame_count) * channels;
+            for (samples[0..sample_count]) |*sample|
+                sample.* = smith.value(i16);
+            const bytes = encodeInterleaved(
+                &encoded,
+                samples[0..sample_count],
+                .{
+                    .sample_rate = 48_000,
+                    .channel_count = channels,
+                    .encoding = if (smith.value(bool))
+                        .pcm_i16
+                    else
+                        .pcm_i24,
+                    .block_size = 16,
+                },
+            ) catch return;
+            break :generated bytes.len;
+        },
+        else => unreachable,
+    };
+    if (length != 0 and smith.value(bool)) {
+        const mutation_count = smith.valueRangeAtMost(u8, 1, 32);
+        for (0..mutation_count) |_|
+            encoded[smith.index(length)] ^= smith.value(u8);
+    }
+    if (smith.value(bool)) {
+        const maximum: u16 = @intCast(@min(
+            length,
+            std.math.maxInt(u16),
+        ));
+        length = smith.valueRangeAtMost(u16, 0, maximum);
+    } else if (length < encoded.len and smith.value(bool)) {
+        const maximum_append: u16 = @intCast(@min(
+            encoded.len - length,
+            std.math.maxInt(u16),
+        ));
+        const append_length = smith.valueRangeAtMost(
+            u16,
+            0,
+            maximum_append,
+        );
+        smith.bytes(encoded[length..][0..append_length]);
+        length += append_length;
+    }
+
+    const untouched = [_]i32{37} ** 512;
+    var destination = untouched;
+    var decode_scratch: [untouched.len]i32 = undefined;
+    var wide_side_scratch: [512]i64 = undefined;
+    const result = decodeInterleavedTransactionalWithLimits(
+        encoded[0..length],
+        &destination,
+        &decode_scratch,
+        &wide_side_scratch,
+        .{
+            .max_stream_bytes = encoded.len,
+            .max_metadata_blocks = 64,
+            .max_metadata_bytes = encoded.len,
+            .max_pcm_frames = destination.len,
+            .max_frame_blocks = 64,
+        },
+    ) catch {
+        if (!std.mem.eql(i32, &untouched, &destination))
+            return error.FlacFuzzFailureWasNotTransactional;
+        return;
+    };
+    const decoded_samples = std.math.mul(
+        usize,
+        result.frames_decoded,
+        result.info.channel_count,
+    ) catch return error.FlacFuzzInvalidFrameCount;
+    if (decoded_samples > destination.len or
+        result.info.frame_count > destination.len)
+        return error.FlacFuzzInvalidFrameCount;
+}
+
 test "verbatim FLAC round trips supported PCM widths and frame boundaries" {
     const source = [_]i32{
         -120, 110,  -90, 80,   -60, 50,  -30, 20,
@@ -5512,6 +5873,9 @@ test "incremental FLAC writer composes bounded seek metadata" {
     try writer.finalize();
     try std.testing.expectEqual(@as(u32, 4), writer.seek_points_written);
 
+    const file_size = writer.byte_count;
+    const metadata_section_bytes = 38 + writer.metadata_bytes;
+
     var retained_metadata: [256]u8 = undefined;
     const retained_metadata_bytes =
         (try requiredCommentMetadataBytes(metadata.comments.?) - 4) +
@@ -5529,6 +5893,66 @@ test "incremental FLAC writer composes bounded seek metadata" {
             std.testing.io,
             file,
             retained_metadata[0 .. retained_metadata_bytes - 1],
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidFlacLimits,
+        FileReader.initWithLimits(
+            std.testing.io,
+            file,
+            &retained_metadata,
+            .{ .max_metadata_blocks = 0 },
+        ),
+    );
+    try std.testing.expectError(
+        error.FlacStreamLimitExceeded,
+        FileReader.requiredMetadataBytesWithLimits(
+            std.testing.io,
+            file,
+            .{ .max_stream_bytes = file_size - 1 },
+        ),
+    );
+    var limit_preserved_metadata: [256]u8 = @splat(0xa5);
+    const original_limit_metadata = limit_preserved_metadata;
+    try std.testing.expectError(
+        error.FlacMetadataBlockLimitExceeded,
+        FileReader.initWithLimits(
+            std.testing.io,
+            file,
+            &limit_preserved_metadata,
+            .{
+                .max_stream_bytes = file_size,
+                .max_metadata_blocks = 2,
+            },
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        &original_limit_metadata,
+        &limit_preserved_metadata,
+    );
+    try std.testing.expectError(
+        error.FlacMetadataLimitExceeded,
+        FileReader.initWithLimits(
+            std.testing.io,
+            file,
+            &retained_metadata,
+            .{
+                .max_stream_bytes = file_size,
+                .max_metadata_bytes = metadata_section_bytes - 1,
+            },
+        ),
+    );
+    try std.testing.expectError(
+        error.FlacPcmFrameLimitExceeded,
+        FileReader.initWithLimits(
+            std.testing.io,
+            file,
+            &retained_metadata,
+            .{
+                .max_stream_bytes = file_size,
+                .max_pcm_frames = 99,
+            },
         ),
     );
     const reader = try FileReader.init(
@@ -5578,6 +6002,64 @@ test "incremental FLAC writer composes bounded seek metadata" {
         4 + @as(usize, metadata.seek_point_capacity) * 18;
     const metadata_end =
         streaminfo_bytes + comment_block_bytes + seek_block_bytes;
+    try std.testing.expectEqual(
+        @as(u64, metadata_end - 4),
+        metadata_section_bytes,
+    );
+    const exact_limits = Limits{
+        .max_stream_bytes = file_size,
+        .max_metadata_blocks = 3,
+        .max_metadata_bytes = metadata_section_bytes,
+        .max_pcm_frames = 100,
+        .max_frame_blocks = 7,
+    };
+    var exact_decoded: [source.len]i32 = undefined;
+    _ = try decodeInterleavedWithLimits(
+        encoded[0..byte_count],
+        &exact_decoded,
+        &.{},
+        exact_limits,
+    );
+    try std.testing.expectEqualSlices(i32, &source, &exact_decoded);
+    try std.testing.expectError(
+        error.FlacStreamLimitExceeded,
+        decodeInterleavedWithLimits(
+            encoded[0..byte_count],
+            &exact_decoded,
+            &.{},
+            .{ .max_stream_bytes = file_size - 1 },
+        ),
+    );
+    const frame_limited_reader = try FileReader.initWithLimits(
+        std.testing.io,
+        file,
+        &retained_metadata,
+        .{
+            .max_stream_bytes = file_size,
+            .max_metadata_blocks = 3,
+            .max_metadata_bytes = metadata_section_bytes,
+            .max_pcm_frames = 100,
+            .max_frame_blocks = 1,
+        },
+    );
+    var preserved_decode: [source.len]i32 = @splat(37);
+    const original_decode = preserved_decode;
+    var output_scratch: [source.len]i32 = undefined;
+    var limited_frame_storage: [96]u8 = undefined;
+    try std.testing.expectError(
+        error.FlacFrameBlockLimitExceeded,
+        frame_limited_reader.decodeTransactional(
+            &preserved_decode,
+            &output_scratch,
+            &limited_frame_storage,
+            &.{},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &original_decode,
+        &preserved_decode,
+    );
     try std.testing.expectEqual(
         @as(u8, 4),
         encoded[streaminfo_bytes] & 0x7f,
@@ -5929,6 +6411,44 @@ test "streaming FLAC file reader decodes without whole-file storage" {
     try std.testing.expectError(
         error.InvalidFlacFileReaderState,
         invalid_channels.decodeRange(
+            0,
+            &preserved,
+            &frame_storage,
+            &decoded_frame_scratch,
+            &.{},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &[_]i32{ 7, 8 },
+        &preserved,
+    );
+
+    var invalid_limits = reader;
+    invalid_limits.limits.max_frame_blocks = 0;
+    try std.testing.expect(!invalid_limits.valid());
+    try std.testing.expectError(
+        error.InvalidFlacFileReaderState,
+        invalid_limits.decodeRange(
+            0,
+            &preserved,
+            &frame_storage,
+            &decoded_frame_scratch,
+            &.{},
+        ),
+    );
+    try std.testing.expectEqualSlices(
+        i32,
+        &[_]i32{ 7, 8 },
+        &preserved,
+    );
+
+    var invalid_metadata_count = reader;
+    invalid_metadata_count.metadata_blocks = 0;
+    try std.testing.expect(!invalid_metadata_count.valid());
+    try std.testing.expectError(
+        error.InvalidFlacFileReaderState,
+        invalid_metadata_count.decodeRange(
             0,
             &preserved,
             &frame_storage,

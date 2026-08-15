@@ -2845,6 +2845,24 @@ pub fn build(b: *std.Build) void {
     audio_file_fuzz_step.dependOn(
         &b.addRunArtifact(audio_file_fuzz_tests).step,
     );
+    const flac_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        flac_fuzz_module.link_libc = true;
+    const flac_fuzz_tests = b.addTest(.{
+        .root_module = flac_fuzz_module,
+        .filters = &.{"fuzz bounded FLAC parsing and decoding"},
+    });
+    const flac_fuzz_step = b.step(
+        "test-flac-fuzz",
+        "Run or fuzz bounded FLAC parsing and decoding",
+    );
+    flac_fuzz_step.dependOn(
+        &b.addRunArtifact(flac_fuzz_tests).step,
+    );
     const midi_file_benchmark_core = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = b.graph.host,
