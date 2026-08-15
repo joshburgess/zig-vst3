@@ -1898,3 +1898,23 @@ classifies the core as `KEEP` at 5,155 production and 4,786 test lines.
 | Production termination scan and fixture | Passed |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: MP3 Decoder Boundary
+
+The MP3 facade now delegates frame decoding, synthesis, stream recovery,
+metadata reads, seeking, and positional file reads to `dsp/mp3/decoder.zig`.
+All public declarations retain their prior names and exact identities. The
+encoder analysis state remains with the encoder because it owns encoder
+configuration and the analysis-side transform history.
+
+This is an intermediate Q-ARCH-001 boundary. The cohesion ledger records the
+new decoder module as `SPLIT` because codec state and positional reader state
+still form two separable contracts. The facade also remains `SPLIT` until
+reservoir ownership is separated from encoding and file writing.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-mp3 --summary all` | Passed: 6/6 steps and 131/131 tests |
+| ReleaseSafe cross-compilation | Passed: Linux AArch64, Linux x86-64, and Windows x86-64 |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

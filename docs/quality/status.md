@@ -327,7 +327,8 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Continue Q-ARCH-001 with `dsp/mp3.zig`. Separate shared MPEG Layer III
-bitstream syntax from encoder and decoder state, preserve the current public
-facade and exact identities, then repeat focused, fuzz, cross-target,
-inventory, and installed-consumer gates.
+Continue Q-ARCH-001 with the MP3 modules. Separate decode and synthesis state
+from metadata parsing, seeking, and positional reads in `dsp/mp3/decoder.zig`,
+then move reservoir ownership out of the encoder and file writer. Preserve the
+current public facade and exact identities before repeating inventory and
+installed-consumer gates.

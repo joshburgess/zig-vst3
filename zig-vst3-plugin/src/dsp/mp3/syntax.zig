@@ -1430,7 +1430,7 @@ pub const MainDataBitWriter = struct {
     bytes: []u8,
     bit_offset: usize = 0,
 
-    fn write(
+    pub fn write(
         self: *@This(),
         value: anytype,
         bit_count: u5,
@@ -1475,7 +1475,7 @@ pub const MainDataBitReader = struct {
     bit_offset: usize = 0,
     bit_limit: usize,
 
-    fn read(self: *@This(), bit_count: u5) !u16 {
+    pub fn read(self: *@This(), bit_count: u5) !u16 {
         if (bit_count > 16 or
             self.bit_offset > self.bit_limit or
             bit_count > self.bit_limit - self.bit_offset)
