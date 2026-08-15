@@ -56,6 +56,8 @@ Phase 0 creates `docs/quality/` with these maintained records:
   permitted operations, work bounds, and failure behavior
 - `parsers.md`: checked parser and persistent-state source inventory, semantic
   families, limits, failure contracts, evidence state, and reviewed exclusions
+- `numerics.md`: checked Q13–Q15 numerical evidence, pending review, and
+  non-numerical exclusions plus benchmark families
 - `status.md`: phase state, completed scope, and next review target
 
 Findings use `Q-<area>-<number>` identifiers and one of four severities:

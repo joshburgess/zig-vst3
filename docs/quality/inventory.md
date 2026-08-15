@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 866 source files and 478,499 source lines.
+The checked inventory contains 868 source files and 478,653 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -32,7 +32,7 @@ misstate review effort.
 
 | Unit | Scope | Files | Lines | C/E/X/T | Rank | Principal exposure | Required verification |
 | --- | --- | ---: | ---: | --- | --- | --- | --- |
-| Q00 | Build graph, CI, release and validation scripts | 130 | 18,849 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
+| Q00 | Build graph, CI, release and validation scripts | 132 | 19,003 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
 | Q01 | Raw VST3 ABI mirrors and COM helpers | 116 | 30,396 | 5/5/4/5 | Elevated | Public ABI, pointers, reference counts, host callbacks | SDK layout parity, callback lifecycle, validators, sanitizers |
 | Q02 | ARA model, controller, analysis, cache, and official headers | 21 | 28,227 | 5/4/5/3 | High | Host callbacks, readers, atomics, persistence, untrusted host data | Header parity, lifecycle stress, allocator failure, TSan, state corruption |
 | Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,152 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
@@ -64,7 +64,7 @@ manual review. They include false positives and cannot establish absence.
 
 | Unit | Allocation | Pointer | Atomic | Callback | Parser | Public |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Q00 | 1 | 9 | 3 | 82 | 464 | 1 |
+| Q00 | 1 | 9 | 3 | 82 | 466 | 1 |
 | Q01 | 138 | 2,263 | 94 | 1,190 | 99 | 2,520 |
 | Q02 | 7 | 445 | 38 | 190 | 196 | 358 |
 | Q03 | 39 | 272 | 8 | 194 | 32 | 280 |

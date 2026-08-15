@@ -337,6 +337,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   ADM, HRTF, and dynamic-matrix submodules fell through to generic Q15. Exact
   directory rules and fixture assertions now cover the intended Q10–Q14
   owners, and the recorded 866-file inventory reflects those boundaries.
+- Established the checked Phase 5 numerical ledger across all 100 Q13, Q14,
+  and Q15 sources. It records 44 existing evidence dispositions, 39 pending
+  numerical reviews, and 17 justified non-numerical exclusions. Negative
+  fixtures reject missing, stale, misassigned, and malformed records.
 
 ## Phase 5 Scope
 
@@ -351,7 +355,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Build the Phase 5 numerical and performance ledger from the checked Q13, Q14,
-and Q15 source inventories. Identify critical algorithms without an
-independent comparison, identity, or stated tolerance, then resolve those gaps
-before the full phase gate.
+Review the 39 `REVIEW` records in `numerics.md`, beginning with shared ADM and
+HRTF spatial values, then foundational Q15 primitives before composite effects.
+Move a source to `EVIDENCE` only after its reference or identity, tolerance,
+finite containment, latency, channel, and transactional contracts are sound.

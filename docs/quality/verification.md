@@ -2077,3 +2077,23 @@ the regenerated unit and lexical metrics.
 | `scripts/test_quality_inventory_runner.sh` | Passed: exact Q10, Q11, Q13, and Q14 directory assignments plus unclassified-source rejection |
 | `scripts/check_quality_inventory.sh` | Passed: 866 source files and 478,499 lines classified |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Checked Numerical Review Scope
+
+The Phase 5 ledger records every source in the corrected Q13, Q14, and Q15
+inventory. Each exact path has an existing-evidence, pending-review, or
+non-numerical-exclusion disposition. The checker derives its expected paths
+and units from the complete quality inventory, so a new source, unit move,
+duplicate, stale record, or invalid state fails the repository gate.
+
+The initial scope contains 44 evidence records, 39 review records, and 17
+exclusions. These counts establish work remaining. They do not close the
+pending reviews or accept every existing evidence family without inspection.
+
+| Check | Result |
+| --- | --- |
+| `scripts/test_quality_numerics_inventory_runner.sh` | Passed: baseline plus missing-path, wrong-unit, and invalid-state rejection |
+| `scripts/check_quality_numerics_inventory.sh` | Passed: 44 evidence, 39 review, and 17 excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed after staging the new gate: 868 source files and 478,653 lines classified |
+| `zig fmt --check build.zig` | Passed |
+| `git diff --check` | Passed |
