@@ -152,6 +152,7 @@ pub fn Approximations(comptime Sample: type) type {
                     break :blk numerator / denominator;
                 },
                 .tangent => blk: {
+                    if (@abs(value) > 1.5) break :blk @tan(value);
                     const numerator = value * (-135_135.0 +
                         squared * (17_325.0 +
                             squared * (-378.0 + squared)));
@@ -161,13 +162,15 @@ pub fn Approximations(comptime Sample: type) type {
                     break :blk numerator / denominator;
                 },
                 .exponential => blk: {
-                    const numerator = 1_680.0 + value *
-                        (840.0 + value *
-                            (180.0 + value * (20.0 + value)));
-                    const denominator = 1_680.0 + value *
-                        (-840.0 + value *
-                            (180.0 + value * (-20.0 + value)));
-                    break :blk numerator / denominator;
+                    const exponent = @round(value * std.math.log2e);
+                    const reduced = value - exponent * std.math.ln2;
+                    const numerator = 1_680.0 + reduced *
+                        (840.0 + reduced *
+                            (180.0 + reduced * (20.0 + reduced)));
+                    const denominator = 1_680.0 + reduced *
+                        (-840.0 + reduced *
+                            (180.0 + reduced * (-20.0 + reduced)));
+                    break :blk numerator / denominator * @exp2(exponent);
                 },
                 .log_one_plus => blk: {
                     const numerator = value * (7_560.0 +
@@ -326,28 +329,38 @@ pub fn Approximations(comptime Sample: type) type {
                                     (vectorConstant(Vector, -3_150.0) +
                                         vectorConstant(Vector, 28.0) *
                                             squared));
-                    break :blk numerator / denominator;
+                    var approximation = numerator / denominator;
+                    inline for (0..lane_count) |lane| {
+                        if (@abs(value[lane]) > 1.5)
+                            approximation[lane] = @tan(value[lane]);
+                    }
+                    break :blk approximation;
                 },
                 .exponential => blk: {
+                    const exponent = @round(
+                        value * vectorConstant(Vector, std.math.log2e),
+                    );
+                    const reduced = value -
+                        exponent * vectorConstant(Vector, std.math.ln2);
                     const numerator =
                         vectorConstant(Vector, 1_680.0) +
-                        value *
+                        reduced *
                             (vectorConstant(Vector, 840.0) +
-                                value *
+                                reduced *
                                     (vectorConstant(Vector, 180.0) +
-                                        value *
+                                        reduced *
                                             (vectorConstant(Vector, 20.0) +
-                                                value)));
+                                                reduced)));
                     const denominator =
                         vectorConstant(Vector, 1_680.0) +
-                        value *
+                        reduced *
                             (vectorConstant(Vector, -840.0) +
-                                value *
+                                reduced *
                                     (vectorConstant(Vector, 180.0) +
-                                        value *
+                                        reduced *
                                             (vectorConstant(Vector, -20.0) +
-                                                value)));
-                    break :blk numerator / denominator;
+                                                reduced)));
+                    break :blk numerator / denominator * @exp2(exponent);
                 },
                 .log_one_plus => blk: {
                     const numerator = value *
@@ -510,6 +523,88 @@ test "fast math vector validation is transactional" {
         Fast.applyVector(.tangent, &values, 4),
     );
     try std.testing.expectEqualSlices(f32, &before, &values);
+}
+
+test "fast math approximations satisfy full-domain error envelopes" {
+    try expectApproximationBounds(f32);
+    try expectApproximationBounds(f64);
+}
+
+fn expectApproximationBounds(comptime Sample: type) !void {
+    const Fast = Approximations(Sample);
+    const absolute_tolerance: Sample = if (Sample == f32) 0.061 else 0.054;
+    const fine_tolerance: Sample = if (Sample == f32) 0.000_2 else 0.000_11;
+    const trig_tolerance: Sample = if (Sample == f32) 0.000_11 else 0.000_08;
+    const sine_tolerance: Sample = if (Sample == f32) 0.000_025 else 0.000_012;
+    const tangent_tolerance: Sample = if (Sample == f32) 0.000_02 else 0.000_001;
+    const log_tolerance: Sample = if (Sample == f32) 0.000_5 else 0.000_43;
+    const relative_tolerance: Sample = if (Sample == f32) 0.004_1 else 0.004;
+    const exp_relative_tolerance: Sample = if (Sample == f32) 0.000_001 else 0.000_000_000_01;
+
+    for (0..4_097) |index| {
+        const fraction = @as(Sample, @floatFromInt(index)) / 4_096.0;
+        const hyperbolic = -5.0 + 10.0 * fraction;
+        try std.testing.expectApproxEqRel(
+            std.math.cosh(hyperbolic),
+            try Fast.cosh(hyperbolic),
+            relative_tolerance,
+        );
+        try std.testing.expectApproxEqAbs(
+            std.math.sinh(hyperbolic),
+            try Fast.sinh(hyperbolic),
+            absolute_tolerance,
+        );
+        try std.testing.expectApproxEqAbs(
+            std.math.tanh(hyperbolic),
+            try Fast.tanh(hyperbolic),
+            fine_tolerance,
+        );
+
+        const angle = -std.math.pi + 2.0 * std.math.pi * fraction;
+        try std.testing.expectApproxEqAbs(
+            @cos(angle),
+            try Fast.cos(angle),
+            trig_tolerance,
+        );
+        try std.testing.expectApproxEqAbs(
+            @sin(angle),
+            try Fast.sin(angle),
+            sine_tolerance,
+        );
+
+        const exponential = -6.0 + 10.0 * fraction;
+        try std.testing.expectApproxEqRel(
+            @exp(exponential),
+            try Fast.exp(exponential),
+            exp_relative_tolerance,
+        );
+
+        const logarithm = -0.8 + 5.8 * fraction;
+        try std.testing.expectApproxEqAbs(
+            @log(1.0 + logarithm),
+            try Fast.logOnePlus(logarithm),
+            log_tolerance,
+        );
+    }
+
+    for (0..4_096) |index| {
+        const fraction =
+            (@as(Sample, @floatFromInt(index)) + 0.5) / 4_096.0;
+        const angle = -std.math.pi / 2.0 + std.math.pi * fraction;
+        try std.testing.expectApproxEqAbs(
+            @tan(angle),
+            try Fast.tan(angle),
+            tangent_tolerance,
+        );
+    }
+
+    const near_pole: Sample = std.math.pi / 2.0 -
+        if (Sample == f32) 0.000_001 else 0.000_000_001;
+    try std.testing.expectApproxEqRel(
+        @tan(near_pole),
+        try Fast.tan(near_pole),
+        8.0 * std.math.floatEps(Sample),
+    );
 }
 
 fn expectVectorParity(comptime Sample: type) !void {
