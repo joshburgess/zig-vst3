@@ -1109,6 +1109,32 @@ event limit.
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
 
+## 2026-08-15: VST3 Effect Cohesion Closure
+
+Behavior commit: `d37f5b51`
+
+Reflected edit-controller construction now lives in
+`zig_vst3_edit_controller.zig`. Shared COM query, retain, replacement, and
+release operations live in `effect_support.zig`, so controller and component
+lifecycles use the same ownership rules without importing each other.
+
+`zig_vst3_plugin_effect.zig` remains the public facade and owns processor and
+component construction. `ParameterObserver` and `ReflectedEditController` are
+exact aliases, with an explicit type-identity regression. The cohesion ledger
+classifies the remaining facade as `KEEP` at 2,015 production and 2,767 test
+lines.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-vst3-module --summary all` | Passed: 7/7 steps and 796/796 tests |
+| ReleaseSafe gain bundle cross-builds | Passed: Linux x86-64 and Windows x86-64 |
+| `scripts/test_installed_package.sh` | Passed: 18/18 steps and 96/96 tests |
+| Cohesion inventory and fixture | Passed: 33 large handwritten sources classified |
+| Quality and concurrency inventories | Passed: 852 files and 477,231 lines classified; 86 concurrency sources classified |
+| Production termination scan and fixture | Passed |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
+
 ## 2026-08-15: MP3 Table Provenance and Integrity
 
 Behavior commit: `6afb44b6`
