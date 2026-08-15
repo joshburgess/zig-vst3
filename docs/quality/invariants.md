@@ -107,6 +107,10 @@ single type. Later phases must link each invariant to code and verification.
 - MP3 memory and positional-file scans retain one encoded-byte and frame-count
   policy. Byte rejection occurs before tag or frame scanning. Frame-limit
   rejection occurs before cursor, counter, decoder, or caller-storage mutation.
+- Ogg memory and positional-file readers retain one encoded-byte, page-count,
+  packet-count, and logical-stream policy. Seek-index passes use the same
+  policy. Limit rejection leaves reader state unchanged, and file readers
+  reject determinable limits before changing caller storage.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the

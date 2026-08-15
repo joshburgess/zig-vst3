@@ -1279,3 +1279,29 @@ decoder failure must leave the complete decoder state unchanged.
 | `scripts/check_quality_inventory.sh` | Passed: 823 files and 471,198 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded Ogg Stream Parsing
+
+Behavior commit: `328adb46`
+
+Ogg memory and positional-file page and packet readers now retain one
+`OggLimits` policy for encoded bytes, completed pages, completed packets, and
+chained logical streams. The default entry points accept at most 4,294,967,295
+bytes, 10,000,000 pages, 10,000,000 packets, and 65,536 logical streams. Public
+`WithLimits` constructors and Vorbis seek-index helpers accept a custom policy.
+Limit rejection preserves reader state. Byte and count limits that are known
+before a file read also preserve caller storage.
+
+The dedicated native fuzz target combines arbitrary input with generated valid
+single-stream Ogg pages, then mutates, truncates, or extends the candidate.
+Accepted pages must advance the byte cursor, accepted packets must advance the
+packet count, and every packet-parser failure must preserve retained state.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-vorbis --summary all` | Passed: 10/10 steps and 94/94 tests, including native Debug execution, ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation, plus Xiph, stb_vorbis, and Tremor source or interoperability gates |
+| `zig build test-ogg-fuzz --fuzz=100K` | Passed: 100,094 executions, 66 unique inputs, and 253 of 21,817 instrumented branches without a failure |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including the public custom-limit APIs |
+| `scripts/check_quality_inventory.sh` | Passed: 823 files and 471,806 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
