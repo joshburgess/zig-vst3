@@ -95,6 +95,10 @@ single type. Later phases must link each invariant to code and verification.
   must match canonical prefix reconstruction before parsing can continue.
   Duplicate, resolution, cardinality, reciprocity, coefficient, and block
   sequence validation use fixed-storage indexes and bounded probes.
+- Vorbis-comment, FLAC-comment, ID3v2.3, ID3v2.4, RIFF INFO, and AIFF text
+  iterators bind normal traversal to the exact source range and cursor state
+  produced by the preceding successful step. Caller-modified state must match
+  canonical prefix reconstruction before iteration can continue.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the

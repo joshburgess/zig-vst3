@@ -1198,3 +1198,33 @@ realtime findings, it satisfies every Phase 2 exit criterion.
 | Steinberg validator on macOS, Windows, and Ubuntu | Passed |
 | Raw API ABI on macOS, Windows, and Ubuntu | Passed |
 | Cross-compilation and LV2 distribution jobs | Passed |
+
+## 2026-08-15: Linear Retained Metadata Iteration
+
+Behavior commit: `c62ad25e`
+
+Vorbis-comment, FLAC-comment, ID3v2.3, ID3v2.4, RIFF INFO, and AIFF text
+iterators previously reconstructed and parsed their complete retained prefix
+before every item. Commit `c62ad25e` records the exact source range and cursor
+state after initialization and every successful step. Ordinary traversal now
+validates that witness in constant work. Missing or inconsistent witnesses
+still use canonical reconstruction, preserving containment of caller-modified
+public iterator state.
+
+The checked benchmark constructs all six formats at 256, 512, and 1,024
+entries. It rejects any family above 5,000 ns per entry and any 512- or
+1,024-entry result above twice that family's 256-entry baseline. Each size is
+measured three times and uses the minimum elapsed time to exclude scheduler
+preemption without hiding repeatable work.
+
+| Check | Result |
+| --- | --- |
+| `zig build benchmark-metadata-iterators -Doptimize=Debug --summary all` | Passed: maximum 157.04, 155.78, and 151.27 ns per entry at 256, 512, and 1,024 entries |
+| `zig build benchmark-metadata-iterators -Doptimize=ReleaseSafe --summary all` | Passed: maximum 17.62, 17.71, and 18.20 ns per entry at 256, 512, and 1,024 entries |
+| Focused metadata selection | Passed: 36/36 tests, including forced canonical fallback and hostile state |
+| `zig build test-vorbis --summary all` | Passed: 10/10 steps and 92/92 tests, including Linux and Windows ReleaseSafe compilation plus Xiph, stb_vorbis, and Tremor source gates |
+| Q12 FLAC, ID3, and audio-metadata selection | Passed: 59/59 tests |
+| Windows x86-64 ReleaseSafe focused cross-compilation | Passed |
+| `scripts/check_quality_inventory.sh` | Passed: 823 files and 470,770 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

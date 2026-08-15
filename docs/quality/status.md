@@ -72,6 +72,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   declaration, reference, cardinality, reciprocity, coefficient, and block
   validation. The checked Debug and ReleaseSafe scaling gates, 100,668-run
   native fuzz campaign, installed-package matrix, and Windows cross-build pass.
+- Closed Q-PARSE-001 by replacing canonical prefix replay during ordinary
+  Vorbis-comment, FLAC-comment, ID3, RIFF INFO, and AIFF text traversal with
+  exact retained-state witnesses. The checked six-format scaling gate remains
+  flat through 1,024 entries in Debug and ReleaseSafe, and the complete Vorbis
+  plus broader Q12 selections pass.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.
