@@ -68,6 +68,34 @@ Environment: macOS Darwin 24.4.0 on arm64, Zig 0.16.0.
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
 
+## 2026-08-15: Phase 4 API Review Closure
+
+The public API review used the executable installed-module manifest and frozen
+RC1 baseline as the complete compatibility-ready surface. The staged consumer
+suite compiles the high-level framework, standalone, LV2, AUv2, ARA, VSTGUI,
+DSP, and C-kernel entry points and rejects unclassified root drift, removal,
+or reclassification.
+
+The framework API inventory classifies every installed root declaration and
+records naming, ownership, failure, and compatibility status. The ownership,
+concurrency, realtime, parser, and cohesion ledgers supply the lifecycle and
+thread contracts that types cannot express. Framework guides cover plugin
+construction, state, parameters, resources, DSP, GUI, and compatibility. This
+pass corrected the compatibility policy's stale pre-publication wording to
+record the published RC1 and stable 0.3.0 boundary.
+
+Together with the Q-ARCH-001 and Q-ARCH-002 closures, zero unclassified API
+roots, zero `SPLIT` cohesion decisions, and no open critical or high API or
+architecture finding, this satisfies the Phase 4 exit criteria.
+
+| Check | Result |
+| --- | --- |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests |
+| Framework API manifest and RC1 baseline | Passed through the staged installed consumer |
+| Cohesion inventory and fixture | Passed: 36 large handwritten sources classified with no `SPLIT` decisions |
+| Parser inventory and fixture | Passed: 201 production sources classified |
+| `git diff --check` | Passed |
+
 ## 2026-08-15: Ogg and Vorbis Cohesion Closure
 
 Behavior commit: `d1369e4e`

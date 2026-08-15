@@ -1,13 +1,11 @@
 # Framework Compatibility Policy
 
-`zig-vst3-0.3.0-rc.1` is the first release candidate with a compatibility
-boundary for `zig-vst3-plugin`. The repository remains pre-1.0, but declarations
-marked compatibility-ready in the [API inventory](api-compatibility.md) follow
-the policy below through the `0.3.x` line.
-
-The RC tag is prepared by this milestone but is not created until exact-commit
-public CI passes. Until the tag exists, use the candidate commit recorded in the
-release checklist.
+`zig-vst3-0.3.0-rc.1` established the compatibility boundary for
+`zig-vst3-plugin`, and stable `zig-vst3-0.3.0` adopted it unchanged. The
+repository remains pre-1.0, but declarations marked compatibility-ready in the
+[API inventory](api-compatibility.md) follow this policy through the `0.3.x`
+line. Exact tag, commit, CI, and archive evidence is recorded in the
+[release checklist](../release-checklist.md).
 
 ## Compatibility Boundary
 

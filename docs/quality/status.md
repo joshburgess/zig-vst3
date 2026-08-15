@@ -321,6 +321,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Closed Q-ARCH-001 by separating the Ogg container and Vorbis codec behind
   exact facade aliases. Every large handwritten source now has a checked
   `KEEP` decision, and the cohesion inventory contains no `SPLIT` entries.
+- Completed the Phase 4 public API review against the executable framework
+  manifest, frozen RC1 compatibility baseline, staged installed consumers,
+  ownership and realtime ledgers, and framework guides. The compatibility
+  policy now reflects the published RC1 and stable 0.3.0 tags.
 
 ## Phase 4 Scope
 
@@ -334,7 +338,8 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Complete the remaining Phase 4 public API and documentation review. Audit
-ownership, thread, realtime, lifecycle, naming, and error contracts from the
-installed consumer surface, record any findings, and close Phase 4 before
-starting the numerical and performance program in Phase 5.
+Begin Phase 5 with the checked DSP inventory. Map critical algorithms to
+independent numerical references and existing benchmarks, identify gaps in
+finite-value, overflow, precision, latency, channel, and transactional-output
+coverage, then resolve and verify each finding before optimizing measured
+paths.
