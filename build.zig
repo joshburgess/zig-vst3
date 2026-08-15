@@ -2787,6 +2787,48 @@ pub fn build(b: *std.Build) void {
     const zig_vst3_plugin_core_tests = b.addTest(.{
         .root_module = zig_vst3_plugin_core_test_module,
     });
+    const config_input_core_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        config_input_core_module.link_libc = true;
+    const config_input_core_tests = b.addTest(.{
+        .root_module = config_input_core_module,
+        .filters = &.{
+            "prepare config",
+            "device catalog",
+            "device descriptors",
+            "device selection",
+            "directional audio selections",
+            "device failure",
+            "device recovery",
+            "standalone window",
+            "standalone shell",
+        },
+    });
+    const config_input_vst3_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/vst_plugin_compatibility.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    const config_input_vst3_tests = b.addTest(.{
+        .root_module = config_input_vst3_module,
+        .filters = &.{ "FUID", "plugin compatibility" },
+    });
+    const config_input_test_step = b.step(
+        "test-config-inputs",
+        "Run bounded configuration and textual identifier tests",
+    );
+    config_input_test_step.dependOn(
+        &b.addRunArtifact(config_input_core_tests).step,
+    );
+    config_input_test_step.dependOn(
+        &b.addRunArtifact(config_input_vst3_tests).step,
+    );
     const editor_state_fuzz_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,
@@ -3657,6 +3699,23 @@ pub fn build(b: *std.Build) void {
     plugin_core_cross_build_step.dependOn(
         &windows_gnu_plugin_core_tests.step,
     );
+    const config_input_windows_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/vst_plugin_compatibility.zig",
+        ),
+        .target = b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+        .optimize = .ReleaseSafe,
+    });
+    const config_input_windows_tests = b.addTest(.{
+        .root_module = config_input_windows_module,
+        .filters = &.{ "FUID", "plugin compatibility" },
+    });
+    config_input_test_step.dependOn(plugin_core_cross_build_step);
+    config_input_test_step.dependOn(&config_input_windows_tests.step);
     const audio_unit_test_step = b.step(
         "test-audio-unit",
         "Run Audio Unit render, AUv2 ABI, and cross-target checks",

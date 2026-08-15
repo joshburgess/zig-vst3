@@ -991,6 +991,69 @@ test "device selection round trips and rejects malformed state transactionally" 
     try std.testing.expect(restored.audio.?.eql(&original.audio.?));
 }
 
+test "device selection enforces its complete wire bound transactionally" {
+    const identifier_bytes = [_]u8{'a'} ** maximum_device_identifier_bytes;
+    const identifier = try DeviceIdentifier.init(&identifier_bytes);
+    const original = DeviceSelection{
+        .audio = identifier,
+        .audio_input = identifier,
+        .audio_output = identifier,
+        .midi_input = identifier,
+        .midi_output = identifier,
+    };
+    var bytes: [DeviceSelection.maximum_encoded_size + 1]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try original.writeTo(&writer);
+    try std.testing.expectEqual(
+        DeviceSelection.maximum_encoded_size,
+        writer.end,
+    );
+
+    const retained = DeviceSelection{
+        .audio = try DeviceIdentifier.init("retained"),
+    };
+    for (0..writer.end) |truncated_length| {
+        var destination = retained;
+        var reader = std.Io.Reader.fixed(bytes[0..truncated_length]);
+        try std.testing.expectError(
+            error.EndOfStream,
+            destination.readFrom(&reader),
+        );
+        try std.testing.expectEqualDeep(retained, destination);
+    }
+
+    bytes[writer.end] = 0;
+    var destination = retained;
+    var trailing_reader = std.Io.Reader.fixed(bytes[0 .. writer.end + 1]);
+    try std.testing.expectError(
+        error.InvalidDeviceSelection,
+        destination.readFrom(&trailing_reader),
+    );
+    try std.testing.expectEqualDeep(retained, destination);
+}
+
+test "device selection rejects invalid field encodings transactionally" {
+    const retained = DeviceSelection{
+        .audio = try DeviceIdentifier.init("retained"),
+    };
+    const malformed_records = [_][]const u8{
+        "DVSL\x02\x00\x02",
+        "DVSL\x02\x00\x01\x00",
+        "DVSL\x02\x00\x01\x01\x00\x00\x00\x00\x00\x00",
+        "DVSL\x02\x00\x01\x01\xff\x00\x00\x00\x00\x00",
+    };
+
+    for (malformed_records) |record| {
+        var destination = retained;
+        var reader = std.Io.Reader.fixed(record);
+        try std.testing.expectError(
+            error.InvalidDeviceSelection,
+            destination.readFrom(&reader),
+        );
+        try std.testing.expectEqualDeep(retained, destination);
+    }
+}
+
 test "device selection restores version one records" {
     const audio = try DeviceIdentifier.init("audio:legacy");
     const midi_output = try DeviceIdentifier.init("midi:legacy");
