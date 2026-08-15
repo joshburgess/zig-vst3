@@ -92,11 +92,11 @@ fn restoreParameterStateEntry(
     set: *const parameters.ParameterSet(Params),
     values: *parameters.ParameterValues(Params),
     seen_restored: []bool,
-    migrations: []const ParameterIdMigration,
+    migration_index: *const migrations_mod.MigrationIndex,
     entry: ParameterStateEntry,
     report: *ReadParameterStateReport,
 ) !void {
-    const restored_id = migrations_mod.migratedParameterId(entry.id, migrations);
+    const restored_id = migration_index.migratedParameterId(entry.id);
     const index = set.indexOfId(restored_id) orelse {
         report.ignored_count += 1;
         return;
@@ -149,7 +149,7 @@ pub fn readParameterStateWithMigrationsReport(
     reader: anytype,
     migrations: []const ParameterIdMigration,
 ) !ReadParameterStateReport {
-    try migrations_mod.validateParameterIdMigrations(migrations);
+    const migration_index = try migrations_mod.MigrationIndex.init(migrations);
     const header = try readParameterStateHeader(reader);
     if (!header.isCurrentVersion()) return error.UnsupportedStateVersion;
     var restored = parameters.ParameterValues(Params).init(set);
@@ -162,7 +162,15 @@ pub fn readParameterStateWithMigrationsReport(
     var seen_restored = [_]bool{false} ** parameters.ParameterSet(Params).count;
     for (0..header.entry_count) |_| {
         const entry = try readParameterStateEntry(reader);
-        try restoreParameterStateEntry(Params, set, &restored, &seen_restored, migrations, entry, &report);
+        try restoreParameterStateEntry(
+            Params,
+            set,
+            &restored,
+            &seen_restored,
+            &migration_index,
+            entry,
+            &report,
+        );
     }
     if (report.accountedCount() != report.entry_count)
         return error.InvalidParameterStateReport;

@@ -34,6 +34,8 @@ const duplicateParameterMigrationIndex = state.duplicateParameterMigrationIndex;
 const cyclicParameterMigrationIndex = state.cyclicParameterMigrationIndex;
 const ambiguousParameterMigrationIndex = state.ambiguousParameterMigrationIndex;
 const migratedParameterId = state.migratedParameterId;
+const maximum_parameter_id_migrations =
+    state.maximum_parameter_id_migrations;
 
 const FixedBufferStream = struct {
     buffer: []u8,
@@ -72,6 +74,70 @@ fn writeStateHeader(writer: anytype, version: u16, entry_count: u16) !void {
     try writer.writeAll(magic);
     try writer.writeInt(u16, version, .little);
     try writer.writeInt(u16, entry_count, .little);
+}
+
+test "fuzz failure-atomic parameter state restore" {
+    try std.testing.fuzz({}, fuzzParameterStateRestore, .{
+        .corpus = &.{
+            "ZPLGSTAT\x01\x00\x02\x00" ++
+                "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xd0\x3f" ++
+                "\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe8\x3f",
+            "ZPLGSTAT\x01\x00\x01\x00\x00",
+        },
+    });
+}
+
+fn fuzzParameterStateRestore(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    const Params = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(
+            0,
+            "Gain",
+            0.0,
+            1.0,
+            0.2,
+        ),
+        mix: parameters.FloatParam = parameters.FloatParam.init(
+            1,
+            "Mix",
+            0.0,
+            1.0,
+            0.8,
+        ),
+    };
+    const Set = parameters.ParameterSet(Params);
+    const Values = parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    try std.testing.expect(values.storeField(&set, "gain", 0.2));
+    try std.testing.expect(values.storeField(&set, "mix", 0.8));
+
+    var storage: [64 * 1024]u8 = undefined;
+    const length = smith.slice(&storage);
+    var reader = std.Io.Reader.fixed(storage[0..length]);
+    if (readParameterStateReport(
+        Params,
+        &set,
+        &values,
+        &reader,
+    )) |report| {
+        if (!report.fullyHandled())
+            return error.InvalidParameterStateFuzzReport;
+        const gain = values.loadField(&set, "gain");
+        const mix = values.loadField(&set, "mix");
+        if (!std.math.isFinite(gain) or gain < 0.0 or gain > 1.0 or
+            !std.math.isFinite(mix) or mix < 0.0 or mix > 1.0)
+            return error.InvalidParameterStateFuzzValue;
+    } else |_| {
+        try std.testing.expectEqual(
+            @as(f64, 0.2),
+            values.loadField(&set, "gain"),
+        );
+        try std.testing.expectEqual(
+            @as(f64, 0.8),
+            values.loadField(&set, "mix"),
+        );
+    }
 }
 
 test "parameter state round-trips normalized values" {
@@ -851,6 +917,81 @@ test "parameter state migrates renamed parameter ids through chains" {
     });
 
     try std.testing.expectEqual(@as(f64, 0.25), new_values.loadField(&new_set, "output"));
+}
+
+test "parameter state bounds migration tables and resolves maximum chain" {
+    const OldParams = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(
+            1,
+            "Gain",
+            0.0,
+            1.0,
+            1.0,
+        ),
+    };
+    const NewParams = struct {
+        output: parameters.FloatParam = parameters.FloatParam.init(
+            maximum_parameter_id_migrations + 1,
+            "Output",
+            0.0,
+            1.0,
+            1.0,
+        ),
+    };
+    const old_set = parameters.ParameterSet(OldParams).init(.{});
+    const new_set = parameters.ParameterSet(NewParams).init(.{});
+    var old_values = parameters.ParameterValues(OldParams).init(&old_set);
+    var new_values = parameters.ParameterValues(NewParams).init(&new_set);
+    try std.testing.expect(old_values.storeField(&old_set, "gain", 0.25));
+
+    var bytes: [encodedSize(OldParams)]u8 = undefined;
+    var output = FixedBufferStream.init(&bytes);
+    try writeParameterState(
+        OldParams,
+        &old_set,
+        &old_values,
+        output.writer(),
+    );
+
+    var migrations: [maximum_parameter_id_migrations]ParameterIdMigration =
+        undefined;
+    for (&migrations, 0..) |*migration, index| {
+        migration.* = .{
+            .old_id = @intCast(index + 1),
+            .new_id = @intCast(index + 2),
+        };
+    }
+    var input = FixedBufferStream.init(&bytes);
+    try readParameterStateWithMigrations(
+        NewParams,
+        &new_set,
+        &new_values,
+        input.reader(),
+        &migrations,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.25),
+        new_values.loadField(&new_set, "output"),
+    );
+
+    var too_many: [maximum_parameter_id_migrations + 1]ParameterIdMigration =
+        undefined;
+    try std.testing.expect(new_values.storeField(&new_set, "output", 0.8));
+    input = FixedBufferStream.init(&bytes);
+    try std.testing.expectError(
+        error.TooManyParameterIdMigrations,
+        readParameterStateWithMigrations(
+            NewParams,
+            &new_set,
+            &new_values,
+            input.reader(),
+            &too_many,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.8),
+        new_values.loadField(&new_set, "output"),
+    );
 }
 
 test "parameter state exposes migration resolution" {

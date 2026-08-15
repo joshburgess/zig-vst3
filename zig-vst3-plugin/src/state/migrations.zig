@@ -2,6 +2,7 @@ const format = @import("format.zig");
 const std = @import("std");
 
 pub const ParameterIdMigration = format.ParameterIdMigration;
+pub const maximum_parameter_id_migrations: usize = 256;
 
 const MigrationResolution = union(enum) {
     resolved: u32,
@@ -9,11 +10,97 @@ const MigrationResolution = union(enum) {
 };
 
 pub fn validateParameterIdMigrations(migrations: []const ParameterIdMigration) !void {
-    if (identityParameterMigrationIndex(migrations) != null) return error.IdentityParameterMigration;
-    if (duplicateParameterMigrationIndex(migrations) != null) return error.DuplicateParameterMigration;
-    if (cyclicParameterMigrationIndex(migrations) != null) return error.CyclicParameterMigration;
-    if (ambiguousParameterMigrationIndex(migrations) != null) return error.AmbiguousParameterMigration;
+    _ = try MigrationIndex.init(migrations);
 }
+
+pub const MigrationIndex = struct {
+    entries: [maximum_parameter_id_migrations]ParameterIdMigration = undefined,
+    len: usize = 0,
+
+    pub fn init(migrations: []const ParameterIdMigration) !MigrationIndex {
+        if (migrations.len > maximum_parameter_id_migrations)
+            return error.TooManyParameterIdMigrations;
+        if (identityParameterMigrationIndex(migrations) != null)
+            return error.IdentityParameterMigration;
+        if (duplicateParameterMigrationIndex(migrations) != null)
+            return error.DuplicateParameterMigration;
+        const result = initSorted(migrations);
+        if (result.cyclicMigrationIndex(migrations) != null)
+            return error.CyclicParameterMigration;
+        if (duplicateNewMigrationIndex(migrations) != null)
+            return error.AmbiguousParameterMigration;
+        return result;
+    }
+
+    fn initSorted(migrations: []const ParameterIdMigration) MigrationIndex {
+        var result = MigrationIndex{};
+        result.len = migrations.len;
+        @memcpy(result.entries[0..migrations.len], migrations);
+        var index: usize = 1;
+        while (index < result.len) : (index += 1) {
+            const value = result.entries[index];
+            var insertion = index;
+            while (insertion != 0 and
+                result.entries[insertion - 1].old_id > value.old_id)
+            {
+                result.entries[insertion] = result.entries[insertion - 1];
+                insertion -= 1;
+            }
+            result.entries[insertion] = value;
+        }
+        return result;
+    }
+
+    pub fn migratedParameterId(
+        self: *const MigrationIndex,
+        id: u32,
+    ) u32 {
+        return switch (self.resolution(id)) {
+            .resolved => |resolved| resolved,
+            .cyclic => id,
+        };
+    }
+
+    fn cyclicMigrationIndex(
+        self: *const MigrationIndex,
+        migrations: []const ParameterIdMigration,
+    ) ?usize {
+        for (migrations, 0..) |migration, index| {
+            if (self.resolution(migration.old_id) == .cyclic)
+                return index;
+        }
+        return null;
+    }
+
+    fn resolution(
+        self: *const MigrationIndex,
+        id: u32,
+    ) MigrationResolution {
+        var current = id;
+        for (0..self.len + 1) |_| {
+            current = self.nextId(current) orelse
+                return .{ .resolved = current };
+        }
+        return .cyclic;
+    }
+
+    fn nextId(self: *const MigrationIndex, id: u32) ?u32 {
+        var start: usize = 0;
+        var end = self.len;
+        while (start < end) {
+            const middle = start + (end - start) / 2;
+            const migration = self.entries[middle];
+            if (id < migration.old_id) {
+                end = middle;
+            } else if (id > migration.old_id) {
+                start = middle + 1;
+            } else {
+                return migration.new_id;
+            }
+        }
+        return null;
+    }
+};
 
 pub fn identityParameterMigrationIndex(migrations: []const ParameterIdMigration) ?usize {
     for (migrations, 0..) |migration, index| {
@@ -50,38 +137,28 @@ pub fn cyclicParameterMigrationIndex(migrations: []const ParameterIdMigration) ?
 }
 
 pub fn ambiguousParameterMigrationIndex(migrations: []const ParameterIdMigration) ?usize {
-    return firstMigrationPairIndex(migrations, migrationTargetsAreAmbiguous);
+    if (cyclicParameterMigrationIndex(migrations) != null) return null;
+    return duplicateNewMigrationIndex(migrations);
 }
 
-fn migrationTargetsAreAmbiguous(
+fn duplicateNewMigrationIndex(
+    migrations: []const ParameterIdMigration,
+) ?usize {
+    // With unique old IDs and no cycles, independent chains converge exactly
+    // when two edges have the same destination.
+    return firstMigrationPairIndex(migrations, duplicateNewIds);
+}
+
+fn duplicateNewIds(
     left: ParameterIdMigration,
     right: ParameterIdMigration,
-    migrations: []const ParameterIdMigration,
+    _: []const ParameterIdMigration,
 ) bool {
-    const same_resolved_target = migratedParameterId(left.old_id, migrations) == migratedParameterId(right.old_id, migrations);
-    if (!same_resolved_target) return false;
-
-    const same_chain = migrationIdsShareChain(left.old_id, right.old_id, migrations);
-    return !same_chain;
-}
-
-fn migrationIdsShareChain(left_id: u32, right_id: u32, migrations: []const ParameterIdMigration) bool {
-    return migrationPathContains(left_id, right_id, migrations) or migrationPathContains(right_id, left_id, migrations);
+    return left.new_id == right.new_id;
 }
 
 fn migrationPathIsCyclic(start_id: u32, migrations: []const ParameterIdMigration) bool {
     return migrationResolution(start_id, migrations) == .cyclic;
-}
-
-fn migrationPathContains(start_id: u32, target_id: u32, migrations: []const ParameterIdMigration) bool {
-    if (start_id == target_id) return true;
-
-    var current = start_id;
-    for (0..migrationStepLimit(migrations)) |_| {
-        current = nextParameterMigrationId(current, migrations) orelse return false;
-        if (current == target_id) return true;
-    }
-    return false;
 }
 
 pub fn migratedParameterId(id: u32, migrations: []const ParameterIdMigration) u32 {
@@ -121,6 +198,26 @@ test "parameter migration validation accepts empty and chained migrations" {
     try std.testing.expectEqual(@as(u32, 3), migratedParameterId(1, &migrations));
     try std.testing.expectEqual(@as(u32, 3), migratedParameterId(2, &migrations));
     try std.testing.expectEqual(@as(u32, 4), migratedParameterId(4, &migrations));
+}
+
+test "parameter migration validation bounds and indexes migration work" {
+    var too_many: [maximum_parameter_id_migrations + 1]ParameterIdMigration =
+        undefined;
+    try std.testing.expectError(
+        error.TooManyParameterIdMigrations,
+        validateParameterIdMigrations(&too_many),
+    );
+
+    const migrations = [_]ParameterIdMigration{
+        .{ .old_id = 9, .new_id = 11 },
+        .{ .old_id = 1, .new_id = 7 },
+        .{ .old_id = 7, .new_id = 9 },
+    };
+    const index = try MigrationIndex.init(&migrations);
+    try std.testing.expectEqual(@as(u32, 11), index.migratedParameterId(1));
+    try std.testing.expectEqual(@as(u32, 11), index.migratedParameterId(7));
+    try std.testing.expectEqual(@as(u32, 11), index.migratedParameterId(9));
+    try std.testing.expectEqual(@as(u32, 12), index.migratedParameterId(12));
 }
 
 test "parameter migration validation reports invalid migration tables" {

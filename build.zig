@@ -2863,6 +2863,24 @@ pub fn build(b: *std.Build) void {
     audio_metadata_fuzz_step.dependOn(
         &b.addRunArtifact(audio_metadata_fuzz_tests).step,
     );
+    const state_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        state_fuzz_module.link_libc = true;
+    const state_fuzz_tests = b.addTest(.{
+        .root_module = state_fuzz_module,
+        .filters = &.{"fuzz failure-atomic parameter state restore"},
+    });
+    const state_fuzz_step = b.step(
+        "test-state-fuzz",
+        "Run or fuzz failure-atomic parameter state restore",
+    );
+    state_fuzz_step.dependOn(
+        &b.addRunArtifact(state_fuzz_tests).step,
+    );
     const flac_fuzz_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,

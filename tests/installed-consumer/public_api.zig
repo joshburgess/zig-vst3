@@ -38,6 +38,12 @@ test "installed package compiles compatibility-ready framework entry points" {
             "RenderPropertyAdapter",         "AudioTimeStamp",
             "AudioUnitParameterEvent",
         });
+        requireDecls(plug.state, &.{
+            "maximum_parameter_id_migrations",
+            "readParameterStateWithMigrations",
+            "readParameterStateWithMigrationsReport",
+            "validateParameterIdMigrations",
+        });
         requireDecls(vst3, &.{
             "ara_document_controller", "ara_extension",         "ara_factory",
             "ara_model",               "ara_playback_renderer", "ara_source_cache",

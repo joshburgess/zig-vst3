@@ -58,7 +58,7 @@ const migrations = &.{
 try instance.readParameterStateWithMigrations(reader, migrations);
 ```
 
-Migration chains are allowed. Validation rejects identity mappings, duplicate old ids, independently converging target ids, and cycles before loading mutates parameter values. Use `state.migratedParameterId` or the instance-bound equivalent when diagnostics need to show where a saved id will land.
+Migration chains are allowed. A restore accepts at most `state.maximum_parameter_id_migrations` mappings, currently 256. Validation rejects identity mappings, duplicate old ids, independently converging target ids, and cycles before reading state or mutating parameter values. Restore builds one fixed-storage sorted index after validation, so each decoded id follows its migration chain through bounded binary lookups. Use `state.migratedParameterId` or the instance-bound equivalent when diagnostics need to show where a saved id will land.
 
 ## Restore Reports
 
@@ -107,5 +107,6 @@ The JSON uses the same format version and reflected parameter values as the bina
 - `state.writeParameterState`, `readParameterState`, and migration/report variants.
 - `state.writeParameterStateJson`: debug JSON output.
 - `state.validateParameterIdMigrations` and migration diagnostic helpers for identity, duplicate, cyclic, and ambiguous entries.
+- `state.maximum_parameter_id_migrations`: maximum migration mappings accepted by one restore.
 
 Program lists can also carry finite normalized parameter snapshots through `plug.units.ProgramParameter`. `PluginInstance.applyProgram` and related helpers validate the complete snapshot, then apply matching parameter ids.

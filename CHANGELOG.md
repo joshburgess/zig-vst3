@@ -13,6 +13,7 @@
 - Added `dsp.FlacLimits`, bounded FLAC decode entry points, and bounded streaming reader constructors for explicit stream-byte, metadata, PCM-frame, and encoded-frame-block policies.
 - Added `dsp.Id3Limits`, `dsp.AudioMetadataLimits`, and bounded ID3, RIFF INFO, AIFF text, and RIFF XML constructors for explicit encoded-byte policies.
 - Added `dsp.HrtfSofaLimits` and bounded SOFA loader methods for an explicit NetCDF file-byte policy.
+- Added `state.maximum_parameter_id_migrations` and a dedicated failure-atomic parameter-state fuzz target.
 
 ### Changed
 
@@ -25,6 +26,7 @@
 - FLAC memory and positional-file decoding now applies documented default limits. Metadata preflight rejects determinable size and work limits before file-reader storage changes, and transactional decode variants preserve PCM output when a later frame-block limit is reached.
 - Direct ID3 and audio-metadata parsing now applies a 256 MiB default encoded-byte limit. XML elements accept at most 1,024 attributes and 256 KiB of attribute source, bounding duplicate and expanded-name validation work.
 - SOFA loading now applies a 1 GiB default file-byte limit before passing a dataset to the NetCDF runtime.
+- Parameter-state restore now accepts at most 256 ID migrations and indexes them once before decoding entries, bounding migration validation and lookup work.
 
 ## zig-vst3-0.3.0 - 2026-08-14
 
