@@ -178,9 +178,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Rejected the first Phase 2 completion candidate after macOS CI exposed a
   second cumulative LV2 UI test counter and an undeclared `rg` dependency in
   the realtime inventory. Commit `a79b294a` closes both verifier defects.
-- Recorded Q-VER-008 for six unrelated native test executables that terminated
-  with `SIGSEGV` after macOS CI restored its Zig cache. All six gates pass
-  together from fresh local caches. The replacement macOS job runs uncached.
+- Expanded Q-VER-008 after the uncached replacement reproduced seven crashes
+  on the new macOS 26 ARM `macos-latest` image. Every failed artifact used
+  ThreadSanitizer, all unsanitized tests passed, and the same sanitizer gates
+  pass on local macOS 15.4. CI now pins the maintained macOS 15 ARM image.
 
 ## Phase 2 Scope
 
@@ -195,6 +196,6 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Run the replacement Phase 2 completion gate at `a79b294a` and close the phase
-only if all public CI jobs, including the fresh-cache macOS native gates, and
-all exit criteria pass.
+Run the pinned-macOS replacement Phase 2 completion gate and close the phase
+only if all public CI jobs, including the uncached macOS 15 sanitizer gates,
+and all exit criteria pass.

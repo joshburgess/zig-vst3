@@ -1030,4 +1030,29 @@ Correction commit: `a79b294a7ad2d55f1ab8b7bff2e0a966f6a3c47c`
 | `scripts/check_quality_inventory.sh` | Passed: 820 files and 468,924 lines classified |
 | `zig fmt --check zig-vst3-plugin/src/lv2_ui.zig` | Passed |
 | `git diff --check` | Passed |
-| GitHub Actions run `31854031396` | Pending replacement run at `a79b294a` |
+| GitHub Actions run `31854031396` | Superseded by the evidence-only `eb1b232f` commit and run `31854142882` |
+
+## 2026-08-15: Uncached macOS 26 Sanitizer Reproduction
+
+Candidate commit: `eb1b232f675be17c7c982dfae2cecf528c1c2b9d`
+
+The exact local Phase 2 completion gate passed from its dedicated caches: all
+441 build steps completed, 7,506 of 7,510 tests passed, and four tests skipped.
+The main Debug group passed 1,798 tests and skipped two. The six native backend
+gates, repository scripts, downstream consumers, and installed-package matrix
+all passed.
+
+GitHub Actions run `31854142882` tested the pull request merge into unchanged
+`main`. Repository hygiene and Windows job `94935626486` passed. The uncached
+macOS job `94935626446` used the `macos-26-arm64` image on macOS 26.5.2 and
+reproduced seven `SIGSEGV` failures. The failed artifacts were the CoreAudio,
+CoreMIDI, ALSA MIDI, ALSA UMP, and Windows MIDI ThreadSanitizer tests, the
+shared native callback-gate ThreadSanitizer test, and the portable Windows UMP
+ThreadSanitizer executable. The remaining 7,495 tests passed and four skipped.
+
+This result rejects restored cache corruption as the cause and isolates the
+failure to ThreadSanitizer execution on the moving `macos-latest` image. The
+same artifacts pass on local macOS 15.4. GitHub moved `macos-latest` from macOS
+15 to macOS 26 in June and July 2026 and lists `macos-15` as a maintained ARM
+runner label. The workflow now pins every macOS job to that stable image. A
+fresh public run must pass before Q-VER-008 or Phase 2 closes.
