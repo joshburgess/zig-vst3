@@ -2199,3 +2199,27 @@ unit-peak, and Kaiser evidence remains intact.
 | `scripts/check_quality_numerics_inventory.sh` | Passed after disposition update: 56 evidence, 27 review, and 18 excluded sources |
 | `scripts/check_quality_inventory.sh` | Passed: 869 source files and 478,997 lines classified |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Smoothing and Dry/Wet Review
+
+Behavior commit: `01a3c774`
+
+The dry/wet review found that finite streams and finite bounded gains could
+still produce a non-finite weighted sum. Mixing now preflights every output
+and preserves the wet buffer and pending dry block on failure. Its gain-law,
+endpoint, integer-latency, fractional-latency, and sequencing evidence passes.
+
+The linear and multiplicative smoother review accepted exact settlement,
+partition and skip equivalence, retargeting, transactional validation, bounded
+duration, range containment, and generated hostile-state recovery. These
+scalar state machines have no channel-layout or block-latency contract.
+
+| Check | Result |
+| --- | --- |
+| Direct Debug dry/wet test | Passed: 4/4 tests |
+| Direct ReleaseSafe dry/wet test | Passed: 4/4 tests |
+| Direct Debug smoothed-value test | Passed: 7/7 tests |
+| Direct ReleaseSafe smoothed-value test | Passed: 7/7 tests |
+| `scripts/check_quality_numerics_inventory.sh` | Passed after disposition updates: 58 evidence, 25 review, and 18 excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,027 lines classified |
+| `git diff --check` | Passed |

@@ -85,7 +85,7 @@ Q15	zig-vst3-plugin/src/dsp/chorus.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/convolution.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/delay.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/denormals.zig	EVIDENCE	N-PRIMITIVE
-Q15	zig-vst3-plugin/src/dsp/dry_wet.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/dry_wet.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/dynamics.zig	EVIDENCE	N-DYNAMICS
 Q15	zig-vst3-plugin/src/dsp/elliptic_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/equiripple_design.zig	EVIDENCE	N-FILTER
@@ -128,7 +128,7 @@ Q15	zig-vst3-plugin/src/dsp/resampler.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/reverb.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/shared_processor_duplicator.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/simd_register.zig	EVIDENCE	N-PRIMITIVE
-Q15	zig-vst3-plugin/src/dsp/smoothed_value.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/smoothed_value.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/special_functions.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/state_variable.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/stereo_modulation.zig	REVIEW	N-PENDING
