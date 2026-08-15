@@ -2737,6 +2737,13 @@ test "simple stereo effect delegates data exchange receiver callbacks" {
     blocks[0].size = 64;
     blocks[0].blockID = ivstdataexchange.InvalidDataExchangeBlockID;
     receiver.vtable.onDataExchangeBlocksReceived(receiver, 77, blocks.len, &blocks, 1);
+    receiver.vtable.onDataExchangeBlocksReceived(
+        receiver,
+        77,
+        zig_vst3_plugin_bridge.input_data_exchange_block_capacity + 1,
+        &blocks,
+        1,
+    );
     try std.testing.expectEqual(@as(usize, 0), test_data_exchange_blocks_received_count);
     blocks[0].blockID = 22;
     receiver.vtable.onDataExchangeBlocksReceived(receiver, 77, blocks.len, &blocks, 1);
@@ -2744,6 +2751,21 @@ test "simple stereo effect delegates data exchange receiver callbacks" {
     try std.testing.expectEqual(@as(types.uint32, blocks.len), test_data_exchange_last_num_blocks);
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 22), test_data_exchange_last_block_id);
     try std.testing.expectEqual(@as(types.TBool, 1), test_data_exchange_last_background_flag);
+
+    var maximum_blocks = [_]ivstdataexchange.DataExchangeBlock{blocks[0]} **
+        zig_vst3_plugin_bridge.input_data_exchange_block_capacity;
+    receiver.vtable.onDataExchangeBlocksReceived(
+        receiver,
+        77,
+        maximum_blocks.len,
+        maximum_blocks[0..].ptr,
+        0,
+    );
+    try std.testing.expectEqual(@as(usize, 2), test_data_exchange_blocks_received_count);
+    try std.testing.expectEqual(
+        @as(types.uint32, @intCast(maximum_blocks.len)),
+        test_data_exchange_last_num_blocks,
+    );
 
     receiver.vtable.queueClosed(receiver, 77);
     try std.testing.expectEqual(@as(usize, 1), test_data_exchange_queue_closed_count);
@@ -5782,7 +5804,11 @@ pub fn SimpleEffect(comptime Config: type) type {
         fn onDataExchangeBlocksReceived(_: *anyopaque, user_context_id: ivstdataexchange.DataExchangeUserContextID, num_blocks: types.uint32, blocks: ?[*]ivstdataexchange.DataExchangeBlock, on_background_thread: types.TBool) callconv(.c) void {
             if (@hasDecl(Config, "onDataExchangeBlocksReceived")) {
                 if (on_background_thread > 1) return;
-                if (num_blocks == 0) return;
+                if (num_blocks == 0 or
+                    num_blocks > zig_vst3_plugin_bridge.input_data_exchange_block_capacity)
+                {
+                    return;
+                }
                 const received = blocks orelse return;
                 for (received[0..@intCast(num_blocks)]) |block| {
                     if (block.data == null or block.size == 0 or block.blockID == ivstdataexchange.InvalidDataExchangeBlockID) return;

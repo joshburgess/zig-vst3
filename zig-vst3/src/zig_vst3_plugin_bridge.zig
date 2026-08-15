@@ -19,6 +19,7 @@ const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub const input_parameter_change_capacity: usize = 64;
 pub const input_event_capacity: usize = 64;
+pub const input_data_exchange_block_capacity: usize = 64;
 const string128 = @import("string128.zig");
 const tuid = @import("tuid.zig");
 const vst_event_list = @import("vst_event_list.zig");
