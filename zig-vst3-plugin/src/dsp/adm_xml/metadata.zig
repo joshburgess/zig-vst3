@@ -3,7 +3,7 @@ const adm = @import("../adm.zig");
 const common = @import("common.zig");
 const xml = @import("../xml.zig");
 
-const max_identifier_bytes: usize = 20;
+const max_identifier_bytes = common.max_identifier_bytes;
 const declarationSpec = common.declarationSpec;
 const insideAfe = common.insideAfe;
 const isXmlNamespaceDeclaration = common.isXmlNamespaceDeclaration;

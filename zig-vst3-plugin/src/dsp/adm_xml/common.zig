@@ -1,6 +1,9 @@
 const std = @import("std");
 const adm = @import("../adm.zig");
 
+pub const max_identifier_bytes: usize = 20;
+pub const max_profile_text_bytes: usize = 128;
+
 pub fn isXmlNamespaceDeclaration(attribute_name: []const u8) bool {
     return std.mem.eql(u8, attribute_name, "xmlns") or
         std.mem.startsWith(u8, attribute_name, "xmlns:");

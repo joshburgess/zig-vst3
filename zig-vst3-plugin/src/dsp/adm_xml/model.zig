@@ -1,10 +1,11 @@
 const std = @import("std");
 const adm = @import("../adm.zig");
 const adm_time = @import("../adm_time.zig");
+const common = @import("common.zig");
 const xml = @import("../xml.zig");
 
-const max_identifier_bytes: usize = 20;
-const max_profile_text_bytes: usize = 128;
+const max_identifier_bytes = common.max_identifier_bytes;
+const max_profile_text_bytes = common.max_profile_text_bytes;
 
 pub const max_adm_positions: usize = 9;
 pub const max_adm_speaker_labels: usize = 16;
@@ -249,3 +250,34 @@ pub const BlockFormat = struct {
         return self.matrix_coefficients[0..self.matrix_coefficient_count];
     }
 };
+
+pub fn parseGainUnit(encoded: []const u8) !GainUnit {
+    if (std.mem.eql(u8, encoded, "linear")) return .linear;
+    if (std.mem.eql(u8, encoded, "dB")) return .decibels;
+    return error.InvalidAdmGainUnit;
+}
+
+pub fn parseAdmFlag(encoded: []const u8) !bool {
+    if (std.mem.eql(u8, encoded, "0")) return false;
+    if (std.mem.eql(u8, encoded, "1")) return true;
+    return error.InvalidAdmFlag;
+}
+pub fn parseFiniteAdmFloat(encoded: []const u8) !f64 {
+    const value = std.fmt.parseFloat(f64, encoded) catch
+        return error.InvalidAdmFloat;
+    if (!std.math.isFinite(value)) return error.InvalidAdmFloat;
+    return value;
+}
+
+pub fn parseAdmMatrixGain(encoded: []const u8, unit: GainUnit) !f64 {
+    const value = std.fmt.parseFloat(f64, encoded) catch
+        return error.InvalidAdmFloat;
+    if (std.math.isFinite(value)) return value;
+    if (unit == .decibels and
+        std.math.isInf(value) and
+        value < 0.0)
+    {
+        return value;
+    }
+    return error.InvalidAdmFloat;
+}
