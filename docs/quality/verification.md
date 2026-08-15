@@ -2306,6 +2306,35 @@ fallback, exact smoothing settlement, partition behavior, and hostile state.
 | `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,265 lines classified |
 | `git diff --check` | Passed |
 
+## 2026-08-15: Composite Effects Numerical Closure
+
+Behavior commit: `9b4ec47a`
+
+The final numerical review group covers chorus, flanger, modulated delay,
+phaser, reverb, stereo modulation, vibrato, and waveshaping. The mono block
+effects now permit exact in-place operation and reject shifted overlap before
+state changes. Reverb requires disjoint output planes but permits exact input
+replacement where its per-frame execution is safe. Stereo modulation uses a
+stricter contract because it completes the left processor before starting the
+right: only corresponding exact replacements are allowed, with all
+cross-channel aliases rejected before either processor advances. Flanger and
+vibrato translate overlap failures without misreporting them as length errors.
+
+Existing numerical evidence includes static delay and feedback echoes,
+partition invariance, all-pass energy, tempo and parameter smoothing,
+algorithmic stereo-tail decorrelation, bounded odd-symmetric shaping, dry and
+wet identities, configuration transactionality, and hostile-state recovery.
+
+| Check | Result |
+| --- | --- |
+| Focused Debug stateful-composite selection | Passed: 41/41 tests |
+| Focused ReleaseSafe stateful-composite selection | Passed: 41/41 tests |
+| Direct Debug waveshaper test | Passed: 7/7 tests |
+| Direct ReleaseSafe waveshaper test | Passed: 7/7 tests |
+| `scripts/check_quality_numerics_inventory.sh` | Passed after final dispositions: 83 evidence, 0 review, and 18 excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,459 lines classified |
+| `git diff --check` | Passed |
+
 ## 2026-08-15: Foundational Filter Review
 
 The remaining foundational filters have direct defining identities and

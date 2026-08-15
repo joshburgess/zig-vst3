@@ -27,6 +27,7 @@ and representative performance where those concerns apply.
 | N-FILTER | IIR and FIR design plus special functions | SciPy 1.17 vectors, independent ODE vectors, response identities, reconstruction, convergence, maximum-size finite containment, and transactional failures |
 | N-TRANSFORM | FFT, convolution, resampling, oversampling, and limiters | Defining transforms, direct convolution, backend parity, sinc reconstruction, response and recombination identities, partition invariance, latency, and transactional failures |
 | N-DYNAMICS | Dynamics and multiband processing | Independent scalar vectors, static-curve and recombination identities, peak containment, partition invariance, latency, and transactional failures |
+| N-EFFECT | Modulation, nonlinear shaping, and algorithmic reverb | Static-delay and feedback vectors, all-pass and symmetry identities, partition invariance, tempo and parameter smoothing, stereo decorrelation, finite containment, and transactional aliases |
 | N-PRIMITIVE | Scalar, SIMD, phase, smoothing, and buffer primitives | Scalar-oracle parity, algebraic identities, alias matrices, finite containment, overflow rejection, and transactional destinations |
 | N-PENDING | Algorithmic source requiring Phase 5 review | Evidence and contract disposition have not yet been accepted |
 
@@ -81,7 +82,7 @@ Q15	zig-vst3-plugin/src/dsp/buffer_regions.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/butterworth_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/chebyshev2_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/chebyshev_design.zig	EVIDENCE	N-FILTER
-Q15	zig-vst3-plugin/src/dsp/chorus.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/chorus.zig	EVIDENCE	N-EFFECT
 Q15	zig-vst3-plugin/src/dsp/convolution.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/delay.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/denormals.zig	EVIDENCE	N-PRIMITIVE
@@ -96,7 +97,7 @@ Q15	zig-vst3-plugin/src/dsp/fir_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/first_order_tpt.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/fixed_rate.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/fixture_runner.zig	EXCLUDED	independent-fixture process runner
-Q15	zig-vst3-plugin/src/dsp/flanger.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/flanger.zig	EVIDENCE	N-EFFECT
 Q15	zig-vst3-plugin/src/dsp/gain_bias.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/inter_sample_limiter.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/kernel_dispatch.zig	EVIDENCE	N-PRIMITIVE
@@ -105,7 +106,7 @@ Q15	zig-vst3-plugin/src/dsp/linkwitz_riley.zig	EVIDENCE	N-DYNAMICS
 Q15	zig-vst3-plugin/src/dsp/log_ramp.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/lookup_table.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/mixed_oversampling.zig	EVIDENCE	N-TRANSFORM
-Q15	zig-vst3-plugin/src/dsp/modulated_delay.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/modulated_delay.zig	EVIDENCE	N-EFFECT
 Q15	zig-vst3-plugin/src/dsp/modulation_rate.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/multiband_dynamics.zig	EVIDENCE	N-DYNAMICS
 Q15	zig-vst3-plugin/src/dsp/multichannel_oversampling.zig	EVIDENCE	N-TRANSFORM
@@ -115,7 +116,7 @@ Q15	zig-vst3-plugin/src/dsp/oversampling.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/panner.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/pcm_dither.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/phase.zig	EVIDENCE	N-PRIMITIVE
-Q15	zig-vst3-plugin/src/dsp/phaser.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/phaser.zig	EVIDENCE	N-EFFECT
 Q15	zig-vst3-plugin/src/dsp/polynomial.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/polyphase_fir.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/polyphase_iir.zig	EVIDENCE	N-TRANSFORM
@@ -125,16 +126,16 @@ Q15	zig-vst3-plugin/src/dsp/processor_chain.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/processor_duplicator.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/realtime_snapshot.zig	EXCLUDED	fixed-storage concurrency primitive
 Q15	zig-vst3-plugin/src/dsp/resampler.zig	EVIDENCE	N-TRANSFORM
-Q15	zig-vst3-plugin/src/dsp/reverb.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/reverb.zig	EVIDENCE	N-EFFECT
 Q15	zig-vst3-plugin/src/dsp/shared_processor_duplicator.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/simd_register.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/smoothed_value.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/special_functions.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/state_variable.zig	EVIDENCE	N-FILTER
-Q15	zig-vst3-plugin/src/dsp/stereo_modulation.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/vibrato.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/stereo_modulation.zig	EVIDENCE	N-EFFECT
+Q15	zig-vst3-plugin/src/dsp/vibrato.zig	EVIDENCE	N-EFFECT
 Q15	zig-vst3-plugin/src/dsp/wave64_metadata.zig	EXCLUDED	passive metadata values
-Q15	zig-vst3-plugin/src/dsp/waveshaper.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/waveshaper.zig	EVIDENCE	N-EFFECT
 Q15	zig-vst3-plugin/src/dsp/window.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/gui_ir_convolution.zig	EXCLUDED	public compatibility alias
 <!-- numerical-files:end -->

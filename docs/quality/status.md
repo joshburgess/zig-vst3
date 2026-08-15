@@ -393,6 +393,12 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   separation, partition invariance, finite containment, alias transactionality,
   and configuration failure behavior pass in Debug and ReleaseSafe. The ledger
   now has 75 evidence, 8 review, and 18 excluded records.
+- Closed high Q-MEM-015 across mono and stereo composite effects. Execution-
+  order-specific alias contracts now preserve supported in-place use and
+  reject ambiguous overlap before output or state changes. Static effect
+  vectors, partition behavior, smoothing, stereo tails, shaping identities,
+  and containment pass. The numerical ledger is complete with 83 evidence,
+  zero review, and 18 excluded records.
 
 ## Phase 5 Scope
 
@@ -407,8 +413,8 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the eight remaining `REVIEW` records in `numerics.md`. They are the
-chorus, flanger, modulated-delay, phaser, reverb, stereo-modulation, vibrato,
-and waveshaper composite effects.
+Reconcile the completed numerical ledger with Phase 5 benchmark coverage and
+exit criteria. Close any missing representative performance family before
+starting Phase 6 platform and ABI review.
 Move a source to `EVIDENCE` only after its reference or identity, tolerance,
 finite containment, latency, channel, and transactional contracts are sound.
