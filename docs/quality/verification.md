@@ -2223,3 +2223,29 @@ scalar state machines have no channel-layout or block-latency contract.
 | `scripts/check_quality_numerics_inventory.sh` | Passed after disposition updates: 58 evidence, 25 review, and 18 excluded sources |
 | `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,027 lines classified |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Fast-Math Full-Domain Accuracy
+
+Behavior commit: `323a977f`
+
+The fast-math review replaced point samples with complete accepted-domain
+error envelopes. That stronger gate found more than 100 percent relative f32
+exponential error at -6 and an approximate tangent pole inside a domain that
+extends to the exact ±π/2 poles. Exponential evaluation now range-reduces by
+integer powers of two before applying its Padé form. Tangent retains the Padé
+path through the interior and uses the standard operation only in the narrow
+pole boundary. Scalar and SIMD implementations preserve matching results.
+
+The reference gate samples 4,097 points across every hyperbolic,
+trigonometric, exponential, and logarithmic domain for both f32 and f64. It
+also samples 4,096 interior tangent points and probes both precisions next to
+the positive pole with explicit absolute or relative bounds.
+
+| Check | Result |
+| --- | --- |
+| Direct Debug fast-math test | Passed: 18/18 tests |
+| Direct ReleaseSafe fast-math test | Passed: 18/18 tests |
+| Scalar, fixed-width SIMD, native-width SIMD, tails, and invalid-input transactionality | Passed |
+| `scripts/check_quality_numerics_inventory.sh` | Passed after disposition update: 59 evidence, 24 review, and 18 excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,122 lines classified |
+| `git diff --check` | Passed |

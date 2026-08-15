@@ -372,6 +372,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   failure. Linear and multiplicative smoothing also passed exact settlement,
   skip, partition, bounded-duration, and hostile-state review. The ledger now
   has 58 evidence, 25 review, and 18 excluded records.
+- Closed high Q-NUM-003 after full-domain sweeps exposed excessive exponential
+  and near-pole tangent error. Base-2 exponential range reduction and a narrow
+  tangent pole fallback preserve the accepted domains and scalar-SIMD parity.
+  Dense f32 and f64 reference bounds pass in Debug and ReleaseSafe. The ledger
+  now has 59 evidence, 24 review, and 18 excluded records.
 
 ## Phase 5 Scope
 
@@ -386,7 +391,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the 25 `REVIEW` records in `numerics.md`, continuing with foundational
+Review the 24 `REVIEW` records in `numerics.md`, continuing with foundational
 Q15 primitives before composite effects.
 Move a source to `EVIDENCE` only after its reference or identity, tolerance,
 finite containment, latency, channel, and transactional contracts are sound.

@@ -89,7 +89,7 @@ Q15	zig-vst3-plugin/src/dsp/dry_wet.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/dynamics.zig	EVIDENCE	N-DYNAMICS
 Q15	zig-vst3-plugin/src/dsp/elliptic_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/equiripple_design.zig	EVIDENCE	N-FILTER
-Q15	zig-vst3-plugin/src/dsp/fast_math.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/fast_math.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/fft.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/fir.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/fir_design.zig	EVIDENCE	N-FILTER
