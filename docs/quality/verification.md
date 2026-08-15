@@ -2097,6 +2097,26 @@ The checked numerical ledger has no pending record, every critical DSP family
 has direct or independent evidence with stated tolerances, and no critical or
 high numerical or performance finding is open. Phase 5 is complete.
 
+## 2026-08-15: Checked Platform and ABI Review Scope
+
+The Phase 6 ledger derives its expected paths and review units from the
+complete quality inventory. It covers Q01 raw VST3 and COM, Q02 ARA, Q03 raw
+VSTGUI, Q04 framework exports, Q06 runtime and dynamic loading, Q17 LV2 and
+Audio Unit, Q18 native platform integration, and Q19 VSTGUI C++ and native UI.
+
+All 301 initial records are `REVIEW`. This establishes exact scope without
+treating prior broad ABI, host, sanitizer, or cross-build gates as an accepted
+source-level review. The fixture proves that a missing path, wrong review unit,
+or invalid state fails the checker.
+
+| Check | Result |
+| --- | --- |
+| `scripts/check_quality_abi_inventory.sh` | Passed: zero evidence, 301 review, and zero excluded sources |
+| `scripts/test_quality_abi_inventory_runner.sh` | Passed: baseline plus missing-path, wrong-unit, and invalid-state rejection |
+| `scripts/check_quality_inventory.sh` | Passed after staging the new gate: 871 source files and 479,661 lines |
+| `zig fmt --check build.zig` | Passed |
+| `git diff --check` | Passed |
+
 ## 2026-08-15: Extracted Review-Unit Classification
 
 Behavior commit: `5930f9fa`

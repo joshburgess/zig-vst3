@@ -405,6 +405,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   capacities. The one-job benchmark passes 5/5 steps and every timing and
   memory threshold. The audit also corrected the recorded least-squares input
   from 255 taps to its actual 63 taps.
+- Began Phase 6 with a checked ledger covering all 301 sources in the Q01,
+  Q02, Q03, Q04, Q06, Q17, Q18, and Q19 platform-facing review units. Missing,
+  stale, duplicate, malformed, and misassigned records fail the repository
+  gate. Every source starts in `REVIEW`; prior broad test coverage is not
+  accepted until its boundary contract and evidence are inspected.
 
 ## Phase 5 Scope
 

@@ -32,7 +32,7 @@ misstate review effort.
 
 | Unit | Scope | Files | Lines | C/E/X/T | Rank | Principal exposure | Required verification |
 | --- | --- | ---: | ---: | --- | --- | --- | --- |
-| Q00 | Build graph, CI, release and validation scripts | 132 | 19,003 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
+| Q00 | Build graph, CI, release and validation scripts | 134 | 19,162 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
 | Q01 | Raw VST3 ABI mirrors and COM helpers | 116 | 30,396 | 5/5/4/5 | Elevated | Public ABI, pointers, reference counts, host callbacks | SDK layout parity, callback lifecycle, validators, sanitizers |
 | Q02 | ARA model, controller, analysis, cache, and official headers | 21 | 28,227 | 5/4/5/3 | High | Host callbacks, readers, atomics, persistence, untrusted host data | Header parity, lifecycle stress, allocator failure, TSan, state corruption |
 | Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,152 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
@@ -47,14 +47,14 @@ misstate review effort.
 | Q12 | FLAC, audio containers, metadata, and file I/O | 15 | 24,981 | 5/5/5/4 | High | Untrusted files, XML, arithmetic, transactional output | Fuzzing, short I/O, failure injection, independent tools |
 | Q13 | ADM parsing and rendering | 27 | 34,623 | 5/4/5/4 | High | XML, timed metadata, matrix construction, exclusion rules | Fuzzing, numerical oracles, bounded inputs, partition invariance |
 | Q14 | HRTF, HOA, and spatial matrices | 10 | 15,061 | 5/4/5/4 | High | Measured datasets, conditioning, realtime publication | Dataset corruption, numerical parity, TSan, partition invariance |
-| Q15 | DSP primitives, convolution, filters, effects, resampling, and numerics | 63 | 33,712 | 5/4/5/4 | High | Numerical stability, bounds, realtime execution and publication | Independent vectors, property tests, finite containment, TSan, benchmarks |
+| Q15 | DSP primitives, convolution, filters, effects, resampling, and numerics | 64 | 34,376 | 5/4/5/4 | High | Numerical stability, bounds, realtime execution and publication | Independent vectors, property tests, finite containment, TSan, benchmarks |
 | Q16 | Toolkit-neutral GUI state and models | 16 | 9,146 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
 | Q17 | LV2 and Audio Unit adapters | 9 | 22,788 | 5/5/5/4 | High | C ABI, host pointers, realtime entry, state and worker callbacks | ABI fixtures, dynamic hosts, sanitizers, metadata lint, failure silence |
 | Q18 | Standalone runtime and native audio, MIDI, and window backends | 62 | 37,689 | 5/5/5/3 | High | OS callbacks, devices, threads, handles, recovery | TSan, callback drain, fault injection, cross-target and physical checks |
 | Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,691 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
 | Q20 | Product and API examples | 54 | 14,923 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
 | Q21 | Test hosts, reference adapters, and downstream fixtures | 101 | 29,828 | 3/3/4/4 | Moderate | Oracle correctness and false confidence | Mutation review, independent provenance, fixture self-tests |
-| Q22 | ABI, fixture, codec, and parity tools | 57 | 11,078 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
+| Q22 | ABI, fixture, codec, and parity tools | 57 | 11,121 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
 
 ## Lexical Concentrations
 
@@ -64,7 +64,7 @@ manual review. They include false positives and cannot establish absence.
 
 | Unit | Allocation | Pointer | Atomic | Callback | Parser | Public |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Q00 | 1 | 9 | 3 | 82 | 466 | 1 |
+| Q00 | 1 | 9 | 3 | 82 | 468 | 1 |
 | Q01 | 138 | 2,263 | 94 | 1,190 | 99 | 2,520 |
 | Q02 | 7 | 445 | 38 | 190 | 196 | 358 |
 | Q03 | 39 | 272 | 8 | 194 | 32 | 280 |
@@ -79,7 +79,7 @@ manual review. They include false positives and cannot establish absence.
 | Q12 | 0 | 26 | 0 | 0 | 721 | 399 |
 | Q13 | 90 | 3 | 0 | 0 | 409 | 615 |
 | Q14 | 134 | 13 | 18 | 14 | 71 | 254 |
-| Q15 | 2 | 12 | 32 | 0 | 73 | 1,908 |
+| Q15 | 2 | 12 | 32 | 0 | 73 | 1,911 |
 | Q16 | 2 | 67 | 22 | 17 | 198 | 410 |
 | Q17 | 74 | 439 | 4 | 238 | 141 | 1,064 |
 | Q18 | 270 | 542 | 302 | 913 | 65 | 641 |
