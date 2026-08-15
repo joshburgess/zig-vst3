@@ -6370,9 +6370,15 @@ pub fn build(b: *std.Build) void {
     }
 
     const raw_api_abi_step = b.step("raw-api-abi", "Run raw API ABI and entry-symbol checks");
+    const abi_cache_routing = b.addSystemCommand(&.{
+        "sh",
+        "scripts/test_abi_cache_routing.sh",
+    });
     raw_api_abi_step.dependOn(entry_symbols_step);
+    raw_api_abi_step.dependOn(&abi_cache_routing.step);
     addStepDependencies(raw_api_abi_step, &raw_api_script_steps);
     addStepDependencies(raw_api_abi_step, &abi_harness_steps);
+    test_step.dependOn(&abi_cache_routing.step);
 
     const phase1_step = b.step("phase1", "Run Phase 1 COM/vtable integration checks");
     phase1_step.dependOn(test_step);
@@ -7094,6 +7100,14 @@ fn addExamplePluginTestDependencies(
 fn addScriptCheckStep(b: *std.Build, options: ScriptCheckOptions) *std.Build.Step {
     const step = b.step(options.step_name, options.description);
     const check = b.addSystemCommand(&.{options.script});
+    check.setEnvironmentVariable(
+        "ZIG_LOCAL_CACHE_DIR",
+        b.cache_root.path orelse ".zig-cache",
+    );
+    check.setEnvironmentVariable(
+        "ZIG_GLOBAL_CACHE_DIR",
+        b.graph.global_cache_root.path orelse ".zig-global-cache",
+    );
     step.dependOn(&check.step);
     return step;
 }
