@@ -29,7 +29,8 @@ split.
 | `zig-vst3-plugin/src/dsp/id3.zig` | 1,566 / 658 | Parses and encodes bounded ID3v2.3 and ID3v2.4 tags while retaining exact iterator source and cursor state. | KEEP. Both versions share frame encoding, text decoding, and retained-state validation. |
 | `zig-vst3-plugin/src/dsp/ixml.zig` | 2,889 / 565 | Materializes bounded iXML metadata and exposes typed views over tracks, sync points, history, location, and BEXT fields. | KEEP. The typed model is the parser result and shares its storage and limit invariants. |
 | `zig-vst3-plugin/src/dsp/kernel_dispatch.zig` | 1,527 / 787 | Detects CPU features and binds scalar or SIMD kernels into immutable dispatcher values. | KEEP. Backend selection and function tables form one dispatch contract. |
-| `zig-vst3-plugin/src/dsp/matrix.zig` | 3,503 / 1,975 | Provides fixed and dynamic matrices plus reusable LU, QR, and SVD workspaces owned by the caller allocator. | SPLIT. Retain fixed and dynamic matrix storage here and extract each factorization into a sibling module with explicit workspace ownership. |
+| `zig-vst3-plugin/src/dsp/matrix.zig` | 1,436 / 1,986 | Provides fixed-size vectors and matrices plus fixed-storage LU, QR, and SVD decompositions. | KEEP. Dimensions and workspace sizes are compile-time invariants shared by the fixed family. |
+| `zig-vst3-plugin/src/dsp/matrix/dynamic.zig` | 2,076 / 0 | Owns runtime-shaped matrix allocation and reusable LU, QR, and SVD workspaces through the caller allocator. | KEEP. Public matrix convenience methods return the factorization types and each factorization accepts the matrix type, so their exact identities form one mutually dependent contract. |
 | `zig-vst3-plugin/src/dsp/mp3.zig` | 16,584 / 12,720 | Owns MPEG Layer III headers, side information, bit reservoir, Huffman coding, encoding, decoding, seeking, and positional I/O. | SPLIT. Separate shared bitstream syntax from encoder and decoder state while preserving the current public module as a facade. |
 | `zig-vst3-plugin/src/dsp/ogg.zig` | 20,969 / 10,120 | Owns Ogg pages, packets, streams, files, and the complete Vorbis header, encode, decode, seek, rate-control, and concealment stack. | SPLIT. Separate the Ogg container from the Vorbis codec and retain all current `dsp.ogg` names as exact aliases. |
 | `zig-vst3-plugin/src/dsp/special_functions.zig` | 1,062 / 1,235 | Implements the elliptic, Jacobi, and Bessel functions used by DSP design code with shared domain and convergence handling. | KEEP. These functions share numerical primitives and one error policy; the file is test-heavy rather than production-heavy. |
@@ -68,7 +69,8 @@ decisions.
 - `zig-vst3-plugin/src/dsp/id3.zig` | 2224 | 1566 | 658 | KEEP
 - `zig-vst3-plugin/src/dsp/ixml.zig` | 3454 | 2889 | 565 | KEEP
 - `zig-vst3-plugin/src/dsp/kernel_dispatch.zig` | 2314 | 1527 | 787 | KEEP
-- `zig-vst3-plugin/src/dsp/matrix.zig` | 5478 | 3503 | 1975 | SPLIT
+- `zig-vst3-plugin/src/dsp/matrix.zig` | 3422 | 1436 | 1986 | KEEP
+- `zig-vst3-plugin/src/dsp/matrix/dynamic.zig` | 2076 | 2076 | 0 | KEEP
 - `zig-vst3-plugin/src/dsp/mp3.zig` | 29304 | 16584 | 12720 | SPLIT
 - `zig-vst3-plugin/src/dsp/ogg.zig` | 31089 | 20969 | 10120 | SPLIT
 - `zig-vst3-plugin/src/dsp/special_functions.zig` | 2297 | 1062 | 1235 | KEEP
