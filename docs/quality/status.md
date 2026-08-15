@@ -333,6 +333,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   runtime's bounded-attempt contract instead of rejecting an expected
   unavailable result. The complete benchmark passes, including 19,903
   successful publications in 20,000 contended attempts.
+- Closed Q-VER-012 after the Phase 5 scope query found that extracted Ogg, MP3,
+  ADM, HRTF, and dynamic-matrix submodules fell through to generic Q15. Exact
+  directory rules and fixture assertions now cover the intended Q10–Q14
+  owners, and the recorded 866-file inventory reflects those boundaries.
 
 ## Phase 5 Scope
 

@@ -2060,3 +2060,20 @@ results, and requires successful writer and reader progress. It completed
 | `zig build benchmark -Doptimize=ReleaseSafe --summary all` | Passed: 5/5 steps and every regression budget; the benchmark executable uses its pinned ReleaseFast configuration |
 | `zig fmt --check` over both changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Extracted Review-Unit Classification
+
+Behavior commit: `5930f9fa`
+
+The Phase 5 scope query found that Phase 4 implementation submodules below the
+Ogg, MP3, ADM, HRTF, and matrix directories fell through to generic Q15 even
+though their facades retained the intended Q10–Q14 assignments. The classifier
+now assigns every extracted directory to its owning unit. The fixture asserts
+exact counts for all five directory families, and the inventory tables record
+the regenerated unit and lexical metrics.
+
+| Check | Result |
+| --- | --- |
+| `scripts/test_quality_inventory_runner.sh` | Passed: exact Q10, Q11, Q13, and Q14 directory assignments plus unclassified-source rejection |
+| `scripts/check_quality_inventory.sh` | Passed: 866 source files and 478,499 lines classified |
+| `git diff --check` | Passed |
