@@ -29261,7 +29261,7 @@ fn fuzzMp3(_: void, smith: *std.testing.Smith) !void {
             end = try appendFrame(&storage, end, header);
             break :seed end;
         },
-        else => unreachable,
+        else => smith.slice(&storage),
     };
     if (length != 0 and smith.value(bool)) {
         const mutation_count = smith.valueRangeAtMost(u8, 1, 32);

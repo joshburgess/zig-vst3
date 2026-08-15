@@ -389,11 +389,13 @@ pub const PacketIterator = struct {
         if (self.packet_index == self.pages.limits.max_packets and
             self.packet_index != std.math.maxInt(u64))
         {
+            const page_exhausted = if (self.page) |page|
+                self.segment_index == page.lacing_values.len
+            else
+                true;
             if (self.packet_bytes == 0 and
                 self.pages.offset == self.pages.encoded.len and
-                (self.page == null or
-                    self.segment_index ==
-                        (self.page orelse unreachable).lacing_values.len))
+                page_exhausted)
             {
                 return null;
             }
@@ -1457,11 +1459,13 @@ pub const FilePacketReader = struct {
         if (self.packet_index == self.pages.limits.max_packets and
             self.packet_index != std.math.maxInt(u64))
         {
+            const page_exhausted = if (self.page) |page|
+                self.segment_index == page.lacing_values.len
+            else
+                true;
             if (self.packet_bytes == 0 and
                 self.pages.offset == self.pages.file_size and
-                (self.page == null or
-                    self.segment_index ==
-                        (self.page orelse unreachable).lacing_values.len))
+                page_exhausted)
             {
                 return null;
             }
@@ -31026,7 +31030,7 @@ fn fuzzOgg(_: void, smith: *std.testing.Smith) !void {
             }
             break :generated writer.bytes().len;
         },
-        else => unreachable,
+        else => smith.slice(&encoded),
     };
     if (length != 0 and smith.value(bool)) {
         const mutation_count = smith.valueRangeAtMost(u8, 1, 32);

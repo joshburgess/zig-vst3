@@ -3405,7 +3405,7 @@ fn fuzzIxml(_: void, smith: *std.testing.Smith) !void {
             @memcpy(storage[0..ixml_fuzz_structured.len], ixml_fuzz_structured);
             break :seed ixml_fuzz_structured.len;
         },
-        else => unreachable,
+        else => smith.slice(&storage),
     };
     if (length != 0 and smith.value(bool)) {
         const mutation_count = smith.valueRangeAtMost(u8, 1, 32);

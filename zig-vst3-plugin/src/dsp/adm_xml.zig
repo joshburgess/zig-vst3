@@ -3382,7 +3382,10 @@ fn identifierKey(identifier: adm.Identifier) u128 {
 }
 
 fn mixedKeyIndex(key: u128, comptime slot_count: usize) usize {
-    comptime std.debug.assert(std.math.isPowerOfTwo(slot_count));
+    comptime {
+        if (!std.math.isPowerOfTwo(slot_count))
+            @compileError("ADM identifier index slot count must be a power of two");
+    }
     var value: u64 = @truncate(key ^ (key >> 64));
     value ^= value >> 30;
     value *%= 0xbf58476d1ce4e5b9;
@@ -9664,7 +9667,7 @@ fn fuzzAdmXml(_: void, smith: *std.testing.Smith) !void {
             @memcpy(storage[0..adm_xml_fuzz_graph.len], adm_xml_fuzz_graph);
             break :seed adm_xml_fuzz_graph.len;
         },
-        else => unreachable,
+        else => smith.slice(&storage),
     };
     if (length != 0 and smith.value(bool)) {
         const mutation_count = smith.valueRangeAtMost(u8, 1, 32);
