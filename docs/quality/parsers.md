@@ -1,0 +1,221 @@
+# Parser and Persistent-State Inventory
+
+This ledger is the exhaustive Phase 3 review boundary for production sources
+that parse, decode, restore, import, or transport externally supplied data. It
+also records lexical false positives so the source set is mechanically closed.
+The inventory is not a claim that every family is complete. A family is closed
+only when its limits, failure behavior, fuzzing, sanitizer evidence, and any
+required independent oracle are recorded in the other quality evidence files.
+
+`scripts/check_parser_inventory.sh` derives candidates from the repository-wide
+parser metric and from persistence- and input-oriented filenames. It rejects
+missing, stale, duplicate, untracked, and out-of-scope entries. Its negative
+fixture proves that omitting either a lexical candidate or a semantic filename
+candidate fails the gate.
+
+## Semantic Families
+
+| Family | Input boundary | Limits and failure contract | Evidence and disposition |
+| --- | --- | --- | --- |
+| P-STATE | Generic parameter state, migration tables, and runtime delegates | The encoded count is 16-bit, migration tables are capped at 256, all migration work is bounded, and publication occurs only after complete validation. | Closed by Q-STATE-001. Native fuzzing, truncation, hostile migration, cross-build, and installed-package evidence are recorded in `verification.md`. |
+| P-EDITOR | Typed editor-state envelopes and migrations | Field capacity and each payload are compile-time bounded. Reads use a temporary state before publication. Migration-count and fuzz coverage still require an explicit audit. | Open review family. |
+| P-RESOURCE | Resource paths, reference metadata, recovery records, bounded byte accumulation, exchange, and job delegates | Individual types use fixed storage and transactional replacement, but the complete byte, count, and work-limit chain has not yet been recorded as one family. | Open review family. |
+| P-ADAPTER | VST3, LV2, and AUv2 state or host-option adapters | Parameter state delegates to P-STATE and AUv2 uses fixed maximum state storage. Host-provided option arrays and all wrapper failure paths still require an explicit family audit. | Open review family. |
+| P-MIDI | Fixed MIDI packets, UMP byte streams, SysEx assemblers, Standard MIDI Files, and native MIDI delegates | Standard MIDI Files have an explicit file policy and bounded linear validation. Packet and segmented-message implementations use fixed capacities, but the complete native and streaming boundary inventory remains to be recorded. | Q-MIDI-001 is closed for Standard MIDI Files. The remaining family is open. |
+| P-MIDI-CI | MIDI-CI discovery, profiles, process inquiry, property exchange, JSON, caches, resources, and sessions | Protocol fields and local stores are capacity-bounded. The aggregate payload, fragment, request, and JSON work limits require one end-to-end audit and dedicated hostile-input evidence. | Open high-priority review family. |
+| P-AUDIO | Ogg/Vorbis, MP3, FLAC, WAV/RF64/Wave64/AIFF, ID3, broadcast metadata, iXML, and XML metadata import | Public default and caller-selected byte, frame, channel, metadata, and XML limits are enforced before publication. Iterators require progress, arithmetic is checked, and decoding uses bounded caller storage or bounded allocation. | Closed by Q-CODEC-001, Q-PARSE-001, Q-IXML-001, Q-MP3-001, Q-OGG-001, Q-AUDIO-001, Q-FLAC-001, and Q-META-001. Fuzz, sanitizer, independent oracle, cross-build, and installed-package evidence are recorded. |
+| P-ADM | ADM XML, time forms, document construction, render planning, and bounded render delegates | XML source, document capacities, reference resolution, interpolation, and render work have explicit limits. Validation and construction are transactional. | Closed by Q-ADM-001. Fuzz, sanitizer, independent libear comparison, and installed-package evidence are recorded. |
+| P-SOFA | NetCDF SOFA HRTF containers | The public default is 1 GiB with a caller-selected override. The file is checked before NetCDF opens it, dimensions are bounded by fixed capacities, and destination publication is transactional. | Closed by Q-SOFA-001 with two public datasets and independent NetCDF, libmysofa, and libspatialaudio comparisons. |
+| P-ARA | ARA host archives, tuning-analysis archives, audio-source caches, transforms, and model delegates | Several paths use fixed archive buffers, checked readers, bounded model capacities, and transactional generations. The full host-controlled byte/count/work chain and archive fuzz evidence have not yet been consolidated. | Open high-priority review family. |
+| P-CONFIG | Device identifiers, standalone arguments, compatibility JSON, and textual IDs | Individual representations are bounded, but limits and failure behavior have not yet been recorded together. | Open review family. |
+| N-OUTPUT | Encoders, writers, writer fault injection, and output I/O adapters | These sources produce data and do not accept a structured untrusted-input format. Short-write and transactional-output evidence remains tracked by the owning review units. | Reviewed exclusion from the parser set. |
+| N-TEST | Production-located fixtures or test support selected by lexical heuristics | No shipping untrusted-input entry point. | Reviewed exclusion from the parser set. |
+| N-DELEGATE | Export surfaces, GUI transport, import routing, and views that delegate validation to an inventoried family | No independent structured parser. Any external bytes cross an inventoried downstream boundary. | Reviewed delegate. |
+| N-NONINPUT | Lexical matches such as state variables, numeric parsing helpers, raw interface declarations, and runtime lifecycle state | No structured untrusted-input parser or persistent-state restore implementation. | Reviewed lexical exclusion. |
+
+## Checked Source Set
+
+The block below is machine-readable. Each line assigns exactly one tracked
+candidate to a semantic family or reviewed exclusion.
+
+<!-- parser-inventory-begin -->
+```text
+P-MIDI zig-vst3-plugin/src/alsa_midi.zig
+P-MIDI zig-vst3-plugin/src/alsa_ump.zig
+P-MIDI zig-vst3-plugin/src/core_midi.zig
+N-DELEGATE zig-vst3-plugin/src/dsp.zig
+P-ADM zig-vst3-plugin/src/dsp/adm.zig
+P-ADM zig-vst3-plugin/src/dsp/adm_binaural.zig
+P-ADM zig-vst3-plugin/src/dsp/adm_direct_speaker_mapping.zig
+P-ADM zig-vst3-plugin/src/dsp/adm_hoa_decoder.zig
+P-ADM zig-vst3-plugin/src/dsp/adm_hoa_dual_band.zig
+P-ADM zig-vst3-plugin/src/dsp/adm_hoa_matrix.zig
+P-ADM zig-vst3-plugin/src/dsp/adm_hoa_radial.zig
+P-ADM zig-vst3-plugin/src/dsp/adm_render.zig
+P-ADM zig-vst3-plugin/src/dsp/adm_sample_time.zig
+P-ADM zig-vst3-plugin/src/dsp/adm_time.zig
+P-ADM zig-vst3-plugin/src/dsp/adm_xml.zig
+N-OUTPUT zig-vst3-plugin/src/dsp/aiff_writer.zig
+P-AUDIO zig-vst3-plugin/src/dsp/audio_file_reader.zig
+P-AUDIO zig-vst3-plugin/src/dsp/audio_metadata.zig
+P-AUDIO zig-vst3-plugin/src/dsp/broadcast_metadata.zig
+N-NONINPUT zig-vst3-plugin/src/dsp/denormals.zig
+N-NONINPUT zig-vst3-plugin/src/dsp/fft.zig
+N-NONINPUT zig-vst3-plugin/src/dsp/file_reader_io.zig
+N-OUTPUT zig-vst3-plugin/src/dsp/file_writer_faults.zig
+N-OUTPUT zig-vst3-plugin/src/dsp/file_writer_io.zig
+N-TEST zig-vst3-plugin/src/dsp/fixture_runner.zig
+P-AUDIO zig-vst3-plugin/src/dsp/flac.zig
+P-SOFA zig-vst3-plugin/src/dsp/hrtf_sofa.zig
+P-AUDIO zig-vst3-plugin/src/dsp/id3.zig
+P-AUDIO zig-vst3-plugin/src/dsp/ixml.zig
+N-NONINPUT zig-vst3-plugin/src/dsp/kernel_dispatch.zig
+P-AUDIO zig-vst3-plugin/src/dsp/mp3.zig
+P-AUDIO zig-vst3-plugin/src/dsp/ogg.zig
+N-OUTPUT zig-vst3-plugin/src/dsp/pcm_encode.zig
+N-OUTPUT zig-vst3-plugin/src/dsp/rf64_writer.zig
+N-NONINPUT zig-vst3-plugin/src/dsp/state_variable.zig
+N-OUTPUT zig-vst3-plugin/src/dsp/wav_writer.zig
+P-AUDIO zig-vst3-plugin/src/dsp/wave64_metadata.zig
+N-OUTPUT zig-vst3-plugin/src/dsp/wave64_writer.zig
+P-AUDIO zig-vst3-plugin/src/dsp/xml.zig
+P-EDITOR zig-vst3-plugin/src/editor_state.zig
+N-DELEGATE zig-vst3-plugin/src/gui.zig
+P-AUDIO zig-vst3-plugin/src/gui_audio_file_importer.zig
+N-DELEGATE zig-vst3-plugin/src/gui_audio_sample_store.zig
+N-DELEGATE zig-vst3-plugin/src/gui_file_drop.zig
+N-DELEGATE zig-vst3-plugin/src/gui_file_importer.zig
+N-DELEGATE zig-vst3-plugin/src/gui_graph.zig
+N-DELEGATE zig-vst3-plugin/src/gui_ir_convolution.zig
+N-DELEGATE zig-vst3-plugin/src/gui_ir_editor.zig
+N-DELEGATE zig-vst3-plugin/src/gui_preset_browser.zig
+N-NONINPUT zig-vst3-plugin/src/hoa_tests.zig
+P-ADAPTER zig-vst3-plugin/src/lv2.zig
+P-ADAPTER zig-vst3-plugin/src/lv2_metadata.zig
+P-ADAPTER zig-vst3-plugin/src/lv2_ui.zig
+N-NONINPUT zig-vst3-plugin/src/parameters.zig
+N-NONINPUT zig-vst3-plugin/src/parameters/access.zig
+N-NONINPUT zig-vst3-plugin/src/parameters/common.zig
+N-NONINPUT zig-vst3-plugin/src/parameters/descriptors.zig
+N-NONINPUT zig-vst3-plugin/src/parameters/set.zig
+N-NONINPUT zig-vst3-plugin/src/parameters/smoothing.zig
+N-NONINPUT zig-vst3-plugin/src/parameters/value.zig
+P-MIDI zig-vst3-plugin/src/plugin/alsa_midi.zig
+P-MIDI zig-vst3-plugin/src/plugin/alsa_midi_shim.c
+P-MIDI zig-vst3-plugin/src/plugin/alsa_midi_shim.h
+P-MIDI zig-vst3-plugin/src/plugin/alsa_ump.zig
+P-MIDI zig-vst3-plugin/src/plugin/alsa_ump_shim.c
+P-MIDI zig-vst3-plugin/src/plugin/alsa_ump_shim.h
+N-NONINPUT zig-vst3-plugin/src/plugin/audio_layout.zig
+P-CONFIG zig-vst3-plugin/src/plugin/config.zig
+P-MIDI zig-vst3-plugin/src/plugin/core_midi.zig
+P-MIDI zig-vst3-plugin/src/plugin/core_midi_shim.c
+P-MIDI zig-vst3-plugin/src/plugin/core_midi_shim.h
+P-CONFIG zig-vst3-plugin/src/plugin/device_catalog.zig
+P-STATE zig-vst3-plugin/src/plugin/instance.zig
+N-NONINPUT zig-vst3-plugin/src/plugin/lifecycle.zig
+P-MIDI zig-vst3-plugin/src/plugin/midi_scheduler_queue.h
+N-NONINPUT zig-vst3-plugin/src/plugin/pipewire_shim.c
+P-STATE zig-vst3-plugin/src/plugin/runtime.zig
+N-NONINPUT zig-vst3-plugin/src/plugin/spec.zig
+P-CONFIG zig-vst3-plugin/src/plugin/standalone_shell.zig
+N-TEST zig-vst3-plugin/src/plugin/tests.zig
+P-MIDI zig-vst3-plugin/src/plugin/ump_scheduler_queue.h
+P-MIDI zig-vst3-plugin/src/plugin/win_midi.zig
+P-MIDI zig-vst3-plugin/src/plugin/win_midi_shim.c
+P-MIDI zig-vst3-plugin/src/plugin/win_midi_shim.h
+P-MIDI zig-vst3-plugin/src/plugin/win_ump.zig
+P-MIDI zig-vst3-plugin/src/plugin/win_ump_ref_count.hpp
+P-MIDI zig-vst3-plugin/src/plugin/win_ump_shim.cpp
+P-MIDI zig-vst3-plugin/src/plugin/win_ump_shim.h
+P-MIDI zig-vst3-plugin/src/plugin/win_ump_unavailable.c
+P-MIDI zig-vst3-plugin/src/process.zig
+P-MIDI zig-vst3-plugin/src/process/midi1.zig
+P-MIDI zig-vst3-plugin/src/process/midi2.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_device.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_process.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_process_report.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_profile.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_profile_host.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_property.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_property_cache.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_property_controller_resources.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_property_host.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_property_json.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_property_resources.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_property_session.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_ci_property_standard_resources.zig
+P-MIDI-CI zig-vst3-plugin/src/process/midi_endpoint_session.zig
+P-MIDI zig-vst3-plugin/src/process/midi_file.zig
+P-MIDI zig-vst3-plugin/src/process/midi_flex.zig
+P-MIDI zig-vst3-plugin/src/process/midi_flex_text.zig
+P-MIDI zig-vst3-plugin/src/process/midi_mixed_data.zig
+P-MIDI zig-vst3-plugin/src/process/midi_rpn.zig
+P-MIDI zig-vst3-plugin/src/process/midi_segmented.zig
+P-MIDI zig-vst3-plugin/src/process/midi_stream.zig
+P-MIDI zig-vst3-plugin/src/process/midi_stream_text.zig
+P-MIDI zig-vst3-plugin/src/process/midi_sysex7.zig
+P-MIDI zig-vst3-plugin/src/process/midi_sysex8.zig
+P-MIDI zig-vst3-plugin/src/process/midi_system.zig
+P-MIDI zig-vst3-plugin/src/process/midi_ump.zig
+P-MIDI zig-vst3-plugin/src/process/midi_ump_bytes.zig
+P-MIDI zig-vst3-plugin/src/process/midi_utility.zig
+P-MIDI zig-vst3-plugin/src/process/mpe.zig
+N-NONINPUT zig-vst3-plugin/src/realtime_audit.zig
+P-RESOURCE zig-vst3-plugin/src/resource.zig
+P-RESOURCE zig-vst3-plugin/src/resource/byte_accumulator.zig
+P-RESOURCE zig-vst3-plugin/src/resource/exchange.zig
+P-RESOURCE zig-vst3-plugin/src/resource/job.zig
+P-RESOURCE zig-vst3-plugin/src/resource/path.zig
+P-RESOURCE zig-vst3-plugin/src/resource/recovery.zig
+P-RESOURCE zig-vst3-plugin/src/resource/reference.zig
+N-DELEGATE zig-vst3-plugin/src/root.zig
+P-STATE zig-vst3-plugin/src/state.zig
+P-STATE zig-vst3-plugin/src/state/codec.zig
+P-STATE zig-vst3-plugin/src/state/format.zig
+P-STATE zig-vst3-plugin/src/state/migrations.zig
+P-STATE zig-vst3-plugin/src/state/tests.zig
+P-MIDI zig-vst3-plugin/src/win_midi.zig
+P-MIDI zig-vst3-plugin/src/win_ump.zig
+P-ARA zig-vst3/src/ara_api.zig
+P-ARA zig-vst3/src/ara_content_fades.zig
+P-ARA zig-vst3/src/ara_document_controller.zig
+P-ARA zig-vst3/src/ara_extension.zig
+P-ARA zig-vst3/src/ara_factory.zig
+P-ARA zig-vst3/src/ara_model.zig
+P-ARA zig-vst3/src/ara_playback_renderer.zig
+P-ARA zig-vst3/src/ara_registration.zig
+P-ARA zig-vst3/src/ara_source_cache.zig
+P-ARA zig-vst3/src/ara_spectral_transform.zig
+P-ARA zig-vst3/src/ara_tempo_warp.zig
+P-ARA zig-vst3/src/ara_tuning_analysis.zig
+P-ARA zig-vst3/src/ara_vst3.zig
+N-NONINPUT zig-vst3/src/editor_smoke_controller.zig
+N-DELEGATE zig-vst3/src/gui_ir_transport.zig
+N-DELEGATE zig-vst3/src/gui_note_transport.zig
+N-NONINPUT zig-vst3/src/host_restart_transport.zig
+N-NONINPUT zig-vst3/src/pluginterfaces/vst/ivstautomationstate.zig
+P-MIDI zig-vst3/src/pluginterfaces/vst/ivstmidicontrollers.zig
+P-MIDI zig-vst3/src/pluginterfaces/vst/ivstmidilearn.zig
+P-MIDI zig-vst3/src/pluginterfaces/vst/ivstmidimapping2.zig
+N-NONINPUT zig-vst3/src/pluginterfaces/vst/ivstparameterchanges.zig
+N-NONINPUT zig-vst3/src/pluginterfaces/vst/ivstparameterfunctionname.zig
+N-NONINPUT zig-vst3/src/pluginterfaces/vst/ivstremapparamid.zig
+N-NONINPUT zig-vst3/src/pluginterfaces/vst/vstaudioprocessoralgo.zig
+N-NONINPUT zig-vst3/src/pluginterfaces/vst/vstpresetfile.zig
+N-NONINPUT zig-vst3/src/pluginterfaces/vst/vstpresetkeys.zig
+P-RESOURCE zig-vst3/src/resource_path_transport.zig
+P-CONFIG zig-vst3/src/tuid.zig
+N-NONINPUT zig-vst3/src/vst_parameter_changes.zig
+N-NONINPUT zig-vst3/src/vst_parameter_finder.zig
+P-CONFIG zig-vst3/src/vst_plugin_compatibility.zig
+N-DELEGATE zig-vst3/src/vstgui.zig
+N-DELEGATE zig-vst3/src/vstgui_editor_view.zig
+N-DELEGATE zig-vst3/src/vstgui_lv2_backend.zig
+N-DELEGATE zig-vst3/src/vstgui_single_parameter_controller.zig
+P-ADAPTER zig-vst3/src/zig_vst3_plugin_bridge.zig
+P-ADAPTER zig-vst3/src/zig_vst3_plugin_effect.zig
+P-ADAPTER zig-vst3/src/zig_vst3_plugin_runtime_adapter.zig
+```
+<!-- parser-inventory-end -->
