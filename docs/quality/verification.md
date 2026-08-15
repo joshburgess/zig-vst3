@@ -1907,10 +1907,13 @@ All public declarations retain their prior names and exact identities. The
 encoder analysis state remains with the encoder because it owns encoder
 configuration and the analysis-side transform history.
 
-This is an intermediate Q-ARCH-001 boundary. The cohesion ledger records the
-new decoder module as `SPLIT` because codec state and positional reader state
-still form two separable contracts. The facade also remains `SPLIT` until
-reservoir ownership is separated from encoding and file writing.
+The decoder boundary is now refined into three contracts. `decoder.zig` owns
+requantization, stereo processing, synthesis, and frame and stream decoder
+state. `reader.zig` owns scanning, recovery, seeking, and positional I/O.
+`metadata.zig` provides their passive Xing, VBRI, and summary values without a
+dependency cycle. Each focused module is below the large-source threshold.
+The facade remains `SPLIT` until reservoir ownership is separated from
+encoding and file writing.
 
 | Check | Result |
 | --- | --- |
