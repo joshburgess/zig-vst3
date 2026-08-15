@@ -2887,6 +2887,24 @@ pub fn build(b: *std.Build) void {
     ump_stream_fuzz_step.dependOn(
         &b.addRunArtifact(ump_stream_fuzz_tests).step,
     );
+    const midi_stream_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        midi_stream_fuzz_module.link_libc = true;
+    const midi_stream_fuzz_tests = b.addTest(.{
+        .root_module = midi_stream_fuzz_module,
+        .filters = &.{"fuzz failure-atomic MIDI segmented assemblers"},
+    });
+    const midi_stream_fuzz_step = b.step(
+        "test-midi-stream-fuzz",
+        "Run or fuzz fixed-capacity MIDI segmented assemblers",
+    );
+    midi_stream_fuzz_step.dependOn(
+        &b.addRunArtifact(midi_stream_fuzz_tests).step,
+    );
     const ump_stream_test_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,

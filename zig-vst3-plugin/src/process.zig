@@ -460,3 +460,7 @@ pub const AudioBusRanges = context_mod.AudioBusRanges;
 pub const BoundedProcessContext =
     context_mod.BoundedProcessContext;
 pub const ProcessContext = context_mod.ProcessContext;
+
+test {
+    _ = @import("process/midi_stream_fuzz.zig");
+}
