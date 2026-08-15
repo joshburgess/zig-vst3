@@ -51,6 +51,21 @@ test "ADM renderer facade preserves exact public identities" {
             core.MatrixCoefficientMixer(f32, 8),
     );
     try std.testing.expect(
+        StaticMatrixMixer(f64) == core.StaticMatrixMixer(f64),
+    );
+    try std.testing.expect(
+        VariableMatrixCoefficientMixer(f32, 8, 4, 16, 5) ==
+            core.VariableMatrixCoefficientMixer(f32, 8, 4, 16, 5),
+    );
+    try std.testing.expect(MatrixVariableKind == core.MatrixVariableKind);
+    try std.testing.expect(
+        MatrixVariableInterpolation == core.MatrixVariableInterpolation,
+    );
+    try std.testing.expect(MatrixVariablePoint == core.MatrixVariablePoint);
+    try std.testing.expect(
+        MatrixVariableTimeline == core.MatrixVariableTimeline,
+    );
+    try std.testing.expect(
         DirectSpeakerRouter(f64) == core.DirectSpeakerRouter(f64),
     );
 }

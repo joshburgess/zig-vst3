@@ -1,3 +1,4 @@
+const std = @import("std");
 const adm_polar_extent = @import("../adm_polar_extent.zig");
 const adm_xml = @import("../adm_xml.zig");
 
@@ -32,3 +33,52 @@ pub const ScreenEdges = struct {
     bottom_elevation_degrees: f64,
     top_elevation_degrees: f64,
 };
+
+pub fn renderGain(
+    comptime Sample: type,
+    gain_value: adm_xml.Gain,
+) !Sample {
+    const linear_gain = switch (gain_value.unit) {
+        .linear => gain_value.value,
+        .decibels => if (std.math.isInf(gain_value.value) and
+            gain_value.value < 0.0)
+            0.0
+        else
+            std.math.pow(f64, 10.0, gain_value.value / 20.0),
+    };
+    const gain: Sample = @floatCast(linear_gain);
+    if (!std.math.isFinite(gain))
+        return error.InvalidAdmRendererGain;
+    return gain;
+}
+
+pub fn slicesOverlap(
+    comptime Sample: type,
+    input: []const Sample,
+    output: []Sample,
+) bool {
+    if (input.len == 0 or output.len == 0) return false;
+    const input_start = @intFromPtr(input.ptr);
+    const output_start = @intFromPtr(output.ptr);
+    const input_bytes = std.math.mul(
+        usize,
+        input.len,
+        @sizeOf(Sample),
+    ) catch return true;
+    const output_bytes = std.math.mul(
+        usize,
+        output.len,
+        @sizeOf(Sample),
+    ) catch return true;
+    const input_end = std.math.add(
+        usize,
+        input_start,
+        input_bytes,
+    ) catch return true;
+    const output_end = std.math.add(
+        usize,
+        output_start,
+        output_bytes,
+    ) catch return true;
+    return input_start < output_end and output_start < input_end;
+}
