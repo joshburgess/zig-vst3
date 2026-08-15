@@ -77,6 +77,7 @@ Q15	zig-vst3-plugin/src/dsp.zig	EXCLUDED	public module facade
 Q15	zig-vst3-plugin/src/dsp/audio_block.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/ballistics.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/biquad.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/buffer_regions.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/butterworth_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/chebyshev2_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/chebyshev_design.zig	EVIDENCE	N-FILTER

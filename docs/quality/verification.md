@@ -2137,3 +2137,23 @@ overlap after construction.
 | `scripts/check_quality_numerics_inventory.sh` | Passed after disposition update: 50 evidence, 32 review, and 18 excluded sources |
 | `scripts/check_quality_inventory.sh` | Passed: 868 source files and 478,795 lines classified |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Primitive Block Alias Safety
+
+Behavior commit: `23e93442`
+
+The continuing foundational review found that six single-input block
+processor families accepted shifted input and output slices. Their forward
+loops could overwrite samples before consuming them, making output and
+internal state depend on the alias offset. A shared checked region classifier
+now permits exact in-place operation and disjoint buffers while conservatively
+rejecting every other overlap before mutation. Audio-block alias validation
+uses the same overflow-safe classifier.
+
+| Check | Result |
+| --- | --- |
+| Focused Debug primitive selection | Passed: 41/41 tests |
+| Focused ReleaseSafe primitive selection | Passed: 41/41 tests |
+| `scripts/check_quality_numerics_inventory.sh` | Passed after adding the region primitive: 51 evidence, 32 review, and 18 excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 869 source files and 478,960 lines classified |
+| `git diff --check` | Passed |

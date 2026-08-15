@@ -352,6 +352,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   checked transactionally, and exact corresponding in-place use remains
   supported. The ledger now has 50 evidence, 32 review, and 18 excluded
   records.
+- Closed high Q-MEM-012 after the same audit pattern found shifted input and
+  output aliases in six foundational block processor families. A shared
+  overflow-safe region classifier preserves exact in-place processing and
+  rejects every other overlap before output or state changes. The ledger now
+  has 51 evidence, 32 review, and 18 excluded records.
 
 ## Phase 5 Scope
 
