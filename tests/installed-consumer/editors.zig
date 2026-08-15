@@ -2401,6 +2401,10 @@ test "installed package exposes toolkit-neutral GUI models" {
     );
     const unicode_text = try plugin.editor_state.Text.init("Hall \xe2\x98\x83");
     try std.testing.expect(unicode_text.valid());
+    try std.testing.expectEqual(
+        @as(usize, 256),
+        plugin.editor_state.maximum_migrations,
+    );
 
     const viewport_config = plugin.gui_viewport.Config{ .initial_zoom = 2.0 };
     var viewport = try plugin.gui_viewport.State.init(viewport_config);

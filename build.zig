@@ -2787,6 +2787,70 @@ pub fn build(b: *std.Build) void {
     const zig_vst3_plugin_core_tests = b.addTest(.{
         .root_module = zig_vst3_plugin_core_test_module,
     });
+    const editor_state_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        editor_state_fuzz_module.link_libc = true;
+    const editor_state_fuzz_tests = b.addTest(.{
+        .root_module = editor_state_fuzz_module,
+        .filters = &.{"fuzz failure-atomic bounded editor state restore"},
+    });
+    const editor_state_fuzz_step = b.step(
+        "test-editor-state-fuzz",
+        "Run or fuzz failure-atomic bounded editor state restore",
+    );
+    editor_state_fuzz_step.dependOn(
+        &b.addRunArtifact(editor_state_fuzz_tests).step,
+    );
+    const editor_state_test_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        editor_state_test_module.link_libc = true;
+    const editor_state_tests = b.addTest(.{
+        .root_module = editor_state_test_module,
+        .filters = &.{"editor state"},
+    });
+    const editor_state_test_step = b.step(
+        "test-editor-state",
+        "Run editor-state restore and cross-target tests",
+    );
+    editor_state_test_step.dependOn(
+        &b.addRunArtifact(editor_state_tests).step,
+    );
+    for ([_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    }) |cross_target| {
+        const editor_state_cross_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        const editor_state_cross_tests = b.addTest(.{
+            .root_module = editor_state_cross_module,
+            .filters = &.{"editor state"},
+        });
+        editor_state_test_step.dependOn(&editor_state_cross_tests.step);
+    }
     const midi_file_fuzz_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,

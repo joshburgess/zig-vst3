@@ -4,11 +4,15 @@ pub const wire_version: u16 = 1;
 pub const maximum_fields: usize = 64;
 pub const maximum_text_bytes: usize = 96;
 pub const maximum_envelope_points: usize = 32;
+pub const maximum_migrations: usize = 256;
 pub const maximum_entry_payload_bytes: usize = 1 + maximum_envelope_points * 20;
 pub const encoded_header_size: usize = 8 + @sizeOf(u16) * 4;
 pub const encoded_entry_header_size: usize = @sizeOf(u32) + @sizeOf(u8) + @sizeOf(u16);
 
 const magic = "ZGUISTAT";
+const fuzz_seed = magic ++
+    "\x01\x00\x01\x00\x01\x00\x00\x00" ++
+    "\x01\x00\x00\x00\x01\x01\x00\x01";
 
 pub const Kind = enum(u8) {
     boolean = 1,
@@ -190,7 +194,7 @@ pub fn Store(comptime schema_version: u16, comptime fields: []const Field) type 
         }
 
         pub fn read(self: *Self, reader: anytype, migrations: []const Migration) !ReadReport {
-            try validateMigrations(migrations, schema_version);
+            const migration_index = try MigrationIndex.init(migrations, schema_version);
             var header_magic: [magic.len]u8 = undefined;
             try reader.readSliceAll(&header_magic);
             if (!std.mem.eql(u8, &header_magic, magic)) return error.InvalidEditorStateMagic;
@@ -216,7 +220,7 @@ pub fn Store(comptime schema_version: u16, comptime fields: []const Field) type 
                 const payload_len = try reader.takeInt(u16, .little);
                 if (payload_len > scratch.len) return error.EditorStateEntryTooLarge;
                 try reader.readSliceAll(scratch[0..payload_len]);
-                const id = migratedId(source_version, schema_version, stored_id, migrations);
+                const id = migration_index.migratedId(source_version, stored_id);
                 const index = fieldIndex(id) orelse {
                     report.ignored_count += 1;
                     continue;
@@ -386,30 +390,106 @@ fn readPoint(reader: anytype) !Point {
     };
 }
 
-fn validateMigrations(migrations: []const Migration, current_version: u16) !void {
-    for (migrations, 0..) |migration, index| {
-        if (migration.from_version == 0 or migration.from_version >= current_version) return error.InvalidEditorStateMigration;
-        if (migration.old_id == 0 or migration.new_id == 0) return error.InvalidEditorStateMigration;
-        for (migrations[0..index]) |previous| {
-            if (previous.from_version == migration.from_version and previous.old_id == migration.old_id) {
-                return error.DuplicateEditorStateMigration;
-            }
+const MigrationIndex = struct {
+    entries: [maximum_migrations]Migration = undefined,
+    len: usize = 0,
+    current_version: u16,
+
+    fn init(migrations: []const Migration, current_version: u16) !MigrationIndex {
+        if (migrations.len > maximum_migrations)
+            return error.EditorStateMigrationLimitExceeded;
+
+        var result = MigrationIndex{ .current_version = current_version };
+        result.len = migrations.len;
+        @memcpy(result.entries[0..migrations.len], migrations);
+        for (result.entries[0..result.len]) |migration| {
+            if (migration.from_version == 0 or migration.from_version >= current_version)
+                return error.InvalidEditorStateMigration;
+            if (migration.old_id == 0 or migration.new_id == 0)
+                return error.InvalidEditorStateMigration;
         }
+
+        var index: usize = 1;
+        while (index < result.len) : (index += 1) {
+            const value = result.entries[index];
+            var insertion = index;
+            while (insertion != 0 and lessThan(value, result.entries[insertion - 1])) {
+                result.entries[insertion] = result.entries[insertion - 1];
+                insertion -= 1;
+            }
+            result.entries[insertion] = value;
+        }
+        index = 1;
+        while (index < result.len) : (index += 1) {
+            const migration = result.entries[index];
+            const previous = result.entries[index - 1];
+            if (previous.from_version == migration.from_version and previous.old_id == migration.old_id)
+                return error.DuplicateEditorStateMigration;
+        }
+        return result;
     }
+
+    fn migratedId(self: *const MigrationIndex, source_version: u16, stored_id: u32) u32 {
+        var id = stored_id;
+        var start: usize = 0;
+        while (start < self.len) {
+            const version = self.entries[start].from_version;
+            var end = start + 1;
+            while (end < self.len and self.entries[end].from_version == version) : (end += 1) {}
+            if (version >= source_version and version < self.current_version) {
+                for (self.entries[start..end]) |migration| {
+                    if (migration.old_id == id) {
+                        id = migration.new_id;
+                        break;
+                    }
+                }
+            }
+            start = end;
+        }
+        return id;
+    }
+
+    fn lessThan(left: Migration, right: Migration) bool {
+        if (left.from_version != right.from_version)
+            return left.from_version < right.from_version;
+        return left.old_id < right.old_id;
+    }
+};
+
+test "fuzz failure-atomic bounded editor state restore" {
+    try std.testing.fuzz({}, fuzzEditorStateRestore, .{
+        .corpus = &.{fuzz_seed},
+    });
 }
 
-fn migratedId(source_version: u16, current_version: u16, stored_id: u32, migrations: []const Migration) u32 {
-    var id = stored_id;
-    var version = source_version;
-    while (version < current_version) : (version += 1) {
-        for (migrations) |migration| {
-            if (migration.from_version == version and migration.old_id == id) {
-                id = migration.new_id;
-                break;
-            }
+fn fuzzEditorStateRestore(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    const State = Store(3, &.{
+        .{ .id = 2, .default = .{ .text = comptime Text.init("default") catch unreachable } },
+        .{ .id = 3, .default = .{ .boolean = false } },
+    });
+    const migrations = [_]Migration{
+        .{ .from_version = 2, .old_id = 9, .new_id = 3 },
+        .{ .from_version = 1, .old_id = 1, .new_id = 9 },
+    };
+    var storage: [State.maximumEncodedSize()]u8 = undefined;
+    const length = smith.slice(&storage);
+    var reader = std.Io.Reader.fixed(storage[0..length]);
+    var state = State.init();
+    try state.set(2, .{ .text = try Text.init("unchanged") });
+    try state.set(3, .{ .boolean = true });
+    if (state.read(&reader, &migrations)) |report| {
+        if (report.decoded_count > maximum_fields or
+            report.restored_count > report.decoded_count or
+            report.ignored_count > report.decoded_count or
+            !state.valid())
+        {
+            return error.InvalidEditorStateFuzzResult;
         }
+    } else |_| {
+        try std.testing.expectEqualStrings("unchanged", state.get(2).?.text.slice());
+        try std.testing.expect(state.get(3).?.boolean);
     }
-    return id;
 }
 
 test "editor state round trips every supported value" {
@@ -510,6 +590,65 @@ test "editor state migrates field IDs between schema versions" {
     const report = try new.read(&reader, &.{.{ .from_version = 1, .old_id = 4, .new_id = 9 }});
     try std.testing.expectEqual(@as(u32, 7), new.get(9).?.index);
     try std.testing.expectEqual(@as(u16, 1), report.source_schema_version);
+}
+
+test "editor state migration work is bounded at the exact limit" {
+    const Old = Store(1, &.{.{ .id = 1, .default = .{ .index = 0 } }});
+    const New = Store(maximum_migrations + 1, &.{.{
+        .id = maximum_migrations + 1,
+        .default = .{ .index = 0 },
+    }});
+    var migrations: [maximum_migrations]Migration = undefined;
+    for (&migrations, 1..) |*migration, version| {
+        migration.* = .{
+            .from_version = @intCast(version),
+            .old_id = @intCast(version),
+            .new_id = @intCast(version + 1),
+        };
+    }
+
+    var old = Old.init();
+    try old.set(1, .{ .index = 19 });
+    var bytes: [Old.maximumEncodedSize()]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try old.write(&writer);
+    var reader = std.Io.Reader.fixed(writer.buffered());
+    var new = New.init();
+    const report = try new.read(&reader, &migrations);
+    try std.testing.expectEqual(@as(usize, 1), report.restored_count);
+    try std.testing.expectEqual(@as(u32, 19), new.get(maximum_migrations + 1).?.index);
+
+    var too_many: [maximum_migrations + 1]Migration = undefined;
+    @memcpy(too_many[0..maximum_migrations], &migrations);
+    too_many[maximum_migrations] = .{
+        .from_version = 1,
+        .old_id = maximum_migrations + 2,
+        .new_id = maximum_migrations + 3,
+    };
+    try new.set(maximum_migrations + 1, .{ .index = 23 });
+    var rejected_reader = std.Io.Reader.fixed(writer.buffered());
+    try std.testing.expectError(
+        error.EditorStateMigrationLimitExceeded,
+        new.read(&rejected_reader, &too_many),
+    );
+    try std.testing.expectEqual(@as(usize, 0), rejected_reader.seek);
+    try std.testing.expectEqual(@as(u32, 23), new.get(maximum_migrations + 1).?.index);
+}
+
+test "editor state applies at most one migration per schema version" {
+    const index = try MigrationIndex.init(&.{
+        .{ .from_version = 1, .old_id = 2, .new_id = 3 },
+        .{ .from_version = 1, .old_id = 1, .new_id = 2 },
+        .{ .from_version = 2, .old_id = 2, .new_id = 4 },
+    }, 3);
+    try std.testing.expectEqual(@as(u32, 4), index.migratedId(1, 1));
+    try std.testing.expectError(
+        error.DuplicateEditorStateMigration,
+        MigrationIndex.init(&.{
+            .{ .from_version = 1, .old_id = 1, .new_id = 2 },
+            .{ .from_version = 1, .old_id = 1, .new_id = 3 },
+        }, 3),
+    );
 }
 
 test "editor state rejects every truncated prefix transactionally" {
