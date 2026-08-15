@@ -112,6 +112,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   validated table once before state input is read, and fuzzing arbitrary
   parameter-state bytes for failure-atomic restore. The broad state selection,
   Windows cross-build, and installed-package matrix pass.
+- Added a checked parser and persistent-state ledger covering 177 production
+  sources across eleven input families and four reviewed exclusions. The
+  repository gate derives both lexical and semantic filename candidates, and
+  negative fixtures prove that omitting either candidate class fails.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.
@@ -253,6 +257,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Complete the Phase 3 parser and state inventory. Record explicit limits and
-failure-atomicity for every untrusted-input path, then close remaining coverage
-gaps with focused fuzz, corruption, oracle, and sanitizer evidence.
+Audit the open P-ARA and P-MIDI-CI families from the checked parser inventory.
+Record their complete host-controlled byte, count, allocation, and work-limit
+chains, then close defects and coverage gaps with focused fuzz, corruption,
+state-model, and sanitizer evidence.

@@ -54,6 +54,8 @@ Phase 0 creates `docs/quality/` with these maintained records:
   atomic orders so later synchronization changes require renewed review
 - `realtime.md`: checked processing entry points, transitive helper chains,
   permitted operations, work bounds, and failure behavior
+- `parsers.md`: checked parser and persistent-state source inventory, semantic
+  families, limits, failure contracts, evidence state, and reviewed exclusions
 - `status.md`: phase state, completed scope, and next review target
 
 Findings use `Q-<area>-<number>` identifiers and one of four severities:

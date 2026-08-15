@@ -1454,3 +1454,30 @@ KiB, and requires every failed restore to preserve both prior values exactly.
 | `scripts/check_quality_inventory.sh` | Passed: 823 files and 473,445 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Checked Parser and Persistent-State Inventory
+
+Behavior commit: `a2b0bb64`
+
+The Phase 3 ledger assigns every production source selected by the repository
+parser metric or by persistence- and input-oriented filenames to one of eleven
+semantic input families or four reviewed exclusions. The gate rejects missing,
+stale, duplicate, untracked, out-of-scope, and unknown-family entries. Its
+fixture independently removes one lexical candidate and one filename-derived
+candidate, and requires both omissions to fail.
+
+The ledger distinguishes inventory coverage from review completion. P-STATE,
+P-AUDIO, P-ADM, and P-SOFA point to their closed findings and evidence. The
+remaining families stay explicitly open, with P-ARA and P-MIDI-CI selected as
+the next high-priority audits.
+
+| Check | Result |
+| --- | --- |
+| `scripts/check_parser_inventory.sh` | Passed: 177 production sources classified |
+| `scripts/test_parser_inventory_runner.sh` | Passed: baseline accepted; omitted lexical candidate, omitted semantic filename candidate, and unknown family rejected |
+| `scripts/check_quality_inventory.sh` | Passed: 825 files and 473,643 lines classified |
+| `scripts/test_quality_inventory_runner.sh` | Passed |
+| `bash -n scripts/check_parser_inventory.sh scripts/test_parser_inventory_runner.sh` | Passed |
+| `shellcheck scripts/check_parser_inventory.sh scripts/test_parser_inventory_runner.sh` | Passed |
+| `zig fmt --check build.zig` | Passed |
+| `git diff --check` | Passed |
