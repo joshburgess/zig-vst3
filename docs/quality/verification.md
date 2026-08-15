@@ -1584,3 +1584,36 @@ fuzz gate before the complete rerun.
 | `zig build test --summary all` | Passed: 446/446 steps, 7,556 tests passed, and six expected platform skips across the complete repository matrix |
 | `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,484 lines classified |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded Editor-State Migration
+
+Behavior commit: `88d286da`
+
+The P-EDITOR review covered typed values, encoded field and payload extents,
+schema migration, truncation, corruption, and publication. Schema declarations
+permit at most 64 fields. The wire count is checked against that limit before
+entry traversal, and all payload decoding uses a 641-byte fixed scratch buffer.
+Text and envelope values retain their own exact capacities and validity checks.
+
+The remaining caller-provided migration table had no limit. Validation was
+quadratic, and field restoration scanned the complete table once for every
+schema version. Restoration now rejects more than 256 migrations before reader
+access, validates and orders accepted entries once in fixed storage, and visits
+that index once per decoded field. Grouped traversal preserves the existing
+rule that at most one migration applies to a field in each schema version.
+
+The exact-limit test resolves a 256-link chain and rejects 257 migrations
+without consuming input or changing the destination. The dedicated mutation
+harness exercises migration, all header and entry lengths, value decoding, and
+failure-atomic publication.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-editor-state --summary all` | Passed: 6/6 steps and 19/19 tests, including native execution and ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| `zig build test-editor-state-fuzz --summary all` | Passed: 3/3 steps and 7/7 tests |
+| `zig build test-editor-state-fuzz --fuzz=100K` | Passed: 100,059 executions, 57 unique inputs, and 106 of 21,867 instrumented branches without a failure |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including the public migration limit |
+| `scripts/check_parser_inventory.sh` | Passed: 177 production sources classified |
+| `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,691 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
