@@ -21,6 +21,18 @@ pub const ChannelMode = enum(u2) {
 pub const maximum_free_format_frame_bytes: usize = 16 * 1024;
 pub const maximum_encoded_frame_bytes: usize = 1441;
 pub const maximum_encoded_main_data_bytes: usize = 2048;
+pub const Limits = struct {
+    max_stream_bytes: u64 = std.math.maxInt(u32),
+    max_frames: u64 = 10_000_000,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_stream_bytes < 4 or self.max_frames == 0)
+            return error.InvalidMp3Limits;
+    }
+};
+
+pub const default_limits = Limits{};
+
 const maximum_frame_main_data_bytes: usize =
     (4 * std.math.maxInt(u12) + 7) / 8;
 const decoder_delay_samples: u16 = 528 + 1;
@@ -14486,8 +14498,18 @@ pub const Stream = struct {
     frame_index: u64 = 0,
     sample_offset: u64 = 0,
     free_frame_base_bytes: ?usize = null,
+    limits: Limits = default_limits,
 
     pub fn init(encoded: []const u8) !Stream {
+        return initWithLimits(encoded, default_limits);
+    }
+
+    pub fn initWithLimits(encoded: []const u8, limits: Limits) !Stream {
+        try limits.validate();
+        const encoded_bytes = std.math.cast(u64, encoded.len) orelse
+            return error.Mp3StreamLimitExceeded;
+        if (encoded_bytes > limits.max_stream_bytes)
+            return error.Mp3StreamLimitExceeded;
         const audio_start = try leadingTagBytes(encoded);
         const audio_end = trailingTagStart(encoded, audio_start);
         if (audio_end - audio_start < 4) return error.Mp3StreamHasNoFrames;
@@ -14496,6 +14518,7 @@ pub const Stream = struct {
             .audio_start = audio_start,
             .audio_end = audio_end,
             .cursor = audio_start,
+            .limits = limits,
         };
     }
 
@@ -14507,6 +14530,8 @@ pub const Stream = struct {
     pub fn next(self: *Stream) !?Frame {
         try self.validateState();
         if (self.cursor == self.audio_end) return null;
+        if (self.frame_index == self.limits.max_frames)
+            return error.Mp3FrameLimitExceeded;
         if (self.audio_end - self.cursor < 4)
             return error.TrailingMp3Data;
         const header = try Header.parse(self.encoded[self.cursor..]);
@@ -14638,10 +14663,15 @@ pub const Stream = struct {
     }
 
     fn validateState(self: *const Stream) !void {
+        self.limits.validate() catch return error.InvalidMp3StreamState;
+        const encoded_bytes = std.math.cast(u64, self.encoded.len) orelse
+            return error.InvalidMp3StreamState;
         if (self.audio_start > self.audio_end or
             self.audio_end > self.encoded.len or
             self.cursor < self.audio_start or
-            self.cursor > self.audio_end)
+            self.cursor > self.audio_end or
+            encoded_bytes > self.limits.max_stream_bytes or
+            self.frame_index > self.limits.max_frames)
         {
             return error.InvalidMp3StreamState;
         }
@@ -14692,7 +14722,11 @@ pub const Stream = struct {
     }
 
     pub fn summarize(encoded: []const u8) !Summary {
-        var stream = try Stream.init(encoded);
+        return summarizeWithLimits(encoded, default_limits);
+    }
+
+    pub fn summarizeWithLimits(encoded: []const u8, limits: Limits) !Summary {
+        var stream = try Stream.initWithLimits(encoded, limits);
         var first_xing: ?Xing = null;
         var first_vbri: ?Vbri = null;
         while (try stream.next()) |frame| {
@@ -14726,10 +14760,22 @@ pub const FileReader = struct {
     frame_index: u64 = 0,
     sample_offset: u64 = 0,
     free_frame_base_bytes: ?usize = null,
+    limits: Limits = default_limits,
 
     /// The caller owns the file and frame storage for the reader lifetime.
     pub fn init(io: std.Io, file: std.Io.File) !FileReader {
+        return initWithLimits(io, file, default_limits);
+    }
+
+    pub fn initWithLimits(
+        io: std.Io,
+        file: std.Io.File,
+        limits: Limits,
+    ) !FileReader {
+        try limits.validate();
         const file_size = (try file.stat(io)).size;
+        if (file_size > limits.max_stream_bytes)
+            return error.Mp3StreamLimitExceeded;
         if (file_size < 3) return error.Mp3StreamHasNoFrames;
 
         var prefix: [10]u8 = undefined;
@@ -14773,6 +14819,7 @@ pub const FileReader = struct {
             .offset = audio_start,
             .first_header = first_header,
             .free_frame_base_bytes = free_frame_base_bytes,
+            .limits = limits,
         };
     }
 
@@ -14785,6 +14832,8 @@ pub const FileReader = struct {
     pub fn next(self: *FileReader, storage: []u8) !?FileFrame {
         try self.validateState();
         if (self.offset == self.audio_end) return null;
+        if (self.frame_index == self.limits.max_frames)
+            return error.Mp3FrameLimitExceeded;
         if (self.audio_end - self.offset < 4)
             return error.TrailingMp3Data;
 
@@ -14960,6 +15009,8 @@ pub const FileReader = struct {
         ) catch return error.InvalidMp3SeekPoint;
         if (point.sample_offset != expected_sample)
             return error.InvalidMp3SeekPoint;
+        if (point.frame_index > self.limits.max_frames)
+            return error.InvalidMp3SeekPoint;
         if (!mp3FrameProgressValid(
             point.frame_index,
             byte_offset - self.audio_start,
@@ -15000,10 +15051,14 @@ pub const FileReader = struct {
     }
 
     fn validateState(self: *const FileReader) !void {
+        self.limits.validate() catch
+            return error.InvalidMp3FileReaderState;
         if (self.audio_start > self.audio_end or
             self.audio_end - self.audio_start < 4 or
             self.offset < self.audio_start or
-            self.offset > self.audio_end)
+            self.offset > self.audio_end or
+            self.audio_end > self.limits.max_stream_bytes or
+            self.frame_index > self.limits.max_frames)
         {
             return error.InvalidMp3FileReaderState;
         }
@@ -15041,7 +15096,21 @@ pub const FileReader = struct {
         file: std.Io.File,
         storage: []u8,
     ) !FileSummary {
-        var reader = try FileReader.init(io, file);
+        return summarizeWithLimits(
+            io,
+            file,
+            storage,
+            default_limits,
+        );
+    }
+
+    pub fn summarizeWithLimits(
+        io: std.Io,
+        file: std.Io.File,
+        storage: []u8,
+        limits: Limits,
+    ) !FileSummary {
+        var reader = try FileReader.initWithLimits(io, file, limits);
         var first_xing: ?Xing = null;
         var first_vbri: ?VbriSummary = null;
         while (try reader.next(storage)) |frame| {
@@ -21898,6 +21967,41 @@ test "stream skips ID3 tags, summarizes frames, and builds seek index" {
         summary.durationSeconds(),
         1e-12,
     );
+    try std.testing.expectError(
+        error.InvalidMp3Limits,
+        Stream.initWithLimits(storage[0..cursor], .{ .max_frames = 0 }),
+    );
+    try std.testing.expectError(
+        error.Mp3StreamLimitExceeded,
+        Stream.initWithLimits(storage[0..cursor], .{
+            .max_stream_bytes = cursor - 1,
+        }),
+    );
+    try std.testing.expectError(
+        error.Mp3FrameLimitExceeded,
+        Stream.summarizeWithLimits(storage[0..cursor], .{
+            .max_stream_bytes = cursor,
+            .max_frames = 2,
+        }),
+    );
+    const limited_summary = try Stream.summarizeWithLimits(
+        storage[0..cursor],
+        .{ .max_stream_bytes = cursor, .max_frames = 3 },
+    );
+    try std.testing.expectEqual(@as(u64, 3), limited_summary.frame_count);
+
+    var limited_stream = try Stream.initWithLimits(
+        storage[0..cursor],
+        .{ .max_stream_bytes = cursor, .max_frames = 2 },
+    );
+    _ = try limited_stream.next();
+    _ = try limited_stream.next();
+    const limited_before = limited_stream;
+    try std.testing.expectError(
+        error.Mp3FrameLimitExceeded,
+        limited_stream.next(),
+    );
+    try std.testing.expectEqualDeep(limited_before, limited_stream);
 
     try std.testing.expectEqual(
         @as(usize, 2),
@@ -21941,6 +22045,27 @@ test "file reader scans summarizes indexes and seeks without whole-file storage"
     );
     defer file.close(std.testing.io);
     try file.writePositionalAll(std.testing.io, encoded[0..cursor], 0);
+
+    try std.testing.expectError(
+        error.Mp3StreamLimitExceeded,
+        FileReader.initWithLimits(std.testing.io, file, .{
+            .max_stream_bytes = cursor - 1,
+        }),
+    );
+    var limited_reader = try FileReader.initWithLimits(
+        std.testing.io,
+        file,
+        .{ .max_stream_bytes = cursor, .max_frames = 2 },
+    );
+    var limited_storage: [maximum_free_format_frame_bytes]u8 = undefined;
+    _ = try limited_reader.next(&limited_storage);
+    _ = try limited_reader.next(&limited_storage);
+    const limited_reader_before = limited_reader;
+    try std.testing.expectError(
+        error.Mp3FrameLimitExceeded,
+        limited_reader.next(&limited_storage),
+    );
+    try std.testing.expectEqualDeep(limited_reader_before, limited_reader);
 
     var reader = try FileReader.init(std.testing.io, file);
     try std.testing.expectEqual(@as(u64, 14), reader.audio_start);
@@ -29114,4 +29239,66 @@ test "composes ID3 prefixes and tails with offset MP3 files" {
             tail_faults.operations(),
         ),
     );
+}
+
+const mp3_fuzz_header = [_]u8{ 0xff, 0xfb, 0x90, 0x00 };
+
+test "fuzz bounded MP3 framing and decoding" {
+    try std.testing.fuzz({}, fuzzMp3, .{
+        .corpus = &.{&mp3_fuzz_header},
+    });
+}
+
+fn fuzzMp3(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var storage: [64 * 1024]u8 = undefined;
+    var length: usize = switch (smith.valueRangeAtMost(u8, 0, 1)) {
+        0 => smith.slice(&storage),
+        1 => seed: {
+            var end: usize = 0;
+            const header = testHeader(3, true, 9, 0, false, .stereo);
+            end = try appendFrame(&storage, end, header);
+            end = try appendFrame(&storage, end, header);
+            break :seed end;
+        },
+        else => unreachable,
+    };
+    if (length != 0 and smith.value(bool)) {
+        const mutation_count = smith.valueRangeAtMost(u8, 1, 32);
+        for (0..mutation_count) |_|
+            storage[smith.index(length)] ^= smith.value(u8);
+    }
+    if (smith.value(bool)) {
+        const maximum: u16 = @intCast(@min(length, std.math.maxInt(u16)));
+        length = smith.valueRangeAtMost(u16, 0, maximum);
+    } else if (length < storage.len and smith.value(bool)) {
+        const maximum_append: u16 = @intCast(@min(
+            storage.len - length,
+            std.math.maxInt(u16),
+        ));
+        const append_length = smith.valueRangeAtMost(u16, 0, maximum_append);
+        smith.bytes(storage[length..][0..append_length]);
+        length += append_length;
+    }
+
+    const limits = Limits{
+        .max_stream_bytes = storage.len,
+        .max_frames = 256,
+    };
+    var stream = Stream.initWithLimits(storage[0..length], limits) catch return;
+    var decoder = FrameDecoder{};
+    var previous_cursor = stream.cursor;
+    while (stream.next() catch return) |frame| {
+        if (stream.cursor <= previous_cursor)
+            return error.Mp3FuzzParserDidNotAdvance;
+        previous_cursor = stream.cursor;
+        _ = frame.crcValid() catch return;
+        _ = frame.sideInformation() catch return;
+        const decoder_before = decoder;
+        _ = decoder.decode(frame) catch {
+            if (!std.meta.eql(decoder_before, decoder))
+                return error.Mp3FuzzDecoderFailureWasNotTransactional;
+            continue;
+        };
+    }
 }

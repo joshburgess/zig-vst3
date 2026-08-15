@@ -2791,6 +2791,24 @@ pub fn build(b: *std.Build) void {
     ixml_fuzz_step.dependOn(
         &b.addRunArtifact(ixml_fuzz_tests).step,
     );
+    const mp3_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        mp3_fuzz_module.link_libc = true;
+    const mp3_fuzz_tests = b.addTest(.{
+        .root_module = mp3_fuzz_module,
+        .filters = &.{"fuzz bounded MP3 framing and decoding"},
+    });
+    const mp3_fuzz_step = b.step(
+        "test-mp3-fuzz",
+        "Run or fuzz bounded MP3 framing and decoding",
+    );
+    mp3_fuzz_step.dependOn(
+        &b.addRunArtifact(mp3_fuzz_tests).step,
+    );
     const midi_file_benchmark_core = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = b.graph.host,

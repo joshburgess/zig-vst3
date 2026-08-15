@@ -5364,15 +5364,21 @@ test "installed package exposes bounded MP3 framing and seeking" {
         );
         generated_length += frame_bytes.len;
     }
-    const generated_summary = try plugin.dsp.Mp3Stream.summarize(
+    const generated_limits = plugin.dsp.Mp3Limits{
+        .max_stream_bytes = generated_length,
+        .max_frames = 2,
+    };
+    const generated_summary = try plugin.dsp.Mp3Stream.summarizeWithLimits(
         generated[0..generated_length],
+        generated_limits,
     );
     try std.testing.expectEqual(
         @as(u64, 2),
         generated_summary.frame_count,
     );
-    var generated_stream = try plugin.dsp.Mp3Stream.init(
+    var generated_stream = try plugin.dsp.Mp3Stream.initWithLimits(
         generated[0..generated_length],
+        generated_limits,
     );
     try std.testing.expect(generated_stream.valid());
     var generated_decoder = plugin.dsp.Mp3FrameDecoder{};
