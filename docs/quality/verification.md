@@ -963,24 +963,6 @@ semantic review record to be revisited.
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
 
-## 2026-08-15: Shared ADM and HRTF Numerical Review
-
-The first ledger unit covers exact ADM time and sample positions, common
-speaker mapping, shared renderer geometry, and HRTF position conversion. The
-review checked overflow, finite containment, coordinate convention, tolerance,
-partition, alias, latency, and transactional behavior against direct vectors
-and the existing independent ADM and HRTF evidence families.
-
-| Check | Result |
-| --- | --- |
-| Direct `adm.zig` test | Passed: 15/15 tests |
-| Direct common-speaker mapping test | Passed: 21/21 tests |
-| Direct ADM sample-time test | Passed: 5/5 tests |
-| Direct ADM time test | Passed: 3/3 tests |
-| Direct ADM renderer test | Passed: 195/195 tests, including independent gain vectors and the native fuzz test |
-| `zig build test-hrtf --summary all` | Passed: 8/8 steps and 149/151 tests, with two expected public-dataset skips and three ReleaseSafe cross-target builds |
-| `scripts/check_quality_numerics_inventory.sh` | Passed: 49 evidence, 33 review, and 18 excluded sources |
-
 ## 2026-08-14: VST3 Realtime Bounds and Transitive Call Chains
 
 Behavior commit: `10ea05e6`
@@ -2114,4 +2096,44 @@ pending reviews or accept every existing evidence family without inspection.
 | `scripts/check_quality_numerics_inventory.sh` | Passed: 44 evidence, 39 review, and 17 excluded sources |
 | `scripts/check_quality_inventory.sh` | Passed after staging the new gate: 868 source files and 478,653 lines classified |
 | `zig fmt --check build.zig` | Passed |
+| `git diff --check` | Passed |
+
+## 2026-08-15: Shared ADM and HRTF Numerical Review
+
+The first ledger unit covers exact ADM time and sample positions, common
+speaker mapping, shared renderer geometry, and HRTF position conversion. The
+review checked overflow, finite containment, coordinate convention, tolerance,
+partition, alias, latency, and transactional behavior against direct vectors
+and the existing independent ADM and HRTF evidence families.
+
+| Check | Result |
+| --- | --- |
+| Direct `adm.zig` test | Passed: 15/15 tests |
+| Direct common-speaker mapping test | Passed: 21/21 tests |
+| Direct ADM sample-time test | Passed: 5/5 tests |
+| Direct ADM time test | Passed: 3/3 tests |
+| Direct ADM renderer test | Passed: 195/195 tests, including independent gain vectors and the native fuzz test |
+| `zig build test-hrtf --summary all` | Passed: 8/8 steps and 149/151 tests, with two expected public-dataset skips and three ReleaseSafe cross-target builds |
+| `scripts/check_quality_numerics_inventory.sh` | Passed: 49 evidence, 33 review, and 18 excluded sources |
+
+## 2026-08-15: Audio Block Alias Safety
+
+Behavior commit: `97657397`
+
+The foundational Q15 review found that mutable channel overlap and ambiguous
+source aliases were not rejected. `copyFrom` could invoke `@memcpy` on shifted
+regions, and arithmetic could consume values overwritten by an earlier output
+write. Construction now requires disjoint mutable channels. Every multi-block
+mutation preflights complete alias relationships, permits an exact
+corresponding in-place source, and rejects shifted or cross-channel overlap
+before changing output. Retained-state validation detects channels changed to
+overlap after construction.
+
+| Check | Result |
+| --- | --- |
+| Direct Debug audio-block test | Passed: 9/9 tests |
+| Direct ReleaseSafe audio-block test | Passed: 9/9 tests |
+| ReleaseSafe installed-package gate | Passed: 18/18 steps and 96/96 tests |
+| `scripts/check_quality_numerics_inventory.sh` | Passed after disposition update: 50 evidence, 32 review, and 18 excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 868 source files and 478,795 lines classified |
 | `git diff --check` | Passed |

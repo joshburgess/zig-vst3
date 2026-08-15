@@ -74,7 +74,7 @@ Q14	zig-vst3-plugin/src/hoa_tests.zig	EVIDENCE	N-HRTF
 Q14	zig-vst3-plugin/src/hrtf_tests.zig	EVIDENCE	N-HRTF
 Q14	zig-vst3-plugin/src/hrtf_thread_sanitizer.zig	EXCLUDED	concurrency test root
 Q15	zig-vst3-plugin/src/dsp.zig	EXCLUDED	public module facade
-Q15	zig-vst3-plugin/src/dsp/audio_block.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/audio_block.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/ballistics.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/biquad.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/butterworth_design.zig	EVIDENCE	N-FILTER
@@ -182,3 +182,14 @@ dataset, partition, and cross-target evidence remains in N-HRTF.
 exact CHNA byte serialization, not rendering arithmetic. Its normative stereo
 bytes, malformed-state, overlap, reserved-entry, parser, and positional-write
 tests remain parser and persistence evidence.
+
+### Audio Block Arithmetic and Aliasing
+
+Audio-block construction and mutation now make the planar storage contract
+explicit. Mutable channels are disjoint. Copy, scaled addition, subtraction,
+sum replacement, and product replacement preflight every destination-source
+pair. Exact corresponding in-place sources are valid, while shifted and
+cross-channel aliases fail before output changes. Checked span arithmetic
+treats a hostile address calculation as overlap. Existing finite-input and
+overflow preflights preserve transactional arithmetic, and aggregate values
+retain direct scalar expectations.

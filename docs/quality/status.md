@@ -346,6 +346,12 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   HRTF spatial conversion have direct vectors, explicit tolerances, finite and
   transactional coverage. The ledger now has 49 evidence, 33 review, and 18
   excluded records.
+- Closed critical Q-MEM-011 after foundational review found that audio-block
+  copy could reach overlapping `@memcpy` and arithmetic allowed ambiguous
+  shifted aliases. Mutable channels are now disjoint, every source alias is
+  checked transactionally, and exact corresponding in-place use remains
+  supported. The ledger now has 50 evidence, 32 review, and 18 excluded
+  records.
 
 ## Phase 5 Scope
 
@@ -360,7 +366,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the 33 `REVIEW` records in `numerics.md`, beginning with foundational
+Review the 32 `REVIEW` records in `numerics.md`, continuing with foundational
 Q15 primitives before composite effects.
 Move a source to `EVIDENCE` only after its reference or identity, tolerance,
 finite containment, latency, channel, and transactional contracts are sound.
