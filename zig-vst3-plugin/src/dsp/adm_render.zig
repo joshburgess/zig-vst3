@@ -1,5 +1,5 @@
 const std = @import("std");
-const core = @import("adm_render/core.zig");
+const core = @import("adm_render/object.zig");
 
 pub const maximum_input_channels = core.maximum_input_channels;
 pub const maximum_output_channels = core.maximum_output_channels;
@@ -77,5 +77,20 @@ test "ADM renderer facade preserves exact public identities" {
     );
     try std.testing.expect(
         DirectSpeakerRouter(f64) == core.DirectSpeakerRouter(f64),
+    );
+    try std.testing.expect(
+        DirectSpeakerPositionRouter(f32) ==
+            core.DirectSpeakerPositionRouter(f32),
+    );
+    try std.testing.expect(
+        DirectSpeakerRoutingContext == core.DirectSpeakerRoutingContext,
+    );
+    try std.testing.expect(
+        DirectSpeakerCommonPackMapping ==
+            core.DirectSpeakerCommonPackMapping,
+    );
+    try std.testing.expect(DirectSpeakerRoute == core.DirectSpeakerRoute);
+    try std.testing.expect(
+        resolveDirectSpeakerRoute == core.resolveDirectSpeakerRoute,
     );
 }
