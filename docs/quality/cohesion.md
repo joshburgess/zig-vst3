@@ -47,7 +47,7 @@ split.
 | `zig-vst3/src/ara_source_cache.zig` | 1,568 / 635 | Owns fixed or paged source audio populated on control threads and published as immutable generations to realtime readers. | KEEP. Fill, directory publication, lookup, and teardown form one cache ownership contract. |
 | `zig-vst3/src/ara_tuning_analysis.zig` | 4,584 / 3,032 | Runs bounded tuning, tempo, meter, key, chord, and note analysis and serializes retained analysis results. | SPLIT. Extract each detector behind shared bounded observation and archive types. |
 | `zig-vst3/src/zig_vst3_plugin_bridge.zig` | 2,439 / 2,836 | Converts VST3 process, parameter, event, bus, and state interfaces into the framework's bounded process model. | KEEP. The conversions share one host-call lifetime and negotiated bus and capacity state. |
-| `zig-vst3/src/zig_vst3_plugin_effect.zig` | 3,322 / 2,773 | Builds reflected edit controllers and effect component pairs over shared parameter, host-request, state, and view lifecycles. | SPLIT. Separate controller construction from processor and component construction while retaining the public facade. |
+| `zig-vst3/src/zig_vst3_plugin_effect.zig` | 2,015 / 2,767 | Builds processor and component instances over shared audio-bus, parameter, state, host-request, data-exchange, and connection lifecycles. Reflected controller construction and shared COM lifetime helpers live in sibling modules. | KEEP. The remaining runtime state belongs to one component lifecycle; the public controller and observer names are exact aliases and the file is now dominated by colocated integration tests. |
 
 ## Checked Records
 
@@ -88,5 +88,5 @@ decisions.
 - `zig-vst3/src/ara_source_cache.zig` | 2203 | 1568 | 635 | KEEP
 - `zig-vst3/src/ara_tuning_analysis.zig` | 7616 | 4584 | 3032 | SPLIT
 - `zig-vst3/src/zig_vst3_plugin_bridge.zig` | 5275 | 2439 | 2836 | KEEP
-- `zig-vst3/src/zig_vst3_plugin_effect.zig` | 6095 | 3322 | 2773 | SPLIT
+- `zig-vst3/src/zig_vst3_plugin_effect.zig` | 4782 | 2015 | 2767 | KEEP
 <!-- cohesion-files:end -->
