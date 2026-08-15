@@ -8754,9 +8754,12 @@ test "installed package exposes file-backed audio writers" {
     try wav.append(f32, &.{ -0.5, 0.5 });
     try wav.finalize();
     try std.testing.expect(wav.valid());
-    const wav_reader = try plugin.dsp.AudioFileReader.init(
+    const installed_audio_limits: plugin.dsp.AudioFileLimits =
+        plugin.dsp.default_audio_file_limits;
+    const wav_reader = try plugin.dsp.AudioFileReader.initWithLimits(
         std.testing.io,
         wav_file,
+        installed_audio_limits,
     );
     try std.testing.expect(wav_reader.valid());
     try std.testing.expectEqual(

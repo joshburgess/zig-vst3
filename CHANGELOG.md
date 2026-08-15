@@ -9,6 +9,7 @@
 - Added `dsp.IxmlLimits`, `default_ixml_limits`, `requiredIxmlParseStorageWithLimits`, and `parseIxmlMetadataWithLimits` for explicit iXML document, structural-work, decoded-text, track, and sync-point policies.
 - Added `dsp.Mp3Limits`, `default_mp3_limits`, `Mp3Stream.initWithLimits`, `Mp3Stream.summarizeWithLimits`, `Mp3FileReader.initWithLimits`, and `Mp3FileReader.summarizeWithLimits` for explicit encoded-byte and frame-count policies.
 - Added `dsp.OggLimits`, bounded Ogg reader constructors, and bounded Vorbis seek-index helpers for explicit encoded-byte, page, packet, and chained-stream policies.
+- Added `dsp.AudioFileLimits`, `default_audio_file_limits`, and `AudioFileReader.initWithLimits` for explicit file-byte, chunk-count, metadata-chunk, and frame-count policies.
 
 ### Changed
 
@@ -17,6 +18,7 @@
 - iXML parsing now applies documented default limits. Vorbis-comment, FLAC-comment, ID3v2.3, ID3v2.4, RIFF INFO, and AIFF text iterators retain exact validated-state witnesses instead of replaying their complete prefixes during ordinary traversal.
 - MP3 memory and positional-file scans now reject streams larger than the documented default byte policy or longer than the default frame-count policy. Frame-limit rejection leaves the iterator or reader unchanged.
 - Ogg memory and positional-file readers now apply documented whole-stream defaults in addition to the existing page, packet-storage, and resynchronization bounds. Count-limit rejection leaves reader state unchanged.
+- WAV, AIFF, AIFC, RF64, BW64, and Wave64 readers now apply documented default limits. Determinable file limits are rejected before parsing, and chunk, metadata, and frame limits are checked before exposing accepted reader state or caller storage.
 
 ## zig-vst3-0.3.0 - 2026-08-14
 

@@ -37,6 +37,25 @@ pub const Info = struct {
     frame_count: u64,
 };
 
+pub const Limits = struct {
+    max_file_bytes: u64 = 1024 * 1024 * 1024 * 1024,
+    max_chunks: u64 = 1_000_000,
+    max_metadata_chunk_bytes: u64 = 256 * 1024 * 1024,
+    max_frames: u64 = 10_000_000_000,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_file_bytes < 12 or
+            self.max_chunks == 0 or
+            self.max_metadata_chunk_bytes == 0 or
+            self.max_frames == 0)
+        {
+            return error.InvalidAudioFileLimits;
+        }
+    }
+};
+
+pub const default_limits = Limits{};
+
 pub const AdmMetadata = struct {
     document: adm_xml.Document,
     channel_allocation: adm.View,
@@ -68,17 +87,30 @@ pub const FileReader = struct {
     data_bytes: u64,
     frame_bytes: u16,
     byte_order: std.builtin.Endian,
+    file_size: u64,
+    limits: Limits = default_limits,
 
     /// The caller owns the file and must keep it open for the reader lifetime.
     pub fn init(io: std.Io, file: std.Io.File) !FileReader {
+        return initWithLimits(io, file, default_limits);
+    }
+
+    pub fn initWithLimits(
+        io: std.Io,
+        file: std.Io.File,
+        limits: Limits,
+    ) !FileReader {
+        try limits.validate();
         const stat = try file.stat(io);
+        if (stat.size > limits.max_file_bytes)
+            return error.AudioFileLimitExceeded;
         if (stat.size < 12) return error.TruncatedAudioFile;
         var header: [12]u8 = undefined;
         try readExactAt(io, file, 0, &header);
         if (std.mem.eql(u8, header[0..4], "RIFF") and
             std.mem.eql(u8, header[8..12], "WAVE"))
         {
-            return parseWav(io, file, stat.size, header);
+            return parseWav(io, file, stat.size, header, limits);
         }
         if ((std.mem.eql(u8, header[0..4], "RF64") or
             std.mem.eql(u8, header[0..4], "BW64")) and
@@ -92,13 +124,14 @@ pub const FileReader = struct {
                     .bw64
                 else
                     .rf64,
+                limits,
             );
         }
         if (std.mem.eql(u8, header[0..4], "FORM") and
             (std.mem.eql(u8, header[8..12], "AIFF") or
                 std.mem.eql(u8, header[8..12], "AIFC")))
         {
-            return parseAiff(io, file, stat.size, header);
+            return parseAiff(io, file, stat.size, header, limits);
         }
         if (stat.size >= 40) {
             var wave64_header: [40]u8 = undefined;
@@ -106,7 +139,13 @@ pub const FileReader = struct {
             if (std.mem.eql(u8, wave64_header[0..16], &wave64_riff_guid) and
                 std.mem.eql(u8, wave64_header[24..40], &wave64_wave_guid))
             {
-                return parseWave64(io, file, stat.size, wave64_header);
+                return parseWave64(
+                    io,
+                    file,
+                    stat.size,
+                    wave64_header,
+                    limits,
+                );
             }
         }
         return error.UnsupportedAudioContainer;
@@ -463,7 +502,17 @@ pub const FileReader = struct {
     }
 
     fn validateState(self: *const FileReader) !void {
-        if (self.info.sample_rate == 0 or
+        self.limits.validate() catch
+            return error.InvalidAudioFileReaderState;
+        const minimum_file_bytes: u64 = switch (self.info.container) {
+            .wav, .aiff, .aifc => 12,
+            .rf64, .bw64 => 48,
+            .wave64 => 40,
+        };
+        if (self.file_size < minimum_file_bytes or
+            self.file_size > self.limits.max_file_bytes or
+            self.info.frame_count > self.limits.max_frames or
+            self.info.sample_rate == 0 or
             self.info.channel_count == 0 or
             self.frame_bytes == 0)
             return error.InvalidAudioFileReaderState;
@@ -483,11 +532,13 @@ pub const FileReader = struct {
             self.info.frame_count !=
                 self.data_bytes / self.frame_bytes)
             return error.InvalidAudioFileReaderState;
-        _ = std.math.add(
+        const data_end = std.math.add(
             u64,
             self.data_offset,
             self.data_bytes,
         ) catch return error.InvalidAudioFileReaderState;
+        if (data_end > self.file_size)
+            return error.InvalidAudioFileReaderState;
     }
 };
 
@@ -520,9 +571,13 @@ const RiffChunkIterator = struct {
     end: u64,
     large_data_bytes: ?u64 = null,
     offset: u64 = 12,
+    chunks_read: u64 = 0,
+    max_chunks: u64,
 
     fn next(self: *RiffChunkIterator) !?RiffChunk {
         if (self.offset == self.end) return null;
+        if (self.chunks_read == self.max_chunks)
+            return error.AudioFileChunkLimitExceeded;
         if (self.offset > self.end or self.end - self.offset < 8)
             return error.TruncatedAudioFile;
 
@@ -558,6 +613,7 @@ const RiffChunkIterator = struct {
             .padded_end = padded_end,
         };
         self.offset = padded_end;
+        self.chunks_read += 1;
         return chunk;
     }
 };
@@ -575,9 +631,13 @@ const Wave64ChunkIterator = struct {
     file: std.Io.File,
     end: u64,
     offset: u64 = 40,
+    chunks_read: u64 = 0,
+    max_chunks: u64,
 
     fn next(self: *Wave64ChunkIterator) !?Wave64Chunk {
         if (self.offset == self.end) return null;
+        if (self.chunks_read == self.max_chunks)
+            return error.AudioFileChunkLimitExceeded;
         if (self.offset > self.end or self.end - self.offset < 24)
             return error.TruncatedAudioFile;
 
@@ -608,6 +668,7 @@ const Wave64ChunkIterator = struct {
             .aligned_end = aligned_end,
         };
         self.offset = aligned_end;
+        self.chunks_read += 1;
         return chunk;
     }
 };
@@ -626,6 +687,7 @@ fn scanRiffMetadataChunk(
             null
         else
             bounds.rf64_data_bytes,
+        .max_chunks = reader.limits.max_chunks,
     };
     while (try chunks.next()) |chunk| {
         if (try chunkMatches(
@@ -638,6 +700,8 @@ fn scanRiffMetadataChunk(
         )) {
             const total_bytes =
                 chunk.padded_end - chunk.source_offset;
+            if (total_bytes > reader.limits.max_metadata_chunk_bytes)
+                return error.AudioMetadataLimitExceeded;
             if (total_bytes > std.math.maxInt(usize))
                 return error.MetadataSizeOverflow;
             const required: usize = @intCast(total_bytes);
@@ -678,6 +742,7 @@ fn scanWave64MetadataChunk(
         .io = reader.io,
         .file = reader.file,
         .end = end,
+        .max_chunks = reader.limits.max_chunks,
     };
     while (try chunks.next()) |chunk| {
         var matches = std.mem.eql(
@@ -728,6 +793,8 @@ fn scanWave64MetadataChunk(
                 8,
                 padded_payload,
             ) catch return error.MetadataSizeOverflow;
+            if (required > reader.limits.max_metadata_chunk_bytes)
+                return error.AudioMetadataLimitExceeded;
             if (required > std.math.maxInt(usize))
                 return error.MetadataSizeOverflow;
             const required_length: usize = @intCast(required);
@@ -825,6 +892,7 @@ fn parseWav(
     file: std.Io.File,
     file_size: u64,
     header: [12]u8,
+    limits: Limits,
 ) !FileReader {
     const riff_end = std.math.add(
         u64,
@@ -841,6 +909,7 @@ fn parseWav(
         .io = io,
         .file = file,
         .end = riff_end,
+        .max_chunks = limits.max_chunks,
     };
     while (try chunks.next()) |chunk| {
         if (std.mem.eql(u8, &chunk.id, "fmt ")) {
@@ -860,6 +929,8 @@ fn parseWav(
     const payload = data_offset orelse return error.MissingAudioData;
     if (data_bytes % parsed.frame_bytes != 0)
         return error.IncompleteAudioFrame;
+    const frame_count = data_bytes / parsed.frame_bytes;
+    try validateFrameLimit(frame_count, limits);
     return .{
         .io = io,
         .file = file,
@@ -868,12 +939,14 @@ fn parseWav(
             .encoding = parsed.encoding,
             .sample_rate = parsed.sample_rate,
             .channel_count = parsed.channel_count,
-            .frame_count = data_bytes / parsed.frame_bytes,
+            .frame_count = frame_count,
         },
         .data_offset = payload,
         .data_bytes = data_bytes,
         .frame_bytes = parsed.frame_bytes,
         .byte_order = .little,
+        .file_size = file_size,
+        .limits = limits,
     };
 }
 
@@ -926,6 +999,7 @@ fn parseLargeRiff(
     file: std.Io.File,
     file_size: u64,
     container: Container,
+    limits: Limits,
 ) !FileReader {
     if (file_size < 48) return error.TruncatedAudioFile;
     var ds64_header: [8]u8 = undefined;
@@ -969,6 +1043,7 @@ fn parseLargeRiff(
         .file = file,
         .end = riff_end,
         .large_data_bytes = declared_data_bytes,
+        .max_chunks = limits.max_chunks,
     };
     while (try chunks.next()) |chunk| {
         if (std.mem.eql(u8, &chunk.id, "fmt ")) {
@@ -993,6 +1068,7 @@ fn parseLargeRiff(
     const frame_count = data_bytes / parsed.frame_bytes;
     if (frame_count != declared_frames)
         return error.AudioFrameCountMismatch;
+    try validateFrameLimit(frame_count, limits);
     return .{
         .io = io,
         .file = file,
@@ -1007,6 +1083,8 @@ fn parseLargeRiff(
         .data_bytes = data_bytes,
         .frame_bytes = parsed.frame_bytes,
         .byte_order = .little,
+        .file_size = file_size,
+        .limits = limits,
     };
 }
 
@@ -1032,6 +1110,7 @@ fn parseWave64(
     file: std.Io.File,
     file_size: u64,
     header: [40]u8,
+    limits: Limits,
 ) !FileReader {
     const riff_end = std.mem.readInt(u64, header[16..24], .little);
     if (riff_end > file_size) return error.TruncatedAudioFile;
@@ -1044,6 +1123,7 @@ fn parseWave64(
         .io = io,
         .file = file,
         .end = riff_end,
+        .max_chunks = limits.max_chunks,
     };
     while (try chunks.next()) |chunk| {
         if (std.mem.eql(u8, &chunk.guid, &wave64_format_guid)) {
@@ -1063,6 +1143,8 @@ fn parseWave64(
     const payload = data_offset orelse return error.MissingAudioData;
     if (data_bytes % parsed.frame_bytes != 0)
         return error.IncompleteAudioFrame;
+    const frame_count = data_bytes / parsed.frame_bytes;
+    try validateFrameLimit(frame_count, limits);
     return .{
         .io = io,
         .file = file,
@@ -1071,12 +1153,14 @@ fn parseWave64(
             .encoding = parsed.encoding,
             .sample_rate = parsed.sample_rate,
             .channel_count = parsed.channel_count,
-            .frame_count = data_bytes / parsed.frame_bytes,
+            .frame_count = frame_count,
         },
         .data_offset = payload,
         .data_bytes = data_bytes,
         .frame_bytes = parsed.frame_bytes,
         .byte_order = .little,
+        .file_size = file_size,
+        .limits = limits,
     };
 }
 
@@ -1085,6 +1169,7 @@ fn parseAiff(
     file: std.Io.File,
     file_size: u64,
     header: [12]u8,
+    limits: Limits,
 ) !FileReader {
     const is_aifc = std.mem.eql(u8, header[8..12], "AIFC");
     const form_end = std.math.add(
@@ -1100,7 +1185,10 @@ fn parseAiff(
     var data_offset: ?u64 = null;
     var data_bytes: u64 = 0;
     var offset: u64 = 12;
+    var chunks_read: u64 = 0;
     while (offset < form_end) {
+        if (chunks_read == limits.max_chunks)
+            return error.AudioFileChunkLimitExceeded;
         if (form_end - offset < 8) return error.TruncatedAudioFile;
         var chunk_header: [8]u8 = undefined;
         try readExactAt(io, file, offset, &chunk_header);
@@ -1180,6 +1268,7 @@ fn parseAiff(
             chunk_bytes & 1,
         ) catch return error.InvalidAudioFile;
         if (offset > form_end) return error.TruncatedAudioFile;
+        chunks_read += 1;
     }
 
     const parsed = format orelse return error.MissingAudioFormat;
@@ -1189,6 +1278,7 @@ fn parseAiff(
     const frame_count = data_bytes / parsed.frame_bytes;
     if (frame_count != (declared_frames orelse return error.MissingAudioFormat))
         return error.AudioFrameCountMismatch;
+    try validateFrameLimit(frame_count, limits);
     return .{
         .io = io,
         .file = file,
@@ -1203,7 +1293,14 @@ fn parseAiff(
         .data_bytes = data_bytes,
         .frame_bytes = parsed.frame_bytes,
         .byte_order = .big,
+        .file_size = file_size,
+        .limits = limits,
     };
+}
+
+fn validateFrameLimit(frame_count: u64, limits: Limits) !void {
+    if (frame_count > limits.max_frames)
+        return error.AudioFrameLimitExceeded;
 }
 
 fn decodeExtendedRate(bytes: []const u8) !u32 {
@@ -1361,6 +1458,124 @@ fn testFileReaderMutationContainment(
             true;
         try std.testing.expect(rejected);
     }
+}
+
+const AudioFileFuzzContext = struct {
+    file: std.Io.File,
+};
+
+const audio_file_fuzz_seed = "RIFF\x24\x00\x00\x00WAVE";
+
+test "fuzz bounded audio container parsing and reads" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const file = try temporary.dir.createFile(
+        std.testing.io,
+        "fuzz-audio-file",
+        .{ .read = true, .truncate = true },
+    );
+    defer file.close(std.testing.io);
+    try std.testing.fuzz(AudioFileFuzzContext{ .file = file }, fuzzAudioFile, .{
+        .corpus = &.{audio_file_fuzz_seed},
+    });
+}
+
+fn fuzzAudioFile(context: AudioFileFuzzContext, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var encoded: [4096]u8 = undefined;
+    var length: usize = switch (smith.valueRangeAtMost(u8, 0, 2)) {
+        0 => smith.slice(&encoded),
+        1, 2 => generated: {
+            const samples = [_]f32{ -1.0, -0.5, 0.0, 0.5, 1.0 };
+            const sample_count: usize = smith.valueRangeAtMost(
+                u8,
+                1,
+                samples.len,
+            );
+            const spec = wav_writer.Spec{
+                .sample_rate = 48_000,
+                .channel_count = 1,
+                .encoding = if (smith.value(bool))
+                    .pcm_i16
+                else
+                    .ieee_f32,
+            };
+            const bytes = if (smith.valueRangeAtMost(u8, 0, 2) == 1)
+                try wav_writer.writeInterleaved(
+                    f32,
+                    &encoded,
+                    samples[0..sample_count],
+                    spec,
+                )
+            else
+                try aiff_writer.writeInterleaved(
+                    f32,
+                    &encoded,
+                    samples[0..sample_count],
+                    .{
+                        .sample_rate = spec.sample_rate,
+                        .channel_count = spec.channel_count,
+                        .encoding = .pcm_i16,
+                    },
+                );
+            break :generated bytes.len;
+        },
+        else => unreachable,
+    };
+    if (length != 0 and smith.value(bool)) {
+        const mutation_count = smith.valueRangeAtMost(u8, 1, 32);
+        for (0..mutation_count) |_|
+            encoded[smith.index(length)] ^= smith.value(u8);
+    }
+    if (smith.value(bool)) {
+        length = smith.valueRangeAtMost(u16, 0, @intCast(length));
+    } else if (length < encoded.len and smith.value(bool)) {
+        const append_length: usize = smith.valueRangeAtMost(
+            u16,
+            0,
+            @intCast(encoded.len - length),
+        );
+        smith.bytes(encoded[length..][0..append_length]);
+        length += append_length;
+    }
+
+    try context.file.setLength(std.testing.io, 0);
+    try context.file.writePositionalAll(
+        std.testing.io,
+        encoded[0..length],
+        0,
+    );
+    const reader = FileReader.initWithLimits(
+        std.testing.io,
+        context.file,
+        .{
+            .max_file_bytes = encoded.len,
+            .max_chunks = 64,
+            .max_metadata_chunk_bytes = encoded.len,
+            .max_frames = 1024,
+        },
+    ) catch return;
+    if (!reader.valid()) return error.AudioFileFuzzInvalidReaderState;
+
+    const untouched = [_]f32{37.0} ** 32;
+    var destination = untouched;
+    var scratch: [untouched.len]f32 = undefined;
+    const frame_start = smith.value(u16);
+    if (reader.readInterleavedTransactional(
+        f32,
+        frame_start,
+        &destination,
+        &scratch,
+    )) |frames| {
+        if (frames > destination.len / reader.info.channel_count)
+            return error.AudioFileFuzzInvalidFrameCount;
+    } else |_| {
+        if (!std.mem.eql(f32, &untouched, &destination))
+            return error.AudioFileFuzzReadFailureWasNotTransactional;
+    }
+
+    for (std.meta.tags(MetadataKind)) |kind|
+        _ = reader.requiredMetadataChunkBytes(kind) catch continue;
 }
 
 test "file readers contain deterministic container mutations" {
@@ -1591,6 +1806,47 @@ test "file reader decodes WAV metadata layout and random frame ranges" {
         1.0,  0.25,
     });
     try writer.finalize();
+
+    const file_size = (try file.stat(std.testing.io)).size;
+    try std.testing.expectError(
+        error.InvalidAudioFileLimits,
+        FileReader.initWithLimits(std.testing.io, file, .{
+            .max_chunks = 0,
+        }),
+    );
+    try std.testing.expectError(
+        error.AudioFileLimitExceeded,
+        FileReader.initWithLimits(std.testing.io, file, .{
+            .max_file_bytes = file_size - 1,
+        }),
+    );
+    try std.testing.expectError(
+        error.AudioFileChunkLimitExceeded,
+        FileReader.initWithLimits(std.testing.io, file, .{
+            .max_file_bytes = file_size,
+            .max_chunks = 1,
+        }),
+    );
+    try std.testing.expectError(
+        error.AudioFrameLimitExceeded,
+        FileReader.initWithLimits(std.testing.io, file, .{
+            .max_file_bytes = file_size,
+            .max_frames = 2,
+        }),
+    );
+    const metadata_limited = try FileReader.initWithLimits(
+        std.testing.io,
+        file,
+        .{
+            .max_file_bytes = file_size,
+            .max_metadata_chunk_bytes = 1,
+            .max_frames = 3,
+        },
+    );
+    try std.testing.expectError(
+        error.AudioMetadataLimitExceeded,
+        metadata_limited.requiredMetadataChunkBytes(.broadcast),
+    );
 
     const reader = try FileReader.init(std.testing.io, file);
     try std.testing.expectEqual(Container.wav, reader.info.container);
@@ -2067,6 +2323,7 @@ test "file reader decodes BW64 ADM carriage and audio" {
         .file = file,
         .end = bounds.end,
         .large_data_bytes = bounds.rf64_data_bytes,
+        .max_chunks = reader.limits.max_chunks,
     };
     var channel_offset: ?u64 = null;
     while (try chunks.next()) |chunk| {
@@ -2330,6 +2587,30 @@ test "file reader rejects malformed structure and invalid requests" {
         &preserved,
     );
     hostile = reader;
+    hostile.file_size = 11;
+    try std.testing.expect(!hostile.valid());
+    try std.testing.expectError(
+        error.InvalidAudioFileReaderState,
+        hostile.readInterleaved(f32, 0, &preserved),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &original_preserved,
+        &preserved,
+    );
+    hostile = reader;
+    hostile.limits.max_frames = 0;
+    try std.testing.expect(!hostile.valid());
+    try std.testing.expectError(
+        error.InvalidAudioFileReaderState,
+        hostile.readInterleaved(f32, 0, &preserved),
+    );
+    try std.testing.expectEqualSlices(
+        f32,
+        &original_preserved,
+        &preserved,
+    );
+    hostile = reader;
     hostile.info.frame_count = 1;
     hostile.data_offset = std.math.maxInt(u64);
     hostile.data_bytes = 2;
@@ -2495,6 +2776,7 @@ test "transactional metadata read preserves output after late truncation" {
         .io = std.testing.io,
         .file = file,
         .end = bounds.end,
+        .max_chunks = reader.limits.max_chunks,
     };
     var broadcast_offset: ?u64 = null;
     while (try chunks.next()) |chunk| {
