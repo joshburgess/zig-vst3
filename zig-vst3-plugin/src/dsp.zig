@@ -216,6 +216,8 @@ pub const HrtfMotionPointQueue = hrtf.MotionPointQueue;
 pub const HrtfInterpolation = hrtf.Interpolation;
 pub const hrtfMeasurementFromPositions = hrtf.measurementFromPositions;
 pub const HrtfSofaLoader = hrtf_sofa.Loader;
+pub const HrtfSofaLimits = hrtf_sofa.Limits;
+pub const default_hrtf_sofa_limits = hrtf_sofa.default_limits;
 pub const maximum_adm_renderer_input_channels =
     adm_render.maximum_input_channels;
 pub const adm_polar_extent_spreading_direction_count =

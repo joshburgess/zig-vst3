@@ -10490,8 +10490,16 @@ test "installed package renders bounded HRTF responses" {
     try std.testing.expectEqualDeep(decoded_database, decoded_into);
 
     const SofaLoader = plugin.dsp.HrtfSofaLoader(1, 1);
+    const sofa_limits: plugin.dsp.HrtfSofaLimits =
+        plugin.dsp.default_hrtf_sofa_limits;
+    try sofa_limits.validate();
     try std.testing.expect(@hasDecl(SofaLoader, "isOpen"));
     try std.testing.expect(@hasDecl(SofaLoader, "openRuntime"));
+    try std.testing.expect(@hasDecl(SofaLoader, "loadFileWithLimits"));
+    try std.testing.expect(@hasDecl(
+        SofaLoader,
+        "loadFileIntoWithLimits",
+    ));
 }
 
 test "installed package owns and decomposes runtime-shaped matrices" {

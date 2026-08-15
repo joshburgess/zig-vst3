@@ -12,6 +12,7 @@
 - Added `dsp.AudioFileLimits`, `default_audio_file_limits`, and `AudioFileReader.initWithLimits` for explicit file-byte, chunk-count, metadata-chunk, and frame-count policies.
 - Added `dsp.FlacLimits`, bounded FLAC decode entry points, and bounded streaming reader constructors for explicit stream-byte, metadata, PCM-frame, and encoded-frame-block policies.
 - Added `dsp.Id3Limits`, `dsp.AudioMetadataLimits`, and bounded ID3, RIFF INFO, AIFF text, and RIFF XML constructors for explicit encoded-byte policies.
+- Added `dsp.HrtfSofaLimits` and bounded SOFA loader methods for an explicit NetCDF file-byte policy.
 
 ### Changed
 
@@ -23,6 +24,7 @@
 - WAV, AIFF, AIFC, RF64, BW64, and Wave64 readers now apply documented default limits. Determinable file limits are rejected before parsing, and chunk, metadata, and frame limits are checked before exposing accepted reader state or caller storage.
 - FLAC memory and positional-file decoding now applies documented default limits. Metadata preflight rejects determinable size and work limits before file-reader storage changes, and transactional decode variants preserve PCM output when a later frame-block limit is reached.
 - Direct ID3 and audio-metadata parsing now applies a 256 MiB default encoded-byte limit. XML elements accept at most 1,024 attributes and 256 KiB of attribute source, bounding duplicate and expanded-name validation work.
+- SOFA loading now applies a 1 GiB default file-byte limit before passing a dataset to the NetCDF runtime.
 
 ## zig-vst3-0.3.0 - 2026-08-14
 

@@ -2,6 +2,17 @@ const builtin = @import("builtin");
 const std = @import("std");
 const hrtf = @import("hrtf.zig");
 
+pub const Limits = struct {
+    max_file_bytes: u64 = 1024 * 1024 * 1024,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_file_bytes == 0)
+            return error.InvalidSofaLimits;
+    }
+};
+
+pub const default_limits = Limits{};
+
 pub const PositionEncoding = enum {
     spherical_degrees,
     cartesian_metres,
@@ -316,11 +327,25 @@ pub fn Loader(
             allocator: std.mem.Allocator,
             path: []const u8,
         ) !DatabaseType {
+            return self.loadFileWithLimits(
+                allocator,
+                path,
+                default_limits,
+            );
+        }
+
+        pub fn loadFileWithLimits(
+            self: *const Self,
+            allocator: std.mem.Allocator,
+            path: []const u8,
+            limits: Limits,
+        ) !DatabaseType {
             var result: DatabaseType = undefined;
-            try self.loadFileInto(
+            try self.loadFileIntoWithLimits(
                 allocator,
                 path,
                 &result,
+                limits,
             );
             return result;
         }
@@ -331,10 +356,27 @@ pub fn Loader(
             path: []const u8,
             destination: *DatabaseType,
         ) !void {
+            return self.loadFileIntoWithLimits(
+                allocator,
+                path,
+                destination,
+                default_limits,
+            );
+        }
+
+        pub fn loadFileIntoWithLimits(
+            self: *const Self,
+            allocator: std.mem.Allocator,
+            path: []const u8,
+            destination: *DatabaseType,
+            limits: Limits,
+        ) !void {
             if (self.library == null) return error.SofaLoaderClosed;
             const api = self.api orelse return error.SofaLoaderClosed;
+            try limits.validate();
             const terminated_path = try terminatedPath(allocator, path);
             defer allocator.free(terminated_path);
+            try validateFileSize(path, limits);
 
             var file_id: c_int = 0;
             try check(api.open(
@@ -529,6 +571,16 @@ pub fn Loader(
             );
         }
     };
+}
+
+fn validateFileSize(path: []const u8, limits: Limits) !void {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const file = std.Io.Dir.cwd().openFile(io, path, .{}) catch
+        return error.SofaFileUnavailable;
+    defer file.close(io);
+    const stat = file.stat(io) catch return error.SofaFileUnavailable;
+    if (stat.size > limits.max_file_bytes)
+        return error.SofaLimitExceeded;
 }
 
 const nc_no_error: c_int = 0;
@@ -1774,6 +1826,32 @@ test "standard HRTF loader rejects ambiguous paths" {
     );
 }
 
+test "standard HRTF loader bounds NetCDF file bytes before parsing" {
+    try std.testing.expectError(
+        error.InvalidSofaLimits,
+        (Limits{ .max_file_bytes = 0 }).validate(),
+    );
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    try temporary.dir.writeFile(std.testing.io, .{
+        .sub_path = "bounded.sofa",
+        .data = "SOFA",
+    });
+    var path_storage: [1024]u8 = undefined;
+    const path_length = try temporary.dir.realPathFile(
+        std.testing.io,
+        "bounded.sofa",
+        &path_storage,
+    );
+    const path = path_storage[0..path_length];
+    try validateFileSize(path, .{ .max_file_bytes = 4 });
+    try std.testing.expectError(
+        error.SofaLimitExceeded,
+        validateFileSize(path, .{ .max_file_bytes = 3 }),
+    );
+}
+
 test "standard HRTF loader contains closed ownership state" {
     const TestLoader = Loader(1, 1);
     var loader = TestLoader{
@@ -1850,10 +1928,27 @@ test "standard HRTF loader reads a CC BY public fixture" {
         hrtf.Database(1_513, 128),
     );
     defer std.testing.allocator.destroy(database);
-    try loader.loadFileInto(
+    const fixture_file = try std.Io.Dir.cwd().openFile(
+        std.testing.io,
+        path,
+        .{},
+    );
+    defer fixture_file.close(std.testing.io);
+    const fixture_bytes = (try fixture_file.stat(std.testing.io)).size;
+    try std.testing.expectError(
+        error.SofaLimitExceeded,
+        loader.loadFileIntoWithLimits(
+            std.testing.allocator,
+            path,
+            database,
+            .{ .max_file_bytes = fixture_bytes - 1 },
+        ),
+    );
+    try loader.loadFileIntoWithLimits(
         std.testing.allocator,
         path,
         database,
+        .{ .max_file_bytes = fixture_bytes },
     );
     try std.testing.expectEqual(
         @as(usize, 1_513),
