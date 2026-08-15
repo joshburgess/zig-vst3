@@ -116,17 +116,17 @@ Q15	zig-vst3-plugin/src/dsp/panner.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/pcm_dither.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/phase.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/phaser.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/polynomial.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/polynomial.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/polyphase_fir.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/polyphase_iir.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/polyphase_iir_oversampling.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/process_context.zig	EXCLUDED	format-neutral processing value view
-Q15	zig-vst3-plugin/src/dsp/processor_chain.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/processor_duplicator.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/processor_chain.zig	EVIDENCE	N-PRIMITIVE
+Q15	zig-vst3-plugin/src/dsp/processor_duplicator.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/realtime_snapshot.zig	EXCLUDED	fixed-storage concurrency primitive
 Q15	zig-vst3-plugin/src/dsp/resampler.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/reverb.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/shared_processor_duplicator.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/shared_processor_duplicator.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/simd_register.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/smoothed_value.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/special_functions.zig	EVIDENCE	N-FILTER

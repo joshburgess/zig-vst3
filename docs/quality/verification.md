@@ -2249,3 +2249,30 @@ the positive pole with explicit absolute or relative bounds.
 | `scripts/check_quality_numerics_inventory.sh` | Passed after disposition update: 59 evidence, 24 review, and 18 excluded sources |
 | `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,122 lines classified |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Polynomial and Processor Composition Review
+
+Behavior commit: `8f55fbbf`
+
+The processor-composition review found shifted input and output overlap in
+chains, independent channel duplicators, and caller-owned shared-state
+duplicators. All three now preserve exact in-place operation and reject every
+other overlap before changing output or processor state.
+
+The polynomial review accepted Horner evaluation, bounded algebra,
+derivative-integral and division reconstruction, interpolation, QR and SVD
+fitting, Legendre, Chebyshev, Hermite, Laguerre, and Jacobi recurrences, plus
+allocation-free complex root solving. Analytic roots, recurrence identities,
+rank deficiency, repeated roots, convergence limits, capacity, and hostile
+state all have direct evidence. Polynomial operations own their output values,
+so channel layout and caller-buffer aliasing do not apply.
+
+| Check | Result |
+| --- | --- |
+| Direct Debug polynomial test | Passed: 55/55 tests, including matrix decomposition dependencies |
+| Direct ReleaseSafe polynomial test | Passed: 55/55 tests |
+| Focused Debug processor-composition selection | Passed: 19/19 tests |
+| Focused ReleaseSafe processor-composition selection | Passed: 19/19 tests |
+| `scripts/check_quality_numerics_inventory.sh` | Passed after disposition updates: 63 evidence, 20 review, and 18 excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,203 lines classified |
+| `git diff --check` | Passed |

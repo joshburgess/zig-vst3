@@ -377,6 +377,12 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   tangent pole fallback preserve the accepted domains and scalar-SIMD parity.
   Dense f32 and f64 reference bounds pass in Debug and ReleaseSafe. The ledger
   now has 59 evidence, 24 review, and 18 excluded records.
+- Closed high Q-MEM-013 after three processor-composition adapters accepted
+  shifted block aliases. Chains plus independent and shared-state duplicators
+  now reject overlap before output or state changes while preserving exact
+  in-place use. Polynomial algebra, fitting, orthogonal families, and root
+  solving also passed review. The ledger now has 63 evidence, 20 review, and
+  18 excluded records.
 
 ## Phase 5 Scope
 
@@ -391,7 +397,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the 24 `REVIEW` records in `numerics.md`, continuing with foundational
+Review the 20 `REVIEW` records in `numerics.md`, continuing with foundational
 Q15 primitives before composite effects.
 Move a source to `EVIDENCE` only after its reference or identity, tolerance,
 finite containment, latency, channel, and transactional contracts are sound.
