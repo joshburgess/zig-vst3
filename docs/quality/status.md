@@ -327,7 +327,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Continue Q-ARCH-001 with the MP3 modules. Move reservoir ownership out of the
-encoder and file writer, then reassess the remaining facade for one coherent
-encoding contract. Preserve the current public facade and exact identities
-before repeating inventory and installed-consumer gates.
+Continue Q-ARCH-001 with the MP3 modules. Move adaptive reservoir stream
+ownership out of the encoder and file writer, then reassess the remaining
+facade for one coherent encoding contract. Preserve the current public facade
+and exact identities before repeating inventory and installed-consumer gates.

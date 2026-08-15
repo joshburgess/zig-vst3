@@ -68,6 +68,21 @@ Environment: macOS Darwin 24.4.0 on arm64, Zig 0.16.0.
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
 
+## 2026-08-15: MP3 Reservoir Credit Boundary
+
+Reservoir quantizer budgets, history-credit validation, and failure-atomic
+credit commits now live in `dsp/mp3/reservoir.zig`. The module owns the
+available-history and committed-frame state and depends only on passive MPEG
+header syntax. The public facade exposes exact aliases for every moved type and
+function.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-mp3 --summary all` | Passed: 6/6 steps and 131/131 tests |
+| ReleaseSafe cross-compilation | Passed: Linux AArch64, Linux x86-64, and Windows x86-64 |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
+
 The four skips were reported inside the Debug groups. Platform and hardware
 availability will be accounted for in Phase 6 rather than counted as passes.
 
