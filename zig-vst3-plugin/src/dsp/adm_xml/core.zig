@@ -1,7 +1,24 @@
 const std = @import("std");
 const adm = @import("../adm.zig");
 const adm_time = @import("../adm_time.zig");
+const common = @import("common.zig");
+const metadata = @import("metadata.zig");
 const xml = @import("../xml.zig");
+
+const MetadataSource = metadata.MetadataSource;
+const MetadataEventIterator = metadata.MetadataEventIterator;
+const DeclarationSpec = common.DeclarationSpec;
+const declarationSpec = common.declarationSpec;
+const insideAfe = common.insideAfe;
+const isXmlNamespaceDeclaration = common.isXmlNamespaceDeclaration;
+pub const Extension = metadata.Extension;
+pub const UntypedElement = metadata.UntypedElement;
+pub const ExtensionIterator = metadata.ExtensionIterator;
+pub const UntypedElementIterator = metadata.UntypedElementIterator;
+pub const ExtensionAttribute = metadata.ExtensionAttribute;
+pub const ExtensionAttributeIterator = metadata.ExtensionAttributeIterator;
+pub const UntypedAttribute = metadata.UntypedAttribute;
+pub const UntypedAttributeIterator = metadata.UntypedAttributeIterator;
 
 const max_identifier_bytes: usize = 20;
 const max_profile_text_bytes: usize = 128;
@@ -2518,11 +2535,6 @@ fn emissionElementTypeLabel(
         error.InvalidAdmEmissionProfileFormat;
 }
 
-fn isXmlNamespaceDeclaration(attribute_name: []const u8) bool {
-    return std.mem.eql(u8, attribute_name, "xmlns") or
-        std.mem.startsWith(u8, attribute_name, "xmlns:");
-}
-
 fn profilesEqual(left: Profile, right: Profile) bool {
     return std.mem.eql(u8, left.name, right.name) and
         std.mem.eql(u8, left.version, right.version) and
@@ -2778,581 +2790,6 @@ pub const BlockFormat = struct {
         if (self.matrix_coefficient_count > self.matrix_coefficients.len)
             return &.{};
         return self.matrix_coefficients[0..self.matrix_coefficient_count];
-    }
-};
-
-const MetadataEventIterator = struct {
-    events: xml.EventIterator,
-    namespace_name: ?xml.NamespaceName,
-    afe_depth: ?usize = null,
-
-    fn init(document: Document) MetadataEventIterator {
-        return .{
-            .events = document.xml_document.iterator(),
-            .namespace_name = document.namespace_name,
-        };
-    }
-
-    fn next(self: *MetadataEventIterator) !?xml.Event {
-        while (try self.events.next()) |event| {
-            switch (event) {
-                .start => |element| {
-                    const namespace_matches = try xml.namespaceNamesEql(
-                        self.namespace_name,
-                        element.namespace_name,
-                    );
-                    if (namespace_matches and
-                        std.mem.eql(
-                            u8,
-                            element.localName(),
-                            "audioFormatExtended",
-                        ))
-                    {
-                        self.afe_depth = if (element.self_closing)
-                            null
-                        else
-                            element.depth;
-                    }
-                    if (insideAfe(self.afe_depth, element.depth) and
-                        !namespace_matches)
-                    {
-                        if (!element.self_closing)
-                            try skipXmlSubtree(&self.events, element);
-                        continue;
-                    }
-                    return event;
-                },
-                .end => |element| {
-                    if (self.afe_depth == element.depth and
-                        try xml.namespaceNamesEql(
-                            self.namespace_name,
-                            element.namespace_name,
-                        ) and
-                        std.mem.eql(
-                            u8,
-                            element.localName(),
-                            "audioFormatExtended",
-                        ))
-                    {
-                        self.afe_depth = null;
-                    }
-                    return event;
-                },
-                .text => return event,
-            }
-        }
-        return null;
-    }
-};
-
-fn skipXmlSubtree(
-    events: *xml.EventIterator,
-    start: xml.StartElement,
-) !void {
-    _ = try consumeXmlSubtree(events, start);
-}
-
-fn consumeXmlSubtree(
-    events: *xml.EventIterator,
-    start: xml.StartElement,
-) !xml.EndElement {
-    while (try events.next()) |event| {
-        switch (event) {
-            .end => |element| {
-                if (element.depth == start.depth and
-                    std.mem.eql(u8, element.name, start.name))
-                {
-                    return element;
-                }
-            },
-            else => {},
-        }
-    }
-    return error.UnclosedAdmExtension;
-}
-
-fn isTypedMetadataElementName(local_name: []const u8) bool {
-    // New typed readers must add their element names to this inventory.
-    const names = [_][]const u8{
-        "alternativeValueSet",
-        "alternativeValueSetIDRef",
-        "audioBlockFormatBinaural",
-        "audioBlockFormatDirectSpeakers",
-        "audioBlockFormatHoa",
-        "audioBlockFormatIDRef",
-        "audioBlockFormatMatrix",
-        "audioBlockFormatObjects",
-        "audioChannelFormat",
-        "audioChannelFormatIDRef",
-        "audioComplementaryObjectGroupLabel",
-        "audioComplementaryObjectIDRef",
-        "audioContent",
-        "audioContentIDRef",
-        "audioContentLabel",
-        "audioFormatExtended",
-        "audioObject",
-        "audioObjectIDRef",
-        "audioObjectInteraction",
-        "audioPackFormat",
-        "audioPackFormatIDRef",
-        "audioProgramme",
-        "audioProgrammeIDRef",
-        "audioProgrammeLabel",
-        "audioStreamFormat",
-        "audioStreamFormatIDRef",
-        "audioTrack",
-        "audioTrackFormat",
-        "audioTrackFormatIDRef",
-        "audioTrackUID",
-        "audioTrackUIDRef",
-        "cartesian",
-        "channelLock",
-        "coefficient",
-        "decodePackFormatIDRef",
-        "degree",
-        "depth",
-        "dialogue",
-        "dialogueLoudness",
-        "diffuse",
-        "encodePackFormatIDRef",
-        "equation",
-        "frameFormat",
-        "frameHeader",
-        "frequency",
-        "gain",
-        "gainInteractionRange",
-        "headLocked",
-        "headphoneVirtualise",
-        "height",
-        "importance",
-        "inputPackFormatIDRef",
-        "integratedLoudness",
-        "jumpPosition",
-        "loudnessMetadata",
-        "matrix",
-        "nfcRefDist",
-        "normalization",
-        "objectDivergence",
-        "order",
-        "outputChannelFormatIDRef",
-        "outputChannelIDRef",
-        "outputPackFormatIDRef",
-        "position",
-        "positionInteractionRange",
-        "positionOffset",
-        "profile",
-        "profileList",
-        "screenRef",
-        "speakerLabel",
-        "tag",
-        "tagGroup",
-        "tagList",
-        "transportTrackFormat",
-        "width",
-        "zone",
-        "zoneExclusion",
-    };
-    for (names) |name| {
-        if (std.mem.eql(u8, local_name, name)) return true;
-    }
-    return false;
-}
-
-fn extensionDeclarationOwner(
-    element: xml.StartElement,
-    storage: []u8,
-) !?adm.Identifier {
-    const spec = declarationSpec(element.localName()) orelse return null;
-    const encoded = try element.attribute(spec.attribute_name) orelse
-        return error.MissingAdmIdentifier;
-    const raw = try xml.decodeContent(storage, encoded);
-    const identifier = try adm.Identifier.parse(raw);
-    if (identifier.kind != spec.kind)
-        return error.InvalidAdmDeclarationKind;
-    return identifier;
-}
-
-pub const Extension = struct {
-    qualified_name: []const u8,
-    namespace_uri: ?[]const u8,
-    attributes: []const u8,
-    source: []const u8,
-    source_offset: usize,
-    depth: usize,
-    parent_element_name: []const u8,
-    declaration_owner: ?adm.Identifier,
-
-    pub fn localName(self: Extension) []const u8 {
-        return xml.qualifiedLocalName(self.qualified_name);
-    }
-};
-
-pub const UntypedElement = struct {
-    qualified_name: []const u8,
-    namespace_uri: ?[]const u8,
-    attributes: []const u8,
-    source: []const u8,
-    source_offset: usize,
-    depth: usize,
-    parent_element_name: []const u8,
-    declaration_owner: ?adm.Identifier,
-
-    pub fn localName(self: UntypedElement) []const u8 {
-        return xml.qualifiedLocalName(self.qualified_name);
-    }
-};
-
-const MetadataElementRelation = enum {
-    foreign,
-    untyped,
-};
-
-fn MetadataElementIterator(comptime relation: MetadataElementRelation) type {
-    const Result = switch (relation) {
-        .foreign => Extension,
-        .untyped => UntypedElement,
-    };
-    return struct {
-        document: Document,
-        events: xml.EventIterator,
-        afe_depth: ?usize = null,
-        element_names: [xml.max_depth]?[]const u8 = @splat(null),
-        owners: [xml.max_depth]?adm.Identifier = @splat(null),
-        owner_storage: [xml.max_depth][max_identifier_bytes]u8 = undefined,
-        namespace_uri_storage: [xml.max_namespace_uri_bytes]u8 = undefined,
-
-        const Self = @This();
-
-        fn init(document: Document) Self {
-            return .{
-                .document = document,
-                .events = document.xml_document.iterator(),
-            };
-        }
-
-        /// Returned namespace and owner identifier storage remain valid until
-        /// the next iterator call.
-        pub fn next(self: *Self) !?Result {
-            const checkpoint = self.*;
-            return self.nextInPlace() catch |err| {
-                self.* = checkpoint;
-                return err;
-            };
-        }
-
-        fn nextInPlace(self: *Self) !?Result {
-            while (try self.events.next()) |event| {
-                switch (event) {
-                    .start => |element| {
-                        const inherited_owner = if (element.depth == 0)
-                            null
-                        else
-                            self.owners[element.depth - 1];
-                        self.owners[element.depth] = inherited_owner;
-                        self.element_names[element.depth] = null;
-
-                        const namespace_matches = try xml.namespaceNamesEql(
-                            self.document.namespace_name,
-                            element.namespace_name,
-                        );
-                        if (namespace_matches and
-                            std.mem.eql(
-                                u8,
-                                element.localName(),
-                                "audioFormatExtended",
-                            ))
-                        {
-                            self.afe_depth = if (element.self_closing)
-                                null
-                            else
-                                element.depth;
-                            self.element_names[element.depth] =
-                                element.localName();
-                            self.owners[element.depth] = null;
-                            continue;
-                        }
-                        if (!insideAfe(self.afe_depth, element.depth))
-                            continue;
-
-                        const typed = namespace_matches and
-                            isTypedMetadataElementName(element.localName());
-                        const target = switch (relation) {
-                            .foreign => !namespace_matches,
-                            .untyped => namespace_matches and !typed,
-                        };
-                        if (target) return try self.readElement(element);
-                        if (!typed) {
-                            if (!element.self_closing)
-                                try skipXmlSubtree(&self.events, element);
-                            continue;
-                        }
-
-                        self.element_names[element.depth] =
-                            element.localName();
-                        if (try extensionDeclarationOwner(
-                            element,
-                            &self.owner_storage[element.depth],
-                        )) |identifier| {
-                            self.owners[element.depth] = identifier;
-                        }
-                    },
-                    .end => |element| {
-                        if (self.afe_depth == element.depth and
-                            try xml.namespaceNamesEql(
-                                self.document.namespace_name,
-                                element.namespace_name,
-                            ) and
-                            std.mem.eql(
-                                u8,
-                                element.localName(),
-                                "audioFormatExtended",
-                            ))
-                        {
-                            self.afe_depth = null;
-                        }
-                    },
-                    else => {},
-                }
-            }
-            return null;
-        }
-
-        fn readElement(
-            self: *Self,
-            element: xml.StartElement,
-        ) !Result {
-            const parent_element_name = if (element.depth == 0)
-                null
-            else
-                self.element_names[element.depth - 1];
-            const parent = parent_element_name orelse switch (relation) {
-                .foreign => return error.InvalidAdmExtensionOwner,
-                .untyped => return error.InvalidAdmUntypedElementOwner,
-            };
-            const source_end = if (element.self_closing)
-                element.source_end
-            else
-                (try consumeXmlSubtree(&self.events, element)).source_end;
-            const namespace_uri =
-                if (element.namespace_name) |namespace_name|
-                    try xml.decodeContent(
-                        &self.namespace_uri_storage,
-                        namespace_name.encoded,
-                    )
-                else
-                    null;
-            return .{
-                .qualified_name = element.name,
-                .namespace_uri = namespace_uri,
-                .attributes = element.attributes,
-                .source = self.document.xml_document.bytes[element.source_start..source_end],
-                .source_offset = element.source_start,
-                .depth = element.depth,
-                .parent_element_name = parent,
-                .declaration_owner = self.owners[element.depth],
-            };
-        }
-    };
-}
-
-pub const ExtensionIterator = MetadataElementIterator(.foreign);
-pub const UntypedElementIterator = MetadataElementIterator(.untyped);
-
-pub const ExtensionAttribute = struct {
-    qualified_name: []const u8,
-    namespace_uri: []const u8,
-    encoded_value: []const u8,
-    source: []const u8,
-    element_name: []const u8,
-    declaration_owner: ?adm.Identifier,
-
-    pub fn localName(self: ExtensionAttribute) []const u8 {
-        return xml.qualifiedLocalName(self.qualified_name);
-    }
-
-    pub fn decodeValue(
-        self: ExtensionAttribute,
-        destination: []u8,
-    ) ![]const u8 {
-        return xml.decodeContent(destination, self.encoded_value);
-    }
-};
-
-const MetadataAttributeRelation = enum {
-    foreign,
-    metadata,
-};
-
-const MetadataAttributeIterator = struct {
-    document: Document,
-    events: xml.EventIterator,
-    afe_depth: ?usize = null,
-    owners: [xml.max_depth]?adm.Identifier = @splat(null),
-    owner_storage: [xml.max_depth][max_identifier_bytes]u8 = undefined,
-    namespace_uri_storage: [xml.max_namespace_uri_bytes]u8 = undefined,
-    current_element: ?xml.StartElement = null,
-    attributes: xml.AttributeIterator = xml.AttributeIterator.init(""),
-
-    fn init(document: Document) MetadataAttributeIterator {
-        return .{
-            .document = document,
-            .events = document.xml_document.iterator(),
-        };
-    }
-
-    /// Returned namespace and owner identifier storage remain valid until
-    /// the next iterator call.
-    fn next(
-        self: *MetadataAttributeIterator,
-        relation: MetadataAttributeRelation,
-    ) !?ExtensionAttribute {
-        while (true) {
-            if (self.current_element) |element| {
-                while (try self.attributes.next()) |attribute| {
-                    if (isXmlNamespaceDeclaration(attribute.name) or
-                        std.mem.indexOfScalar(
-                            u8,
-                            attribute.name,
-                            ':',
-                        ) == null)
-                    {
-                        continue;
-                    }
-                    const namespace_name =
-                        (try self.events.attributeNamespaceName(
-                            element,
-                            attribute,
-                        )) orelse return error.InvalidAdmExtensionNamespace;
-                    const namespace_matches = try xml.namespaceNamesEql(
-                        self.document.namespace_name,
-                        namespace_name,
-                    );
-                    if ((relation == .foreign and namespace_matches) or
-                        (relation == .metadata and !namespace_matches))
-                    {
-                        continue;
-                    }
-                    const namespace_uri = try xml.decodeContent(
-                        &self.namespace_uri_storage,
-                        namespace_name.encoded,
-                    );
-                    return .{
-                        .qualified_name = attribute.name,
-                        .namespace_uri = namespace_uri,
-                        .encoded_value = attribute.value,
-                        .source = attribute.source,
-                        .element_name = element.localName(),
-                        .declaration_owner = self.owners[element.depth],
-                    };
-                }
-                self.current_element = null;
-            }
-
-            const event = (try self.events.next()) orelse return null;
-            switch (event) {
-                .start => |element| {
-                    const inherited_owner = if (element.depth == 0)
-                        null
-                    else
-                        self.owners[element.depth - 1];
-                    self.owners[element.depth] = inherited_owner;
-                    const namespace_matches = try xml.namespaceNamesEql(
-                        self.document.namespace_name,
-                        element.namespace_name,
-                    );
-                    const is_afe = namespace_matches and
-                        std.mem.eql(
-                            u8,
-                            element.localName(),
-                            "audioFormatExtended",
-                        );
-                    if (is_afe) {
-                        self.afe_depth = if (element.self_closing)
-                            null
-                        else
-                            element.depth;
-                        self.owners[element.depth] = null;
-                    } else if (!insideAfe(
-                        self.afe_depth,
-                        element.depth,
-                    )) {
-                        continue;
-                    } else if (!namespace_matches) {
-                        if (!element.self_closing)
-                            try skipXmlSubtree(&self.events, element);
-                        continue;
-                    } else if (!isTypedMetadataElementName(
-                        element.localName(),
-                    )) {
-                        if (!element.self_closing)
-                            try skipXmlSubtree(&self.events, element);
-                        continue;
-                    } else if (try extensionDeclarationOwner(
-                        element,
-                        &self.owner_storage[element.depth],
-                    )) |identifier| {
-                        self.owners[element.depth] = identifier;
-                    }
-                    self.current_element = element;
-                    self.attributes =
-                        xml.AttributeIterator.init(element.attributes);
-                },
-                .end => |element| {
-                    if (self.afe_depth == element.depth and
-                        try xml.namespaceNamesEql(
-                            self.document.namespace_name,
-                            element.namespace_name,
-                        ) and
-                        std.mem.eql(
-                            u8,
-                            element.localName(),
-                            "audioFormatExtended",
-                        ))
-                    {
-                        self.afe_depth = null;
-                    }
-                },
-                else => {},
-            }
-        }
-    }
-};
-
-pub const ExtensionAttributeIterator = struct {
-    iterator: MetadataAttributeIterator,
-
-    fn init(document: Document) ExtensionAttributeIterator {
-        return .{ .iterator = MetadataAttributeIterator.init(document) };
-    }
-
-    pub fn next(
-        self: *ExtensionAttributeIterator,
-    ) !?ExtensionAttribute {
-        const checkpoint = self.*;
-        return self.iterator.next(.foreign) catch |err| {
-            self.* = checkpoint;
-            return err;
-        };
-    }
-};
-
-pub const UntypedAttribute = ExtensionAttribute;
-
-pub const UntypedAttributeIterator = struct {
-    iterator: MetadataAttributeIterator,
-
-    fn init(document: Document) UntypedAttributeIterator {
-        return .{ .iterator = MetadataAttributeIterator.init(document) };
-    }
-
-    pub fn next(
-        self: *UntypedAttributeIterator,
-    ) !?UntypedAttribute {
-        const checkpoint = self.*;
-        return self.iterator.next(.metadata) catch |err| {
-            self.* = checkpoint;
-            return err;
-        };
     }
 };
 
@@ -3776,8 +3213,15 @@ pub const Document = struct {
         return document;
     }
 
+    fn metadataSource(self: Document) MetadataSource {
+        return .{
+            .document = self.xml_document,
+            .namespace_name = self.namespace_name,
+        };
+    }
+
     fn metadataEvents(self: Document) MetadataEventIterator {
-        return MetadataEventIterator.init(self);
+        return MetadataEventIterator.init(self.metadataSource());
     }
 
     pub fn declarations(self: Document) DeclarationIterator {
@@ -3805,23 +3249,23 @@ pub const Document = struct {
     }
 
     pub fn extensions(self: Document) ExtensionIterator {
-        return ExtensionIterator.init(self);
+        return ExtensionIterator.init(self.metadataSource());
     }
 
     pub fn extensionAttributes(
         self: Document,
     ) ExtensionAttributeIterator {
-        return ExtensionAttributeIterator.init(self);
+        return ExtensionAttributeIterator.init(self.metadataSource());
     }
 
     pub fn untypedElements(self: Document) UntypedElementIterator {
-        return UntypedElementIterator.init(self);
+        return UntypedElementIterator.init(self.metadataSource());
     }
 
     pub fn untypedAttributes(
         self: Document,
     ) UntypedAttributeIterator {
-        return UntypedAttributeIterator.init(self);
+        return UntypedAttributeIterator.init(self.metadataSource());
     }
 
     pub fn validateTypedVocabulary(self: Document) !void {
@@ -8931,35 +8375,6 @@ pub const ReferenceIterator = struct {
     }
 };
 
-const DeclarationSpec = struct {
-    kind: adm.IdentifierKind,
-    attribute_name: []const u8,
-};
-
-fn declarationSpec(local_name: []const u8) ?DeclarationSpec {
-    if (std.mem.eql(u8, local_name, "audioProgramme"))
-        return .{ .kind = .programme, .attribute_name = "audioProgrammeID" };
-    if (std.mem.eql(u8, local_name, "audioContent"))
-        return .{ .kind = .content, .attribute_name = "audioContentID" };
-    if (std.mem.eql(u8, local_name, "audioObject"))
-        return .{ .kind = .object, .attribute_name = "audioObjectID" };
-    if (std.mem.eql(u8, local_name, "audioPackFormat"))
-        return .{ .kind = .pack_format, .attribute_name = "audioPackFormatID" };
-    if (std.mem.eql(u8, local_name, "audioChannelFormat"))
-        return .{ .kind = .channel_format, .attribute_name = "audioChannelFormatID" };
-    if (std.mem.eql(u8, local_name, "audioStreamFormat"))
-        return .{ .kind = .stream_format, .attribute_name = "audioStreamFormatID" };
-    if (std.mem.eql(u8, local_name, "audioTrackFormat"))
-        return .{ .kind = .track_format, .attribute_name = "audioTrackFormatID" };
-    if (std.mem.eql(u8, local_name, "audioTrackUID"))
-        return .{ .kind = .track_uid, .attribute_name = "UID" };
-    if (std.mem.eql(u8, local_name, "alternativeValueSet"))
-        return .{ .kind = .alternative_value_set, .attribute_name = "alternativeValueSetID" };
-    if (std.mem.startsWith(u8, local_name, "audioBlockFormat"))
-        return .{ .kind = .block_format, .attribute_name = "audioBlockFormatID" };
-    return null;
-}
-
 const ReferenceSpec = struct {
     kind: ReferenceKind,
     identifier_kind: adm.IdentifierKind,
@@ -9037,11 +8452,6 @@ fn channelTrackReference(raw: []const u8) !adm.Identifier {
     if (raw.len == 14 and asciiEqlIgnoreCase(raw[0..3], "AC_"))
         return adm.Identifier.parse(raw[0..11]);
     return adm.Identifier.parse(raw);
-}
-
-fn insideAfe(afe_depth: ?usize, element_depth: usize) bool {
-    const depth = afe_depth orelse return false;
-    return element_depth > depth;
 }
 
 fn isDirectChild(parent_depth: usize, child_depth: usize) bool {
