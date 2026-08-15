@@ -111,6 +111,31 @@ test "oscillator waveforms preserve phase across blocks" {
     );
 }
 
+test "oscillator sine and square match quarter-cycle identities" {
+    var sine = try Oscillator(f64).init(8_000.0, 2_000.0, .sine);
+    var sine_samples: [4]f64 = undefined;
+    sine.process(&sine_samples);
+    for (
+        [_]f64{ 0.0, 1.0, 0.0, -1.0 },
+        sine_samples,
+    ) |expected, actual| {
+        try std.testing.expectApproxEqAbs(
+            expected,
+            actual,
+            0.000_000_000_001,
+        );
+    }
+
+    var square = try Oscillator(f32).init(8_000.0, 2_000.0, .square);
+    var square_samples: [4]f32 = undefined;
+    square.process(&square_samples);
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 1.0, 1.0, -1.0, -1.0 },
+        &square_samples,
+    );
+}
+
 test "oscillator validates configuration and normalizes reset phase" {
     try std.testing.expectError(
         error.InvalidOscillatorConfig,
