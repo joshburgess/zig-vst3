@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 const dry_wet = @import("dry_wet.zig");
 
 pub const Rule = dry_wet.MixingRule;
@@ -62,6 +63,14 @@ pub fn StereoPanner(comptime Sample: type) type {
         ) !void {
             if (input.len != left.len or input.len != right.len)
                 return error.PannerBufferLengthMismatch;
+            if (buffer_regions.overlap(Sample, left, right) or
+                (buffer_regions.overlap(Sample, input, left) and
+                    !buffer_regions.same(input, left)) or
+                (buffer_regions.overlap(Sample, input, right) and
+                    !buffer_regions.same(input, right)))
+            {
+                return error.PannerBufferOverlap;
+            }
             for (input, left, right) |input_sample, *left_sample, *right_sample| {
                 const output = self.processSample(input_sample);
                 left_sample.* = output[0];
@@ -166,4 +175,32 @@ test "stereo panner validates position and buffers" {
         [2]f32{ 0.0, 0.0 },
         panner.processSample(1.0),
     );
+}
+
+test "stereo panner validates complete buffer aliases transactionally" {
+    const panner = try StereoPanner(f32).init(0.0);
+    var storage = [_]f32{ 1.0, 2.0, 3.0, 4.0 };
+    var right: [3]f32 = @splat(9.0);
+    const retained_storage = storage;
+    const retained_right = right;
+    try std.testing.expectError(
+        error.PannerBufferOverlap,
+        panner.process(storage[0..3], storage[1..4], &right),
+    );
+    try std.testing.expectEqualSlices(f32, &retained_storage, &storage);
+    try std.testing.expectEqualSlices(f32, &retained_right, &right);
+
+    var left: [3]f32 = @splat(8.0);
+    const retained_left = left;
+    try std.testing.expectError(
+        error.PannerBufferOverlap,
+        panner.process(storage[0..3], &left, left[0..3]),
+    );
+    try std.testing.expectEqualSlices(f32, &retained_left, &left);
+
+    try panner.process(storage[0..3], storage[0..3], &right);
+    for (storage[0..3], right) |left_sample, right_sample| {
+        try std.testing.expect(std.math.isFinite(left_sample));
+        try std.testing.expect(std.math.isFinite(right_sample));
+    }
 }
