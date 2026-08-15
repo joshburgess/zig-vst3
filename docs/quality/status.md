@@ -89,6 +89,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   page-count, packet-count, and chained-stream policies across memory, file,
   and seek-index paths. The 94-test Vorbis/Ogg gate, 100,094-run native fuzz
   campaign, installed-package matrix, and ReleaseSafe cross-builds pass.
+- Closed Q-AUDIO-001 with bounded default and caller-selected file-byte,
+  chunk-count, requested-metadata-byte, and PCM-frame policies across WAV,
+  AIFF, AIFC, RF64, BW64, and Wave64 readers. The 168-test Q12 selection,
+  100,153-run native fuzz campaign, installed-package matrix, and Windows
+  ReleaseSafe cross-build pass.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.

@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 823 source files and 471,806 source lines.
+The checked inventory contains 823 source files and 472,111 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -32,7 +32,7 @@ misstate review effort.
 
 | Unit | Scope | Files | Lines | C/E/X/T | Rank | Principal exposure | Required verification |
 | --- | --- | ---: | ---: | --- | --- | --- | --- |
-| Q00 | Build graph, CI, release and validation scripts | 126 | 17,757 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
+| Q00 | Build graph, CI, release and validation scripts | 126 | 17,775 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
 | Q01 | Raw VST3 ABI mirrors and COM helpers | 114 | 28,988 | 5/5/4/5 | Elevated | Public ABI, pointers, reference counts, host callbacks | SDK layout parity, callback lifecycle, validators, sanitizers |
 | Q02 | ARA model, controller, analysis, cache, and official headers | 15 | 27,714 | 5/4/5/3 | High | Host callbacks, readers, atomics, persistence, untrusted host data | Header parity, lifecycle stress, allocator failure, TSan, state corruption |
 | Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,152 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
@@ -44,16 +44,16 @@ misstate review effort.
 | Q09 | MIDI 1, MIDI 2, MIDI-CI, MPE, files, streams, and sessions | 33 | 20,657 | 4/5/5/3 | High | Untrusted byte streams, bounded queues, session state | Fuzzing, truncation, progress, capacity, deterministic state models |
 | Q10 | Ogg and Vorbis | 1 | 31,085 | 5/5/5/4 | High | Untrusted packets, checked arithmetic, codec state, seeking | Fuzzing, truncation, sanitizer runs, independent decoders |
 | Q11 | MP3 | 3 | 30,826 | 5/5/5/4 | High | Untrusted frames, bit reservoirs, Huffman data, synthesis | Fuzzing, corruption, sanitizer runs, independent decoders |
-| Q12 | FLAC, audio containers, metadata, and file I/O | 15 | 23,821 | 5/5/5/4 | High | Untrusted files, XML, arithmetic, transactional output | Fuzzing, short I/O, failure injection, independent tools |
+| Q12 | FLAC, audio containers, metadata, and file I/O | 15 | 24,103 | 5/5/5/4 | High | Untrusted files, XML, arithmetic, transactional output | Fuzzing, short I/O, failure injection, independent tools |
 | Q13 | ADM parsing and rendering | 15 | 33,905 | 5/4/5/4 | High | XML, timed metadata, matrix construction, exclusion rules | Fuzzing, numerical oracles, bounded inputs, partition invariance |
 | Q14 | HRTF, HOA, and spatial matrices | 7 | 14,901 | 5/4/5/4 | High | Measured datasets, conditioning, realtime publication | Dataset corruption, numerical parity, TSan, partition invariance |
-| Q15 | DSP primitives, convolution, filters, effects, resampling, and numerics | 62 | 33,533 | 5/4/5/4 | High | Numerical stability, bounds, realtime execution and publication | Independent vectors, property tests, finite containment, TSan, benchmarks |
+| Q15 | DSP primitives, convolution, filters, effects, resampling, and numerics | 62 | 33,535 | 5/4/5/4 | High | Numerical stability, bounds, realtime execution and publication | Independent vectors, property tests, finite containment, TSan, benchmarks |
 | Q16 | Toolkit-neutral GUI state and models | 16 | 9,006 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
 | Q17 | LV2 and Audio Unit adapters | 6 | 22,415 | 5/5/5/4 | High | C ABI, host pointers, realtime entry, state and worker callbacks | ABI fixtures, dynamic hosts, sanitizers, metadata lint, failure silence |
 | Q18 | Standalone runtime and native audio, MIDI, and window backends | 60 | 37,463 | 5/5/5/3 | High | OS callbacks, devices, threads, handles, recovery | TSan, callback drain, fault injection, cross-target and physical checks |
 | Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,691 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
 | Q20 | Product and API examples | 54 | 14,920 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
-| Q21 | Test hosts, reference adapters, and downstream fixtures | 101 | 29,765 | 3/3/4/4 | Moderate | Oracle correctness and false confidence | Mutation review, independent provenance, fixture self-tests |
+| Q21 | Test hosts, reference adapters, and downstream fixtures | 101 | 29,768 | 3/3/4/4 | Moderate | Oracle correctness and false confidence | Mutation review, independent provenance, fixture self-tests |
 | Q22 | ABI, fixture, codec, and parity tools | 56 | 10,955 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
 
 ## Lexical Concentrations
@@ -76,10 +76,10 @@ manual review. They include false positives and cannot establish absence.
 | Q09 | 53 | 0 | 0 | 0 | 673 | 846 |
 | Q10 | 0 | 6 | 0 | 0 | 524 | 362 |
 | Q11 | 0 | 8 | 0 | 0 | 667 | 416 |
-| Q12 | 0 | 26 | 0 | 0 | 668 | 370 |
+| Q12 | 0 | 26 | 0 | 0 | 668 | 374 |
 | Q13 | 90 | 0 | 0 | 0 | 396 | 328 |
 | Q14 | 132 | 13 | 18 | 14 | 71 | 223 |
-| Q15 | 2 | 12 | 32 | 0 | 65 | 1,885 |
+| Q15 | 2 | 12 | 32 | 0 | 65 | 1,887 |
 | Q16 | 2 | 67 | 22 | 17 | 191 | 409 |
 | Q17 | 74 | 439 | 4 | 234 | 139 | 896 |
 | Q18 | 270 | 539 | 300 | 889 | 65 | 615 |

@@ -1305,3 +1305,34 @@ packet count, and every packet-parser failure must preserve retained state.
 | `scripts/check_quality_inventory.sh` | Passed: 823 files and 471,806 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded Audio Container Parsing
+
+Behavior commit: `4b326977`
+
+`AudioFileReader` now retains one `AudioFileLimits` policy across WAV, AIFF,
+AIFC, RF64, BW64, and Wave64 parsing and metadata scans. Default entry points
+accept at most one TiB of encoded file data, 1,000,000 chunks per scan, 256 MiB
+for one requested metadata chunk, and 10,000,000,000 PCM frames.
+`initWithLimits` exposes the same policy to installed consumers. File-byte
+rejection precedes header parsing. Chunk and frame limits precede accepted
+reader publication, while requested-metadata limits precede destination writes.
+
+The deterministic mutation suite flips every encoded byte under three masks
+and tests every strict truncation prefix for all six supported containers. The
+dedicated native fuzz target combines arbitrary input with generated WAV and
+AIFF, then mutates, truncates, or extends the candidate before parsing it
+through positional file I/O. Accepted readers must retain valid bounded state,
+successful reads must report an in-range frame count, and failed transactional
+reads must preserve caller output.
+
+| Check | Result |
+| --- | --- |
+| Focused audio-file reader selection | Passed: 18/18 tests, including every independent limit, hostile retained state, all-container deterministic mutation and truncation, and transactional late-I/O failure |
+| Broad Q12 file, metadata, XML, and writer selection | Passed: 168/168 tests |
+| `zig build test-audio-file-fuzz --fuzz=100K` | Passed: 100,153 executions, 60 unique inputs, and 411 of 22,216 instrumented branches without a failure |
+| `zig build test-plugin-core-builds --summary all` | Passed: Windows x86-64 ReleaseSafe cross-compilation |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including the public custom-limit APIs |
+| `scripts/check_quality_inventory.sh` | Passed: 823 files and 472,111 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

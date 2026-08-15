@@ -111,6 +111,10 @@ single type. Later phases must link each invariant to code and verification.
   packet-count, and logical-stream policy. Seek-index passes use the same
   policy. Limit rejection leaves reader state unchanged, and file readers
   reject determinable limits before changing caller storage.
+- WAV, AIFF, AIFC, RF64, BW64, and Wave64 readers retain one file-byte,
+  chunk-count, requested-metadata-byte, and PCM-frame policy. File-size
+  rejection precedes header parsing. Chunk and frame limits precede accepted
+  reader publication, and metadata limits precede caller-storage changes.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the
