@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 821 source files and 469,425 source lines.
+The checked inventory contains 821 source files and 469,478 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -43,7 +43,7 @@ misstate review effort.
 | Q08 | Process context, events, changes, segmentation, and ordering | 5 | 9,114 | 5/5/5/4 | High | Host-controlled counts and pointers on realtime path | Boundary generation, malformed host data, partition invariance |
 | Q09 | MIDI 1, MIDI 2, MIDI-CI, MPE, files, streams, and sessions | 33 | 20,657 | 4/5/5/3 | High | Untrusted byte streams, bounded queues, session state | Fuzzing, truncation, progress, capacity, deterministic state models |
 | Q10 | Ogg and Vorbis | 1 | 30,491 | 5/5/5/4 | High | Untrusted packets, checked arithmetic, codec state, seeking | Fuzzing, truncation, sanitizer runs, independent decoders |
-| Q11 | MP3 | 3 | 30,586 | 5/5/5/4 | High | Untrusted frames, bit reservoirs, Huffman data, synthesis | Fuzzing, corruption, sanitizer runs, independent decoders |
+| Q11 | MP3 | 3 | 30,639 | 5/5/5/4 | High | Untrusted frames, bit reservoirs, Huffman data, synthesis | Fuzzing, corruption, sanitizer runs, independent decoders |
 | Q12 | FLAC, audio containers, metadata, and file I/O | 15 | 23,449 | 5/5/5/4 | High | Untrusted files, XML, arithmetic, transactional output | Fuzzing, short I/O, failure injection, independent tools |
 | Q13 | ADM parsing and rendering | 15 | 33,388 | 5/4/5/4 | High | XML, timed metadata, matrix construction, exclusion rules | Fuzzing, numerical oracles, bounded inputs, partition invariance |
 | Q14 | HRTF, HOA, and spatial matrices | 7 | 14,901 | 5/4/5/4 | High | Measured datasets, conditioning, realtime publication | Dataset corruption, numerical parity, TSan, partition invariance |
@@ -145,8 +145,8 @@ assigned reviewer and later-phase gate.
 | --- | --- | --- |
 | `vendor/ARA_API/*` | Bundled official ARA 2.3 headers and notices, 4,311 lines including non-source text | Pinned input to Zig translation and ABI checks; no local regeneration |
 | `zig-vst3/src/pluginterfaces/**` | Repository-maintained Zig mirrors of pinned VST3 SDK declarations | Checked against SDK C++ layouts by the raw ABI matrix |
-| `zig-vst3-plugin/src/dsp/mp3_huffman_tables.zig` | ISO/IEC 11172-3 Table 3-B.7 data, 1,485 lines | Source is named; extraction method and byte-for-byte regeneration are not recorded |
-| `zig-vst3-plugin/src/dsp/mp3_synthesis_window.zig` | Embedded 512-value synthesis table, 34 lines | Provenance and regeneration are not recorded |
+| `zig-vst3-plugin/src/dsp/mp3_huffman_tables.zig` | [ISO/IEC 11172-3:1993](https://www.iso.org/standard/22412.html), Annex B, Table 3-B.7 | Reconstruction enumerates tables by number and cells by `x * side + y`, retaining each published codeword length and unsigned bits. The semantic serialization has SHA-256 `9fdeb0ca3c74ac54a8ee9154544e8dced73aef97837de1311572e75866de76ec`, enforced by the MP3 tests. |
+| `zig-vst3-plugin/src/dsp/mp3_synthesis_window.zig` | [ISO/IEC 11172-3:1993](https://www.iso.org/standard/22412.html), Annex B, Table 3-B.3 | Reconstruction reads the 512 `D[i]` values in index order, multiplies each published coefficient by 65,536, and rounds to the nearest integer. The big-endian `i32` serialization has SHA-256 `e8d6792457f2a517d0e36a87d29f83610aa00d6cca6281f0b31802faa4b2ccf3`, enforced by the MP3 tests. |
 | `gui-adapters/vstgui/testdata/*` | Checked-in visual reference images, 51 files | Visual tests compare renderer output with these references; acceptance provenance requires Q16 review |
 | MP3 conformance fixtures | CC0 minimp3 vectors at commit `ea99364f61c14656440e8d77e9c233ccf3124633` | The checked-in README records upstream paths and decoded SHA-256 values |
 | Downloaded codec references | Xiph libogg 1.3.5, libvorbis 1.3.7, Tremor commit `820fb323`, stb_vorbis commit `2c980bb5`, and Helix MP3 commit `7f7dfc76` | Preparation scripts pin archive hashes; fixture runners exercise download, identity, hash-failure, and interruption handling |

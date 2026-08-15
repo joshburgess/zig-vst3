@@ -1,3 +1,5 @@
+// ISO/IEC 11172-3:1993, Annex B, Table 3-B.3. Each published D[i]
+// coefficient is multiplied by 65,536 and rounded to the nearest integer.
 pub const values = [512]i32{
     0,      -1,     -1,     -1,     -1,     -1,     -1,     -2,     -2,     -2,     -2,     -3,     -3,     -4,     -4,     -5,
     -5,     -6,     -7,     -7,     -8,     -9,     -10,    -11,    -13,    -14,    -16,    -17,    -19,    -21,    -24,    -26,

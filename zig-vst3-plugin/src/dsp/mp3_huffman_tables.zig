@@ -1,4 +1,5 @@
-// ISO/IEC 11172-3 Table 3-B.7 codeword data
+// ISO/IEC 11172-3:1993, Annex B, Table 3-B.7. Entries retain the
+// standard's x-major, y-minor cell order, codeword length, and unsigned bits.
 
 pub const Entry = struct {
     length: u5,

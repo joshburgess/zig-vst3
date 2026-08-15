@@ -19791,6 +19791,56 @@ test "preserves the quantized MP3 synthesis window" {
         @as(i32, 1),
         synthesis_window_quantized[511],
     );
+
+    var synthesis_hash = std.crypto.hash.sha2.Sha256.init(.{});
+    var encoded_value: [4]u8 = undefined;
+    for (synthesis_window_quantized) |value| {
+        std.mem.writeInt(u32, &encoded_value, @bitCast(value), .big);
+        synthesis_hash.update(&encoded_value);
+    }
+    var synthesis_digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 =
+        undefined;
+    synthesis_hash.final(&synthesis_digest);
+    var expected_digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 =
+        undefined;
+    _ = try std.fmt.hexToBytes(
+        &expected_digest,
+        "e8d6792457f2a517d0e36a87d29f83610aa00d6cca6281f0b31802faa4b2ccf3",
+    );
+    try std.testing.expectEqual(expected_digest, synthesis_digest);
+}
+
+test "preserves the MP3 Huffman table codewords" {
+    var hash = std.crypto.hash.sha2.Sha256.init(.{});
+    var encoded_bits: [4]u8 = undefined;
+    for (0..32) |table_index| {
+        const index: u5 = @intCast(table_index);
+        const table = huffman_tables.get(index) catch |err| switch (err) {
+            error.InvalidMp3HuffmanTable => {
+                hash.update(&.{ @intCast(index), 0xff });
+                continue;
+            },
+        };
+        hash.update(&.{
+            @intCast(index),
+            @intCast(table.side),
+            @intCast(table.linbits),
+        });
+        for (table.entries) |entry| {
+            hash.update(&.{@intCast(entry.length)});
+            std.mem.writeInt(u32, &encoded_bits, entry.bits, .big);
+            hash.update(&encoded_bits);
+        }
+    }
+    var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+    hash.final(&digest);
+    var expected_digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 =
+        undefined;
+    _ = try std.fmt.hexToBytes(
+        &expected_digest,
+        "9fdeb0ca3c74ac54a8ee9154544e8dced73aef97837de1311572e75866de76ec",
+    );
+    try std.testing.expectEqual(expected_digest, digest);
 }
 
 test "synthesizes MP3 polyphase PCM against a shift register" {
