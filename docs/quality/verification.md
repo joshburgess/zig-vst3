@@ -993,3 +993,41 @@ caches recovered space. Sequential reruns shared one global cache and passed.
 | `scripts/test_vstgui_thread_sanitizer_runner.sh` | Passed: success, test failure, interruption, invalid configuration, owned-build cleanup, and artifact-write failure cases |
 | `zig build --cache-dir /private/tmp/zig-vst3-teardown-coreaudio-local --global-cache-dir /private/tmp/zig-vst3-teardown-shared-global test-coreaudio --summary all` | Passed outside the restricted sandbox: 9/9 steps and 10/11 tests; one hardware-dependent discovery test skipped |
 | `zig build --cache-dir /private/tmp/zig-vst3-teardown-examples-local --global-cache-dir /private/tmp/zig-vst3-teardown-shared-global test-example-ownership --summary all` | Passed outside the restricted sandbox: 17/17 steps and 46/46 tests |
+
+## 2026-08-14: First Phase 2 Completion Candidate
+
+Candidate commit: `daa6589cb2594b14474f461e8707593a9e7250dd`
+
+GitHub Actions run `31850045681` tested the pull request merge of the candidate
+into unchanged `main`. Its macOS job `94924059503` rejected the candidate. The
+main Debug group found that the preliminary LV2 UI lifecycle probe incremented
+`Backend.create_count` without resetting it before the independent scenario.
+Both realtime inventory commands also failed because the current macOS image
+does not provide the undeclared `rg` executable.
+
+The same job reported `SIGSEGV` from six native callback test executables after
+restoring a Zig cache: CoreMIDI, CoreAudio, ALSA MIDI, ALSA UMP, Windows MIDI,
+and the portable Windows UMP reference-count test. A fresh-cache local run of
+those exact six build gates passed 58/58 steps and 64/65 tests, with one
+hardware-dependent CoreAudio skip. This narrows the public failure but does not
+close Q-VER-008. The replacement public macOS run must execute without restored
+Zig artifacts.
+
+The local full gate at the same candidate had passed the repository scripts,
+codec and DSP probes, downstream consumers, installed-package matrix, native
+VSTGUI checks, and other earlier leaves. Its 1,800-test Debug executable was
+still CPU-bound after 48 minutes when the public failures invalidated the
+candidate. The obsolete local run was stopped before editing the replacement.
+
+Correction commit: `a79b294a7ad2d55f1ab8b7bff2e0a966f6a3c47c`
+
+| Check | Result |
+| --- | --- |
+| `scripts/test_realtime_source_inventory_runner.sh` | Passed: baseline, missing processor, and missing contract path |
+| `bash -n scripts/check_realtime_source_inventory.sh scripts/test_realtime_source_inventory_runner.sh` | Passed |
+| Fresh-cache `zig build test-lv2-ui-adapter --summary all` | Passed outside the restricted sandbox: 9/9 steps |
+| Fresh-cache `zig build test-coremidi test-coreaudio test-alsamidi test-alsaump test-winmidi test-winump --summary all` | Passed outside the restricted sandbox: 58/58 steps and 64/65 tests; one hardware-dependent CoreAudio test skipped |
+| `scripts/check_quality_inventory.sh` | Passed: 820 files and 468,924 lines classified |
+| `zig fmt --check zig-vst3-plugin/src/lv2_ui.zig` | Passed |
+| `git diff --check` | Passed |
+| GitHub Actions run `31854031396` | Pending replacement run at `a79b294a` |

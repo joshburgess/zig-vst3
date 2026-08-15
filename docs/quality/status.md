@@ -175,6 +175,12 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Completed the Phase 2 teardown matrix across native callbacks, standalone
   devices, workers, immutable publishers, ARA, HRTF, VSTGUI, and VST3 lifetime
   families. Repeated TSan gates and focused lifecycle suites pass.
+- Rejected the first Phase 2 completion candidate after macOS CI exposed a
+  second cumulative LV2 UI test counter and an undeclared `rg` dependency in
+  the realtime inventory. Commit `a79b294a` closes both verifier defects.
+- Recorded Q-VER-008 for six unrelated native test executables that terminated
+  with `SIGSEGV` after macOS CI restored its Zig cache. All six gates pass
+  together from fresh local caches. The replacement macOS job runs uncached.
 
 ## Phase 2 Scope
 
@@ -189,5 +195,6 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Run the Phase 2 completion gate at one exact commit and close the phase only if
-all public CI jobs and exit criteria pass.
+Run the replacement Phase 2 completion gate at `a79b294a` and close the phase
+only if all public CI jobs, including the fresh-cache macOS native gates, and
+all exit criteria pass.
