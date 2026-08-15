@@ -464,8 +464,9 @@ test "fuzz failure-atomic bounded editor state restore" {
 
 fn fuzzEditorStateRestore(_: void, smith: *std.testing.Smith) !void {
     @disableInstrumentation();
+    const default_text = comptime try Text.init("default");
     const State = Store(3, &.{
-        .{ .id = 2, .default = .{ .text = comptime Text.init("default") catch unreachable } },
+        .{ .id = 2, .default = .{ .text = default_text } },
         .{ .id = 3, .default = .{ .boolean = false } },
     });
     const migrations = [_]Migration{
