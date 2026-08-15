@@ -30,6 +30,46 @@ pub const max_adm_speaker_label_bytes: usize = 64;
 pub const max_adm_matrix_coefficients: usize = 32;
 pub const max_adm_exclusion_zones: usize = 32;
 
+pub const Limits = struct {
+    max_document_bytes: usize = 16 * 1024 * 1024,
+    max_xml_events: usize = 1_000_000,
+    max_declarations: usize = 4_096,
+    max_references: usize = 16_384,
+    max_profiles: usize = 1_024,
+    max_tag_groups: usize = 4_096,
+    max_tags: usize = 16_384,
+    max_tag_targets: usize = 16_384,
+    max_blocks: usize = 16_384,
+    max_extensions: usize = 16_384,
+    max_extension_attributes: usize = 65_536,
+    max_untyped_elements: usize = 16_384,
+    max_untyped_attributes: usize = 65_536,
+    max_validation_work: usize = 4_000_000,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_document_bytes == 0 or
+            self.max_xml_events == 0 or
+            self.max_declarations == 0 or
+            self.max_references == 0 or
+            self.max_profiles == 0 or
+            self.max_tag_groups == 0 or
+            self.max_tags == 0 or
+            self.max_tag_targets == 0 or
+            self.max_blocks == 0 or
+            self.max_extensions == 0 or
+            self.max_extension_attributes == 0 or
+            self.max_untyped_elements == 0 or
+            self.max_untyped_attributes == 0 or
+            self.max_validation_work == 0 or
+            self.max_declarations > declaration_index_capacity)
+        {
+            return error.InvalidAdmXmlLimits;
+        }
+    }
+};
+
+pub const default_limits = Limits{};
+
 pub const Declaration = struct {
     identifier: adm.Identifier,
     element_name: []const u8,
@@ -3316,9 +3356,239 @@ pub const UntypedAttributeIterator = struct {
     }
 };
 
+const ValidationBudget = struct {
+    remaining: usize,
+
+    fn init(limits: Limits) ValidationBudget {
+        return .{ .remaining = limits.max_validation_work };
+    }
+
+    fn consume(self: *ValidationBudget) !void {
+        if (self.remaining == 0) return error.AdmXmlValidationWorkLimitExceeded;
+        self.remaining -= 1;
+    }
+};
+
+const declaration_index_capacity: usize = 4_096;
+const declaration_slot_count: usize = declaration_index_capacity * 2;
+
+fn identifierKey(identifier: adm.Identifier) u128 {
+    // Identifier parsing fixes every prefix and digit count, so this tuple is
+    // the exact case-insensitive identity represented by `raw`.
+    return @as(u128, identifier.primary) |
+        (@as(u128, identifier.secondary orelse 0) << 32) |
+        (@as(u128, @intFromEnum(identifier.kind)) << 64) |
+        (@as(u128, @intFromBool(identifier.secondary != null)) << 72);
+}
+
+fn mixedKeyIndex(key: u128, comptime slot_count: usize) usize {
+    comptime std.debug.assert(std.math.isPowerOfTwo(slot_count));
+    var value: u64 = @truncate(key ^ (key >> 64));
+    value ^= value >> 30;
+    value *%= 0xbf58476d1ce4e5b9;
+    value ^= value >> 27;
+    value *%= 0x94d049bb133111eb;
+    value ^= value >> 31;
+    return @as(usize, @truncate(value)) & (slot_count - 1);
+}
+
+const CardinalityCounts = struct {
+    channel: u8 = 0,
+    pack: u8 = 0,
+    stream: u8 = 0,
+    track: u8 = 0,
+    matrix_output: u8 = 0,
+};
+
+const DeclarationSlot = struct {
+    key: u128 = 0,
+    counts: CardinalityCounts = .{},
+};
+
+const DeclarationIndex = struct {
+    slots: [declaration_slot_count]DeclarationSlot = @splat(.{}),
+    occupied: [declaration_index_capacity]u16 = @splat(0),
+    count: usize = 0,
+
+    fn insert(
+        self: *DeclarationIndex,
+        identifier: adm.Identifier,
+        budget: *ValidationBudget,
+    ) !void {
+        const key = identifierKey(identifier);
+        var slot_index = mixedKeyIndex(key, declaration_slot_count);
+        for (0..declaration_slot_count) |_| {
+            try budget.consume();
+            const slot = &self.slots[slot_index];
+            if (slot.key == 0) {
+                if (self.count >= declaration_index_capacity)
+                    return error.TooManyAdmDeclarations;
+                slot.key = key;
+                self.occupied[self.count] = @intCast(slot_index);
+                self.count += 1;
+                return;
+            }
+            if (slot.key == key) return error.DuplicateAdmDeclaration;
+            slot_index = (slot_index + 1) & (declaration_slot_count - 1);
+        }
+        return error.TooManyAdmDeclarations;
+    }
+
+    fn find(
+        self: *DeclarationIndex,
+        identifier: adm.Identifier,
+        budget: *ValidationBudget,
+    ) !?*DeclarationSlot {
+        const key = identifierKey(identifier);
+        var slot_index = mixedKeyIndex(key, declaration_slot_count);
+        for (0..declaration_slot_count) |_| {
+            try budget.consume();
+            const slot = &self.slots[slot_index];
+            if (slot.key == 0) return null;
+            if (slot.key == key) return slot;
+            slot_index = (slot_index + 1) & (declaration_slot_count - 1);
+        }
+        return null;
+    }
+};
+
+fn noteIndexedCardinality(
+    slot: *DeclarationSlot,
+    reference_kind: ReferenceKind,
+) void {
+    const count = switch (reference_kind) {
+        .channel_format => &slot.counts.channel,
+        .pack_format => &slot.counts.pack,
+        .stream_format => &slot.counts.stream,
+        .track_format => &slot.counts.track,
+        .matrix_output_channel => &slot.counts.matrix_output,
+        else => return,
+    };
+    if (count.* < 2) count.* += 1;
+}
+
+fn validateIndexedCardinalities(
+    index: *const DeclarationIndex,
+    budget: *ValidationBudget,
+) !void {
+    for (index.occupied[0..index.count]) |slot_index| {
+        try budget.consume();
+        const slot = index.slots[slot_index];
+        const kind: adm.IdentifierKind = @enumFromInt(
+            @as(u8, @truncate(slot.key >> 64)),
+        );
+        switch (kind) {
+            .stream_format => {
+                if (slot.counts.channel > 1 or slot.counts.pack > 1)
+                    return error.TooManyAdmStreamReferences;
+                if (slot.counts.channel != 0 and slot.counts.pack != 0)
+                    return error.AmbiguousAdmStreamFormat;
+            },
+            .track_format => {
+                if (slot.counts.stream > 1)
+                    return error.TooManyAdmTrackStreamReferences;
+            },
+            .track_uid => {
+                if (slot.counts.track > 1 or slot.counts.channel > 1)
+                    return error.TooManyAdmTrackReferences;
+                if (slot.counts.track != 0 and slot.counts.channel != 0)
+                    return error.AmbiguousAdmTrackReference;
+                if (slot.counts.pack > 1)
+                    return error.TooManyAdmPackReferences;
+            },
+            .block_format => {
+                if (slot.counts.matrix_output > 1)
+                    return error.TooManyAdmMatrixOutputReferences;
+            },
+            else => {},
+        }
+    }
+}
+
+const reciprocal_slot_count: usize = declaration_index_capacity * 2;
+
+const ReciprocalTrackIndex = struct {
+    keys: [reciprocal_slot_count]u128 = @splat(0),
+    directions: [reciprocal_slot_count]u8 = @splat(0),
+    unmatched_forward: usize = 0,
+
+    fn pairKey(stream: adm.Identifier, track: adm.Identifier) u128 {
+        return @as(u128, stream.primary) |
+            (@as(u128, track.primary) << 32) |
+            (@as(u128, track.secondary orelse 0) << 64) |
+            (@as(u128, 1) << 96);
+    }
+
+    fn note(
+        self: *ReciprocalTrackIndex,
+        stream: adm.Identifier,
+        track: adm.Identifier,
+        direction: u8,
+        budget: *ValidationBudget,
+    ) !void {
+        const key = pairKey(stream, track);
+        var slot_index = mixedKeyIndex(key, reciprocal_slot_count);
+        for (0..reciprocal_slot_count) |_| {
+            try budget.consume();
+            if (self.keys[slot_index] == 0) {
+                self.keys[slot_index] = key;
+                self.directions[slot_index] = direction;
+                if (direction == 0b01) self.unmatched_forward += 1;
+                return;
+            }
+            if (self.keys[slot_index] == key) {
+                const previous = self.directions[slot_index];
+                self.directions[slot_index] |= direction;
+                if (previous == 0b01 and direction == 0b10)
+                    self.unmatched_forward -= 1;
+                return;
+            }
+            slot_index = (slot_index + 1) & (reciprocal_slot_count - 1);
+        }
+        return error.AdmXmlValidationWorkLimitExceeded;
+    }
+
+    fn validate(self: *const ReciprocalTrackIndex) !void {
+        if (self.unmatched_forward != 0)
+            return error.MissingReciprocalAdmTrackReference;
+    }
+};
+
+const block_channel_slot_count: usize = declaration_index_capacity * 2;
+
+const BlockChannelSlot = struct {
+    primary: u32 = 0,
+    count: usize = 0,
+    preceding_blocks_have_timing: bool = true,
+};
+
+const BlockChannelIndex = struct {
+    slots: [block_channel_slot_count]BlockChannelSlot = @splat(.{}),
+
+    fn findOrInsert(
+        self: *BlockChannelIndex,
+        primary: u32,
+        budget: *ValidationBudget,
+    ) !*BlockChannelSlot {
+        var slot_index = mixedKeyIndex(primary, block_channel_slot_count);
+        for (0..block_channel_slot_count) |_| {
+            try budget.consume();
+            const slot = &self.slots[slot_index];
+            if (slot.primary == 0) {
+                slot.primary = primary;
+                return slot;
+            }
+            if (slot.primary == primary) return slot;
+            slot_index = (slot_index + 1) & (block_channel_slot_count - 1);
+        }
+        return error.TooManyAdmBlocks;
+    }
+};
+
 pub const Document = struct {
     xml_document: xml.Document,
     namespace_name: ?xml.NamespaceName,
+    limits: Limits,
     declaration_count: usize,
     reference_count: usize,
     profile_count: usize,
@@ -3331,14 +3601,27 @@ pub const Document = struct {
     untyped_element_count: usize,
     untyped_attribute_count: usize,
 
+    /// Parses and validates using the bounded defaults in `default_limits`.
     pub fn init(bytes: []const u8) !Document {
+        return initWithLimits(bytes, default_limits);
+    }
+
+    /// Parses and validates without allocation, retaining `bytes` by reference.
+    pub fn initWithLimits(bytes: []const u8, limits: Limits) !Document {
+        try limits.validate();
+        if (bytes.len > limits.max_document_bytes)
+            return error.AdmXmlDocumentTooLarge;
         const xml_document = try xml.Document.init(bytes);
         var afe_count: usize = 0;
+        var xml_event_count: usize = 0;
         var namespace_name: ?xml.NamespaceName = null;
         var afe_depth: ?usize = null;
         var foreign_depth: ?usize = null;
         var events = xml_document.iterator();
         while (try events.next()) |event| {
+            if (xml_event_count >= limits.max_xml_events)
+                return error.TooManyAdmXmlEvents;
+            xml_event_count += 1;
             switch (event) {
                 .start => |element| {
                     if (foreign_depth != null) continue;
@@ -3383,6 +3666,7 @@ pub const Document = struct {
         var document = Document{
             .xml_document = xml_document,
             .namespace_name = namespace_name,
+            .limits = limits,
             .declaration_count = 0,
             .reference_count = 0,
             .profile_count = 0,
@@ -3397,49 +3681,95 @@ pub const Document = struct {
         };
         var declaration_iterator = document.declarations();
         while (try declaration_iterator.next()) |_| {
+            if (document.declaration_count >= limits.max_declarations)
+                return error.TooManyAdmDeclarations;
             document.declaration_count += 1;
         }
         var profile_iterator = document.profiles();
         while (try profile_iterator.next()) |_| {
+            if (document.profile_count >= limits.max_profiles)
+                return error.TooManyAdmProfiles;
             document.profile_count += 1;
         }
         var tag_iterator = document.tags();
         while (try tag_iterator.next()) |item| {
             switch (item) {
-                .tag => document.tag_count += 1,
-                .target => document.tag_target_count += 1,
+                .tag => {
+                    if (document.tag_count >= limits.max_tags)
+                        return error.TooManyAdmTags;
+                    document.tag_count += 1;
+                },
+                .target => {
+                    if (document.tag_target_count >= limits.max_tag_targets)
+                        return error.TooManyAdmTagTargets;
+                    document.tag_target_count += 1;
+                },
             }
         }
         document.tag_group_count = tag_iterator.group_count;
+        if (document.tag_group_count > limits.max_tag_groups)
+            return error.TooManyAdmTagGroups;
         var reference_iterator = document.references();
         while (try reference_iterator.next()) |_| {
+            if (document.reference_count >= limits.max_references)
+                return error.TooManyAdmReferences;
             document.reference_count += 1;
         }
         var block_iterator = document.blocks();
         while (try block_iterator.next()) |_| {
+            if (document.block_count >= limits.max_blocks)
+                return error.TooManyAdmBlocks;
             document.block_count += 1;
         }
         var extension_iterator = document.extensions();
         while (try extension_iterator.next()) |_| {
+            if (document.extension_count >= limits.max_extensions)
+                return error.TooManyAdmExtensions;
             document.extension_count += 1;
         }
         var extension_attribute_iterator =
             document.extensionAttributes();
         while (try extension_attribute_iterator.next()) |_| {
+            if (document.extension_attribute_count >=
+                limits.max_extension_attributes)
+            {
+                return error.TooManyAdmExtensionAttributes;
+            }
             document.extension_attribute_count += 1;
         }
         var untyped_element_iterator = document.untypedElements();
         while (try untyped_element_iterator.next()) |_| {
+            if (document.untyped_element_count >= limits.max_untyped_elements)
+                return error.TooManyUntypedAdmElements;
             document.untyped_element_count += 1;
         }
         var untyped_attribute_iterator = document.untypedAttributes();
         while (try untyped_attribute_iterator.next()) |_| {
+            if (document.untyped_attribute_count >=
+                limits.max_untyped_attributes)
+            {
+                return error.TooManyUntypedAdmAttributes;
+            }
             document.untyped_attribute_count += 1;
         }
-        try document.validateDuplicateDeclarations();
-        try document.validateReferences();
-        try document.validateCardinalities();
-        try document.validateBlockSequences();
+        var validation_budget = ValidationBudget.init(limits);
+        var declaration_index = DeclarationIndex{};
+        try document.indexDeclarations(
+            &declaration_index,
+            &validation_budget,
+        );
+        try document.validateReferencesWithIndex(
+            &declaration_index,
+            &validation_budget,
+        );
+        try validateIndexedCardinalities(
+            &declaration_index,
+            &validation_budget,
+        );
+        try document.validateBlockSequencesWithIndex(
+            &declaration_index,
+            &validation_budget,
+        );
         return document;
     }
 
@@ -3498,16 +3828,47 @@ pub const Document = struct {
     }
 
     pub fn contains(self: Document, wanted: adm.Identifier) !bool {
+        var budget = ValidationBudget.init(self.limits);
+        return self.containsWithBudget(wanted, &budget);
+    }
+
+    fn containsWithBudget(
+        self: Document,
+        wanted: adm.Identifier,
+        budget: *ValidationBudget,
+    ) !bool {
         var iterator = self.declarations();
         while (try iterator.next()) |declaration| {
+            try budget.consume();
             if (declaration.identifier.eql(wanted)) return true;
         }
         return false;
     }
 
     pub fn validateReferences(self: Document) !void {
+        var budget = ValidationBudget.init(self.limits);
+        return self.validateReferencesWithBudget(&budget);
+    }
+
+    fn validateReferencesWithBudget(
+        self: Document,
+        budget: *ValidationBudget,
+    ) !void {
+        var declaration_index = DeclarationIndex{};
+        try self.indexDeclarations(&declaration_index, budget);
+        try self.validateReferencesWithIndex(&declaration_index, budget);
+        try validateIndexedCardinalities(&declaration_index, budget);
+    }
+
+    fn validateReferencesWithIndex(
+        self: Document,
+        declaration_index: *DeclarationIndex,
+        budget: *ValidationBudget,
+    ) !void {
+        var reciprocal_tracks = ReciprocalTrackIndex{};
         var iterator = self.references();
         while (try iterator.next()) |reference| {
+            try budget.consume();
             if (reference.virtual_silent_track) {
                 const owner = reference.owner orelse
                     return error.InvalidAdmReferenceOwner;
@@ -3526,25 +3887,44 @@ pub const Document = struct {
                     return error.SelfReferentialAdmDefinition;
                 }
             }
-            if (identifier.kind == .track_uid or
-                identifier.isCommonDefinition())
+            const skips_resolution = identifier.kind == .track_uid or
+                identifier.isCommonDefinition();
+            if (!skips_resolution and
+                (try declaration_index.find(identifier, budget)) == null)
             {
-                continue;
-            }
-            if (!try self.contains(identifier))
                 return error.UnresolvedAdmReference;
+            }
+            if (reference.direct_owner) {
+                const owner = reference.owner orelse
+                    return error.InvalidAdmReferenceOwner;
+                const owner_slot = (try declaration_index.find(
+                    owner,
+                    budget,
+                )) orelse return error.InvalidAdmReferenceOwner;
+                noteIndexedCardinality(owner_slot, reference.kind);
+            }
+            if (skips_resolution) continue;
             if (reference.kind == .stream_format) {
                 const owner = reference.owner orelse continue;
-                if (owner.kind == .track_format and
-                    !try self.hasReciprocalTrackReference(
+                if (owner.kind == .track_format)
+                    try reciprocal_tracks.note(
                         identifier,
                         owner,
-                    ))
-                {
-                    return error.MissingReciprocalAdmTrackReference;
-                }
+                        0b01,
+                        budget,
+                    );
+            } else if (reference.kind == .track_format) {
+                const owner = reference.owner orelse continue;
+                if (owner.kind == .stream_format)
+                    try reciprocal_tracks.note(
+                        owner,
+                        identifier,
+                        0b10,
+                        budget,
+                    );
             }
         }
+        try reciprocal_tracks.validate();
     }
 
     pub fn validateChannelAllocation(
@@ -6795,28 +7175,26 @@ pub const Document = struct {
         return error.MissingAudioFormatExtended;
     }
 
-    fn validateDuplicateDeclarations(self: Document) !void {
-        var outer = self.declarations();
-        var index: usize = 0;
-        while (try outer.next()) |declaration| : (index += 1) {
-            var inner = self.declarations();
-            var previous_index: usize = 0;
-            while (previous_index < index) : (previous_index += 1) {
-                const previous = (try inner.next()) orelse
-                    return error.InvalidAdmDeclarationIteration;
-                if (previous.identifier.eql(declaration.identifier))
-                    return error.DuplicateAdmDeclaration;
-            }
+    fn indexDeclarations(
+        self: Document,
+        index: *DeclarationIndex,
+        budget: *ValidationBudget,
+    ) !void {
+        var declaration_iterator = self.declarations();
+        while (try declaration_iterator.next()) |declaration| {
+            try index.insert(declaration.identifier, budget);
         }
     }
 
     fn validateUniqueProfiles(self: Document) !void {
+        var budget = ValidationBudget.init(self.limits);
         var outer = self.profiles();
         var index: usize = 0;
         while (try outer.next()) |profile| : (index += 1) {
             var inner = self.profiles();
             var previous_index: usize = 0;
             while (previous_index < index) : (previous_index += 1) {
+                try budget.consume();
                 const previous = (try inner.next()) orelse
                     return error.InvalidAdmProfileIteration;
                 if (profilesEqual(profile, previous))
@@ -6825,138 +7203,46 @@ pub const Document = struct {
         }
     }
 
-    fn validateCardinalities(self: Document) !void {
-        var declaration_iterator = self.declarations();
-        while (try declaration_iterator.next()) |declaration| {
-            if (declaration.identifier.kind != .stream_format and
-                declaration.identifier.kind != .track_format and
-                declaration.identifier.kind != .track_uid and
-                declaration.identifier.kind != .block_format)
-            {
-                continue;
-            }
-            var channel_references: usize = 0;
-            var pack_references: usize = 0;
-            var stream_references: usize = 0;
-            var track_references: usize = 0;
-            var matrix_output_references: usize = 0;
-            var reference_iterator = self.references();
-            while (try reference_iterator.next()) |reference| {
-                const owner = reference.owner orelse continue;
-                if (!reference.direct_owner or
-                    !owner.eql(declaration.identifier))
-                {
-                    continue;
-                }
-                switch (reference.kind) {
-                    .channel_format => channel_references += 1,
-                    .pack_format => pack_references += 1,
-                    .stream_format => stream_references += 1,
-                    .track_format => track_references += 1,
-                    .matrix_output_channel => matrix_output_references += 1,
-                    else => {},
-                }
-            }
-            switch (declaration.identifier.kind) {
-                .stream_format => {
-                    if (channel_references > 1 or pack_references > 1) {
-                        return error.TooManyAdmStreamReferences;
-                    }
-                    if (channel_references != 0 and pack_references != 0)
-                        return error.AmbiguousAdmStreamFormat;
-                },
-                .track_format => {
-                    if (stream_references > 1)
-                        return error.TooManyAdmTrackStreamReferences;
-                },
-                .track_uid => {
-                    if (track_references > 1 or channel_references > 1)
-                        return error.TooManyAdmTrackReferences;
-                    if (track_references != 0 and channel_references != 0)
-                        return error.AmbiguousAdmTrackReference;
-                    if (pack_references > 1)
-                        return error.TooManyAdmPackReferences;
-                },
-                .block_format => {
-                    if (matrix_output_references > 1)
-                        return error.TooManyAdmMatrixOutputReferences;
-                },
-                else => return error.InvalidAdmCardinalityState,
-            }
-        }
-    }
-
-    fn hasReciprocalTrackReference(
+    fn validateBlockSequencesWithIndex(
         self: Document,
-        stream: adm.Identifier,
-        track: adm.Identifier,
-    ) !bool {
-        var reference_iterator = self.references();
-        while (try reference_iterator.next()) |reference| {
-            if (reference.kind != .track_format or
-                !reference.direct_owner)
-            {
-                continue;
-            }
-            const owner = reference.owner orelse continue;
-            const identifier = reference.identifier orelse continue;
-            if (owner.eql(stream) and identifier.eql(track)) return true;
-        }
-        return false;
-    }
-
-    fn validateBlockSequences(self: Document) !void {
+        declaration_index: *DeclarationIndex,
+        budget: *ValidationBudget,
+    ) !void {
         const serial_frame = try self.hasSerialFrameRoot();
+        var channels = BlockChannelIndex{};
         var block_iterator = self.blocks();
         while (try block_iterator.next()) |block| {
+            try budget.consume();
             if (block.identifier.primary != block.channel_identifier.primary)
                 return error.AdmBlockIdentifierMismatch;
             for (block.matrixCoefficientSlice()) |coefficient| {
+                try budget.consume();
                 const identifier = try coefficient.channelIdentifier();
                 if (!identifier.isCommonDefinition() and
-                    !try self.contains(identifier))
+                    (try declaration_index.find(identifier, budget)) == null)
                 {
                     return error.UnresolvedAdmReference;
                 }
             }
-            var channel_block_count: usize = 0;
-            var preceding_blocks: usize = 0;
-            var all_blocks = self.blocks();
-            while (try all_blocks.next()) |candidate| {
-                if (!candidate.channel_identifier.eql(
-                    block.channel_identifier,
-                )) {
-                    continue;
-                }
-                channel_block_count += 1;
-                if (candidate.identifier.eql(block.identifier)) break;
-                preceding_blocks += 1;
-            }
+            if (serial_frame) continue;
+
+            const channel = try channels.findOrInsert(
+                block.channel_identifier.primary,
+                budget,
+            );
             const sequence = block.identifier.secondary orelse
                 return error.InvalidAdmBlockIdentifier;
-            if (!serial_frame and
-                sequence != @as(u32, @intCast(preceding_blocks + 1)))
-            {
+            if (sequence != @as(u32, @intCast(channel.count + 1)))
                 return error.InvalidAdmBlockSequence;
-            }
-
-            if (channel_block_count == 1) {
-                var remainder = self.blocks();
-                while (try remainder.next()) |candidate| {
-                    if (candidate.channel_identifier.eql(
-                        block.channel_identifier,
-                    ) and !candidate.identifier.eql(block.identifier)) {
-                        channel_block_count += 1;
-                        break;
-                    }
-                }
-            }
-            if (!serial_frame and
-                channel_block_count > 1 and
-                (!block.rtime_explicit or block.duration == null))
+            const has_timing = block.rtime_explicit and block.duration != null;
+            if (channel.count != 0 and
+                (!channel.preceding_blocks_have_timing or !has_timing))
             {
                 return error.MissingDynamicAdmBlockTiming;
             }
+            channel.count += 1;
+            channel.preceding_blocks_have_timing =
+                channel.preceding_blocks_have_timing and has_timing;
         }
     }
 
@@ -9348,6 +9634,237 @@ fn asciiEqlIgnoreCase(left: []const u8, right: []const u8) bool {
             return false;
     }
     return true;
+}
+
+const adm_xml_fuzz_minimal = "<audioFormatExtended/>";
+const adm_xml_fuzz_graph =
+    "<audioFormatExtended>" ++
+    "<audioContent audioContentID=\"ACO_1001\">" ++
+    "<audioObjectIDRef>AO_1001</audioObjectIDRef>" ++
+    "</audioContent>" ++
+    "<audioObject audioObjectID=\"AO_1001\"/>" ++
+    "</audioFormatExtended>";
+
+test "fuzz bounded ADM XML parsing and traversal" {
+    try std.testing.fuzz({}, fuzzAdmXml, .{
+        .corpus = &.{ adm_xml_fuzz_minimal, adm_xml_fuzz_graph },
+    });
+}
+
+fn fuzzAdmXml(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var storage: [64 * 1024]u8 = undefined;
+    var length: usize = switch (smith.valueRangeAtMost(u8, 0, 2)) {
+        0 => smith.slice(&storage),
+        1 => seed: {
+            @memcpy(storage[0..adm_xml_fuzz_minimal.len], adm_xml_fuzz_minimal);
+            break :seed adm_xml_fuzz_minimal.len;
+        },
+        2 => seed: {
+            @memcpy(storage[0..adm_xml_fuzz_graph.len], adm_xml_fuzz_graph);
+            break :seed adm_xml_fuzz_graph.len;
+        },
+        else => unreachable,
+    };
+    if (length != 0 and smith.value(bool)) {
+        const mutation_count = smith.valueRangeAtMost(u8, 1, 32);
+        for (0..mutation_count) |_|
+            storage[smith.index(length)] ^= smith.value(u8);
+    }
+    if (smith.value(bool)) {
+        const maximum: u16 = @intCast(@min(length, std.math.maxInt(u16)));
+        length = smith.valueRangeAtMost(u16, 0, maximum);
+    } else if (length < storage.len and smith.value(bool)) {
+        const maximum_append: u16 = @intCast(@min(
+            storage.len - length,
+            std.math.maxInt(u16),
+        ));
+        const append_length = smith.valueRangeAtMost(u16, 0, maximum_append);
+        smith.bytes(storage[length..][0..append_length]);
+        length += append_length;
+    }
+
+    const limits = Limits{
+        .max_document_bytes = storage.len,
+        .max_xml_events = 20_000,
+        .max_declarations = 256,
+        .max_references = 1_024,
+        .max_profiles = 256,
+        .max_tag_groups = 256,
+        .max_tags = 1_024,
+        .max_tag_targets = 1_024,
+        .max_blocks = 1_024,
+        .max_extensions = 1_024,
+        .max_extension_attributes = 4_096,
+        .max_untyped_elements = 1_024,
+        .max_untyped_attributes = 4_096,
+        .max_validation_work = 100_000,
+    };
+    const document = Document.initWithLimits(
+        storage[0..length],
+        limits,
+    ) catch return;
+    try document.validateReferences();
+
+    var declaration_count: usize = 0;
+    var declarations = document.declarations();
+    while (try declarations.next()) |_| declaration_count += 1;
+    if (declaration_count != document.declaration_count)
+        return error.FuzzAdmDeclarationCountMismatch;
+
+    var reference_count: usize = 0;
+    var references = document.references();
+    while (try references.next()) |_| reference_count += 1;
+    if (reference_count != document.reference_count)
+        return error.FuzzAdmReferenceCountMismatch;
+
+    var block_count: usize = 0;
+    var blocks = document.blocks();
+    while (try blocks.next()) |_| block_count += 1;
+    if (block_count != document.block_count)
+        return error.FuzzAdmBlockCountMismatch;
+}
+
+fn expectAdmCountLimit(
+    comptime field_name: []const u8,
+    expected_error: anyerror,
+    bytes: []const u8,
+) !void {
+    var limits = default_limits;
+    @field(limits, field_name) = 1;
+    try std.testing.expectError(
+        expected_error,
+        Document.initWithLimits(bytes, limits),
+    );
+}
+
+test "ADM XML enforces construction and validation limits" {
+    var limits = default_limits;
+    limits.max_document_bytes = "<audioFormatExtended/>".len - 1;
+    try std.testing.expectError(
+        error.AdmXmlDocumentTooLarge,
+        Document.initWithLimits("<audioFormatExtended/>", limits),
+    );
+
+    limits = default_limits;
+    limits.max_xml_events = 1;
+    try std.testing.expectError(
+        error.TooManyAdmXmlEvents,
+        Document.initWithLimits(
+            "<audioFormatExtended><audioObject " ++
+                "audioObjectID=\"AO_1001\"/></audioFormatExtended>",
+            limits,
+        ),
+    );
+
+    const two_declarations =
+        "<audioFormatExtended>" ++
+        "<audioObject audioObjectID=\"AO_1001\"/>" ++
+        "<audioObject audioObjectID=\"AO_1002\"/>" ++
+        "</audioFormatExtended>";
+    limits = default_limits;
+    limits.max_declarations = 1;
+    try std.testing.expectError(
+        error.TooManyAdmDeclarations,
+        Document.initWithLimits(two_declarations, limits),
+    );
+
+    limits = default_limits;
+    limits.max_validation_work = 1;
+    try std.testing.expectError(
+        error.AdmXmlValidationWorkLimitExceeded,
+        Document.initWithLimits(two_declarations, limits),
+    );
+
+    limits = default_limits;
+    limits.max_declarations = declaration_index_capacity + 1;
+    try std.testing.expectError(
+        error.InvalidAdmXmlLimits,
+        Document.initWithLimits("<audioFormatExtended/>", limits),
+    );
+
+    try expectAdmCountLimit(
+        "max_references",
+        error.TooManyAdmReferences,
+        "<audioFormatExtended>" ++
+            "<audioContent audioContentID=\"ACO_1001\">" ++
+            "<audioObjectIDRef>AO_1001</audioObjectIDRef>" ++
+            "<audioObjectIDRef>AO_1002</audioObjectIDRef>" ++
+            "</audioContent>" ++
+            "<audioObject audioObjectID=\"AO_1001\"/>" ++
+            "<audioObject audioObjectID=\"AO_1002\"/>" ++
+            "</audioFormatExtended>",
+    );
+    try expectAdmCountLimit(
+        "max_profiles",
+        error.TooManyAdmProfiles,
+        "<audioFormatExtended><profileList>" ++
+            "<profile profileName=\"A\" profileVersion=\"1\" " ++
+            "profileLevel=\"1\">A</profile>" ++
+            "<profile profileName=\"B\" profileVersion=\"1\" " ++
+            "profileLevel=\"1\">B</profile>" ++
+            "</profileList></audioFormatExtended>",
+    );
+    const two_tag_groups =
+        "<audioFormatExtended><audioObject audioObjectID=\"AO_1001\"/>" ++
+        "<tagList>" ++
+        "<tagGroup><tag>a</tag>" ++
+        "<audioObjectIDRef>AO_1001</audioObjectIDRef></tagGroup>" ++
+        "<tagGroup><tag>b</tag>" ++
+        "<audioObjectIDRef>AO_1001</audioObjectIDRef></tagGroup>" ++
+        "</tagList></audioFormatExtended>";
+    try expectAdmCountLimit(
+        "max_tag_groups",
+        error.TooManyAdmTagGroups,
+        two_tag_groups,
+    );
+    try expectAdmCountLimit(
+        "max_tags",
+        error.TooManyAdmTags,
+        two_tag_groups,
+    );
+    try expectAdmCountLimit(
+        "max_tag_targets",
+        error.TooManyAdmTagTargets,
+        two_tag_groups,
+    );
+    try expectAdmCountLimit(
+        "max_blocks",
+        error.TooManyAdmBlocks,
+        "<audioFormatExtended>" ++
+            "<audioChannelFormat audioChannelFormatID=\"AC_00051001\" " ++
+            "audioChannelFormatName=\"LeftEar\">" ++
+            "<audioBlockFormatBinaural " ++
+            "audioBlockFormatID=\"AB_00051001_00000001\"/>" ++
+            "<audioBlockFormatBinaural " ++
+            "audioBlockFormatID=\"AB_00051001_00000002\"/>" ++
+            "</audioChannelFormat></audioFormatExtended>",
+    );
+    try expectAdmCountLimit(
+        "max_extensions",
+        error.TooManyAdmExtensions,
+        "<a:audioFormatExtended xmlns:a=\"urn:adm\" xmlns:v=\"urn:v\">" ++
+            "<v:one/><v:two/></a:audioFormatExtended>",
+    );
+    try expectAdmCountLimit(
+        "max_extension_attributes",
+        error.TooManyAdmExtensionAttributes,
+        "<a:audioFormatExtended xmlns:a=\"urn:adm\" xmlns:v=\"urn:v\" " ++
+            "v:one=\"1\" v:two=\"2\"/>",
+    );
+    try expectAdmCountLimit(
+        "max_untyped_elements",
+        error.TooManyUntypedAdmElements,
+        "<audioFormatExtended><future/><later/></audioFormatExtended>",
+    );
+    try expectAdmCountLimit(
+        "max_untyped_attributes",
+        error.TooManyUntypedAdmAttributes,
+        "<a:audioFormatExtended xmlns:a=\"urn:adm\">" ++
+            "<a:audioObject audioObjectID=\"AO_1001\" " ++
+            "a:future=\"1\" a:later=\"2\"/>" ++
+            "</a:audioFormatExtended>",
+    );
 }
 
 test "ADM XML validates a namespaced custom reference graph" {

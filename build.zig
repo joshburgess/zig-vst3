@@ -2755,6 +2755,24 @@ pub fn build(b: *std.Build) void {
     midi_file_fuzz_step.dependOn(
         &b.addRunArtifact(midi_file_fuzz_tests).step,
     );
+    const adm_xml_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        adm_xml_fuzz_module.link_libc = true;
+    const adm_xml_fuzz_tests = b.addTest(.{
+        .root_module = adm_xml_fuzz_module,
+        .filters = &.{"fuzz bounded ADM XML parsing and traversal"},
+    });
+    const adm_xml_fuzz_step = b.step(
+        "test-adm-xml-fuzz",
+        "Run or fuzz the bounded ADM XML parser",
+    );
+    adm_xml_fuzz_step.dependOn(
+        &b.addRunArtifact(adm_xml_fuzz_tests).step,
+    );
     const midi_file_benchmark_core = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = b.graph.host,
@@ -2781,6 +2799,33 @@ pub fn build(b: *std.Build) void {
     );
     midi_file_benchmark_step.dependOn(
         &b.addRunArtifact(midi_file_benchmark).step,
+    );
+    const adm_xml_benchmark_core = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = b.graph.host,
+        .optimize = optimize,
+    });
+    if (b.graph.host.result.os.tag == .linux)
+        adm_xml_benchmark_core.link_libc = true;
+    const adm_xml_benchmark = b.addExecutable(.{
+        .name = "adm-xml-complexity",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/adm_xml_complexity.zig"),
+            .target = b.graph.host,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    adm_xml_benchmark.root_module.addImport(
+        "zig-vst3-plugin-core",
+        adm_xml_benchmark_core,
+    );
+    const adm_xml_benchmark_step = b.step(
+        "benchmark-adm-xml-parser",
+        "Measure bounded ADM XML validation scaling",
+    );
+    adm_xml_benchmark_step.dependOn(
+        &b.addRunArtifact(adm_xml_benchmark).step,
     );
     const plugin_runtime_test_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),

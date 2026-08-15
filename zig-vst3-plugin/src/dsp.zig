@@ -233,6 +233,8 @@ pub const AdmXmlCartesianExclusionZone =
     adm_xml.CartesianExclusionZone;
 pub const AdmXmlCoordinate = adm_xml.Coordinate;
 pub const AdmXmlDocument = adm_xml.Document;
+pub const AdmXmlLimits = adm_xml.Limits;
+pub const default_adm_xml_limits = adm_xml.default_limits;
 pub const AdmXmlExtension = adm_xml.Extension;
 pub const AdmXmlExtensionAttribute = adm_xml.ExtensionAttribute;
 pub const AdmXmlExtensionAttributeIterator =

@@ -7981,6 +7981,22 @@ test "installed package exposes file-backed audio writers" {
         for (coefficient.channel_identifier_bytes) |byte|
             try std.testing.expectEqual(@as(u8, 0), byte);
     }
+    const minimal_adm_xml = "<audioFormatExtended/>";
+    var installed_adm_limits: plugin.dsp.AdmXmlLimits =
+        plugin.dsp.default_adm_xml_limits;
+    installed_adm_limits.max_document_bytes = minimal_adm_xml.len;
+    _ = try plugin.dsp.AdmXmlDocument.initWithLimits(
+        minimal_adm_xml,
+        installed_adm_limits,
+    );
+    installed_adm_limits.max_document_bytes -= 1;
+    try std.testing.expectError(
+        error.AdmXmlDocumentTooLarge,
+        plugin.dsp.AdmXmlDocument.initWithLimits(
+            minimal_adm_xml,
+            installed_adm_limits,
+        ),
+    );
     const advanced_adm = try plugin.dsp.AdmXmlDocument.init(
         \\<audioFormatExtended>
         \\  <audioObject audioObjectID="AO_1001"/>
