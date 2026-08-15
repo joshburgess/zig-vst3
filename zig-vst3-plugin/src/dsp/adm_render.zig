@@ -44,6 +44,16 @@ test "ADM renderer facade preserves exact public identities" {
         PolarPointSourcePanner(f32) == core.PolarPointSourcePanner(f32),
     );
     try std.testing.expect(
+        PolarExtentPanner(f64) == core.PolarExtentPanner(f64),
+    );
+    try std.testing.expect(
+        CartesianPointSourcePanner(f32) ==
+            core.CartesianPointSourcePanner(f32),
+    );
+    try std.testing.expect(
+        CartesianExtentPanner(f64) == core.CartesianExtentPanner(f64),
+    );
+    try std.testing.expect(
         ObjectPointGainPlan(f64) == core.ObjectPointGainPlan(f64),
     );
     try std.testing.expect(
