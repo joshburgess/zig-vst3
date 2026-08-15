@@ -1,8 +1,8 @@
 # Quality Program Status
 
-Current phase: Phase 4, Architecture and API Refinement
+Current phase: Phase 6, Platform and ABI Review
 
-Status: in progress; Phases 0 through 3 complete
+Status: in progress; Phases 0 through 5 complete
 
 Baseline commit: `08bf883e9d2d324f3a7933fa21851bbd9ffec513`
 
@@ -399,6 +399,12 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   vectors, partition behavior, smoothing, stereo tails, shaping identities,
   and containment pass. The numerical ledger is complete with 83 evidence,
   zero review, and 18 excluded records.
+- Completed Phase 5 after reconciling every executable performance budget with
+  setup, realtime, memory, and hostile-scaling coverage. Five new fixed-storage
+  ceilings cover the sample and IR pipelines at their exact benchmark
+  capacities. The one-job benchmark passes 5/5 steps and every timing and
+  memory threshold. The audit also corrected the recorded least-squares input
+  from 255 taps to its actual 63 taps.
 
 ## Phase 5 Scope
 
@@ -413,8 +419,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Reconcile the completed numerical ledger with Phase 5 benchmark coverage and
-exit criteria. Close any missing representative performance family before
-starting Phase 6 platform and ABI review.
-Move a source to `EVIDENCE` only after its reference or identity, tolerance,
-finite containment, latency, channel, and transactional contracts are sound.
+Begin Phase 6 with a checked inventory of every platform and ABI boundary.
+Reconcile VST3 and COM declarations, native adapters, reference counts,
+callback teardown, calling conventions, and layout or behavior evidence before
+moving to LV2, AUv2, ARA, system audio, MIDI, windows, and dynamic libraries.

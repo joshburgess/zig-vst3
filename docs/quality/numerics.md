@@ -142,20 +142,38 @@ Q15	zig-vst3-plugin/src/gui_ir_convolution.zig	EXCLUDED	public compatibility ali
 
 ## Benchmark Families
 
-`tools/benchmark.zig` records fixed regression budgets for framework blocks,
-state and resource exchange, GUI snapshots, import and preparation work,
-resampling, advanced filter design, oversampling, dynamics, ADM diffuse
-rendering, snapshot publication, Vorbis transforms, dispatched kernels, and C
-kernel comparisons. Parser scaling benchmarks remain recorded in
-`verification.md`. Phase 5 must review input shapes and thresholds before this
-section can close.
+`tools/benchmark.zig` is the executable timing and memory ledger. Its `Budget`
+record is the source of truth for every ceiling. The following table records
+the representative workloads that close the four Phase 5 performance classes.
+
+| Class | Workload | Regression threshold |
+| --- | --- | --- |
+| Setup | 8 MiB mono PCM WAV import; 262,144-frame sample decode and preview construction | At least 50 MiB/s; at most 500 ms |
+| Setup | 131,072-frame mono IR, 512-sample partitions | At most 500 ms preparation and 1 ms pending adoption |
+| Setup | Order-six Chebyshev II and elliptic filters; complex and inverse complex Jacobi; 63-tap, two-band least-squares and equiripple FIR; two-stage 4x mixed oversampler | At most 1 ms, 5 ms, 10 us, 10 us, 100 ms, 200 ms, and 500 ms per design, respectively |
+| Realtime | 512-frame framework block; scalar and native 44.1-to-48 kHz resampling; fixed 48 kHz model at 44.1, 48, 88.2, and 96 kHz host rates | At most 50 us/block, 500 ns/input sample, and 2 us/sample |
+| Realtime | 4x mixed oversampling; lookahead and 4x inter-sample limiters; four-band compressor | At most 5 us, 2 us, 5 us, and 5 us per sample |
+| Realtime | Twelve-output ADM diffuse rendering in f32 and f64 at 16, 64, and 512 frames; 131,072-frame IR convolution with 512-sample partitions | At most 5 us/output sample and 20 us/sample |
+| Realtime | Snapshot publish, read, partial reference update, and publish attempt with one concurrent reader across 20,000 operations | At most 1 us, 1 us, 2 us, and 2 us per attempt |
+| Realtime | Forward and inverse Vorbis MDCT at 64, 256, and 2,048 samples; scalar and detected buffer kernels at 8, 32, 128, and 512 samples | At most 500 ns/sample and 100 ns/sample |
+| Memory | 262,144-frame decoded importer and eight-voice player | At most 3 MiB and 7 MiB fixed storage |
+| Memory | 131,072-frame IR convolver with 512-sample partitions, decoded importer, and editor | At most 20 MiB, 2 MiB, and 4 MiB fixed storage |
+| Hostile scaling | MIDI file parse and traversal at 1,000, 2,000, and 4,000 events; UMP traversal at 1,024, 2,048, and 4,096 packets | At most 2 us/item and 1.75x per-item growth between adjacent sizes |
+| Hostile scaling | ADM XML at 128, 256, and 512 declaration-reference pairs | At most 1 ms/pair and 1.6x per-pair growth between adjacent sizes |
+| Hostile scaling | Vorbis, FLAC, ID3v2.3, ID3v2.4, RIFF INFO, and AIFF text traversal at 256, 512, and 1,024 entries | At most 5 us/entry and 2x per-entry growth from the 256-entry baseline |
+
+The main benchmark also enforces state and resource exchange, GUI snapshot,
+sample publication and playback, dense Zig and C kernels, denormal-tail, and
+resource-identity budgets. `verification.md` records the measured results and
+the separate parser-scaling commands.
 
 ## Current Disposition
 
-The first ledger pass intentionally leaves `REVIEW` records open. It establishes
-complete scope and prevents later source additions or unit moves from silently
-escaping Phase 5. A source moves to `EVIDENCE` only after its numerical and
-performance contracts have been inspected and its evidence family is accurate.
+The checked ledger is complete at 83 `EVIDENCE`, zero `REVIEW`, and 18
+`EXCLUDED` records. The inventory gate prevents later source additions or unit
+moves from silently escaping Phase 5. A source remains `EVIDENCE` only while
+its numerical and performance contracts and named evidence family stay
+accurate.
 
 ## Accepted Review Units
 

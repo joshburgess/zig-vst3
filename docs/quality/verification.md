@@ -2039,7 +2039,7 @@ encoding and file writing.
 Behavior commits: `f916c524`, `6ff1533c`
 
 The first Phase 5 benchmark run repeatably failed the least-squares FIR setup
-budget. The 255-tap, 1,024-density workload measured 111.4 ms and 110.5 ms
+budget. The 63-tap, 1,024-density workload measured 111.4 ms and 110.5 ms
 against a 100 ms ceiling. Each of its 65,536 grid rows evaluated every basis
 term with a separate cosine call. The implementation now evaluates one cosine
 and derives the remaining 31 terms with the bounded Chebyshev recurrence. The
@@ -2060,6 +2060,42 @@ results, and requires successful writer and reader progress. It completed
 | `zig build benchmark -Doptimize=ReleaseSafe --summary all` | Passed: 5/5 steps and every regression budget; the benchmark executable uses its pinned ReleaseFast configuration |
 | `zig fmt --check` over both changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Phase 5 Performance Coverage and Closure
+
+Behavior commit: `330d0c3a`
+
+The performance audit reconciled every `Budget` field and complexity benchmark
+with the Phase 5 setup, realtime, memory, and hostile-scaling requirements.
+Timing gates already enforced explicit inputs and ceilings. The sample and IR
+pipelines reported fixed storage but did not reject growth, so the benchmark
+now enforces five type-size ceilings at the exact capacities it exercises.
+
+The sample workload uses a 262,144-frame decoded importer and eight-voice
+player. They measure 2.01 MiB and 6.00 MiB against 3 MiB and 7 MiB ceilings.
+The IR workload uses a 131,072-frame convolver with 512-sample partitions plus
+the matching importer and editor. They measure 19.04 MiB, 1.01 MiB, and 3.00
+MiB against 20 MiB, 2 MiB, and 4 MiB ceilings.
+
+The evidence reconciliation also corrected the least-squares benchmark
+description from 255 taps to its actual 63 taps. The 65,536-row statement was
+already correct: two bands each use 1,024 grid points for each of 32 basis
+terms.
+
+| Check | Result |
+| --- | --- |
+| `zig build -j1 --cache-dir /private/tmp/zig-vst3-phase5-benchmark-local --global-cache-dir /private/tmp/zig-vst3-global-cache benchmark -Doptimize=ReleaseSafe --summary all` | Passed: 5/5 steps, every timing threshold, and all five fixed-storage ceilings |
+| Sample fixed storage | Passed: 2.01 MiB importer and 6.00 MiB player |
+| IR fixed storage | Passed: 19.04 MiB convolver, 1.01 MiB importer, and 3.00 MiB editor |
+| Representative realtime results | Passed: 290.2 ns/512-frame framework block, 1,203.1 ns/IR sample, 524.8 ns/4x mixed-oversampling sample, and 61.2 ns/contended snapshot attempt |
+| Representative setup results | Passed: 0.70 ms sample decode, 5.82 ms IR preparation, 45.60 ms least-squares design, and 3.61 ms mixed-oversampling design |
+| Build resource bound | Passed with one build job; benchmark executable compilation used 543 MiB maximum resident memory and the disposable local cache used 90 MiB |
+| `zig fmt --check tools/benchmark.zig` | Passed |
+| `git diff --check` | Passed |
+
+The checked numerical ledger has no pending record, every critical DSP family
+has direct or independent evidence with stated tolerances, and no critical or
+high numerical or performance finding is open. Phase 5 is complete.
 
 ## 2026-08-15: Extracted Review-Unit Classification
 
