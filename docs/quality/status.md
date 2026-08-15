@@ -256,6 +256,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   termination constructs that postdate its zero-tolerance source scan. The
   other 444/446 steps and 7,556/7,562 tests passed or reached their expected
   platform skips.
+- Closed Q-VER-009 by giving test generators safe bounded fallbacks, replacing
+  the ADM runtime assertion with a compile-time diagnostic, and handling
+  nullable Ogg pages explicitly. The complete repository gate now passes all
+  446/446 steps with 7,556 tests passed and six expected platform skips.
 
 ## Phase 3 Scope
 
@@ -270,7 +274,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Close Q-VER-009 and restore the complete repository gate. Then audit the open
-P-EDITOR and P-RESOURCE families from the checked parser inventory, recording
-their complete byte, count, allocation, work-limit, migration, and
-failure-atomicity chains.
+Audit the open P-EDITOR and P-RESOURCE families from the checked parser
+inventory. Record their complete byte, count, allocation, work-limit,
+migration, and failure-atomicity chains, then close defects and coverage gaps
+with focused corruption, fuzz, and allocation-failure evidence.

@@ -1557,3 +1557,30 @@ replay identically from the same baseline.
 | `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,477 lines classified |
 | `zig build test --summary all` | Incomplete: 444/446 steps succeeded and 7,556/7,562 tests passed with six expected platform skips. The sole failed dependency was the pre-existing production termination-path scan now tracked by Q-VER-009. |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Production Termination-Path Gate Restored
+
+Behavior commit: `91a7e2e4`
+
+The zero-tolerance production-source scan found ten constructs introduced after
+the gate itself. Seven were mathematically unreachable selector fallbacks in
+top-level parser fuzz helpers, but their placement made them production
+declarations. They now return bounded arbitrary input for every otherwise
+impossible selector value. The ADM identifier hash index now reports an invalid
+slot count through `@compileError` inside an explicit compile-time block. Both
+Ogg packet readers now derive nullable page exhaustion with an optional match
+instead of asserting that a second read of the optional value succeeds.
+
+The first focused rerun caught that a bare `@compileError` is analyzed even for
+valid generic instantiations. Moving it into an explicit compile-time block
+restored the intended conditional diagnostic. This correction passed the ADM
+fuzz gate before the complete rerun.
+
+| Check | Result |
+| --- | --- |
+| `scripts/check_production_termination_paths.sh` | Passed: no production termination path found |
+| `scripts/test_production_termination_path_check.sh` | Passed: unreachable, runtime assertion, panic, debug panic, and trap fixtures rejected; comments, strings, and test blocks accepted |
+| Affected parser gates | Passed: complete 94-test Vorbis gate plus ADM XML, iXML, MP3, Ogg, audio-file, FLAC, and MIDI-file fuzz gates |
+| `zig build test --summary all` | Passed: 446/446 steps, 7,556 tests passed, and six expected platform skips across the complete repository matrix |
+| `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,484 lines classified |
+| `git diff --check` | Passed |
