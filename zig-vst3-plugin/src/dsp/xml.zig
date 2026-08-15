@@ -163,6 +163,8 @@ pub const Attribute = struct {
 pub const AttributeIterator = struct {
     bytes: []const u8,
     offset: usize = 0,
+    validated_offset: usize = 0,
+    source_validated: bool = false,
 
     pub fn init(bytes: []const u8) AttributeIterator {
         return .{ .bytes = bytes };
@@ -177,6 +179,8 @@ pub const AttributeIterator = struct {
         try self.validateState();
         var trial = self.*;
         const attribute = try trial.nextInPlace();
+        trial.validated_offset = trial.offset;
+        trial.source_validated = true;
         self.* = trial;
         return attribute;
     }
@@ -184,6 +188,8 @@ pub const AttributeIterator = struct {
     fn validateState(self: AttributeIterator) !void {
         if (self.offset > self.bytes.len)
             return error.InvalidXmlAttributeIteratorState;
+        if (self.source_validated and self.offset == self.validated_offset)
+            return;
         var canonical = AttributeIterator.init(self.bytes);
         var state_seen = self.offset == 0;
         while (try canonical.nextInPlace()) |_| {
@@ -247,14 +253,17 @@ pub const EventIterator = struct {
     offset: usize,
     elements: [max_depth]StartElement = undefined,
     depth: usize = 0,
+    validated_offset: usize,
+    validated_depth: usize = 0,
+    validated_elements: [max_depth]StartElement = undefined,
 
     pub fn init(bytes: []const u8) EventIterator {
+        const initial_offset: usize =
+            if (std.mem.startsWith(u8, bytes, "\xef\xbb\xbf")) 3 else 0;
         return .{
             .bytes = bytes,
-            .offset = if (std.mem.startsWith(u8, bytes, "\xef\xbb\xbf"))
-                3
-            else
-                0,
+            .offset = initial_offset,
+            .validated_offset = initial_offset,
         };
     }
 
@@ -267,6 +276,7 @@ pub const EventIterator = struct {
         try self.validateState();
         var trial = self.*;
         const event = try trial.nextInPlace();
+        trial.markValidated();
         self.* = trial;
         return event;
     }
@@ -274,6 +284,7 @@ pub const EventIterator = struct {
     fn validateState(self: EventIterator) !void {
         if (self.offset > self.bytes.len or self.depth > max_depth)
             return error.InvalidXmlEventIteratorState;
+        if (self.matchesValidatedState()) return;
         var canonical = EventIterator.init(self.bytes);
         while (true) {
             if (eventStatesEqual(self, canonical)) return;
@@ -282,6 +293,28 @@ pub const EventIterator = struct {
             _ = (try canonical.nextInPlace()) orelse
                 return error.InvalidXmlEventIteratorState;
         }
+    }
+
+    fn matchesValidatedState(self: EventIterator) bool {
+        if (self.offset != self.validated_offset or
+            self.depth != self.validated_depth)
+        {
+            return false;
+        }
+        for (0..self.depth) |index| {
+            if (!startElementsEqual(
+                self.elements[index],
+                self.validated_elements[index],
+            )) return false;
+        }
+        return true;
+    }
+
+    fn markValidated(self: *EventIterator) void {
+        self.validated_offset = self.offset;
+        self.validated_depth = self.depth;
+        for (0..self.depth) |index|
+            self.validated_elements[index] = self.elements[index];
     }
 
     fn nextInPlace(self: *EventIterator) !?Event {
@@ -1339,4 +1372,45 @@ test "XML document enforces bounded nesting" {
         error.XmlNestingTooDeep,
         Document.init(bytes[0..offset]),
     );
+}
+
+test "XML iterators retain validated linear traversal witnesses" {
+    const child_count = 4_096;
+    var document_storage: [child_count * 4 + 16]u8 = undefined;
+    var document_writer = std.Io.Writer.fixed(&document_storage);
+    try document_writer.writeAll("<r>");
+    for (0..child_count) |_| try document_writer.writeAll("<x/>");
+    try document_writer.writeAll("</r>");
+
+    const document = try Document.init(document_writer.buffered());
+    var events = document.iterator();
+    var event_count: usize = 0;
+    while (try events.next()) |_| event_count += 1;
+    try std.testing.expectEqual(child_count + 2, event_count);
+    try std.testing.expect(events.matchesValidatedState());
+
+    var replayed_events = document.iterator();
+    _ = try replayed_events.next();
+    _ = try replayed_events.next();
+    replayed_events.validated_offset = 0;
+    replayed_events.validated_depth = 0;
+    try replayed_events.validateState();
+    _ = try replayed_events.next();
+
+    const attribute_count = 1_024;
+    var attribute_storage: [attribute_count * 16]u8 = undefined;
+    var attribute_writer = std.Io.Writer.fixed(&attribute_storage);
+    for (0..attribute_count) |index|
+        try attribute_writer.print("a{}=\"x\" ", .{index});
+    var attributes = AttributeIterator.init(attribute_writer.buffered());
+    var parsed_attribute_count: usize = 0;
+    while (try attributes.next()) |_| parsed_attribute_count += 1;
+    try std.testing.expectEqual(attribute_count, parsed_attribute_count);
+    try std.testing.expectEqual(attributes.offset, attributes.validated_offset);
+
+    var replayed_attributes = AttributeIterator.init("a=\"x\" b=\"y\"");
+    _ = try replayed_attributes.next();
+    replayed_attributes.validated_offset = 0;
+    try replayed_attributes.validateState();
+    _ = try replayed_attributes.next();
 }
