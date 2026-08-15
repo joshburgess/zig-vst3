@@ -91,9 +91,9 @@ ordering.
 | `gui-adapters/vstgui/zig_vstgui_accessibility_linux_clipboard_tests.cpp` | 0 | 0 | 1 | 1 | 0 | 0 |
 | `gui-adapters/vstgui/zig_vstgui_adapter_tests.cpp` | 2 | 0 | 0 | 0 | 0 | 0 |
 | `gui-adapters/vstgui/zig_vstgui_editor.cpp` | 1 | 0 | 1 | 2 | 1 | 0 |
-| `zig-vst3-plugin/src/plugin/alsa_midi_shim.c` | 22 | 0 | 6 | 3 | 0 | 0 |
+| `zig-vst3-plugin/src/plugin/alsa_midi_shim.c` | 22 | 0 | 7 | 3 | 0 | 0 |
 | `zig-vst3-plugin/src/plugin/alsa_shim.c` | 18 | 0 | 7 | 2 | 0 | 0 |
-| `zig-vst3-plugin/src/plugin/alsa_ump_shim.c` | 21 | 0 | 6 | 3 | 0 | 0 |
+| `zig-vst3-plugin/src/plugin/alsa_ump_shim.c` | 21 | 0 | 7 | 3 | 0 | 0 |
 | `zig-vst3-plugin/src/plugin/core_audio_shim.c` | 7 | 0 | 11 | 3 | 1 | 0 |
 | `zig-vst3-plugin/src/plugin/pipewire_shim.c` | 15 | 0 | 2 | 2 | 0 | 0 |
 | `zig-vst3-plugin/src/plugin/win_ump_ref_count.hpp` | 5 | 0 | 0 | 0 | 1 | 0 |
