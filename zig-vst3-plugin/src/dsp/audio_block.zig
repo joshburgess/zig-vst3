@@ -13,6 +13,7 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
         /// The channel slices and their sample storage must outlive the block.
         pub fn init(source: []const []Sample) !Self {
             const frame_count = try validateShape(Sample, maximum_channels, source);
+            try validateMutableChannels(Sample, source);
             var channels: [maximum_channels][]Sample = undefined;
             for (source, 0..) |channel_samples, index|
                 channels[index] = channel_samples;
@@ -110,8 +111,12 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
             source: ConstAudioBlock(Sample, maximum_channels),
         ) !void {
             try validateMatchingShape(self, source);
-            for (0..self.channel_count) |index|
+            try validateSourceAliases(Sample, self, source);
+            for (0..self.channel_count) |index| {
+                if (sameSlice(self.channels[index], source.channels[index]))
+                    continue;
                 @memcpy(self.channels[index], source.channels[index]);
+            }
         }
 
         pub fn addFrom(
@@ -127,6 +132,7 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
             gain: Sample,
         ) !void {
             try validateMatchingShape(self, source);
+            try validateSourceAliases(Sample, self, source);
             if (!std.math.isFinite(gain))
                 return error.AudioBlockNonFiniteValue;
             for (0..self.channel_count) |channel_index| {
@@ -181,6 +187,8 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
         ) !void {
             try validateMatchingShape(self, left);
             try validateMatchingShape(self, right);
+            try validateSourceAliases(Sample, self, left);
+            try validateSourceAliases(Sample, self, right);
             for (0..self.channel_count) |channel_index| {
                 for (
                     left.channels[channel_index],
@@ -217,7 +225,10 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
             for (0..self.channel_count) |index| {
                 if (self.channels[index].len != self.frame_count) return false;
             }
-            return true;
+            return mutableChannelsDisjoint(
+                Sample,
+                self.channels[0..self.channel_count],
+            );
         }
     };
 }
@@ -230,6 +241,67 @@ fn validateMatchingShape(destination: anytype, source: anytype) !void {
     if (destination.channel_count != source.channel_count or
         destination.frame_count != source.frame_count)
         return error.AudioBlockShapeMismatch;
+}
+
+fn validateMutableChannels(comptime Sample: type, channels: anytype) !void {
+    if (!mutableChannelsDisjoint(Sample, channels))
+        return error.AudioBlockBufferOverlap;
+}
+
+fn mutableChannelsDisjoint(comptime Sample: type, channels: anytype) bool {
+    for (channels, 0..) |channel, index| {
+        for (channels[index + 1 ..]) |later| {
+            if (slicesOverlap(Sample, channel, later)) return false;
+        }
+    }
+    return true;
+}
+
+fn validateSourceAliases(
+    comptime Sample: type,
+    destination: anytype,
+    source: anytype,
+) !void {
+    for (destination.channels[0..destination.channel_count], 0..) |output, output_index| {
+        for (source.channels[0..source.channel_count], 0..) |input, input_index| {
+            if (!slicesOverlap(Sample, output, input)) continue;
+            if (output_index == input_index and sameSlice(output, input))
+                continue;
+            return error.AudioBlockBufferOverlap;
+        }
+    }
+}
+
+fn slicesOverlap(comptime Sample: type, first: anytype, second: anytype) bool {
+    if (first.len == 0 or second.len == 0) return false;
+    const first_start = @intFromPtr(first.ptr);
+    const second_start = @intFromPtr(second.ptr);
+    const first_bytes = std.math.mul(
+        usize,
+        first.len,
+        @sizeOf(Sample),
+    ) catch return true;
+    const second_bytes = std.math.mul(
+        usize,
+        second.len,
+        @sizeOf(Sample),
+    ) catch return true;
+    const first_end = std.math.add(
+        usize,
+        first_start,
+        first_bytes,
+    ) catch return true;
+    const second_end = std.math.add(
+        usize,
+        second_start,
+        second_bytes,
+    ) catch return true;
+    return first_start < second_end and second_start < first_end;
+}
+
+fn sameSlice(first: anytype, second: anytype) bool {
+    return first.len == second.len and
+        (first.len == 0 or @intFromPtr(first.ptr) == @intFromPtr(second.ptr));
 }
 
 pub fn ConstAudioBlock(
@@ -545,6 +617,76 @@ test "audio block arithmetic rejects overflow transactionally" {
         destination.multiply(std.math.floatMax(f64)),
     );
     try std.testing.expectEqualSlices(f64, &before, &destination_samples);
+}
+
+test "audio block mutation rejects ambiguous aliases transactionally" {
+    var overlapping_channels = [_]f32{ 1.0, 2.0, 3.0 };
+    try std.testing.expectError(
+        error.AudioBlockBufferOverlap,
+        AudioBlock(f32, 2).init(&.{
+            overlapping_channels[0..2],
+            overlapping_channels[1..3],
+        }),
+    );
+
+    var storage = [_]f32{ 1.0, 2.0, 3.0, 4.0 };
+    var destination = try AudioBlock(f32, 1).init(&.{storage[0..2]});
+    const shifted = try ConstAudioBlock(f32, 1).init(&.{storage[1..3]});
+    const before = storage;
+    try std.testing.expectError(
+        error.AudioBlockBufferOverlap,
+        destination.copyFrom(shifted),
+    );
+    try std.testing.expectError(
+        error.AudioBlockBufferOverlap,
+        destination.addScaled(shifted, 2.0),
+    );
+    try std.testing.expectError(
+        error.AudioBlockBufferOverlap,
+        destination.replaceWithProduct(shifted, shifted),
+    );
+    try std.testing.expectEqualDeep(before, storage);
+
+    var left = [_]f32{ 2.0, 3.0 };
+    var right = [_]f32{ 5.0, 7.0 };
+    var channels = try AudioBlock(f32, 2).init(&.{ left[0..], right[0..] });
+    const swapped = try ConstAudioBlock(f32, 2).init(&.{
+        right[0..],
+        left[0..],
+    });
+    try std.testing.expectError(
+        error.AudioBlockBufferOverlap,
+        channels.replaceWithSum(swapped, swapped),
+    );
+    try std.testing.expectEqualSlices(f32, &.{ 2.0, 3.0 }, &left);
+    try std.testing.expectEqualSlices(f32, &.{ 5.0, 7.0 }, &right);
+
+    var first = [_]f32{ 0.25, 0.5 };
+    var second = [_]f32{ 0.75, 1.0 };
+    var malformed = try AudioBlock(f32, 2).init(&.{
+        first[0..],
+        second[0..],
+    });
+    malformed.channels[1] = malformed.channels[0];
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectError(
+        error.InvalidAudioBlockState,
+        malformed.multiply(2.0),
+    );
+    try std.testing.expectEqualSlices(f32, &.{ 0.25, 0.5 }, &first);
+    try std.testing.expectEqualSlices(f32, &.{ 0.75, 1.0 }, &second);
+}
+
+test "audio block mutation permits exact corresponding aliases" {
+    var samples = [_]f64{ 1.5, -2.0 };
+    var block = try AudioBlock(f64, 1).init(&.{samples[0..]});
+    const same = block.asConst();
+    try block.copyFrom(same);
+    try block.addFrom(same);
+    try std.testing.expectEqualSlices(f64, &.{ 3.0, -4.0 }, &samples);
+    const doubled = block.asConst();
+    try block.replaceWithProduct(doubled, doubled);
+    try std.testing.expectEqualSlices(f64, &.{ 9.0, 16.0 }, &samples);
 }
 
 test "const audio block reports bounded aggregate values" {

@@ -462,7 +462,7 @@ Chain and independent duplicator members must expose `processSample(Sample) Samp
 
 ## Audio Blocks And Process Contexts
 
-`AudioBlock(Sample, maximum_channels)` and `ConstAudioBlock(Sample, maximum_channels)` are allocation-free views over caller-owned planar channel slices. Construction checks the channel bound and equal frame counts. Every indexing, view, arithmetic, and aggregate operation revalidates retained shape before accessing caller storage. Sub-block and channel-subset views retain aliasing with the original storage. Mutable blocks support checked copy, addition, subtraction, scaled addition, multiplication by a scalar, and replacement with the pointwise sum or product of two blocks. Const views report minimum, maximum, peak magnitude, and sum of squares.
+`AudioBlock(Sample, maximum_channels)` and `ConstAudioBlock(Sample, maximum_channels)` are allocation-free views over caller-owned planar channel slices. Construction checks the channel bound and equal frame counts. Mutable channel slices must be disjoint. Copy and arithmetic operations reject shifted or cross-channel source aliases before mutation while permitting an exact corresponding in-place source. Every indexing, view, arithmetic, and aggregate operation revalidates retained shape before accessing caller storage. Sub-block and channel-subset views retain aliasing with the original storage. Mutable blocks support checked copy, addition, subtraction, scaled addition, multiplication by a scalar, and replacement with the pointwise sum or product of two blocks. Const views report minimum, maximum, peak magnitude, and sum of squares.
 
 ```zig
 var block = try plug.dsp.AudioBlock(f32, 8).init(channels);
