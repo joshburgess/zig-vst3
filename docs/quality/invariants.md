@@ -99,6 +99,11 @@ single type. Later phases must link each invariant to code and verification.
   iterators bind normal traversal to the exact source range and cursor state
   produced by the preceding successful step. Caller-modified state must match
   canonical prefix reconstruction before iteration can continue.
+- iXML requirements analysis and materialization apply one retained limits
+  policy for document bytes, conservative structural work, decoded text,
+  tracks, and sync points. The structural budget reserves 128 operations per
+  byte across fixed-depth analysis and materialization. Limit failure occurs
+  before caller storage is changed.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the

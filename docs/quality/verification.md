@@ -1228,3 +1228,29 @@ preemption without hiding repeatable work.
 | `scripts/check_quality_inventory.sh` | Passed: 823 files and 470,770 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded iXML Parsing
+
+Behavior commit: `c1e49fc0`
+
+`requiredIxmlParseStorage` and `parseIxmlMetadata` now apply
+`default_ixml_limits`. The corresponding `WithLimits` APIs accept a public
+`IxmlLimits` policy for document bytes, conservative structural work, decoded
+text, tracks, and sync points. The structural estimate reserves 128 operations
+per input byte for fixed-depth analysis and materialization. Every count and
+work rejection occurs during analysis, before caller storage is materialized.
+
+The native fuzz target mixes arbitrary input with minimal and structured seed
+documents, byte mutation, truncation, and extension. If requirements analysis
+accepts a document, exact-size caller storage must materialize it successfully
+under the same policy and reproduce the analyzed track and sync-point counts.
+
+| Check | Result |
+| --- | --- |
+| Focused iXML selection | Passed: 19/19 tests, including every independent limit and failure-atomic storage checks |
+| `zig build test-ixml-fuzz --fuzz=100K` | Passed: 100,528 executions, 526 unique runs, and 493 of 21,408 instrumented branches covered without a failure |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including the public custom-limit APIs |
+| Windows x86-64 ReleaseSafe iXML cross-compilation | Passed |
+| `scripts/check_quality_inventory.sh` | Passed: 823 files and 470,985 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

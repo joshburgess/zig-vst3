@@ -77,6 +77,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   exact retained-state witnesses. The checked six-format scaling gate remains
   flat through 1,024 entries in Debug and ReleaseSafe, and the complete Vorbis
   plus broader Q12 selections pass.
+- Closed Q-IXML-001 with bounded default and caller-selected byte,
+  structural-work, decoded-text, track, and sync-point policies. The focused
+  suite, 100,528-run native fuzz campaign, installed-package matrix, and
+  Windows cross-build pass.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.
