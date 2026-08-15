@@ -84,7 +84,7 @@ Q15	zig-vst3-plugin/src/dsp/chebyshev_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/chorus.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/convolution.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/delay.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/denormals.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/denormals.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/dry_wet.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/dynamics.zig	EVIDENCE	N-DYNAMICS
 Q15	zig-vst3-plugin/src/dsp/elliptic_design.zig	EVIDENCE	N-FILTER
@@ -97,12 +97,12 @@ Q15	zig-vst3-plugin/src/dsp/first_order_tpt.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/fixed_rate.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/fixture_runner.zig	EXCLUDED	independent-fixture process runner
 Q15	zig-vst3-plugin/src/dsp/flanger.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/gain_bias.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/gain_bias.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/inter_sample_limiter.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/kernel_dispatch.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/ladder.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/linkwitz_riley.zig	EVIDENCE	N-DYNAMICS
-Q15	zig-vst3-plugin/src/dsp/log_ramp.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/log_ramp.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/lookup_table.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/mixed_oversampling.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/modulated_delay.zig	REVIEW	N-PENDING
@@ -114,7 +114,7 @@ Q15	zig-vst3-plugin/src/dsp/oscillator.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/oversampling.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/panner.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/pcm_dither.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/phase.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/phase.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/phaser.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/polynomial.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/polyphase_fir.zig	EVIDENCE	N-TRANSFORM

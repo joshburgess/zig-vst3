@@ -2157,3 +2157,25 @@ uses the same overflow-safe classifier.
 | `scripts/check_quality_numerics_inventory.sh` | Passed after adding the region primitive: 51 evidence, 32 review, and 18 excluded sources |
 | `scripts/check_quality_inventory.sh` | Passed: 869 source files and 478,960 lines classified |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Scalar State and Denormal Review
+
+The foundational review accepted four small state and platform primitives.
+Phase construction and advancement use finite bounded wrapping and reject
+invalid increments without mutation. Gain, bias, and logarithmic ramps have
+direct linear, decibel, and geometric identities, exact target settlement,
+skip equivalence, hostile-state containment, and transactional setters.
+Denormal scopes directly verify architectural control-state restoration,
+nested ownership, subnormal flushing, and recurrent plus convolution tails.
+Latency and channel layout do not apply to these scalar and thread-local
+contracts.
+
+| Check | Result |
+| --- | --- |
+| Direct Debug phase test | Passed: 3/3 tests |
+| Direct Debug denormal test | Passed: 4/4 tests |
+| Direct Debug gain and bias test | Passed: 3/3 tests |
+| Direct Debug logarithmic-ramp test | Passed: 3/3 tests |
+| Direct ReleaseSafe repetitions of all four tests | Passed: the same 13/13 tests |
+| `scripts/check_quality_numerics_inventory.sh` | Passed after disposition updates: 55 evidence, 28 review, and 18 excluded sources |
+| `git diff --check` | Passed |
