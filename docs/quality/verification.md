@@ -2305,3 +2305,27 @@ fallback, exact smoothing settlement, partition behavior, and hostile state.
 | `scripts/check_quality_numerics_inventory.sh` | Passed after disposition updates: 68 evidence, 15 review, and 18 excluded sources |
 | `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,265 lines classified |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Foundational Filter Review
+
+The remaining foundational filters have direct defining identities and
+containment evidence. Biquad responses cover every filter family, cutoff,
+center gain, shelves, notch rejection, complex evaluation, unity, and bounded
+coefficient transition. First-order TPT pass filters meet at -3.0103 dB, and
+its all-pass impulse preserves energy. FIR and fractional delay behavior use
+exact impulse and interpolation vectors. Ballistics uses analytic peak release
+and RMS convergence. State-variable and nonlinear ladder filters separate
+frequency bands and preserve results across block partitions. Lookup-table
+interpolation covers its complete domain and endpoints.
+
+Every slice-based filter in this group supports exact in-place operation and
+rejects shifted overlap before changing output or state. Configuration errors
+are transactional, and retained non-finite state has explicit containment.
+
+| Check | Result |
+| --- | --- |
+| Focused Debug foundational-filter selection | Passed: 41/41 tests |
+| Focused ReleaseSafe foundational-filter selection | Passed: 41/41 tests |
+| `scripts/check_quality_numerics_inventory.sh` | Passed after disposition updates: 75 evidence, 8 review, and 18 excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,265 lines classified |
+| `git diff --check` | Passed |

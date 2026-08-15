@@ -75,15 +75,15 @@ Q14	zig-vst3-plugin/src/hrtf_tests.zig	EVIDENCE	N-HRTF
 Q14	zig-vst3-plugin/src/hrtf_thread_sanitizer.zig	EXCLUDED	concurrency test root
 Q15	zig-vst3-plugin/src/dsp.zig	EXCLUDED	public module facade
 Q15	zig-vst3-plugin/src/dsp/audio_block.zig	EVIDENCE	N-PRIMITIVE
-Q15	zig-vst3-plugin/src/dsp/ballistics.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/biquad.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/ballistics.zig	EVIDENCE	N-FILTER
+Q15	zig-vst3-plugin/src/dsp/biquad.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/buffer_regions.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/butterworth_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/chebyshev2_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/chebyshev_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/chorus.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/convolution.zig	EVIDENCE	N-TRANSFORM
-Q15	zig-vst3-plugin/src/dsp/delay.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/delay.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/denormals.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/dry_wet.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/dynamics.zig	EVIDENCE	N-DYNAMICS
@@ -93,17 +93,17 @@ Q15	zig-vst3-plugin/src/dsp/fast_math.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/fft.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/fir.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/fir_design.zig	EVIDENCE	N-FILTER
-Q15	zig-vst3-plugin/src/dsp/first_order_tpt.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/first_order_tpt.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/fixed_rate.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/fixture_runner.zig	EXCLUDED	independent-fixture process runner
 Q15	zig-vst3-plugin/src/dsp/flanger.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/gain_bias.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/inter_sample_limiter.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/kernel_dispatch.zig	EVIDENCE	N-PRIMITIVE
-Q15	zig-vst3-plugin/src/dsp/ladder.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/ladder.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/linkwitz_riley.zig	EVIDENCE	N-DYNAMICS
 Q15	zig-vst3-plugin/src/dsp/log_ramp.zig	EVIDENCE	N-PRIMITIVE
-Q15	zig-vst3-plugin/src/dsp/lookup_table.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/lookup_table.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/mixed_oversampling.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/modulated_delay.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/modulation_rate.zig	EVIDENCE	N-PRIMITIVE
@@ -130,7 +130,7 @@ Q15	zig-vst3-plugin/src/dsp/shared_processor_duplicator.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/simd_register.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/smoothed_value.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/special_functions.zig	EVIDENCE	N-FILTER
-Q15	zig-vst3-plugin/src/dsp/state_variable.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/state_variable.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/stereo_modulation.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/vibrato.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/wave64_metadata.zig	EXCLUDED	passive metadata values

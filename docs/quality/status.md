@@ -388,6 +388,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   in-place use remains supported for either output plane. FIR, oscillator, PCM
   dither, and modulation-rate evidence also passed review. The ledger now has
   68 evidence, 15 review, and 18 excluded records.
+- Accepted ballistics, biquad, delay, first-order TPT, ladder, lookup-table,
+  and state-variable filters. Analytic responses, direct vectors, frequency
+  separation, partition invariance, finite containment, alias transactionality,
+  and configuration failure behavior pass in Debug and ReleaseSafe. The ledger
+  now has 75 evidence, 8 review, and 18 excluded records.
 
 ## Phase 5 Scope
 
@@ -402,7 +407,8 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the 15 `REVIEW` records in `numerics.md`, finishing the foundational
-filters before the remaining composite effects.
+Review the eight remaining `REVIEW` records in `numerics.md`. They are the
+chorus, flanger, modulated-delay, phaser, reverb, stereo-modulation, vibrato,
+and waveshaper composite effects.
 Move a source to `EVIDENCE` only after its reference or identity, tolerance,
 finite containment, latency, channel, and transactional contracts are sound.
