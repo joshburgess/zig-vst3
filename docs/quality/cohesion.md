@@ -15,7 +15,7 @@ split.
 
 | Source | Production / test lines | Role and state contract | Decision |
 | --- | ---: | --- | --- |
-| `build.zig` | 7,497 / 0 | Owns the repository build graph. Its steps share resolved targets, package modules, feature options, and named aggregate gates. | KEEP. Splitting would require a broad mutable build context without creating an independently meaningful package contract. |
+| `build.zig` | 7,530 / 0 | Owns the repository build graph. Its steps share resolved targets, package modules, feature options, and named aggregate gates. | KEEP. Splitting would require a broad mutable build context without creating an independently meaningful package contract. |
 | `gui-adapters/vstgui/zig_vstgui_accessibility_bridge.cpp` | 2,840 / 0 | Owns the native accessibility peer bridge and the lifetime transfer between VSTGUI objects and platform accessibility objects. | KEEP. The translation unit already matches one foreign-lifetime boundary. |
 | `gui-adapters/vstgui/zig_vstgui_editor.cpp` | 2,417 / 0 | Owns native editor creation, attachment, resize, and teardown behind the Zig VSTGUI ABI. | KEEP. Its state is one editor lifecycle and is separate from graph and accessibility implementations. |
 | `gui-adapters/vstgui/zig_vstgui_graphs.cpp` | 2,053 / 0 | Owns graph widgets, retained plot data, and graph-specific draw and input callbacks. | KEEP. Graph state and invalidation form one adapter contract. |
@@ -38,7 +38,7 @@ split.
 | `zig-vst3-plugin/src/lv2_ui.zig` | 1,723 / 2,080 | Owns LV2 UI feature negotiation, host subscription and resize callbacks, backend lifecycle, and idle publication. | KEEP. The runtime state is one UI instance, and more than half the file is colocated lifecycle testing. |
 | `zig-vst3-plugin/src/parameters/access.zig` | 1,704 / 1,024 | Derives typed parameter values, read-only views, and editors from one compile-time parameter schema. | KEEP. All three views depend on the same descriptor reflection and range conversion invariants. |
 | `zig-vst3-plugin/src/plugin/instance.zig` | 2,659 / 0 | Generates one plugin runtime that owns preparation, processing, state, resources, and teardown according to the plugin specification. | KEEP. The generic type is the lifecycle boundary; its supporting state is already factored into sibling modules. |
-| `zig-vst3-plugin/src/plugin/standalone.zig` | 3,058 / 3,043 | Owns capture FIFO and clock-domain bridging, routing, worker coordination, device lifecycle, and the standalone host shell. | SPLIT. Extract capture transport and drift control from host and device orchestration. |
+| `zig-vst3-plugin/src/plugin/standalone.zig` | 1,953 / 3,063 | Owns callback adaptation, channel routing, MIDI and UMP scheduling, device lifecycle, and the standalone host shell. Capture FIFO, drift control, and disparate-clock transport live in `plugin/standalone/capture.zig`. | KEEP. The remaining production code coordinates one host lifecycle; every moved public name is an exact alias. |
 | `zig-vst3-plugin/src/process/context.zig` | 2,058 / 1,610 | Defines one bounded process block view over transport, audio buses, parameters, events, data exchange, and host requests. | KEEP. These borrowed views share the lifetime of one host process call and expose no independent ownership. |
 | `zig-vst3-plugin/src/process/events.zig` | 1,557 / 1,529 | Defines bounded event values, validation, ordering, iteration, and note tracking for a process block. | KEEP. Validation and iteration preserve the same event representation and block-lifetime contract. |
 | `zig-vst3/src/ara_document_controller.zig` | 4,090 / 1,908 | Owns the bounded ARA document model, archive store and restore, audio-reader leases, host notifications, and model-update sequencing. | KEEP. These operations mutate one controller model and share its generation, capacity, and host-lifetime invariants. |
@@ -54,7 +54,7 @@ rejects missing or stale sources, changed metrics, duplicate paths, and unknown
 decisions.
 
 <!-- cohesion-files:start -->
-- `build.zig` | 7497 | 7497 | 0 | KEEP
+- `build.zig` | 7530 | 7530 | 0 | KEEP
 - `gui-adapters/vstgui/zig_vstgui_accessibility_bridge.cpp` | 2840 | 2840 | 0 | KEEP
 - `gui-adapters/vstgui/zig_vstgui_editor.cpp` | 2417 | 2417 | 0 | KEEP
 - `gui-adapters/vstgui/zig_vstgui_graphs.cpp` | 2053 | 2053 | 0 | KEEP
@@ -77,7 +77,7 @@ decisions.
 - `zig-vst3-plugin/src/lv2_ui.zig` | 3803 | 1723 | 2080 | KEEP
 - `zig-vst3-plugin/src/parameters/access.zig` | 2728 | 1704 | 1024 | KEEP
 - `zig-vst3-plugin/src/plugin/instance.zig` | 2659 | 2659 | 0 | KEEP
-- `zig-vst3-plugin/src/plugin/standalone.zig` | 6101 | 3058 | 3043 | SPLIT
+- `zig-vst3-plugin/src/plugin/standalone.zig` | 5016 | 1953 | 3063 | KEEP
 - `zig-vst3-plugin/src/process/context.zig` | 3668 | 2058 | 1610 | KEEP
 - `zig-vst3-plugin/src/process/events.zig` | 3086 | 1557 | 1529 | KEEP
 - `zig-vst3/src/ara_document_controller.zig` | 5998 | 4090 | 1908 | KEEP

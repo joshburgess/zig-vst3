@@ -162,6 +162,8 @@ until its ownership and publication family is reviewed and the path is added.
 - `zig-vst3-plugin/src/plugin/native_callback_gate.zig`
 - `zig-vst3-plugin/src/plugin/pipewire_shim.c`
 - `zig-vst3-plugin/src/plugin/standalone.zig`
+- `zig-vst3-plugin/src/plugin/standalone/capture.zig`
+- `zig-vst3-plugin/src/plugin/standalone/common.zig`
 - `zig-vst3-plugin/src/plugin/wasapi.zig`
 - `zig-vst3-plugin/src/plugin/wasapi_shim.c`
 - `zig-vst3-plugin/src/plugin/win_midi.zig`

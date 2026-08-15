@@ -3435,6 +3435,39 @@ pub fn build(b: *std.Build) void {
     plugin_runtime_test_step.dependOn(
         &b.addRunArtifact(plugin_runtime_tests).step,
     );
+    const standalone_capture_test_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        standalone_capture_test_module.link_libc = true;
+    const standalone_capture_tests = b.addTest(.{
+        .root_module = standalone_capture_test_module,
+        .filters = &.{ "capture", "clock drift" },
+    });
+    const standalone_capture_test_step = b.step(
+        "test-standalone-capture",
+        "Run standalone capture transport and clock-drift tests",
+    );
+    standalone_capture_test_step.dependOn(
+        &b.addRunArtifact(standalone_capture_tests).step,
+    );
+    const standalone_capture_windows_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .gnu,
+            }),
+            .optimize = .ReleaseSafe,
+        }),
+        .filters = &.{ "capture", "clock drift" },
+    });
+    standalone_capture_test_step.dependOn(
+        &standalone_capture_windows_tests.step,
+    );
     const resource_ownership_test_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,
