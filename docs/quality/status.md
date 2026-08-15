@@ -271,6 +271,20 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   bounded LV2 feature, option, atom, audio-block, state, and VST3 host-input
   paths. Exact-limit, one-over, VST3, LV2, cross-target, and installed-package
   gates pass.
+- Closed Q-MIDI-002 by bounding UMP streams and replacing repeated complete
+  replay with an exact validated traversal witness. The checked Debug and
+  ReleaseSafe scaling gate stays flat through 4,096 packets, and focused,
+  cross-target, installed-package, and 100,367-case generated-input gates pass.
+- Closed high-severity Q-MIDI-003 by rechecking ALSA stop requests inside
+  native input drains, capping each poll wake at 64 reads, and bounding raw
+  MIDI 1 and UMP callback counts before pointer traversal. Native backend,
+  ThreadSanitizer, cross-target, and installed-package gates pass.
+- Closed P-MIDI after a 102,591-case generated-input campaign preserved the
+  complete state of fixed-capacity SysEx7, SysEx8, Mixed Data Set, Flex Data
+  text, and Stream text assemblers on every rejected packet.
+- Closed Q-EDITOR-002 by replacing the editor-state mutation helper's
+  compile-time termination fallback with error propagation. The production
+  termination-path scan and focused editor-state gate pass.
 
 ## Phase 3 Scope
 
@@ -285,6 +299,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Audit the remaining P-MIDI family from the checked parser inventory. Record
-native and streaming MIDI byte, packet, message, queue, allocation, progress,
-and work limits with focused corruption and cross-target evidence.
+Audit the remaining P-CONFIG family from the checked parser inventory. Record
+device identifier, standalone argument, compatibility JSON, textual ID, byte,
+count, allocation, progress, and publication limits with focused malformed
+input and cross-target evidence.

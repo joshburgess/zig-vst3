@@ -1690,3 +1690,52 @@ backing block and proves rejection occurs before traversal or delegation.
 | `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,830 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded Linear MIDI Streams and Native Input
+
+Behavior commits: `d316b437`, `4e09e9e1`, `171a1218`, and `b6ac068d`
+
+The remaining P-MIDI review covered MIDI 1 messages, UMP framing, SysEx7,
+SysEx8, Mixed Data Set, Flex Data text, Stream messages, native input and
+output delegates, fixed scheduler queues, and raw VST3 MIDI declarations.
+Messages and packets use fixed three-byte and four-word storage. Segmented
+assemblers use compile-time capacities and checked transactional append.
+Native output queues hold 256 fixed messages or packets, and raw VST3 files are
+ABI declarations with independent SDK layout and constant gates.
+
+The UMP iterator previously traversed its complete source before every packet.
+It now accepts a 256 MiB default or caller-selected word and packet policy,
+validates the complete source once, and retains an exact source, limits,
+cursor, and packet-count witness. Caller-modified state uses bounded canonical
+fallback. Exact-limit and one-over tests prove limit rejection leaves cursor
+and packet count unchanged. The checked scaling gate remains flat from 1,024
+through 4,096 one-word packets at 125.78, 124.79, and 124.83 Debug ns per
+packet and 10.09, 10.29, and 10.05 ReleaseSafe ns per packet.
+
+The native review found that ALSA input threads could remain inside a readable
+device drain without rechecking stop. Each drain now checks stop before every
+read and accepts at most 64 reads per poll wake. MIDI 1 callbacks reject more
+than 256 bytes, shared ALSA and Windows UMP callbacks reject more than 64
+words, and CoreMIDI rejects a count beyond its 16-bit packet length before
+pointer traversal. Direct ALSA C string copies reject an overflowing length
+before scanning or allocation.
+
+One generated-input target covers bounded UMP framing and exact deterministic
+replay. A second sends arbitrary valid UMP frames through five fixed-capacity
+segmented assemblers and compares the complete prior state after every
+rejected packet.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-ump-stream --summary all` | Passed: 6/6 steps and 9/9 tests, including native execution and ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| `zig build test-ump-stream-fuzz --fuzz=100K` | Passed: 100,367 executions, 365 unique inputs, and 90 of 21,719 instrumented branches without a failure |
+| `zig build benchmark-ump-stream` in Debug and ReleaseSafe | Passed: checked per-packet cost stayed flat through 4,096 packets |
+| `zig build test-midi-stream-fuzz --fuzz=100K` | Passed: 102,591 executions, 2,517 unique inputs, and 496 of 23,109 instrumented branches without a failure |
+| Native backend gates | Passed: ALSA MIDI 13/13 steps and 15/15 tests; ALSA UMP 13/13 steps and 11/11 tests; Windows MIDI 9/9 steps and 11/11 tests; Windows UMP 7/7 steps and 4/4 tests; CoreMIDI 9/9 steps with 13/14 tests passed and one native-device skip |
+| `zig build test-midi-thread-sanitizers --summary all` | Passed: 11/11 steps and 9/9 tests |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests |
+| `scripts/check_production_termination_paths.sh` | Passed after `d31a1ed2` removed the editor-state mutation helper's compile-time fallback |
+| `scripts/check_parser_inventory.sh` | Passed: 178 production sources classified |
+| `scripts/check_quality_inventory.sh` | Passed: 827 files and 475,456 lines classified |
+| `zig fmt --check` over changed Zig and build sources | Passed |
+| `git diff --check` | Passed |
