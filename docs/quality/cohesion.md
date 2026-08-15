@@ -24,7 +24,7 @@ split.
 | `zig-vst3-plugin/src/dsp/adm_xml.zig` | 10,470 / 4,786 | Parses bounded ADM XML into caller storage and validates references, profiles, timelines, and graph relationships before publication. | SPLIT. Separate XML token and attribute traversal from the ADM model and graph validator without exposing parser scratch state. |
 | `zig-vst3-plugin/src/dsp/audio_file_reader.zig` | 1,577 / 1,247 | Selects bounded WAV, RF64, BW64, Wave64, AIFF, and AIFC readers and presents one positional PCM and metadata interface. | KEEP. The file is the format-dispatch boundary; format implementations already live in narrower modules. |
 | `zig-vst3-plugin/src/dsp/flac.zig` | 4,747 / 2,547 | Owns FLAC metadata, frame encoding and decoding, positional I/O, and caller-provided work storage. | KEEP. Frame and metadata state share one bitstream contract, while large static tables already live outside the file. |
-| `zig-vst3-plugin/src/dsp/hrtf.zig` | 3,410 / 2,756 | Owns tracker clock calibration, bounded motion publication, HRTF database interpolation, room paths, and convolver preparation. | SPLIT. Move tracker time and motion transport into a DSP motion module so HRTF retains only spatial database and renderer state. |
+| `zig-vst3-plugin/src/dsp/hrtf.zig` | 3,257 / 2,767 | Owns tracker clock calibration, bounded motion publication, HRTF database interpolation, room paths, and convolver preparation. Stateless spatial types and conversions live in `hrtf/spatial.zig`. | SPLIT. Move tracker time and motion transport into a DSP motion module so HRTF retains only spatial database and renderer state. |
 | `zig-vst3-plugin/src/dsp/hrtf_sofa.zig` | 1,335 / 906 | Converts a bounded SOFA/NetCDF dataset into caller-owned HRTF database storage with failure-atomic publication. | KEEP. External parsing and database conversion are one setup-time ownership boundary. |
 | `zig-vst3-plugin/src/dsp/id3.zig` | 1,566 / 658 | Parses and encodes bounded ID3v2.3 and ID3v2.4 tags while retaining exact iterator source and cursor state. | KEEP. Both versions share frame encoding, text decoding, and retained-state validation. |
 | `zig-vst3-plugin/src/dsp/ixml.zig` | 2,889 / 565 | Materializes bounded iXML metadata and exposes typed views over tracks, sync points, history, location, and BEXT fields. | KEEP. The typed model is the parser result and shares its storage and limit invariants. |
@@ -63,7 +63,7 @@ decisions.
 - `zig-vst3-plugin/src/dsp/adm_xml.zig` | 15256 | 10470 | 4786 | SPLIT
 - `zig-vst3-plugin/src/dsp/audio_file_reader.zig` | 2824 | 1577 | 1247 | KEEP
 - `zig-vst3-plugin/src/dsp/flac.zig` | 7294 | 4747 | 2547 | KEEP
-- `zig-vst3-plugin/src/dsp/hrtf.zig` | 6166 | 3410 | 2756 | SPLIT
+- `zig-vst3-plugin/src/dsp/hrtf.zig` | 6024 | 3257 | 2767 | SPLIT
 - `zig-vst3-plugin/src/dsp/hrtf_sofa.zig` | 2241 | 1335 | 906 | KEEP
 - `zig-vst3-plugin/src/dsp/id3.zig` | 2224 | 1566 | 658 | KEEP
 - `zig-vst3-plugin/src/dsp/ixml.zig` | 3454 | 2889 | 565 | KEEP
