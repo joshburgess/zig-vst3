@@ -108,6 +108,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   file-byte policy enforced before external parsing. Both public datasets,
   independent NetCDF, libmysofa, and libspatialaudio comparisons, the
   installed-package matrix, and Linux plus Windows cross-builds pass.
+- Closed Q-STATE-001 by bounding parameter ID migrations at 256, indexing the
+  validated table once before state input is read, and fuzzing arbitrary
+  parameter-state bytes for failure-atomic restore. The broad state selection,
+  Windows cross-build, and installed-package matrix pass.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.

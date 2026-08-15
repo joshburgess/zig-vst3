@@ -1422,3 +1422,35 @@ The native C++ NetCDF reference compared eight complete responses per dataset.
 | `scripts/check_quality_inventory.sh` | Passed: 823 files and 473,173 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded Failure-Atomic Parameter State
+
+Behavior commit: `906296e3`
+
+The binary parameter-state format already bounds one input to a 16-bit entry
+count and fixed 12-byte entries. Restore already decodes into a private
+`ParameterValues` snapshot before publication. This change bounds the remaining
+migration multiplier at `maximum_parameter_id_migrations`, currently 256.
+Validation rejects a 257th mapping before reading state. It sorts the accepted
+table into fixed storage, detects cycles through bounded binary lookups, and
+recognizes independent convergence by duplicate destination IDs. Each decoded
+state ID then follows its chain through the same index instead of rescanning
+the original slice linearly.
+
+The deterministic suite accepts and resolves the complete 256-link chain,
+rejects one mapping over the limit without changing prior values, and retains
+the existing identity, duplicate-source, cycle, convergence, truncation,
+duplicate-entry, range, finite-value, and accounting cases. The dedicated fuzz
+target seeds valid and truncated state, supplies arbitrary inputs through 64
+KiB, and requires every failed restore to preserve both prior values exactly.
+
+| Check | Result |
+| --- | --- |
+| Broad state selection | Passed: 198/198 tests across parameter state, migration, LV2, AUv2, editor state, resource state, and retained-state families |
+| Focused parameter-state and migration selection | Passed: 41/41 Debug tests |
+| `zig build test-state-fuzz --fuzz=100K` | Passed: 100,005 further executions; cumulative corpus reached 200,041 runs, 34 unique inputs, and 170 of 21,675 instrumented branches without a failure |
+| `zig build test-plugin-core-builds -Dtarget=x86_64-windows-gnu -Doptimize=ReleaseSafe --summary all` | Passed: 2/2 steps and Windows x86-64 ReleaseSafe cross-compilation |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including the public migration bound |
+| `scripts/check_quality_inventory.sh` | Passed: 823 files and 473,445 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

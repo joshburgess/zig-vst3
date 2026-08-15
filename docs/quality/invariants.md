@@ -128,6 +128,10 @@ single type. Later phases must link each invariant to code and verification.
   before calling the external runtime. Compile-time measurement and frame
   capacities bound every decoded variable before allocation, and the caller's
   destination changes only after complete dataset validation.
+- Parameter-state headers bound decoded entries to 65,535 and fixed-size wire
+  records. Restore accepts at most 256 ID migrations, validates and indexes the
+  complete table before reading state, decodes into a private value snapshot,
+  and publishes only after every declared entry succeeds.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the
