@@ -1336,3 +1336,34 @@ reads must preserve caller output.
 | `scripts/check_quality_inventory.sh` | Passed: 823 files and 472,111 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded FLAC Parsing and Decoding
+
+Behavior commit: `fa3e5f47`
+
+FLAC memory and positional-file decoders now retain one `FlacLimits` policy
+for encoded bytes, metadata blocks, complete metadata bytes, declared PCM
+frames, and decoded FLAC frame blocks per operation. Default entry points
+accept at most one TiB of encoded data, 1,000,000 metadata blocks, 256 MiB of
+metadata, 10,000,000,000 PCM frames, and 10,000,000 decoded frame blocks.
+Public `WithLimits` entry points and file-reader constructors accept a custom
+policy. File metadata preflight applies determinable limits before retained
+metadata storage changes. Accepted file readers retain their exact metadata
+totals and policy as validated state.
+
+The dedicated native fuzz target combines arbitrary input with generated mono
+and stereo PCM16 or PCM24 FLAC streams, then mutates, truncates, or extends the
+candidate. It decodes through the explicit policy and transactional API. Every
+failure must preserve complete caller output. Every success must fit both its
+decoded sample count and declared frame count within caller capacity.
+
+| Check | Result |
+| --- | --- |
+| Focused FLAC selection | Passed: 37/37 tests, including independent limits, exact-bound success, hostile retained state, and transactional late frame-block rejection |
+| Broad Q12 file, metadata, XML, and writer selection | Passed: 169/169 tests |
+| `zig build test-flac-fuzz --fuzz=100K` | Passed: 100,488 executions, 308 unique inputs, and 592 of 21,553 instrumented branches without a failure |
+| `zig build test-plugin-core-builds --summary all` | Passed: Windows x86-64 ReleaseSafe cross-compilation |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including the public custom-limit APIs |
+| `scripts/check_quality_inventory.sh` | Passed: 823 files and 472,667 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

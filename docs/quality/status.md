@@ -94,6 +94,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   AIFF, AIFC, RF64, BW64, and Wave64 readers. The 168-test Q12 selection,
   100,153-run native fuzz campaign, installed-package matrix, and Windows
   ReleaseSafe cross-build pass.
+- Closed Q-FLAC-001 with bounded default and caller-selected encoded-byte,
+  metadata-block, metadata-byte, PCM-frame, and decoded-frame-block policies
+  across memory and positional-file FLAC decoding. The 169-test Q12 selection,
+  100,488-run native fuzz campaign, installed-package matrix, and Windows
+  ReleaseSafe cross-build pass.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.

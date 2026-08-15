@@ -115,6 +115,10 @@ single type. Later phases must link each invariant to code and verification.
   chunk-count, requested-metadata-byte, and PCM-frame policy. File-size
   rejection precedes header parsing. Chunk and frame limits precede accepted
   reader publication, and metadata limits precede caller-storage changes.
+- FLAC memory and positional-file decoders retain one encoded-byte,
+  metadata-block, metadata-byte, PCM-frame, and decoded-frame-block policy.
+  File metadata preflight rejects determinable limits before retained storage
+  changes. Transactional decode preserves caller PCM after any later failure.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the
