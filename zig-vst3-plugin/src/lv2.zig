@@ -3,153 +3,83 @@ const common = @import("common.zig");
 const plugin_api = @import("plugin.zig");
 const process_api = @import("process.zig");
 const units_api = @import("units.zig");
+const uris = @import("lv2/uris.zig");
 
 pub const metadata = @import("lv2_metadata.zig");
 pub const ui = @import("lv2_ui.zig");
 
-pub const core_uri = "http://lv2plug.in/ns/lv2core";
-pub const hard_rt_capable_uri =
-    "http://lv2plug.in/ns/lv2core#hardRTCapable";
-pub const urid_map_uri =
-    "http://lv2plug.in/ns/ext/urid#map";
-pub const urid_unmap_uri =
-    "http://lv2plug.in/ns/ext/urid#unmap";
-pub const options_options_uri =
-    "http://lv2plug.in/ns/ext/options#options";
-pub const options_interface_uri =
-    "http://lv2plug.in/ns/ext/options#interface";
-pub const state_interface_uri =
-    "http://lv2plug.in/ns/ext/state#interface";
-pub const state_map_path_uri =
-    "http://lv2plug.in/ns/ext/state#mapPath";
-pub const state_make_path_uri =
-    "http://lv2plug.in/ns/ext/state#makePath";
-pub const state_free_path_uri =
-    "http://lv2plug.in/ns/ext/state#freePath";
-pub const state_changed_uri =
-    "http://lv2plug.in/ns/ext/state#StateChanged";
-pub const state_thread_safe_restore_uri =
-    "http://lv2plug.in/ns/ext/state#threadSafeRestore";
-pub const worker_interface_uri =
-    "http://lv2plug.in/ns/ext/worker#interface";
-pub const worker_schedule_uri =
-    "http://lv2plug.in/ns/ext/worker#schedule";
-pub const programs_interface_uri =
-    "http://kxstudio.sf.net/ns/lv2ext/programs#Interface";
-pub const atom_chunk_uri =
-    "http://lv2plug.in/ns/ext/atom#Chunk";
-pub const atom_sequence_uri =
-    "http://lv2plug.in/ns/ext/atom#Sequence";
-pub const atom_frame_time_uri =
-    "http://lv2plug.in/ns/ext/atom#frameTime";
-pub const atom_blank_uri =
-    "http://lv2plug.in/ns/ext/atom#Blank";
-pub const atom_object_uri =
-    "http://lv2plug.in/ns/ext/atom#Object";
-pub const atom_bool_uri =
-    "http://lv2plug.in/ns/ext/atom#Bool";
-pub const atom_float_uri =
-    "http://lv2plug.in/ns/ext/atom#Float";
-pub const atom_double_uri =
-    "http://lv2plug.in/ns/ext/atom#Double";
-pub const atom_int_uri =
-    "http://lv2plug.in/ns/ext/atom#Int";
-pub const atom_long_uri =
-    "http://lv2plug.in/ns/ext/atom#Long";
-pub const atom_path_uri =
-    "http://lv2plug.in/ns/ext/atom#Path";
-pub const atom_string_uri =
-    "http://lv2plug.in/ns/ext/atom#String";
-pub const atom_uri_uri =
-    "http://lv2plug.in/ns/ext/atom#URI";
-pub const atom_urid_uri =
-    "http://lv2plug.in/ns/ext/atom#URID";
-pub const midi_event_uri =
-    "http://lv2plug.in/ns/ext/midi#MidiEvent";
-pub const patch_message_uri =
-    "http://lv2plug.in/ns/ext/patch#Message";
-pub const patch_get_uri =
-    "http://lv2plug.in/ns/ext/patch#Get";
-pub const patch_set_uri =
-    "http://lv2plug.in/ns/ext/patch#Set";
-pub const patch_ack_uri =
-    "http://lv2plug.in/ns/ext/patch#Ack";
-pub const patch_error_uri =
-    "http://lv2plug.in/ns/ext/patch#Error";
-pub const patch_put_uri =
-    "http://lv2plug.in/ns/ext/patch#Put";
-pub const patch_insert_uri =
-    "http://lv2plug.in/ns/ext/patch#Insert";
-pub const patch_patch_uri =
-    "http://lv2plug.in/ns/ext/patch#Patch";
-pub const patch_delete_uri =
-    "http://lv2plug.in/ns/ext/patch#Delete";
-pub const patch_copy_uri =
-    "http://lv2plug.in/ns/ext/patch#Copy";
-pub const patch_move_uri =
-    "http://lv2plug.in/ns/ext/patch#Move";
-pub const patch_add_uri =
-    "http://lv2plug.in/ns/ext/patch#add";
-pub const patch_accept_uri =
-    "http://lv2plug.in/ns/ext/patch#accept";
-pub const patch_remove_uri =
-    "http://lv2plug.in/ns/ext/patch#remove";
-pub const patch_body_uri =
-    "http://lv2plug.in/ns/ext/patch#body";
-pub const patch_context_uri =
-    "http://lv2plug.in/ns/ext/patch#context";
-pub const patch_destination_uri =
-    "http://lv2plug.in/ns/ext/patch#destination";
-pub const patch_property_uri =
-    "http://lv2plug.in/ns/ext/patch#property";
-pub const patch_request_uri =
-    "http://lv2plug.in/ns/ext/patch#request";
-pub const patch_sequence_number_uri =
-    "http://lv2plug.in/ns/ext/patch#sequenceNumber";
-pub const patch_subject_uri =
-    "http://lv2plug.in/ns/ext/patch#subject";
-pub const patch_value_uri =
-    "http://lv2plug.in/ns/ext/patch#value";
-pub const time_position_uri =
-    "http://lv2plug.in/ns/ext/time#Position";
-pub const time_bar_uri =
-    "http://lv2plug.in/ns/ext/time#bar";
-pub const time_bar_beat_uri =
-    "http://lv2plug.in/ns/ext/time#barBeat";
-pub const time_beat_uri =
-    "http://lv2plug.in/ns/ext/time#beat";
-pub const time_beat_unit_uri =
-    "http://lv2plug.in/ns/ext/time#beatUnit";
-pub const time_beats_per_bar_uri =
-    "http://lv2plug.in/ns/ext/time#beatsPerBar";
-pub const time_beats_per_minute_uri =
-    "http://lv2plug.in/ns/ext/time#beatsPerMinute";
-pub const time_frame_uri =
-    "http://lv2plug.in/ns/ext/time#frame";
-pub const time_frames_per_second_uri =
-    "http://lv2plug.in/ns/ext/time#framesPerSecond";
-pub const time_speed_uri =
-    "http://lv2plug.in/ns/ext/time#speed";
-pub const buffer_minimum_block_length_uri =
-    "http://lv2plug.in/ns/ext/buf-size#minBlockLength";
-pub const buffer_maximum_block_length_uri =
-    "http://lv2plug.in/ns/ext/buf-size#maxBlockLength";
-pub const buffer_nominal_block_length_uri =
-    "http://lv2plug.in/ns/ext/buf-size#nominalBlockLength";
-pub const buffer_sequence_size_uri =
-    "http://lv2plug.in/ns/ext/buf-size#sequenceSize";
-pub const resize_port_resize_uri =
-    "http://lv2plug.in/ns/ext/resize-port#resize";
-pub const log_log_uri =
-    "http://lv2plug.in/ns/ext/log#log";
-pub const log_error_uri =
-    "http://lv2plug.in/ns/ext/log#Error";
-pub const log_warning_uri =
-    "http://lv2plug.in/ns/ext/log#Warning";
-pub const log_note_uri =
-    "http://lv2plug.in/ns/ext/log#Note";
-pub const log_trace_uri =
-    "http://lv2plug.in/ns/ext/log#Trace";
+pub const core_uri = uris.core_uri;
+pub const hard_rt_capable_uri = uris.hard_rt_capable_uri;
+pub const urid_map_uri = uris.urid_map_uri;
+pub const urid_unmap_uri = uris.urid_unmap_uri;
+pub const options_options_uri = uris.options_options_uri;
+pub const options_interface_uri = uris.options_interface_uri;
+pub const state_interface_uri = uris.state_interface_uri;
+pub const state_map_path_uri = uris.state_map_path_uri;
+pub const state_make_path_uri = uris.state_make_path_uri;
+pub const state_free_path_uri = uris.state_free_path_uri;
+pub const state_changed_uri = uris.state_changed_uri;
+pub const state_thread_safe_restore_uri = uris.state_thread_safe_restore_uri;
+pub const worker_interface_uri = uris.worker_interface_uri;
+pub const worker_schedule_uri = uris.worker_schedule_uri;
+pub const programs_interface_uri = uris.programs_interface_uri;
+pub const atom_chunk_uri = uris.atom_chunk_uri;
+pub const atom_sequence_uri = uris.atom_sequence_uri;
+pub const atom_frame_time_uri = uris.atom_frame_time_uri;
+pub const atom_blank_uri = uris.atom_blank_uri;
+pub const atom_object_uri = uris.atom_object_uri;
+pub const atom_bool_uri = uris.atom_bool_uri;
+pub const atom_float_uri = uris.atom_float_uri;
+pub const atom_double_uri = uris.atom_double_uri;
+pub const atom_int_uri = uris.atom_int_uri;
+pub const atom_long_uri = uris.atom_long_uri;
+pub const atom_path_uri = uris.atom_path_uri;
+pub const atom_string_uri = uris.atom_string_uri;
+pub const atom_uri_uri = uris.atom_uri_uri;
+pub const atom_urid_uri = uris.atom_urid_uri;
+pub const midi_event_uri = uris.midi_event_uri;
+pub const patch_message_uri = uris.patch_message_uri;
+pub const patch_get_uri = uris.patch_get_uri;
+pub const patch_set_uri = uris.patch_set_uri;
+pub const patch_ack_uri = uris.patch_ack_uri;
+pub const patch_error_uri = uris.patch_error_uri;
+pub const patch_put_uri = uris.patch_put_uri;
+pub const patch_insert_uri = uris.patch_insert_uri;
+pub const patch_patch_uri = uris.patch_patch_uri;
+pub const patch_delete_uri = uris.patch_delete_uri;
+pub const patch_copy_uri = uris.patch_copy_uri;
+pub const patch_move_uri = uris.patch_move_uri;
+pub const patch_add_uri = uris.patch_add_uri;
+pub const patch_accept_uri = uris.patch_accept_uri;
+pub const patch_remove_uri = uris.patch_remove_uri;
+pub const patch_body_uri = uris.patch_body_uri;
+pub const patch_context_uri = uris.patch_context_uri;
+pub const patch_destination_uri = uris.patch_destination_uri;
+pub const patch_property_uri = uris.patch_property_uri;
+pub const patch_request_uri = uris.patch_request_uri;
+pub const patch_sequence_number_uri = uris.patch_sequence_number_uri;
+pub const patch_subject_uri = uris.patch_subject_uri;
+pub const patch_value_uri = uris.patch_value_uri;
+pub const time_position_uri = uris.time_position_uri;
+pub const time_bar_uri = uris.time_bar_uri;
+pub const time_bar_beat_uri = uris.time_bar_beat_uri;
+pub const time_beat_uri = uris.time_beat_uri;
+pub const time_beat_unit_uri = uris.time_beat_unit_uri;
+pub const time_beats_per_bar_uri = uris.time_beats_per_bar_uri;
+pub const time_beats_per_minute_uri = uris.time_beats_per_minute_uri;
+pub const time_frame_uri = uris.time_frame_uri;
+pub const time_frames_per_second_uri = uris.time_frames_per_second_uri;
+pub const time_speed_uri = uris.time_speed_uri;
+pub const buffer_minimum_block_length_uri = uris.buffer_minimum_block_length_uri;
+pub const buffer_maximum_block_length_uri = uris.buffer_maximum_block_length_uri;
+pub const buffer_nominal_block_length_uri = uris.buffer_nominal_block_length_uri;
+pub const buffer_sequence_size_uri = uris.buffer_sequence_size_uri;
+pub const resize_port_resize_uri = uris.resize_port_resize_uri;
+pub const log_log_uri = uris.log_log_uri;
+pub const log_error_uri = uris.log_error_uri;
+pub const log_warning_uri = uris.log_warning_uri;
+pub const log_note_uri = uris.log_note_uri;
+pub const log_trace_uri = uris.log_trace_uri;
 pub const Handle = ?*anyopaque;
 
 pub const Feature = extern struct {
@@ -5168,6 +5098,89 @@ fn featureStruct(
     const feature = featureWithUri(features, wanted_uri) orelse
         return null;
     return featureValue(T, feature);
+}
+
+test "LV2 URI public names remain exact aliases" {
+    const names = .{
+        "core_uri",
+        "hard_rt_capable_uri",
+        "urid_map_uri",
+        "urid_unmap_uri",
+        "options_options_uri",
+        "options_interface_uri",
+        "state_interface_uri",
+        "state_map_path_uri",
+        "state_make_path_uri",
+        "state_free_path_uri",
+        "state_changed_uri",
+        "state_thread_safe_restore_uri",
+        "worker_interface_uri",
+        "worker_schedule_uri",
+        "programs_interface_uri",
+        "atom_chunk_uri",
+        "atom_sequence_uri",
+        "atom_frame_time_uri",
+        "atom_blank_uri",
+        "atom_object_uri",
+        "atom_bool_uri",
+        "atom_float_uri",
+        "atom_double_uri",
+        "atom_int_uri",
+        "atom_long_uri",
+        "atom_path_uri",
+        "atom_string_uri",
+        "atom_uri_uri",
+        "atom_urid_uri",
+        "midi_event_uri",
+        "patch_message_uri",
+        "patch_get_uri",
+        "patch_set_uri",
+        "patch_ack_uri",
+        "patch_error_uri",
+        "patch_put_uri",
+        "patch_insert_uri",
+        "patch_patch_uri",
+        "patch_delete_uri",
+        "patch_copy_uri",
+        "patch_move_uri",
+        "patch_add_uri",
+        "patch_accept_uri",
+        "patch_remove_uri",
+        "patch_body_uri",
+        "patch_context_uri",
+        "patch_destination_uri",
+        "patch_property_uri",
+        "patch_request_uri",
+        "patch_sequence_number_uri",
+        "patch_subject_uri",
+        "patch_value_uri",
+        "time_position_uri",
+        "time_bar_uri",
+        "time_bar_beat_uri",
+        "time_beat_uri",
+        "time_beat_unit_uri",
+        "time_beats_per_bar_uri",
+        "time_beats_per_minute_uri",
+        "time_frame_uri",
+        "time_frames_per_second_uri",
+        "time_speed_uri",
+        "buffer_minimum_block_length_uri",
+        "buffer_maximum_block_length_uri",
+        "buffer_nominal_block_length_uri",
+        "buffer_sequence_size_uri",
+        "resize_port_resize_uri",
+        "log_log_uri",
+        "log_error_uri",
+        "log_warning_uri",
+        "log_note_uri",
+        "log_trace_uri",
+    };
+    inline for (names) |name| {
+        const public_value = @field(@This(), name);
+        const internal_value = @field(uris, name);
+        try std.testing.expect(@TypeOf(public_value) == @TypeOf(internal_value));
+        try std.testing.expectEqualStrings(public_value, internal_value);
+    }
 }
 
 test "LV2 feature lookup validates host pointer alignment" {
