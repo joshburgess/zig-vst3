@@ -45,7 +45,7 @@ split.
 | `zig-vst3-plugin/src/process/events.zig` | 1,557 / 1,529 | Defines bounded event values, validation, ordering, iteration, and note tracking for a process block. | KEEP. Validation and iteration preserve the same event representation and block-lifetime contract. |
 | `zig-vst3/src/ara_document_controller.zig` | 4,090 / 1,908 | Owns the bounded ARA document model, archive store and restore, audio-reader leases, host notifications, and model-update sequencing. | KEEP. These operations mutate one controller model and share its generation, capacity, and host-lifetime invariants. |
 | `zig-vst3/src/ara_source_cache.zig` | 1,568 / 635 | Owns fixed or paged source audio populated on control threads and published as immutable generations to realtime readers. | KEEP. Fill, directory publication, lookup, and teardown form one cache ownership contract. |
-| `zig-vst3/src/ara_tuning_analysis.zig` | 4,584 / 3,032 | Runs bounded tuning, tempo, meter, key, chord, and note analysis and serializes retained analysis results. | SPLIT. Extract each detector behind shared bounded observation and archive types. |
+| `zig-vst3/src/ara_tuning_analysis.zig` | 2,508 / 3,054 | Owns bounded per-source analysis state, request fulfillment, content publication, invalidation, and failure-atomic archive persistence. Tuning, tempo, meter, harmony, and note detectors live behind shared model and validation modules. | KEEP. The remaining state and archive code form one analyzer lifecycle, while every detector is now independently reviewable and the facade preserves exact public identities. |
 | `zig-vst3/src/zig_vst3_plugin_bridge.zig` | 2,439 / 2,836 | Converts VST3 process, parameter, event, bus, and state interfaces into the framework's bounded process model. | KEEP. The conversions share one host-call lifetime and negotiated bus and capacity state. |
 | `zig-vst3/src/zig_vst3_plugin_effect.zig` | 2,015 / 2,767 | Builds processor and component instances over shared audio-bus, parameter, state, host-request, data-exchange, and connection lifecycles. Reflected controller construction and shared COM lifetime helpers live in sibling modules. | KEEP. The remaining runtime state belongs to one component lifecycle; the public controller and observer names are exact aliases and the file is now dominated by colocated integration tests. |
 
@@ -86,7 +86,7 @@ decisions.
 - `zig-vst3-plugin/src/process/events.zig` | 3086 | 1557 | 1529 | KEEP
 - `zig-vst3/src/ara_document_controller.zig` | 5998 | 4090 | 1908 | KEEP
 - `zig-vst3/src/ara_source_cache.zig` | 2203 | 1568 | 635 | KEEP
-- `zig-vst3/src/ara_tuning_analysis.zig` | 7616 | 4584 | 3032 | SPLIT
+- `zig-vst3/src/ara_tuning_analysis.zig` | 5562 | 2508 | 3054 | KEEP
 - `zig-vst3/src/zig_vst3_plugin_bridge.zig` | 5275 | 2439 | 2836 | KEEP
 - `zig-vst3/src/zig_vst3_plugin_effect.zig` | 4782 | 2015 | 2767 | KEEP
 <!-- cohesion-files:end -->
