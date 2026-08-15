@@ -45,6 +45,11 @@ does not imply that every possible DSP algorithm is complete. It means existing
 names and checked behavior are candidates for compatibility preservation. New
 algorithms remain additive.
 
+Partitioned convolution is implemented in the DSP layer. The experimental
+`gui_ir_convolution` root remains an exact alias for its existing metadata,
+options, queue, error, and convolver declarations. This move changes dependency
+direction without adding, removing, or reclassifying a public root declaration.
+
 ## Standalone API
 
 | Public declarations | Classification | Contract |

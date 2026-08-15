@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 827 source files and 475,578 source lines.
+The checked inventory contains 828 source files and 475,661 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -32,13 +32,13 @@ misstate review effort.
 
 | Unit | Scope | Files | Lines | C/E/X/T | Rank | Principal exposure | Required verification |
 | --- | --- | ---: | ---: | --- | --- | --- | --- |
-| Q00 | Build graph, CI, release and validation scripts | 128 | 18,489 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
+| Q00 | Build graph, CI, release and validation scripts | 128 | 18,545 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
 | Q01 | Raw VST3 ABI mirrors and COM helpers | 114 | 28,988 | 5/5/4/5 | Elevated | Public ABI, pointers, reference counts, host callbacks | SDK layout parity, callback lifecycle, validators, sanitizers |
 | Q02 | ARA model, controller, analysis, cache, and official headers | 15 | 28,085 | 5/4/5/3 | High | Host callbacks, readers, atomics, persistence, untrusted host data | Header parity, lifecycle stress, allocator failure, TSan, state corruption |
 | Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,152 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
 | Q04 | Raw-to-framework VST3 processor and controller adapters | 3 | 11,910 | 5/5/5/4 | High | Realtime host entry, dual state stores, resource publication | Lifecycle model, failure silence, host mutation, sanitizer stress |
 | Q05 | Raw-package example plugin declarations | 18 | 758 | 2/2/2/4 | Moderate | Factory examples and public construction patterns | Compile, validator, package examples |
-| Q06 | Framework declaration, lifecycle, topology, and runtime core | 16 | 9,592 | 5/5/5/4 | High | Public compatibility, ownership, realtime processing | API manifest, state-machine tests, allocator failure, bounded-work audit |
+| Q06 | Framework declaration, lifecycle, topology, and runtime core | 16 | 9,606 | 5/5/5/4 | High | Public compatibility, ownership, realtime processing | API manifest, state-machine tests, allocator failure, bounded-work audit |
 | Q07 | Parameters, state, units, and resources | 23 | 14,199 | 5/5/4/4 | Elevated | Persistence, background work, publication, public API | Migration corpus, transactionality, allocator failure, TSan |
 | Q08 | Process context, events, changes, segmentation, and ordering | 5 | 9,122 | 5/5/5/4 | High | Host-controlled counts and pointers on realtime path | Boundary generation, malformed host data, partition invariance |
 | Q09 | MIDI 1, MIDI 2, MIDI-CI, MPE, files, streams, and sessions | 34 | 21,229 | 4/5/5/3 | High | Untrusted byte streams, bounded queues, session state | Fuzzing, truncation, progress, capacity, deterministic state models |
@@ -47,12 +47,12 @@ misstate review effort.
 | Q12 | FLAC, audio containers, metadata, and file I/O | 15 | 24,981 | 5/5/5/4 | High | Untrusted files, XML, arithmetic, transactional output | Fuzzing, short I/O, failure injection, independent tools |
 | Q13 | ADM parsing and rendering | 15 | 33,908 | 5/4/5/4 | High | XML, timed metadata, matrix construction, exclusion rules | Fuzzing, numerical oracles, bounded inputs, partition invariance |
 | Q14 | HRTF, HOA, and spatial matrices | 7 | 14,996 | 5/4/5/4 | High | Measured datasets, conditioning, realtime publication | Dataset corruption, numerical parity, TSan, partition invariance |
-| Q15 | DSP primitives, convolution, filters, effects, resampling, and numerics | 62 | 33,553 | 5/4/5/4 | High | Numerical stability, bounds, realtime execution and publication | Independent vectors, property tests, finite containment, TSan, benchmarks |
+| Q15 | DSP primitives, convolution, filters, effects, resampling, and numerics | 63 | 33,563 | 5/4/5/4 | High | Numerical stability, bounds, realtime execution and publication | Independent vectors, property tests, finite containment, TSan, benchmarks |
 | Q16 | Toolkit-neutral GUI state and models | 16 | 9,146 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
 | Q17 | LV2 and Audio Unit adapters | 6 | 22,415 | 5/5/5/4 | High | C ABI, host pointers, realtime entry, state and worker callbacks | ABI fixtures, dynamic hosts, sanitizers, metadata lint, failure silence |
 | Q18 | Standalone runtime and native audio, MIDI, and window backends | 60 | 37,637 | 5/5/5/3 | High | OS callbacks, devices, threads, handles, recovery | TSan, callback drain, fault injection, cross-target and physical checks |
 | Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,691 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
-| Q20 | Product and API examples | 54 | 14,920 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
+| Q20 | Product and API examples | 54 | 14,923 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
 | Q21 | Test hosts, reference adapters, and downstream fixtures | 101 | 29,828 | 3/3/4/4 | Moderate | Oracle correctness and false confidence | Mutation review, independent provenance, fixture self-tests |
 | Q22 | ABI, fixture, codec, and parity tools | 57 | 11,064 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
 
@@ -79,7 +79,7 @@ manual review. They include false positives and cannot establish absence.
 | Q12 | 0 | 26 | 0 | 0 | 721 | 399 |
 | Q13 | 90 | 0 | 0 | 0 | 396 | 328 |
 | Q14 | 134 | 13 | 18 | 14 | 71 | 228 |
-| Q15 | 2 | 12 | 32 | 0 | 73 | 1,900 |
+| Q15 | 2 | 12 | 32 | 0 | 73 | 1,908 |
 | Q16 | 2 | 67 | 22 | 17 | 198 | 410 |
 | Q17 | 74 | 439 | 4 | 234 | 139 | 896 |
 | Q18 | 270 | 542 | 302 | 913 | 65 | 623 |

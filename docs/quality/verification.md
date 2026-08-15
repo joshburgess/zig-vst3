@@ -1782,3 +1782,41 @@ Phase 3.
 | `zig build test --summary all` | Passed: 446/446 steps with 7,647 tests passed and six expected platform skips |
 | `zig fmt --check` over changed Zig and build sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: DSP Convolution Dependency Direction
+
+Behavior commit: `6ea6099b`
+
+Q-ARCH-002 identified a DSP-to-GUI dependency: HRTF imported partitioned
+convolution, its fixed preparation queue, and realtime publication state from
+`gui_ir_convolution.zig`. The implementation now lives in
+`dsp/convolution.zig`, `dsp.zig` exports it from that location, and HRTF uses a
+sibling DSP import. IR Loader uses the preferred `core.dsp` path.
+
+The existing `gui_ir_convolution` module remains installed as a thin exact
+alias. A public-module regression checks that its metadata, instantiated
+convolver, and instantiated preparation queue are the same types exposed by
+the DSP namespace. The installed DSP fixture already passes metadata from the
+old namespace into the DSP convolver, providing a second consumer-level type
+identity check. No public root declaration was added, removed, renamed, or
+reclassified.
+
+The new focused gate executes convolution processing, generation replacement,
+sample-rate publication, invalid retained state, queue ordering and retry,
+concurrent transfer, and bounded worker-stack coverage. It also compiles the
+same selection in ReleaseSafe mode for Linux AArch64, Linux x86-64, and Windows
+x86-64. HRTF, IR Loader lifecycle and all three bundle targets, the complete
+DSP publication ThreadSanitizer gate, and the staged package pass.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-convolution --summary all` | Passed: 6/6 steps and 26/26 tests, including ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| `zig build test-hrtf --summary all` | Passed: 8/8 steps with 148/150 tests passed and two expected dataset skips |
+| `zig build test-dsp-thread-sanitizer --summary all` | Passed: 5/5 steps and 149/149 tests |
+| `zig build test-gui-lifecycle-ir-loader --summary all` | Passed: 9/9 steps and 6/6 tests |
+| IR Loader bundle builds | Passed: native Debug plus ReleaseSafe Linux x86-64 and Windows x86-64 bundles |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests |
+| Quality inventory gates | Passed: 828 files and 475,661 lines classified, 178 parser candidates classified, 82 concurrency sources classified, and 57 Zig plus 11 native atomic-order sources tracked |
+| `scripts/check_production_termination_paths.sh` | Passed |
+| `zig fmt --check` over changed Zig, build, and example sources | Passed |
+| `git diff --check` | Passed |

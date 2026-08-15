@@ -143,8 +143,8 @@ convolver owns fixed publication slots and atomics, while prepared impulse
 responses are copied into those slots before publication. Realtime views borrow
 the active slot only for a processing interval. Reset and non-realtime reclaim
 retire slots before reuse. The focused convolution, snapshot, duplicator, and
-process-context selections pass 52 tests. Q-ARCH-002 records the convolver's
-misleading GUI placement, not an ownership mismatch.
+process-context selections pass 52 tests. Commit `6ea6099b` places this owner in
+`dsp/convolution.zig`; the former GUI module is now a compatibility alias.
 
 ## Q16: Toolkit-Neutral GUI Ownership
 

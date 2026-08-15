@@ -298,6 +298,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Completed Phase 3 with all parser families closed, no open critical or high
   parser finding, and 446/446 repository steps passing with 7,647 tests passed
   and six expected platform skips.
+- Closed Q-ARCH-002 by moving partitioned convolution and realtime publication
+  into the DSP layer. HRTF now depends within DSP, while the former GUI module
+  remains an exact public compatibility alias. Focused, cross-target,
+  ThreadSanitizer, IR Loader, and installed-package gates pass.
 
 ## Phase 4 Scope
 
@@ -311,8 +315,8 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Resolve Q-ARCH-002. Move the shared partitioned convolution and realtime
-publication contract out of the GUI-named module and into the DSP layer.
-Preserve the public GUI-facing name through a compatible alias where practical,
-then verify HRTF, GUI impulse-response processing, installed-package consumers,
-dependency direction, and public compatibility.
+Resolve Q-ARCH-001 by building a checked large-file and cohesion inventory.
+Record production and colocated-test line counts, dependency roles, state and
+ownership contracts, and a keep-or-split decision for every large handwritten
+source. Decompose only where a narrower module creates a clearer contract and
+retain compatibility for any public path affected by a move.
