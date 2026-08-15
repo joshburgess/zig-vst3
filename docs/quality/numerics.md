@@ -91,7 +91,7 @@ Q15	zig-vst3-plugin/src/dsp/elliptic_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/equiripple_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/fast_math.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/fft.zig	EVIDENCE	N-TRANSFORM
-Q15	zig-vst3-plugin/src/dsp/fir.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/fir.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/fir_design.zig	EVIDENCE	N-FILTER
 Q15	zig-vst3-plugin/src/dsp/first_order_tpt.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/fixed_rate.zig	EVIDENCE	N-TRANSFORM
@@ -106,14 +106,14 @@ Q15	zig-vst3-plugin/src/dsp/log_ramp.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/lookup_table.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/mixed_oversampling.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/modulated_delay.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/modulation_rate.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/modulation_rate.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/multiband_dynamics.zig	EVIDENCE	N-DYNAMICS
 Q15	zig-vst3-plugin/src/dsp/multichannel_oversampling.zig	EVIDENCE	N-TRANSFORM
 Q15	zig-vst3-plugin/src/dsp/multichannel_polyphase_iir_oversampling.zig	EVIDENCE	N-TRANSFORM
-Q15	zig-vst3-plugin/src/dsp/oscillator.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/oscillator.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/oversampling.zig	EVIDENCE	N-TRANSFORM
-Q15	zig-vst3-plugin/src/dsp/panner.zig	REVIEW	N-PENDING
-Q15	zig-vst3-plugin/src/dsp/pcm_dither.zig	REVIEW	N-PENDING
+Q15	zig-vst3-plugin/src/dsp/panner.zig	EVIDENCE	N-PRIMITIVE
+Q15	zig-vst3-plugin/src/dsp/pcm_dither.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/phase.zig	EVIDENCE	N-PRIMITIVE
 Q15	zig-vst3-plugin/src/dsp/phaser.zig	REVIEW	N-PENDING
 Q15	zig-vst3-plugin/src/dsp/polynomial.zig	EVIDENCE	N-PRIMITIVE

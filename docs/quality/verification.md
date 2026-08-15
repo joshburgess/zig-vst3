@@ -2276,3 +2276,32 @@ so channel layout and caller-buffer aliasing do not apply.
 | `scripts/check_quality_numerics_inventory.sh` | Passed after disposition updates: 63 evidence, 20 review, and 18 excluded sources |
 | `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,203 lines classified |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Standalone Generator and Utility Review
+
+Behavior commits: `1d6e62d0`, `b8dea27a`
+
+The stereo-panner review found unchecked overlap between its input and two
+output planes. Output planes must now be disjoint, while either one may exactly
+replace the input when the other is disjoint. Every other overlap is rejected
+before either destination changes.
+
+The FIR impulse response is its defining convolution vector across block
+partitions, with transactional configuration and explicit checked failures.
+Oscillator quarter-cycle identities now cover sine, square, saw, and triangle
+waveforms. PCM quantization covers signed endpoints, deterministic independent
+channel sequences, theoretical TPDF mean and variance, bounded noise-shaped
+error, extreme finite saturation, and generated floating-point patterns.
+Modulation rates cover every note division, host position phase, tempo
+fallback, exact smoothing settlement, partition behavior, and hostile state.
+
+| Check | Result |
+| --- | --- |
+| Direct Debug and ReleaseSafe panner tests | Passed: 9/9 tests in each mode |
+| Direct Debug and ReleaseSafe FIR tests | Passed: 4/4 tests in each mode |
+| Direct Debug and ReleaseSafe oscillator tests | Passed: 3/3 tests in each mode |
+| Direct Debug and ReleaseSafe PCM-dither tests | Passed: 7/7 tests in each mode |
+| Focused Debug and ReleaseSafe modulation-rate selections | Passed: 14/14 tests in each mode |
+| `scripts/check_quality_numerics_inventory.sh` | Passed after disposition updates: 68 evidence, 15 review, and 18 excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,265 lines classified |
+| `git diff --check` | Passed |
