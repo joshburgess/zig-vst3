@@ -2,166 +2,30 @@ const std = @import("std");
 const file_reader_io = @import("file_reader_io.zig");
 const file_writer_io = @import("file_writer_io.zig");
 const huffman_tables = @import("mp3_huffman_tables.zig");
+const syntax = @import("mp3/syntax.zig");
 const synthesis_window_quantized =
     @import("mp3_synthesis_window.zig").values;
 
-pub const Version = enum {
-    mpeg1,
-    mpeg2,
-    mpeg25,
-};
-
-pub const ChannelMode = enum(u2) {
-    stereo = 0,
-    joint_stereo = 1,
-    dual_channel = 2,
-    mono = 3,
-};
-
-pub const maximum_free_format_frame_bytes: usize = 16 * 1024;
-pub const maximum_encoded_frame_bytes: usize = 1441;
-pub const maximum_encoded_main_data_bytes: usize = 2048;
-pub const Limits = struct {
-    max_stream_bytes: u64 = std.math.maxInt(u32),
-    max_frames: u64 = 10_000_000,
-
-    pub fn validate(self: Limits) !void {
-        if (self.max_stream_bytes < 4 or self.max_frames == 0)
-            return error.InvalidMp3Limits;
-    }
-};
-
-pub const default_limits = Limits{};
-
-const maximum_frame_main_data_bytes: usize =
-    (4 * std.math.maxInt(u12) + 7) / 8;
-const decoder_delay_samples: u16 = 528 + 1;
-
-pub const Header = struct {
-    version: Version,
-    crc_present: bool,
-    free_format: bool,
-    bitrate_kbps: u16,
-    sample_rate: u32,
-    padding: bool,
-    private: bool,
-    channel_mode: ChannelMode,
-    mode_extension: u2,
-    copyright: bool,
-    original: bool,
-    emphasis: u2,
-
-    pub fn parse(bytes: []const u8) !Header {
-        if (bytes.len < 4) return error.TruncatedMp3Header;
-        const value = readU32(bytes[0..4]);
-        if (value >> 21 != 0x7ff) return error.InvalidMp3Sync;
-
-        const version = switch (@as(u2, @intCast((value >> 19) & 0x3))) {
-            0 => Version.mpeg25,
-            1 => return error.ReservedMp3Version,
-            2 => Version.mpeg2,
-            3 => Version.mpeg1,
-        };
-        if (((value >> 17) & 0x3) != 1)
-            return error.NotMp3LayerThree;
-
-        const bitrate_index: u4 = @intCast((value >> 12) & 0xf);
-        if (bitrate_index == 15) return error.InvalidMp3Bitrate;
-        const rate_index: u2 = @intCast((value >> 10) & 0x3);
-        if (rate_index == 3) return error.InvalidMp3SampleRate;
-
-        return .{
-            .version = version,
-            .crc_present = ((value >> 16) & 1) == 0,
-            .free_format = bitrate_index == 0,
-            .bitrate_kbps = if (bitrate_index == 0)
-                0
-            else
-                bitrate(version, bitrate_index),
-            .sample_rate = sampleRate(version, rate_index),
-            .padding = ((value >> 9) & 1) != 0,
-            .private = ((value >> 8) & 1) != 0,
-            .channel_mode = @enumFromInt((value >> 6) & 0x3),
-            .mode_extension = @intCast((value >> 4) & 0x3),
-            .copyright = ((value >> 3) & 1) != 0,
-            .original = ((value >> 2) & 1) != 0,
-            .emphasis = @intCast(value & 0x3),
-        };
-    }
-
-    pub fn channels(self: Header) u8 {
-        return if (self.channel_mode == .mono) 1 else 2;
-    }
-
-    pub fn samplesPerFrame(self: Header) u16 {
-        return if (self.version == .mpeg1) 1152 else 576;
-    }
-
-    pub fn frameBytes(self: Header) usize {
-        if (self.free_format) return 0;
-        const coefficient: u64 =
-            if (self.version == .mpeg1) 144_000 else 72_000;
-        const base = coefficient * self.bitrate_kbps / self.sample_rate;
-        return @intCast(base + @intFromBool(self.padding));
-    }
-
-    pub fn sideInformationBytes(self: Header) u8 {
-        return switch (self.version) {
-            .mpeg1 => if (self.channels() == 1) 17 else 32,
-            .mpeg2, .mpeg25 => if (self.channels() == 1) 9 else 17,
-        };
-    }
-
-    pub fn encode(self: Header) ![4]u8 {
-        const version_bits: u2 = switch (self.version) {
-            .mpeg1 => 3,
-            .mpeg2 => 2,
-            .mpeg25 => 0,
-        };
-        const rate_index = sampleRateIndex(
-            self.version,
-            self.sample_rate,
-        ) orelse return error.InvalidMp3EncoderSampleRate;
-        const bitrate_index: u4 = if (self.free_format) blk: {
-            if (self.bitrate_kbps != 0)
-                return error.InvalidMp3EncoderBitrate;
-            break :blk 0;
-        } else bitrateIndex(
-            self.version,
-            self.bitrate_kbps,
-        ) orelse return error.InvalidMp3EncoderBitrate;
-        if (self.emphasis == 2)
-            return error.InvalidMp3EncoderEmphasis;
-
-        var value: u32 = 0x7ff << 21;
-        value |= @as(u32, version_bits) << 19;
-        value |= 1 << 17;
-        value |= @as(u32, @intFromBool(!self.crc_present)) << 16;
-        value |= @as(u32, bitrate_index) << 12;
-        value |= @as(u32, rate_index) << 10;
-        value |= @as(u32, @intFromBool(self.padding)) << 9;
-        value |= @as(u32, @intFromBool(self.private)) << 8;
-        value |= @as(u32, @intFromEnum(self.channel_mode)) << 6;
-        value |= @as(u32, self.mode_extension) << 4;
-        value |= @as(u32, @intFromBool(self.copyright)) << 3;
-        value |= @as(u32, @intFromBool(self.original)) << 2;
-        value |= self.emphasis;
-        return .{
-            @intCast(value >> 24),
-            @intCast((value >> 16) & 0xff),
-            @intCast((value >> 8) & 0xff),
-            @intCast(value & 0xff),
-        };
-    }
-
-    fn compatible(self: Header, other: Header) bool {
-        return self.version == other.version and
-            self.sample_rate == other.sample_rate and
-            self.free_format == other.free_format and
-            self.channels() == other.channels();
-    }
-};
-
+pub const Version = syntax.Version;
+pub const ChannelMode = syntax.ChannelMode;
+pub const maximum_free_format_frame_bytes =
+    syntax.maximum_free_format_frame_bytes;
+pub const maximum_encoded_frame_bytes =
+    syntax.maximum_encoded_frame_bytes;
+pub const maximum_encoded_main_data_bytes =
+    syntax.maximum_encoded_main_data_bytes;
+pub const Limits = syntax.Limits;
+pub const default_limits = syntax.default_limits;
+const maximum_frame_main_data_bytes =
+    syntax.maximum_frame_main_data_bytes;
+const decoder_delay_samples = syntax.decoder_delay_samples;
+pub const Header = syntax.Header;
+const bitrate = syntax.bitrate;
+const bitrateIndex = syntax.bitrateIndex;
+const sampleRate = syntax.sampleRate;
+const sampleRateIndex = syntax.sampleRateIndex;
+const headersCompatible = syntax.headersCompatible;
+const readU32 = syntax.readU32;
 fn headerStateValid(header: Header) bool {
     if (sampleRateIndex(header.version, header.sample_rate) == null)
         return false;
@@ -7357,7 +7221,7 @@ fn reservoirPackingRequirements(
         if (frame.xing != null or frame.vbri != null)
             return error.Mp3ReservoirMetadataFrameUnsupported;
         if (first_header) |first| {
-            if (!first.compatible(frame.header))
+            if (!headersCompatible(first, frame.header))
                 return error.Mp3ReservoirFormatChanged;
         } else {
             first_header = frame.header;
@@ -8481,7 +8345,10 @@ fn borrowMainData(
 ) !u16 {
     const previous_frame = try Frame.parse(previous, 0);
     const current_frame = try Frame.parse(current, 0);
-    if (!previous_frame.header.compatible(current_frame.header) or
+    if (!headersCompatible(
+        previous_frame.header,
+        current_frame.header,
+    ) or
         previous_frame.bytes.len != previous.len or
         current_frame.bytes.len != current.len)
         return error.Mp3ReservoirFormatChanged;
@@ -14558,7 +14425,7 @@ pub const Stream = struct {
             frame_bytes,
         );
         if (self.first_header) |first| {
-            if (!first.compatible(frame.header))
+            if (!headersCompatible(first, frame.header))
                 return error.Mp3StreamFormatChanged;
         }
         const next_cursor = std.math.add(
@@ -14613,7 +14480,7 @@ pub const Stream = struct {
                 self.encoded[candidate..self.audio_end],
             ) catch continue;
             if (self.first_header) |first| {
-                if (!first.compatible(header)) continue;
+                if (!headersCompatible(first, header)) continue;
             }
             const next_free_base = if (header.free_format)
                 self.free_frame_base_bytes orelse
@@ -14650,7 +14517,7 @@ pub const Stream = struct {
                     const following_header = Header.parse(
                         self.encoded[following..self.audio_end],
                     ) catch continue;
-                    if (!header.compatible(following_header))
+                    if (!headersCompatible(header, following_header))
                         continue;
                 }
             }
@@ -14840,7 +14707,7 @@ pub const FileReader = struct {
         var header_bytes: [4]u8 = undefined;
         try readExactAt(self.io, self.file, self.offset, &header_bytes);
         const header = try Header.parse(&header_bytes);
-        if (!self.first_header.compatible(header))
+        if (!headersCompatible(self.first_header, header))
             return error.Mp3StreamFormatChanged;
         const frame_bytes = try resolvedFrameBytes(
             header,
@@ -14967,7 +14834,7 @@ pub const FileReader = struct {
                 &header_bytes,
             ) catch continue;
             const header = Header.parse(&header_bytes) catch continue;
-            if (!self.first_header.compatible(header)) continue;
+            if (!headersCompatible(self.first_header, header)) continue;
             const frame_bytes = resolvedFrameBytes(
                 header,
                 self.free_frame_base_bytes,
@@ -15020,7 +14887,7 @@ pub const FileReader = struct {
         try readExactAt(self.io, self.file, byte_offset, &header_bytes);
         const header = Header.parse(&header_bytes) catch
             return error.InvalidMp3SeekPoint;
-        if (!self.first_header.compatible(header))
+        if (!headersCompatible(self.first_header, header))
             return error.InvalidMp3SeekPoint;
         const frame_bytes = resolvedFrameBytes(
             header,
@@ -15264,7 +15131,7 @@ fn inferMemoryFreeFormatBase(
     while (candidate <= maximum_candidate) : (candidate += 1) {
         const candidate_header =
             Header.parse(encoded[candidate..audio_end]) catch continue;
-        if (!header.compatible(candidate_header)) continue;
+        if (!headersCompatible(header, candidate_header)) continue;
         const frame_bytes = candidate - offset;
         const padding: usize = @intFromBool(header.padding);
         if (frame_bytes <= padding) continue;
@@ -15311,7 +15178,7 @@ fn confirmsMemoryFreeFormat(
     if (next > audio_end -| 4) return false;
     const next_header =
         Header.parse(encoded[next..audio_end]) catch return false;
-    if (!header.compatible(next_header)) return false;
+    if (!headersCompatible(header, next_header)) return false;
     const next_frame_bytes = resolvedFrameBytes(
         next_header,
         base,
@@ -15374,7 +15241,7 @@ fn inferFileFreeFormatBase(
         try readExactAt(io, file, candidate, &header_bytes);
         const candidate_header =
             Header.parse(&header_bytes) catch continue;
-        if (!header.compatible(candidate_header)) continue;
+        if (!headersCompatible(header, candidate_header)) continue;
         const frame_bytes = std.math.cast(
             usize,
             candidate - offset,
@@ -15433,7 +15300,7 @@ fn confirmsFileFreeFormat(
     var next_bytes: [4]u8 = undefined;
     try readExactAt(io, file, next, &next_bytes);
     const next_header = Header.parse(&next_bytes) catch return false;
-    if (!header.compatible(next_header)) return false;
+    if (!headersCompatible(header, next_header)) return false;
     const next_frame_bytes = resolvedFrameBytes(
         next_header,
         base,
@@ -16088,45 +15955,6 @@ fn readOptionalU32(bytes: []const u8, cursor: *usize) !u32 {
     return value;
 }
 
-fn bitrate(version: Version, index: u4) u16 {
-    const mpeg1 = [_]u16{
-        0,   32,  40,  48,  56,  64,  80,  96,
-        112, 128, 160, 192, 224, 256, 320, 0,
-    };
-    const mpeg2 = [_]u16{
-        0,  8,  16, 24,  32,  40,  48,  56,
-        64, 80, 96, 112, 128, 144, 160, 0,
-    };
-    return if (version == .mpeg1) mpeg1[index] else mpeg2[index];
-}
-
-fn bitrateIndex(version: Version, value: u16) ?u4 {
-    for (1..15) |index| {
-        const encoded_index: u4 = @intCast(index);
-        if (bitrate(version, encoded_index) == value)
-            return encoded_index;
-    }
-    return null;
-}
-
-fn sampleRate(version: Version, index: u2) u32 {
-    const base = [_]u32{ 44_100, 48_000, 32_000, 0 };
-    return switch (version) {
-        .mpeg1 => base[index],
-        .mpeg2 => base[index] / 2,
-        .mpeg25 => base[index] / 4,
-    };
-}
-
-fn sampleRateIndex(version: Version, value: u32) ?u2 {
-    for (0..3) |index| {
-        const encoded_index: u2 = @intCast(index);
-        if (sampleRate(version, encoded_index) == value)
-            return encoded_index;
-    }
-    return null;
-}
-
 fn readU16(bytes: []const u8) u16 {
     return (@as(u16, bytes[0]) << 8) | bytes[1];
 }
@@ -16135,13 +15963,6 @@ fn readU24(bytes: []const u8) u24 {
     return (@as(u24, bytes[0]) << 16) |
         (@as(u24, bytes[1]) << 8) |
         bytes[2];
-}
-
-fn readU32(bytes: []const u8) u32 {
-    return (@as(u32, bytes[0]) << 24) |
-        (@as(u32, bytes[1]) << 16) |
-        (@as(u32, bytes[2]) << 8) |
-        bytes[3];
 }
 
 fn readExactAt(
