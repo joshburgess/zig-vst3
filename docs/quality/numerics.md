@@ -36,11 +36,11 @@ The records are tab-separated so the checker can compare exact paths without
 interpreting prose or Markdown tables.
 
 <!-- numerical-files:start -->
-Q13	zig-vst3-plugin/src/dsp/adm.zig	REVIEW	N-PENDING
+Q13	zig-vst3-plugin/src/dsp/adm.zig	EXCLUDED	ADM identifier and CHNA container serialization
 Q13	zig-vst3-plugin/src/dsp/adm_binaural.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_cartesian_extent.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_diffuse.zig	EVIDENCE	N-ADM
-Q13	zig-vst3-plugin/src/dsp/adm_direct_speaker_mapping.zig	REVIEW	N-PENDING
+Q13	zig-vst3-plugin/src/dsp/adm_direct_speaker_mapping.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_hoa_decoder.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_hoa_dual_band.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_hoa_matrix.zig	EVIDENCE	N-ADM
@@ -48,13 +48,13 @@ Q13	zig-vst3-plugin/src/dsp/adm_hoa_radial.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_polar_extent.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_polar_panner.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_render.zig	EXCLUDED	public compatibility facade
-Q13	zig-vst3-plugin/src/dsp/adm_render/common.zig	REVIEW	N-PENDING
+Q13	zig-vst3-plugin/src/dsp/adm_render/common.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_render/direct_speaker.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_render/matrix.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_render/object.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_render/panner.zig	EVIDENCE	N-ADM
-Q13	zig-vst3-plugin/src/dsp/adm_sample_time.zig	REVIEW	N-PENDING
-Q13	zig-vst3-plugin/src/dsp/adm_time.zig	REVIEW	N-PENDING
+Q13	zig-vst3-plugin/src/dsp/adm_sample_time.zig	EVIDENCE	N-ADM
+Q13	zig-vst3-plugin/src/dsp/adm_time.zig	EVIDENCE	N-ADM
 Q13	zig-vst3-plugin/src/dsp/adm_xml.zig	EXCLUDED	parser facade
 Q13	zig-vst3-plugin/src/dsp/adm_xml/block.zig	EXCLUDED	XML block parser and validation
 Q13	zig-vst3-plugin/src/dsp/adm_xml/common.zig	EXCLUDED	XML vocabulary
@@ -65,7 +65,7 @@ Q13	zig-vst3-plugin/src/dsp/adm_xml/model.zig	EXCLUDED	passive metadata values
 Q13	zig-vst3-plugin/src/dsp/adm_xml/standard.zig	EXCLUDED	XML declaration and reference traversal
 Q14	zig-vst3-plugin/src/dsp/hrtf.zig	EVIDENCE	N-HRTF
 Q14	zig-vst3-plugin/src/dsp/hrtf/motion.zig	EXCLUDED	clock calibration and bounded transport
-Q14	zig-vst3-plugin/src/dsp/hrtf/spatial.zig	REVIEW	N-PENDING
+Q14	zig-vst3-plugin/src/dsp/hrtf/spatial.zig	EVIDENCE	N-HRTF
 Q14	zig-vst3-plugin/src/dsp/hrtf_sofa.zig	EVIDENCE	N-HRTF
 Q14	zig-vst3-plugin/src/dsp/hrtf_stream.zig	EVIDENCE	N-HRTF
 Q14	zig-vst3-plugin/src/dsp/matrix.zig	EVIDENCE	N-HRTF
@@ -154,3 +154,31 @@ The first ledger pass intentionally leaves `REVIEW` records open. It establishes
 complete scope and prevents later source additions or unit moves from silently
 escaping Phase 5. A source moves to `EVIDENCE` only after its numerical and
 performance contracts have been inspected and its evidence family is accurate.
+
+## Accepted Review Units
+
+### ADM and HRTF Shared Values
+
+The first review accepts exact ADM time and sample-position arithmetic, common
+speaker mapping, renderer geometry helpers, and HRTF spatial conversion. ADM
+time parsing bounds every decimal and sample representation to checked integer
+storage. Addition, comparison, ceiling conversion, and interpolation preserve
+exact rational values through `u1024`; floating-point conversion occurs only
+for the final clamped phase. Tests cover unlike denominators, values beyond
+the exact f64 integer range, malformed denominators, parse overflow, sequence
+transactionality, and partitioned renderer equivalence.
+
+Common speaker mappings use the standard layout rule vectors and reject
+malformed retained gain views. Renderer geometry is exercised by independent
+polar and Cartesian gain vectors, screen-layout reference positions, power
+preservation, tie behavior, finite containment, buffer alias rejection, and
+transactional output. HRTF position conversion uses an explicit right-handed
+world-to-head rotation. Room-plan vectors independently recompute distance,
+reflection gain, delay, and rotated azimuth with absolute tolerances of
+`1e-12` for direction and gain and `1e-9` samples for delay. The HRTF matrix,
+dataset, partition, and cross-target evidence remains in N-HRTF.
+
+`adm.zig` is excluded from the numerical phase because it owns identifiers and
+exact CHNA byte serialization, not rendering arithmetic. Its normative stereo
+bytes, malformed-state, overlap, reserved-entry, parser, and positional-write
+tests remain parser and persistence evidence.

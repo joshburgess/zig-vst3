@@ -963,6 +963,24 @@ semantic review record to be revisited.
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
 
+## 2026-08-15: Shared ADM and HRTF Numerical Review
+
+The first ledger unit covers exact ADM time and sample positions, common
+speaker mapping, shared renderer geometry, and HRTF position conversion. The
+review checked overflow, finite containment, coordinate convention, tolerance,
+partition, alias, latency, and transactional behavior against direct vectors
+and the existing independent ADM and HRTF evidence families.
+
+| Check | Result |
+| --- | --- |
+| Direct `adm.zig` test | Passed: 15/15 tests |
+| Direct common-speaker mapping test | Passed: 21/21 tests |
+| Direct ADM sample-time test | Passed: 5/5 tests |
+| Direct ADM time test | Passed: 3/3 tests |
+| Direct ADM renderer test | Passed: 195/195 tests, including independent gain vectors and the native fuzz test |
+| `zig build test-hrtf --summary all` | Passed: 8/8 steps and 149/151 tests, with two expected public-dataset skips and three ReleaseSafe cross-target builds |
+| `scripts/check_quality_numerics_inventory.sh` | Passed: 49 evidence, 33 review, and 18 excluded sources |
+
 ## 2026-08-14: VST3 Realtime Bounds and Transitive Call Chains
 
 Behavior commit: `10ea05e6`

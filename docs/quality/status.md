@@ -341,6 +341,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   and Q15 sources. It records 44 existing evidence dispositions, 39 pending
   numerical reviews, and 17 justified non-numerical exclusions. Negative
   fixtures reject missing, stale, misassigned, and malformed records.
+- Accepted the shared ADM and HRTF value review. Exact rational time and sample
+  positions, standard speaker mapping, renderer geometry, and right-handed
+  HRTF spatial conversion have direct vectors, explicit tolerances, finite and
+  transactional coverage. The ledger now has 49 evidence, 33 review, and 18
+  excluded records.
 
 ## Phase 5 Scope
 
@@ -355,7 +360,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the 39 `REVIEW` records in `numerics.md`, beginning with shared ADM and
-HRTF spatial values, then foundational Q15 primitives before composite effects.
+Review the 33 `REVIEW` records in `numerics.md`, beginning with foundational
+Q15 primitives before composite effects.
 Move a source to `EVIDENCE` only after its reference or identity, tolerance,
 finite containment, latency, channel, and transactional contracts are sound.
