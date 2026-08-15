@@ -325,21 +325,29 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   manifest, frozen RC1 compatibility baseline, staged installed consumers,
   ownership and realtime ledgers, and framework guides. The compatibility
   policy now reflects the published RC1 and stable 0.3.0 tags.
+- Began Phase 5 with the complete local benchmark. Closed Q-PERF-001 by
+  replacing repeated least-squares FIR cosine evaluation with one cosine and a
+  bounded recurrence per grid row. The unchanged workload improved from
+  110.5–111.4 ms to 90.7 ms and passes its 100 ms regression ceiling.
+- Closed Q-VER-011 by making the contended snapshot benchmark measure the
+  runtime's bounded-attempt contract instead of rejecting an expected
+  unavailable result. The complete benchmark passes, including 19,903
+  successful publications in 20,000 contended attempts.
 
-## Phase 4 Scope
+## Phase 5 Scope
 
-- Review dependency direction, module boundaries, public surface area,
-  duplicated mechanisms, naming, error sets, and file cohesion.
-- Record one cohesion decision for every large handwritten source and split it
-  only when the result creates a clearer contract.
-- Review public APIs, examples, and documentation as consumer code, including
-  ownership, thread, realtime, lifecycle, and error contracts.
-- Preserve compatibility or record and verify every intentional public change.
+- Map critical DSP algorithms to independent numerical vectors, identities,
+  or reference implementations with stated tolerances.
+- Review finite-value, overflow, precision, latency, channel, layout, and
+  transactional-output contracts.
+- Record representative setup, realtime, memory, and hostile-scaling
+  benchmarks with explicit inputs and regression thresholds.
+- Optimize only measured failures while preserving readable invariants and
+  numerical evidence.
 
 ## Next Review Target
 
-Begin Phase 5 with the checked DSP inventory. Map critical algorithms to
-independent numerical references and existing benchmarks, identify gaps in
-finite-value, overflow, precision, latency, channel, and transactional-output
-coverage, then resolve and verify each finding before optimizing measured
-paths.
+Build the Phase 5 numerical and performance ledger from the checked Q13, Q14,
+and Q15 source inventories. Identify critical algorithms without an
+independent comparison, identity, or stated tolerance, then resolve those gaps
+before the full phase gate.

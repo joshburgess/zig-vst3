@@ -2033,3 +2033,30 @@ encoding and file writing.
 | ReleaseSafe cross-compilation | Passed: Linux AArch64, Linux x86-64, and Windows x86-64 |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Phase 5 Benchmark Baseline and Repairs
+
+Behavior commits: `f916c524`, `6ff1533c`
+
+The first Phase 5 benchmark run repeatably failed the least-squares FIR setup
+budget. The 255-tap, 1,024-density workload measured 111.4 ms and 110.5 ms
+against a 100 ms ceiling. Each of its 65,536 grid rows evaluated every basis
+term with a separate cosine call. The implementation now evaluates one cosine
+and derives the remaining 31 terms with the bounded Chebyshev recurrence. The
+unchanged workload measures 90.7 ms, an 18 percent reduction from the 110.5 ms
+repeat run.
+
+That repair exposed a separate harness defect in the later contended snapshot
+benchmark. Fixed-storage publication is deliberately bounded and may report
+`RealtimeSnapshotUnavailable` when no inactive slot can be reserved. The
+benchmark now measures fixed publication attempts, records unavailable
+results, and requires successful writer and reader progress. It completed
+19,903 successful publications in 20,000 attempts at 40.2 ns per attempt.
+
+| Check | Result |
+| --- | --- |
+| `zig test zig-vst3-plugin/src/dsp/fir_design.zig` | Passed: 39/39 tests, including SciPy 1.17 response parity and maximum-tap finite containment |
+| `zig test zig-vst3-plugin/src/dsp/realtime_snapshot.zig` | Passed: 18/18 tests, including torn-state stress and multiple-reader update coherence |
+| `zig build benchmark -Doptimize=ReleaseSafe --summary all` | Passed: 5/5 steps and every regression budget; the benchmark executable uses its pinned ReleaseFast configuration |
+| `zig fmt --check` over both changed Zig sources | Passed |
+| `git diff --check` | Passed |
