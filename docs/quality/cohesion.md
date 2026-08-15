@@ -20,7 +20,7 @@ split.
 | `gui-adapters/vstgui/zig_vstgui_editor.cpp` | 2,417 / 0 | Owns native editor creation, attachment, resize, and teardown behind the Zig VSTGUI ABI. | KEEP. Its state is one editor lifecycle and is separate from graph and accessibility implementations. |
 | `gui-adapters/vstgui/zig_vstgui_graphs.cpp` | 2,053 / 0 | Owns graph widgets, retained plot data, and graph-specific draw and input callbacks. | KEEP. Graph state and invalidation form one adapter contract. |
 | `zig-vst3-plugin/src/audio_unit_v2.zig` | 2,349 / 2,290 | Owns the component instance, processor state, host callbacks, and render lifecycle. Raw ABI vocabulary lives in `audio_unit_v2/abi.zig`. | KEEP. The remaining production state belongs to one component lifecycle; every prior public ABI name is an exact alias. |
-| `zig-vst3-plugin/src/dsp/adm_render.zig` | 4,931 / 3,964 | Converts validated ADM model data into direct-speaker, matrix, object, and HOA rendering state. Callers own all storage. | SPLIT. Extract the four rendering families behind shared position and gain contracts. |
+| `zig-vst3-plugin/src/dsp/adm_render/core.zig` | 4,911 / 3,982 | Implements direct-speaker, matrix, object, and HOA rendering behind the exact public aliases in `dsp/adm_render.zig`; shared position and speaker vocabulary lives in `adm_render/common.zig`. | SPLIT. Continue extracting the four rendering families from this temporary implementation module. |
 | `zig-vst3-plugin/src/dsp/adm_xml.zig` | 10,470 / 4,786 | Parses bounded ADM XML into caller storage and validates references, profiles, timelines, and graph relationships before publication. | SPLIT. Separate XML token and attribute traversal from the ADM model and graph validator without exposing parser scratch state. |
 | `zig-vst3-plugin/src/dsp/audio_file_reader.zig` | 1,577 / 1,247 | Selects bounded WAV, RF64, BW64, Wave64, AIFF, and AIFC readers and presents one positional PCM and metadata interface. | KEEP. The file is the format-dispatch boundary; format implementations already live in narrower modules. |
 | `zig-vst3-plugin/src/dsp/flac.zig` | 4,747 / 2,547 | Owns FLAC metadata, frame encoding and decoding, positional I/O, and caller-provided work storage. | KEEP. Frame and metadata state share one bitstream contract, while large static tables already live outside the file. |
@@ -60,7 +60,7 @@ decisions.
 - `gui-adapters/vstgui/zig_vstgui_editor.cpp` | 2417 | 2417 | 0 | KEEP
 - `gui-adapters/vstgui/zig_vstgui_graphs.cpp` | 2053 | 2053 | 0 | KEEP
 - `zig-vst3-plugin/src/audio_unit_v2.zig` | 4639 | 2349 | 2290 | KEEP
-- `zig-vst3-plugin/src/dsp/adm_render.zig` | 8895 | 4931 | 3964 | SPLIT
+- `zig-vst3-plugin/src/dsp/adm_render/core.zig` | 8893 | 4911 | 3982 | SPLIT
 - `zig-vst3-plugin/src/dsp/adm_xml.zig` | 15256 | 10470 | 4786 | SPLIT
 - `zig-vst3-plugin/src/dsp/audio_file_reader.zig` | 2824 | 1577 | 1247 | KEEP
 - `zig-vst3-plugin/src/dsp/flac.zig` | 7294 | 4747 | 2547 | KEEP
