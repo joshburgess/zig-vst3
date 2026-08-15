@@ -2242,9 +2242,11 @@ pub fn Analyzer(
     comptime limits: Limits,
 ) type {
     if (limits.sources == 0 or
+        limits.sources > std.math.maxInt(u16) or
         limits.channels == 0 or
         limits.frames < 8 or
         limits.name_bytes == 0 or
+        limits.name_bytes > std.math.maxInt(u16) or
         limits.tempo_bins < 8 or
         limits.tempo_entries < 2 or
         limits.tempo_entries >
@@ -2259,7 +2261,9 @@ pub fn Analyzer(
         limits.chords > maximum_detected_chords or
         limits.note_entries == 0 or
         limits.note_entries > maximum_detected_notes)
-        @compileError("ARA tuning analysis limits must be nonzero");
+        @compileError(
+            "ARA tuning analysis limits must fit archive and detection capacities",
+        );
 
     const SourceId = @FieldType(
         ControllerType.ContentObject,
@@ -3231,17 +3235,18 @@ pub fn Analyzer(
                 const slot = self.findSlot(source_id) orelse continue;
                 if (!slotNeedsArchive(slot))
                     continue;
-                size += archive_record_fixed_size +
-                    nameLength(slot) +
-                    @as(usize, slot.tempo_entry_count) * 16 +
-                    @as(usize, slot.bar_signature_count) *
-                        archive_bar_signature_size +
-                    @as(usize, slot.note_count) *
-                        archive_note_size +
-                    @as(usize, slot.key_signature_count) *
-                        archive_key_signature_size +
-                    @as(usize, slot.chord_count) *
+                const record_size = archive_record_fixed_size +|
+                    nameLength(slot) +|
+                    @as(usize, slot.tempo_entry_count) *| 16 +|
+                    @as(usize, slot.bar_signature_count) *|
+                        archive_bar_signature_size +|
+                    @as(usize, slot.note_count) *|
+                        archive_note_size +|
+                    @as(usize, slot.key_signature_count) *|
+                        archive_key_signature_size +|
+                    @as(usize, slot.chord_count) *|
                         archive_chord_size;
+                size +|= record_size;
             }
             return size;
         }
@@ -5514,6 +5519,98 @@ test "ARA note detection accepts silence and rejects malformed input" {
             &notes,
         ),
     );
+}
+
+const fuzz_empty_analysis_archive =
+    "ZTUN\x08\x01\x00" ++
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" ++
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" ++
+    "\x00\x00\x00\x00\x00";
+
+const fuzz_tempo_analysis_archive =
+    "ZTUN\x04\x01\x00" ++
+    "\x00\x00\x02\x00\x00\x00\xdc\x43\x01\x00A" ++
+    "\x02\x02\x00" ++
+    "\x00\x00\x00\x00\x00\x00\x00\x00" ++
+    "\x00\x00\x00\x00\x00\x00\x00\x00" ++
+    "\x00\x00\x00\x00\x00\x00\xe0\x3f" ++
+    "\x00\x00\x00\x00\x00\x00\xf0\x3f";
+
+test "fuzz failure-atomic bounded ARA analysis archive restore" {
+    try std.testing.fuzz({}, fuzzAnalysisArchiveRestore, .{
+        .corpus = &.{
+            "ZTUN\x08\x00\x00",
+            "ZTUN\x08\x01\x00\x00",
+            fuzz_empty_analysis_archive,
+            fuzz_tempo_analysis_archive,
+        },
+    });
+}
+
+fn fuzzAnalysisArchiveRestore(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    const TestController = controller_api.Controller(.{
+        .audio_sources = 1,
+        .name_bytes = 16,
+        .persistent_id_bytes = 16,
+        .archive_extension_bytes = 16 * 1024,
+    });
+    const TestAnalyzer = Analyzer(TestController, .{
+        .sources = 1,
+        .channels = 1,
+        .frames = 8,
+        .name_bytes = 16,
+        .tempo_bins = 8,
+        .tempo_entries = 4,
+        .bar_signatures = 2,
+        .key_signatures = 2,
+        .chords = 2,
+        .note_entries = 2,
+    });
+    var factory = std.mem.zeroes(raw.ARAFactory);
+    var controller = TestController{
+        .host = std.mem.zeroes(raw.ARADocumentControllerHostInstance),
+        .factory = &factory,
+    };
+    try controller.document.beginEditing();
+    const source_id = try controller.document.createAudioSource(
+        null,
+        .{
+            .name = "Source",
+            .persistent_id = "source-1",
+            .sample_count = 8,
+            .sample_rate = 48_000.0,
+            .channel_count = 1,
+        },
+    );
+    _ = try controller.document.endEditing();
+
+    var analyzer = TestAnalyzer.init(&controller);
+    analyzer.slots[0].source_id = source_id;
+    analyzer.slots[0].status = .approved;
+    analyzer.slots[0].tuning.concertPitchFrequency = 442.0;
+    const baseline = analyzer.slots;
+    const mappings = [_]TestController.ArchiveSourceMapping{.{
+        .archive_id = "source-1",
+        .current_id = source_id,
+    }};
+    var storage: [16 * 1024]u8 = undefined;
+    const length = smith.slice(&storage);
+    const input = storage[0..length];
+
+    if (analyzer.restoreArchiveChecked(&mappings, input)) |_| {
+        var replay = TestAnalyzer.init(&controller);
+        replay.slots = baseline;
+        try replay.restoreArchiveChecked(&mappings, input);
+        if (!std.meta.eql(analyzer.slots, replay.slots))
+            return error.InvalidArchive;
+    } else |_| {
+        if (std.mem.eql(u8, input, fuzz_empty_analysis_archive) or
+            std.mem.eql(u8, input, fuzz_tempo_analysis_archive))
+            return error.InvalidArchive;
+        if (!std.meta.eql(baseline, analyzer.slots))
+            return error.InvalidArchive;
+    }
 }
 
 test "ARA tuning analyzer fulfills requests, publishes content, and invalidates" {

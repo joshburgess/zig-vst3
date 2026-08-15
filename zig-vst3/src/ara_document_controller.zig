@@ -2064,6 +2064,11 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                     @ptrCast(filter_pointer);
                 if (value.structSize < raw.kARAStoreObjectsFilterMinSize)
                     return error.InvalidStructSize;
+                if (value.audioSourceRefsCount >
+                    Model.audio_source_capacity or
+                    value.audioModificationRefsCount >
+                        Model.audio_modification_capacity)
+                    return error.InvalidFilter;
                 try validateCountedPointer(
                     value.audioSourceRefsCount,
                     value.audioSourceRefs,
@@ -2398,6 +2403,11 @@ pub fn Controller(comptime limits: model_api.Limits) type {
                 return error.InvalidStructSize;
             if (filter.documentData != raw.kARAFalse and
                 filter.documentData != raw.kARATrue)
+                return error.InvalidFilter;
+            if (filter.audioSourceIDsCount >
+                Model.audio_source_capacity or
+                filter.audioModificationIDsCount >
+                    Model.audio_modification_capacity)
                 return error.InvalidFilter;
             try validateCountedPointer(
                 filter.audioSourceIDsCount,
@@ -4493,6 +4503,270 @@ test "ARA controller round trips bounded versioned archives" {
             stored_modification_id,
         ) != null,
     );
+}
+
+test "ARA archive filters reject counts above model capacity before access" {
+    const TestController = Controller(.{
+        .musical_contexts = 1,
+        .region_sequences = 1,
+        .audio_sources = 1,
+        .audio_modifications = 1,
+        .playback_regions = 1,
+        .name_bytes = 32,
+        .persistent_id_bytes = 32,
+    });
+    var archive = TestArchive{};
+    var factory = std.mem.zeroes(raw.ARAFactory);
+    var host = testHostWithArchive(&archive);
+    var properties = raw.ARADocumentProperties{
+        .structSize = @sizeOf(raw.ARADocumentProperties),
+        .name = "Session",
+    };
+    var controller: TestController = undefined;
+    try controller.init(&factory, &host, &properties);
+    try controller.document.beginEditing();
+    const source_id = try controller.document.createAudioSource(
+        null,
+        .{
+            .name = "Take",
+            .persistent_id = "source-1",
+            .sample_count = 48_000,
+            .sample_rate = 48_000.0,
+            .channel_count = 2,
+        },
+    );
+    const modification_id =
+        try controller.document.createAudioModification(
+            source_id,
+            null,
+            .{
+                .name = "Edit",
+                .persistent_id = "modification-1",
+            },
+        );
+    _ = try controller.document.endEditing();
+
+    const writer_ref: raw.ARAArchiveWriterHostRef = @ptrCast(&archive);
+    try controller.storeArchive(writer_ref, null);
+    const stored_archive = archive;
+    const source_ref = encodeRef(raw.ARAAudioSourceRef, source_id);
+    const source_refs = [_]raw.ARAAudioSourceRef{
+        source_ref,
+        source_ref,
+    };
+    var store_filter = raw.ARAStoreObjectsFilter{
+        .structSize = @sizeOf(raw.ARAStoreObjectsFilter),
+        .documentData = raw.kARAFalse,
+        .audioSourceRefsCount = source_refs.len,
+        .audioSourceRefs = &source_refs,
+        .audioModificationRefsCount = 0,
+        .audioModificationRefs = null,
+    };
+    try std.testing.expectError(
+        error.InvalidFilter,
+        controller.storeArchive(writer_ref, &store_filter),
+    );
+    try std.testing.expectEqualDeep(stored_archive, archive);
+
+    const modification_ref = encodeRef(
+        raw.ARAAudioModificationRef,
+        modification_id,
+    );
+    const modification_refs = [_]raw.ARAAudioModificationRef{
+        modification_ref,
+        modification_ref,
+    };
+    store_filter.audioSourceRefsCount = 0;
+    store_filter.audioSourceRefs = null;
+    store_filter.audioModificationRefsCount = modification_refs.len;
+    store_filter.audioModificationRefs = &modification_refs;
+    try std.testing.expectError(
+        error.InvalidFilter,
+        controller.storeArchive(writer_ref, &store_filter),
+    );
+    try std.testing.expectEqualDeep(stored_archive, archive);
+
+    const source_archive_ids =
+        [_]raw.ARAPersistentID{ "source-1", "source-1" };
+    var restore_filter = raw.ARARestoreObjectsFilter{
+        .structSize = @sizeOf(raw.ARARestoreObjectsFilter),
+        .documentData = raw.kARAFalse,
+        .audioSourceIDsCount = source_archive_ids.len,
+        .audioSourceArchiveIDs = &source_archive_ids,
+        .audioSourceCurrentIDs = null,
+        .audioModificationIDsCount = 0,
+        .audioModificationArchiveIDs = null,
+        .audioModificationCurrentIDs = null,
+    };
+    try std.testing.expectError(
+        error.InvalidFilter,
+        controller.decodeArchive(
+            archive.bytes[0..archive.length],
+            &restore_filter,
+        ),
+    );
+
+    const modification_archive_ids = [_]raw.ARAPersistentID{
+        "modification-1",
+        "modification-1",
+    };
+    restore_filter.audioSourceIDsCount = 0;
+    restore_filter.audioSourceArchiveIDs = null;
+    restore_filter.audioModificationIDsCount =
+        modification_archive_ids.len;
+    restore_filter.audioModificationArchiveIDs =
+        &modification_archive_ids;
+    try std.testing.expectError(
+        error.InvalidFilter,
+        controller.decodeArchive(
+            archive.bytes[0..archive.length],
+            &restore_filter,
+        ),
+    );
+}
+
+const fuzz_empty_controller_archive =
+    "ZV3ARA\x00\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+
+const fuzz_extension_controller_archive =
+    "ZV3ARA\x00\x02\x01\x00\x01\x00\x01\x00" ++
+    "\x08\x00source-1" ++
+    "\x0e\x00modification-1" ++
+    "\x01\x00\x00\x00x";
+
+test "fuzz bounded ARA controller archive restore" {
+    try std.testing.fuzz({}, fuzzControllerArchiveRestore, .{
+        .corpus = &.{
+            fuzz_empty_controller_archive,
+            fuzz_extension_controller_archive,
+            "ZV3ARA\x00\x02\x01",
+        },
+    });
+}
+
+fn fuzzControllerArchiveRestore(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    const TestController = Controller(.{
+        .audio_sources = 1,
+        .audio_modifications = 1,
+        .name_bytes = 16,
+        .persistent_id_bytes = 16,
+        .archive_extension_bytes = 256,
+    });
+    const ProviderState = struct {
+        calls: usize = 0,
+        mapping_count: usize = 0,
+        extension_bytes: usize = 0,
+    };
+    const Provider = struct {
+        fn state(context: ?*anyopaque) *ProviderState {
+            return @ptrCast(@alignCast(context.?));
+        }
+
+        fn restore(
+            context: ?*anyopaque,
+            mappings: []const TestController.ArchiveSourceMapping,
+            bytes: []const u8,
+        ) bool {
+            const value = state(context);
+            value.calls += 1;
+            value.mapping_count = mappings.len;
+            value.extension_bytes = bytes.len;
+            return true;
+        }
+
+        fn available(
+            _: ?*anyopaque,
+            _: *const TestController.ContentObject,
+            _: raw.ARAContentType,
+        ) bool {
+            return false;
+        }
+
+        fn grade(
+            _: ?*anyopaque,
+            _: *const TestController.ContentObject,
+            _: raw.ARAContentType,
+        ) raw.ARAContentGrade {
+            return raw.kARAContentGradeInitial;
+        }
+
+        fn eventCount(
+            _: ?*anyopaque,
+            _: *const TestController.ContentProvider.Query,
+        ) ?usize {
+            return null;
+        }
+
+        fn eventData(
+            _: ?*anyopaque,
+            _: *const TestController.ContentProvider.Query,
+            _: usize,
+        ) ?*const anyopaque {
+            return null;
+        }
+
+        const vtable = TestController.ContentProvider.VTable{
+            .restore_archive = restore,
+            .is_available = available,
+            .grade = grade,
+            .event_count = eventCount,
+            .event_data = eventData,
+        };
+    };
+
+    var factory = std.mem.zeroes(raw.ARAFactory);
+    var controller = TestController{
+        .host = std.mem.zeroes(raw.ARADocumentControllerHostInstance),
+        .factory = &factory,
+    };
+    try controller.document.beginEditing();
+    const source_id = try controller.document.createAudioSource(
+        null,
+        .{
+            .name = "Source",
+            .persistent_id = "source-1",
+            .sample_count = 8,
+            .sample_rate = 48_000.0,
+            .channel_count = 1,
+        },
+    );
+    _ = try controller.document.createAudioModification(
+        source_id,
+        null,
+        .{
+            .name = "Edit",
+            .persistent_id = "modification-1",
+        },
+    );
+    _ = try controller.document.endEditing();
+    const revision = controller.document.currentRevision();
+
+    var provider_state = ProviderState{};
+    try controller.setContentProvider(.{
+        .context = &provider_state,
+        .vtable = &Provider.vtable,
+    });
+    var storage: @TypeOf(controller.archive_buffer) = undefined;
+    const length = smith.slice(&storage);
+    const input = storage[0..length];
+
+    if (controller.decodeArchive(input, null)) |_| {
+        const first = provider_state;
+        provider_state = .{};
+        try controller.decodeArchive(input, null);
+        if (!std.meta.eql(first, provider_state))
+            return error.InvalidArchive;
+    } else |_| {
+        if (provider_state.calls != 0)
+            return error.InvalidArchive;
+        if (std.mem.eql(u8, input, fuzz_empty_controller_archive) or
+            std.mem.eql(u8, input, fuzz_extension_controller_archive))
+            return error.InvalidArchive;
+    }
+    if (controller.document.currentRevision() != revision or
+        controller.document.audioSource(source_id) == null)
+        return error.InvalidArchive;
 }
 
 test "ARA controller reads host audio and closes readers safely" {

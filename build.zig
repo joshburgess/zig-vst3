@@ -687,6 +687,30 @@ pub fn build(b: *std.Build) void {
     const ara_controller_tests = b.addTest(.{
         .root_module = ara_controller_module,
     });
+    const ara_controller_fuzz_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/ara_document_controller.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_controller_fuzz_module.addImport(
+        "zig-vst3-ara",
+        zig_vst3_ara,
+    );
+    if (target.result.os.tag == .linux)
+        ara_controller_fuzz_module.link_libc = true;
+    const ara_controller_fuzz_tests = b.addTest(.{
+        .root_module = ara_controller_fuzz_module,
+        .filters = &.{"fuzz bounded ARA controller archive restore"},
+    });
+    const ara_controller_fuzz_step = b.step(
+        "test-ara-controller-archive-fuzz",
+        "Run or fuzz bounded ARA controller archive restore",
+    );
+    ara_controller_fuzz_step.dependOn(
+        &b.addRunArtifact(ara_controller_fuzz_tests).step,
+    );
     const ara_factory_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3/src/ara_factory.zig"),
         .target = target,
@@ -789,6 +813,32 @@ pub fn build(b: *std.Build) void {
     const ara_tuning_analysis_tests = b.addTest(.{
         .root_module = ara_tuning_analysis_module,
     });
+    const ara_archive_fuzz_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/ara_tuning_analysis.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    ara_archive_fuzz_module.addImport(
+        "zig-vst3-ara",
+        zig_vst3_ara,
+    );
+    if (target.result.os.tag == .linux)
+        ara_archive_fuzz_module.link_libc = true;
+    const ara_archive_fuzz_tests = b.addTest(.{
+        .root_module = ara_archive_fuzz_module,
+        .filters = &.{
+            "fuzz failure-atomic bounded ARA analysis archive restore",
+        },
+    });
+    const ara_archive_fuzz_step = b.step(
+        "test-ara-archive-fuzz",
+        "Run or fuzz bounded ARA analysis archive restore",
+    );
+    ara_archive_fuzz_step.dependOn(
+        &b.addRunArtifact(ara_archive_fuzz_tests).step,
+    );
     const ara_tempo_warp_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3/src/ara_tempo_warp.zig",
