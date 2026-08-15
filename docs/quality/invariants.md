@@ -89,6 +89,12 @@ single type. Later phases must link each invariant to code and verification.
   per-track event, total-event, and event-payload limits. Normal iteration
   parses each event once. Validation of a caller-changed cursor may replay only
   the retained track prefix and cannot exceed the retained event limit.
+- ADM XML construction applies explicit document-byte, XML-event,
+  metadata-count, and graph-work limits. Normal XML iteration advances from an
+  exact retained-state witness. A caller-changed cursor or open-element stack
+  must match canonical prefix reconstruction before parsing can continue.
+  Duplicate, resolution, cardinality, reciprocity, coefficient, and block
+  sequence validation use fixed-storage indexes and bounded probes.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the
