@@ -1254,3 +1254,28 @@ under the same policy and reproduce the analyzed track and sync-point counts.
 | `scripts/check_quality_inventory.sh` | Passed: 823 files and 470,985 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded MP3 Stream Parsing
+
+Behavior commit: `1695b7e6`
+
+`Mp3Stream` and `Mp3FileReader` now retain one `Mp3Limits` policy for encoded
+bytes and completed frames. Default entry points accept at most 4,294,967,295
+bytes and 10,000,000 frames. `initWithLimits` and `summarizeWithLimits` expose
+the same policy to installed consumers. Byte rejection precedes tag and frame
+scanning. Frame-limit rejection occurs before cursor, counter, decoder, or
+caller-storage mutation.
+
+The dedicated native fuzz target combines arbitrary input with valid generated
+frames, then mutates, truncates, or extends the candidate. Accepted frames must
+advance the cursor. CRC and side-information parsing must remain bounded, and
+decoder failure must leave the complete decoder state unchanged.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-mp3 --summary all` | Passed: 6/6 steps and 131/131 tests; native Debug execution plus ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| `zig build test-mp3-fuzz --fuzz=100K` | Passed: 100,675 further executions; cumulative corpus reached 202,113 runs, 1,984 unique inputs, and 910 of 21,667 instrumented branches without a failure |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including the public custom-limit APIs |
+| `scripts/check_quality_inventory.sh` | Passed: 823 files and 471,198 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

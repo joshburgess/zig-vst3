@@ -81,6 +81,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   structural-work, decoded-text, track, and sync-point policies. The focused
   suite, 100,528-run native fuzz campaign, installed-package matrix, and
   Windows cross-build pass.
+- Closed Q-MP3-001 with bounded default and caller-selected encoded-byte and
+  frame-count policies for memory and positional-file scans. The complete
+  131-test MP3 gate, a further 100,675-run fuzz campaign, and the
+  installed-package matrix pass.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.
