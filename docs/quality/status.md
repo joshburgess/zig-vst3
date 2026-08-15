@@ -263,6 +263,9 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Closed Q-EDITOR-001 by capping editor-state migrations at 256 and replacing
   repeated schema-version scans with one fixed-storage index. Exact-limit,
   transactional, native fuzz, cross-target, and installed-package gates pass.
+- Closed Q-RESOURCE-001 by validating direct recovery state before any retained
+  state change or worker submission. Fixed-capacity state fuzzing, resource
+  ownership, ThreadSanitizer, cross-target, and installed-package gates pass.
 
 ## Phase 3 Scope
 
@@ -277,7 +280,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Audit the open P-RESOURCE family from the checked parser inventory. Record its
-complete byte, count, allocation, work-limit, worker-progress, and
-failure-atomicity chains, then close defects and coverage gaps with focused
-corruption, fuzz, and allocation-failure evidence.
+Audit the open P-ADAPTER and remaining P-MIDI families from the checked parser
+inventory. Trace host-provided counts and pointers through wrapper state
+delegates, then record native and streaming MIDI byte, packet, message, and
+work limits with focused corruption and cross-target evidence.

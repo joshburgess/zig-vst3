@@ -1617,3 +1617,44 @@ failure-atomic publication.
 | `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,691 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Transactional Resource Restore
+
+Behavior commit: `17eb9d39`
+
+The P-RESOURCE review covered fixed paths and metadata, reference and recovery
+state, bounded byte accumulation, immutable exchange slots, worker jobs, and
+VST3 resource-path transport. Paths reject empty values, embedded zero bytes,
+and compile-time-capacity overflow. Reference lengths are checked before fixed
+payload reads. The byte accumulator uses checked arithmetic and a
+caller-selected maximum, rejects aliased mutation, and preserves content after
+allocation failure. Exchange storage is fixed at no more than 255 slots.
+
+Jobs require positive compile-time work and result limits. Progress updates
+reject inconsistent or over-limit totals. Cancellation and optional deadlines
+are cooperative through the worker context, and results publish only for the
+current accepted generation. Existing concurrency coverage exercises work
+replacement, cancellation, join ordering, generation rollover, exchange
+replacement, and teardown.
+
+The remaining defect was the public `Recovery.restore` boundary. Decoded state
+was validated, but a caller could directly mutate the public fixed-storage
+fields and pass malformed state to restore. The negative control changed a
+valid ready snapshot to restoring. Restore now validates before cancellation,
+generation allocation, snapshot mutation, or worker submission. The regression
+proves the retained recovery and presentation snapshots remain identical.
+
+The dedicated state mutation target parses bounded arbitrary bytes. Every
+successful value must validate, fit the compile-time encoded maximum, and
+survive canonical encode and decode.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-resource --summary all` | Passed: 15/15 steps and 134/134 tests, including native state, worker, exchange, transport, and ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| `zig build test-resource-state-fuzz --fuzz=100K` | Passed: 100,027 executions, 25 unique inputs, and 222 of 22,004 instrumented branches without a failure |
+| `zig build test-resource-thread-sanitizer --summary all` | Passed: 5/5 steps and 60/60 tests |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests |
+| `scripts/check_parser_inventory.sh` | Passed: 177 production sources classified |
+| `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,803 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
