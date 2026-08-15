@@ -2845,6 +2845,24 @@ pub fn build(b: *std.Build) void {
     audio_file_fuzz_step.dependOn(
         &b.addRunArtifact(audio_file_fuzz_tests).step,
     );
+    const audio_metadata_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        audio_metadata_fuzz_module.link_libc = true;
+    const audio_metadata_fuzz_tests = b.addTest(.{
+        .root_module = audio_metadata_fuzz_module,
+        .filters = &.{"fuzz bounded audio metadata parsing"},
+    });
+    const audio_metadata_fuzz_step = b.step(
+        "test-audio-metadata-fuzz",
+        "Run or fuzz bounded audio metadata parsing",
+    );
+    audio_metadata_fuzz_step.dependOn(
+        &b.addRunArtifact(audio_metadata_fuzz_tests).step,
+    );
     const flac_fuzz_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,

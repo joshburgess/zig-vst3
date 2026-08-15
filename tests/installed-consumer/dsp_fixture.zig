@@ -5157,7 +5157,12 @@ test "installed package exposes allocation-free ID3 metadata versions" {
         try plugin.dsp.requiredId3Bytes(&frames, options),
     );
 
-    const view = try plugin.dsp.Id3View.init(encoded);
+    const installed_id3_limits: plugin.dsp.Id3Limits =
+        plugin.dsp.default_id3_limits;
+    const view = try plugin.dsp.Id3View.initWithLimits(
+        encoded,
+        installed_id3_limits,
+    );
     try std.testing.expect(view.header.unsynchronised);
     try std.testing.expect(view.header.footer);
     var middle_iterator: plugin.dsp.Id3Iterator = view.iterator();
@@ -5267,7 +5272,15 @@ test "installed package exposes allocation-free ID3 metadata versions" {
             v23_options,
         ),
     );
-    const v23_view = try plugin.dsp.Id3V23View.init(encoded_v23, &.{});
+    _ = try plugin.dsp.Id3V23View.requiredDecodedBytesWithLimits(
+        encoded_v23,
+        installed_id3_limits,
+    );
+    const v23_view = try plugin.dsp.Id3V23View.initWithLimits(
+        encoded_v23,
+        &.{},
+        installed_id3_limits,
+    );
     var middle_v23_iterator: plugin.dsp.Id3V23Iterator =
         v23_view.iterator();
     middle_v23_iterator.offset = 1;
@@ -7689,8 +7702,11 @@ test "installed metadata iterators reject malformed retained cursors" {
         &riff_storage,
         &entries,
     );
-    const riff_view = try plugin.dsp.RiffInfoMetadataView.init(
+    const installed_metadata_limits: plugin.dsp.AudioMetadataLimits =
+        plugin.dsp.default_audio_metadata_limits;
+    const riff_view = try plugin.dsp.RiffInfoMetadataView.initWithLimits(
         riff_encoded,
+        installed_metadata_limits,
     );
     var middle_riff_iterator = riff_view.iterator();
     middle_riff_iterator.offset = 13;
@@ -7720,8 +7736,10 @@ test "installed metadata iterators reject malformed retained cursors" {
         &aiff_storage,
         &entries,
     );
-    var middle_aiff_iterator =
-        try plugin.dsp.AiffTextMetadataIterator.init(aiff_encoded);
+    var middle_aiff_iterator = try plugin.dsp.AiffTextMetadataIterator.initWithLimits(
+        aiff_encoded,
+        installed_metadata_limits,
+    );
     middle_aiff_iterator.offset = 1;
     try std.testing.expect(!middle_aiff_iterator.valid());
     try std.testing.expectError(
@@ -8840,7 +8858,10 @@ test "installed package exposes file-backed audio writers" {
         .ixml,
         &metadata_storage,
     );
-    const ixml_view = try plugin.dsp.RiffXmlView.init(ixml_chunk.?);
+    const ixml_view = try plugin.dsp.RiffXmlView.initWithLimits(
+        ixml_chunk.?,
+        plugin.dsp.default_audio_metadata_limits,
+    );
     try std.testing.expectEqual(
         plugin.dsp.RiffXmlKind.ixml,
         ixml_view.kind,

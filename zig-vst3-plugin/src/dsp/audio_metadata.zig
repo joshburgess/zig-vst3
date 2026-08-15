@@ -3,6 +3,17 @@ const adm = @import("adm.zig");
 const adm_xml = @import("adm_xml.zig");
 const broadcast_metadata = @import("broadcast_metadata.zig");
 
+pub const Limits = struct {
+    max_encoded_bytes: usize = 256 * 1024 * 1024,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_encoded_bytes == 0)
+            return error.InvalidAudioMetadataLimits;
+    }
+};
+
+pub const default_limits = Limits{};
+
 pub const title = [4]u8{ 'I', 'N', 'A', 'M' };
 pub const artist = [4]u8{ 'I', 'A', 'R', 'T' };
 pub const comment = [4]u8{ 'I', 'C', 'M', 'T' };
@@ -47,8 +58,16 @@ pub const RiffXmlKind = enum {
 pub const RiffXmlView = struct {
     kind: RiffXmlKind,
     document: []const u8,
+    limits: Limits = default_limits,
 
     pub fn init(bytes: []const u8) !RiffXmlView {
+        return initWithLimits(bytes, default_limits);
+    }
+
+    pub fn initWithLimits(bytes: []const u8, limits: Limits) !RiffXmlView {
+        try limits.validate();
+        if (bytes.len > limits.max_encoded_bytes)
+            return error.AudioMetadataLimitExceeded;
         if (bytes.len < 8) return error.InvalidRiffXmlChunk;
         const kind: RiffXmlKind =
             if (std.mem.eql(u8, bytes[0..4], "iXML"))
@@ -78,7 +97,7 @@ pub const RiffXmlView = struct {
             return error.InvalidRiffXmlPadding;
         const document = bytes[8..][0..document_bytes];
         try validateXmlDocument(document);
-        return .{ .kind = kind, .document = document };
+        return .{ .kind = kind, .document = document, .limits = limits };
     }
 };
 
@@ -417,8 +436,16 @@ pub fn writeRiffInfoPayloadFile(
 
 pub const RiffInfoView = struct {
     bytes: []const u8,
+    limits: Limits = default_limits,
 
     pub fn init(bytes: []const u8) !RiffInfoView {
+        return initWithLimits(bytes, default_limits);
+    }
+
+    pub fn initWithLimits(bytes: []const u8, limits: Limits) !RiffInfoView {
+        try limits.validate();
+        if (bytes.len > limits.max_encoded_bytes)
+            return error.AudioMetadataLimitExceeded;
         if (bytes.len < 12 or
             !std.mem.eql(u8, bytes[0..4], "LIST") or
             !std.mem.eql(u8, bytes[8..12], "INFO"))
@@ -440,7 +467,7 @@ pub const RiffInfoView = struct {
             .offset = 12,
         };
         while (try validator.nextInPlace()) |_| {}
-        return .{ .bytes = bytes };
+        return .{ .bytes = bytes, .limits = limits };
     }
 
     pub fn iterator(self: RiffInfoView) RiffInfoIterator {
@@ -449,6 +476,7 @@ pub const RiffInfoView = struct {
             .offset = 12,
             .validated_bytes = self.bytes,
             .validated_offset = 12,
+            .limits = self.limits,
         };
     }
 };
@@ -458,6 +486,7 @@ pub const RiffInfoIterator = struct {
     offset: usize,
     validated_bytes: ?[]const u8 = null,
     validated_offset: usize = 0,
+    limits: Limits = default_limits,
 
     pub fn valid(self: RiffInfoIterator) bool {
         self.validateState() catch return false;
@@ -475,6 +504,10 @@ pub const RiffInfoIterator = struct {
     }
 
     fn validateState(self: RiffInfoIterator) !void {
+        self.limits.validate() catch
+            return error.InvalidRiffInfoIteratorState;
+        if (self.bytes.len > self.limits.max_encoded_bytes)
+            return error.InvalidRiffInfoIteratorState;
         if (self.validated_bytes) |bytes| {
             if (sameByteRange(self.bytes, bytes) and
                 self.offset == self.validated_offset)
@@ -484,7 +517,7 @@ pub const RiffInfoIterator = struct {
         }
         if (self.offset < 12 or self.offset > self.bytes.len)
             return error.InvalidRiffInfoIteratorState;
-        const view = try RiffInfoView.init(self.bytes);
+        const view = try RiffInfoView.initWithLimits(self.bytes, self.limits);
         var canonical = view.iterator();
         var state_seen = self.offset == canonical.offset;
         while (try canonical.nextInPlace()) |_| {
@@ -621,13 +654,25 @@ pub const AiffTextIterator = struct {
     offset: usize = 0,
     validated_bytes: ?[]const u8 = null,
     validated_offset: usize = 0,
+    limits: Limits = default_limits,
 
     pub fn init(bytes: []const u8) !AiffTextIterator {
-        var iterator = AiffTextIterator{ .bytes = bytes };
+        return initWithLimits(bytes, default_limits);
+    }
+
+    pub fn initWithLimits(
+        bytes: []const u8,
+        limits: Limits,
+    ) !AiffTextIterator {
+        try limits.validate();
+        if (bytes.len > limits.max_encoded_bytes)
+            return error.AudioMetadataLimitExceeded;
+        var iterator = AiffTextIterator{ .bytes = bytes, .limits = limits };
         while (try iterator.nextInPlace()) |_| {}
         return .{
             .bytes = bytes,
             .validated_bytes = bytes,
+            .limits = limits,
         };
     }
 
@@ -647,6 +692,10 @@ pub const AiffTextIterator = struct {
     }
 
     fn validateState(self: AiffTextIterator) !void {
+        self.limits.validate() catch
+            return error.InvalidAiffTextIteratorState;
+        if (self.bytes.len > self.limits.max_encoded_bytes)
+            return error.InvalidAiffTextIteratorState;
         if (self.validated_bytes) |bytes| {
             if (sameByteRange(self.bytes, bytes) and
                 self.offset == self.validated_offset)
@@ -656,7 +705,10 @@ pub const AiffTextIterator = struct {
         }
         if (self.offset > self.bytes.len)
             return error.InvalidAiffTextIteratorState;
-        var canonical = try AiffTextIterator.init(self.bytes);
+        var canonical = try AiffTextIterator.initWithLimits(
+            self.bytes,
+            self.limits,
+        );
         var state_seen = self.offset == canonical.offset;
         while (try canonical.nextInPlace()) |_| {
             if (self.offset == canonical.offset) state_seen = true;
@@ -763,6 +815,132 @@ fn writeAt(
     try writer.seekTo(offset);
     try writer.interface.writeAll(bytes);
     try writer.interface.flush();
+}
+
+test "fuzz bounded audio metadata parsing" {
+    try std.testing.fuzz({}, fuzzAudioMetadata, .{
+        .corpus = &.{
+            "ID3\x04\x00\x00\x00\x00\x00\x0c" ++
+                "TIT2\x00\x00\x00\x02\x00\x00\x03x",
+            "ID3\x03\x00\x00\x00\x00\x00\x0c" ++
+                "TIT2\x00\x00\x00\x02\x00\x00\x00x",
+            "LIST\x0e\x00\x00\x00INFOINAM\x02\x00\x00\x00x\x00",
+            "NAME\x00\x00\x00\x01x\x00",
+            "iXML\x09\x00\x00\x00<BWFXML/>\x00",
+        },
+    });
+}
+
+fn fuzzAudioMetadata(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    const id3 = @import("id3.zig");
+    var encoded: [64 * 1024]u8 = undefined;
+    const length = smith.slice(&encoded);
+    const source = encoded[0..length];
+    const limits = Limits{ .max_encoded_bytes = encoded.len };
+
+    if (RiffInfoView.initWithLimits(source, limits)) |view| {
+        var iterator = view.iterator();
+        while (true) {
+            const previous = iterator.offset;
+            const entry = try iterator.next();
+            if (entry == null) break;
+            if (iterator.offset <= previous)
+                return error.AudioMetadataFuzzDidNotProgress;
+        }
+    } else |_| {}
+    if (AiffTextIterator.initWithLimits(source, limits)) |accepted| {
+        var iterator = accepted;
+        while (true) {
+            const previous = iterator.offset;
+            const entry = try iterator.next();
+            if (entry == null) break;
+            if (iterator.offset <= previous)
+                return error.AudioMetadataFuzzDidNotProgress;
+        }
+    } else |_| {}
+    if (RiffXmlView.initWithLimits(source, limits)) |_| {} else |_| {}
+
+    const id3_limits = id3.Limits{ .max_encoded_bytes = encoded.len };
+    if (id3.View.initWithLimits(source, id3_limits)) |view| {
+        var iterator = view.iterator();
+        while (true) {
+            const previous = iterator.offset;
+            const frame = try iterator.next();
+            if (frame == null) break;
+            if (iterator.offset <= previous)
+                return error.AudioMetadataFuzzDidNotProgress;
+        }
+    } else |_| {}
+    var decoded_storage: [encoded.len]u8 = undefined;
+    if (id3.V23View.initWithLimits(
+        source,
+        &decoded_storage,
+        id3_limits,
+    )) |view| {
+        var iterator = view.iterator();
+        while (true) {
+            const previous = iterator.offset;
+            const frame = try iterator.next();
+            if (frame == null) break;
+            if (iterator.offset <= previous)
+                return error.AudioMetadataFuzzDidNotProgress;
+        }
+    } else |_| {}
+}
+
+test "audio metadata parsers enforce retained encoded byte limits" {
+    const entries = [_]Entry{.{ .id = title, .value = "value" }};
+    var storage: [128]u8 = undefined;
+    const riff = try encodeRiffInfo(&storage, &entries);
+    try std.testing.expectError(
+        error.InvalidAudioMetadataLimits,
+        RiffInfoView.initWithLimits(riff, .{ .max_encoded_bytes = 0 }),
+    );
+    try std.testing.expectError(
+        error.AudioMetadataLimitExceeded,
+        RiffInfoView.initWithLimits(
+            riff,
+            .{ .max_encoded_bytes = riff.len - 1 },
+        ),
+    );
+    const riff_view = try RiffInfoView.initWithLimits(
+        riff,
+        .{ .max_encoded_bytes = riff.len },
+    );
+    var riff_iterator = riff_view.iterator();
+    riff_iterator.limits.max_encoded_bytes = riff.len - 1;
+    try std.testing.expect(!riff_iterator.valid());
+
+    const aiff = try encodeAiffText(&storage, &entries);
+    try std.testing.expectError(
+        error.AudioMetadataLimitExceeded,
+        AiffTextIterator.initWithLimits(
+            aiff,
+            .{ .max_encoded_bytes = aiff.len - 1 },
+        ),
+    );
+    _ = try AiffTextIterator.initWithLimits(
+        aiff,
+        .{ .max_encoded_bytes = aiff.len },
+    );
+
+    const riff_xml = try encodeRiffXml(
+        &storage,
+        .ixml,
+        "<BWFXML/>",
+    );
+    try std.testing.expectError(
+        error.AudioMetadataLimitExceeded,
+        RiffXmlView.initWithLimits(
+            riff_xml,
+            .{ .max_encoded_bytes = riff_xml.len - 1 },
+        ),
+    );
+    _ = try RiffXmlView.initWithLimits(
+        riff_xml,
+        .{ .max_encoded_bytes = riff_xml.len },
+    );
 }
 
 test "RIFF INFO metadata round trips known and unknown entries" {

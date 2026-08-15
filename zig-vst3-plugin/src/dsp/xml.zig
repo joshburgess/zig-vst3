@@ -1,6 +1,8 @@
 const std = @import("std");
 
 pub const max_depth: usize = 64;
+pub const max_attributes_per_element: usize = 1024;
+pub const max_attribute_bytes_per_element: usize = 256 * 1024;
 pub const max_namespace_uri_bytes: usize = 2048;
 pub const xml_namespace_uri = "http://www.w3.org/XML/1998/namespace";
 pub const xmlns_namespace_uri = "http://www.w3.org/2000/xmlns/";
@@ -903,9 +905,13 @@ fn nextEncodedCodepoint(
 }
 
 fn validateAttributes(bytes: []const u8) !void {
+    if (bytes.len > max_attribute_bytes_per_element)
+        return error.XmlAttributesTooLarge;
     var iterator = AttributeIterator.init(bytes);
     var count: usize = 0;
     while (try iterator.next()) |attribute_value| {
+        if (count == max_attributes_per_element)
+            return error.TooManyXmlAttributes;
         var previous = AttributeIterator.init(bytes);
         var previous_index: usize = 0;
         while (previous_index < count) : (previous_index += 1) {
@@ -1371,6 +1377,31 @@ test "XML document enforces bounded nesting" {
     try std.testing.expectError(
         error.XmlNestingTooDeep,
         Document.init(bytes[0..offset]),
+    );
+}
+
+test "XML document bounds attributes per element" {
+    var bytes: [max_attributes_per_element * 16 + 32]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try writer.writeAll("<r ");
+    for (0..max_attributes_per_element + 1) |index|
+        try writer.print("a{}=\"x\" ", .{index});
+    try writer.writeAll("/>");
+    try std.testing.expectError(
+        error.TooManyXmlAttributes,
+        Document.init(writer.buffered()),
+    );
+}
+
+test "XML document bounds attribute bytes per element" {
+    var bytes: [max_attribute_bytes_per_element + 16]u8 = undefined;
+    @memset(&bytes, 'a');
+    const encoded_bytes = max_attribute_bytes_per_element + 6;
+    @memcpy(bytes[0..6], "<r a=\"");
+    @memcpy(bytes[encoded_bytes - 3 .. encoded_bytes], "\"/>");
+    try std.testing.expectError(
+        error.XmlAttributesTooLarge,
+        Document.init(bytes[0..encoded_bytes]),
     );
 }
 

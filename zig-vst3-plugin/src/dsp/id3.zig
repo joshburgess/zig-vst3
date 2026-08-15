@@ -1,5 +1,16 @@
 const std = @import("std");
 
+pub const Limits = struct {
+    max_encoded_bytes: usize = 256 * 1024 * 1024,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_encoded_bytes < 10)
+            return error.InvalidId3Limits;
+    }
+};
+
+pub const default_limits = Limits{};
+
 pub const title = [4]u8{ 'T', 'I', 'T', '2' };
 pub const artist = [4]u8{ 'T', 'P', 'E', '1' };
 pub const album = [4]u8{ 'T', 'A', 'L', 'B' };
@@ -208,8 +219,19 @@ pub const V23View = struct {
     header: V23Header,
     frames_start: usize,
     frames_end: usize,
+    limits: Limits = default_limits,
 
     pub fn requiredDecodedBytes(bytes: []const u8) !usize {
+        return requiredDecodedBytesWithLimits(bytes, default_limits);
+    }
+
+    pub fn requiredDecodedBytesWithLimits(
+        bytes: []const u8,
+        limits: Limits,
+    ) !usize {
+        try limits.validate();
+        if (bytes.len > limits.max_encoded_bytes)
+            return error.Id3LimitExceeded;
         const parsed = try parseV23Header(bytes);
         if (!parsed.unsynchronised) return 0;
         return decodedUnsynchronisedBytes(bytes[10..]);
@@ -219,6 +241,17 @@ pub const V23View = struct {
         bytes: []const u8,
         decoded_storage: []u8,
     ) !V23View {
+        return initWithLimits(bytes, decoded_storage, default_limits);
+    }
+
+    pub fn initWithLimits(
+        bytes: []const u8,
+        decoded_storage: []u8,
+        limits: Limits,
+    ) !V23View {
+        try limits.validate();
+        if (bytes.len > limits.max_encoded_bytes)
+            return error.Id3LimitExceeded;
         const parsed = try parseV23Header(bytes);
         const body = if (parsed.unsynchronised) blk: {
             const required = try decodedUnsynchronisedBytes(bytes[10..]);
@@ -259,6 +292,7 @@ pub const V23View = struct {
             },
             .frames_start = frames_start,
             .frames_end = frames_end,
+            .limits = limits,
         };
         var validator = view.iterator();
         while (try validator.nextInPlace()) |_| {}
@@ -270,6 +304,8 @@ pub const V23View = struct {
         return .{
             .bytes = bytes,
             .validated_bytes = bytes,
+            .limits = self.limits,
+            .encoded_bytes = self.bytes.len,
         };
     }
 };
@@ -279,6 +315,8 @@ pub const V23Iterator = struct {
     offset: usize = 0,
     validated_bytes: ?[]const u8 = null,
     validated_offset: usize = 0,
+    limits: Limits = default_limits,
+    encoded_bytes: usize = 0,
 
     pub fn valid(self: V23Iterator) bool {
         self.validateState() catch return false;
@@ -289,6 +327,8 @@ pub const V23Iterator = struct {
         try self.validateState();
         var trial = self.*;
         const frame = try trial.nextInPlace();
+        if (trial.encoded_bytes == 0)
+            trial.encoded_bytes = trial.bytes.len;
         trial.validated_bytes = trial.bytes;
         trial.validated_offset = trial.offset;
         self.* = trial;
@@ -296,6 +336,19 @@ pub const V23Iterator = struct {
     }
 
     fn validateState(self: V23Iterator) !void {
+        self.limits.validate() catch
+            return error.InvalidId3IteratorState;
+        if (self.encoded_bytes == 0 and
+            self.validated_bytes != null and
+            self.bytes.len != 0)
+            return error.InvalidId3IteratorState;
+        const encoded_bytes = if (self.encoded_bytes == 0)
+            self.bytes.len
+        else
+            self.encoded_bytes;
+        if (encoded_bytes < self.bytes.len or
+            encoded_bytes > self.limits.max_encoded_bytes)
+            return error.InvalidId3IteratorState;
         if (self.validated_bytes) |bytes| {
             if (sameByteRange(self.bytes, bytes) and
                 self.offset == self.validated_offset)
@@ -305,7 +358,11 @@ pub const V23Iterator = struct {
         }
         if (self.offset > self.bytes.len)
             return error.InvalidId3IteratorState;
-        var canonical = V23Iterator{ .bytes = self.bytes };
+        var canonical = V23Iterator{
+            .bytes = self.bytes,
+            .limits = self.limits,
+            .encoded_bytes = encoded_bytes,
+        };
         var state_seen = self.offset == canonical.offset;
         while (try canonical.nextInPlace()) |_| {
             if (self.offset == canonical.offset) state_seen = true;
@@ -797,8 +854,16 @@ pub const View = struct {
     header: Header,
     frames_start: usize,
     frames_end: usize,
+    limits: Limits = default_limits,
 
     pub fn init(bytes: []const u8) !View {
+        return initWithLimits(bytes, default_limits);
+    }
+
+    pub fn initWithLimits(bytes: []const u8, limits: Limits) !View {
+        try limits.validate();
+        if (bytes.len > limits.max_encoded_bytes)
+            return error.Id3LimitExceeded;
         if (bytes.len < 10 or !std.mem.eql(u8, bytes[0..3], "ID3"))
             return error.InvalidId3Header;
         if (bytes[3] != 4 or bytes[4] != 0)
@@ -846,6 +911,7 @@ pub const View = struct {
             },
             .frames_start = frames_start,
             .frames_end = frames_end,
+            .limits = limits,
         };
         var validator = view.iterator();
         while (try validator.nextInPlace()) |_| {}
@@ -859,6 +925,8 @@ pub const View = struct {
             .tag_unsynchronised = self.header.unsynchronised,
             .validated_bytes = bytes,
             .validated_tag_unsynchronised = self.header.unsynchronised,
+            .limits = self.limits,
+            .encoded_bytes = self.bytes.len,
         };
     }
 };
@@ -870,6 +938,8 @@ pub const Iterator = struct {
     validated_bytes: ?[]const u8 = null,
     validated_offset: usize = 0,
     validated_tag_unsynchronised: bool = false,
+    limits: Limits = default_limits,
+    encoded_bytes: usize = 0,
 
     pub fn valid(self: Iterator) bool {
         self.validateState() catch return false;
@@ -880,6 +950,8 @@ pub const Iterator = struct {
         try self.validateState();
         var trial = self.*;
         const frame = try trial.nextInPlace();
+        if (trial.encoded_bytes == 0)
+            trial.encoded_bytes = trial.bytes.len;
         trial.validated_bytes = trial.bytes;
         trial.validated_offset = trial.offset;
         trial.validated_tag_unsynchronised = trial.tag_unsynchronised;
@@ -888,6 +960,19 @@ pub const Iterator = struct {
     }
 
     fn validateState(self: Iterator) !void {
+        self.limits.validate() catch
+            return error.InvalidId3IteratorState;
+        if (self.encoded_bytes == 0 and
+            self.validated_bytes != null and
+            self.bytes.len != 0)
+            return error.InvalidId3IteratorState;
+        const encoded_bytes = if (self.encoded_bytes == 0)
+            self.bytes.len
+        else
+            self.encoded_bytes;
+        if (encoded_bytes < self.bytes.len or
+            encoded_bytes > self.limits.max_encoded_bytes)
+            return error.InvalidId3IteratorState;
         if (self.validated_bytes) |bytes| {
             if (sameByteRange(self.bytes, bytes) and
                 self.offset == self.validated_offset and
@@ -902,6 +987,8 @@ pub const Iterator = struct {
         var canonical = Iterator{
             .bytes = self.bytes,
             .tag_unsynchronised = self.tag_unsynchronised,
+            .limits = self.limits,
+            .encoded_bytes = encoded_bytes,
         };
         var state_seen = self.offset == canonical.offset;
         while (try canonical.nextInPlace()) |_| {
@@ -1460,6 +1547,68 @@ fn readSyncsafe35(bytes: *const [5]u8) !u35 {
         value = value << 7 | byte;
     }
     return value;
+}
+
+test "ID3 parsers enforce retained encoded byte limits" {
+    const frames = [_]Frame{.{ .id = title, .payload = &.{ 3, 'x' } }};
+    var encoded_storage: [64]u8 = undefined;
+    const encoded = try encode(&encoded_storage, &frames, .{});
+    try std.testing.expectError(
+        error.InvalidId3Limits,
+        View.initWithLimits(encoded, .{ .max_encoded_bytes = 9 }),
+    );
+    try std.testing.expectError(
+        error.Id3LimitExceeded,
+        View.initWithLimits(
+            encoded,
+            .{ .max_encoded_bytes = encoded.len - 1 },
+        ),
+    );
+    const view = try View.initWithLimits(
+        encoded,
+        .{ .max_encoded_bytes = encoded.len },
+    );
+    var iterator = view.iterator();
+    _ = try iterator.next();
+    iterator.encoded_bytes = 0;
+    try std.testing.expect(!iterator.valid());
+    iterator.encoded_bytes = encoded.len;
+    iterator.limits.max_encoded_bytes = encoded.len - 1;
+    try std.testing.expect(!iterator.valid());
+    try std.testing.expectError(
+        error.InvalidId3IteratorState,
+        iterator.next(),
+    );
+
+    const v23_frames = [_]V23Frame{.{
+        .id = title,
+        .payload = &.{ 0, 'x' },
+    }};
+    const encoded_v23 = try encodeV23(
+        &encoded_storage,
+        &v23_frames,
+        .{},
+    );
+    var decoded_storage: [64]u8 = undefined;
+    try std.testing.expectError(
+        error.Id3LimitExceeded,
+        V23View.initWithLimits(
+            encoded_v23,
+            &decoded_storage,
+            .{ .max_encoded_bytes = encoded_v23.len - 1 },
+        ),
+    );
+    const v23_view = try V23View.initWithLimits(
+        encoded_v23,
+        &decoded_storage,
+        .{ .max_encoded_bytes = encoded_v23.len },
+    );
+    var v23_iterator = v23_view.iterator();
+    v23_iterator.encoded_bytes = 0;
+    try std.testing.expect(!v23_iterator.valid());
+    v23_iterator.encoded_bytes = encoded_v23.len;
+    v23_iterator.limits.max_encoded_bytes = encoded_v23.len - 1;
+    try std.testing.expect(!v23_iterator.valid());
 }
 
 test "ID3v2.3 tag-wide unsynchronisation preserves frame prefixes" {
