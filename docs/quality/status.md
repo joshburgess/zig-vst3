@@ -266,6 +266,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Closed Q-RESOURCE-001 by validating direct recovery state before any retained
   state change or worker submission. Fixed-capacity state fuzzing, resource
   ownership, ThreadSanitizer, cross-target, and installed-package gates pass.
+- Closed Q-ADAPTER-001 by capping VST3 data-exchange callbacks at 64 blocks
+  before raw pointer traversal. The complete adapter review also confirmed
+  bounded LV2 feature, option, atom, audio-block, state, and VST3 host-input
+  paths. Exact-limit, one-over, VST3, LV2, cross-target, and installed-package
+  gates pass.
 
 ## Phase 3 Scope
 
@@ -280,7 +285,6 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Audit the open P-ADAPTER and remaining P-MIDI families from the checked parser
-inventory. Trace host-provided counts and pointers through wrapper state
-delegates, then record native and streaming MIDI byte, packet, message, and
-work limits with focused corruption and cross-target evidence.
+Audit the remaining P-MIDI family from the checked parser inventory. Record
+native and streaming MIDI byte, packet, message, queue, allocation, progress,
+and work limits with focused corruption and cross-target evidence.

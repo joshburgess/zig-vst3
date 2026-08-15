@@ -1658,3 +1658,35 @@ survive canonical encode and decode.
 | `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,803 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded Adapter Input Traversal
+
+Behavior commit: `3a4f718e`
+
+The P-ADAPTER review covered the VST3 processor, controller, and runtime
+bridges plus LV2 core, metadata, and UI adapters. Parameter and editor state
+delegate to their closed bounded families. AUv2 component state uses fixed
+maximum storage. LV2 feature and option arrays stop after 256 entries and
+require terminators. LV2 audio blocks reject counts above the negotiated
+maximum, UI atom bodies are capped before slicing, and state publication is
+transactional. VST3 bus arrays are checked against retained topology counts,
+parameter and event collectors stop after 64 host visits, and data event
+payloads have a fixed maximum.
+
+The remaining uncovered traversal was the VST3 data-exchange receiver. Its
+host-provided 32-bit count previously formed a slice over a raw pointer without
+a framework work limit. The callback now accepts at most 64 blocks, matching
+the existing per-callback input visitation policy, and rejects zero or
+one-over counts before dereferencing the block pointer. The exact-limit test
+delivers all 64 blocks. The one-over test intentionally supplies only one
+backing block and proves rejection occurs before traversal or delegation.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-vst3-module --summary all` | Passed: 7/7 steps and 795/795 tests |
+| `zig build test-lv2 --summary all` | Passed: 56/56 steps and 578/578 tests, including native hosts, ABI checks, bundles, and ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests |
+| `scripts/check_parser_inventory.sh` | Passed: 177 production sources classified |
+| `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,830 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
