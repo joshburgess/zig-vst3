@@ -11,7 +11,7 @@ independent values, statistics, producer- or consumer-owned cursors, and retry
 loads whose successful edge has stronger order. Sequentially consistent uses
 are test observations, not production synchronization requirements.
 
-The Phase 2 semantic review covers all 57 Zig and 11 native sources in this
+The Phase 2 semantic review covers all 58 Zig and 11 native sources in this
 ledger. Their publication and teardown justifications are recorded in
 `concurrency.md`. Checked count fixtures and GitHub Actions run `31858188014`
 pass at the Phase 2 completion candidate `4466af3d`.
@@ -22,7 +22,8 @@ pass at the Phase 2 completion candidate `4466af3d`.
 | `examples/fixed_rate_core.zig` | 0 | 0 | 9 | 8 | 1 | 0 |
 | `examples/model_shell_core.zig` | 0 | 0 | 8 | 9 | 1 | 0 |
 | `examples/resource_swap_core.zig` | 0 | 0 | 5 | 6 | 1 | 0 |
-| `zig-vst3-plugin/src/dsp/hrtf.zig` | 0 | 5 | 13 | 12 | 0 | 0 |
+| `zig-vst3-plugin/src/dsp/hrtf.zig` | 0 | 0 | 7 | 7 | 0 | 0 |
+| `zig-vst3-plugin/src/dsp/hrtf/motion.zig` | 0 | 5 | 6 | 5 | 0 | 0 |
 | `zig-vst3-plugin/src/dsp/hrtf_stream.zig` | 0 | 8 | 12 | 13 | 0 | 0 |
 | `zig-vst3-plugin/src/dsp/realtime_snapshot.zig` | 0 | 5 | 33 | 21 | 5 | 0 |
 | `zig-vst3-plugin/src/gui_audio_file_importer.zig` | 0 | 0 | 1 | 0 | 0 | 0 |
