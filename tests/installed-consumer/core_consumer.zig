@@ -161,6 +161,12 @@ test "installed core package contains malformed MIDI file state" {
         0x2f, 0,
     };
     var file = try core.process.MidiFile.parse(&bytes);
+    var limits = core.process.default_midi_file_limits;
+    limits.max_file_bytes = bytes.len - 1;
+    try std.testing.expectError(
+        error.MidiFileByteLimitExceeded,
+        core.process.MidiFile.parseWithLimits(&bytes, limits),
+    );
     var track_iterator = file.track(0).?.iterator();
     track_iterator.position = 1;
     try std.testing.expect(!track_iterator.valid());

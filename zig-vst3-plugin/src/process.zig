@@ -410,6 +410,8 @@ pub const midi_ci_property_channel_controller_list_resource =
 pub const midi_ci_property_controller_map_list_resource =
     midi_ci_property_controller_resources.controller_map_list_resource;
 pub const MidiFile = midi_file.File;
+pub const MidiFileLimits = midi_file.Limits;
+pub const default_midi_file_limits = midi_file.default_limits;
 pub const MidiFileFormat = midi_file.Format;
 pub const MidiFileDivision = midi_file.Division;
 pub const MidiFileSmpteRate = midi_file.SmpteRate;

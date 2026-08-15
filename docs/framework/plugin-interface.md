@@ -1090,7 +1090,7 @@ Note on with zero velocity converts to a typed note-off event. Note messages, po
 
 ### Standard MIDI Files
 
-`process.MidiFile` validates a complete Standard MIDI File from caller-owned bytes. It supports formats 0, 1, and 2, metric and SMPTE time divisions, running status, channel messages, meta events, and `F0` or `F7` SysEx events. Tracks must end with an end-of-track event, and malformed lengths, truncated events, invalid data bytes, zero tempos, and trailing data are rejected.
+`process.MidiFile` validates a complete Standard MIDI File from caller-owned bytes. It supports formats 0, 1, and 2, metric and SMPTE time divisions, running status, channel messages, meta events, and `F0` or `F7` SysEx events. Tracks must end with an end-of-track event, and malformed lengths, truncated events, invalid data bytes, zero tempos, and trailing data are rejected. `parse` applies `default_midi_file_limits`: 256 MiB per file, 64 MiB per track, 1,024 tracks, one million events per track, four million events in total, and 16 MiB per meta or SysEx payload. `parseWithLimits` accepts an explicit `process.MidiFileLimits` when an application needs a smaller or larger policy.
 
 ```zig
 const file = try plug.process.MidiFile.parse(bytes);
@@ -1102,7 +1102,9 @@ while (try iterator.next()) |event| {
 const seconds = try file.secondsAtTick(0, 960);
 ```
 
-`MidiFile.validate` reparses borrowed storage and compares its format, track count, and division with retained metadata. `valid` provides the boolean form. `secondsAtTick` performs that validation, follows tempo changes for metric files, and converts fixed-rate SMPTE ticks directly. In format 1 it reads tempo from conductor track 0. In format 2 it reads tempo from the selected independent track. Changed or truncated borrowed storage returns `InvalidMidiFileState`. Track iterators reconstruct the retained prefix and accept only an exact event boundary with matching absolute ticks, running status, and terminal state. Failed event iteration preserves all four fields.
+`MidiFile.validate` reparses borrowed storage with the file's retained limits and compares its format, track count, and division with retained metadata. `valid` provides the boolean form. `secondsAtTick` performs that validation, follows tempo changes for metric files, and converts fixed-rate SMPTE ticks directly. In format 1 it reads tempo from conductor track 0. In format 2 it reads tempo from the selected independent track. Changed or truncated borrowed storage returns `InvalidMidiFileState`.
+
+Track iterators borrow track bytes, which must remain unchanged for the iterator's lifetime. Normal traversal carries a validated state witness, so each event is parsed once. If a caller changes the public cursor, tick, running-status, terminal, or event-count fields, the next validation reconstructs the retained prefix and accepts only an exact event boundary with matching state. Replay is capped by the event limit. Failed iteration preserves every retained field.
 
 `process.MidiFileWriter` writes into a caller-provided buffer and backpatches track lengths when `endTrack` is called:
 

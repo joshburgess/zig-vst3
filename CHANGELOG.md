@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added `process.MidiFileLimits`, `default_midi_file_limits`, and `MidiFile.parseWithLimits` for applications that need an explicit Standard MIDI File byte, track, event, or payload policy.
+
+### Changed
+
+- `MidiFile.parse` now applies documented default limits and validates normal event traversal in linear time. Applications that intentionally accept files beyond those defaults can call `parseWithLimits` with a larger policy.
+
 ## zig-vst3-0.3.0 - 2026-08-14
 
 ### Release Notes

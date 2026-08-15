@@ -1,6 +1,29 @@
 const std = @import("std");
 const midi1 = @import("midi1.zig");
 
+pub const Limits = struct {
+    max_file_bytes: usize = 256 * 1024 * 1024,
+    max_track_bytes: usize = 64 * 1024 * 1024,
+    max_tracks: usize = 1_024,
+    max_events_per_track: usize = 1_000_000,
+    max_events_total: usize = 4_000_000,
+    max_event_data_bytes: usize = 16 * 1024 * 1024,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_file_bytes < 14 or
+            self.max_track_bytes < 4 or
+            self.max_tracks == 0 or
+            self.max_tracks > std.math.maxInt(u16) or
+            self.max_events_per_track == 0 or
+            self.max_events_total == 0)
+        {
+            return error.InvalidMidiFileLimits;
+        }
+    }
+};
+
+pub const default_limits = Limits{};
+
 pub const Format = enum(u16) {
     single_track = 0,
     simultaneous_tracks = 1,
@@ -130,17 +153,41 @@ pub const Event = struct {
 
 pub const TrackIterator = struct {
     bytes: []const u8,
+    limits: Limits = default_limits,
     position: usize = 0,
     absolute_ticks: u64 = 0,
     running_status: ?u8 = null,
     ended: bool = false,
+    event_count: usize = 0,
+    validated_state: IteratorState = .{},
 
     pub fn validate(self: *const TrackIterator) !void {
-        if (self.position > self.bytes.len)
+        try self.validateState();
+    }
+
+    fn validateState(self: *const TrackIterator) !void {
+        self.limits.validate() catch
             return error.InvalidMidiTrackIteratorState;
-        var canonical = TrackIterator{ .bytes = self.bytes };
+        if (self.bytes.len > self.limits.max_track_bytes or
+            self.position > self.bytes.len or
+            self.event_count > self.limits.max_events_per_track or
+            (self.running_status != null and
+                (self.running_status.? < 0x80 or
+                    self.running_status.? > 0xEF)))
+        {
+            return error.InvalidMidiTrackIteratorState;
+        }
+
+        const retained_state = self.state();
+        if (std.meta.eql(retained_state, self.validated_state)) return;
+
+        var canonical = TrackIterator{
+            .bytes = self.bytes,
+            .limits = self.limits,
+        };
         while (true) {
-            if (trackStatesEqual(self.*, canonical)) return;
+            if (std.meta.eql(retained_state, canonical.state()))
+                return;
             if (canonical.position >= self.position)
                 return error.InvalidMidiTrackIteratorState;
             _ = (try canonical.nextInPlace()) orelse
@@ -154,11 +201,22 @@ pub const TrackIterator = struct {
     }
 
     pub fn next(self: *TrackIterator) !?Event {
-        try self.validate();
+        try self.validateState();
         var staged = self.*;
         const result = try staged.nextInPlace();
+        staged.validated_state = staged.state();
         self.* = staged;
         return result;
+    }
+
+    fn state(self: *const TrackIterator) IteratorState {
+        return .{
+            .position = self.position,
+            .absolute_ticks = self.absolute_ticks,
+            .running_status = self.running_status,
+            .ended = self.ended,
+            .event_count = self.event_count,
+        };
     }
 
     fn nextInPlace(self: *TrackIterator) !?Event {
@@ -167,6 +225,8 @@ pub const TrackIterator = struct {
             return null;
         }
         if (self.position == self.bytes.len) return null;
+        if (self.event_count >= self.limits.max_events_per_track)
+            return error.MidiTrackEventLimitExceeded;
 
         const delta_ticks = try readVariableLength(self.bytes, &self.position);
         self.absolute_ticks = std.math.add(u64, self.absolute_ticks, delta_ticks) catch
@@ -184,6 +244,7 @@ pub const TrackIterator = struct {
         if (payload == .meta and payload.meta.isEndOfTrack()) {
             self.ended = true;
         }
+        self.event_count += 1;
         return .{
             .delta_ticks = delta_ticks,
             .absolute_ticks = self.absolute_ticks,
@@ -198,6 +259,8 @@ pub const TrackIterator = struct {
         const kind = self.bytes[self.position];
         self.position += 1;
         const length = try readVariableLength(self.bytes, &self.position);
+        if (length > self.limits.max_event_data_bytes)
+            return error.MidiEventDataLimitExceeded;
         const data = try takeBytes(self.bytes, &self.position, length);
         try validateMetaEvent(kind, data);
         return .{ .meta = .{ .kind = kind, .data = data } };
@@ -208,6 +271,8 @@ pub const TrackIterator = struct {
         const status = self.bytes[self.position];
         self.position += 1;
         const length = try readVariableLength(self.bytes, &self.position);
+        if (length > self.limits.max_event_data_bytes)
+            return error.MidiEventDataLimitExceeded;
         const data = try takeBytes(self.bytes, &self.position, length);
         return .{ .sysex = .{ .status = status, .data = data } };
     }
@@ -233,21 +298,33 @@ pub const TrackIterator = struct {
     }
 };
 
-fn trackStatesEqual(left: TrackIterator, right: TrackIterator) bool {
-    return left.position == right.position and
-        left.absolute_ticks == right.absolute_ticks and
-        left.running_status == right.running_status and
-        left.ended == right.ended;
-}
+const IteratorState = struct {
+    position: usize = 0,
+    absolute_ticks: u64 = 0,
+    running_status: ?u8 = null,
+    ended: bool = false,
+    event_count: usize = 0,
+};
 
 pub const Track = struct {
     bytes: []const u8,
+    limits: Limits = default_limits,
 
     pub fn iterator(self: Track) TrackIterator {
-        return .{ .bytes = self.bytes };
+        return .{
+            .bytes = self.bytes,
+            .limits = self.limits,
+        };
     }
 
     pub fn validate(self: Track) !void {
+        _ = try self.validateAndCount();
+    }
+
+    fn validateAndCount(self: Track) !usize {
+        try self.limits.validate();
+        if (self.bytes.len > self.limits.max_track_bytes)
+            return error.MidiTrackByteLimitExceeded;
         var events = self.iterator();
         var saw_end = false;
         while (try events.next()) |event| {
@@ -257,6 +334,7 @@ pub const Track = struct {
             }
         }
         if (!saw_end) return error.MissingEndOfTrack;
+        return events.event_count;
     }
 };
 
@@ -265,8 +343,16 @@ pub const File = struct {
     format: Format,
     track_count: u16,
     division: Division,
+    limits: Limits = default_limits,
 
     pub fn parse(bytes: []const u8) !File {
+        return parseWithLimits(bytes, default_limits);
+    }
+
+    pub fn parseWithLimits(bytes: []const u8, limits: Limits) !File {
+        try limits.validate();
+        if (bytes.len > limits.max_file_bytes)
+            return error.MidiFileByteLimitExceeded;
         if (bytes.len < 14) return error.TruncatedMidiFile;
         if (!std.mem.eql(u8, bytes[0..4], "MThd")) return error.MissingMidiHeader;
         if (readU32(bytes[4..8]) != 6) return error.InvalidMidiHeaderLength;
@@ -280,12 +366,38 @@ pub const File = struct {
         const track_count = readU16(bytes[10..12]);
         if (track_count == 0) return error.InvalidMidiTrackCount;
         if (format == .single_track and track_count != 1) return error.InvalidMidiTrackCount;
+        if (track_count > limits.max_tracks)
+            return error.MidiTrackCountLimitExceeded;
         const division = try Division.decode(readU16(bytes[12..14]));
 
         var position: usize = 14;
+        var event_count: usize = 0;
         for (0..track_count) |_| {
-            const track_value = try readTrack(bytes, &position);
-            try track_value.validate();
+            if (event_count >= limits.max_events_total)
+                return error.MidiFileEventLimitExceeded;
+            var track_value = try readTrack(bytes, &position, limits);
+            const remaining_events = limits.max_events_total - event_count;
+            const total_limit_is_tighter =
+                remaining_events < track_value.limits.max_events_per_track;
+            track_value.limits.max_events_per_track = @min(
+                track_value.limits.max_events_per_track,
+                remaining_events,
+            );
+            const track_event_count = track_value.validateAndCount() catch |err|
+                switch (err) {
+                    error.MidiTrackEventLimitExceeded => if (total_limit_is_tighter)
+                        return error.MidiFileEventLimitExceeded
+                    else
+                        return err,
+                    else => return err,
+                };
+            event_count = std.math.add(
+                usize,
+                event_count,
+                track_event_count,
+            ) catch return error.MidiFileEventLimitExceeded;
+            if (event_count > limits.max_events_total)
+                return error.MidiFileEventLimitExceeded;
         }
         if (position != bytes.len) return error.TrailingMidiFileData;
 
@@ -294,12 +406,13 @@ pub const File = struct {
             .format = format,
             .track_count = track_count,
             .division = division,
+            .limits = limits,
         };
     }
 
     pub fn validate(self: File) !void {
         try self.division.validate();
-        const parsed = File.parse(self.bytes) catch
+        const parsed = File.parseWithLimits(self.bytes, self.limits) catch
             return error.InvalidMidiFileState;
         if (parsed.format != self.format or
             parsed.track_count != self.track_count or
@@ -318,7 +431,11 @@ pub const File = struct {
         if (index >= self.track_count) return null;
         var position: usize = 14;
         for (0..self.track_count) |track_index| {
-            const track_value = readTrack(self.bytes, &position) catch return null;
+            const track_value = readTrack(
+                self.bytes,
+                &position,
+                self.limits,
+            ) catch return null;
             if (track_index == index) return track_value;
         }
         return null;
@@ -502,11 +619,20 @@ pub const Writer = struct {
     }
 };
 
-fn readTrack(bytes: []const u8, position: *usize) !Track {
+fn readTrack(
+    bytes: []const u8,
+    position: *usize,
+    limits: Limits,
+) !Track {
     const header = try takeBytes(bytes, position, 8);
     if (!std.mem.eql(u8, header[0..4], "MTrk")) return error.MissingMidiTrack;
     const length = readU32(header[4..8]);
-    return .{ .bytes = try takeBytes(bytes, position, length) };
+    if (length > limits.max_track_bytes)
+        return error.MidiTrackByteLimitExceeded;
+    return .{
+        .bytes = try takeBytes(bytes, position, length),
+        .limits = limits,
+    };
 }
 
 fn readVariableLength(bytes: []const u8, position: *usize) !u32 {
@@ -823,6 +949,104 @@ test "MIDI track iteration preserves state after malformed input" {
     try std.testing.expectEqual(@as(?u8, 0x91), stale_running.running_status);
 }
 
+test "MIDI file parser enforces explicit byte track event and payload limits" {
+    var storage: [256]u8 = undefined;
+    var writer = try Writer.init(
+        &storage,
+        .simultaneous_tracks,
+        2,
+        .{ .ticks_per_quarter_note = 96 },
+    );
+    try writer.beginTrack();
+    try writer.writeMeta(0, 0x01, "abc");
+    try writer.endTrack(0);
+    try writer.beginTrack();
+    try writer.writeMeta(0, 0x01, "def");
+    try writer.endTrack(0);
+    const encoded = try writer.finish();
+
+    var limits = default_limits;
+    limits.max_file_bytes = encoded.len - 1;
+    try std.testing.expectError(
+        error.MidiFileByteLimitExceeded,
+        File.parseWithLimits(encoded, limits),
+    );
+
+    limits = default_limits;
+    limits.max_track_bytes = 6;
+    try std.testing.expectError(
+        error.MidiTrackByteLimitExceeded,
+        File.parseWithLimits(encoded, limits),
+    );
+
+    limits = default_limits;
+    limits.max_tracks = 1;
+    try std.testing.expectError(
+        error.MidiTrackCountLimitExceeded,
+        File.parseWithLimits(encoded, limits),
+    );
+
+    limits = default_limits;
+    limits.max_events_per_track = 1;
+    try std.testing.expectError(
+        error.MidiTrackEventLimitExceeded,
+        File.parseWithLimits(encoded, limits),
+    );
+
+    limits = default_limits;
+    limits.max_events_total = 3;
+    try std.testing.expectError(
+        error.MidiFileEventLimitExceeded,
+        File.parseWithLimits(encoded, limits),
+    );
+
+    limits = default_limits;
+    limits.max_event_data_bytes = 2;
+    try std.testing.expectError(
+        error.MidiEventDataLimitExceeded,
+        File.parseWithLimits(encoded, limits),
+    );
+
+    limits = default_limits;
+    limits.max_events_total = 0;
+    try std.testing.expectError(
+        error.InvalidMidiFileLimits,
+        File.parseWithLimits(encoded, limits),
+    );
+}
+
+test "MIDI track normal traversal performs no canonical prefix replay" {
+    const generated_event_count = 4_096;
+    var storage: [generated_event_count * 4 + 32]u8 = undefined;
+    var writer = try Writer.init(
+        &storage,
+        .single_track,
+        1,
+        .{ .ticks_per_quarter_note = 480 },
+    );
+    try writer.beginTrack();
+    for (0..generated_event_count) |_| {
+        try writer.writeMeta(0, 0x01, "");
+    }
+    try writer.endTrack(0);
+
+    const file = try File.parse(try writer.finish());
+    var iterator = file.track(0).?.iterator();
+    var traversed: usize = 0;
+    while (try iterator.next()) |_| traversed += 1;
+    try std.testing.expectEqual(generated_event_count + 1, traversed);
+    try std.testing.expect(std.meta.eql(
+        iterator.state(),
+        iterator.validated_state,
+    ));
+
+    var replayed = file.track(0).?.iterator();
+    _ = try replayed.next();
+    replayed.validated_state = .{};
+    try replayed.validate();
+    _ = try replayed.next();
+}
+
 test "MIDI file writer round trips multiple tracks and event kinds" {
     var storage: [256]u8 = undefined;
     var writer = try Writer.init(
@@ -1027,4 +1251,84 @@ test "MIDI file converts metric and SMPTE ticks to seconds" {
     };
     const smpte = try File.parse(&smpte_bytes);
     try std.testing.expectApproxEqAbs(@as(f64, 1.5), try smpte.secondsAtTick(0, 1_500), 0.000_001);
+}
+
+const midi_file_fuzz_minimal = [_]u8{
+    'M',  'T', 'h', 'd', 0, 0,  0,   6,
+    0,    0,   0,   1,   0, 96, 'M', 'T',
+    'r',  'k', 0,   0,   0, 4,  0,   0xFF,
+    0x2F, 0,
+};
+
+const midi_file_fuzz_tempo = [_]u8{
+    'M',  'T', 'h',  'd',  0,    0,    0,    6,
+    0,    0,   0,    1,    0x01, 0xE0, 'M',  'T',
+    'r',  'k', 0,    0,    0,    11,   0,    0xFF,
+    0x51, 3,   0x07, 0xA1, 0x20, 0,    0xFF, 0x2F,
+    0,
+};
+
+test "fuzz MIDI file parsing and traversal" {
+    try std.testing.fuzz({}, fuzzMidiFile, .{
+        .corpus = &.{ &midi_file_fuzz_minimal, &midi_file_fuzz_tempo },
+    });
+}
+
+fn fuzzMidiFile(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var storage: [64 * 1024]u8 = undefined;
+    var length: usize = switch (smith.valueRangeAtMost(u8, 0, 2)) {
+        0 => smith.slice(&storage),
+        1 => seed: {
+            @memcpy(storage[0..midi_file_fuzz_minimal.len], &midi_file_fuzz_minimal);
+            break :seed midi_file_fuzz_minimal.len;
+        },
+        2 => seed: {
+            @memcpy(storage[0..midi_file_fuzz_tempo.len], &midi_file_fuzz_tempo);
+            break :seed midi_file_fuzz_tempo.len;
+        },
+        else => unreachable,
+    };
+    if (length != 0 and smith.value(bool)) {
+        const mutation_count = smith.valueRangeAtMost(u8, 1, 16);
+        for (0..mutation_count) |_| {
+            storage[smith.index(length)] ^= smith.value(u8);
+        }
+    }
+    if (smith.value(bool)) {
+        const maximum: u16 = @intCast(@min(length, std.math.maxInt(u16)));
+        length = smith.valueRangeAtMost(u16, 0, maximum);
+    } else if (length < storage.len and smith.value(bool)) {
+        const maximum_append: u16 = @intCast(@min(
+            storage.len - length,
+            std.math.maxInt(u16),
+        ));
+        const append_length = smith.valueRangeAtMost(u16, 0, maximum_append);
+        smith.bytes(storage[length..][0..append_length]);
+        length += append_length;
+    }
+    const limits = Limits{
+        .max_file_bytes = storage.len,
+        .max_track_bytes = storage.len,
+        .max_tracks = 128,
+        .max_events_per_track = 20_000,
+        .max_events_total = 20_000,
+        .max_event_data_bytes = storage.len,
+    };
+    const file = File.parseWithLimits(storage[0..length], limits) catch return;
+    try file.validate();
+
+    var total_events: usize = 0;
+    for (0..file.track_count) |track_index| {
+        const track = file.track(track_index) orelse
+            return error.FuzzAcceptedMissingMidiTrack;
+        var iterator = track.iterator();
+        while (try iterator.next()) |_| {
+            total_events += 1;
+            if (total_events > limits.max_events_total)
+                return error.FuzzAcceptedExcessMidiEvents;
+        }
+        if (!iterator.ended)
+            return error.FuzzAcceptedUnterminatedMidiTrack;
+    }
 }
