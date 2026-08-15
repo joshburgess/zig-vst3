@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 
 pub const Interpolation = enum {
     linear,
@@ -41,6 +42,8 @@ pub fn DelayLine(comptime Sample: type, comptime capacity: usize) type {
         ) !void {
             if (input.len != output.len)
                 return error.DelayLineBufferLengthMismatch;
+            if (!buffer_regions.exactOrDisjoint(Sample, input, output))
+                return error.DelayLineBufferOverlap;
             try validateDelay(delay_samples, interpolation);
             for (input, output) |input_sample, *output_sample| {
                 output_sample.* = self.processValid(
@@ -187,4 +190,21 @@ test "delay line rejects invalid calls without advancing" {
         try delay.processSample(1.0, 1.0, .linear),
     );
     try std.testing.expect(delay.valid());
+}
+
+test "delay line permits exact in-place buffers and rejects shifted overlap" {
+    var storage = [_]f32{ 1.0, 2.0, 3.0, 4.0 };
+    var shifted = DelayLine(f32, 8){};
+    const before = shifted;
+    const storage_before = storage;
+    try std.testing.expectError(
+        error.DelayLineBufferOverlap,
+        shifted.process(storage[0..3], storage[1..4], 1.0, .linear),
+    );
+    try std.testing.expectEqualDeep(before, shifted);
+    try std.testing.expectEqualDeep(storage_before, storage);
+
+    var in_place = DelayLine(f32, 8){};
+    try in_place.process(&storage, &storage, 1.0, .linear);
+    try std.testing.expectEqualSlices(f32, &.{ 0.0, 1.0, 2.0, 3.0 }, &storage);
 }

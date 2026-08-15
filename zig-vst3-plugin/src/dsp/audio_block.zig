@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 
 pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type {
     validateType(Sample, maximum_channels);
@@ -113,7 +114,10 @@ pub fn AudioBlock(comptime Sample: type, comptime maximum_channels: usize) type 
             try validateMatchingShape(self, source);
             try validateSourceAliases(Sample, self, source);
             for (0..self.channel_count) |index| {
-                if (sameSlice(self.channels[index], source.channels[index]))
+                if (buffer_regions.same(
+                    self.channels[index],
+                    source.channels[index],
+                ))
                     continue;
                 @memcpy(self.channels[index], source.channels[index]);
             }
@@ -251,7 +255,7 @@ fn validateMutableChannels(comptime Sample: type, channels: anytype) !void {
 fn mutableChannelsDisjoint(comptime Sample: type, channels: anytype) bool {
     for (channels, 0..) |channel, index| {
         for (channels[index + 1 ..]) |later| {
-            if (slicesOverlap(Sample, channel, later)) return false;
+            if (buffer_regions.overlap(Sample, channel, later)) return false;
         }
     }
     return true;
@@ -264,44 +268,13 @@ fn validateSourceAliases(
 ) !void {
     for (destination.channels[0..destination.channel_count], 0..) |output, output_index| {
         for (source.channels[0..source.channel_count], 0..) |input, input_index| {
-            if (!slicesOverlap(Sample, output, input)) continue;
-            if (output_index == input_index and sameSlice(output, input))
+            if (!buffer_regions.overlap(Sample, output, input)) continue;
+            if (output_index == input_index and
+                buffer_regions.same(output, input))
                 continue;
             return error.AudioBlockBufferOverlap;
         }
     }
-}
-
-fn slicesOverlap(comptime Sample: type, first: anytype, second: anytype) bool {
-    if (first.len == 0 or second.len == 0) return false;
-    const first_start = @intFromPtr(first.ptr);
-    const second_start = @intFromPtr(second.ptr);
-    const first_bytes = std.math.mul(
-        usize,
-        first.len,
-        @sizeOf(Sample),
-    ) catch return true;
-    const second_bytes = std.math.mul(
-        usize,
-        second.len,
-        @sizeOf(Sample),
-    ) catch return true;
-    const first_end = std.math.add(
-        usize,
-        first_start,
-        first_bytes,
-    ) catch return true;
-    const second_end = std.math.add(
-        usize,
-        second_start,
-        second_bytes,
-    ) catch return true;
-    return first_start < second_end and second_start < first_end;
-}
-
-fn sameSlice(first: anytype, second: anytype) bool {
-    return first.len == second.len and
-        (first.len == 0 or @intFromPtr(first.ptr) == @intFromPtr(second.ptr));
 }
 
 pub fn ConstAudioBlock(

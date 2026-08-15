@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 
 pub const Mode = enum {
     peak,
@@ -85,6 +86,8 @@ pub fn BallisticsFilter(comptime Sample: type) type {
         ) !void {
             if (input.len != output.len)
                 return error.BallisticsBufferLengthMismatch;
+            if (!buffer_regions.exactOrDisjoint(Sample, input, output))
+                return error.BallisticsBufferOverlap;
             for (input, output) |input_sample, *output_sample|
                 output_sample.* = self.processSample(input_sample);
         }
@@ -221,4 +224,22 @@ test "ballistics configuration is transactional and hostile state resets" {
         filter.reset(std.math.floatMax(f32)),
     );
     try std.testing.expectEqual(before_reset, filter.envelope);
+}
+
+test "ballistics permits exact in-place buffers and rejects shifted overlap" {
+    const config = Config{ .sample_rate = 48_000.0 };
+    var storage = [_]f32{ 0.25, 0.5, 0.75, 1.0 };
+    var shifted = try BallisticsFilter(f32).init(config);
+    const before = shifted;
+    const storage_before = storage;
+    try std.testing.expectError(
+        error.BallisticsBufferOverlap,
+        shifted.process(storage[0..3], storage[1..4]),
+    );
+    try std.testing.expectEqualDeep(before, shifted);
+    try std.testing.expectEqualDeep(storage_before, storage);
+
+    var in_place = try BallisticsFilter(f32).init(config);
+    try in_place.process(&storage, &storage);
+    for (storage) |sample| try std.testing.expect(std.math.isFinite(sample));
 }

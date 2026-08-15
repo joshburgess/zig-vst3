@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 
 pub fn LookupTable(comptime Sample: type, comptime point_count: usize) type {
     if (Sample != f32 and Sample != f64)
@@ -85,6 +86,8 @@ pub fn LookupTable(comptime Sample: type, comptime point_count: usize) type {
         ) !void {
             if (input.len != output.len)
                 return error.LookupTableBufferLengthMismatch;
+            if (!buffer_regions.exactOrDisjoint(Sample, input, output))
+                return error.LookupTableBufferOverlap;
             for (input, output) |input_sample, *output_sample|
                 output_sample.* = self.processSample(input_sample);
         }
@@ -192,4 +195,18 @@ test "lookup table rejects invalid construction and contains hostile state" {
         @as(f32, 0.5),
         table.processSample(0.5),
     );
+}
+
+test "lookup table permits in-place buffers and rejects shifted overlap" {
+    const table = try LookupTable(f32, 8).init(-1.0, 1.0, square);
+    var storage = [_]f32{ -1.0, -0.5, 0.5, 1.0 };
+    const before = storage;
+    try std.testing.expectError(
+        error.LookupTableBufferOverlap,
+        table.process(storage[0..3], storage[1..4]),
+    );
+    try std.testing.expectEqualDeep(before, storage);
+
+    try table.process(&storage, &storage);
+    for (storage) |sample| try std.testing.expect(std.math.isFinite(sample));
 }

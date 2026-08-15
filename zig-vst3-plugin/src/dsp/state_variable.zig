@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 
 pub const Kind = enum {
     low_pass,
@@ -95,6 +96,8 @@ pub fn StateVariableFilter(comptime Sample: type) type {
         ) !void {
             if (input.len != output.len)
                 return error.StateVariableBufferLengthMismatch;
+            if (!buffer_regions.exactOrDisjoint(Sample, input, output))
+                return error.StateVariableBufferOverlap;
             for (input, output) |input_sample, *output_sample|
                 output_sample.* = self.processSample(input_sample);
         }
@@ -260,4 +263,26 @@ test "state-variable configuration is transactional and hostile state resets" {
     filter.ic1 = std.math.nan(f32);
     try std.testing.expectEqual(@as(f32, 0.25), filter.processSample(0.25));
     try std.testing.expect(filter.valid());
+}
+
+test "state-variable permits in-place buffers and rejects shifted overlap" {
+    const config = Config{
+        .kind = .low_pass,
+        .sample_rate = 48_000.0,
+        .frequency_hz = 1_000.0,
+    };
+    var storage = [_]f32{ 1.0, 0.5, 0.25, 0.0 };
+    var shifted = try StateVariableFilter(f32).init(config);
+    const before = shifted;
+    const storage_before = storage;
+    try std.testing.expectError(
+        error.StateVariableBufferOverlap,
+        shifted.process(storage[0..3], storage[1..4]),
+    );
+    try std.testing.expectEqualDeep(before, shifted);
+    try std.testing.expectEqualDeep(storage_before, storage);
+
+    var in_place = try StateVariableFilter(f32).init(config);
+    try in_place.process(&storage, &storage);
+    for (storage) |sample| try std.testing.expect(std.math.isFinite(sample));
 }
