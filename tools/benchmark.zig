@@ -26,9 +26,14 @@ const Budget = struct {
     sample_adoption_ns: f64 = 1_000_000.0,
     sample_playback_ns_per_frame: f64 = 1_000.0,
     playhead_update_ns: f64 = 10_000.0,
+    sample_importer_bytes: usize = 3 * 1024 * 1024,
+    sample_player_bytes: usize = 7 * 1024 * 1024,
     ir_preparation_ms: f64 = 500.0,
     ir_adoption_ns: f64 = 1_000_000.0,
     ir_processing_ns_per_sample: f64 = 20_000.0,
+    ir_convolver_bytes: usize = 20 * 1024 * 1024,
+    ir_importer_bytes: usize = 2 * 1024 * 1024,
+    ir_editor_bytes: usize = 4 * 1024 * 1024,
     resampler_ns_per_sample: f64 = 500.0,
     fixed_rate_ns_per_sample: f64 = 2_000.0,
     chebyshev2_design_ns: f64 = 1_000_000.0,
@@ -651,6 +656,19 @@ fn requireRate(
         .elapsed_ns = elapsed_ns,
     };
     try benchmark.requireAtMost(maximum_ns_per_operation);
+}
+
+fn requireStorageAtMost(
+    name: []const u8,
+    actual_bytes: usize,
+    maximum_bytes: usize,
+) !void {
+    if (actual_bytes <= maximum_bytes) return;
+    std.debug.print(
+        "memory budget exceeded: {s} uses {d} bytes, budget {d} bytes\n",
+        .{ name, actual_bytes, maximum_bytes },
+    );
+    return error.BenchmarkMemoryBudgetExceeded;
 }
 
 fn benchVorbisInverseMdct() !void {
@@ -1575,6 +1593,16 @@ fn benchSamplePlayerPipeline() !void {
         @as(f64, @floatFromInt(@sizeOf(Importer))) / (1024.0 * 1024.0),
         @as(f64, @floatFromInt(@sizeOf(Player))) / (1024.0 * 1024.0),
     });
+    try requireStorageAtMost(
+        "262144-frame sample importer",
+        @sizeOf(Importer),
+        budget.sample_importer_bytes,
+    );
+    try requireStorageAtMost(
+        "262144-frame, eight-voice sample player",
+        @sizeOf(Player),
+        budget.sample_player_bytes,
+    );
     if (decode_ms > budget.sample_decode_ms or
         @as(f64, @floatFromInt(preview_ns)) / iterations > budget.sample_preview_ns or
         publication_ms > budget.sample_publication_ms or
@@ -1646,6 +1674,21 @@ fn benchIrConvolution() !void {
     std.debug.print("IR controller fixed storage: {d:.2} MiB importer + {d:.2} MiB editor\n", .{
         importer_mib, editor_mib,
     });
+    try requireStorageAtMost(
+        "131072-frame, 512-sample-partition IR convolver",
+        @sizeOf(Convolver),
+        budget.ir_convolver_bytes,
+    );
+    try requireStorageAtMost(
+        "131072-frame IR importer",
+        @sizeOf(Importer),
+        budget.ir_importer_bytes,
+    );
+    try requireStorageAtMost(
+        "131072-frame IR editor",
+        @sizeOf(Editor),
+        budget.ir_editor_bytes,
+    );
     std.debug.print("IR preparation and publication: {d:.2} ms; pending adoption: {d} ns\n", .{
         preparation_ms, adoption_ns,
     });
