@@ -83,8 +83,10 @@ pub fn Flanger(
             input: []const Sample,
             output: []Sample,
         ) !void {
-            self.core.process(input, output) catch
-                return error.FlangerBufferLengthMismatch;
+            self.core.process(input, output) catch |err| switch (err) {
+                error.ModulatedDelayBufferLengthMismatch => return error.FlangerBufferLengthMismatch,
+                error.ModulatedDelayBufferOverlap => return error.FlangerBufferOverlap,
+            };
         }
 
         pub fn valid(self: *const Self) bool {
@@ -143,4 +145,18 @@ test "flanger exposes tempo synchronization and smoothing" {
     try effect.syncTempo(90.0, .dotted_quarter, 0.01);
     try std.testing.expectEqual(@as(f64, 1.0), effect.core.config.rate_hz);
     try std.testing.expect(effect.valid());
+}
+
+test "flanger translates shifted overlap without mutation" {
+    const Effect = Flanger(f32, 512);
+    var effect = try Effect.init(.{ .sample_rate = 48_000.0 });
+    var storage = [_]f32{ 1.0, 0.5, 0.25, 0.0 };
+    const retained = storage;
+    const before = effect;
+    try std.testing.expectError(
+        error.FlangerBufferOverlap,
+        effect.process(storage[0..3], storage[1..4]),
+    );
+    try std.testing.expectEqualDeep(before, effect);
+    try std.testing.expectEqualSlices(f32, &retained, &storage);
 }

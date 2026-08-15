@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 
 pub const Config = struct {
     sample_rate: f64,
@@ -233,6 +234,17 @@ pub fn Reverb(comptime Sample: type, comptime maximum_delay_samples: usize) type
                 input_left.len != output_left.len or
                 input_left.len != output_right.len)
                 return error.ReverbBufferLengthMismatch;
+            if (buffer_regions.overlap(Sample, output_left, output_right))
+                return error.ReverbBufferOverlap;
+            inline for (.{ output_left, output_right }) |output| {
+                inline for (.{ input_left, input_right }) |input| {
+                    if (buffer_regions.overlap(Sample, input, output) and
+                        !buffer_regions.same(input, output))
+                    {
+                        return error.ReverbBufferOverlap;
+                    }
+                }
+            }
             for (
                 input_left,
                 input_right,
@@ -421,4 +433,32 @@ test "reverb configuration is transactional and hostile state resets" {
     try std.testing.expectEqual(@as(f32, 0.25), output.left);
     try std.testing.expectEqual(@as(f32, -0.5), output.right);
     try std.testing.expect(reverb.valid());
+}
+
+test "reverb validates stereo aliases before processing" {
+    const Effect = Reverb(f32, 2_048);
+    var effect = try Effect.init(.{ .sample_rate = 48_000.0 });
+    var left = [_]f32{ 1.0, 0.5, 0.25, 0.0 };
+    var right = [_]f32{ 0.0, 0.25, 0.5, 1.0 };
+    const retained_left = left;
+    const retained_right = right;
+    const before = effect;
+    try std.testing.expectError(
+        error.ReverbBufferOverlap,
+        effect.process(
+            left[0..3],
+            right[0..3],
+            left[1..4],
+            right[0..3],
+        ),
+    );
+    try std.testing.expectEqualDeep(before, effect);
+    try std.testing.expectEqualSlices(f32, &retained_left, &left);
+    try std.testing.expectEqualSlices(f32, &retained_right, &right);
+
+    try effect.process(&left, &right, &left, &right);
+    for (left, right) |left_sample, right_sample| {
+        try std.testing.expect(std.math.isFinite(left_sample));
+        try std.testing.expect(std.math.isFinite(right_sample));
+    }
 }

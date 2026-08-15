@@ -81,8 +81,10 @@ pub fn Vibrato(
             input: []const Sample,
             output: []Sample,
         ) !void {
-            self.core.process(input, output) catch
-                return error.VibratoBufferLengthMismatch;
+            self.core.process(input, output) catch |err| switch (err) {
+                error.ModulatedDelayBufferLengthMismatch => return error.VibratoBufferLengthMismatch,
+                error.ModulatedDelayBufferOverlap => return error.VibratoBufferOverlap,
+            };
         }
 
         pub fn valid(self: *const Self) bool {
@@ -156,4 +158,18 @@ test "vibrato exposes tempo synchronization and smoothing" {
     try effect.syncTempo(120.0, .eighth, 0.01);
     try std.testing.expectEqual(@as(f64, 4.0), effect.core.config.rate_hz);
     try std.testing.expect(effect.valid());
+}
+
+test "vibrato translates shifted overlap without mutation" {
+    const Effect = Vibrato(f32, 512);
+    var effect = try Effect.init(.{ .sample_rate = 48_000.0 });
+    var storage = [_]f32{ 1.0, 0.5, 0.25, 0.0 };
+    const retained = storage;
+    const before = effect;
+    try std.testing.expectError(
+        error.VibratoBufferOverlap,
+        effect.process(storage[0..3], storage[1..4]),
+    );
+    try std.testing.expectEqualDeep(before, effect);
+    try std.testing.expectEqualSlices(f32, &retained, &storage);
 }

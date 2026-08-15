@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 const delay = @import("delay.zig");
 const dry_wet = @import("dry_wet.zig");
 const modulation_rate = @import("modulation_rate.zig");
@@ -230,6 +231,8 @@ pub fn Chorus(
         ) !void {
             if (input.len != output.len)
                 return error.ChorusBufferLengthMismatch;
+            if (!buffer_regions.exactOrDisjoint(Sample, input, output))
+                return error.ChorusBufferOverlap;
             for (input, output) |input_sample, *output_sample|
                 output_sample.* = self.processSample(input_sample);
         }
@@ -416,4 +419,20 @@ test "chorus exposes tempo synchronization and smoothing" {
     }, 120.0, .quarter, 0.02);
     try std.testing.expectEqual(@as(f64, 1.5), chorus.config.rate_hz);
     try std.testing.expect(chorus.valid());
+}
+
+test "chorus permits in-place buffers and rejects shifted overlap" {
+    const Effect = Chorus(f32, 512);
+    var effect = try Effect.init(.{ .sample_rate = 48_000.0 });
+    var storage = [_]f32{ 1.0, 0.5, 0.25, 0.0 };
+    const retained = storage;
+    const before = effect;
+    try std.testing.expectError(
+        error.ChorusBufferOverlap,
+        effect.process(storage[0..3], storage[1..4]),
+    );
+    try std.testing.expectEqualDeep(before, effect);
+    try std.testing.expectEqualSlices(f32, &retained, &storage);
+    try effect.process(&storage, &storage);
+    for (storage) |sample| try std.testing.expect(std.math.isFinite(sample));
 }

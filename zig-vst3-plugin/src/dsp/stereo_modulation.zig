@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 const modulated_delay = @import("modulated_delay.zig");
 
 /// Coordinates two matching modulation processors with a fixed phase offset.
@@ -59,6 +60,22 @@ pub fn StereoProcessor(
                 left_output.len != sample_count or
                 right_output.len != sample_count)
                 return error.StereoModulationBufferLengthMismatch;
+            if (buffer_regions.overlap(Sample, left_output, right_output) or
+                !buffer_regions.exactOrDisjoint(
+                    Sample,
+                    left_input,
+                    left_output,
+                ) or
+                !buffer_regions.exactOrDisjoint(
+                    Sample,
+                    right_input,
+                    right_output,
+                ) or
+                buffer_regions.overlap(Sample, left_output, right_input) or
+                buffer_regions.overlap(Sample, right_output, left_input))
+            {
+                return error.StereoModulationBufferOverlap;
+            }
 
             self.left.process(left_input, left_output) catch
                 return error.StereoModulationProcessingFailed;
@@ -225,4 +242,44 @@ test "stereo modulation rejects invalid input transactionally" {
     );
     try std.testing.expectEqual(left_phase, stereo.left.phase);
     try std.testing.expectEqual(right_phase, stereo.right.phase);
+}
+
+test "stereo modulation rejects cross-channel aliases before processing" {
+    const Effect = modulated_delay.Processor(f32, 256);
+    const Stereo = StereoProcessor(f32, Effect);
+    const config = modulated_delay.Config{
+        .sample_rate = 48_000.0,
+        .rate_hz = 1.0,
+        .center_delay_ms = 3.0,
+        .depth_ms = 1.0,
+        .feedback = 0.0,
+        .mix = 0.5,
+        .mixing_rule = .linear,
+    };
+    var stereo = try Stereo.init(
+        try Effect.init(config),
+        try Effect.init(config),
+        0.25,
+    );
+    var left = [_]f32{ 1.0, 0.5, 0.25 };
+    var right = [_]f32{ 0.0, 0.25, 0.5 };
+    var output: [3]f32 = @splat(9.0);
+    const retained_left = left;
+    const retained_right = right;
+    const retained_output = output;
+    const before = stereo;
+    try std.testing.expectError(
+        error.StereoModulationBufferOverlap,
+        stereo.process(&left, &right, &right, &output),
+    );
+    try std.testing.expectEqualDeep(before, stereo);
+    try std.testing.expectEqualSlices(f32, &retained_left, &left);
+    try std.testing.expectEqualSlices(f32, &retained_right, &right);
+    try std.testing.expectEqualSlices(f32, &retained_output, &output);
+
+    try stereo.process(&left, &right, &left, &right);
+    for (left, right) |left_sample, right_sample| {
+        try std.testing.expect(std.math.isFinite(left_sample));
+        try std.testing.expect(std.math.isFinite(right_sample));
+    }
 }

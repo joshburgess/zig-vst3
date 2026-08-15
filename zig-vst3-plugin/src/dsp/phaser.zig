@@ -1,4 +1,5 @@
 const std = @import("std");
+const buffer_regions = @import("buffer_regions.zig");
 const dry_wet = @import("dry_wet.zig");
 const modulation_rate = @import("modulation_rate.zig");
 const smoothed_value = @import("smoothed_value.zig");
@@ -262,6 +263,8 @@ pub fn Phaser(
         ) !void {
             if (input.len != output.len)
                 return error.PhaserBufferLengthMismatch;
+            if (!buffer_regions.exactOrDisjoint(Sample, input, output))
+                return error.PhaserBufferOverlap;
             for (input, output) |input_sample, *output_sample|
                 output_sample.* = self.processSample(input_sample);
         }
@@ -524,4 +527,20 @@ test "phaser smooths frequency range feedback and mix transactionally" {
         phaser.processSample(0.25),
     );
     try std.testing.expect(phaser.valid());
+}
+
+test "phaser permits in-place buffers and rejects shifted overlap" {
+    const Effect = Phaser(f32, 4);
+    var effect = try Effect.init(.{ .sample_rate = 48_000.0 });
+    var storage = [_]f32{ 1.0, 0.5, 0.25, 0.0 };
+    const retained = storage;
+    const before = effect;
+    try std.testing.expectError(
+        error.PhaserBufferOverlap,
+        effect.process(storage[0..3], storage[1..4]),
+    );
+    try std.testing.expectEqualDeep(before, effect);
+    try std.testing.expectEqualSlices(f32, &retained, &storage);
+    try effect.process(&storage, &storage);
+    for (storage) |sample| try std.testing.expect(std.math.isFinite(sample));
 }
