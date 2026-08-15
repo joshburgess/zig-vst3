@@ -2848,8 +2848,10 @@ test "LV2 UI adapter bridges lifecycle automation touch idle and resize" {
     );
     try std.testing.expectEqual(@as(usize, 1), host.subscriptions);
     try std.testing.expectEqual(@as(usize, 1), host.unsubscriptions);
+    try std.testing.expectEqual(@as(usize, 1), Backend.create_count);
     host.subscriptions = 0;
     host.unsubscriptions = 0;
+    Backend.create_count = 0;
     var failing = std.testing.FailingAllocator.init(
         std.testing.allocator,
         .{ .fail_index = 0 },

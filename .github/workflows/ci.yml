@@ -61,7 +61,7 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
-          use-cache: ${{ matrix.os != 'windows-latest' }}
+          use-cache: ${{ matrix.os == 'ubuntu-latest' }}
       - name: Install Linux GUI dependencies
         if: runner.os == 'Linux'
         run: |

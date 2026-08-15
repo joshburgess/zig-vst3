@@ -11,8 +11,9 @@ actual=$(mktemp "${TMPDIR:-/tmp}/zig-vst3-realtime-actual.XXXXXX")
 documented=$(mktemp "${TMPDIR:-/tmp}/zig-vst3-realtime-documented.XXXXXX")
 trap 'rm -f "$expected" "$actual" "$documented"' EXIT
 
-rg -l 'pub fn (process|process64|processWithParameters|process64WithParameters|processWithParameterView|process64WithParameterView)\(' \
-    examples --glob '*.zig' | \
+git grep -l -E \
+    'pub fn (process|process64|processWithParameters|process64WithParameters|processWithParameterView|process64WithParameterView)\(' \
+    -- 'examples/**/*.zig' 'examples/*.zig' | \
     LC_ALL=C sort | \
     sed '/^examples\/realtime_source_audit\.zig$/d' > "$actual"
 
