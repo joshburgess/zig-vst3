@@ -2869,6 +2869,70 @@ pub fn build(b: *std.Build) void {
     midi_file_fuzz_step.dependOn(
         &b.addRunArtifact(midi_file_fuzz_tests).step,
     );
+    const ump_stream_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        ump_stream_fuzz_module.link_libc = true;
+    const ump_stream_fuzz_tests = b.addTest(.{
+        .root_module = ump_stream_fuzz_module,
+        .filters = &.{"fuzz bounded UMP stream traversal"},
+    });
+    const ump_stream_fuzz_step = b.step(
+        "test-ump-stream-fuzz",
+        "Run or fuzz bounded UMP stream traversal",
+    );
+    ump_stream_fuzz_step.dependOn(
+        &b.addRunArtifact(ump_stream_fuzz_tests).step,
+    );
+    const ump_stream_test_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        ump_stream_test_module.link_libc = true;
+    const ump_stream_tests = b.addTest(.{
+        .root_module = ump_stream_test_module,
+        .filters = &.{"UMP iterator"},
+    });
+    const ump_stream_test_step = b.step(
+        "test-ump-stream",
+        "Run bounded UMP stream and cross-target tests",
+    );
+    ump_stream_test_step.dependOn(
+        &b.addRunArtifact(ump_stream_tests).step,
+    );
+    for ([_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    }) |cross_target| {
+        const cross_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        const cross_tests = b.addTest(.{
+            .root_module = cross_module,
+            .filters = &.{"UMP iterator"},
+        });
+        ump_stream_test_step.dependOn(&cross_tests.step);
+    }
     const midi_ci_wire_fuzz_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,
@@ -3153,6 +3217,33 @@ pub fn build(b: *std.Build) void {
     );
     midi_file_benchmark_step.dependOn(
         &b.addRunArtifact(midi_file_benchmark).step,
+    );
+    const ump_stream_benchmark_core = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = b.graph.host,
+        .optimize = optimize,
+    });
+    if (b.graph.host.result.os.tag == .linux)
+        ump_stream_benchmark_core.link_libc = true;
+    const ump_stream_benchmark = b.addExecutable(.{
+        .name = "ump-stream-complexity",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/ump_stream_complexity.zig"),
+            .target = b.graph.host,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    ump_stream_benchmark.root_module.addImport(
+        "zig-vst3-plugin-core",
+        ump_stream_benchmark_core,
+    );
+    const ump_stream_benchmark_step = b.step(
+        "benchmark-ump-stream",
+        "Measure bounded UMP stream traversal scaling",
+    );
+    ump_stream_benchmark_step.dependOn(
+        &b.addRunArtifact(ump_stream_benchmark).step,
     );
     const adm_xml_benchmark_core = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),

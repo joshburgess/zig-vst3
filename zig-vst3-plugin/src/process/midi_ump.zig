@@ -29,6 +29,21 @@ pub fn wordCountForType(message_type: MessageType) u3 {
     };
 }
 
+pub const Limits = struct {
+    max_words: usize = 64 * 1024 * 1024,
+    max_packets: usize = 64 * 1024 * 1024,
+
+    pub fn validate(self: Limits) !void {
+        if (self.max_words == 0 or self.max_packets == 0 or
+            self.max_packets > self.max_words)
+        {
+            return error.InvalidUmpLimits;
+        }
+    }
+};
+
+pub const default_limits = Limits{};
+
 pub const Packet = struct {
     storage: [4]u32,
     word_count: u3,
@@ -83,7 +98,10 @@ pub const Packet = struct {
 
 pub const Iterator = struct {
     source: []const u32,
+    limits: Limits = default_limits,
     cursor: usize = 0,
+    packet_count: usize = 0,
+    validated_state: ?IteratorState = null,
 
     pub fn valid(self: *const Iterator) bool {
         self.validateState() catch return false;
@@ -92,22 +110,44 @@ pub const Iterator = struct {
 
     pub fn next(self: *Iterator) !?Packet {
         try self.validateState();
-        return self.nextInPlace();
+        var staged = self.*;
+        const packet = try staged.nextInPlace();
+        staged.validated_state = staged.state();
+        self.* = staged;
+        return packet;
     }
 
     fn validateState(self: *const Iterator) !void {
-        if (self.cursor > self.source.len)
+        self.limits.validate() catch
             return error.InvalidUmpIteratorState;
-        var canonical = Iterator{ .source = self.source };
-        var state_seen = self.cursor == 0;
+        if (self.source.len > self.limits.max_words)
+            return error.UmpWordLimitExceeded;
+        if (self.cursor > self.source.len or
+            self.packet_count > self.limits.max_packets)
+        {
+            return error.InvalidUmpIteratorState;
+        }
+        const retained = self.state();
+        if (self.validated_state) |witness| {
+            if (std.meta.eql(retained, witness)) return;
+        }
+
+        var canonical = Iterator{
+            .source = self.source,
+            .limits = self.limits,
+        };
+        var state_seen = std.meta.eql(retained, canonical.state());
         while (try canonical.nextInPlace()) |_| {
-            if (self.cursor == canonical.cursor) state_seen = true;
+            if (std.meta.eql(retained, canonical.state()))
+                state_seen = true;
         }
         if (!state_seen) return error.InvalidUmpIteratorState;
     }
 
     fn nextInPlace(self: *Iterator) !?Packet {
         if (self.cursor == self.source.len) return null;
+        if (self.packet_count >= self.limits.max_packets)
+            return error.UmpPacketLimitExceeded;
 
         const count: usize = wordCountForType(typeFromWord(self.source[self.cursor]));
         const end = std.math.add(usize, self.cursor, count) catch
@@ -115,12 +155,31 @@ pub const Iterator = struct {
         if (end > self.source.len) return error.TruncatedUmpPacket;
         const packet = try Packet.init(self.source[self.cursor..end]);
         self.cursor = end;
+        self.packet_count += 1;
         return packet;
+    }
+
+    fn state(self: *const Iterator) IteratorState {
+        return .{
+            .source = self.source,
+            .limits = self.limits,
+            .cursor = self.cursor,
+            .packet_count = self.packet_count,
+        };
     }
 
     pub fn reset(self: *Iterator) void {
         self.cursor = 0;
+        self.packet_count = 0;
+        self.validated_state = null;
     }
+};
+
+const IteratorState = struct {
+    source: []const u32,
+    limits: Limits,
+    cursor: usize,
+    packet_count: usize,
 };
 
 pub const Midi1Packet = struct {
@@ -309,7 +368,88 @@ test "UMP iterator walks mixed packet sizes and contains truncation" {
     try std.testing.expectEqual(words.len + 1, iterator.cursor);
     iterator.reset();
     try std.testing.expectEqual(@as(usize, 0), iterator.cursor);
+    try std.testing.expectEqual(@as(usize, 0), iterator.packet_count);
     try std.testing.expect(iterator.valid());
+}
+
+test "UMP iterator enforces exact word and packet limits transactionally" {
+    const words = [_]u32{
+        0x2090_3C7F,
+        0x2080_3C00,
+        0x20C0_0100,
+        0x20D0_0200,
+    };
+    const exact_limits = Limits{
+        .max_words = words.len,
+        .max_packets = words.len,
+    };
+    var exact = Iterator{
+        .source = &words,
+        .limits = exact_limits,
+    };
+    while (try exact.next()) |_| {}
+    try std.testing.expectEqual(words.len, exact.cursor);
+    try std.testing.expectEqual(words.len, exact.packet_count);
+
+    var word_limited = Iterator{
+        .source = &words,
+        .limits = .{
+            .max_words = words.len - 1,
+            .max_packets = words.len - 1,
+        },
+    };
+    try std.testing.expectError(
+        error.UmpWordLimitExceeded,
+        word_limited.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), word_limited.cursor);
+    try std.testing.expectEqual(@as(usize, 0), word_limited.packet_count);
+
+    var packet_limited = Iterator{
+        .source = &words,
+        .limits = .{
+            .max_words = words.len,
+            .max_packets = words.len - 1,
+        },
+    };
+    try std.testing.expectError(
+        error.UmpPacketLimitExceeded,
+        packet_limited.next(),
+    );
+    try std.testing.expectEqual(@as(usize, 0), packet_limited.cursor);
+    try std.testing.expectEqual(@as(usize, 0), packet_limited.packet_count);
+
+    var invalid_limits = Iterator{
+        .source = &words,
+        .limits = .{
+            .max_words = 1,
+            .max_packets = 2,
+        },
+    };
+    try std.testing.expectError(
+        error.InvalidUmpIteratorState,
+        invalid_limits.next(),
+    );
+}
+
+test "UMP iterator retains a linear traversal witness" {
+    const packet_count = 4_096;
+    const words = [_]u32{0x2090_3C7F} ** packet_count;
+    var iterator = Iterator{ .source = &words };
+    var traversed: usize = 0;
+    while (try iterator.next()) |_| traversed += 1;
+    try std.testing.expectEqual(packet_count, traversed);
+    try std.testing.expect(iterator.validated_state != null);
+    try std.testing.expect(std.meta.eql(
+        iterator.state(),
+        iterator.validated_state.?,
+    ));
+
+    var replayed = Iterator{ .source = &words };
+    _ = try replayed.next();
+    replayed.validated_state = null;
+    try std.testing.expect(replayed.valid());
+    _ = try replayed.next();
 }
 
 test "MIDI 1 channel messages round trip through UMP exactly" {
@@ -373,4 +513,74 @@ test "UMP value scaling preserves every MIDI 1 value and endpoint" {
         try std.testing.expectEqual(value, scale16To14(scale14To16(value)));
         try std.testing.expectEqual(value, scale32To14(scale14To32(value)));
     }
+}
+
+const ump_fuzz_single = [_]u8{ 0x20, 0x90, 0x3c, 0x7f };
+const ump_fuzz_mixed = [_]u8{
+    0x20, 0x90, 0x3c, 0x7f,
+    0x40, 0x90, 0x3c, 0x00,
+    0xff, 0xff, 0x00, 0x00,
+};
+
+test "fuzz bounded UMP stream traversal" {
+    try std.testing.fuzz({}, fuzzUmpStream, .{
+        .corpus = &.{ &ump_fuzz_single, &ump_fuzz_mixed },
+    });
+}
+
+fn fuzzUmpStream(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var bytes: [16 * 1024]u8 = undefined;
+    const byte_count = smith.slice(&bytes);
+    var words: [bytes.len / @sizeOf(u32)]u32 = undefined;
+    const word_count = byte_count / @sizeOf(u32);
+    for (words[0..word_count], 0..) |*word, index| {
+        const offset = index * @sizeOf(u32);
+        word.* = std.mem.readInt(
+            u32,
+            bytes[offset..][0..@sizeOf(u32)],
+            .big,
+        );
+    }
+
+    const maximum_words: usize = if (word_count == 0)
+        1
+    else
+        smith.valueRangeAtMost(u16, 1, @intCast(words.len));
+    const maximum_packets: usize = smith.valueRangeAtMost(
+        u16,
+        1,
+        @intCast(maximum_words),
+    );
+    const limits = Limits{
+        .max_words = maximum_words,
+        .max_packets = maximum_packets,
+    };
+    var iterator = Iterator{
+        .source = words[0..word_count],
+        .limits = limits,
+    };
+    if (!iterator.valid()) {
+        const cursor = iterator.cursor;
+        const packet_count = iterator.packet_count;
+        _ = iterator.next() catch {
+            try std.testing.expectEqual(cursor, iterator.cursor);
+            try std.testing.expectEqual(packet_count, iterator.packet_count);
+            return;
+        };
+        return error.FuzzAcceptedInvalidUmpStream;
+    }
+
+    var replay = iterator;
+    var traversed: usize = 0;
+    while (try iterator.next()) |packet| {
+        const replayed = (try replay.next()) orelse
+            return error.FuzzUmpReplayEndedEarly;
+        try std.testing.expectEqualSlices(u32, packet.words(), replayed.words());
+        traversed += 1;
+        if (traversed > limits.max_packets)
+            return error.FuzzAcceptedExcessUmpPackets;
+    }
+    try std.testing.expect((try replay.next()) == null);
+    try std.testing.expect(iterator.valid());
 }

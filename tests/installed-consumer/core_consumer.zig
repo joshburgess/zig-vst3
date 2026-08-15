@@ -2273,6 +2273,10 @@ test "installed package exposes validated UMP iteration" {
         0xffff_0000,
     };
     var iterator = core.process.UmpIterator{ .source = &words };
+    try std.testing.expectEqual(
+        core.process.default_ump_limits,
+        core.process.UmpLimits{},
+    );
     try std.testing.expect(iterator.valid());
     try std.testing.expect((try iterator.next()) != null);
     try std.testing.expect((try iterator.next()) != null);
@@ -2291,6 +2295,13 @@ test "installed package exposes validated UMP iteration" {
         iterator.next(),
     );
     try std.testing.expectEqual(words.len + 1, iterator.cursor);
+
+    var limited = core.process.UmpIterator{
+        .source = &words,
+        .limits = .{ .max_words = 2, .max_packets = 2 },
+    };
+    try std.testing.expectError(error.UmpWordLimitExceeded, limited.next());
+    try std.testing.expectEqual(@as(usize, 0), limited.cursor);
 }
 
 test "installed package contains malformed segment iterator state" {
