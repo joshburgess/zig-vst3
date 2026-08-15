@@ -1,8 +1,8 @@
 # Quality Program Status
 
-Current phase: Phase 2, Concurrency and Realtime Safety
+Current phase: Phase 3, Parsers, Codecs, and Persistent State
 
-Status: in progress; Phase 1 complete
+Status: in progress; Phases 0 through 2 complete
 
 Baseline commit: `08bf883e9d2d324f3a7933fa21851bbd9ffec513`
 
@@ -195,20 +195,24 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   on the new macOS 26 ARM `macos-latest` image. Every failed artifact used
   ThreadSanitizer, all unsanitized tests passed, and the same sanitizer gates
   pass on local macOS 15.4. CI now pins the maintained macOS 15 ARM image.
+- Closed Q-VER-008 and completed Phase 2 after GitHub Actions run `31858188014`
+  at `4466af3d` completed all 19 jobs successfully. The pinned macOS 15 build
+  executed the full sanitizer suite, and macOS pluginval passed both normal and
+  strictness-10 validation.
 
-## Phase 2 Scope
+## Phase 3 Scope
 
-- Map thread ownership and publication for processor state, GUI exchange,
-  resources, devices, MIDI, HRTF, and teardown.
-- Review every atomic operation and memory order against a stated
-  happens-before relationship.
-- Audit locks, blocking calls, allocation, logging, file access, and loop bounds
-  reachable from realtime entry points.
-- Add deterministic state-machine, callback-overlap, race-focused stress, and
-  bounded-work evidence where each contract permits it.
+- Audit every untrusted-input parser for explicit size and work limits,
+  checked arithmetic, progress, transactionality, truncation, and corruption.
+- Add dedicated fuzz targets and checked-in seed corpora for the highest-risk
+  parsers, and preserve reproducible cases for every discovered defect.
+- Verify persistent-state restore and migration are failure-atomic and retain
+  stable public identifiers.
+- Compare codecs with independent implementations and record tolerances where
+  licensing and available tooling permit.
 
 ## Next Review Target
 
-Run the pinned-macOS replacement Phase 2 completion gate and close the phase
-only if all public CI jobs, including the uncached macOS 15 sanitizer gates,
-and all exit criteria pass.
+Complete the Phase 3 parser and state inventory. Record explicit limits and
+failure-atomicity for every untrusted-input path, then close remaining coverage
+gaps with focused fuzz, corruption, oracle, and sanitizer evidence.

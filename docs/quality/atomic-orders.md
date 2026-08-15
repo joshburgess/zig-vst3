@@ -11,6 +11,11 @@ independent values, statistics, producer- or consumer-owned cursors, and retry
 loads whose successful edge has stronger order. Sequentially consistent uses
 are test observations, not production synchronization requirements.
 
+The Phase 2 semantic review covers all 57 Zig and 11 native sources in this
+ledger. Their publication and teardown justifications are recorded in
+`concurrency.md`. Checked count fixtures and GitHub Actions run `31858188014`
+pass at the Phase 2 completion candidate `4466af3d`.
+
 | Source | Unordered | Monotonic | Acquire | Release | Acquire-release | Sequentially consistent |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 <!-- atomic-order-counts:start -->
