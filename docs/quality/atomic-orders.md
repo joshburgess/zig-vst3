@@ -29,7 +29,7 @@ pass at the Phase 2 completion candidate `4466af3d`.
 | `zig-vst3-plugin/src/gui_audio_sample_store.zig` | 0 | 0 | 11 | 13 | 3 | 0 |
 | `zig-vst3-plugin/src/gui_file_importer.zig` | 0 | 0 | 1 | 7 | 0 | 0 |
 | `zig-vst3-plugin/src/gui_graph.zig` | 0 | 4 | 9 | 11 | 0 | 0 |
-| `zig-vst3-plugin/src/gui_ir_convolution.zig` | 0 | 0 | 19 | 19 | 7 | 0 |
+| `zig-vst3-plugin/src/dsp/convolution.zig` | 0 | 0 | 19 | 19 | 7 | 0 |
 | `zig-vst3-plugin/src/gui_telemetry.zig` | 0 | 5 | 18 | 16 | 3 | 0 |
 | `zig-vst3-plugin/src/lv2.zig` | 0 | 0 | 8 | 6 | 5 | 0 |
 | `zig-vst3-plugin/src/parameters/value.zig` | 0 | 5 | 0 | 0 | 0 | 0 |

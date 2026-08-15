@@ -107,7 +107,10 @@ const Definition = struct {
 
 pub const Spec = core.plugin.PluginSpec(Definition);
 pub const ir_parameter_set = Spec.ParameterSet.init(.{});
-const Convolver = core.gui_ir_convolution.PartitionedConvolver(maximum_ir_frames, convolution_partition_size);
+const Convolver = core.dsp.PartitionedConvolver(
+    maximum_ir_frames,
+    convolution_partition_size,
+);
 const IREditor = core.gui_ir_editor.Editor(maximum_ir_frames);
 const AudioImporter = vst3.vstgui.DecodedAudioFileImporter(maximum_ir_frames);
 const default_ir_name = core.editor_state.Text.init("Untitled IR") catch

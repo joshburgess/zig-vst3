@@ -86,7 +86,7 @@ N-DELEGATE zig-vst3-plugin/src/gui_audio_sample_store.zig
 N-DELEGATE zig-vst3-plugin/src/gui_file_drop.zig
 N-DELEGATE zig-vst3-plugin/src/gui_file_importer.zig
 N-DELEGATE zig-vst3-plugin/src/gui_graph.zig
-N-DELEGATE zig-vst3-plugin/src/gui_ir_convolution.zig
+N-NONINPUT zig-vst3-plugin/src/dsp/convolution.zig
 N-DELEGATE zig-vst3-plugin/src/gui_ir_editor.zig
 N-DELEGATE zig-vst3-plugin/src/gui_preset_browser.zig
 N-NONINPUT zig-vst3-plugin/src/hoa_tests.zig

@@ -2829,6 +2829,62 @@ pub fn build(b: *std.Build) void {
     config_input_test_step.dependOn(
         &b.addRunArtifact(config_input_vst3_tests).step,
     );
+    const convolution_test_filters = &[_][]const u8{
+        "partitioned convolver",
+        "convolution preparation queue",
+        "large convolver",
+    };
+    const convolution_test_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        convolution_test_module.link_libc = true;
+    const convolution_tests = b.addTest(.{
+        .root_module = convolution_test_module,
+        .filters = convolution_test_filters,
+    });
+    const convolution_test_step = b.step(
+        "test-convolution",
+        "Run DSP convolution and publication tests",
+    );
+    convolution_test_step.dependOn(
+        &b.addRunArtifact(convolution_tests).step,
+    );
+    const convolution_cross_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    };
+    for (convolution_cross_targets) |convolution_target| {
+        const convolution_cross_module = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = convolution_target,
+            .optimize = .ReleaseSafe,
+        });
+        if (convolution_target.result.os.tag == .linux)
+            convolution_cross_module.link_libc = true;
+        const convolution_cross_tests = b.addTest(.{
+            .root_module = convolution_cross_module,
+            .filters = convolution_test_filters,
+        });
+        convolution_test_step.dependOn(&convolution_cross_tests.step);
+    }
     const editor_state_fuzz_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,

@@ -1,5 +1,5 @@
 const std = @import("std");
-const convolution = @import("../gui_ir_convolution.zig");
+const convolution = @import("convolution.zig");
 
 pub const Direction = struct {
     azimuth_degrees: f64 = 0,

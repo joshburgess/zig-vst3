@@ -330,6 +330,20 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(vst3.zig_vst3_plugin_effect, "HostRequestSink"));
 }
 
+test "GUI convolution compatibility module aliases the DSP implementation" {
+    try std.testing.expect(
+        gui_ir_convolution.Metadata == dsp.ConvolutionMetadata,
+    );
+    try std.testing.expect(
+        gui_ir_convolution.PartitionedConvolver(16, 8) ==
+            dsp.PartitionedConvolver(16, 8),
+    );
+    try std.testing.expect(
+        gui_ir_convolution.PreparationQueue(16, 2) ==
+            dsp.ConvolutionPreparationQueue(16, 2),
+    );
+}
+
 test "zig-vst3-plugin runs core module tests" {
     std.testing.refAllDecls(core);
 }
