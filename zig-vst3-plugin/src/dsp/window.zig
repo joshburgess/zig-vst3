@@ -27,6 +27,10 @@ pub fn fill(
     validateSampleType(Sample);
     if (output.len == 0) return error.EmptyWindow;
     const scale = try normalizationScale(Sample, output.len, kind, periodic, normalization);
+    for (0..output.len) |index| {
+        const value = coefficient(Sample, output.len, index, kind, periodic) * scale;
+        if (!std.math.isFinite(value)) return error.NonFiniteWindowOutput;
+    }
     for (output, 0..) |*sample, index| {
         sample.* = coefficient(Sample, output.len, index, kind, periodic) * scale;
     }
@@ -45,6 +49,12 @@ pub fn apply(
         if (!std.math.isFinite(sample)) return error.NonFiniteWindowInput;
     }
     const scale = try normalizationScale(Sample, samples.len, kind, periodic, normalization);
+    for (samples, 0..) |sample, index| {
+        const window_value =
+            coefficient(Sample, samples.len, index, kind, periodic) * scale;
+        const value = sample * window_value;
+        if (!std.math.isFinite(value)) return error.NonFiniteWindowOutput;
+    }
     for (samples, 0..) |*sample, index| {
         sample.* *= coefficient(Sample, samples.len, index, kind, periodic) * scale;
     }
@@ -103,6 +113,10 @@ pub fn fillKaiser(
         periodic,
         normalization,
     );
+    for (0..output.len) |index| {
+        const value = kaiserCoefficient(Sample, output.len, index, beta, periodic) * scale;
+        if (!std.math.isFinite(value)) return error.NonFiniteWindowOutput;
+    }
     for (output, 0..) |*sample, index| {
         sample.* =
             kaiserCoefficient(Sample, output.len, index, beta, periodic) *
@@ -129,6 +143,13 @@ pub fn applyKaiser(
         periodic,
         normalization,
     );
+    for (samples, 0..) |sample, index| {
+        const window_value =
+            kaiserCoefficient(Sample, samples.len, index, beta, periodic) *
+            scale;
+        const value = sample * window_value;
+        if (!std.math.isFinite(value)) return error.NonFiniteWindowOutput;
+    }
     for (samples, 0..) |*sample, index| {
         sample.* *=
             kaiserCoefficient(Sample, samples.len, index, beta, periodic) *
@@ -178,7 +199,10 @@ fn normalizationScale(
     }
     if (!std.math.isFinite(aggregate) or aggregate <= 0.0)
         return error.InvalidWindowNormalization;
-    return 1.0 / aggregate;
+    const scale = 1.0 / aggregate;
+    if (!std.math.isFinite(scale))
+        return error.InvalidWindowNormalization;
+    return scale;
 }
 
 fn kaiserNormalizationScale(
@@ -200,7 +224,10 @@ fn kaiserNormalizationScale(
     }
     if (!std.math.isFinite(aggregate) or aggregate <= 0.0)
         return error.InvalidWindowNormalization;
-    return 1.0 / aggregate;
+    const scale = 1.0 / aggregate;
+    if (!std.math.isFinite(scale))
+        return error.InvalidWindowNormalization;
+    return scale;
 }
 
 fn validateKaiser(size: usize, beta: anytype) !void {
@@ -284,4 +311,14 @@ test "normalization and application are checked" {
     );
     try std.testing.expectEqual(@as(f32, 1.0), samples[0]);
     try std.testing.expect(std.math.isNan(samples[1]));
+}
+
+test "window application rejects non-finite output transactionally" {
+    var samples: [5]f64 = @splat(std.math.floatMax(f64));
+    const retained = samples;
+    try std.testing.expectError(
+        error.NonFiniteWindowOutput,
+        apply(f64, &samples, .flat_top, false, .unit_sum),
+    );
+    try std.testing.expectEqualSlices(f64, &retained, &samples);
 }
