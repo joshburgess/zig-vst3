@@ -410,6 +410,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   stale, duplicate, malformed, and misassigned records fail the repository
   gate. Every source starts in `REVIEW`; prior broad test coverage is not
   accepted until its boundary contract and evidence are inspected.
+- Closed Q-VER-014 after the raw ABI matrix was found to ignore configured
+  cache roots. All 33 VST3 and ARA comparators now route generated output and
+  nested Zig work through the build graph's cache configuration. The routing
+  fixture and corrected 135-step raw ABI matrix pass.
 
 ## Phase 5 Scope
 
@@ -424,7 +428,8 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Begin Phase 6 with a checked inventory of every platform and ABI boundary.
-Reconcile VST3 and COM declarations, native adapters, reference counts,
-callback teardown, calling conventions, and layout or behavior evidence before
-moving to LV2, AUv2, ARA, system audio, MIDI, windows, and dynamic libraries.
+Continue the A-VST3 source reconciliation. The pinned declaration, calling-
+convention, controlling-identity, entry-symbol, and cache-routing evidence is
+accepted. Reconcile every Q01 implementation source with its lifecycle and
+behavior tests before moving to ARA, VSTGUI, LV2, AUv2, system audio, MIDI,
+windows, and dynamic libraries.

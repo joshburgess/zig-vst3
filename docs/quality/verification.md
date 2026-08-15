@@ -2362,6 +2362,37 @@ fallback, exact smoothing settlement, partition behavior, and hostile state.
 | `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,265 lines classified |
 | `git diff --check` | Passed |
 
+## 2026-08-15: ABI Cache Routing
+
+Behavior commit: `af412dda`
+
+The Phase 6 raw ABI review found that its 33 shell comparators ignored the
+local cache selected by `zig build`. Their generated native and Zig outputs
+landed in the repository `.zig-cache`; nested Zig processes used the default
+user-wide global cache; and the ARA comparator explicitly replaced both cache
+roots. This made a bounded run's artifact ownership inaccurate and reproduced
+restricted-environment failures after the declared temporary caches were
+otherwise usable.
+
+The build graph now exports its selected local and global roots to every script
+check. Each ABI script puts generated comparator output beneath the selected
+local root, and the ARA checker inherits rather than replaces both roots. A
+fixture checks every ABI script's output declaration and runs the TUID checker
+with fake native and Zig compilers. It proves that generated output uses the
+temporary local root, nested Zig receives both exact roots, and no fallback
+cache appears in the fixture working directory.
+
+| Check | Result |
+| --- | --- |
+| `sh scripts/test_abi_cache_routing.sh` | Passed |
+| Restricted raw ABI run | All 33 script comparators and the routing fixture passed; the top-level build `translate-c` was denied cache access by the execution sandbox, so this partial run was not accepted as the matrix result |
+| `zig build -j1 --cache-dir /private/tmp/zig-vst3-phase6-cache-fix-local --global-cache-dir /private/tmp/zig-vst3-phase6-cache-fix-global raw-api-abi --summary all` | Passed with cache access: 135/135 steps |
+| ABI output location inspection | Passed: all 33 named comparator directories were beneath the supplied local cache |
+| `scripts/check_quality_inventory.sh` | Passed after committing the routing fixture: 872 source files and 479,738 lines classified |
+| Quality inventory and ABI inventory fixtures | Passed |
+| `scripts/check_quality_abi_inventory.sh` | Passed: 0 evidence, 301 review, and 0 excluded sources before A-VST3 dispositions |
+| `zig fmt --check build.zig` and `git diff --check` | Passed |
+
 ## 2026-08-15: Composite Effects Numerical Closure
 
 Behavior commit: `9b4ec47a`

@@ -341,6 +341,26 @@ Q19	gui-adapters/vstgui/zig_vstgui_xy_pad.cpp	REVIEW	A-VSTGUI-NATIVE
 Q19	gui-adapters/vstgui/zig_vstgui_xy_pad.h	REVIEW	A-VSTGUI-NATIVE
 <!-- abi-files:end -->
 
+## Active A-VST3 Evidence
+
+The raw declaration and interoperability matrix is accepted as one part of
+the A-VST3 review. It does not yet disposition implementation sources.
+
+| Boundary | Declaration source | Automated evidence | Result |
+| --- | --- | --- | --- |
+| VST3 base, GUI, test, and VST interfaces | Pinned Steinberg VST3 SDK `v3.8.0_build_66` at `9fad9770f2ae8542ab1a548a68c1ad1ac690abe0`, with the exact interface and IID ledger in `docs/interface-inventory.md` | 32 SDK-backed constant, IID, struct, vtable, helper, and calling-convention comparators | Passed in the bounded raw ABI matrix |
+| ARA companion declarations used by VST3 | Vendored `ARAInterface.h` and `ARAVST3.h` | Translated-header and native C++ layout comparison | Passed in the bounded raw ABI matrix |
+| `FUnknown` and shared controlling identity | Steinberg `FUnknown`, the Zig `funknown.zig` implementation, and `multi_interface.zig` | Native C harness, native C++ harness, pinned-SDK C++ harness, saturated-reference regressions, and aggregate TSan reference-count coverage | Passed |
+| Plugin module entry symbols | Steinberg platform entry contracts and `entry.zig` | Symbol inspection across every configured example and C-kernel product | Passed in the bounded raw ABI matrix |
+| ABI verifier cache ownership | Build graph cache roots and all 33 ABI scripts | Checked routing fixture plus a complete matrix using explicit temporary local and global caches | Passed; Q-VER-014 is closed |
+
+The complete matrix at `af412dda` passed 135/135 build steps with one job.
+Every script-generated ABI directory appeared beneath the supplied temporary
+local cache. The initial restricted run separately proved all 33 script
+comparators passed, but its top-level `translate-c` step was denied by the
+execution sandbox. The accepted complete result is the rerun with that cache
+access available. No repository cache is treated as evidence.
+
 ## Current Disposition
 
 The initial ledger contains 301 `REVIEW` records. Review proceeds by boundary
