@@ -68,6 +68,32 @@ Environment: macOS Darwin 24.4.0 on arm64, Zig 0.16.0.
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
 
+## 2026-08-15: MP3 Cohesion Closure
+
+The complete MP3 encoding contract now lives in `dsp/mp3_encoder.zig`.
+It owns CBR and VBR analysis and quantization, adaptive reservoir streams,
+gapless finalization, Xing and VBRI emission, and both memory and positional
+file publication. These variants share encoder configuration, transform
+history, bit budgets, frame accounting, rollback storage, and transactional
+publication rules.
+
+`dsp/mp3.zig` is now the compatibility facade and its colocated behavioral
+suite. Its public declarations remain exact aliases to the syntax, codec,
+reader, metadata, reservoir, and encoder modules. The cohesion ledger
+classifies both the 518-production-line facade and the 11,747-line encoder
+contract as `KEEP`, completing the MP3 portion of Q-ARCH-001.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-mp3 --summary all` | Passed: 6/6 steps and 131/131 tests |
+| ReleaseSafe cross-compilation | Passed: Linux AArch64, Linux x86-64, and Windows x86-64 |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests |
+| Cohesion inventory and fixture | Passed: 34 large handwritten sources classified |
+| Quality and concurrency inventories | Passed: 864 files and 477,981 lines classified; 86 concurrency sources classified |
+| Parser inventory and fixture | Passed: 199 production sources classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
+
 ## 2026-08-15: MP3 Reservoir Credit Boundary
 
 Reservoir quantizer budgets, history-credit validation, and failure-atomic

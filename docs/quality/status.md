@@ -314,6 +314,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   tempo and meter, harmony, and polyphonic-note detectors behind shared
   bounded model and validation modules. Exact facade identities, the full
   ARA matrix, archive fuzzing, inventories, and installed consumers pass.
+- Completed the MP3 portion of Q-ARCH-001 by separating shared syntax,
+  decoder and synthesis state, metadata values, positional reading, reservoir
+  credit accounting, and the complete encoder contract behind exact facade
+  aliases. The 131-test gate and all ReleaseSafe targets pass.
 
 ## Phase 4 Scope
 
@@ -327,7 +331,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Continue Q-ARCH-001 with the MP3 modules. Move adaptive reservoir stream
-ownership out of the encoder and file writer, then reassess the remaining
-facade for one coherent encoding contract. Preserve the current public facade
-and exact identities before repeating inventory and installed-consumer gates.
+Continue Q-ARCH-001 with `dsp/ogg.zig`, the final source still classified
+`SPLIT`. Separate the Ogg container contract from Vorbis codec state while
+preserving the current public facade and exact identities, then repeat focused,
+cross-target, inventory, and installed-consumer gates.
