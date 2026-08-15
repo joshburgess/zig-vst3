@@ -1395,3 +1395,30 @@ entry point and requires accepted iterators to make strict cursor progress.
 | `scripts/check_quality_inventory.sh` | Passed: 823 files and 473,068 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded SOFA Container Loading
+
+Behavior commit: `604e6727`
+
+`HrtfSofaLoader` now applies one `HrtfSofaLimits` file-byte policy before
+passing a dataset path to `nc_open`. Existing methods use a 1 GiB default, and
+public `WithLimits` methods accept a caller-selected bound. One-byte-under
+rejection precedes NetCDF parsing and destination mutation. Exact-byte success
+continues into the existing nonzero dimension, checked shape-product,
+compile-time measurement and frame capacity, finite-value, geometry, and
+failure-atomic publication checks.
+
+Both prepared CC BY 4.0 public datasets exercised the final source. The Viking
+fixture contains 1,513 measurements and 128 response frames at 48 kHz. The
+HUTUBS fixture contains 440 measurements and 256 response frames at 44.1 kHz.
+The native C++ NetCDF reference compared eight complete responses per dataset.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-hrtf --summary all` with both public fixture paths | Passed: 14/14 steps and 150/150 tests, including exact file limits, both real NetCDF loads, two independent reference executions, and ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| `zig build test-hrtf-reference --summary all` with both public fixture paths | Passed: eight full-response comparisons across 440 measurements and 256 frames, plus eight across 1,513 measurements and 128 frames |
+| `zig build test-established-spatial-renderers --summary all` with pinned prepared sources | Passed: 6/6 steps, 6,144 libmysofa samples with 7.451e-8 peak error, and 5,654 libspatialaudio samples with 1.192e-7 peak error |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including the public limits type and bounded method declarations |
+| `scripts/check_quality_inventory.sh` | Passed: 823 files and 473,173 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

@@ -104,6 +104,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   parsing. XML attributes now have independent count and source-byte limits.
   The 174-test Q12 selection, 100,017-run native fuzz campaign,
   installed-package matrix, and Windows ReleaseSafe cross-build pass.
+- Closed Q-SOFA-001 with a bounded default and caller-selected NetCDF
+  file-byte policy enforced before external parsing. Both public datasets,
+  independent NetCDF, libmysofa, and libspatialaudio comparisons, the
+  installed-package matrix, and Linux plus Windows cross-builds pass.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.
