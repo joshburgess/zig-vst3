@@ -2167,6 +2167,10 @@ test "installed package exposes checked UMP messages and SysEx7 assembly" {
         .resource = "ChannelList",
         .pagination = .{ .offset = 0, .limit = 16 },
     };
+    try std.testing.expectEqual(
+        @as(usize, std.math.maxInt(u14)),
+        plugin.process.MidiCiPropertyMaximumHeaderBytes,
+    );
     var property_json: std.Io.Writer.Allocating =
         .init(std.testing.allocator);
     defer property_json.deinit();

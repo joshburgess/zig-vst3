@@ -1189,3 +1189,74 @@ test "MIDI-CI Property Exchange request IDs are bounded and reusable" {
     try std.testing.expect(request_ids.valid());
     try request_ids.release(1);
 }
+
+const property_exchange_capabilities_fuzz_seed = [_]u8{
+    0x7E, 0x7F, 0x0D, 0x30, 0x02, 0x01, 0, 0,
+    0,    0x02, 0,    0,    0,    0x01, 0, 0,
+};
+
+const property_exchange_data_fuzz_seed = [_]u8{
+    0x7E, 0x7F, 0x0D, 0x36, 0x02, 0x01, 0, 0,
+    0,    0x02, 0,    0,    0,    0x01, 1, 0,
+    0x01, 1,    0,    1,    0,    1,    0, 0x02,
+};
+
+test "fuzz bounded MIDI-CI Property Exchange wire parsing" {
+    try std.testing.fuzz({}, fuzzPropertyExchangeWire, .{
+        .corpus = &.{
+            &property_exchange_capabilities_fuzz_seed,
+            &property_exchange_data_fuzz_seed,
+        },
+    });
+}
+
+fn fuzzPropertyExchangeWire(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var storage: [512]u8 = undefined;
+    const length: usize = switch (smith.valueRangeAtMost(u8, 0, 2)) {
+        0 => smith.slice(&storage),
+        1 => seeded: {
+            @memcpy(
+                storage[0..property_exchange_capabilities_fuzz_seed.len],
+                &property_exchange_capabilities_fuzz_seed,
+            );
+            break :seeded property_exchange_capabilities_fuzz_seed.len;
+        },
+        2 => seeded: {
+            @memcpy(
+                storage[0..property_exchange_data_fuzz_seed.len],
+                &property_exchange_data_fuzz_seed,
+            );
+            break :seeded property_exchange_data_fuzz_seed.len;
+        },
+        else => smith.slice(&storage),
+    };
+    const source = storage[0..length];
+
+    if (Message.parse(source)) |message| {
+        var encoded: [16]u8 = undefined;
+        const canonical = try message.encode(&encoded);
+        try std.testing.expectEqualSlices(u8, source, canonical);
+        try std.testing.expectEqualDeep(message, try Message.parse(canonical));
+    } else |_| {}
+
+    const PropertyData = DataMessage(64, 256);
+    const PropertyReassembler = Reassembler(64, 256);
+    if (PropertyData.parse(source)) |message| {
+        var encoded: [342]u8 = undefined;
+        const canonical = try message.encode(&encoded);
+        try std.testing.expectEqualSlices(u8, source, canonical);
+        try std.testing.expectEqualDeep(
+            message,
+            try PropertyData.parse(canonical),
+        );
+
+        var reassembler = PropertyReassembler{};
+        const before = reassembler;
+        if (reassembler.push(message)) |_| {
+            try reassembler.validate();
+        } else |_| {
+            try std.testing.expectEqualDeep(before, reassembler);
+        }
+    } else |_| {}
+}

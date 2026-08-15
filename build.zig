@@ -2805,6 +2805,120 @@ pub fn build(b: *std.Build) void {
     midi_file_fuzz_step.dependOn(
         &b.addRunArtifact(midi_file_fuzz_tests).step,
     );
+    const midi_ci_wire_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        midi_ci_wire_fuzz_module.link_libc = true;
+    const midi_ci_wire_fuzz_tests = b.addTest(.{
+        .root_module = midi_ci_wire_fuzz_module,
+        .filters = &.{"fuzz bounded MIDI-CI Property Exchange wire parsing"},
+    });
+    const midi_ci_wire_fuzz_step = b.step(
+        "test-midi-ci-wire-fuzz",
+        "Run or fuzz bounded MIDI-CI Property Exchange wire parsing",
+    );
+    midi_ci_wire_fuzz_step.dependOn(
+        &b.addRunArtifact(midi_ci_wire_fuzz_tests).step,
+    );
+    const midi_ci_json_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        midi_ci_json_fuzz_module.link_libc = true;
+    const midi_ci_json_fuzz_tests = b.addTest(.{
+        .root_module = midi_ci_json_fuzz_module,
+        .filters = &.{"fuzz bounded MIDI-CI Property Exchange headers and Mcoded7"},
+    });
+    const midi_ci_json_fuzz_step = b.step(
+        "test-midi-ci-json-fuzz",
+        "Run or fuzz bounded MIDI-CI Property Exchange JSON and Mcoded7",
+    );
+    midi_ci_json_fuzz_step.dependOn(
+        &b.addRunArtifact(midi_ci_json_fuzz_tests).step,
+    );
+    const midi_ci_resource_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        midi_ci_resource_fuzz_module.link_libc = true;
+    const midi_ci_resource_fuzz_tests = b.addTest(.{
+        .root_module = midi_ci_resource_fuzz_module,
+        .filters = &.{"fuzz bounded MIDI-CI resource JSON and cache restore"},
+    });
+    const midi_ci_resource_fuzz_step = b.step(
+        "test-midi-ci-resource-fuzz",
+        "Run or fuzz bounded MIDI-CI resources and cache restore",
+    );
+    midi_ci_resource_fuzz_step.dependOn(
+        &b.addRunArtifact(midi_ci_resource_fuzz_tests).step,
+    );
+    const midi_ci_test_filters = &[_][]const u8{
+        "MIDI-CI",
+        "Property Exchange",
+        "property cache",
+        "Property Host",
+        "controller resources",
+        "DeviceInfo",
+        "ChannelList",
+        "ProgramList",
+        "Foundational resources",
+        "ResourceList",
+        "standard resource",
+        "requester",
+        "responder",
+        "endpoint reply",
+    };
+    const midi_ci_native_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const midi_ci_native_tests = b.addTest(.{
+        .root_module = midi_ci_native_module,
+        .filters = midi_ci_test_filters,
+    });
+    const midi_ci_test_step = b.step(
+        "test-midi-ci",
+        "Run MIDI-CI protocol, state, JSON, and cross-target tests",
+    );
+    midi_ci_test_step.dependOn(
+        &b.addRunArtifact(midi_ci_native_tests).step,
+    );
+    for ([_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    }) |cross_target| {
+        const midi_ci_cross_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+            .target = cross_target,
+            .optimize = .ReleaseSafe,
+        });
+        const midi_ci_cross_tests = b.addTest(.{
+            .root_module = midi_ci_cross_module,
+            .filters = midi_ci_test_filters,
+        });
+        midi_ci_test_step.dependOn(&midi_ci_cross_tests.step);
+    }
     const adm_xml_fuzz_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,

@@ -5,9 +5,14 @@ const profile = @import("midi_ci_profile.zig");
 const profile_host = @import("midi_ci_profile_host.zig");
 const property = @import("midi_ci_property.zig");
 const property_cache = @import("midi_ci_property_cache.zig");
+const property_controller_resources =
+    @import("midi_ci_property_controller_resources.zig");
 const property_host = @import("midi_ci_property_host.zig");
 const property_json = @import("midi_ci_property_json.zig");
+const property_resources = @import("midi_ci_property_resources.zig");
 const property_session = @import("midi_ci_property_session.zig");
+const property_standard_resources =
+    @import("midi_ci_property_standard_resources.zig");
 
 pub const Config = struct {
     remote_capacity: usize = 8,
@@ -1479,4 +1484,133 @@ test "MIDI-CI device rejects unsupported categories and version fields" {
         error.MidiCiProcessInquiryNotSupported,
         device.processInquiry(handle),
     );
+}
+
+const midi_ci_resource_fuzz_seeds = [_][]const u8{
+    "[]",
+    "{}",
+    "\"single\"",
+    "{\"manufacturerId\":[1,2,3],\"familyId\":[1,2],\"modelId\":[3,4],\"versionId\":[1,0,0,0],\"manufacturer\":\"A\",\"family\":\"B\",\"model\":\"C\",\"version\":\"1\"}",
+};
+
+test "fuzz bounded MIDI-CI resource JSON and cache restore" {
+    try std.testing.fuzz({}, fuzzMidiCiResourcesAndCache, .{
+        .corpus = &.{
+            midi_ci_resource_fuzz_seeds[0],
+            midi_ci_resource_fuzz_seeds[1],
+            midi_ci_resource_fuzz_seeds[2],
+            midi_ci_resource_fuzz_seeds[3],
+        },
+    });
+}
+
+fn fuzzMidiCiResourcesAndCache(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var storage: [4096]u8 = undefined;
+    const length: usize = switch (smith.valueRangeAtMost(u8, 0, 4)) {
+        0 => smith.slice(&storage),
+        1...4 => |seed_index| seeded: {
+            const seed = midi_ci_resource_fuzz_seeds[seed_index - 1];
+            @memcpy(storage[0..seed.len], seed);
+            break :seeded seed.len;
+        },
+        else => smith.slice(&storage),
+    };
+    const source = storage[0..length];
+
+    switch (smith.valueRangeAtMost(u8, 0, 10)) {
+        0 => if (property_resources.DeviceInfo.parseJson(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+            try std.testing.expect(parsed.value.valid());
+        } else |_| {},
+        1 => if (property_resources.ChannelList.parseJson(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+            try std.testing.expect(parsed.value.valid());
+        } else |_| {},
+        2 => if (property_resources.ProgramList.parseJson(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+            try std.testing.expect(parsed.value.valid());
+        } else |_| {},
+        3 => if (property_resources.ResourceList.parseJson(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+            try std.testing.expect(parsed.value.valid());
+        } else |_| {},
+        4 => if (property_resources.parseJsonSchema(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+        } else |_| {},
+        5 => if (property_standard_resources.ModeList.parseJson(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+            try std.testing.expect(parsed.value.valid());
+        } else |_| {},
+        6 => if (property_standard_resources.CurrentMode.parseJson(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+            try std.testing.expect(parsed.value.valid());
+        } else |_| {},
+        7 => if (property_standard_resources.StateList.parseJson(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+            try std.testing.expect(parsed.value.valid());
+        } else |_| {},
+        8 => if (property_controller_resources.AllControllerList.parseJson(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+            try std.testing.expect(parsed.value.valid());
+        } else |_| {},
+        9 => if (property_controller_resources.ChannelControllerList.parseJson(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+            try std.testing.expect(parsed.value.valid());
+        } else |_| {},
+        10 => if (property_controller_resources.ControllerMapList.parseJson(
+            std.testing.allocator,
+            source,
+        )) |parsed| {
+            defer parsed.deinit();
+            try std.testing.expect(parsed.value.valid());
+        } else |_| {},
+        else => {},
+    }
+
+    const Cache = property_cache.RemoteCache(4, 36, 36, 256);
+    var baseline = Cache{};
+    _ = try baseline.put(.{
+        .remote = try midi_ci.Muid.init(1),
+        .resource = "DeviceInfo",
+    }, "retained");
+    var restored = baseline;
+    if (restored.restoreSnapshot(source)) |_| {
+        try restored.validate();
+        var replay = baseline;
+        try replay.restoreSnapshot(source);
+        try std.testing.expectEqualDeep(restored, replay);
+    } else |_| {
+        try std.testing.expectEqualDeep(baseline, restored);
+    }
 }

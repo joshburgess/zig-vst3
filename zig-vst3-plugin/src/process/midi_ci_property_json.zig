@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const maximum_header_bytes = std.math.maxInt(u14);
+
 pub const Encoding = enum {
     ascii,
     mcoded7,
@@ -467,6 +469,8 @@ fn parseHeaderObject(
     source: []const u8,
     required_prefix: []const u8,
 ) !std.json.Parsed(std.json.Value) {
+    if (source.len == 0 or source.len > maximum_header_bytes)
+        return error.InvalidMidiCiPropertyHeaderLength;
     if (!std.mem.startsWith(u8, source, required_prefix))
         return error.InvalidMidiCiPropertyHeaderOrder;
     try validateHeaderBytes(source);
@@ -751,6 +755,34 @@ test "Property Exchange headers reject malformed constrained JSON" {
     }
 }
 
+test "Property Exchange headers reject one byte over the wire limit before allocation" {
+    const prefix = "{\"resource\":";
+    var source: [maximum_header_bytes + 1]u8 = @splat('x');
+    @memcpy(source[0..prefix.len], prefix);
+    try std.testing.expectError(
+        error.InvalidMidiCiPropertyHeaderLength,
+        RequestHeader.parseJson(std.testing.failing_allocator, &source),
+    );
+}
+
+test "Property Exchange header parsing releases every failed allocation" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        testRequestHeaderAllocationFailure,
+        .{},
+    );
+}
+
+fn testRequestHeaderAllocationFailure(allocator: std.mem.Allocator) !void {
+    const parsed = try RequestHeader.parseJson(
+        allocator,
+        "{\"resource\":\"DeviceInfo\",\"resId\":\"entry_1\"}",
+    );
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings("DeviceInfo", parsed.value.resource);
+    try std.testing.expectEqualStrings("entry_1", parsed.value.res_id.?);
+}
+
 test "Property Exchange zlib Mcoded7 round trips and rejects malformed data" {
     var compressed: [256]u8 = undefined;
     var work: [ZlibMcoded7.work_buffer_length]u8 = undefined;
@@ -833,4 +865,60 @@ test "Mcoded7 rejects malformed input before changing destination" {
         Mcoded7.decode(&.{ 1, 0 }, &destination),
     );
     try std.testing.expectEqualSlices(u8, &([_]u8{0xaa} ** 8), &destination);
+}
+
+const property_header_fuzz_seeds = [_][]const u8{
+    "{\"resource\":\"DeviceInfo\"}",
+    "{\"status\":200}",
+    "{\"command\":\"start\",\"resource\":\"ChannelList\"}",
+    "{\"status\":144}",
+};
+
+test "fuzz bounded MIDI-CI Property Exchange headers and Mcoded7" {
+    try std.testing.fuzz({}, fuzzPropertyHeadersAndMcoded7, .{
+        .corpus = &.{
+            property_header_fuzz_seeds[0],
+            property_header_fuzz_seeds[1],
+            property_header_fuzz_seeds[2],
+            property_header_fuzz_seeds[3],
+        },
+    });
+}
+
+fn fuzzPropertyHeadersAndMcoded7(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var storage: [1024]u8 = undefined;
+    const length: usize = switch (smith.valueRangeAtMost(u8, 0, 4)) {
+        0 => smith.slice(&storage),
+        1...4 => |seed_index| seeded: {
+            const seed = property_header_fuzz_seeds[seed_index - 1];
+            @memcpy(storage[0..seed.len], seed);
+            break :seeded seed.len;
+        },
+        else => smith.slice(&storage),
+    };
+    const source = storage[0..length];
+
+    if (RequestHeader.parseJson(std.testing.allocator, source)) |parsed| {
+        defer parsed.deinit();
+        try std.testing.expect(parsed.value.valid());
+    } else |_| {}
+    if (ReplyHeader.parseJson(std.testing.allocator, source)) |parsed| {
+        defer parsed.deinit();
+        try std.testing.expect(parsed.value.valid());
+    } else |_| {}
+    if (SubscriptionHeader.parseJson(std.testing.allocator, source)) |parsed| {
+        defer parsed.deinit();
+        try std.testing.expect(parsed.value.valid());
+    } else |_| {}
+    if (NotifyHeader.parseJson(std.testing.allocator, source)) |parsed| {
+        defer parsed.deinit();
+    } else |_| {}
+
+    var decoded_storage: [1024]u8 = undefined;
+    if (Mcoded7.decode(source, &decoded_storage)) |decoded| {
+        var encoded_storage: [1171]u8 = undefined;
+        const encoded = try Mcoded7.encode(decoded, &encoded_storage);
+        try std.testing.expectEqualSlices(u8, source, encoded);
+    } else |_| {}
 }

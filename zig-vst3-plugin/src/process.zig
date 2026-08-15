@@ -336,6 +336,8 @@ pub const MidiCiDevicePropertyCompletion = midi_ci_device.PropertyCompletion;
 pub const MidiCiDevicePropertyUpdate = midi_ci_device.PropertyUpdate;
 pub const MidiCiDevice = midi_ci_device.Device;
 pub const MidiCiPropertyEncoding = midi_ci_property_json.Encoding;
+pub const MidiCiPropertyMaximumHeaderBytes =
+    midi_ci_property_json.maximum_header_bytes;
 pub const MidiCiPropertyMcoded7 = midi_ci_property_json.Mcoded7;
 pub const MidiCiPropertyZlibMcoded7 = midi_ci_property_json.ZlibMcoded7;
 pub const MidiCiPropertyPagination = midi_ci_property_json.Pagination;
