@@ -139,6 +139,13 @@ single type. Later phases must link each invariant to code and verification.
   Tuning-analysis restore stages fixed-capacity slots and publishes only after
   every record, name, and content count fits both its wire representation and
   compile-time capacity and all values pass semantic validation.
+- MIDI-CI wire parsers require exact message lengths and bound variable fields
+  by their 7-, 14-, or 28-bit representation plus compile-time capacities.
+  Property Exchange headers reject more than 16,383 bytes before allocation,
+  and resource JSON rejects more than 65,535 bytes before parsing. Sessions,
+  requests, profiles, subscriptions, fragments, and cache entries use fixed
+  capacities. Reassembly and cache restore publish only completely validated
+  replacements, and every rejected cache restore preserves the prior cache.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the

@@ -248,6 +248,14 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   and tuning-analysis archive restoration is bounded and failure-atomic. The
   complete ARA gate, two fuzz campaigns, TSan, cross-builds, and installed
   package pass.
+- Closed Q-MIDI-CI-001 by enforcing the 14-bit Property Exchange header limit
+  before allocation. Added a 108-test focused native and cross-target gate plus
+  three fuzz targets for wire parsing, failure-atomic reassembly, constrained
+  JSON, Mcoded7, resource bodies, and cache restore.
+- Opened Q-VER-009 after the complete repository gate found ten older
+  termination constructs that postdate its zero-tolerance source scan. The
+  other 444/446 steps and 7,556/7,562 tests passed or reached their expected
+  platform skips.
 
 ## Phase 3 Scope
 
@@ -262,7 +270,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Audit the open P-MIDI-CI family from the checked parser inventory. Record its
-complete host-controlled payload, fragment, request, cache, JSON, allocation,
-and work-limit chains, then close defects and coverage gaps with focused fuzz,
-corruption, state-model, and sanitizer evidence.
+Close Q-VER-009 and restore the complete repository gate. Then audit the open
+P-EDITOR and P-RESOURCE families from the checked parser inventory, recording
+their complete byte, count, allocation, work-limit, migration, and
+failure-atomicity chains.

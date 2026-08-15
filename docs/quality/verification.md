@@ -1519,3 +1519,41 @@ deterministic replay after every success.
 | `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,064 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded MIDI-CI Inputs and Transactional Restore
+
+Behavior commit: `387204ef`
+
+The P-MIDI-CI review covered discovery, endpoint information, profiles,
+process inquiry and reports, Property Exchange messages, chunk reassembly,
+request and subscription sessions, JSON headers and resources, remote caches,
+and MIDI endpoint sessions. Exact wire messages are bounded by 7-, 14-, and
+28-bit fields plus compile-time storage capacities. Resource JSON already
+rejected more than 65,535 bytes, and its dynamic schema parser uses the Zig
+standard library's iterative heap stack within that source bound.
+
+The remaining direct header JSON entry points accepted an arbitrary slice
+before allocation. They now reject an empty source or more than 16,383 bytes at
+the shared boundary, matching the wire field, and the public facade exports the
+limit. A one-byte-over test uses a failing allocator to prove rejection before
+allocation. Exhaustive allocation-failure injection covers a successful header
+with retained strings.
+
+Three dedicated fuzz targets cover canonical wire replay, transactional chunk
+reassembly, all four constrained header forms, Mcoded7 replay, eleven resource
+and controller JSON entry points, and failure-atomic cache snapshots. Failed
+cache restores preserve the complete prior cache, and successful restores
+replay identically from the same baseline.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-midi-ci --summary all` | Passed: 6/6 steps and 108/108 tests, including native execution and ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| Combined focused and fuzz smoke gate | Passed: 15/15 steps and 129/129 tests |
+| `zig build test-midi-ci-wire-fuzz --fuzz=100K` | Passed: 100,024 executions, 22 unique inputs, and 199 of 22,548 instrumented branches without a failure |
+| `zig build test-midi-ci-json-fuzz --fuzz=100K` | Passed: 166,853 executions, 47 unique inputs, and 829 of 22,079 instrumented branches without a failure |
+| `zig build test-midi-ci-resource-fuzz --fuzz=100K` | Passed: 144,779 executions, 278 unique inputs, and 1,310 of 25,215 instrumented branches without a failure |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including the exported header limit |
+| `scripts/check_parser_inventory.sh` | Passed: 177 production sources classified |
+| `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,477 lines classified |
+| `zig build test --summary all` | Incomplete: 444/446 steps succeeded and 7,556/7,562 tests passed with six expected platform skips. The sole failed dependency was the pre-existing production termination-path scan now tracked by Q-VER-009. |
+| `git diff --check` | Passed |
