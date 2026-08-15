@@ -92,6 +92,15 @@ pub fn DryWetMixer(
                 self.config.rule,
             );
             for (wet, self.pending_dry[0..self.pending_count]) |
+                wet_sample,
+                dry_sample,
+            | {
+                const output =
+                    dry_sample * gains.dry + wet_sample * gains.wet;
+                if (!std.math.isFinite(output))
+                    return error.NonFiniteDryWetOutput;
+            }
+            for (wet, self.pending_dry[0..self.pending_count]) |
                 *wet_sample,
                 dry_sample,
             | {
@@ -338,4 +347,25 @@ test "dry wet sequencing failures preserve pending data" {
         mixer.mixWet(&invalid),
     );
     try std.testing.expectEqual(@as(usize, 2), mixer.pending_count);
+}
+
+test "dry wet mixer rejects non-finite output transactionally" {
+    const Mixer = DryWetMixer(f64, 2, 1);
+    var mixer = try Mixer.init(.{
+        .wet = 0.5,
+        .rule = .equal_power,
+    });
+    try mixer.pushDry(&.{std.math.floatMax(f64)});
+    var wet = [_]f64{std.math.floatMax(f64)};
+    const retained = wet;
+    try std.testing.expectError(
+        error.NonFiniteDryWetOutput,
+        mixer.mixWet(&wet),
+    );
+    try std.testing.expectEqualSlices(f64, &retained, &wet);
+    try std.testing.expectEqual(@as(usize, 1), mixer.pending_count);
+    try std.testing.expectEqual(
+        std.math.floatMax(f64),
+        mixer.pending_dry[0],
+    );
 }
