@@ -310,6 +310,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   controller construction and shared COM lifetime operations from processor
   and component construction. Exact facade identities, the 796-test VST3
   gate, cross-builds, inventories, and installed-package matrix pass.
+- Completed the ARA analysis portion of Q-ARCH-001 by separating tuning,
+  tempo and meter, harmony, and polyphonic-note detectors behind shared
+  bounded model and validation modules. Exact facade identities, the full
+  ARA matrix, archive fuzzing, inventories, and installed consumers pass.
 
 ## Phase 4 Scope
 
@@ -323,7 +327,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Continue Q-ARCH-001 with `ara_tuning_analysis.zig`. Extract detector families
-behind shared bounded observation and archive types, preserve all public
-identities, then repeat the focused, fuzz, cross-target, inventory, and
-installed-consumer gates.
+Continue Q-ARCH-001 with `dsp/mp3.zig`. Separate shared MPEG Layer III
+bitstream syntax from encoder and decoder state, preserve the current public
+facade and exact identities, then repeat focused, fuzz, cross-target,
+inventory, and installed-consumer gates.

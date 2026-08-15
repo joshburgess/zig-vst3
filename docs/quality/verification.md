@@ -1109,6 +1109,32 @@ event limit.
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
 
+## 2026-08-15: ARA Analysis Cohesion Closure
+
+Behavior commit: `e3be67c7`
+
+ARA detector families now live in focused tuning, tempo and meter, harmony,
+and polyphonic-note modules. They share passive configurations, results, and
+limits through `ara_analysis_model.zig`, plus bounded search, correlation,
+and tempo-map validation through `ara_analysis_common.zig`.
+
+`ara_tuning_analysis.zig` remains the public facade and owns per-source
+analysis state, requests, content publication, invalidation, and archive
+persistence. Public configuration and limit types are exact aliases with an
+explicit identity regression. The cohesion ledger classifies the remaining
+facade as `KEEP` at 2,508 production and 3,054 test lines.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-ara --summary all` | Passed: 77/77 steps and 445/445 tests, including ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| `zig build test-ara-archive-fuzz --fuzz=100K` | Passed: 100,051 executions and 47 unique inputs without a failure |
+| `scripts/test_installed_package.sh` | Passed: 18/18 steps and 96/96 tests |
+| Cohesion inventory and fixture | Passed: 33 large handwritten sources classified |
+| Quality and concurrency inventories | Passed: 858 files and 477,391 lines classified; 86 concurrency sources classified |
+| Production termination scan and fixture | Passed |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
+
 ## 2026-08-15: VST3 Effect Cohesion Closure
 
 Behavior commit: `d37f5b51`
