@@ -318,6 +318,9 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   decoder and synthesis state, metadata values, positional reading, reservoir
   credit accounting, and the complete encoder contract behind exact facade
   aliases. The 131-test gate and all ReleaseSafe targets pass.
+- Closed Q-ARCH-001 by separating the Ogg container and Vorbis codec behind
+  exact facade aliases. Every large handwritten source now has a checked
+  `KEEP` decision, and the cohesion inventory contains no `SPLIT` entries.
 
 ## Phase 4 Scope
 
@@ -331,7 +334,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Continue Q-ARCH-001 with the Vorbis implementation remaining in `dsp/ogg.zig`.
-Move the codec contract behind exact facade aliases, then classify the facade
-and codec separately and repeat focused, cross-target, inventory, and
-installed-consumer gates.
+Complete the remaining Phase 4 public API and documentation review. Audit
+ownership, thread, realtime, lifecycle, naming, and error contracts from the
+installed consumer surface, record any findings, and close Phase 4 before
+starting the numerical and performance program in Phase 5.

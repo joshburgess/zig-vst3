@@ -85,6 +85,7 @@ P-AUDIO zig-vst3-plugin/src/dsp/mp3/syntax.zig
 N-OUTPUT zig-vst3-plugin/src/dsp/mp3_encoder.zig
 P-AUDIO zig-vst3-plugin/src/dsp/ogg.zig
 P-AUDIO zig-vst3-plugin/src/dsp/ogg/container.zig
+P-AUDIO zig-vst3-plugin/src/dsp/ogg/vorbis.zig
 N-OUTPUT zig-vst3-plugin/src/dsp/pcm_encode.zig
 N-OUTPUT zig-vst3-plugin/src/dsp/rf64_writer.zig
 N-NONINPUT zig-vst3-plugin/src/dsp/state_variable.zig

@@ -68,6 +68,32 @@ Environment: macOS Darwin 24.4.0 on arm64, Zig 0.16.0.
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
 
+## 2026-08-15: Ogg and Vorbis Cohesion Closure
+
+Behavior commit: `d1369e4e`
+
+The complete Vorbis codec contract now lives in `dsp/ogg/vorbis.zig`. It owns
+header and setup parsing, codebooks, floor and residue processing, packet
+encode and decode, PCM analysis and synthesis, rate control, seeking,
+concealment, and stream publication. Those operations share the setup graph,
+block modes, overlap history, packet bitstream, and rate model.
+
+`dsp/ogg.zig` now preserves exact aliases to the independent Ogg container and
+Vorbis codec modules and retains their integrated behavioral suite. The
+cohesion inventory contains no `SPLIT` decisions, closing Q-ARCH-001.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-vorbis --summary all` | Passed: 10/10 steps and 94/94 tests |
+| ReleaseSafe cross-compilation | Passed: Linux AArch64, Linux x86-64, and Windows x86-64 |
+| Independent runners | Passed: Xiph Vorbis, stb_vorbis, Tremor preparation, and Tremor interoperability failure coverage |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests |
+| Cohesion inventory and fixture | Passed: 36 large handwritten sources classified with no `SPLIT` decisions |
+| Quality and concurrency inventories | Passed: 866 files and 478,462 lines classified; 86 concurrency sources classified |
+| Parser inventory and fixture | Passed: 201 production sources classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
+
 ## 2026-08-15: Ogg Container Boundary
 
 Ogg page and packet iteration, chained logical streams, bounded recovery,
