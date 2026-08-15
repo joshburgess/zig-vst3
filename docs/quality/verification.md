@@ -1134,3 +1134,40 @@ Both expected digests live outside the table source files.
 | `scripts/check_quality_inventory.sh` | Passed: 821 files and 469,478 lines classified |
 | `zig fmt --check` over the three changed MP3 sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded ADM XML Validation
+
+Behavior commits: `8f1d1750`, `4c34d23f`
+
+The first complexity-gate execution already used fixed-storage ADM graph
+indexes, but still used canonical prefix reconstruction in the underlying XML
+event iterator. It measured 115,542,863 Debug ns per declaration/reference
+pair at 128 pairs and failed the gate. This negative control isolated XML
+retained-state replay as a separate quadratic cost.
+
+Commit `8f1d1750` binds normal event traversal to the exact offset, open-element
+stack, namespace slices, and borrowed source ranges produced by the preceding
+successful step. Attribute traversal similarly binds its exact offset after
+validating the complete source. A missing or inconsistent witness takes the
+existing canonical reconstruction path. Iterator mutation tests exercise that
+fallback and continue to require failure-atomic rejection.
+
+Commit `4c34d23f` adds `AdmXmlLimits`, `default_adm_xml_limits`, and
+`AdmXmlDocument.initWithLimits`. The policy independently bounds input bytes,
+XML events, every retained metadata category, and graph-validation work. Exact
+fixed-storage indexes replace nested scans for duplicate declarations,
+reference resolution, cardinality, stream/track reciprocity, Matrix
+coefficient targets, and per-channel block sequences. The parser remains
+allocation-free and retains the selected limits with its borrowed document.
+
+| Check | Result |
+| --- | --- |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter 'dsp.adm_xml' --test-filter 'dsp.xml'` | Passed: 110/110 tests, including hostile retained state, every explicit limit family, graph semantics, and the native fuzz corpus |
+| `zig build test-adm-xml-fuzz --fuzz=100K` | Passed: 100,668 executions, 666 unique runs, and 968 of 24,354 instrumented branches covered without a failure |
+| `zig build benchmark-adm-xml-parser -Doptimize=Debug --summary all` | Passed: 377,214.84, 373,128.91, and 373,533.20 ns per pair at 128, 256, and 512 pairs |
+| `zig build benchmark-adm-xml-parser -Doptimize=ReleaseSafe --summary all` | Passed: 66,054.69, 65,943.36, and 67,976.56 ns per pair at 128, 256, and 512 pairs |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests, including the public custom-limit boundary |
+| `zig test -target x86_64-windows-gnu -OReleaseSafe -fno-emit-bin -Mroot=zig-vst3-plugin/src/core.zig --test-filter 'dsp.adm_xml' --test-filter 'dsp.xml'` | Passed: Windows x86-64 cross-compilation |
+| `scripts/check_quality_inventory.sh` | Passed: 822 files and 470,254 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

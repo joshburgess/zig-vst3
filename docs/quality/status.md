@@ -67,6 +67,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   reconstruction rules for every embedded MP3 Huffman and synthesis-window
   value. Separate semantic SHA-256 checks reject table drift, including a
   verified one-bit negative control.
+- Closed Q-ADM-001 with exact linear XML iterator witnesses, explicit ADM byte,
+  event, metadata-count, and graph-work limits, and fixed-storage indexes for
+  declaration, reference, cardinality, reciprocity, coefficient, and block
+  validation. The checked Debug and ReleaseSafe scaling gates, 100,668-run
+  native fuzz campaign, installed-package matrix, and Windows cross-build pass.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.

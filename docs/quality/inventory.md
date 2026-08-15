@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 821 source files and 469,478 source lines.
+The checked inventory contains 822 source files and 470,254 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -44,8 +44,8 @@ misstate review effort.
 | Q09 | MIDI 1, MIDI 2, MIDI-CI, MPE, files, streams, and sessions | 33 | 20,657 | 4/5/5/3 | High | Untrusted byte streams, bounded queues, session state | Fuzzing, truncation, progress, capacity, deterministic state models |
 | Q10 | Ogg and Vorbis | 1 | 30,491 | 5/5/5/4 | High | Untrusted packets, checked arithmetic, codec state, seeking | Fuzzing, truncation, sanitizer runs, independent decoders |
 | Q11 | MP3 | 3 | 30,639 | 5/5/5/4 | High | Untrusted frames, bit reservoirs, Huffman data, synthesis | Fuzzing, corruption, sanitizer runs, independent decoders |
-| Q12 | FLAC, audio containers, metadata, and file I/O | 15 | 23,449 | 5/5/5/4 | High | Untrusted files, XML, arithmetic, transactional output | Fuzzing, short I/O, failure injection, independent tools |
-| Q13 | ADM parsing and rendering | 15 | 33,388 | 5/4/5/4 | High | XML, timed metadata, matrix construction, exclusion rules | Fuzzing, numerical oracles, bounded inputs, partition invariance |
+| Q12 | FLAC, audio containers, metadata, and file I/O | 15 | 23,523 | 5/5/5/4 | High | Untrusted files, XML, arithmetic, transactional output | Fuzzing, short I/O, failure injection, independent tools |
+| Q13 | ADM parsing and rendering | 15 | 33,905 | 5/4/5/4 | High | XML, timed metadata, matrix construction, exclusion rules | Fuzzing, numerical oracles, bounded inputs, partition invariance |
 | Q14 | HRTF, HOA, and spatial matrices | 7 | 14,901 | 5/4/5/4 | High | Measured datasets, conditioning, realtime publication | Dataset corruption, numerical parity, TSan, partition invariance |
 | Q15 | DSP primitives, convolution, filters, effects, resampling, and numerics | 62 | 33,513 | 5/4/5/4 | High | Numerical stability, bounds, realtime execution and publication | Independent vectors, property tests, finite containment, TSan, benchmarks |
 | Q16 | Toolkit-neutral GUI state and models | 16 | 9,006 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
@@ -54,7 +54,7 @@ misstate review effort.
 | Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,691 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
 | Q20 | Product and API examples | 54 | 14,920 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
 | Q21 | Test hosts, reference adapters, and downstream fixtures | 101 | 29,724 | 3/3/4/4 | Moderate | Oracle correctness and false confidence | Mutation review, independent provenance, fixture self-tests |
-| Q22 | ABI, fixture, codec, and parity tools | 54 | 10,486 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
+| Q22 | ABI, fixture, codec, and parity tools | 55 | 10,608 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
 
 ## Lexical Concentrations
 
@@ -76,8 +76,8 @@ manual review. They include false positives and cannot establish absence.
 | Q09 | 53 | 0 | 0 | 0 | 673 | 846 |
 | Q10 | 0 | 6 | 0 | 0 | 522 | 346 |
 | Q11 | 0 | 8 | 0 | 0 | 661 | 409 |
-| Q12 | 0 | 26 | 0 | 0 | 657 | 365 |
-| Q13 | 90 | 0 | 0 | 0 | 394 | 324 |
+| Q12 | 0 | 26 | 0 | 0 | 660 | 365 |
+| Q13 | 90 | 0 | 0 | 0 | 396 | 328 |
 | Q14 | 132 | 13 | 18 | 14 | 71 | 223 |
 | Q15 | 2 | 12 | 32 | 0 | 63 | 1,870 |
 | Q16 | 2 | 67 | 22 | 17 | 191 | 409 |
@@ -86,7 +86,7 @@ manual review. They include false positives and cannot establish absence.
 | Q19 | 185 | 0 | 67 | 749 | 68 | 0 |
 | Q20 | 116 | 252 | 17 | 41 | 255 | 836 |
 | Q21 | 63 | 211 | 11 | 136 | 452 | 268 |
-| Q22 | 80 | 37 | 3 | 27 | 217 | 59 |
+| Q22 | 82 | 37 | 3 | 27 | 224 | 60 |
 
 ## Boundaries
 
