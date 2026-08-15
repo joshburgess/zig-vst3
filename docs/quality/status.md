@@ -63,6 +63,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   failure-atomic linear iteration, a checked complexity gate, and a dedicated
   native fuzz target. Focused Debug, ReleaseSafe, installed-package, and
   Windows cross-build verification passes.
+- Closed Q-CODEC-001 by identifying the exact ISO/IEC 11172-3:1993 sources and
+  reconstruction rules for every embedded MP3 Huffman and synthesis-window
+  value. Separate semantic SHA-256 checks reject table drift, including a
+  verified one-bit negative control.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.

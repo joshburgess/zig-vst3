@@ -1108,3 +1108,29 @@ event limit.
 | `scripts/check_quality_inventory.sh` | Passed: 821 files and 469,425 lines classified |
 | `zig fmt --check` over changed Zig sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: MP3 Table Provenance and Integrity
+
+Behavior commit: `6afb44b6`
+
+The Layer III pair-code Huffman tables now identify ISO/IEC 11172-3:1993,
+Annex B, Table 3-B.7. The reconstruction procedure enumerates each table by
+number and each cell by `x * side + y`, retaining the published codeword length
+and unsigned bits. The semantic serialization covers the table index, side,
+`linbits`, entry length, and big-endian codeword value. Its SHA-256 is
+`9fdeb0ca3c74ac54a8ee9154544e8dced73aef97837de1311572e75866de76ec`.
+
+The synthesis window now identifies Annex B, Table 3-B.3. Reconstruction reads
+all 512 `D[i]` coefficients in index order, multiplies each by 65,536, and
+rounds to the nearest integer. The big-endian `i32` serialization has SHA-256
+`e8d6792457f2a517d0e36a87d29f83610aa00d6cca6281f0b31802faa4b2ccf3`.
+Both expected digests live outside the table source files.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-mp3 --summary all` | Passed: 6/6 steps and 130/130 tests; native Debug execution plus ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter 'preserves the'` | Passed: 10/10 selected tests, including both complete table digests |
+| One-bit mutation of table 1's first Huffman codeword | Rejected by the focused integrity test with the expected digest mismatch; restoring the bit returned the gate to 10/10 passing tests |
+| `scripts/check_quality_inventory.sh` | Passed: 821 files and 469,478 lines classified |
+| `zig fmt --check` over the three changed MP3 sources | Passed |
+| `git diff --check` | Passed |
