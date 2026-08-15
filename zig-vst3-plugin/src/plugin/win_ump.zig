@@ -5,6 +5,8 @@ const shared = @import("zig-vst3-native-ump");
 
 pub const InputStatistics = shared.InputStatistics;
 pub const OutputStatistics = shared.OutputStatistics;
+pub const maximum_input_words_per_callback =
+    shared.maximum_input_words_per_callback;
 
 const ReceiveWords = *const fn (
     context: ?*anyopaque,

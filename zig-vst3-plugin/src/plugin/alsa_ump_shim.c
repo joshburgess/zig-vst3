@@ -296,6 +296,7 @@ static char *duplicate_name(
 {
     char *copy;
     if (source == NULL || source_length == 0 ||
+        source_length == SIZE_MAX ||
         memchr(source, 0, source_length) != NULL) {
         return NULL;
     }
@@ -732,7 +733,10 @@ static void *input_thread(void *context)
         if ((revents & POLLIN) == 0) {
             continue;
         }
-        while (1) {
+        while (!atomic_load_explicit(
+            &input->stop_requested,
+            memory_order_acquire
+        )) {
             ssize_t count = input->api.ump_read(
                 input->handle,
                 words,

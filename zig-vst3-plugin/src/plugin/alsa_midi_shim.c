@@ -151,6 +151,7 @@ static int copy_identifier(
 {
     char *copy;
     if (identifier == NULL || identifier_length == 0 ||
+        identifier_length == SIZE_MAX ||
         memchr(identifier, 0, identifier_length) != NULL) {
         return -1;
     }
@@ -447,7 +448,10 @@ static void *input_thread(void *context)
         if ((revents & POLLIN) == 0) {
             continue;
         }
-        while (1) {
+        while (!atomic_load_explicit(
+            &input->stop_requested,
+            memory_order_acquire
+        )) {
             ssize_t count = input->api.rawmidi_read(
                 input->handle,
                 bytes,

@@ -13,6 +13,8 @@ const ReceiveBytes = *const fn (
     length: usize,
 ) callconv(.c) void;
 
+pub const maximum_input_bytes_per_callback: usize = 256;
+
 pub const InputStatistics = struct {
     received: usize,
     unsupported: usize,
@@ -396,6 +398,7 @@ pub fn Backend(comptime Api: type) type {
             var admission = self.input_callbacks.admit() orelse return;
             defer admission.release();
             if (bytes_pointer == null or length == 0 or
+                length > maximum_input_bytes_per_callback or
                 timestamp_nanoseconds == 0)
             {
                 incrementSaturating(&self.malformed_count);
@@ -1326,6 +1329,22 @@ test "ALSA MIDI parser contains malformed and system traffic" {
     const statistics = backend.inputStatistics();
     try std.testing.expectEqual(@as(usize, 3), statistics.unsupported);
     try std.testing.expectEqual(@as(usize, 1), statistics.malformed);
+
+    const exact = [_]u8{0xf8} ** maximum_input_bytes_per_callback;
+    try MockApi.inject(&exact, 300);
+    const one = [_]u8{0xf8};
+    TestBackend.receiveBytes(
+        &backend,
+        400,
+        &one,
+        maximum_input_bytes_per_callback + 1,
+    );
+    const bounded_statistics = backend.inputStatistics();
+    try std.testing.expectEqual(
+        @as(usize, 3 + maximum_input_bytes_per_callback),
+        bounded_statistics.unsupported,
+    );
+    try std.testing.expectEqual(@as(usize, 2), bounded_statistics.malformed);
 }
 
 test "ALSA MIDI callback rejects misaligned context" {

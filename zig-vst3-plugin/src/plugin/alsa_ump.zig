@@ -13,6 +13,8 @@ const ReceiveWords = *const fn (
     word_count: usize,
 ) callconv(.c) void;
 
+pub const maximum_input_words_per_callback: usize = 64;
+
 pub const InputStatistics = struct {
     received: usize,
     malformed: usize,
@@ -399,6 +401,7 @@ pub fn BackendWithContract(
             var admission = self.input_callbacks.admit() orelse return;
             defer admission.release();
             if (words_pointer == null or word_count == 0 or
+                word_count > maximum_input_words_per_callback or
                 timestamp_nanoseconds == 0)
             {
                 incrementSaturating(&self.malformed_count);
@@ -1328,20 +1331,42 @@ test "ALSA UMP input contains invalid callback boundaries" {
     var descriptors: [4]device_catalog.DeviceDescriptor = undefined;
     _ = try backend.enumerate(&descriptors);
     try backend.selectInput(descriptors[0].identifier);
-    var context: u8 = 0;
+    var received: usize = 0;
     try backend.startInput(.{
-        .context = &context,
+        .context = &received,
         .receive = struct {
             fn receive(
-                _: *anyopaque,
+                context: *anyopaque,
                 _: standalone.TimestampedUmpPacket,
-            ) void {}
+            ) void {
+                const count: *usize = @ptrCast(@alignCast(context));
+                count.* += 1;
+            }
         }.receive,
     });
     try MockApi.inject(&.{0x20903c64}, 0);
     try MockApi.inject(&.{}, 100);
     try std.testing.expectEqual(
         @as(usize, 2),
+        backend.inputStatistics().malformed,
+    );
+
+    const exact = [_]u32{0x20903c64} **
+        maximum_input_words_per_callback;
+    try MockApi.inject(&exact, 200);
+    const one = [_]u32{0x20903c64};
+    TestBackend.receiveWords(
+        &backend,
+        300,
+        &one,
+        maximum_input_words_per_callback + 1,
+    );
+    try std.testing.expectEqual(
+        maximum_input_words_per_callback,
+        received,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 3),
         backend.inputStatistics().malformed,
     );
 }

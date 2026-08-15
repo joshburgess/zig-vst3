@@ -13,6 +13,8 @@ const ReceiveBytes = *const fn (
     length: usize,
 ) callconv(.c) void;
 
+pub const maximum_input_bytes_per_callback: usize = std.math.maxInt(u16);
+
 const NotifyTopologyChanged = *const fn (
     context: ?*anyopaque,
 ) callconv(.c) void;
@@ -440,7 +442,9 @@ pub fn Backend(comptime Api: type) type {
             var admission = self.input_callbacks.admit() orelse return;
             defer admission.release();
             const callback = self.input_callback orelse return;
-            if (bytes_pointer == null or length == 0) {
+            if (bytes_pointer == null or length == 0 or
+                length > maximum_input_bytes_per_callback)
+            {
                 incrementSaturating(&self.malformed_count);
                 return;
             }
@@ -1625,6 +1629,42 @@ test "CoreMIDI callbacks reject misaligned context" {
         bytes.len,
     );
     TestBackend.notifyTopologyChanged(misaligned);
+}
+
+test "CoreMIDI callback rejects a count above the packet wire limit" {
+    TestApi.resetTestState();
+    const TestBackend = Backend(TestApi);
+    var backend = TestBackend{};
+    try backend.open("Test client");
+    defer backend.close();
+    var devices: [3]device_catalog.DeviceDescriptor = undefined;
+    _ = try backend.enumerate(&devices);
+    try backend.selectInput(devices[0].identifier);
+    var received: usize = 0;
+    try backend.startInput(.{
+        .context = &received,
+        .receive = struct {
+            fn receive(
+                context: *anyopaque,
+                _: standalone.TimestampedMidi1Packet,
+            ) void {
+                const count: *usize = @ptrCast(@alignCast(context));
+                count.* += 1;
+            }
+        }.receive,
+    });
+    const one = [_]u8{ 0x90, 60, 100 };
+    TestBackend.receiveBytes(
+        &backend,
+        24,
+        &one,
+        maximum_input_bytes_per_callback + 1,
+    );
+    try std.testing.expectEqual(@as(usize, 0), received);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        backend.inputStatistics().malformed,
+    );
 }
 
 test "native CoreMIDI client and ports open without device access" {
