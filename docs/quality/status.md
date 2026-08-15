@@ -243,6 +243,11 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   at `4466af3d` completed all 19 jobs successfully. The pinned macOS 15 build
   executed the full sanitizer suite, and macOS pluginval passed both normal and
   strictness-10 validation.
+- Closed critical Q-ARA-001 by rejecting ARA archive filter counts above model
+  capacities before host pointer traversal or fixed-array indexing. Controller
+  and tuning-analysis archive restoration is bounded and failure-atomic. The
+  complete ARA gate, two fuzz campaigns, TSan, cross-builds, and installed
+  package pass.
 
 ## Phase 3 Scope
 
@@ -257,7 +262,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Audit the open P-ARA and P-MIDI-CI families from the checked parser inventory.
-Record their complete host-controlled byte, count, allocation, and work-limit
-chains, then close defects and coverage gaps with focused fuzz, corruption,
-state-model, and sanitizer evidence.
+Audit the open P-MIDI-CI family from the checked parser inventory. Record its
+complete host-controlled payload, fragment, request, cache, JSON, allocation,
+and work-limit chains, then close defects and coverage gaps with focused fuzz,
+corruption, state-model, and sanitizer evidence.

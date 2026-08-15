@@ -132,6 +132,13 @@ single type. Later phases must link each invariant to code and verification.
   records. Restore accepts at most 256 ID migrations, validates and indexes the
   complete table before reading state, decodes into a private value snapshot,
   and publishes only after every declared entry succeeds.
+- ARA document archives use a compile-time buffer derived from model source,
+  modification, persistent-ID, and extension limits. Store and restore filter
+  counts are capped before host pointer traversal or fixed-array indexing, and
+  the complete envelope is decoded before an extension callback can run.
+  Tuning-analysis restore stages fixed-capacity slots and publishes only after
+  every record, name, and content count fits both its wire representation and
+  compile-time capacity and all values pass semantic validation.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the

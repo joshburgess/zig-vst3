@@ -1481,3 +1481,41 @@ the next high-priority audits.
 | `shellcheck scripts/check_parser_inventory.sh scripts/test_parser_inventory_runner.sh` | Passed |
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: Bounded Failure-Atomic ARA Archives
+
+Behavior commit: `7c392946`
+
+The document-controller archive buffer is derived at compile time from the
+model source, modification, persistent-ID, and extension capacities. Host file
+size is checked before reading. Store and restore filter counts are now capped
+before any host pointer traversal or fixed-array indexing. Strings, object
+records, and extension bytes remain bounded by the same capacities, and the
+complete envelope must decode before the extension provider receives it.
+
+Tuning-analysis restore decodes into a staged copy of its fixed-capacity slots
+and publishes only after the complete reader succeeds. Record, name, and
+content counts fit both the 16-bit wire representation and compile-time
+capacities. Archive-size calculation saturates so an unrepresentable size is
+rejected by the controller instead of overflowing. The wider source-cache,
+renderer, analysis, and transform review found fixed storage, checked range
+arithmetic, and transactional generation publication throughout.
+
+The deterministic regressions exercise exactly one source or modification
+over each store and restore filter limit. Rejected stores preserve the complete
+prior host archive. The controller fuzzer requires decoding failure before any
+extension callback and deterministic replay after success. The tuning-analysis
+fuzzer requires exact prior-slot preservation after every error and
+deterministic replay after every success.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-ara --summary all` | Passed: 77/77 steps and 444/444 tests, including native execution, ARA VST3 ABI checks, and ReleaseSafe Linux AArch64, Linux x86-64, and Windows x86-64 compilation |
+| `zig build test-ara-controller-archive-fuzz --fuzz=100K` | Passed: 100,006 executions and 148 of 8,995 instrumented branches without a failure |
+| `zig build test-ara-archive-fuzz --fuzz=100K` | Passed: 200,048 cumulative executions, 38 unique inputs, and 228 of 9,338 instrumented branches without a failure |
+| `zig build test-phase2-thread-sanitizers --summary all` | Passed: 10/10 steps and 17/17 tests |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 tests |
+| `scripts/check_parser_inventory.sh` | Passed: 177 production sources classified |
+| `scripts/check_quality_inventory.sh` | Passed: 825 files and 474,064 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
