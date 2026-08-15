@@ -50,19 +50,19 @@ review_unit() {
         zig-vst3-plugin/src/parameters/*|zig-vst3-plugin/src/state/*|zig-vst3-plugin/src/resource/*|zig-vst3-plugin/src/units/*|zig-vst3-plugin/src/parameters.zig|zig-vst3-plugin/src/state.zig|zig-vst3-plugin/src/resource.zig|zig-vst3-plugin/src/units.zig)
             printf '%s\n' Q07
             ;;
-        zig-vst3-plugin/src/dsp/ogg.zig)
+        zig-vst3-plugin/src/dsp/ogg.zig|zig-vst3-plugin/src/dsp/ogg/*.zig)
             printf '%s\n' Q10
             ;;
-        zig-vst3-plugin/src/dsp/mp3*.zig)
+        zig-vst3-plugin/src/dsp/mp3*.zig|zig-vst3-plugin/src/dsp/mp3/*.zig)
             printf '%s\n' Q11
             ;;
         zig-vst3-plugin/src/dsp/flac.zig|zig-vst3-plugin/src/dsp/id3.zig|zig-vst3-plugin/src/dsp/audio_file_reader.zig|zig-vst3-plugin/src/dsp/audio_metadata.zig|zig-vst3-plugin/src/dsp/broadcast_metadata.zig|zig-vst3-plugin/src/dsp/ixml.zig|zig-vst3-plugin/src/dsp/xml.zig|zig-vst3-plugin/src/dsp/*writer*.zig|zig-vst3-plugin/src/dsp/file_*_io.zig|zig-vst3-plugin/src/dsp/pcm_encode.zig)
             printf '%s\n' Q12
             ;;
-        zig-vst3-plugin/src/dsp/adm*.zig)
+        zig-vst3-plugin/src/dsp/adm*.zig|zig-vst3-plugin/src/dsp/adm_render/*.zig|zig-vst3-plugin/src/dsp/adm_xml/*.zig)
             printf '%s\n' Q13
             ;;
-        zig-vst3-plugin/src/dsp/hrtf*.zig|zig-vst3-plugin/src/dsp/matrix.zig|zig-vst3-plugin/src/hoa_tests.zig|zig-vst3-plugin/src/hrtf_tests.zig|zig-vst3-plugin/src/hrtf_thread_sanitizer.zig)
+        zig-vst3-plugin/src/dsp/hrtf*.zig|zig-vst3-plugin/src/dsp/hrtf/*.zig|zig-vst3-plugin/src/dsp/matrix.zig|zig-vst3-plugin/src/dsp/matrix/*.zig|zig-vst3-plugin/src/hoa_tests.zig|zig-vst3-plugin/src/hrtf_tests.zig|zig-vst3-plugin/src/hrtf_thread_sanitizer.zig)
             printf '%s\n' Q14
             ;;
         zig-vst3-plugin/src/dsp/*.zig|zig-vst3-plugin/src/dsp.zig|zig-vst3-plugin/src/gui_ir_convolution.zig)
