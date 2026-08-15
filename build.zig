@@ -3253,6 +3253,72 @@ pub fn build(b: *std.Build) void {
     resource_ownership_test_step.dependOn(
         &b.addRunArtifact(resource_ownership_tests).step,
     );
+    const resource_state_fuzz_module = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (target.result.os.tag == .linux)
+        resource_state_fuzz_module.link_libc = true;
+    const resource_state_fuzz_tests = b.addTest(.{
+        .root_module = resource_state_fuzz_module,
+        .filters = &.{"fuzz bounded resource reference state"},
+    });
+    const resource_state_fuzz_step = b.step(
+        "test-resource-state-fuzz",
+        "Run or fuzz bounded resource reference state",
+    );
+    resource_state_fuzz_step.dependOn(
+        &b.addRunArtifact(resource_state_fuzz_tests).step,
+    );
+    const resource_transport_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3/src/resource_path_transport.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const resource_test_step = b.step(
+        "test-resource",
+        "Run resource state, worker, exchange, transport, and cross-target tests",
+    );
+    resource_test_step.dependOn(resource_ownership_test_step);
+    resource_test_step.dependOn(resource_state_fuzz_step);
+    resource_test_step.dependOn(&b.addRunArtifact(resource_transport_tests).step);
+    for ([_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    }) |cross_target| {
+        const resource_cross_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("zig-vst3-plugin/src/resource.zig"),
+                .target = cross_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        const transport_cross_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("zig-vst3/src/resource_path_transport.zig"),
+                .target = cross_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        resource_test_step.dependOn(&resource_cross_tests.step);
+        resource_test_step.dependOn(&transport_cross_tests.step);
+    }
     const matrix_test_module = b.createModule(.{
         .root_source_file = b.path(
             "zig-vst3-plugin/src/dsp/matrix.zig",

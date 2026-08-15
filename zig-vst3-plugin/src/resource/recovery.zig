@@ -408,6 +408,7 @@ pub fn Recovery(comptime Config: type) type {
 
         pub fn restore(self: *Self, state: ReferenceState) void {
             if (!realtime_audit.observe(.lock)) return;
+            state.validate() catch return;
             switch (state) {
                 .empty => {
                     _ = self.preparation.requestCancel();
@@ -795,6 +796,12 @@ test "resource recovery presents one bounded generation to the GUI" {
     try std.testing.expectEqual(@as(f64, 1.0), presentation.progress.value);
     try std.testing.expectEqualStrings("ready model", presentation.metadata());
     try presentation.progress.validate();
+
+    var malformed_restore = retained.reference;
+    malformed_restore.linked.path.length = 65;
+    recovery.restore(malformed_restore);
+    try std.testing.expectEqualDeep(retained, recovery.snapshot());
+    try std.testing.expectEqualDeep(presentation, recovery.presentationSnapshot());
 
     var malformed = presentation;
     malformed.progress.generation +%= 1;

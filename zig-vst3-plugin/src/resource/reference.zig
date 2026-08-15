@@ -229,6 +229,45 @@ pub fn State(comptime path_capacity: usize, comptime metadata_capacity: usize) t
     };
 }
 
+test "fuzz bounded resource reference state" {
+    try std.testing.fuzz({}, fuzzReferenceState, .{
+        .corpus = &.{ "\x00", "\x01ZRSRCREF" },
+    });
+}
+
+fn fuzzReferenceState(_: void, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    const Stored = State(64, 64);
+    var storage: [Stored.maximum_encoded_size]u8 = undefined;
+    const length: usize = switch (smith.valueRangeAtMost(u8, 0, 1)) {
+        0 => smith.slice(&storage),
+        1 => seeded: {
+            const linked = try Reference(64, 64).init(
+                "model.fixture",
+                Identity.fromBytes("bounded resource"),
+                3,
+                "linear",
+            );
+            const state: Stored = .{ .linked = linked };
+            var writer = std.Io.Writer.fixed(&storage);
+            try state.write(&writer);
+            break :seeded writer.end;
+        },
+        else => smith.slice(&storage),
+    };
+    var reader = std.Io.Reader.fixed(storage[0..length]);
+    if (Stored.read(&reader)) |restored| {
+        if (!restored.valid() or restored.encodedSize() > Stored.maximum_encoded_size)
+            return error.InvalidResourceStateFuzzResult;
+        var canonical_storage: [Stored.maximum_encoded_size]u8 = undefined;
+        var writer = std.Io.Writer.fixed(&canonical_storage);
+        try restored.write(&writer);
+        var canonical_reader = std.Io.Reader.fixed(writer.buffered());
+        try std.testing.expectEqualDeep(restored, try Stored.read(&canonical_reader));
+        try std.testing.expectEqual(writer.end, canonical_reader.seek);
+    } else |_| {}
+}
+
 test "resource reference round trips a maximum length path" {
     const Stored = Reference(32, 24);
     const path = "12345678901234567890123456789012";
