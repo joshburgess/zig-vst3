@@ -4,7 +4,7 @@
 fails when a new source file has no review unit. Run it after changing source
 layout or inventory rules.
 
-The checked inventory contains 821 source files and 469,424 source lines.
+The checked inventory contains 821 source files and 469,425 source lines.
 These totals include tests, tools, scripts, imported headers, and embedded data.
 They are workload measures, not implementation-size claims.
 
@@ -54,7 +54,7 @@ misstate review effort.
 | Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,691 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
 | Q20 | Product and API examples | 54 | 14,920 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
 | Q21 | Test hosts, reference adapters, and downstream fixtures | 101 | 29,724 | 3/3/4/4 | Moderate | Oracle correctness and false confidence | Mutation review, independent provenance, fixture self-tests |
-| Q22 | ABI, fixture, codec, and parity tools | 54 | 10,485 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
+| Q22 | ABI, fixture, codec, and parity tools | 54 | 10,486 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
 
 ## Lexical Concentrations
 

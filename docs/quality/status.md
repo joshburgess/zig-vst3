@@ -59,6 +59,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   these counts are evidence per command rather than a unique-test total.
 - Recorded Q-MIDI-001 for the Standard MIDI File iterator's quadratic state
   replay and missing explicit parser work limit.
+- Closed Q-MIDI-001 with independent byte, track, event, and payload limits,
+  failure-atomic linear iteration, a checked complexity gate, and a dedicated
+  native fuzz target. Focused Debug, ReleaseSafe, installed-package, and
+  Windows cross-build verification passes.
 - Recorded Q01, Q05, Q10–Q16, Q20, and non-production ownership dispositions,
   including codecs, files, ADM, dynamic matrices, SOFA, fixed DSP publication,
   GUI import workers, and owning product examples.

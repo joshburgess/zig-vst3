@@ -1056,3 +1056,55 @@ same artifacts pass on local macOS 15.4. GitHub moved `macos-latest` from macOS
 15 to macOS 26 in June and July 2026 and lists `macos-15` as a maintained ARM
 runner label. The workflow now pins every macOS job to that stable image. A
 fresh public run must pass before Q-VER-008 or Phase 2 closes.
+
+## 2026-08-15: Bounded Standard MIDI File Parsing
+
+Behavior commit: `43b6c79b`
+
+Q-MIDI-001 was reproduced at `4466af3d` by checking the new measurement tool
+out in a detached worktree, compiling it against that commit's plugin core,
+and running it in report-only mode:
+
+```text
+zig build-exe -OReleaseSafe --cache-dir /private/tmp/zig-vst3-midi-baseline-local --global-cache-dir /private/tmp/zig-vst3-midi-benchmark-global --dep zig-vst3-plugin-core -Mroot=tools/midi_file_complexity.zig -Mzig-vst3-plugin-core=zig-vst3-plugin/src/core.zig -lc -femit-bin=/private/tmp/zig-vst3-midi-baseline/midi-file-complexity
+/private/tmp/zig-vst3-midi-baseline/midi-file-complexity --report-only
+```
+
+| Events | Parse ns/event | Traversal ns/event |
+| ---: | ---: | ---: |
+| 1,000 | 2,889.72 | 2,895.45 |
+| 2,000 | 5,766.12 | 5,796.50 |
+| 4,000 | 11,513.72 | 11,556.36 |
+
+Doubling the event count doubled the old per-event cost, which confirms
+quadratic total work. Commit `43b6c79b` carries a validated iterator witness,
+so ordinary traversal parses each event once. If public cursor state changes,
+validation falls back to canonical prefix replay bounded by the track event
+limit. Parsing now enforces independently configurable file, track,
+track-count, per-track event, total-event, and event-payload limits.
+
+The checked benchmark uses a 2,000 ns/event ceiling and rejects per-event
+growth above 1.75 times between adjacent sizes. Both supported safety-oriented
+optimization modes passed:
+
+| Command and mode | 1,000 events | 2,000 events | 4,000 events |
+| --- | --- | --- | --- |
+| `zig build benchmark-midi-file-parser -Doptimize=Debug --summary all` | parse 118.71, traversal 106.27 ns/event | parse 116.28, traversal 122.54 ns/event | parse 117.16, traversal 110.55 ns/event |
+| `zig build benchmark-midi-file-parser -Doptimize=ReleaseSafe --summary all` | parse 15.89, traversal 18.47 ns/event | parse 24.12, traversal 16.45 ns/event | parse 15.66, traversal 15.66 ns/event |
+
+The native fuzz target uses two valid seeds plus arbitrary generation,
+mutation, truncation, and extension. Accepted inputs must revalidate, expose
+every declared track, terminate every iterator, and stay within the total
+event limit.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-midi-file-fuzz --summary all` | Passed: 3/3 steps and 7/7 selected tests |
+| `zig build test-midi-file-fuzz --fuzz=100K` | Passed: 100,319 executions, 317 unique runs, and 283 of 21,615 instrumented branches covered without a failure |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter 'MIDI file'` | Passed: 17/17 tests |
+| `zig test -Mroot=zig-vst3-plugin/src/core.zig --test-filter 'MIDI track'` | Passed: 8/8 tests |
+| `scripts/test_installed_package.sh --optimize=ReleaseSafe` | Passed: 18/18 steps and 96/96 downstream tests |
+| `zig build test-plugin-core-builds --summary all` | Passed: 2/2 steps, including ReleaseSafe Windows compilation |
+| `scripts/check_quality_inventory.sh` | Passed: 821 files and 469,425 lines classified |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |

@@ -85,6 +85,10 @@ single type. Later phases must link each invariant to code and verification.
 
 - Parsers either consume input, return a complete result, or return an error.
   They cannot loop indefinitely on an unchanged cursor.
+- Standard MIDI File parsing applies explicit file, track, track-count,
+  per-track event, total-event, and event-payload limits. Normal iteration
+  parses each event once. Validation of a caller-changed cursor may replay only
+  the retained track prefix and cannot exceed the retained event limit.
 - Counts, offsets, sizes, timestamps, and sample positions are checked before
   narrowing, addition, multiplication, allocation, or slice construction.
 - Invalid or non-finite input cannot cause partial output publication unless the
