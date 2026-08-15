@@ -266,13 +266,19 @@ pub const V23View = struct {
     }
 
     pub fn iterator(self: V23View) V23Iterator {
-        return .{ .bytes = self.body[self.frames_start..self.frames_end] };
+        const bytes = self.body[self.frames_start..self.frames_end];
+        return .{
+            .bytes = bytes,
+            .validated_bytes = bytes,
+        };
     }
 };
 
 pub const V23Iterator = struct {
     bytes: []const u8,
     offset: usize = 0,
+    validated_bytes: ?[]const u8 = null,
+    validated_offset: usize = 0,
 
     pub fn valid(self: V23Iterator) bool {
         self.validateState() catch return false;
@@ -281,10 +287,22 @@ pub const V23Iterator = struct {
 
     pub fn next(self: *V23Iterator) !?V23EncodedFrame {
         try self.validateState();
-        return self.nextInPlace();
+        var trial = self.*;
+        const frame = try trial.nextInPlace();
+        trial.validated_bytes = trial.bytes;
+        trial.validated_offset = trial.offset;
+        self.* = trial;
+        return frame;
     }
 
     fn validateState(self: V23Iterator) !void {
+        if (self.validated_bytes) |bytes| {
+            if (sameByteRange(self.bytes, bytes) and
+                self.offset == self.validated_offset)
+            {
+                return;
+            }
+        }
         if (self.offset > self.bytes.len)
             return error.InvalidId3IteratorState;
         var canonical = V23Iterator{ .bytes = self.bytes };
@@ -835,9 +853,12 @@ pub const View = struct {
     }
 
     pub fn iterator(self: View) Iterator {
+        const bytes = self.bytes[self.frames_start..self.frames_end];
         return .{
-            .bytes = self.bytes[self.frames_start..self.frames_end],
+            .bytes = bytes,
             .tag_unsynchronised = self.header.unsynchronised,
+            .validated_bytes = bytes,
+            .validated_tag_unsynchronised = self.header.unsynchronised,
         };
     }
 };
@@ -846,6 +867,9 @@ pub const Iterator = struct {
     bytes: []const u8,
     offset: usize = 0,
     tag_unsynchronised: bool,
+    validated_bytes: ?[]const u8 = null,
+    validated_offset: usize = 0,
+    validated_tag_unsynchronised: bool = false,
 
     pub fn valid(self: Iterator) bool {
         self.validateState() catch return false;
@@ -854,10 +878,25 @@ pub const Iterator = struct {
 
     pub fn next(self: *Iterator) !?EncodedFrame {
         try self.validateState();
-        return self.nextInPlace();
+        var trial = self.*;
+        const frame = try trial.nextInPlace();
+        trial.validated_bytes = trial.bytes;
+        trial.validated_offset = trial.offset;
+        trial.validated_tag_unsynchronised = trial.tag_unsynchronised;
+        self.* = trial;
+        return frame;
     }
 
     fn validateState(self: Iterator) !void {
+        if (self.validated_bytes) |bytes| {
+            if (sameByteRange(self.bytes, bytes) and
+                self.offset == self.validated_offset and
+                self.tag_unsynchronised ==
+                    self.validated_tag_unsynchronised)
+            {
+                return;
+            }
+        }
         if (self.offset > self.bytes.len)
             return error.InvalidId3IteratorState;
         var canonical = Iterator{
@@ -938,6 +977,10 @@ pub const Iterator = struct {
         };
     }
 };
+
+fn sameByteRange(first: []const u8, second: []const u8) bool {
+    return first.len == second.len and first.ptr == second.ptr;
+}
 
 pub fn requiredBytes(
     frames: []const Frame,
@@ -1555,6 +1598,9 @@ test "ID3v2.3 validation is transactional and version-specific" {
         .{},
     );
     const view = try V23View.init(encoded, &.{});
+    var fallback_iterator = view.iterator();
+    fallback_iterator.validated_bytes = null;
+    try std.testing.expect((try fallback_iterator.next()) != null);
     var middle_iterator = view.iterator();
     middle_iterator.offset = 1;
     try std.testing.expect(!middle_iterator.valid());
@@ -1967,6 +2013,9 @@ test "ID3v2.4 parser rejects invalid padding and unsynchronisation" {
         .{ .padding_bytes = 2 },
     );
     const view = try View.init(encoded);
+    var fallback_iterator = view.iterator();
+    fallback_iterator.validated_bytes = null;
+    try std.testing.expect((try fallback_iterator.next()) != null);
     var middle_iterator = view.iterator();
     middle_iterator.offset = 1;
     try std.testing.expect(!middle_iterator.valid());

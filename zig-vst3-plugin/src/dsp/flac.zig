@@ -723,6 +723,10 @@ pub const CommentIterator = struct {
     offset: usize,
     remaining: u32,
     vendor: []const u8,
+    validated_payload: ?[]const u8 = null,
+    validated_vendor: ?[]const u8 = null,
+    validated_offset: usize = 0,
+    validated_remaining: u32 = 0,
 
     pub fn init(encoded: []const u8) !?CommentIterator {
         if (encoded.len < 4 or !std.mem.eql(u8, encoded[0..4], "fLaC"))
@@ -753,6 +757,7 @@ pub const CommentIterator = struct {
                 result = try parseCommentPayload(
                     encoded[offset..][0..payload_size],
                 );
+                result.recordWitness();
                 found = true;
             }
             offset += payload_size;
@@ -765,6 +770,7 @@ pub const CommentIterator = struct {
         try self.validateState();
         var trial = self.*;
         const comment = try trial.nextInPlace();
+        trial.recordWitness();
         self.* = trial;
         return comment;
     }
@@ -775,6 +781,7 @@ pub const CommentIterator = struct {
     }
 
     fn validateState(self: *const CommentIterator) !void {
+        if (self.witnessMatches()) return;
         var canonical = try parseCommentPayload(self.payload);
         if (@intFromPtr(self.vendor.ptr) !=
             @intFromPtr(canonical.vendor.ptr) or
@@ -789,6 +796,22 @@ pub const CommentIterator = struct {
                 state_seen = true;
         }
         if (!state_seen) return error.InvalidFlacVorbisComments;
+    }
+
+    fn witnessMatches(self: *const CommentIterator) bool {
+        const payload = self.validated_payload orelse return false;
+        const vendor = self.validated_vendor orelse return false;
+        return sameByteRange(self.payload, payload) and
+            sameByteRange(self.vendor, vendor) and
+            self.offset == self.validated_offset and
+            self.remaining == self.validated_remaining;
+    }
+
+    fn recordWitness(self: *CommentIterator) void {
+        self.validated_payload = self.payload;
+        self.validated_vendor = self.vendor;
+        self.validated_offset = self.offset;
+        self.validated_remaining = self.remaining;
     }
 
     fn nextInPlace(self: *CommentIterator) !?CommentView {
@@ -824,6 +847,10 @@ pub const CommentIterator = struct {
         };
     }
 };
+
+fn sameByteRange(first: []const u8, second: []const u8) bool {
+    return first.len == second.len and first.ptr == second.ptr;
+}
 
 const streaminfo_bytes = 42;
 
@@ -6216,6 +6243,7 @@ test "FLAC Vorbis comments preserve UTF-8 fields" {
     var iterator = (try CommentIterator.init(flac_bytes)).?;
     try std.testing.expect(iterator.valid());
     try std.testing.expectEqualStrings(comments.vendor, iterator.vendor);
+    iterator.validated_payload = null;
     for (comments.fields) |expected| {
         const actual = (try iterator.next()).?;
         try std.testing.expectEqualStrings(expected.name, actual.name);

@@ -2117,11 +2117,16 @@ pub const VorbisCommentIterator = struct {
     vendor: []const u8,
     offset: usize,
     remaining: u32,
+    validated_packet: ?[]const u8 = null,
+    validated_vendor: ?[]const u8 = null,
+    validated_offset: usize = 0,
+    validated_remaining: u32 = 0,
 
     pub fn init(packet: []const u8) !VorbisCommentIterator {
-        const result = try initPrefix(packet);
+        var result = try initPrefix(packet);
         var validation = result;
         while (try validation.nextInPlace()) |_| {}
+        result.recordWitness();
         return result;
     }
 
@@ -2152,6 +2157,7 @@ pub const VorbisCommentIterator = struct {
         try self.validateState();
         var trial = self.*;
         const comment = try trial.nextInPlace();
+        trial.recordWitness();
         self.* = trial;
         return comment;
     }
@@ -2164,6 +2170,7 @@ pub const VorbisCommentIterator = struct {
     }
 
     fn validateState(self: *const VorbisCommentIterator) !void {
+        if (self.witnessMatches()) return;
         var canonical = try initPrefix(self.packet);
         if (!sameByteRange(self.vendor, canonical.vendor))
             return error.InvalidVorbisCommentIteratorState;
@@ -2178,6 +2185,22 @@ pub const VorbisCommentIterator = struct {
             _ = (try canonical.nextInPlace()) orelse
                 return error.InvalidVorbisCommentIteratorState;
         }
+    }
+
+    fn witnessMatches(self: *const VorbisCommentIterator) bool {
+        const packet = self.validated_packet orelse return false;
+        const vendor = self.validated_vendor orelse return false;
+        return sameByteRange(self.packet, packet) and
+            sameByteRange(self.vendor, vendor) and
+            self.offset == self.validated_offset and
+            self.remaining == self.validated_remaining;
+    }
+
+    fn recordWitness(self: *VorbisCommentIterator) void {
+        self.validated_packet = self.packet;
+        self.validated_vendor = self.vendor;
+        self.validated_offset = self.offset;
+        self.validated_remaining = self.remaining;
     }
 
     fn nextInPlace(self: *VorbisCommentIterator) !?VorbisComment {
@@ -19336,6 +19359,7 @@ test "Vorbis comments validate UTF-8 fields and framing" {
     var comments = try VorbisCommentIterator.init(packet[0..36]);
     try std.testing.expect(comments.valid());
     try std.testing.expectEqualStrings("vendor", comments.vendor);
+    comments.validated_packet = null;
     const title = (try comments.next()).?;
     try std.testing.expectEqualStrings("TITLE", title.name);
     try std.testing.expectEqualStrings("Song", title.value);

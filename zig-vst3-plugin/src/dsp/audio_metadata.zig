@@ -447,6 +447,8 @@ pub const RiffInfoView = struct {
         return .{
             .bytes = self.bytes,
             .offset = 12,
+            .validated_bytes = self.bytes,
+            .validated_offset = 12,
         };
     }
 };
@@ -454,6 +456,8 @@ pub const RiffInfoView = struct {
 pub const RiffInfoIterator = struct {
     bytes: []const u8,
     offset: usize,
+    validated_bytes: ?[]const u8 = null,
+    validated_offset: usize = 0,
 
     pub fn valid(self: RiffInfoIterator) bool {
         self.validateState() catch return false;
@@ -462,10 +466,22 @@ pub const RiffInfoIterator = struct {
 
     pub fn next(self: *RiffInfoIterator) !?Entry {
         try self.validateState();
-        return self.nextInPlace();
+        var trial = self.*;
+        const entry = try trial.nextInPlace();
+        trial.validated_bytes = trial.bytes;
+        trial.validated_offset = trial.offset;
+        self.* = trial;
+        return entry;
     }
 
     fn validateState(self: RiffInfoIterator) !void {
+        if (self.validated_bytes) |bytes| {
+            if (sameByteRange(self.bytes, bytes) and
+                self.offset == self.validated_offset)
+            {
+                return;
+            }
+        }
         if (self.offset < 12 or self.offset > self.bytes.len)
             return error.InvalidRiffInfoIteratorState;
         const view = try RiffInfoView.init(self.bytes);
@@ -603,11 +619,16 @@ pub fn writeAiffTextFile(
 pub const AiffTextIterator = struct {
     bytes: []const u8,
     offset: usize = 0,
+    validated_bytes: ?[]const u8 = null,
+    validated_offset: usize = 0,
 
     pub fn init(bytes: []const u8) !AiffTextIterator {
         var iterator = AiffTextIterator{ .bytes = bytes };
         while (try iterator.nextInPlace()) |_| {}
-        return .{ .bytes = bytes };
+        return .{
+            .bytes = bytes,
+            .validated_bytes = bytes,
+        };
     }
 
     pub fn valid(self: AiffTextIterator) bool {
@@ -617,10 +638,22 @@ pub const AiffTextIterator = struct {
 
     pub fn next(self: *AiffTextIterator) !?Entry {
         try self.validateState();
-        return self.nextInPlace();
+        var trial = self.*;
+        const entry = try trial.nextInPlace();
+        trial.validated_bytes = trial.bytes;
+        trial.validated_offset = trial.offset;
+        self.* = trial;
+        return entry;
     }
 
     fn validateState(self: AiffTextIterator) !void {
+        if (self.validated_bytes) |bytes| {
+            if (sameByteRange(self.bytes, bytes) and
+                self.offset == self.validated_offset)
+            {
+                return;
+            }
+        }
         if (self.offset > self.bytes.len)
             return error.InvalidAiffTextIteratorState;
         var canonical = try AiffTextIterator.init(self.bytes);
@@ -664,6 +697,10 @@ pub const AiffTextIterator = struct {
         };
     }
 };
+
+fn sameByteRange(first: []const u8, second: []const u8) bool {
+    return first.len == second.len and first.ptr == second.ptr;
+}
 
 fn validateXmlDocument(document: []const u8) !void {
     if (document.len == 0) return error.EmptyXmlDocument;
@@ -738,6 +775,7 @@ test "RIFF INFO metadata round trips known and unknown entries" {
     const encoded = try encodeRiffInfo(&storage, &entries);
     const view = try RiffInfoView.init(encoded);
     var iterator = view.iterator();
+    iterator.validated_bytes = null;
     for (entries) |expected| {
         const actual = (try iterator.next()).?;
         try std.testing.expectEqual(expected.id, actual.id);
@@ -840,6 +878,7 @@ test "AIFF text metadata round trips padded chunks" {
     var storage: [40]u8 = undefined;
     const encoded = try encodeAiffText(&storage, &entries);
     var iterator = try AiffTextIterator.init(encoded);
+    iterator.validated_bytes = null;
     for (entries) |expected| {
         const actual = (try iterator.next()).?;
         try std.testing.expectEqual(expected.id, actual.id);

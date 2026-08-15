@@ -2827,6 +2827,35 @@ pub fn build(b: *std.Build) void {
     adm_xml_benchmark_step.dependOn(
         &b.addRunArtifact(adm_xml_benchmark).step,
     );
+    const metadata_iterator_benchmark_core = b.createModule(.{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
+        .target = b.graph.host,
+        .optimize = optimize,
+    });
+    if (b.graph.host.result.os.tag == .linux)
+        metadata_iterator_benchmark_core.link_libc = true;
+    const metadata_iterator_benchmark = b.addExecutable(.{
+        .name = "metadata-iterator-complexity",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tools/metadata_iterator_complexity.zig",
+            ),
+            .target = b.graph.host,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    metadata_iterator_benchmark.root_module.addImport(
+        "zig-vst3-plugin-core",
+        metadata_iterator_benchmark_core,
+    );
+    const metadata_iterator_benchmark_step = b.step(
+        "benchmark-metadata-iterators",
+        "Measure retained metadata iterator scaling",
+    );
+    metadata_iterator_benchmark_step.dependOn(
+        &b.addRunArtifact(metadata_iterator_benchmark).step,
+    );
     const plugin_runtime_test_module = b.createModule(.{
         .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,
