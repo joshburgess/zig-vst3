@@ -33,7 +33,7 @@ split.
 | `zig-vst3-plugin/src/dsp/mp3.zig` | 16,584 / 12,720 | Owns MPEG Layer III headers, side information, bit reservoir, Huffman coding, encoding, decoding, seeking, and positional I/O. | SPLIT. Separate shared bitstream syntax from encoder and decoder state while preserving the current public module as a facade. |
 | `zig-vst3-plugin/src/dsp/ogg.zig` | 20,969 / 10,120 | Owns Ogg pages, packets, streams, files, and the complete Vorbis header, encode, decode, seek, rate-control, and concealment stack. | SPLIT. Separate the Ogg container from the Vorbis codec and retain all current `dsp.ogg` names as exact aliases. |
 | `zig-vst3-plugin/src/dsp/special_functions.zig` | 1,062 / 1,235 | Implements the elliptic, Jacobi, and Bessel functions used by DSP design code with shared domain and convergence handling. | KEEP. These functions share numerical primitives and one error policy; the file is test-heavy rather than production-heavy. |
-| `zig-vst3-plugin/src/lv2.zig` | 5,792 / 4,537 | Defines LV2 ABI layouts and owns plugin instance, feature negotiation, worker, state, programs, and dynamic-port lifecycles. The URI vocabulary lives in `lv2/uris.zig`. | SPLIT. Extract raw ABI declarations from the stateful plugin adapter while retaining owning sinks and exact public aliases. |
+| `zig-vst3-plugin/src/lv2.zig` | 5,523 / 4,608 | Owns plugin instance, feature negotiation, worker, state, programs, dynamic ports, and bounded host-owned path lifecycles. C layouts and callbacks live in `lv2/abi.zig`; URI constants live in `lv2/uris.zig`. | KEEP. The remaining values belong to one plugin instance, and all moved public names retain exact type and value identity. |
 | `zig-vst3-plugin/src/lv2_metadata.zig` | 1,436 / 1,178 | Generates bounded Turtle metadata from one validated plugin and UI metadata model. | KEEP. Escaping, URI emission, port emission, and preset output share one transactional writer. |
 | `zig-vst3-plugin/src/lv2_ui.zig` | 1,723 / 2,080 | Owns LV2 UI feature negotiation, host subscription and resize callbacks, backend lifecycle, and idle publication. | KEEP. The runtime state is one UI instance, and more than half the file is colocated lifecycle testing. |
 | `zig-vst3-plugin/src/parameters/access.zig` | 1,704 / 1,024 | Derives typed parameter values, read-only views, and editors from one compile-time parameter schema. | KEEP. All three views depend on the same descriptor reflection and range conversion invariants. |
@@ -72,7 +72,7 @@ decisions.
 - `zig-vst3-plugin/src/dsp/mp3.zig` | 29304 | 16584 | 12720 | SPLIT
 - `zig-vst3-plugin/src/dsp/ogg.zig` | 31089 | 20969 | 10120 | SPLIT
 - `zig-vst3-plugin/src/dsp/special_functions.zig` | 2297 | 1062 | 1235 | KEEP
-- `zig-vst3-plugin/src/lv2.zig` | 10329 | 5792 | 4537 | SPLIT
+- `zig-vst3-plugin/src/lv2.zig` | 10131 | 5523 | 4608 | KEEP
 - `zig-vst3-plugin/src/lv2_metadata.zig` | 2614 | 1436 | 1178 | KEEP
 - `zig-vst3-plugin/src/lv2_ui.zig` | 3803 | 1723 | 2080 | KEEP
 - `zig-vst3-plugin/src/parameters/access.zig` | 2728 | 1704 | 1024 | KEEP

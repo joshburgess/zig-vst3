@@ -91,6 +91,7 @@ N-DELEGATE zig-vst3-plugin/src/gui_ir_editor.zig
 N-DELEGATE zig-vst3-plugin/src/gui_preset_browser.zig
 N-NONINPUT zig-vst3-plugin/src/hoa_tests.zig
 P-ADAPTER zig-vst3-plugin/src/lv2.zig
+N-NONINPUT zig-vst3-plugin/src/lv2/abi.zig
 N-NONINPUT zig-vst3-plugin/src/lv2/uris.zig
 P-ADAPTER zig-vst3-plugin/src/lv2_metadata.zig
 P-ADAPTER zig-vst3-plugin/src/lv2_ui.zig

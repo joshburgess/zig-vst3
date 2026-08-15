@@ -1,4 +1,5 @@
 const std = @import("std");
+const abi = @import("lv2/abi.zig");
 const common = @import("common.zig");
 const plugin_api = @import("plugin.zig");
 const process_api = @import("process.zig");
@@ -80,40 +81,18 @@ pub const log_error_uri = uris.log_error_uri;
 pub const log_warning_uri = uris.log_warning_uri;
 pub const log_note_uri = uris.log_note_uri;
 pub const log_trace_uri = uris.log_trace_uri;
-pub const Handle = ?*anyopaque;
-
-pub const Feature = extern struct {
-    URI: ?[*:0]const u8,
-    data: ?*anyopaque,
-};
-
-pub const Urid = u32;
-
-pub const UridMapFunction = *const fn (
-    handle: ?*anyopaque,
-    URI: [*:0]const u8,
-) callconv(.c) Urid;
-
-pub const UridMap = extern struct {
-    handle: ?*anyopaque,
-    map: ?UridMapFunction,
-};
-
+pub const Handle = abi.Handle;
+pub const Feature = abi.Feature;
+pub const Urid = abi.Urid;
+pub const UridMapFunction = abi.UridMapFunction;
+pub const UridMap = abi.UridMap;
 const CheckedUridMap = struct {
     handle: ?*anyopaque,
     map: UridMapFunction,
 };
 
-pub const UridUnmap = extern struct {
-    handle: ?*anyopaque,
-    unmap: ?UridUnmapFunction,
-};
-
-pub const UridUnmapFunction = *const fn (
-    handle: ?*anyopaque,
-    urid: Urid,
-) callconv(.c) ?[*:0]const u8;
-
+pub const UridUnmap = abi.UridUnmap;
+pub const UridUnmapFunction = abi.UridUnmapFunction;
 pub const maximum_unmapped_uri_bytes: usize = 4096;
 
 pub const UridUnmapSink = struct {
@@ -135,77 +114,20 @@ pub const UridUnmapSink = struct {
     }
 };
 
-pub const Atom = extern struct {
-    size: u32,
-    type: Urid,
-};
-
-pub const AtomEventTime = extern union {
-    frames: i64,
-    beats: f64,
-};
-
-pub const AtomEvent = extern struct {
-    time: AtomEventTime,
-    body: Atom,
-};
-
-pub const AtomSequenceBody = extern struct {
-    unit: Urid,
-    pad: u32,
-};
-
-pub const AtomSequence = extern struct {
-    atom: Atom,
-    body: AtomSequenceBody,
-};
-
-pub const AtomObjectBody = extern struct {
-    id: Urid,
-    otype: Urid,
-};
-
-pub const AtomObject = extern struct {
-    atom: Atom,
-    body: AtomObjectBody,
-};
-
-pub const AtomPropertyBody = extern struct {
-    key: Urid,
-    context: Urid,
-    value: Atom,
-};
-
-pub const AtomBool = extern struct {
-    atom: Atom,
-    body: i32,
-};
-
-pub const AtomFloat = extern struct {
-    atom: Atom,
-    body: f32,
-};
-
-pub const AtomDouble = extern struct {
-    atom: Atom,
-    body: f64,
-};
-
-pub const AtomInt = extern struct {
-    atom: Atom,
-    body: i32,
-};
-
-pub const AtomLong = extern struct {
-    atom: Atom,
-    body: i64,
-};
-
-pub const AtomUrid = extern struct {
-    atom: Atom,
-    body: Urid,
-};
-
+pub const Atom = abi.Atom;
+pub const AtomEventTime = abi.AtomEventTime;
+pub const AtomEvent = abi.AtomEvent;
+pub const AtomSequenceBody = abi.AtomSequenceBody;
+pub const AtomSequence = abi.AtomSequence;
+pub const AtomObjectBody = abi.AtomObjectBody;
+pub const AtomObject = abi.AtomObject;
+pub const AtomPropertyBody = abi.AtomPropertyBody;
+pub const AtomBool = abi.AtomBool;
+pub const AtomFloat = abi.AtomFloat;
+pub const AtomDouble = abi.AtomDouble;
+pub const AtomInt = abi.AtomInt;
+pub const AtomLong = abi.AtomLong;
+pub const AtomUrid = abi.AtomUrid;
 pub const PatchValueKind = enum {
     boolean,
     int,
@@ -297,96 +219,25 @@ pub const PatchGraphGetRequest = struct {
     request: ?PatchRequestReference = null,
 };
 
-pub const OptionsContext = enum(c_int) {
-    instance = 0,
-    resource = 1,
-    blank = 2,
-    port = 3,
-};
-
-pub const OptionsOption = extern struct {
-    context: c_int = @intFromEnum(OptionsContext.instance),
-    subject: u32 = 0,
-    key: Urid = 0,
-    size: u32 = 0,
-    type: Urid = 0,
-    value: ?*const anyopaque = null,
-};
-
-pub const OptionsStatus = u32;
-pub const options_status_success: OptionsStatus = 0;
-pub const options_status_unknown: OptionsStatus = 1 << 0;
-pub const options_status_bad_subject: OptionsStatus = 1 << 1;
-pub const options_status_bad_key: OptionsStatus = 1 << 2;
-pub const options_status_bad_value: OptionsStatus = 1 << 3;
-
-pub const OptionsInterface = extern struct {
-    get: *const fn (
-        instance: Handle,
-        options: ?[*]align(1) OptionsOption,
-    ) callconv(.c) OptionsStatus,
-    set: *const fn (
-        instance: Handle,
-        options: ?[*]align(1) const OptionsOption,
-    ) callconv(.c) OptionsStatus,
-};
-
-pub const WorkerStatus = enum(c_int) {
-    success = 0,
-    unknown = 1,
-    no_space = 2,
-    _,
-};
-
-pub const WorkerRespondHandle = ?*anyopaque;
-pub const WorkerRespondFunction = *const fn (
-    handle: WorkerRespondHandle,
-    size: u32,
-    data: ?*const anyopaque,
-) callconv(.c) WorkerStatus;
-
-pub const WorkerScheduleFunction = *const fn (
-    handle: ?*anyopaque,
-    size: u32,
-    data: ?*const anyopaque,
-) callconv(.c) WorkerStatus;
-
-pub const WorkerSchedule = extern struct {
-    handle: ?*anyopaque,
-    schedule_work: ?WorkerScheduleFunction,
-};
-
-pub const ResizePortStatus = enum(c_int) {
-    success = 0,
-    unknown = 1,
-    no_space = 2,
-    _,
-};
-
-pub const ResizePortFunction = *const fn (
-    data: ?*anyopaque,
-    port_index: u32,
-    size: usize,
-) callconv(.c) ResizePortStatus;
-
-pub const ResizePortFeature = extern struct {
-    data: ?*anyopaque,
-    resize: ?ResizePortFunction,
-};
-
-pub const LogPrintfFunction = *const fn (
-    handle: ?*anyopaque,
-    type: Urid,
-    format: [*:0]const u8,
-    ...,
-) callconv(.c) c_int;
-
-pub const LogFeature = extern struct {
-    handle: ?*anyopaque,
-    printf: ?LogPrintfFunction,
-    vprintf: ?*const anyopaque,
-};
-
+pub const OptionsContext = abi.OptionsContext;
+pub const OptionsOption = abi.OptionsOption;
+pub const OptionsStatus = abi.OptionsStatus;
+pub const options_status_success = abi.options_status_success;
+pub const options_status_unknown = abi.options_status_unknown;
+pub const options_status_bad_subject = abi.options_status_bad_subject;
+pub const options_status_bad_key = abi.options_status_bad_key;
+pub const options_status_bad_value = abi.options_status_bad_value;
+pub const OptionsInterface = abi.OptionsInterface;
+pub const WorkerStatus = abi.WorkerStatus;
+pub const WorkerRespondHandle = abi.WorkerRespondHandle;
+pub const WorkerRespondFunction = abi.WorkerRespondFunction;
+pub const WorkerScheduleFunction = abi.WorkerScheduleFunction;
+pub const WorkerSchedule = abi.WorkerSchedule;
+pub const ResizePortStatus = abi.ResizePortStatus;
+pub const ResizePortFunction = abi.ResizePortFunction;
+pub const ResizePortFeature = abi.ResizePortFeature;
+pub const LogPrintfFunction = abi.LogPrintfFunction;
+pub const LogFeature = abi.LogFeature;
 pub const NonRealtimeLogLevel = enum {
     error_message,
     warning,
@@ -428,42 +279,9 @@ const CheckedWorkerSchedule = struct {
     schedule_work: WorkerScheduleFunction,
 };
 
-pub const WorkerInterface = extern struct {
-    work: *const fn (
-        instance: Handle,
-        respond: ?WorkerRespondFunction,
-        handle: WorkerRespondHandle,
-        size: u32,
-        data: ?*const anyopaque,
-    ) callconv(.c) WorkerStatus,
-    work_response: *const fn (
-        instance: Handle,
-        size: u32,
-        body: ?*const anyopaque,
-    ) callconv(.c) WorkerStatus,
-    end_run: ?*const fn (
-        instance: Handle,
-    ) callconv(.c) WorkerStatus,
-};
-
-pub const ProgramDescriptor = extern struct {
-    bank: u32,
-    program: u32,
-    name: [*:0]const u8,
-};
-
-pub const ProgramsInterface = extern struct {
-    get_program: *const fn (
-        instance: Handle,
-        index: u32,
-    ) callconv(.c) ?*const ProgramDescriptor,
-    select_program: *const fn (
-        instance: Handle,
-        bank: u32,
-        program: u32,
-    ) callconv(.c) void,
-};
-
+pub const WorkerInterface = abi.WorkerInterface;
+pub const ProgramDescriptor = abi.ProgramDescriptor;
+pub const ProgramsInterface = abi.ProgramsInterface;
 pub const WorkerScheduleSink = struct {
     context: *anyopaque,
     maximum_size: usize,
@@ -529,84 +347,20 @@ pub const StateChangedSink = struct {
     }
 };
 
-pub const StateHandle = ?*anyopaque;
-
-pub const StateStatus = enum(c_int) {
-    success = 0,
-    unknown = 1,
-    bad_type = 2,
-    bad_flags = 3,
-    no_feature = 4,
-    no_property = 5,
-    no_space = 6,
-    _,
-};
-
-pub const state_is_pod: u32 = 1 << 0;
-pub const state_is_portable: u32 = 1 << 1;
-pub const state_is_native: u32 = 1 << 2;
+pub const StateHandle = abi.StateHandle;
+pub const StateStatus = abi.StateStatus;
+pub const state_is_pod = abi.state_is_pod;
+pub const state_is_portable = abi.state_is_portable;
+pub const state_is_native = abi.state_is_native;
+pub const StateStoreFunction = abi.StateStoreFunction;
+pub const StateRetrieveFunction = abi.StateRetrieveFunction;
+pub const StateInterface = abi.StateInterface;
+pub const StateMapPathFunction = abi.StateMapPathFunction;
+pub const StateFreePathFunction = abi.StateFreePathFunction;
+pub const StateMapPath = abi.StateMapPath;
+pub const StateMakePath = abi.StateMakePath;
+pub const StateFreePath = abi.StateFreePath;
 pub const maximum_state_path_bytes: usize = 4096;
-
-pub const StateStoreFunction = *const fn (
-    handle: StateHandle,
-    key: Urid,
-    value: *const anyopaque,
-    size: usize,
-    value_type: Urid,
-    flags: u32,
-) callconv(.c) StateStatus;
-
-pub const StateRetrieveFunction = *const fn (
-    handle: StateHandle,
-    key: Urid,
-    size: *usize,
-    value_type: *Urid,
-    flags: *u32,
-) callconv(.c) ?*const anyopaque;
-
-pub const StateInterface = extern struct {
-    save: *const fn (
-        instance: Handle,
-        store: ?StateStoreFunction,
-        handle: StateHandle,
-        flags: u32,
-        features: ?[*:null]const ?*const Feature,
-    ) callconv(.c) StateStatus,
-    restore: *const fn (
-        instance: Handle,
-        retrieve: ?StateRetrieveFunction,
-        handle: StateHandle,
-        flags: u32,
-        features: ?[*:null]const ?*const Feature,
-    ) callconv(.c) StateStatus,
-};
-
-pub const StateMapPathFunction = *const fn (
-    handle: StateHandle,
-    path: [*:0]const u8,
-) callconv(.c) ?[*:0]u8;
-
-pub const StateFreePathFunction = *const fn (
-    handle: StateHandle,
-    path: [*:0]u8,
-) callconv(.c) void;
-
-pub const StateMapPath = extern struct {
-    handle: StateHandle,
-    abstract_path: ?StateMapPathFunction,
-    absolute_path: ?StateMapPathFunction,
-};
-
-pub const StateMakePath = extern struct {
-    handle: StateHandle,
-    path: ?StateMapPathFunction,
-};
-
-pub const StateFreePath = extern struct {
-    handle: StateHandle,
-    free_path: ?StateFreePathFunction,
-};
-
 pub const StateMapPathSink = struct {
     handle: StateHandle,
     abstract_path: StateMapPathFunction,
@@ -725,31 +479,7 @@ pub const StatePathFeatures = struct {
     }
 };
 
-pub const Descriptor = extern struct {
-    URI: [*:0]const u8,
-    instantiate: *const fn (
-        descriptor: ?*const Descriptor,
-        sample_rate: f64,
-        bundle_path: ?[*:0]const u8,
-        features: ?[*:null]const ?*const Feature,
-    ) callconv(.c) Handle,
-    connect_port: *const fn (
-        instance: Handle,
-        port: u32,
-        data_location: ?*anyopaque,
-    ) callconv(.c) void,
-    activate: ?*const fn (instance: Handle) callconv(.c) void,
-    run: *const fn (
-        instance: Handle,
-        sample_count: u32,
-    ) callconv(.c) void,
-    deactivate: ?*const fn (instance: Handle) callconv(.c) void,
-    cleanup: *const fn (instance: Handle) callconv(.c) void,
-    extension_data: *const fn (
-        URI: ?[*:0]const u8,
-    ) callconv(.c) ?*const anyopaque,
-};
-
+pub const Descriptor = abi.Descriptor;
 pub const RunStatus = enum {
     ready,
     succeeded,
@@ -5098,6 +4828,78 @@ fn featureStruct(
     const feature = featureWithUri(features, wanted_uri) orelse
         return null;
     return featureValue(T, feature);
+}
+
+test "LV2 ABI public names remain exact aliases" {
+    const names = .{
+        "Handle",
+        "Feature",
+        "Urid",
+        "UridMapFunction",
+        "UridMap",
+        "UridUnmap",
+        "UridUnmapFunction",
+        "Atom",
+        "AtomEventTime",
+        "AtomEvent",
+        "AtomSequenceBody",
+        "AtomSequence",
+        "AtomObjectBody",
+        "AtomObject",
+        "AtomPropertyBody",
+        "AtomBool",
+        "AtomFloat",
+        "AtomDouble",
+        "AtomInt",
+        "AtomLong",
+        "AtomUrid",
+        "OptionsContext",
+        "OptionsOption",
+        "OptionsStatus",
+        "options_status_success",
+        "options_status_unknown",
+        "options_status_bad_subject",
+        "options_status_bad_key",
+        "options_status_bad_value",
+        "OptionsInterface",
+        "WorkerStatus",
+        "WorkerRespondHandle",
+        "WorkerRespondFunction",
+        "WorkerScheduleFunction",
+        "WorkerSchedule",
+        "ResizePortStatus",
+        "ResizePortFunction",
+        "ResizePortFeature",
+        "LogPrintfFunction",
+        "LogFeature",
+        "WorkerInterface",
+        "ProgramDescriptor",
+        "ProgramsInterface",
+        "StateHandle",
+        "StateStatus",
+        "state_is_pod",
+        "state_is_portable",
+        "state_is_native",
+        "StateStoreFunction",
+        "StateRetrieveFunction",
+        "StateInterface",
+        "StateMapPathFunction",
+        "StateFreePathFunction",
+        "StateMapPath",
+        "StateMakePath",
+        "StateFreePath",
+        "Descriptor",
+    };
+    inline for (names) |name| {
+        const public_value = @field(@This(), name);
+        const internal_value = @field(abi, name);
+        if (@TypeOf(public_value) == type) {
+            if (public_value != internal_value)
+                @compileError("LV2 ABI public type identity changed");
+        } else {
+            try std.testing.expectEqual(internal_value, public_value);
+        }
+    }
 }
 
 test "LV2 URI public names remain exact aliases" {
