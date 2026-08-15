@@ -331,7 +331,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Continue Q-ARCH-001 with `dsp/ogg.zig`, the final source still classified
-`SPLIT`. Separate the Ogg container contract from Vorbis codec state while
-preserving the current public facade and exact identities, then repeat focused,
-cross-target, inventory, and installed-consumer gates.
+Continue Q-ARCH-001 with the Vorbis implementation remaining in `dsp/ogg.zig`.
+Move the codec contract behind exact facade aliases, then classify the facade
+and codec separately and repeat focused, cross-target, inventory, and
+installed-consumer gates.

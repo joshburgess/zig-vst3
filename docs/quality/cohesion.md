@@ -34,7 +34,8 @@ split.
 | `zig-vst3-plugin/src/dsp/matrix/dynamic.zig` | 2,076 / 0 | Owns runtime-shaped matrix allocation and reusable LU, QR, and SVD workspaces through the caller allocator. | KEEP. Public matrix convenience methods return the factorization types and each factorization accepts the matrix type, so their exact identities form one mutually dependent contract. |
 | `zig-vst3-plugin/src/dsp/mp3.zig` | 518 / 12,720 | Preserves the MPEG Layer III public facade and its behavioral, recovery, failure-atomicity, and cross-feature regression suite. Syntax, codec, reader, metadata, reservoir credit, and encoding implementations live in focused modules behind exact aliases. | KEEP. The remaining production surface is compatibility wiring, while nearly all lines are tests that exercise interactions across the public facade. |
 | `zig-vst3-plugin/src/dsp/mp3_encoder.zig` | 11,747 / 0 | Owns MPEG Layer III CBR and VBR analysis, quantization, adaptive reservoir streams, gapless finalization, metadata emission, and memory and positional-file publication. | KEEP. These variants share encoder configuration, analysis history, bit budgets, rollback state, frame accounting, and one failure-atomic publication contract. |
-| `zig-vst3-plugin/src/dsp/ogg.zig` | 20,969 / 10,120 | Owns Ogg pages, packets, streams, files, and the complete Vorbis header, encode, decode, seek, rate-control, and concealment stack. | SPLIT. Separate the Ogg container from the Vorbis codec and retain all current `dsp.ogg` names as exact aliases. |
+| `zig-vst3-plugin/src/dsp/ogg.zig` | 18,843 / 10,120 | Owns the complete Vorbis header, encode, decode, rate-control, seeking, and concealment stack behind the current public facade. Ogg pages, packets, stream and file readers, seek indexing, and writers live in `ogg/container.zig`. | SPLIT. Move the Vorbis codec contract behind exact facade aliases, then reassess the facade and codec separately. |
+| `zig-vst3-plugin/src/dsp/ogg/container.zig` | 2,260 / 0 | Owns bounded Ogg page and packet iteration, chained logical streams, recovery, seek indexing, stream writing, and positional file I/O. | KEEP. Page continuity, packet assembly, stream limits, checksums, and reader and writer offsets form one container state contract independent of Vorbis codec state. |
 | `zig-vst3-plugin/src/dsp/special_functions.zig` | 1,062 / 1,235 | Implements the elliptic, Jacobi, and Bessel functions used by DSP design code with shared domain and convergence handling. | KEEP. These functions share numerical primitives and one error policy; the file is test-heavy rather than production-heavy. |
 | `zig-vst3-plugin/src/lv2.zig` | 5,523 / 4,608 | Owns plugin instance, feature negotiation, worker, state, programs, dynamic ports, and bounded host-owned path lifecycles. C layouts and callbacks live in `lv2/abi.zig`; URI constants live in `lv2/uris.zig`. | KEEP. The remaining values belong to one plugin instance, and all moved public names retain exact type and value identity. |
 | `zig-vst3-plugin/src/lv2_metadata.zig` | 1,436 / 1,178 | Generates bounded Turtle metadata from one validated plugin and UI metadata model. | KEEP. Escaping, URI emission, port emission, and preset output share one transactional writer. |
@@ -76,7 +77,8 @@ decisions.
 - `zig-vst3-plugin/src/dsp/matrix/dynamic.zig` | 2076 | 2076 | 0 | KEEP
 - `zig-vst3-plugin/src/dsp/mp3.zig` | 13238 | 518 | 12720 | KEEP
 - `zig-vst3-plugin/src/dsp/mp3_encoder.zig` | 11747 | 11747 | 0 | KEEP
-- `zig-vst3-plugin/src/dsp/ogg.zig` | 31089 | 20969 | 10120 | SPLIT
+- `zig-vst3-plugin/src/dsp/ogg.zig` | 28963 | 18843 | 10120 | SPLIT
+- `zig-vst3-plugin/src/dsp/ogg/container.zig` | 2260 | 2260 | 0 | KEEP
 - `zig-vst3-plugin/src/dsp/special_functions.zig` | 2297 | 1062 | 1235 | KEEP
 - `zig-vst3-plugin/src/lv2.zig` | 10131 | 5523 | 4608 | KEEP
 - `zig-vst3-plugin/src/lv2_metadata.zig` | 2614 | 1436 | 1178 | KEEP

@@ -68,6 +68,23 @@ Environment: macOS Darwin 24.4.0 on arm64, Zig 0.16.0.
 | `zig fmt --check build.zig` | Passed |
 | `git diff --check` | Passed |
 
+## 2026-08-15: Ogg Container Boundary
+
+Ogg page and packet iteration, chained logical streams, bounded recovery,
+seek indexing, stream writing, and positional file I/O now live in
+`dsp/ogg/container.zig`. The module owns page continuity, packet assembly,
+stream limits, checksums, and reader and writer offsets without importing
+Vorbis codec state. The existing `dsp/ogg.zig` declarations remain exact
+aliases.
+
+| Check | Result |
+| --- | --- |
+| `zig build test-vorbis --summary all` | Passed: 10/10 steps and 94/94 tests |
+| ReleaseSafe cross-compilation | Passed: Linux AArch64, Linux x86-64, and Windows x86-64 |
+| Independent runners | Passed: Xiph Vorbis, stb_vorbis, Tremor preparation, and Tremor interoperability failure coverage |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
+
 ## 2026-08-15: MP3 Cohesion Closure
 
 The complete MP3 encoding contract now lives in `dsp/mp3_encoder.zig`.
