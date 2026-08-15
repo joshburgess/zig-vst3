@@ -5591,6 +5591,11 @@ pub fn build(b: *std.Build) void {
     );
     test_step.dependOn(
         &b.addSystemCommand(
+            &.{"scripts/check_quality_cohesion_inventory.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
             &.{"scripts/check_parser_inventory.sh"},
         ).step,
     );
@@ -5612,6 +5617,11 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(
         &b.addSystemCommand(
             &.{"scripts/test_quality_inventory_runner.sh"},
+        ).step,
+    );
+    test_step.dependOn(
+        &b.addSystemCommand(
+            &.{"scripts/test_quality_cohesion_inventory_runner.sh"},
         ).step,
     );
     test_step.dependOn(
