@@ -302,6 +302,10 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   into the DSP layer. HRTF now depends within DSP, while the former GUI module
   remains an exact public compatibility alias. Focused, cross-target,
   ThreadSanitizer, IR Loader, and installed-package gates pass.
+- Completed the ADM XML portion of Q-ARCH-001 by moving all public metadata
+  traversal behind immutable source views. The remaining core contains one
+  document construction and graph-validation contract. Its 125-test gate,
+  cross-target compilation, inventories, and installed-package matrix pass.
 
 ## Phase 4 Scope
 
@@ -315,8 +319,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Resolve Q-ARCH-001 by building a checked large-file and cohesion inventory.
-Record production and colocated-test line counts, dependency roles, state and
-ownership contracts, and a keep-or-split decision for every large handwritten
-source. Decompose only where a narrower module creates a clearer contract and
-retain compatibility for any public path affected by a move.
+Continue Q-ARCH-001 with `zig_vst3_plugin_effect.zig`. Separate reflected
+controller construction from processor and component construction, preserve
+the current public facade and exact public identities, then repeat the
+focused, cross-target, inventory, and installed-consumer gates.

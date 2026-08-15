@@ -1820,3 +1820,29 @@ DSP publication ThreadSanitizer gate, and the staged package pass.
 | `scripts/check_production_termination_paths.sh` | Passed |
 | `zig fmt --check` over changed Zig, build, and example sources | Passed |
 | `git diff --check` | Passed |
+
+## 2026-08-15: ADM XML Cohesion Closure
+
+Behavior commit: `dfeca639`
+
+ADM XML public traversal now lives in two focused modules. `standard.zig`
+owns declaration, reference, profile, and tag iteration over an immutable
+metadata source. `block.zig` owns block syntax and parameter validation over
+the same source. Neither module imports the document implementation or
+retains construction, count, limit, index, or graph-validation state.
+
+The remaining core owns bounded document construction, fixed-storage graph
+indexes, relationship validation, and emission-profile orchestration. The
+public facade preserves every prior type identity. The cohesion ledger now
+classifies the core as `KEEP` at 5,155 production and 4,786 test lines.
+
+| Check | Result |
+| --- | --- |
+| Direct ADM XML gate | Passed: 125/125 tests and the native fuzz test |
+| ReleaseSafe cross-compilation | Passed: Linux x86-64 and Windows x86-64 |
+| `scripts/test_installed_package.sh` | Passed: 18/18 steps and 96/96 tests |
+| Cohesion inventory and fixture | Passed: 33 large handwritten sources classified |
+| Quality and concurrency inventories | Passed: 850 files and 477,154 lines classified; 85 concurrency sources classified |
+| Production termination scan and fixture | Passed |
+| `zig fmt --check` over changed Zig sources | Passed |
+| `git diff --check` | Passed |
