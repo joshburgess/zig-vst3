@@ -147,7 +147,7 @@ assigned reviewer and later-phase gate.
 | `zig-vst3/src/pluginterfaces/**` | Repository-maintained Zig mirrors of pinned VST3 SDK declarations | Checked against SDK C++ layouts by the raw ABI matrix |
 | `zig-vst3-plugin/src/dsp/mp3_huffman_tables.zig` | [ISO/IEC 11172-3:1993](https://www.iso.org/standard/22412.html), Annex B, Table 3-B.7 | Reconstruction enumerates tables by number and cells by `x * side + y`, retaining each published codeword length and unsigned bits. The semantic serialization has SHA-256 `9fdeb0ca3c74ac54a8ee9154544e8dced73aef97837de1311572e75866de76ec`, enforced by the MP3 tests. |
 | `zig-vst3-plugin/src/dsp/mp3_synthesis_window.zig` | [ISO/IEC 11172-3:1993](https://www.iso.org/standard/22412.html), Annex B, Table 3-B.3 | Reconstruction reads the 512 `D[i]` values in index order, multiplies each published coefficient by 65,536, and rounds to the nearest integer. The big-endian `i32` serialization has SHA-256 `e8d6792457f2a517d0e36a87d29f83610aa00d6cca6281f0b31802faa4b2ccf3`, enforced by the MP3 tests. |
-| `gui-adapters/vstgui/testdata/*` | Checked-in visual reference images, 51 files | Visual tests compare renderer output with these references; acceptance provenance requires Q16 review |
+| `gui-adapters/vstgui/testdata/*` | Checked-in visual reference images, 51 files | Accepted by the Q16 review; native visual tests compare renderer output with these references, and build-mode plus sanitizer fixtures protect the gate |
 | MP3 conformance fixtures | CC0 minimp3 vectors at commit `ea99364f61c14656440e8d77e9c233ccf3124633` | The checked-in README records upstream paths and decoded SHA-256 values |
 | Downloaded codec references | Xiph libogg 1.3.5, libvorbis 1.3.7, Tremor commit `820fb323`, stb_vorbis commit `2c980bb5`, and Helix MP3 commit `7f7dfc76` | Preparation scripts pin archive hashes; fixture runners exercise download, identity, hash-failure, and interruption handling |
 | Downloaded spatial references | libspatialaudio 0.4.1, libmysofa commit `6cc5b15a`, Viking HRTF v2, and HUTUBS participant 1 | Preparation scripts pin versions or commits and SHA-256 values; fixture runners exercise source preparation |
@@ -155,8 +155,9 @@ assigned reviewer and later-phase gate.
 | `tools/pack_ara_bindings.zig` | Repository tool that packages translated ARA declarations | Exercised by ARA ABI, installed-package, and published-release gates |
 | LV2 metadata outputs | Generated at build or bundle time from plugin declarations | Generator tools and bundle lint provide reproducibility checks |
 
-The two MP3 tables are tracked as finding Q-CODEC-001 until their provenance and
-verification are sufficient to detect accidental edits.
+Finding Q-CODEC-001 is closed by commit `6afb44b6`. The two MP3 tables retain
+exact ISO/IEC 11172-3:1993 sources, deterministic reconstruction rules, and
+semantic SHA-256 checks that detect accidental edits.
 
 ## Cross-Cutting Exposure
 

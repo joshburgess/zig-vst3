@@ -8,8 +8,8 @@ types, build declarations, and supporting prose.
 
 `KEEP` means the file has one contract whose private invariants would become
 harder to review if separated. `SPLIT` identifies a concrete narrower boundary
-that must be extracted before Q-ARCH-001 closes. Size alone never requires a
-split.
+that must be extracted before the ledger can close. Q-ARCH-001 closed with zero
+`SPLIT` records. Size alone never requires a split.
 
 ## Decisions
 

@@ -408,9 +408,12 @@ validator result does not substitute for those checks.
 
 ## Current Disposition
 
-The ledger contains 137 `EVIDENCE` and 164 `REVIEW` records. All Q01 and Q02
-sources are accepted. Review proceeds through the remaining boundary families,
-replacing each record with accepted evidence or a precise exclusion. Phase 6
-remains open until no `REVIEW` record remains, every boundary has a declaration
-source and the strongest technically possible automated check, every skip is
-explicit, and no critical or high platform or ABI finding is open.
+The ledger contains 301 `EVIDENCE`, zero `REVIEW`, and zero `EXCLUDED` records.
+All Q01, Q02, Q03, Q04, Q06, Q17, Q18, and Q19 boundary families are accepted.
+Every automated skip is explicit, and no critical or high platform or ABI
+finding remains open. Phase 6 is complete.
+
+Actual DAW and ARA-host embedding, physical audio and MIDI devices, native
+Windows UMP hardware, and live Linux and Windows editor visuals remain external
+checks. Native fixtures, validators, sanitizers, and cross-compilation evidence
+do not claim those environments.

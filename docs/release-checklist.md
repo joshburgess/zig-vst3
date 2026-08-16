@@ -125,7 +125,9 @@ Record fresh Tier 3 host smoke tests in `docs/host-matrix.md` before tagging. Th
 - Event-monitor gets at least one scan/load/save/reload test, or the release notes explicitly defer analyzer manual host coverage
 - Sine-synth gets at least one MIDI instrument test, or the release notes explicitly defer instrument manual host coverage
 
-Linux and Windows host rows can remain follow-up work for `0.2.x` if CI bundles keep passing and the release notes call out that the first manual host pass was macOS-only. Do not describe deferred rows as host-proven.
+Linux and Windows host rows remain external follow-up work while CI bundles
+keep passing and release notes identify the exact manual host coverage. Do not
+describe deferred rows as host-proven.
 
 For every release containing GUI changes, record these editor lifecycle checks for at least the reference gain editor:
 
@@ -138,19 +140,15 @@ For every release containing GUI changes, record these editor lifecycle checks f
 - Confirm closing the editor stops editor-only timers, repaint requests, and telemetry production.
 - Record the host, host version, operating system, architecture, display scale, and result in `docs/host-matrix.md`.
 
-## Tag
+## Published RC1 Tag
 
-After the framework automated checks pass, tag the release candidate. External
-rows remain explicitly experimental and do not block this core-only boundary:
+RC1 was published after explicit authorization. Annotated tag object
+`93a81b7eaac446882775cd6fb0230710c2125755` dereferences to exact candidate
+commit `7650781a5625c041ec474a5377d859a427a344f3`. The tag is immutable. Do not
+move, delete, or recreate it.
 
-```sh
-git tag -a zig-vst3-0.3.0-rc.1 7650781a5625c041ec474a5377d859a427a344f3 -m 'zig-vst3 0.3.0-rc.1'
-git push origin zig-vst3-0.3.0-rc.1
-```
-
-After the tag is public, verify the downloaded source archive and run the
-installed-package and independent downstream fixtures against its extracted
-package tree:
+To recheck the downloaded source archive, run the installed-package and
+independent downstream fixtures against its extracted package tree:
 
 ```sh
 scripts/test_published_release.sh \
@@ -168,21 +166,17 @@ result and the existing candidate evidence for the stable-release decision.
 ## Stable 0.3.0 Promotion
 
 Stable `zig-vst3-0.3.0` retains the exact RC1 compatibility baseline and changes
-only the shared release version. Run the complete framework candidate gate and
-require all 19 public CI jobs at the exact stable candidate commit. Record that
-commit before requesting authorization for the stable tag.
-
-After stable tag authorization, create an annotated `zig-vst3-0.3.0` tag at the
-recorded stable candidate commit and push only that tag. Then verify its remote
-dereference and run:
+only the shared release version. It was published after explicit authorization
+at the exact candidate recorded below. The public tag is immutable. Do not move,
+delete, or recreate it. To recheck its archive, run:
 
 ```sh
 scripts/test_published_release.sh \
   https://github.com/joshburgess/zig-vst3/archive/refs/tags/zig-vst3-0.3.0.tar.gz
 ```
 
-Record the public archive SHA-256 and both consumer-suite results before closing
-the stable release milestone.
+Compare the public archive SHA-256 and both consumer-suite results with the
+recorded stable result.
 
 Stable result on 2026-08-14:
 
