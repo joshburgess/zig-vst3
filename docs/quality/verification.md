@@ -2795,3 +2795,52 @@ targets, LV2 distribution, and the repaired Debug VSTGUI and Windows ARA gates.
 Q-VER-018 and Q-VER-019 are closed, and no Phase 7 finding is deferred. The
 subsequent Phase 8 public-document review opened Q-DOC-001 for stale release
 framing and incomplete Unreleased notes.
+
+## 2026-08-15: Phase 8 Merge Readiness
+
+Reviewed candidate commit: `63a2b7e894ea37b6cbf34da6cd1f954d6e3b3d08`
+
+The documentation review reconciled the stable `0.3.0` installation and raw
+API interpretation, the compatibility-ready and experimental framework
+boundary, the capability summary, immutable RC1 and stable tag records,
+verification-only codec and spatial source pins, external host promotion
+evidence, the Unreleased changelog, and final quality-ledger dispositions.
+Q-DOC-001 is closed by commits `678625a7`, `359a3eb8`, and `63a2b7e8`.
+
+| Check | Result |
+| --- | --- |
+| Public documentation and evidence records | Passed: no stale live tag-creation commands, pre-release installation framing, pending closed finding, or mismatched final ledger count remains |
+| Tracked Markdown links | Passed for all 60 tracked Markdown documents |
+| Prose and diff checks | Passed: no em dash in maintained prose and both candidate plus complete-branch `git diff --check` succeed |
+| Checked repository records | Passed: 873 production sources and 480,575 lines, 201 parser sources, 26 realtime processor sources, 86 concurrency sources, 61 Zig plus 11 native atomic-order sources, 83 numerical evidence and 18 excluded sources, 301 ABI evidence sources, and 36 cohesion decisions |
+| Policy mutation fixtures | Passed for source classification, parser and realtime coverage, concurrency, atomic orders, numerics, ABI, cohesion, raw callback storage, production termination, and retired references |
+| Exact public candidate | GitHub Actions run `31924249420` passed all 19 jobs at `63a2b7e8`, including three native platform graphs, repository hygiene, raw ABI, validators, pluginval strictness 10, six cross-targets, Windows validation and pluginval, and LV2 distribution |
+
+The final history review starts at `main` commit
+`75c9420e45033863e2314958334c986d281a4b95`. The reviewed candidate contains
+832 commits with no merge commit, and this documentation-only closure record
+makes the final history 833 commits. No WIP, fixup, squash, temporary, or
+do-not-merge subject remains. Commit subjects and bodies contain no prohibited
+attribution. The final diff contains 879 files, 436,404 insertions, and 2,521
+deletions. The risk-ranked inventories and Phase 1 through Phase 7 evidence
+cover the implementation; the Phase 8 review covers its public presentation
+and complete history shape.
+
+At the reviewed candidate, the local branch and
+`origin/feature/plugin-gui` both resolve to `63a2b7e8`. Pull request 6 remains
+open, draft, mergeable, based on `main`, and headed by `feature/plugin-gui`.
+Remote annotated tag `zig-vst3-0.3.0-rc.1` still dereferences to
+`7650781a5625c041ec474a5377d859a427a344f3`; `zig-vst3-0.3.0` still
+dereferences to `cf3baa5f132df16bdfa5e86d3437e4cfc3295b39`.
+
+All 82 findings are closed. None is deferred. Actual VST3, ARA, LV2, and AUv2
+host integration; physical audio, MIDI, disparate-clock, and Windows UMP
+hardware; live Linux and Windows editor, accessibility, and clipboard
+workflows; and product loudspeaker, headphone, and codec audition remain
+external checks. Automated fixtures, validators, sanitizers, and
+cross-compilation evidence do not claim those environments.
+
+This closure record changes only the quality findings, verification, and status
+documents. Its exact commit still requires the public CI confirmation named in
+the handoff. No pull-request state, tag, release, or branch has been changed,
+and no merge has been performed.

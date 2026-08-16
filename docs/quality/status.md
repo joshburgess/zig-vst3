@@ -2,7 +2,7 @@
 
 Current phase: Phase 8, Merge Readiness
 
-Status: in progress; Phases 0 through 7 complete
+Status: complete; Phases 0 through 8 complete
 
 Baseline commit: `08bf883e9d2d324f3a7933fa21851bbd9ffec513`
 
@@ -487,25 +487,28 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   AndroidX VBRI fixture are explicitly accounted for. Public GitHub Actions
   run `31921757212` passes every macOS, Ubuntu, native Windows, raw ABI,
   validator, pluginval, cross-compile, and LV2 distribution job.
-- Began Phase 8 with a complete branch history and public-document review.
-  Q-DOC-001 records stale installation, release, compatibility, and changelog
-  framing that must be reconciled before accepting the merge candidate.
+- Completed Phase 8 through exact reviewed candidate
+  `63a2b7e894ea37b6cbf34da6cd1f954d6e3b3d08`. Q-DOC-001 is closed by three
+  documentation commits and public GitHub Actions run `31924249420`, which
+  passes all 19 jobs. The final diff and 833-commit linear history pass review;
+  local and remote branch heads match; pull request 6 remains open, draft, and
+  mergeable; and both published release tags retain their authorized targets.
+  No finding is open or deferred. Remaining host, hardware, live-display, and
+  audition checks are explicitly external.
 
-## Phase 8 Scope
+## Phase 8 Completion
 
-- Reconcile every public release and compatibility statement with stable
-  `0.3.0` and the implemented compatibility-ready boundary.
-- Review the complete branch diff and commit history for unreviewed changes,
-  temporary commits, accidental attribution, and merge structure.
-- Confirm that the exact candidate is clean, pushed, and green in public CI.
-- Record remaining external checks and deferred findings without extending
-  automated evidence beyond what it proves.
-- Prepare the final evidence summary and stop before changing pull request 6
-  or merging it.
+- Public release, installation, compatibility, source-pin, tag, and changelog
+  statements agree with stable `0.3.0` and the implemented boundary.
+- The complete diff, linear history, checked inventories, finding states,
+  remote heads, tag targets, and pull-request state have exact evidence.
+- The reviewed candidate is clean, pushed, and green in all 19 public CI jobs.
+- Remaining external checks are recorded without extending automated claims.
+- Pull request 6 state is unchanged and no merge has been performed.
 
 ## Next Review Target
 
-Close Q-DOC-001 with checked public documentation and a green exact-commit CI
-run. Complete the final diff, history, remote, tag, and pull-request audit,
-record the remaining external checks, and present the exact candidate without
-changing pull request 6 or merging it.
+The quality consolidation program is complete. Preserve the final closure
+record, require its exact public CI run to pass, and present the resulting
+clean, pushed candidate to the user. Do not change pull request 6 or merge it
+without explicit authorization.
