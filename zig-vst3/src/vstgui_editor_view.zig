@@ -817,6 +817,348 @@ extern fn zig_vstgui_editor_set_frame(*Editor, ?*iplugview.IPlugFrame) void;
 extern fn zig_vstgui_editor_set_wayland_host(*Editor, ?*anyopaque) void;
 extern fn zig_vstgui_editor_set_resize_callbacks(*Editor, ResizeCallbacks) void;
 
+fn requireAdapterAbi(
+    comptime condition: bool,
+    comptime message: []const u8,
+) void {
+    if (!condition) @compileError(message);
+}
+
+pub fn verifyStructAbi(
+    comptime name: []const u8,
+    comptime expected: type,
+    comptime actual: type,
+) void {
+    const expected_fields = @typeInfo(expected).@"struct".fields;
+    const actual_fields = @typeInfo(actual).@"struct".fields;
+    requireAdapterAbi(
+        @sizeOf(expected) == @sizeOf(actual),
+        name ++ " size differs",
+    );
+    requireAdapterAbi(
+        @alignOf(expected) == @alignOf(actual),
+        name ++ " alignment differs",
+    );
+    requireAdapterAbi(
+        expected_fields.len == actual_fields.len,
+        name ++ " field count differs",
+    );
+    inline for (expected_fields, 0..) |expected_field, index| {
+        const actual_field = actual_fields[index];
+        requireAdapterAbi(
+            std.mem.eql(u8, expected_field.name, actual_field.name),
+            name ++ " field name differs",
+        );
+        requireAdapterAbi(
+            @offsetOf(expected, expected_field.name) ==
+                @offsetOf(actual, actual_field.name),
+            name ++ "." ++ expected_field.name ++ " offset differs",
+        );
+        requireAdapterAbi(
+            @sizeOf(expected_field.type) == @sizeOf(actual_field.type) and
+                @alignOf(expected_field.type) == @alignOf(actual_field.type),
+            name ++ "." ++ expected_field.name ++ " field ABI differs",
+        );
+    }
+}
+
+pub fn verifyEnumAbi(
+    comptime name: []const u8,
+    comptime expected: type,
+    comptime actual: type,
+) void {
+    requireAdapterAbi(
+        @sizeOf(expected) == @sizeOf(actual) and
+            @alignOf(expected) == @alignOf(actual),
+        name ++ " enum ABI differs",
+    );
+}
+
+pub fn verifyFunctionAbi(
+    comptime name: []const u8,
+    comptime expected: type,
+    comptime actual: type,
+) void {
+    const expected_info = @typeInfo(expected).@"fn";
+    const actual_info = @typeInfo(actual).@"fn";
+    requireAdapterAbi(
+        std.meta.activeTag(expected_info.calling_convention) ==
+            std.meta.activeTag(actual_info.calling_convention),
+        name ++ " calling convention differs",
+    );
+    requireAdapterAbi(
+        expected_info.is_var_args == actual_info.is_var_args,
+        name ++ " varargs contract differs",
+    );
+    requireAdapterAbi(
+        expected_info.params.len == actual_info.params.len,
+        name ++ " parameter count differs",
+    );
+    const expected_return = expected_info.return_type orelse
+        @compileError(name ++ " expected return type is generic");
+    const actual_return = actual_info.return_type orelse
+        @compileError(name ++ " actual return type is generic");
+    requireAdapterAbi(
+        @sizeOf(expected_return) == @sizeOf(actual_return) and
+            @alignOf(expected_return) == @alignOf(actual_return),
+        name ++ " return ABI differs",
+    );
+    inline for (expected_info.params, 0..) |expected_param, index| {
+        const expected_type = expected_param.type orelse
+            @compileError(name ++ " expected parameter type is generic");
+        const actual_type = actual_info.params[index].type orelse
+            @compileError(name ++ " actual parameter type is generic");
+        requireAdapterAbi(
+            @sizeOf(expected_type) == @sizeOf(actual_type) and
+                @alignOf(expected_type) == @alignOf(actual_type),
+            name ++ " parameter ABI differs",
+        );
+    }
+}
+
+fn verifyValue(
+    comptime name: []const u8,
+    comptime expected: anytype,
+    comptime actual: anytype,
+) void {
+    const expected_value = switch (@typeInfo(@TypeOf(expected))) {
+        .@"enum" => @intFromEnum(expected),
+        .int, .comptime_int => expected,
+        else => @compileError(name ++ " expected value is not an integer"),
+    };
+    const actual_value = switch (@typeInfo(@TypeOf(actual))) {
+        .@"enum" => @intFromEnum(actual),
+        .int, .comptime_int => actual,
+        else => @compileError(name ++ " is not an integer value"),
+    };
+    requireAdapterAbi(
+        expected_value == actual_value,
+        name ++ " value differs",
+    );
+}
+
+pub fn verifyAdapterAbi(comptime adapter: type) void {
+    @setEvalBranchQuota(200_000);
+    inline for (.{
+        .{ "ZigVstguiFileImportSnapshot", FileImportSnapshot, adapter.ZigVstguiFileImportSnapshot },
+        .{ "ZigVstguiCallbacks", Callbacks, adapter.ZigVstguiCallbacks },
+        .{ "ZigVstguiParameterInfo", ParameterInfo, adapter.ZigVstguiParameterInfo },
+        .{ "ZigVstguiParameterDescription", ParameterDescription, adapter.ZigVstguiParameterDescription },
+        .{ "ZigVstguiParameterValue", ParameterValue, adapter.ZigVstguiParameterValue },
+        .{ "ZigVstguiXYPadDescription", XYPadDescription, adapter.ZigVstguiXYPadDescription },
+        .{ "ZigVstguiPreset", PresetDescription, adapter.ZigVstguiPreset },
+        .{ "ZigVstguiPresetBrowserDescription", PresetBrowserDescription, adapter.ZigVstguiPresetBrowserDescription },
+        .{ "ZigVstguiMenuItemDescription", MenuItemDescription, adapter.ZigVstguiMenuItemDescription },
+        .{ "ZigVstguiActionMenuDescription", ActionMenuDescription, adapter.ZigVstguiActionMenuDescription },
+        .{ "ZigVstguiActionButtonDescription", ActionButtonDescription, adapter.ZigVstguiActionButtonDescription },
+        .{ "ZigVstguiEditableLabelDescription", EditableLabelDescription, adapter.ZigVstguiEditableLabelDescription },
+        .{ "ZigVstguiProgressSnapshot", ProgressSnapshot, adapter.ZigVstguiProgressSnapshot },
+        .{ "ZigVstguiProgressIndicatorDescription", ProgressIndicatorDescription, adapter.ZigVstguiProgressIndicatorDescription },
+        .{ "ZigVstguiPianoDescription", PianoDescription, adapter.ZigVstguiPianoDescription },
+        .{ "ZigVstguiStepSequencerDescription", StepSequencerDescription, adapter.ZigVstguiStepSequencerDescription },
+        .{ "ZigVstguiFileDropDescription", FileDropDescription, adapter.ZigVstguiFileDropDescription },
+        .{ "ZigVstguiMeterDescription", MeterDescription, adapter.ZigVstguiMeterDescription },
+        .{ "ZigVstguiMeterCallbacks", MeterCallbacks, adapter.ZigVstguiMeterCallbacks },
+        .{ "ZigVstguiGraphPoint", gui_graph.Point, adapter.ZigVstguiGraphPoint },
+        .{ "ZigVstguiGraphAxis", GraphAxis, adapter.ZigVstguiGraphAxis },
+        .{ "ZigVstguiEnvelopePoint", EnvelopePoint, adapter.ZigVstguiEnvelopePoint },
+        .{ "ZigVstguiViewportDescription", ViewportDescription, adapter.ZigVstguiViewportDescription },
+        .{ "ZigVstguiRangeSelectionDescription", RangeSelectionDescription, adapter.ZigVstguiRangeSelectionDescription },
+        .{ "ZigVstguiGraphDescription", GraphDescription, adapter.ZigVstguiGraphDescription },
+        .{ "ZigVstguiGraphLayerDescription", GraphLayerDescription, adapter.ZigVstguiGraphLayerDescription },
+        .{ "ZigVstguiGraphHandleDescription", GraphHandleDescription, adapter.ZigVstguiGraphHandleDescription },
+        .{ "ZigVstguiGraphCallbacks", GraphCallbacks, adapter.ZigVstguiGraphCallbacks },
+        .{ "ZigVstguiAssetDescription", AssetDescription, adapter.ZigVstguiAssetDescription },
+        .{ "ZigVstguiFontDescription", Fonts, adapter.ZigVstguiFontDescription },
+        .{ "ZigVstguiDrawRequest", DrawRequest, adapter.ZigVstguiDrawRequest },
+        .{ "ZigVstguiDrawingCallbacks", DrawingCallbacks, adapter.ZigVstguiDrawingCallbacks },
+        .{ "ZigVstguiStyleOverride", NativeStyleOverride, adapter.ZigVstguiStyleOverride },
+        .{ "ZigVstguiGroupDescription", GroupDescription, adapter.ZigVstguiGroupDescription },
+        .{ "ZigVstguiSkinDescription", SkinDescription, adapter.ZigVstguiSkinDescription },
+        .{ "ZigVstguiResizeCallbacks", ResizeCallbacks, adapter.ZigVstguiResizeCallbacks },
+    }) |mapping| verifyStructAbi(mapping[0], mapping[1], mapping[2]);
+
+    inline for (.{
+        .{ "ZigVstguiFileImportEntryPoint", FileImportEntryPoint, adapter.ZigVstguiFileImportEntryPoint },
+        .{ "ZigVstguiFileImportStatus", FileImportStatus, adapter.ZigVstguiFileImportStatus },
+        .{ "ZigVstguiFileImportFailure", FileImportFailure, adapter.ZigVstguiFileImportFailure },
+        .{ "ZigVstguiFileImportCommand", FileImportCommand, adapter.ZigVstguiFileImportCommand },
+        .{ "ZigVstguiControlKind", ControlKind, adapter.ZigVstguiControlKind },
+        .{ "ZigVstguiMenuItemKind", MenuItemKind, adapter.ZigVstguiMenuItemKind },
+        .{ "ZigVstguiActionRole", ActionRole, adapter.ZigVstguiActionRole },
+        .{ "ZigVstguiActionIcon", ActionIcon, adapter.ZigVstguiActionIcon },
+        .{ "ZigVstguiProgressMode", ProgressMode, adapter.ZigVstguiProgressMode },
+        .{ "ZigVstguiProgressState", ProgressState, adapter.ZigVstguiProgressState },
+        .{ "ZigVstguiMeterKind", MeterKind, adapter.ZigVstguiMeterKind },
+        .{ "ZigVstguiGraphScale", GraphScale, adapter.ZigVstguiGraphScale },
+        .{ "ZigVstguiGraphKind", GraphKind, adapter.ZigVstguiGraphKind },
+        .{ "ZigVstguiGraphStyleRole", GraphStyleRole, adapter.ZigVstguiGraphStyleRole },
+        .{ "ZigVstguiViewportAxes", ViewportAxes, adapter.ZigVstguiViewportAxes },
+        .{ "ZigVstguiAssetFormat", AssetFormat, adapter.ZigVstguiAssetFormat },
+        .{ "ZigVstguiAssetScale", AssetScale, adapter.ZigVstguiAssetScale },
+        .{ "ZigVstguiDrawingComponent", DrawingComponent, adapter.ZigVstguiDrawingComponent },
+        .{ "ZigVstguiDrawingState", DrawingState, adapter.ZigVstguiDrawingState },
+        .{ "ZigVstguiThemeKind", Theme, adapter.ZigVstguiThemeKind },
+        .{ "ZigVstguiLayoutKind", Layout, adapter.ZigVstguiLayoutKind },
+        .{ "ZigVstguiPlatform", Platform, adapter.ZigVstguiPlatform },
+    }) |mapping| verifyEnumAbi(mapping[0], mapping[1], mapping[2]);
+
+    inline for (.{
+        .{ "ZIG_VSTGUI_MAX_PARAMETERS", max_parameters, adapter.ZIG_VSTGUI_MAX_PARAMETERS },
+        .{ "ZIG_VSTGUI_MAX_DECLARATION_TEXT_BYTES", max_declaration_text_bytes, adapter.ZIG_VSTGUI_MAX_DECLARATION_TEXT_BYTES },
+        .{ "ZIG_VSTGUI_MAX_XY_PADS", max_xy_pads, adapter.ZIG_VSTGUI_MAX_XY_PADS },
+        .{ "ZIG_VSTGUI_MAX_PRESET_BROWSERS", max_preset_browsers, adapter.ZIG_VSTGUI_MAX_PRESET_BROWSERS },
+        .{ "ZIG_VSTGUI_MAX_PRESETS", max_presets, adapter.ZIG_VSTGUI_MAX_PRESETS },
+        .{ "ZIG_VSTGUI_MAX_ACTION_MENUS", max_action_menus, adapter.ZIG_VSTGUI_MAX_ACTION_MENUS },
+        .{ "ZIG_VSTGUI_MAX_MENU_ITEMS", max_menu_items, adapter.ZIG_VSTGUI_MAX_MENU_ITEMS },
+        .{ "ZIG_VSTGUI_MAX_PIANOS", max_pianos, adapter.ZIG_VSTGUI_MAX_PIANOS },
+        .{ "ZIG_VSTGUI_MAX_STEP_SEQUENCERS", max_step_sequencers, adapter.ZIG_VSTGUI_MAX_STEP_SEQUENCERS },
+        .{ "ZIG_VSTGUI_MAX_STEPS", max_steps, adapter.ZIG_VSTGUI_MAX_STEPS },
+        .{ "ZIG_VSTGUI_MAX_ACTION_BUTTONS", max_action_buttons, adapter.ZIG_VSTGUI_MAX_ACTION_BUTTONS },
+        .{ "ZIG_VSTGUI_MAX_EDITABLE_LABELS", max_editable_labels, adapter.ZIG_VSTGUI_MAX_EDITABLE_LABELS },
+        .{ "ZIG_VSTGUI_MAX_PROGRESS_INDICATORS", max_progress_indicators, adapter.ZIG_VSTGUI_MAX_PROGRESS_INDICATORS },
+        .{ "ZIG_VSTGUI_MAX_FILE_DROPS", max_file_drops, adapter.ZIG_VSTGUI_MAX_FILE_DROPS },
+        .{ "ZIG_VSTGUI_MAX_DROP_EXTENSIONS", max_drop_extensions, adapter.ZIG_VSTGUI_MAX_DROP_EXTENSIONS },
+        .{ "ZIG_VSTGUI_MAX_DROP_FILES", max_drop_files, adapter.ZIG_VSTGUI_MAX_DROP_FILES },
+        .{ "ZIG_VSTGUI_MAX_METERS", max_meters, adapter.ZIG_VSTGUI_MAX_METERS },
+        .{ "ZIG_VSTGUI_MAX_GRAPHS", max_graphs, adapter.ZIG_VSTGUI_MAX_GRAPHS },
+        .{ "ZIG_VSTGUI_MAX_GRAPH_POINTS", max_graph_points, adapter.ZIG_VSTGUI_MAX_GRAPH_POINTS },
+        .{ "ZIG_VSTGUI_MAX_GRAPH_HANDLES", max_graph_handles, adapter.ZIG_VSTGUI_MAX_GRAPH_HANDLES },
+        .{ "ZIG_VSTGUI_MAX_GRAPH_LAYERS", max_graph_layers, adapter.ZIG_VSTGUI_MAX_GRAPH_LAYERS },
+        .{ "ZIG_VSTGUI_MAX_ASSETS", max_assets, adapter.ZIG_VSTGUI_MAX_ASSETS },
+        .{ "ZIG_VSTGUI_MAX_GROUPS", max_groups, adapter.ZIG_VSTGUI_MAX_GROUPS },
+    }) |mapping| verifyValue(mapping[0], mapping[1], mapping[2]);
+
+    inline for (.{
+        .{ "ZIG_VSTGUI_FILE_IMPORT_DROP", FileImportEntryPoint.drop, adapter.ZIG_VSTGUI_FILE_IMPORT_DROP },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_PICKER", FileImportEntryPoint.picker, adapter.ZIG_VSTGUI_FILE_IMPORT_PICKER },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_IDLE", FileImportStatus.idle, adapter.ZIG_VSTGUI_FILE_IMPORT_IDLE },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_VALIDATING", FileImportStatus.validating, adapter.ZIG_VSTGUI_FILE_IMPORT_VALIDATING },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_IMPORTING", FileImportStatus.importing, adapter.ZIG_VSTGUI_FILE_IMPORT_IMPORTING },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_READY", FileImportStatus.ready, adapter.ZIG_VSTGUI_FILE_IMPORT_READY },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_EMPTY", FileImportStatus.empty, adapter.ZIG_VSTGUI_FILE_IMPORT_EMPTY },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_UNSUPPORTED_FILE", FileImportStatus.unsupported_file, adapter.ZIG_VSTGUI_FILE_IMPORT_UNSUPPORTED_FILE },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_CAPACITY_LIMIT", FileImportStatus.capacity_limit, adapter.ZIG_VSTGUI_FILE_IMPORT_CAPACITY_LIMIT },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_INVALID_PATH", FileImportStatus.invalid_path, adapter.ZIG_VSTGUI_FILE_IMPORT_INVALID_PATH },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_CANCELLED", FileImportStatus.cancelled, adapter.ZIG_VSTGUI_FILE_IMPORT_CANCELLED },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_FAILED", FileImportStatus.failed, adapter.ZIG_VSTGUI_FILE_IMPORT_FAILED },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE", FileImportFailure.none, adapter.ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_FAILURE_OPEN", FileImportFailure.open_failed, adapter.ZIG_VSTGUI_FILE_IMPORT_FAILURE_OPEN },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_FAILURE_TOO_LARGE", FileImportFailure.too_large, adapter.ZIG_VSTGUI_FILE_IMPORT_FAILURE_TOO_LARGE },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_FAILURE_MALFORMED", FileImportFailure.malformed, adapter.ZIG_VSTGUI_FILE_IMPORT_FAILURE_MALFORMED },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_FAILURE_TRUNCATED", FileImportFailure.truncated, adapter.ZIG_VSTGUI_FILE_IMPORT_FAILURE_TRUNCATED },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_FAILURE_UNSUPPORTED_FORMAT", FileImportFailure.unsupported_format, adapter.ZIG_VSTGUI_FILE_IMPORT_FAILURE_UNSUPPORTED_FORMAT },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_FAILURE_CANCELLED", FileImportFailure.cancelled, adapter.ZIG_VSTGUI_FILE_IMPORT_FAILURE_CANCELLED },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_FAILURE_WORKER_UNAVAILABLE", FileImportFailure.worker_unavailable, adapter.ZIG_VSTGUI_FILE_IMPORT_FAILURE_WORKER_UNAVAILABLE },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_CANCEL", FileImportCommand.cancel, adapter.ZIG_VSTGUI_FILE_IMPORT_CANCEL },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_RETRY", FileImportCommand.retry, adapter.ZIG_VSTGUI_FILE_IMPORT_RETRY },
+        .{ "ZIG_VSTGUI_FILE_IMPORT_RESET", FileImportCommand.reset, adapter.ZIG_VSTGUI_FILE_IMPORT_RESET },
+        .{ "ZIG_VSTGUI_CONTROL_LINEAR_SLIDER", ControlKind.linear_slider, adapter.ZIG_VSTGUI_CONTROL_LINEAR_SLIDER },
+        .{ "ZIG_VSTGUI_CONTROL_ROTARY_KNOB", ControlKind.rotary_knob, adapter.ZIG_VSTGUI_CONTROL_ROTARY_KNOB },
+        .{ "ZIG_VSTGUI_CONTROL_TOGGLE", ControlKind.toggle, adapter.ZIG_VSTGUI_CONTROL_TOGGLE },
+        .{ "ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN", ControlKind.enum_dropdown, adapter.ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN },
+        .{ "ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM", ControlKind.segmented_enum, adapter.ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM },
+        .{ "ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER", ControlKind.bipolar_slider, adapter.ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER },
+        .{ "ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER", ControlKind.decibel_slider, adapter.ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER },
+        .{ "ZIG_VSTGUI_MENU_ACTION", MenuItemKind.action, adapter.ZIG_VSTGUI_MENU_ACTION },
+        .{ "ZIG_VSTGUI_MENU_TOGGLE", MenuItemKind.toggle, adapter.ZIG_VSTGUI_MENU_TOGGLE },
+        .{ "ZIG_VSTGUI_MENU_SEPARATOR", MenuItemKind.separator, adapter.ZIG_VSTGUI_MENU_SEPARATOR },
+        .{ "ZIG_VSTGUI_ACTION_PRIMARY", ActionRole.primary, adapter.ZIG_VSTGUI_ACTION_PRIMARY },
+        .{ "ZIG_VSTGUI_ACTION_SECONDARY", ActionRole.secondary, adapter.ZIG_VSTGUI_ACTION_SECONDARY },
+        .{ "ZIG_VSTGUI_ACTION_DESTRUCTIVE", ActionRole.destructive, adapter.ZIG_VSTGUI_ACTION_DESTRUCTIVE },
+        .{ "ZIG_VSTGUI_ACTION_ICON_NONE", ActionIcon.none, adapter.ZIG_VSTGUI_ACTION_ICON_NONE },
+        .{ "ZIG_VSTGUI_ACTION_ICON_RESET", ActionIcon.reset, adapter.ZIG_VSTGUI_ACTION_ICON_RESET },
+        .{ "ZIG_VSTGUI_ACTION_ICON_CLEAR", ActionIcon.clear, adapter.ZIG_VSTGUI_ACTION_ICON_CLEAR },
+        .{ "ZIG_VSTGUI_ACTION_ICON_REVERSE", ActionIcon.reverse, adapter.ZIG_VSTGUI_ACTION_ICON_REVERSE },
+        .{ "ZIG_VSTGUI_ACTION_ICON_ZOOM_IN", ActionIcon.zoom_in, adapter.ZIG_VSTGUI_ACTION_ICON_ZOOM_IN },
+        .{ "ZIG_VSTGUI_ACTION_ICON_ZOOM_OUT", ActionIcon.zoom_out, adapter.ZIG_VSTGUI_ACTION_ICON_ZOOM_OUT },
+        .{ "ZIG_VSTGUI_PROGRESS_DETERMINATE", ProgressMode.determinate, adapter.ZIG_VSTGUI_PROGRESS_DETERMINATE },
+        .{ "ZIG_VSTGUI_PROGRESS_INDETERMINATE", ProgressMode.indeterminate, adapter.ZIG_VSTGUI_PROGRESS_INDETERMINATE },
+        .{ "ZIG_VSTGUI_PROGRESS_IDLE", ProgressState.idle, adapter.ZIG_VSTGUI_PROGRESS_IDLE },
+        .{ "ZIG_VSTGUI_PROGRESS_RUNNING", ProgressState.running, adapter.ZIG_VSTGUI_PROGRESS_RUNNING },
+        .{ "ZIG_VSTGUI_PROGRESS_COMPLETE", ProgressState.complete, adapter.ZIG_VSTGUI_PROGRESS_COMPLETE },
+        .{ "ZIG_VSTGUI_PROGRESS_FAILED", ProgressState.failed, adapter.ZIG_VSTGUI_PROGRESS_FAILED },
+        .{ "ZIG_VSTGUI_METER_PEAK", MeterKind.peak, adapter.ZIG_VSTGUI_METER_PEAK },
+        .{ "ZIG_VSTGUI_METER_STEREO", MeterKind.stereo, adapter.ZIG_VSTGUI_METER_STEREO },
+        .{ "ZIG_VSTGUI_METER_GAIN_REDUCTION", MeterKind.gain_reduction, adapter.ZIG_VSTGUI_METER_GAIN_REDUCTION },
+        .{ "ZIG_VSTGUI_GRAPH_LINEAR", GraphScale.linear, adapter.ZIG_VSTGUI_GRAPH_LINEAR },
+        .{ "ZIG_VSTGUI_GRAPH_LOGARITHMIC", GraphScale.logarithmic, adapter.ZIG_VSTGUI_GRAPH_LOGARITHMIC },
+        .{ "ZIG_VSTGUI_GRAPH_DECIBELS", GraphScale.decibels, adapter.ZIG_VSTGUI_GRAPH_DECIBELS },
+        .{ "ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION", GraphKind.transfer_function, adapter.ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION },
+        .{ "ZIG_VSTGUI_GRAPH_ENVELOPE", GraphKind.envelope, adapter.ZIG_VSTGUI_GRAPH_ENVELOPE },
+        .{ "ZIG_VSTGUI_GRAPH_WAVEFORM", GraphKind.waveform, adapter.ZIG_VSTGUI_GRAPH_WAVEFORM },
+        .{ "ZIG_VSTGUI_GRAPH_SPECTRUM", GraphKind.spectrum, adapter.ZIG_VSTGUI_GRAPH_SPECTRUM },
+        .{ "ZIG_VSTGUI_GRAPH_PRIMARY", GraphStyleRole.primary, adapter.ZIG_VSTGUI_GRAPH_PRIMARY },
+        .{ "ZIG_VSTGUI_GRAPH_SECONDARY", GraphStyleRole.secondary, adapter.ZIG_VSTGUI_GRAPH_SECONDARY },
+        .{ "ZIG_VSTGUI_GRAPH_MODULATION", GraphStyleRole.modulation, adapter.ZIG_VSTGUI_GRAPH_MODULATION },
+        .{ "ZIG_VSTGUI_GRAPH_WARNING", GraphStyleRole.warning, adapter.ZIG_VSTGUI_GRAPH_WARNING },
+        .{ "ZIG_VSTGUI_VIEWPORT_HORIZONTAL", ViewportAxes.horizontal, adapter.ZIG_VSTGUI_VIEWPORT_HORIZONTAL },
+        .{ "ZIG_VSTGUI_VIEWPORT_VERTICAL", ViewportAxes.vertical, adapter.ZIG_VSTGUI_VIEWPORT_VERTICAL },
+        .{ "ZIG_VSTGUI_VIEWPORT_BOTH", ViewportAxes.both, adapter.ZIG_VSTGUI_VIEWPORT_BOTH },
+        .{ "ZIG_VSTGUI_ASSET_PNG", AssetFormat.png, adapter.ZIG_VSTGUI_ASSET_PNG },
+        .{ "ZIG_VSTGUI_ASSET_SVG", AssetFormat.svg, adapter.ZIG_VSTGUI_ASSET_SVG },
+        .{ "ZIG_VSTGUI_ASSET_PIXEL_EXACT", AssetScale.pixel_exact, adapter.ZIG_VSTGUI_ASSET_PIXEL_EXACT },
+        .{ "ZIG_VSTGUI_ASSET_CONTAIN", AssetScale.contain, adapter.ZIG_VSTGUI_ASSET_CONTAIN },
+        .{ "ZIG_VSTGUI_ASSET_COVER", AssetScale.cover, adapter.ZIG_VSTGUI_ASSET_COVER },
+        .{ "ZIG_VSTGUI_ASSET_STRETCH", AssetScale.stretch, adapter.ZIG_VSTGUI_ASSET_STRETCH },
+        .{ "ZIG_VSTGUI_DRAW_SLIDER", DrawingComponent.slider, adapter.ZIG_VSTGUI_DRAW_SLIDER },
+        .{ "ZIG_VSTGUI_DRAW_KNOB", DrawingComponent.knob, adapter.ZIG_VSTGUI_DRAW_KNOB },
+        .{ "ZIG_VSTGUI_DRAW_TOGGLE", DrawingComponent.toggle, adapter.ZIG_VSTGUI_DRAW_TOGGLE },
+        .{ "ZIG_VSTGUI_DRAW_DROPDOWN", DrawingComponent.dropdown, adapter.ZIG_VSTGUI_DRAW_DROPDOWN },
+        .{ "ZIG_VSTGUI_DRAW_SEGMENTED", DrawingComponent.segmented, adapter.ZIG_VSTGUI_DRAW_SEGMENTED },
+        .{ "ZIG_VSTGUI_DRAW_NORMAL", DrawingState.normal, adapter.ZIG_VSTGUI_DRAW_NORMAL },
+        .{ "ZIG_VSTGUI_DRAW_HOVERED", DrawingState.hovered, adapter.ZIG_VSTGUI_DRAW_HOVERED },
+        .{ "ZIG_VSTGUI_DRAW_PRESSED", DrawingState.pressed, adapter.ZIG_VSTGUI_DRAW_PRESSED },
+        .{ "ZIG_VSTGUI_DRAW_FOCUSED", DrawingState.focused, adapter.ZIG_VSTGUI_DRAW_FOCUSED },
+        .{ "ZIG_VSTGUI_DRAW_DISABLED", DrawingState.disabled, adapter.ZIG_VSTGUI_DRAW_DISABLED },
+        .{ "ZIG_VSTGUI_DRAW_EDITING", DrawingState.editing, adapter.ZIG_VSTGUI_DRAW_EDITING },
+        .{ "ZIG_VSTGUI_THEME_DEFAULT", Theme.default, adapter.ZIG_VSTGUI_THEME_DEFAULT },
+        .{ "ZIG_VSTGUI_THEME_ALTERNATE", Theme.alternate, adapter.ZIG_VSTGUI_THEME_ALTERNATE },
+        .{ "ZIG_VSTGUI_LAYOUT_ADAPTIVE", Layout.adaptive, adapter.ZIG_VSTGUI_LAYOUT_ADAPTIVE },
+        .{ "ZIG_VSTGUI_LAYOUT_COMPACT_STRIP", Layout.compact_strip, adapter.ZIG_VSTGUI_LAYOUT_COMPACT_STRIP },
+        .{ "ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE", Layout.parameter_workspace, adapter.ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE },
+        .{ "ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE", Layout.instrument_workspace, adapter.ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE },
+        .{ "ZIG_VSTGUI_PLATFORM_MACOS", Platform.macos, adapter.ZIG_VSTGUI_PLATFORM_MACOS },
+        .{ "ZIG_VSTGUI_PLATFORM_WINDOWS", Platform.windows, adapter.ZIG_VSTGUI_PLATFORM_WINDOWS },
+        .{ "ZIG_VSTGUI_PLATFORM_X11", Platform.x11, adapter.ZIG_VSTGUI_PLATFORM_X11 },
+        .{ "ZIG_VSTGUI_PLATFORM_WAYLAND", Platform.wayland, adapter.ZIG_VSTGUI_PLATFORM_WAYLAND },
+    }) |mapping| verifyValue(mapping[0], mapping[1], mapping[2]);
+
+    verifyValue("ZIG_VSTGUI_STYLE_BACKGROUND", 1 << 0, adapter.ZIG_VSTGUI_STYLE_BACKGROUND);
+    verifyValue("ZIG_VSTGUI_STYLE_FOREGROUND", 1 << 1, adapter.ZIG_VSTGUI_STYLE_FOREGROUND);
+    verifyValue("ZIG_VSTGUI_STYLE_BORDER", 1 << 2, adapter.ZIG_VSTGUI_STYLE_BORDER);
+    verifyValue("ZIG_VSTGUI_STYLE_ACCENT", 1 << 3, adapter.ZIG_VSTGUI_STYLE_ACCENT);
+
+    inline for (.{
+        .{ "zig_vstgui_editor_create_with_skin", @TypeOf(zig_vstgui_editor_create_with_skin), @TypeOf(adapter.zig_vstgui_editor_create_with_skin) },
+        .{ "zig_vstgui_editor_create_configured", @TypeOf(zig_vstgui_editor_create_configured), @TypeOf(adapter.zig_vstgui_editor_create_configured) },
+        .{ "zig_vstgui_editor_create_full", @TypeOf(zig_vstgui_editor_create_full), @TypeOf(adapter.zig_vstgui_editor_create_full) },
+        .{ "zig_vstgui_editor_create_complete", @TypeOf(zig_vstgui_editor_create_complete), @TypeOf(adapter.zig_vstgui_editor_create_complete) },
+        .{ "zig_vstgui_editor_create_latest", @TypeOf(zig_vstgui_editor_create_latest), @TypeOf(adapter.zig_vstgui_editor_create_latest) },
+        .{ "zig_vstgui_editor_create_widgets", @TypeOf(zig_vstgui_editor_create_widgets), @TypeOf(adapter.zig_vstgui_editor_create_widgets) },
+        .{ "zig_vstgui_editor_create_components", @TypeOf(zig_vstgui_editor_create_components), @TypeOf(adapter.zig_vstgui_editor_create_components) },
+        .{ "zig_vstgui_canvas_fill_rect", @TypeOf(zig_vstgui_canvas_fill_rect), @TypeOf(adapter.zig_vstgui_canvas_fill_rect) },
+        .{ "zig_vstgui_canvas_stroke_rect", @TypeOf(zig_vstgui_canvas_stroke_rect), @TypeOf(adapter.zig_vstgui_canvas_stroke_rect) },
+        .{ "zig_vstgui_canvas_fill_ellipse", @TypeOf(zig_vstgui_canvas_fill_ellipse), @TypeOf(adapter.zig_vstgui_canvas_fill_ellipse) },
+        .{ "zig_vstgui_canvas_line", @TypeOf(zig_vstgui_canvas_line), @TypeOf(adapter.zig_vstgui_canvas_line) },
+        .{ "zig_vstgui_canvas_draw_asset", @TypeOf(zig_vstgui_canvas_draw_asset), @TypeOf(adapter.zig_vstgui_canvas_draw_asset) },
+        .{ "zig_vstgui_editor_open", @TypeOf(zig_vstgui_editor_open), @TypeOf(adapter.zig_vstgui_editor_open) },
+        .{ "zig_vstgui_editor_close", @TypeOf(zig_vstgui_editor_close), @TypeOf(adapter.zig_vstgui_editor_close) },
+        .{ "zig_vstgui_editor_destroy", @TypeOf(zig_vstgui_editor_destroy), @TypeOf(adapter.zig_vstgui_editor_destroy) },
+        .{ "zig_vstgui_editor_resize", @TypeOf(zig_vstgui_editor_resize), @TypeOf(adapter.zig_vstgui_editor_resize) },
+        .{ "zig_vstgui_editor_set_scale", @TypeOf(zig_vstgui_editor_set_scale), @TypeOf(adapter.zig_vstgui_editor_set_scale) },
+        .{ "zig_vstgui_editor_set_parameter", @TypeOf(zig_vstgui_editor_set_parameter), @TypeOf(adapter.zig_vstgui_editor_set_parameter) },
+        .{ "zig_vstgui_editor_set_modulation", @TypeOf(zig_vstgui_editor_set_modulation), @TypeOf(adapter.zig_vstgui_editor_set_modulation) },
+        .{ "zig_vstgui_editor_refresh_parameters", @TypeOf(zig_vstgui_editor_refresh_parameters), @TypeOf(adapter.zig_vstgui_editor_refresh_parameters) },
+        .{ "zig_vstgui_editor_key_down", @TypeOf(zig_vstgui_editor_key_down), @TypeOf(adapter.zig_vstgui_editor_key_down) },
+        .{ "zig_vstgui_editor_key_up", @TypeOf(zig_vstgui_editor_key_up), @TypeOf(adapter.zig_vstgui_editor_key_up) },
+        .{ "zig_vstgui_editor_set_focus", @TypeOf(zig_vstgui_editor_set_focus), @TypeOf(adapter.zig_vstgui_editor_set_focus) },
+        .{ "zig_vstgui_editor_set_frame", @TypeOf(zig_vstgui_editor_set_frame), @TypeOf(adapter.zig_vstgui_editor_set_frame) },
+        .{ "zig_vstgui_editor_set_wayland_host", @TypeOf(zig_vstgui_editor_set_wayland_host), @TypeOf(adapter.zig_vstgui_editor_set_wayland_host) },
+        .{ "zig_vstgui_editor_set_resize_callbacks", @TypeOf(zig_vstgui_editor_set_resize_callbacks), @TypeOf(adapter.zig_vstgui_editor_set_resize_callbacks) },
+    }) |mapping| verifyFunctionAbi(mapping[0], mapping[1], mapping[2]);
+}
+
 const Binding = struct {
     editor: *Editor,
     controller: *ivsteditcontroller.IEditController,

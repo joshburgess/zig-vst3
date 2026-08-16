@@ -54,6 +54,9 @@ typedef struct ZigVstguiFileImportSnapshot {
     uint32_t preview_points;
 } ZigVstguiFileImportSnapshot;
 
+typedef struct ZigVstguiEnvelopePoint ZigVstguiEnvelopePoint;
+typedef struct ZigVstguiProgressSnapshot ZigVstguiProgressSnapshot;
+
 typedef struct ZigVstguiCallbacks {
     void* userdata;
     void (*begin_edit)(void* userdata, uint32_t parameter_id);
@@ -63,7 +66,7 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*parse_value)(void* userdata, uint32_t parameter_id, const char* text, double* normalized);
     int32_t (*show_context_menu)(void* userdata, uint32_t parameter_id, int32_t x, int32_t y);
     int32_t (*store_editor_index)(void* userdata, uint32_t field_id, uint32_t value);
-    int32_t (*store_editor_envelope)(void* userdata, uint32_t field_id, const struct ZigVstguiEnvelopePoint* points, uint32_t count);
+    int32_t (*store_editor_envelope)(void* userdata, uint32_t field_id, const ZigVstguiEnvelopePoint* points, uint32_t count);
     int32_t (*store_editor_text)(void* userdata, uint32_t field_id, const char* text);
     int32_t (*load_preset)(void* userdata, uint32_t preset_id);
     int32_t (*store_editor_bool)(void* userdata, uint32_t field_id, int32_t value);
@@ -75,7 +78,7 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*load_file_import)(void* userdata, uint32_t drop_id, ZigVstguiFileImportSnapshot* snapshot);
     int32_t (*command_file_import)(void* userdata, uint32_t drop_id, ZigVstguiFileImportCommand command);
     int32_t (*load_editor_text)(void* userdata, uint32_t field_id, char* output, uint32_t capacity);
-    int32_t (*load_progress)(void* userdata, uint32_t source_id, struct ZigVstguiProgressSnapshot* snapshot);
+    int32_t (*load_progress)(void* userdata, uint32_t source_id, ZigVstguiProgressSnapshot* snapshot);
     int32_t (*store_editor_scalars)(void* userdata, const uint32_t* field_ids, const double* values, uint32_t count);
 } ZigVstguiCallbacks;
 
@@ -227,12 +230,12 @@ typedef enum ZigVstguiProgressState {
     ZIG_VSTGUI_PROGRESS_FAILED = 3
 } ZigVstguiProgressState;
 
-typedef struct ZigVstguiProgressSnapshot {
+struct ZigVstguiProgressSnapshot {
     ZigVstguiProgressMode mode;
     ZigVstguiProgressState state;
     double value;
     uint64_t generation;
-} ZigVstguiProgressSnapshot;
+};
 
 typedef struct ZigVstguiProgressIndicatorDescription {
     uint32_t source_id;
@@ -343,7 +346,7 @@ typedef struct ZigVstguiGraphAxis {
     const char* label;
 } ZigVstguiGraphAxis;
 
-typedef struct ZigVstguiEnvelopePoint {
+struct ZigVstguiEnvelopePoint {
     uint32_t point_id;
     double x;
     double y;
@@ -352,7 +355,7 @@ typedef struct ZigVstguiEnvelopePoint {
     uint32_t parameter_mask;
     int32_t x_step_count;
     int32_t y_step_count;
-} ZigVstguiEnvelopePoint;
+};
 
 typedef enum ZigVstguiViewportAxes {
     ZIG_VSTGUI_VIEWPORT_HORIZONTAL = 0,

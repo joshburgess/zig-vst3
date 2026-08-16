@@ -288,6 +288,132 @@ pub fn build(b: *std.Build) void {
     zig_vst3.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
     zig_vst3.addOptions("zig-vst3-gui-options", gui_options);
 
+    const vstgui_adapter_raw = createVstguiAdapterRawModule(
+        b,
+        target,
+        optimize,
+    );
+    const vstgui_bridge_abi_module = b.createModule(.{
+        .root_source_file = b.path(
+            "tools/check_vstgui_bridge_abi.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    const vstgui_bridge_source = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/vstgui_lv2_backend.zig",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    vstgui_bridge_source.addImport(
+        "zig-vst3-plugin-core",
+        zig_vst3_plugin_core,
+    );
+    vstgui_bridge_source.addOptions(
+        "zig-vst3-gui-options",
+        gui_options,
+    );
+    vstgui_bridge_abi_module.addImport(
+        "vstgui-bridge-source",
+        vstgui_bridge_source,
+    );
+    vstgui_bridge_abi_module.addImport(
+        "vstgui-adapter-raw",
+        vstgui_adapter_raw,
+    );
+    const vstgui_bridge_abi = b.addExecutable(.{
+        .name = "check-vstgui-bridge-abi",
+        .root_module = vstgui_bridge_abi_module,
+    });
+    const run_vstgui_bridge_abi = b.addRunArtifact(
+        vstgui_bridge_abi,
+    );
+    const vstgui_bridge_abi_step = b.step(
+        "vstgui-bridge-abi",
+        "Verify handwritten VSTGUI bridge declarations against the C header",
+    );
+    vstgui_bridge_abi_step.dependOn(
+        &run_vstgui_bridge_abi.step,
+    );
+    const vstgui_bridge_abi_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .linux,
+            .abi = .gnu,
+        }),
+        b.resolveTargetQuery(.{
+            .cpu_arch = .x86_64,
+            .os_tag = .windows,
+            .abi = .gnu,
+        }),
+    };
+    for (vstgui_bridge_abi_targets) |abi_target| {
+        const abi_core = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3-plugin/src/core.zig",
+            ),
+            .target = abi_target,
+            .optimize = .ReleaseSafe,
+        });
+        if (abi_target.result.os.tag == .linux)
+            abi_core.link_libc = true;
+        const abi_options = b.addOptions();
+        abi_options.addOption(
+            bool,
+            "vstgui_adapter_enabled",
+            false,
+        );
+        const abi_source = b.createModule(.{
+            .root_source_file = b.path(
+                "zig-vst3/src/vstgui_lv2_backend.zig",
+            ),
+            .target = abi_target,
+            .optimize = .ReleaseSafe,
+        });
+        abi_source.addImport("zig-vst3-plugin-core", abi_core);
+        abi_source.addOptions(
+            "zig-vst3-gui-options",
+            abi_options,
+        );
+        const abi_tool_module = b.createModule(.{
+            .root_source_file = b.path(
+                "tools/check_vstgui_bridge_abi.zig",
+            ),
+            .target = abi_target,
+            .optimize = .ReleaseSafe,
+        });
+        abi_tool_module.addImport(
+            "vstgui-bridge-source",
+            abi_source,
+        );
+        abi_tool_module.addImport(
+            "vstgui-adapter-raw",
+            createVstguiAdapterRawModule(
+                b,
+                abi_target,
+                .ReleaseSafe,
+            ),
+        );
+        const abi_tool = b.addExecutable(.{
+            .name = b.fmt(
+                "check-vstgui-bridge-abi-{s}-{s}",
+                .{
+                    @tagName(abi_target.result.cpu.arch),
+                    @tagName(abi_target.result.os.tag),
+                },
+            ),
+            .root_module = abi_tool_module,
+        });
+        vstgui_bridge_abi_step.dependOn(&abi_tool.step);
+    }
+
     const zig_vst3_plugin = b.addModule("zig-vst3-plugin", .{
         .root_source_file = b.path("zig-vst3-plugin/src/root.zig"),
         .target = target,
@@ -5538,6 +5664,7 @@ pub fn build(b: *std.Build) void {
     }
 
     const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(vstgui_bridge_abi_step);
     test_step.dependOn(&xiph_vorbis_sources_runner.step);
     test_step.dependOn(&tremor_sources_runner.step);
     test_step.dependOn(&tremor_interop_runner.step);
@@ -7428,6 +7555,21 @@ fn createAraRawModule(
         },
         else => translate.createModule(),
     };
+}
+
+fn createVstguiAdapterRawModule(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Module {
+    const translate = b.addTranslateC(.{
+        .root_source_file = b.path(
+            "gui-adapters/vstgui/zig_vstgui_adapter.h",
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    return translate.createModule();
 }
 
 fn hasReferenceEditor(short_name: []const u8) bool {

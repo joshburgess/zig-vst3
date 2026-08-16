@@ -102,6 +102,43 @@ extern fn zig_vstgui_editor_set_resize_callbacks(
     ResizeCallbacks,
 ) void;
 
+pub fn verifyAdapterAbi(comptime adapter: type) void {
+    editor_view.verifyAdapterAbi(adapter);
+    editor_view.verifyStructAbi(
+        "LV2 ZigVstguiResizeCallbacks",
+        ResizeCallbacks,
+        adapter.ZigVstguiResizeCallbacks,
+    );
+    editor_view.verifyStructAbi(
+        "LV2 ZigVstguiMeterCallbacks",
+        MeterCallbacks,
+        adapter.ZigVstguiMeterCallbacks,
+    );
+    editor_view.verifyEnumAbi(
+        "LV2 ZigVstguiPlatform",
+        NativePlatform,
+        adapter.ZigVstguiPlatform,
+    );
+    inline for (.{
+        .{ "LV2 zig_vstgui_editor_create", @TypeOf(zig_vstgui_editor_create), @TypeOf(adapter.zig_vstgui_editor_create) },
+        .{ "LV2 zig_vstgui_editor_create_with_meters", @TypeOf(zig_vstgui_editor_create_with_meters), @TypeOf(adapter.zig_vstgui_editor_create_with_meters) },
+        .{ "LV2 zig_vstgui_editor_open", @TypeOf(zig_vstgui_editor_open), @TypeOf(adapter.zig_vstgui_editor_open) },
+        .{ "LV2 zig_vstgui_editor_close", @TypeOf(zig_vstgui_editor_close), @TypeOf(adapter.zig_vstgui_editor_close) },
+        .{ "LV2 zig_vstgui_editor_native_widget", @TypeOf(zig_vstgui_editor_native_widget), @TypeOf(adapter.zig_vstgui_editor_native_widget) },
+        .{ "LV2 zig_vstgui_editor_idle", @TypeOf(zig_vstgui_editor_idle), @TypeOf(adapter.zig_vstgui_editor_idle) },
+        .{ "LV2 zig_vstgui_editor_destroy", @TypeOf(zig_vstgui_editor_destroy), @TypeOf(adapter.zig_vstgui_editor_destroy) },
+        .{ "LV2 zig_vstgui_editor_resize", @TypeOf(zig_vstgui_editor_resize), @TypeOf(adapter.zig_vstgui_editor_resize) },
+        .{ "LV2 zig_vstgui_editor_set_scale", @TypeOf(zig_vstgui_editor_set_scale), @TypeOf(adapter.zig_vstgui_editor_set_scale) },
+        .{ "LV2 zig_vstgui_editor_set_parameter", @TypeOf(zig_vstgui_editor_set_parameter), @TypeOf(adapter.zig_vstgui_editor_set_parameter) },
+        .{ "LV2 zig_vstgui_editor_set_focus", @TypeOf(zig_vstgui_editor_set_focus), @TypeOf(adapter.zig_vstgui_editor_set_focus) },
+        .{ "LV2 zig_vstgui_editor_set_resize_callbacks", @TypeOf(zig_vstgui_editor_set_resize_callbacks), @TypeOf(adapter.zig_vstgui_editor_set_resize_callbacks) },
+    }) |mapping| editor_view.verifyFunctionAbi(
+        mapping[0],
+        mapping[1],
+        mapping[2],
+    );
+}
+
 const NativeApi = struct {
     const Editor = NativeEditor;
 
