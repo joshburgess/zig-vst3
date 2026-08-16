@@ -61,7 +61,7 @@ pub const Instance = plug.plugin.PluginInstance(VoiceMix);
 pub const parameter_set = Spec.ParameterSet.init(.{});
 
 test "voice mix core example declares reflected int parameter" {
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
 
     try std.testing.expectEqualStrings("zig-vst3-plugin Core Voice Mix", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);

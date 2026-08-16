@@ -5,7 +5,7 @@ const tuid = @import("../../tuid.zig");
 pub const ierror_context_iid = tuid.inlineUid(0x12BCD07B, 0x7C694336, 0xB7DA77C3, 0x444A0CD0);
 
 pub const IErrorContextVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     disableErrorUI: *const fn (*anyopaque, bool) callconv(.c) void,

@@ -18,6 +18,7 @@ pub const ExponentialSmoother = smoothing.ExponentialSmoother;
 pub const LogSmoother = smoothing.LogSmoother;
 
 pub const FloatParam = descriptors.FloatParam;
+pub const LogFloatParam = descriptors.LogFloatParam;
 pub const IntParam = descriptors.IntParam;
 pub const BoolParam = descriptors.BoolParam;
 pub const EnumParam = descriptors.EnumParam;

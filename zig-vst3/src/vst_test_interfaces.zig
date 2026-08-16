@@ -29,7 +29,7 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
 
         const owner = interface_map.ownerFromField(Self, itest.ITestResult, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &itest.itest_result_iid, .ptr = ptr },
@@ -99,7 +99,7 @@ pub fn Test(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, itest.ITest, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &itest.itest_iid, .ptr = ptr },
@@ -187,7 +187,7 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
 
         const owner = interface_map.ownerFromField(Self, itest.ITestSuite, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &itest.itest_suite_iid, .ptr = ptr },
@@ -269,7 +269,7 @@ pub fn TestFactory(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, itest.ITestFactory, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &itest.itest_factory_iid, .ptr = ptr },

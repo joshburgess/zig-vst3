@@ -11,8 +11,8 @@ const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 pub const cid = tuid.inlineUid(0x69B21F85, 0x804045F7, 0x9F452845, 0xC7B18EE0);
 
 const BypassProcessor = struct {
-    pub fn process(_: BypassProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        const bypassed = bypass_controller.bypassed();
+    pub fn process(_: *BypassProcessor, parameters: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+        const bypassed = parameters.getNormalizedById(bypass_controller.bypass_param_id) >= 0.5;
         for (0..context.outputChannelCount()) |channel| {
             const input = context.inputChannel(channel) orelse continue;
             const output = context.outputChannel(channel) orelse continue;
@@ -26,19 +26,9 @@ const BypassProcessor = struct {
 const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
     pub const component_name = "BypassComponent";
     pub const controller_cid = bypass_controller.cid;
+    pub const Params = bypass_spec.Spec.Params;
+    pub const parameter_set = &bypass_spec.parameter_set;
     pub const Processor = BypassProcessor;
-
-    pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
-        bypass_controller.applyParameterChanges(changes);
-    }
-
-    pub fn readState(state: ?*ibstream.IBStream) types.tresult {
-        return bypass_controller.readState(state);
-    }
-
-    pub fn writeState(state: ?*ibstream.IBStream) types.tresult {
-        return bypass_controller.writeState(state);
-    }
 });
 
 pub const create = Effect.create;
@@ -53,7 +43,7 @@ test "bypass component can be created as IComponent" {
     try std.testing.expect(out != null);
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);
+    try std.testing.expectEqual(@as(types.uint32, 0), component_iface.vtable.release(component_iface));
 }
 
 test "bypass component applies host parameter changes through processor shell" {
@@ -62,12 +52,6 @@ test "bypass component applies host parameter changes through processor shell" {
     const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_parameter_changes = @import("vst_parameter_changes.zig");
-
-    defer bypass_controller.applyParameterChanges(.{ .items = &.{.{
-        .id = bypass_controller.bypass_param_id,
-        .sample_offset = 0,
-        .normalized = 0.0,
-    }} });
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -115,7 +99,7 @@ test "bypass component applies host parameter changes through processor shell" {
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f32, &input_samples, &output_samples);
-    try std.testing.expect(bypass_controller.bypassed());
+    try std.testing.expect(Effect.getParameterNormalized(component_iface, bypass_controller.bypass_param_id) >= 0.5);
 }
 
 test "bypass component applies host parameter changes through double precision processor shell" {
@@ -124,12 +108,6 @@ test "bypass component applies host parameter changes through double precision p
     const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_parameter_changes = @import("vst_parameter_changes.zig");
-
-    defer bypass_controller.applyParameterChanges(.{ .items = &.{.{
-        .id = bypass_controller.bypass_param_id,
-        .sample_offset = 0,
-        .normalized = 0.0,
-    }} });
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -177,42 +155,26 @@ test "bypass component applies host parameter changes through double precision p
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f64, &input_samples, &output_samples);
-    try std.testing.expect(bypass_controller.bypassed());
+    try std.testing.expect(Effect.getParameterNormalized(component_iface, bypass_controller.bypass_param_id) >= 0.5);
 }
 
 test "bypass component round-trips bypass state through host callbacks" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
-
-    bypass_controller.applyParameterChanges(.{ .items = &.{.{
-        .id = bypass_controller.bypass_param_id,
-        .sample_offset = 0,
-        .normalized = 1.0,
-    }} });
-    defer bypass_controller.applyParameterChanges(.{ .items = &.{.{
-        .id = bypass_controller.bypass_param_id,
-        .sample_offset = 0,
-        .normalized = 0.0,
-    }} });
-
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     defer _ = component_iface.vtable.release(component_iface);
+    try std.testing.expectEqual(types.kResultOk, Effect.setParameterNormalized(component_iface, bypass_controller.bypass_param_id, 1.0));
 
     const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(bypass_spec.Spec.Params));
     var stream = Stream{};
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
     try std.testing.expectEqual(@as(usize, plug_state.encodedSize(bypass_spec.Spec.Params)), stream.data().len);
-
-    bypass_controller.applyParameterChanges(.{ .items = &.{.{
-        .id = bypass_controller.bypass_param_id,
-        .sample_offset = 0,
-        .normalized = 0.0,
-    }} });
-    try std.testing.expect(!bypass_controller.bypassed());
+    try std.testing.expectEqual(types.kResultOk, Effect.setParameterNormalized(component_iface, bypass_controller.bypass_param_id, 0.0));
+    try std.testing.expect(Effect.getParameterNormalized(component_iface, bypass_controller.bypass_param_id) < 0.5);
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
-    try std.testing.expect(bypass_controller.bypassed());
+    try std.testing.expect(Effect.getParameterNormalized(component_iface, bypass_controller.bypass_param_id) >= 0.5);
 }

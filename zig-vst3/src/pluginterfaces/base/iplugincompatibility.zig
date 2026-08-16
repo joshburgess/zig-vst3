@@ -7,7 +7,7 @@ pub const iplugin_compatibility_iid = tuid.inlineUid(0x4AFD4B6A, 0x35D7C240, 0xA
 pub const kPluginCompatibilityClass: base_types.FIDString = "Plugin Compatibility Class";
 
 pub const IPluginCompatibilityVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     getCompatibilityJSON: *const fn (*anyopaque, ?*ibstream.IBStream) callconv(.c) base_types.tresult,

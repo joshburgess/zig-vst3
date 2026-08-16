@@ -25,10 +25,10 @@ pub const PhysicalUIMapList = extern struct {
 };
 
 pub const INoteExpressionPhysicalUIMappingVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    getPhysicalUIMapping: *const fn (*anyopaque, base_types.int32, base_types.int16, *PhysicalUIMapList) callconv(.c) base_types.tresult,
+    getPhysicalUIMapping: *const fn (*anyopaque, base_types.int32, base_types.int16, [*c]PhysicalUIMapList) callconv(.c) base_types.tresult,
 };
 
 pub const INoteExpressionPhysicalUIMapping = extern struct {

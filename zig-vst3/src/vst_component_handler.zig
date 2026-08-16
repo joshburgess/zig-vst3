@@ -2,12 +2,56 @@ const std = @import("std");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
+const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivstcontextmenu = @import("pluginterfaces/vst/ivstcontextmenu.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+const vst_value = @import("vst_value.zig");
+
+pub fn busActivationIsValid(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) bool {
+    const valid_media = media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) or media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent);
+    const valid_direction = direction == @intFromEnum(ivstcomponent.BusDirections.kInput) or direction == @intFromEnum(ivstcomponent.BusDirections.kOutput);
+    return valid_media and valid_direction and bus_index >= 0 and state <= 1;
+}
+
+pub fn progressTypeIsValid(progress_type: types.uint32) bool {
+    return progress_type == @intFromEnum(ivsteditcontroller.ProgressType.AsyncStateRestoration) or progress_type == @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask);
+}
+
+pub fn progressValueIsValid(value: vsttypes.ParamValue) bool {
+    return vst_value.isNormalized(value);
+}
+
+pub fn automationValueIsValid(value: vsttypes.ParamValue) bool {
+    return vst_value.isNormalized(value);
+}
+
+pub fn parameterIdIsValid(id: vsttypes.ParamID) bool {
+    return id != vsttypes.kNoParamId;
+}
+
+pub fn contextMenuParameterIsValid(param_id: ?*const vsttypes.ParamID) bool {
+    return if (param_id) |id| parameterIdIsValid(id.*) else true;
+}
+
+pub fn restartFlagsAreValid(flags: types.int32) bool {
+    const known_flags = ivsteditcontroller.RestartFlags.kReloadComponent |
+        ivsteditcontroller.RestartFlags.kIoChanged |
+        ivsteditcontroller.RestartFlags.kParamValuesChanged |
+        ivsteditcontroller.RestartFlags.kLatencyChanged |
+        ivsteditcontroller.RestartFlags.kParamTitlesChanged |
+        ivsteditcontroller.RestartFlags.kMidiCCAssignmentChanged |
+        ivsteditcontroller.RestartFlags.kNoteExpressionChanged |
+        ivsteditcontroller.RestartFlags.kIoTitlesChanged |
+        ivsteditcontroller.RestartFlags.kPrefetchableSupportChanged |
+        ivsteditcontroller.RestartFlags.kRoutingInfoChanged |
+        ivsteditcontroller.RestartFlags.kKeyswitchChanged |
+        ivsteditcontroller.RestartFlags.kParamIDMappingChanged;
+    return flags >= 0 and flags & ~known_flags == 0;
+}
 
 fn recordBeginEditState(self: anytype, id: vsttypes.ParamID) void {
     self.begin_count +|= 1;
@@ -68,7 +112,7 @@ pub fn ComponentHandler(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "iface");
 
-        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryInterface(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
@@ -90,6 +134,7 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = owner(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -97,6 +142,8 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = owner(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -104,6 +151,7 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = owner(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -111,6 +159,7 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = owner(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -190,20 +239,20 @@ pub fn ComponentHandler2(comptime Config: type) type {
         const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
         const ownerFromHandler2 = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler2, "handler2");
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
                 .{ .iid = &ivsteditcontroller.icomponent_handler_iid, .ptr = &self.handler },
                 .{ .iid = &ivsteditcontroller.icomponent_handler2_iid, .ptr = &self.handler2 },
             };
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler2_iid)) {
+            if (interface_map.matches(requested_iid, &ivsteditcontroller.icomponent_handler2_iid)) {
                 return interface_map.queryWithAddRef(&self.handler2, addRefFromHandler2, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromHandler2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler2(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler2 },
@@ -233,6 +282,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -240,6 +290,8 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -247,6 +299,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -254,6 +307,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -261,6 +315,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn setDirty(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
+            if (state > 1) return types.kInvalidArgument;
             const self = ownerFromHandler2(ptr);
             self.recordDirty(state);
             if (@hasDecl(Config, "setDirty")) return Config.setDirty(self, state);
@@ -361,20 +416,20 @@ pub fn ComponentHandler3(comptime Config: type) type {
         const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
         const ownerFromHandler3 = interface_map.ownerFromField(Self, ivstcontextmenu.IComponentHandler3, "handler3");
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
                 .{ .iid = &ivsteditcontroller.icomponent_handler_iid, .ptr = &self.handler },
                 .{ .iid = &ivstcontextmenu.icomponent_handler3_iid, .ptr = &self.handler3 },
             };
-            if (std.mem.eql(u8, requested_iid, &ivstcontextmenu.icomponent_handler3_iid)) {
+            if (interface_map.matches(requested_iid, &ivstcontextmenu.icomponent_handler3_iid)) {
                 return interface_map.queryWithAddRef(&self.handler3, addRefFromHandler3, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromHandler3(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler3(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler3(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler3 },
@@ -404,6 +459,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -411,6 +467,8 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -418,6 +476,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -425,6 +484,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -432,6 +492,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn createContextMenu(ptr: *anyopaque, view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) callconv(.c) ?*ivstcontextmenu.IContextMenu {
+            if (!contextMenuParameterIsValid(param_id)) return null;
             const self = ownerFromHandler3(ptr);
             self.recordContextMenuRequest(param_id);
             if (@hasDecl(Config, "createContextMenu")) return Config.createContextMenu(self, view, param_id);
@@ -537,7 +598,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         const ownerFromBus = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandlerBusActivation, "bus_activation");
         const ownerFromTime = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandlerSystemTime, "system_time");
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
@@ -545,16 +606,16 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
                 .{ .iid = &ivsteditcontroller.icomponent_handler_bus_activation_iid, .ptr = &self.bus_activation },
                 .{ .iid = &ivsteditcontroller.icomponent_handler_system_time_iid, .ptr = &self.system_time },
             };
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler_bus_activation_iid)) {
+            if (interface_map.matches(requested_iid, &ivsteditcontroller.icomponent_handler_bus_activation_iid)) {
                 return interface_map.queryWithAddRef(&self.bus_activation, addRefFromBus, &entries, requested_iid, out);
             }
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler_system_time_iid)) {
+            if (interface_map.matches(requested_iid, &ivsteditcontroller.icomponent_handler_system_time_iid)) {
                 return interface_map.queryWithAddRef(&self.system_time, addRefFromTime, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromBus(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromBus(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromBus(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.bus_activation },
@@ -563,7 +624,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.bus_activation, addRefFromBus, &entries, requested_iid, out);
         }
 
-        fn queryFromTime(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromTime(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromTime(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.system_time },
@@ -605,6 +666,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -612,6 +674,8 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -619,6 +683,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -626,6 +691,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -633,6 +699,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn requestBusActivation(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) callconv(.c) types.tresult {
+            if (!busActivationIsValid(media_type, direction, bus_index, state)) return types.kInvalidArgument;
             const self = ownerFromBus(ptr);
             self.recordBusActivation(media_type, direction, bus_index, state);
             if (@hasDecl(Config, "requestBusActivation")) return Config.requestBusActivation(self, media_type, direction, bus_index, state);
@@ -644,7 +711,9 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             return result;
         }
 
-        fn getSystemTime(ptr: *anyopaque, out: *types.int64) callconv(.c) types.tresult {
+        fn getSystemTime(ptr: *anyopaque, out_raw: [*c]types.int64) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *types.int64 = @ptrCast(out_raw);
             const self = ownerFromTime(ptr);
             const value = self.startSystemTimeRequest();
             out.* = value;
@@ -757,20 +826,20 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
         const ownerFromProgress = interface_map.ownerFromField(Self, ivsteditcontroller.IProgress, "progress");
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
                 .{ .iid = &ivsteditcontroller.icomponent_handler_iid, .ptr = &self.handler },
                 .{ .iid = &ivsteditcontroller.iprogress_iid, .ptr = &self.progress },
             };
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.iprogress_iid)) {
+            if (interface_map.matches(requested_iid, &ivsteditcontroller.iprogress_iid)) {
                 return interface_map.queryWithAddRef(&self.progress, addRefFromProgress, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromProgress(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromProgress(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.progress },
@@ -800,6 +869,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -807,6 +877,8 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -814,6 +886,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -821,6 +894,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -832,7 +906,13 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             return result;
         }
 
-        fn start(ptr: *anyopaque, progress_type: types.uint32, description: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
+        fn start(ptr: *anyopaque, progress_type: types.uint32, description: ?[*]const types.char16, out_raw: [*c]ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *ivsteditcontroller.ProgressID = @ptrCast(out_raw);
+            if (!progressTypeIsValid(progress_type)) {
+                out.* = 0;
+                return types.kInvalidArgument;
+            }
             const self = ownerFromProgress(ptr);
             const id = self.startProgress(progress_type, out);
             if (@hasDecl(Config, "start")) {
@@ -845,6 +925,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn update(ptr: *anyopaque, id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!progressValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromProgress(ptr);
             self.recordProgressUpdate(id, value);
             if (@hasDecl(Config, "update")) return Config.update(self, id, value);
@@ -950,7 +1031,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         const ownerFromUnit = interface_map.ownerFromField(Self, ivstunits.IUnitHandler, "unit_handler");
         const ownerFromUnit2 = interface_map.ownerFromField(Self, ivstunits.IUnitHandler2, "unit_handler2");
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
@@ -958,16 +1039,16 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
                 .{ .iid = &ivstunits.iunit_handler_iid, .ptr = &self.unit_handler },
                 .{ .iid = &ivstunits.iunit_handler2_iid, .ptr = &self.unit_handler2 },
             };
-            if (std.mem.eql(u8, requested_iid, &ivstunits.iunit_handler_iid)) {
+            if (interface_map.matches(requested_iid, &ivstunits.iunit_handler_iid)) {
                 return interface_map.queryWithAddRef(&self.unit_handler, addRefFromUnit, &entries, requested_iid, out);
             }
-            if (std.mem.eql(u8, requested_iid, &ivstunits.iunit_handler2_iid)) {
+            if (interface_map.matches(requested_iid, &ivstunits.iunit_handler2_iid)) {
                 return interface_map.queryWithAddRef(&self.unit_handler2, addRefFromUnit2, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromUnit(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromUnit(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.unit_handler },
@@ -976,7 +1057,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.unit_handler, addRefFromUnit, &entries, requested_iid, out);
         }
 
-        fn queryFromUnit2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryFromUnit2(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromUnit2(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.unit_handler2 },
@@ -1018,6 +1099,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -1025,6 +1107,8 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -1032,6 +1116,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -1039,6 +1124,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -1097,12 +1183,28 @@ test "component handler records automation callbacks" {
     const Handler = ComponentHandler(struct {});
     var handler = Handler{};
 
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.beginEdit(handler.asHandler(), vsttypes.kNoParamId));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), vsttypes.kNoParamId, 0.5));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.endEdit(handler.asHandler(), vsttypes.kNoParamId));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.perform_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.end_count);
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, -0.1));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 1.1));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, std.math.nan(vsttypes.ParamValue)));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, std.math.inf(vsttypes.ParamValue)));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.perform_count);
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.restartComponent(handler.asHandler(), -1));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.restartComponent(handler.asHandler(), 1 << 12));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.restart_count);
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.beginEdit(handler.asHandler(), 9));
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 0.5));
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.endEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.restartComponent(handler.asHandler(), ivsteditcontroller.RestartFlags.kIoChanged | ivsteditcontroller.RestartFlags.kParamValuesChanged));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.begin_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.end_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.restart_count);
     try std.testing.expectEqual(@as(vsttypes.ParamID, 9), handler.last_param_id);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), handler.last_value);
 }
@@ -1176,6 +1278,8 @@ test "component handler 2 exposes extension and records callbacks" {
     const handler2: *ivsteditcontroller.IComponentHandler2 = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler2_add_ref_count);
 
+    try std.testing.expectEqual(types.kInvalidArgument, handler2.vtable.setDirty(handler2, 2));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.dirty_count);
     try std.testing.expectEqual(types.kResultOk, handler2.vtable.setDirty(handler2, 1));
     try std.testing.expectEqual(types.kResultOk, handler2.vtable.requestOpenEditor(handler2, "editor"));
     try std.testing.expectEqual(types.kResultOk, handler2.vtable.startGroupEdit(handler2));
@@ -1199,6 +1303,34 @@ test "component handler 2 clears unsupported query outputs from both interfaces"
 
     try std.testing.expectEqual(types.kNoInterface, handler.asHandler2().vtable.queryInterface(handler.asHandler2(), &ivsteditcontroller.icomponent_handler_iid, &handler2_out));
     try std.testing.expectEqual(@as(?*anyopaque, null), handler2_out);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.handler2_add_ref_count);
+}
+
+test "component handler 2 rejects null query arguments" {
+    const Handler = ComponentHandler2(struct {});
+    var handler = Handler{};
+    var out: ?*anyopaque = handler.asHandler();
+
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        handler.asHandler().vtable.queryInterface(
+            handler.asHandler(),
+            null,
+            &out,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(?*anyopaque, @ptrCast(handler.asHandler())),
+        out,
+    );
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        handler.asHandler().vtable.queryInterface(
+            handler.asHandler(),
+            &funknown.iid,
+            null,
+        ),
+    );
     try std.testing.expectEqual(@as(types.uint32, 0), handler.handler2_add_ref_count);
 }
 
@@ -1287,6 +1419,9 @@ test "component handler 3 exposes context menu extension" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler3_add_ref_count);
     try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), handler3.vtable.createContextMenu(handler3, null, null));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.context_menu_count);
+    var invalid_param_id = vsttypes.kNoParamId;
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), handler3.vtable.createContextMenu(handler3, null, &invalid_param_id));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.context_menu_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler3.vtable.release(handler3));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler3_release_count);
 }
@@ -1335,8 +1470,14 @@ test "component handler exposes bus activation and system time extensions" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.bus_add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.time_add_ref_count);
 
-    try std.testing.expectEqual(types.kResultOk, bus.vtable.requestBusActivation(bus, 1, 0, 2, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, bus.vtable.requestBusActivation(bus, 99, @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, bus.vtable.requestBusActivation(bus, @intFromEnum(ivstcomponent.MediaTypes.kAudio), 99, 0, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, bus.vtable.requestBusActivation(bus, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), -1, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, bus.vtable.requestBusActivation(bus, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 2));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.bus_activation_count);
+    try std.testing.expectEqual(types.kResultOk, bus.vtable.requestBusActivation(bus, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 2, 1));
     var value: types.int64 = 0;
+    try std.testing.expectEqual(types.kInvalidArgument, time.vtable.getSystemTime(time, null));
     try std.testing.expectEqual(types.kResultOk, time.vtable.getSystemTime(time, &value));
     try std.testing.expectEqual(@as(types.int64, 12345), value);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.bus_activation_count);
@@ -1439,6 +1580,15 @@ test "component handler exposes progress callbacks" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.progress_add_ref_count);
 
     var progress_id: ivsteditcontroller.ProgressID = 0;
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.start(progress, @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, null));
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.start(progress, 99, null, &progress_id));
+    try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 0), progress_id);
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.update(progress, 77, -0.1));
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.update(progress, 77, 1.1));
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.update(progress, 77, std.math.nan(vsttypes.ParamValue)));
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.update(progress, 77, std.math.inf(vsttypes.ParamValue)));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.start_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.update_count);
     try std.testing.expectEqual(types.kResultOk, progress.vtable.start(progress, @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
     try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 77), progress_id);
     try std.testing.expectEqual(types.kResultOk, progress.vtable.update(progress, progress_id, 0.5));

@@ -38,21 +38,19 @@ pub fn nonNegativeU32Count(count: types.int32) ?types.uint32 {
 }
 
 pub fn int32Count(count: usize) types.int32 {
-    std.debug.assert(count <= std.math.maxInt(types.int32));
-    return @intCast(count);
+    return @intCast(@min(count, std.math.maxInt(types.int32)));
 }
 
 pub fn int32NextCount(index: usize) types.int32 {
-    return int32Count(index + 1);
+    return int32Count(index) +| 1;
 }
 
 pub fn uint32Count(count: usize) types.uint32 {
-    std.debug.assert(count <= std.math.maxInt(types.uint32));
-    return @intCast(count);
+    return @intCast(@min(count, std.math.maxInt(types.uint32)));
 }
 
 pub fn uint32NextCount(index: usize) types.uint32 {
-    return uint32Count(index + 1);
+    return uint32Count(index) +| 1;
 }
 
 pub fn requireInt32Capacity(comptime capacity: usize, comptime name: []const u8) void {
@@ -128,6 +126,25 @@ test "int32 count conversions keep the VST boundary explicit" {
     try std.testing.expectEqual(@as(types.int32, 0), int32Count(0));
     try std.testing.expectEqual(@as(types.int32, 7), int32Count(7));
     try std.testing.expectEqual(@as(types.int32, 8), int32NextCount(7));
+}
+
+test "count conversions contain oversized public inputs" {
+    try std.testing.expectEqual(
+        std.math.maxInt(types.int32),
+        int32Count(std.math.maxInt(usize)),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(types.int32),
+        int32NextCount(std.math.maxInt(usize)),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(types.uint32),
+        uint32Count(std.math.maxInt(usize)),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(types.uint32),
+        uint32NextCount(std.math.maxInt(usize)),
+    );
 }
 
 test "uint32 count conversions keep the VST boundary explicit" {

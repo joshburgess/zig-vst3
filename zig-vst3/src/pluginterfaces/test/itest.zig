@@ -9,7 +9,7 @@ pub const itest_suite_iid = tuid.inlineUid(0x5CA7106F, 0x98784AA5, 0xB4D30D71, 0
 pub const itest_factory_iid = tuid.inlineUid(0xAB483D3A, 0x15264650, 0xBF86EEF6, 0x9A327A93);
 
 pub const ITestVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     setup: *const fn (*anyopaque) callconv(.c) bool,
@@ -19,7 +19,7 @@ pub const ITestVTable = extern struct {
 };
 
 pub const ITestResultVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     addErrorMessage: *const fn (*anyopaque, ?[*:0]const base_types.char16) callconv(.c) void,
@@ -27,7 +27,7 @@ pub const ITestResultVTable = extern struct {
 };
 
 pub const ITestSuiteVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     addTest: *const fn (*anyopaque, base_types.FIDString, ?*ITest) callconv(.c) base_types.tresult,
@@ -36,7 +36,7 @@ pub const ITestSuiteVTable = extern struct {
 };
 
 pub const ITestFactoryVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     createTests: *const fn (*anyopaque, ?*anyopaque, ?*ITestSuite) callconv(.c) base_types.tresult,

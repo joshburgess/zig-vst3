@@ -26,7 +26,7 @@ pub fn PlugFrame(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, iplugview.IPlugFrame, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.iplug_frame_iid, .ptr = ptr },
@@ -42,12 +42,23 @@ pub fn PlugFrame(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPlugFrame");
         }
 
-        fn resizeView(ptr: *anyopaque, view: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
+        fn resizeView(ptr: *anyopaque, view: ?*iplugview.IPlugView, rect_raw: [*c]iplugview.ViewRect) callconv(.c) types.tresult {
+            if (rect_raw == null) return types.kInvalidArgument;
+            const rect: *iplugview.ViewRect = @ptrCast(rect_raw);
             const self = owner(ptr);
+            const requested = rect.*;
+            if (!iplugview.hasValidDimensions(requested)) return types.kInvalidArgument;
             self.resize_count +|= 1;
             if (@hasDecl(Config, "resizeView")) {
                 const result = Config.resizeView(view, rect);
-                if (result != types.kResultOk) return result;
+                if (result != types.kResultOk) {
+                    rect.* = requested;
+                    return result;
+                }
+            }
+            if (!iplugview.hasValidDimensions(rect.*)) {
+                rect.* = requested;
+                return types.kInvalidArgument;
             }
             self.acceptResize(view, rect);
             return types.kResultOk;
@@ -68,6 +79,8 @@ test "plug frame stores resize requests by default" {
     const iface = frame.asInterface();
     var rect = iplugview.ViewRect{ .left = 1, .top = 2, .right = 101, .bottom = 202 };
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.resizeView(iface, null, null));
+    try std.testing.expectEqual(@as(types.uint32, 0), frame.resize_count);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.resizeView(iface, null, &rect));
     try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
     try std.testing.expectEqual(rect, frame.last_rect);
@@ -133,6 +146,53 @@ test "plug frame preserves accepted resize state when delegation fails" {
     try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
     try std.testing.expectEqual(iplugview.ViewRect{ .left = 1, .top = 2, .right = 101, .bottom = 202 }, frame.last_rect);
     try std.testing.expectEqual(@as(?*iplugview.IPlugView, null), frame.last_view);
+}
+
+test "plug frame rejects malformed resize rectangles before delegation" {
+    const Config = struct {
+        var calls: usize = 0;
+
+        fn resizeView(_: ?*iplugview.IPlugView, _: *iplugview.ViewRect) types.tresult {
+            calls += 1;
+            return types.kResultOk;
+        }
+    };
+    const Frame = PlugFrame(Config);
+    var frame = Frame{};
+    const iface = frame.asInterface();
+    const malformed = [_]iplugview.ViewRect{
+        .{ .left = 10, .top = 0, .right = 10, .bottom = 100 },
+        .{ .left = 20, .top = 0, .right = 10, .bottom = 100 },
+        .{ .left = std.math.minInt(types.int32), .top = 0, .right = std.math.maxInt(types.int32), .bottom = 100 },
+    };
+
+    for (malformed) |input| {
+        var rect = input;
+        try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.resizeView(iface, null, &rect));
+        try std.testing.expectEqual(input, rect);
+    }
+    try std.testing.expectEqual(@as(usize, 0), Config.calls);
+    try std.testing.expectEqual(@as(types.uint32, 0), frame.resize_count);
+    try std.testing.expectEqual(iplugview.ViewRect{}, frame.last_rect);
+}
+
+test "plug frame rejects malformed delegated resize output" {
+    const Config = struct {
+        fn resizeView(_: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) types.tresult {
+            rect.bottom = rect.top;
+            return types.kResultOk;
+        }
+    };
+    const Frame = PlugFrame(Config);
+    var frame = Frame{};
+    const iface = frame.asInterface();
+    const requested = iplugview.ViewRect{ .left = 10, .top = 20, .right = 650, .bottom = 500 };
+    var rect = requested;
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.resizeView(iface, null, &rect));
+    try std.testing.expectEqual(requested, rect);
+    try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
+    try std.testing.expectEqual(iplugview.ViewRect{}, frame.last_rect);
 }
 
 test "plug frame supports query interface" {

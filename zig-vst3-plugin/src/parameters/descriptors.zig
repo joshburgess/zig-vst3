@@ -20,8 +20,23 @@ pub const FloatParam = struct {
     is_read_only: bool = false,
     unit_id: i32 = 0,
 
-    pub fn init(id: u32, name: []const u8, min: f64, max: f64, default: f64) FloatParam {
-        return initChecked(id, name, min, max, default) catch @panic("invalid float parameter range");
+    /// Use `initChecked` when any argument is known only at runtime.
+    pub fn init(
+        comptime id: u32,
+        comptime name: []const u8,
+        comptime min: f64,
+        comptime max: f64,
+        comptime default: f64,
+    ) FloatParam {
+        if (comptime !common.isValidRange(min, max))
+            @compileError("invalid float parameter range");
+        return .{
+            .id = id,
+            .name = name,
+            .min = min,
+            .max = max,
+            .default = clampPlainInRange(min, max, default),
+        };
     }
 
     pub fn initChecked(id: u32, name: []const u8, min: f64, max: f64, default: f64) !FloatParam {
@@ -36,20 +51,27 @@ pub const FloatParam = struct {
     }
 
     pub fn containsPlain(self: FloatParam, plain: f64) bool {
-        return common.isFiniteInRange(f64, plain, self.min, self.max);
+        return self.rangeValid() and common.isFiniteInRange(f64, plain, self.min, self.max);
+    }
+
+    fn valid(self: FloatParam) bool {
+        return self.rangeValid() and common.isFiniteInRange(f64, self.default, self.min, self.max);
     }
 
     pub fn clampPlain(self: FloatParam, plain: f64) f64 {
+        if (!self.rangeValid()) return 0.0;
         if (std.math.isNan(plain)) return self.min;
         return std.math.clamp(plain, self.min, self.max);
     }
 
     pub fn normalize(self: FloatParam, plain: f64) f64 {
+        if (!self.rangeValid()) return 0.0;
         const clamped = self.clampPlain(plain);
         return (clamped - self.min) / (self.max - self.min);
     }
 
     pub fn denormalize(self: FloatParam, normalized: f64) f64 {
+        if (!self.rangeValid()) return 0.0;
         const clamped = clampNormalized(normalized);
         return self.min + clamped * (self.max - self.min);
     }
@@ -84,6 +106,125 @@ pub const FloatParam = struct {
         if (std.math.isNan(plain)) return min;
         return std.math.clamp(plain, min, max);
     }
+
+    fn rangeValid(self: FloatParam) bool {
+        return common.isValidRange(self.min, self.max);
+    }
+};
+
+pub const LogFloatParam = struct {
+    id: u32,
+    name: []const u8,
+    short_name: []const u8 = "",
+    units: []const u8 = "",
+    min: f64,
+    max: f64,
+    default: f64,
+    is_bypass: bool = false,
+    can_automate: bool = true,
+    is_read_only: bool = false,
+    unit_id: i32 = 0,
+
+    /// Use `initChecked` when any argument is known only at runtime.
+    pub fn init(
+        comptime id: u32,
+        comptime name: []const u8,
+        comptime min: f64,
+        comptime max: f64,
+        comptime default: f64,
+    ) LogFloatParam {
+        if (comptime !validRange(min, max))
+            @compileError("invalid logarithmic parameter range");
+        return .{
+            .id = id,
+            .name = name,
+            .min = min,
+            .max = max,
+            .default = clampPlainInRange(min, max, default),
+        };
+    }
+
+    pub fn initChecked(id: u32, name: []const u8, min: f64, max: f64, default: f64) !LogFloatParam {
+        if (!validRange(min, max)) return error.InvalidParameterRange;
+        return .{
+            .id = id,
+            .name = name,
+            .min = min,
+            .max = max,
+            .default = clampPlainInRange(min, max, default),
+        };
+    }
+
+    pub fn containsPlain(self: LogFloatParam, plain: f64) bool {
+        return validRange(self.min, self.max) and
+            common.isFiniteInRange(f64, plain, self.min, self.max);
+    }
+
+    fn valid(self: LogFloatParam) bool {
+        return validRange(self.min, self.max) and
+            common.isFiniteInRange(f64, self.default, self.min, self.max);
+    }
+
+    pub fn clampPlain(self: LogFloatParam, plain: f64) f64 {
+        if (!validRange(self.min, self.max)) return 0.0;
+        if (std.math.isNan(plain)) return self.min;
+        return std.math.clamp(plain, self.min, self.max);
+    }
+
+    pub fn normalize(self: LogFloatParam, plain: f64) f64 {
+        if (!validRange(self.min, self.max)) return 0.0;
+        return @log(self.clampPlain(plain) / self.min) / @log(self.max / self.min);
+    }
+
+    pub fn denormalize(self: LogFloatParam, normalized: f64) f64 {
+        if (!validRange(self.min, self.max)) return 0.0;
+        return self.min * std.math.pow(f64, self.max / self.min, clampNormalized(normalized));
+    }
+
+    pub fn defaultNormalized(self: LogFloatParam) f64 {
+        return self.normalize(self.default);
+    }
+
+    pub fn formatPlain(self: LogFloatParam, normalized: f64, buffer: []u8) ![]const u8 {
+        const value = self.denormalize(normalized);
+        return if (value >= 1_000.0)
+            std.fmt.bufPrint(buffer, "{d:.2}k", .{value / 1_000.0})
+        else
+            std.fmt.bufPrint(buffer, "{d:.1}", .{value});
+    }
+
+    pub fn plainFromNormalized(self: LogFloatParam, normalized: f64) f64 {
+        return self.denormalize(normalized);
+    }
+
+    pub fn normalizedFromPlain(self: LogFloatParam, plain: f64) f64 {
+        return self.normalize(plain);
+    }
+
+    pub fn parsePlain(self: LogFloatParam, text: []const u8) !f64 {
+        const trimmed = trimPlainText(text);
+        if (trimmed.len == 0) return error.InvalidCharacter;
+        const suffix = trimmed[trimmed.len - 1];
+        const has_kilohertz_suffix = suffix == 'k' or suffix == 'K';
+        const number = if (has_kilohertz_suffix) trimmed[0 .. trimmed.len - 1] else trimmed;
+        const multiplier: f64 = if (has_kilohertz_suffix) 1_000.0 else 1.0;
+        return self.normalize((try std.fmt.parseFloat(f64, number)) * multiplier);
+    }
+
+    fn validRange(min: f64, max: f64) bool {
+        if (!common.isFinite(f64, min) or
+            !common.isFinite(f64, max) or
+            min <= 0.0 or
+            max <= min)
+            return false;
+        const ratio = max / min;
+        return common.isFinite(f64, ratio) and ratio > 1.0;
+    }
+
+    fn clampPlainInRange(min: f64, max: f64, plain: f64) f64 {
+        if (std.math.isNan(plain)) return min;
+        return std.math.clamp(plain, min, max);
+    }
 };
 
 pub const IntParam = struct {
@@ -99,8 +240,23 @@ pub const IntParam = struct {
     is_read_only: bool = false,
     unit_id: i32 = 0,
 
-    pub fn init(id: u32, name: []const u8, min: i64, max: i64, default: i64) IntParam {
-        return initChecked(id, name, min, max, default) catch @panic("invalid integer parameter range");
+    /// Use `initChecked` when any argument is known only at runtime.
+    pub fn init(
+        comptime id: u32,
+        comptime name: []const u8,
+        comptime min: i64,
+        comptime max: i64,
+        comptime default: i64,
+    ) IntParam {
+        if (comptime max <= min)
+            @compileError("invalid integer parameter range");
+        return .{
+            .id = id,
+            .name = name,
+            .min = min,
+            .max = max,
+            .default = clampPlainInRange(min, max, default),
+        };
     }
 
     pub fn initChecked(id: u32, name: []const u8, min: i64, max: i64, default: i64) !IntParam {
@@ -115,14 +271,20 @@ pub const IntParam = struct {
     }
 
     pub fn containsPlain(self: IntParam, plain: i64) bool {
-        return plain >= self.min and plain <= self.max;
+        return self.rangeValid() and plain >= self.min and plain <= self.max;
+    }
+
+    fn valid(self: IntParam) bool {
+        return self.rangeValid() and self.default >= self.min and self.default <= self.max;
     }
 
     pub fn clampPlain(self: IntParam, plain: i64) i64 {
+        if (!self.rangeValid()) return 0;
         return std.math.clamp(plain, self.min, self.max);
     }
 
     pub fn normalize(self: IntParam, plain: i64) f64 {
+        if (!self.rangeValid()) return 0.0;
         const clamped = self.clampPlain(plain);
         const range = @as(f64, @floatFromInt(self.max)) - @as(f64, @floatFromInt(self.min));
         const offset = @as(f64, @floatFromInt(clamped)) - @as(f64, @floatFromInt(self.min));
@@ -130,6 +292,7 @@ pub const IntParam = struct {
     }
 
     pub fn denormalize(self: IntParam, normalized: f64) i64 {
+        if (!self.rangeValid()) return 0;
         const clamped = clampNormalized(normalized);
         const min = @as(f64, @floatFromInt(self.min));
         const max = @as(f64, @floatFromInt(self.max));
@@ -165,6 +328,10 @@ pub const IntParam = struct {
 
     fn clampPlainInRange(min: i64, max: i64, plain: i64) i64 {
         return std.math.clamp(plain, min, max);
+    }
+
+    fn rangeValid(self: IntParam) bool {
+        return self.max > self.min;
     }
 };
 
@@ -225,6 +392,9 @@ pub fn EnumParam(comptime Enum: type) type {
     const info = @typeInfo(Enum).@"enum";
     if (info.fields.len == 0) {
         @compileError("EnumParam requires at least one enum field");
+    }
+    if (!info.is_exhaustive) {
+        @compileError("EnumParam requires an exhaustive enum");
     }
 
     return struct {
@@ -318,14 +488,14 @@ pub fn EnumParam(comptime Enum: type) type {
             inline for (info.fields, 0..) |field, index| {
                 if (field.value == @intFromEnum(value)) return index;
             }
-            unreachable;
+            return 0;
         }
 
         fn valueAtIndex(wanted_index: usize) Enum {
             inline for (info.fields, 0..) |field, index| {
                 if (index == wanted_index) return @enumFromInt(field.value);
             }
-            unreachable;
+            return @enumFromInt(info.fields[0].value);
         }
 
         fn normalizedFromIndex(index: usize) f64 {
@@ -358,6 +528,40 @@ test "float parameter clamps defaults and values" {
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "Flat", 1.0, 1.0, 1.0));
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "Inf", 0.0, std.math.inf(f64), 1.0));
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "NaN", std.math.nan(f64), 1.0, 1.0));
+    try std.testing.expectError(
+        error.InvalidParameterRange,
+        FloatParam.initChecked(
+            1,
+            "Overflowing span",
+            -std.math.floatMax(f64),
+            std.math.floatMax(f64),
+            0.0,
+        ),
+    );
+}
+
+test "logarithmic float parameter maps and formats perceptual ranges" {
+    const frequency = try LogFloatParam.initChecked(10, "Frequency", 20.0, 20_000.0, 1_000.0);
+    var buffer: [32]u8 = undefined;
+
+    try std.testing.expectApproxEqRel(@as(f64, 632.455532), frequency.denormalize(0.5), 0.000001);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.5), frequency.normalize(632.455532), 0.000001);
+    try std.testing.expectEqualStrings("1.00k", try frequency.formatPlain(frequency.normalize(1_000.0), &buffer));
+    try std.testing.expectApproxEqAbs(frequency.normalize(2_500.0), try frequency.parsePlain("2.5k"), 0.000001);
+    try std.testing.expectApproxEqAbs(frequency.normalize(2_500.0), try frequency.parsePlain(" 2.5K "), 0.000001);
+    try std.testing.expectEqual(@as(f64, 0.0), frequency.normalize(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 1.0), frequency.normalize(std.math.inf(f64)));
+    try std.testing.expectError(error.InvalidParameterRange, LogFloatParam.initChecked(11, "Invalid", 0.0, 20_000.0, 1_000.0));
+    try std.testing.expectError(
+        error.InvalidParameterRange,
+        LogFloatParam.initChecked(
+            11,
+            "Overflowing ratio",
+            std.math.floatMin(f64),
+            std.math.floatMax(f64),
+            1.0,
+        ),
+    );
 }
 
 test "parameter descriptor parsing trims plain text consistently" {
@@ -407,6 +611,55 @@ test "int parameter handles full-width ranges without overflow" {
     try std.testing.expectEqual(std.math.maxInt(i64), param.denormalize(1.0));
     try std.testing.expect(param.defaultNormalized() > 0.49);
     try std.testing.expect(param.defaultNormalized() < 0.51);
+}
+
+test "numeric descriptors contain malformed direct state" {
+    var buffer: [32]u8 = undefined;
+
+    const flat_float = FloatParam{
+        .id = 1,
+        .name = "Flat",
+        .min = 1.0,
+        .max = 1.0,
+        .default = 1.0,
+    };
+    try std.testing.expect(!flat_float.valid());
+    try std.testing.expect(!flat_float.containsPlain(1.0));
+    try std.testing.expectEqual(@as(f64, 0.0), flat_float.clampPlain(1.0));
+    try std.testing.expectEqual(@as(f64, 0.0), flat_float.normalize(1.0));
+    try std.testing.expectEqual(@as(f64, 0.0), flat_float.denormalize(0.5));
+    try std.testing.expectEqual(@as(f64, 0.0), flat_float.defaultNormalized());
+    try std.testing.expectEqualStrings("0%", try flat_float.formatPercent(0.5, &buffer));
+
+    const invalid_log = LogFloatParam{
+        .id = 2,
+        .name = "Log",
+        .min = 0.0,
+        .max = 20_000.0,
+        .default = 1_000.0,
+    };
+    try std.testing.expect(!invalid_log.valid());
+    try std.testing.expect(!invalid_log.containsPlain(1_000.0));
+    try std.testing.expectEqual(@as(f64, 0.0), invalid_log.clampPlain(1_000.0));
+    try std.testing.expectEqual(@as(f64, 0.0), invalid_log.normalize(1_000.0));
+    try std.testing.expectEqual(@as(f64, 0.0), invalid_log.denormalize(0.5));
+    try std.testing.expectEqual(@as(f64, 0.0), invalid_log.defaultNormalized());
+    try std.testing.expectEqualStrings("0.0", try invalid_log.formatPlain(0.5, &buffer));
+
+    const reversed_int = IntParam{
+        .id = 3,
+        .name = "Int",
+        .min = 4,
+        .max = 1,
+        .default = 2,
+    };
+    try std.testing.expect(!reversed_int.valid());
+    try std.testing.expect(!reversed_int.containsPlain(2));
+    try std.testing.expectEqual(@as(i64, 0), reversed_int.clampPlain(2));
+    try std.testing.expectEqual(@as(f64, 0.0), reversed_int.normalize(2));
+    try std.testing.expectEqual(@as(i64, 0), reversed_int.denormalize(0.5));
+    try std.testing.expectEqual(@as(f64, 0.0), reversed_int.defaultNormalized());
+    try std.testing.expectEqualStrings("0", try reversed_int.formatPlain(0.5, &buffer));
 }
 
 test "bool parameter maps around midpoint" {

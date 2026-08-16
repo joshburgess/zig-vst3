@@ -15,7 +15,7 @@ pub const AutomationStates = packed struct(base_types.int32) {
 };
 
 pub const IAutomationStateVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     setAutomationState: *const fn (*anyopaque, base_types.int32) callconv(.c) base_types.tresult,

@@ -1,6 +1,7 @@
 const plug = @import("zig-vst3-plugin-core");
 
 pub const level_param_id: u32 = 0;
+pub const step_param_ids = [_]u32{ 100, 101, 102, 103, 104, 105, 106, 107 };
 
 const SineSynthPlugin = struct {
     pub const name = "zig-vst3 Sine Synth";
@@ -16,6 +17,14 @@ const SineSynthPlugin = struct {
             .max = 1.0,
             .default = 0.1,
         },
+        step_1: plug.parameters.BoolParam = .{ .id = step_param_ids[0], .name = "Step 1", .default = true },
+        step_2: plug.parameters.BoolParam = .{ .id = step_param_ids[1], .name = "Step 2", .default = false },
+        step_3: plug.parameters.BoolParam = .{ .id = step_param_ids[2], .name = "Step 3", .default = true },
+        step_4: plug.parameters.BoolParam = .{ .id = step_param_ids[3], .name = "Step 4", .default = false },
+        step_5: plug.parameters.BoolParam = .{ .id = step_param_ids[4], .name = "Step 5", .default = true },
+        step_6: plug.parameters.BoolParam = .{ .id = step_param_ids[5], .name = "Step 6", .default = false },
+        step_7: plug.parameters.BoolParam = .{ .id = step_param_ids[6], .name = "Step 7", .default = true },
+        step_8: plug.parameters.BoolParam = .{ .id = step_param_ids[7], .name = "Step 8", .default = false },
     };
 };
 

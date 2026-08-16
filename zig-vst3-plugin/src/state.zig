@@ -35,6 +35,8 @@ pub const duplicateParameterMigrationIndex = migrations.duplicateParameterMigrat
 pub const cyclicParameterMigrationIndex = migrations.cyclicParameterMigrationIndex;
 pub const ambiguousParameterMigrationIndex = migrations.ambiguousParameterMigrationIndex;
 pub const migratedParameterId = migrations.migratedParameterId;
+pub const maximum_parameter_id_migrations =
+    migrations.maximum_parameter_id_migrations;
 
 test {
     std.testing.refAllDecls(@import("state/tests.zig"));

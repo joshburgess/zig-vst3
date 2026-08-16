@@ -9,11 +9,11 @@ pub const ivst3_to_aax_wrapper_iid = tuid.inlineUid(0x6D319DC6, 0x60C56242, 0xB3
 pub const ivst3_wrapper_mpe_support_iid = tuid.inlineUid(0x44149067, 0x42CF4BF9, 0x8800B750, 0xF7359FE3);
 
 pub const IHostApplicationVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    getName: *const fn (*anyopaque, [*]vsttypes.TChar) callconv(.c) base_types.tresult,
-    createInstance: *const fn (*anyopaque, *const tuid.TUID, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    getName: *const fn (*anyopaque, [*c]vsttypes.TChar) callconv(.c) base_types.tresult,
+    createInstance: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
 };
 
 pub const IHostApplication = extern struct {
@@ -21,7 +21,7 @@ pub const IHostApplication = extern struct {
 };
 
 pub const IVst3ToVst2WrapperVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
 };
@@ -42,7 +42,7 @@ pub const IVst3ToAAXWrapper = extern struct {
 };
 
 pub const IVst3WrapperMPESupportVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     enableMPEInputProcessing: *const fn (*anyopaque, base_types.TBool) callconv(.c) base_types.tresult,

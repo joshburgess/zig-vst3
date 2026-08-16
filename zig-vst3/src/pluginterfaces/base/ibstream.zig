@@ -11,13 +11,13 @@ pub const IStreamSeekMode = enum(types.int32) {
 };
 
 pub const IBStreamVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) types.uint32,
     release: *const fn (*anyopaque) callconv(.c) types.uint32,
     read: *const fn (*anyopaque, ?*anyopaque, types.int32, ?*types.int32) callconv(.c) types.tresult,
     write: *const fn (*anyopaque, ?*anyopaque, types.int32, ?*types.int32) callconv(.c) types.tresult,
     seek: *const fn (*anyopaque, types.int64, types.int32, ?*types.int64) callconv(.c) types.tresult,
-    tell: *const fn (*anyopaque, *types.int64) callconv(.c) types.tresult,
+    tell: *const fn (*anyopaque, [*c]types.int64) callconv(.c) types.tresult,
 };
 
 pub const IBStream = extern struct {
@@ -25,10 +25,10 @@ pub const IBStream = extern struct {
 };
 
 pub const ISizeableStreamVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) types.uint32,
     release: *const fn (*anyopaque) callconv(.c) types.uint32,
-    getStreamSize: *const fn (*anyopaque, *types.int64) callconv(.c) types.tresult,
+    getStreamSize: *const fn (*anyopaque, [*c]types.int64) callconv(.c) types.tresult,
     setStreamSize: *const fn (*anyopaque, types.int64) callconv(.c) types.tresult,
 };
 

@@ -116,11 +116,13 @@ pub const DataEvent = struct {
 
 pub const EventKindIterator = struct {
     events: Events,
+    frame_count: usize,
     kind: EventKind,
     last_offset: ?usize = null,
     last_index: usize = 0,
 
     pub fn next(self: *EventKindIterator) ?Event {
+        if (!self.valid()) return null;
         if (nextMatchingEvent(self.events.items, self.last_offset, self.last_index, self.kind, matchesKind)) |result| {
             self.last_offset = result.item.sample_offset;
             self.last_index = result.index;
@@ -128,25 +130,50 @@ pub const EventKindIterator = struct {
         }
         return null;
     }
+
+    pub fn valid(self: *const EventKindIterator) bool {
+        return self.events.frame_count == self.frame_count and
+            self.events.valid(self.frame_count) and
+            ordered.indexedCursorValid(
+                self.events.items,
+                self.last_offset,
+                self.last_index,
+                self.kind,
+                matchesKind,
+            );
+    }
 };
 
 pub const EventOffsetIterator = struct {
     events: Events,
+    frame_count: usize,
     sample_offset: usize,
     next_index: usize = 0,
 
     pub fn next(self: *EventOffsetIterator) ?Event {
+        if (!self.valid()) return null;
         return nextStoredMatchingEvent(self.events.items, &self.next_index, self.sample_offset, matchesOffset);
+    }
+
+    pub fn valid(self: *const EventOffsetIterator) bool {
+        return self.events.frame_count == self.frame_count and
+            self.events.valid(self.frame_count) and
+            ordered.storedCursorValid(
+                self.events.items.len,
+                self.next_index,
+            );
     }
 };
 
 pub const EventBusIterator = struct {
     events: Events,
+    frame_count: usize,
     bus_index: i32,
     last_offset: ?usize = null,
     last_index: usize = 0,
 
     pub fn next(self: *EventBusIterator) ?Event {
+        if (!self.valid()) return null;
         if (nextMatchingEvent(self.events.items, self.last_offset, self.last_index, self.bus_index, matchesBus)) |result| {
             self.last_offset = result.item.sample_offset;
             self.last_index = result.index;
@@ -154,15 +181,29 @@ pub const EventBusIterator = struct {
         }
         return null;
     }
+
+    pub fn valid(self: *const EventBusIterator) bool {
+        return self.events.frame_count == self.frame_count and
+            self.events.valid(self.frame_count) and
+            ordered.indexedCursorValid(
+                self.events.items,
+                self.last_offset,
+                self.last_index,
+                self.bus_index,
+                matchesBus,
+            );
+    }
 };
 
 pub const EventChannelIterator = struct {
     events: Events,
+    frame_count: usize,
     channel: i16,
     last_offset: ?usize = null,
     last_index: usize = 0,
 
     pub fn next(self: *EventChannelIterator) ?Event {
+        if (!self.valid()) return null;
         if (nextMatchingEvent(self.events.items, self.last_offset, self.last_index, self.channel, matchesChannel)) |result| {
             self.last_offset = result.item.sample_offset;
             self.last_index = result.index;
@@ -170,16 +211,30 @@ pub const EventChannelIterator = struct {
         }
         return null;
     }
+
+    pub fn valid(self: *const EventChannelIterator) bool {
+        return self.events.frame_count == self.frame_count and
+            self.events.valid(self.frame_count) and
+            ordered.indexedCursorValid(
+                self.events.items,
+                self.last_offset,
+                self.last_index,
+                self.channel,
+                matchesChannel,
+            );
+    }
 };
 
 pub const EventBusChannelIterator = struct {
     events: Events,
+    frame_count: usize,
     bus_index: i32,
     channel: i16,
     last_offset: ?usize = null,
     last_index: usize = 0,
 
     pub fn next(self: *EventBusChannelIterator) ?Event {
+        if (!self.valid()) return null;
         const context = BusChannel{ .bus_index = self.bus_index, .channel = self.channel };
         if (nextMatchingEvent(self.events.items, self.last_offset, self.last_index, context, matchesBusChannel)) |result| {
             self.last_offset = result.item.sample_offset;
@@ -187,6 +242,21 @@ pub const EventBusChannelIterator = struct {
             return result.item;
         }
         return null;
+    }
+
+    pub fn valid(self: *const EventBusChannelIterator) bool {
+        return self.events.frame_count == self.frame_count and
+            self.events.valid(self.frame_count) and
+            ordered.indexedCursorValid(
+                self.events.items,
+                self.last_offset,
+                self.last_index,
+                BusChannel{
+                    .bus_index = self.bus_index,
+                    .channel = self.channel,
+                },
+                matchesBusChannel,
+            );
     }
 };
 
@@ -276,9 +346,15 @@ pub const EventBlockSegmentIterator = struct {
     next_start: usize = 0,
 
     pub fn next(self: *EventBlockSegmentIterator) ?BlockSegment {
+        if (!self.valid()) return null;
         if (self.next_start >= self.frame_count) return null;
         const boundary = self.events.nextSampleOffset(self.next_start) orelse self.frame_count;
         return changes.advanceBlockSegment(&self.next_start, self.frame_count, boundary);
+    }
+
+    pub fn valid(self: *const EventBlockSegmentIterator) bool {
+        return self.next_start <= self.frame_count and
+            self.events.valid(self.frame_count);
     }
 };
 
@@ -714,12 +790,20 @@ fn validateBipolarEventValue(value: f32) !void {
 
 pub const Events = struct {
     items: []const Event = &.{},
+    frame_count: usize = 0,
 
     pub fn init(items: []const Event, frame_count: usize) !Events {
         for (items) |item| {
             try item.validate(frame_count);
         }
-        return .{ .items = items };
+        return .{ .items = items, .frame_count = frame_count };
+    }
+
+    pub fn valid(self: Events, frame_count: usize) bool {
+        for (self.items) |item| {
+            item.validate(frame_count) catch return false;
+        }
+        return true;
     }
 
     pub fn eventCount(self: Events) usize {
@@ -990,23 +1074,28 @@ pub const Events = struct {
     }
 
     pub fn ofKind(self: Events, kind: EventKind) EventKindIterator {
-        return .{ .events = self, .kind = kind };
+        return .{ .events = self, .frame_count = self.frame_count, .kind = kind };
     }
 
     pub fn atOffset(self: Events, sample_offset: usize) EventOffsetIterator {
-        return .{ .events = self, .sample_offset = sample_offset };
+        return .{ .events = self, .frame_count = self.frame_count, .sample_offset = sample_offset };
     }
 
     pub fn forBus(self: Events, bus_index: i32) EventBusIterator {
-        return .{ .events = self, .bus_index = bus_index };
+        return .{ .events = self, .frame_count = self.frame_count, .bus_index = bus_index };
     }
 
     pub fn forChannel(self: Events, channel: i16) EventChannelIterator {
-        return .{ .events = self, .channel = channel };
+        return .{ .events = self, .frame_count = self.frame_count, .channel = channel };
     }
 
     pub fn forBusChannel(self: Events, bus_index: i32, channel: i16) EventBusChannelIterator {
-        return .{ .events = self, .bus_index = bus_index, .channel = channel };
+        return .{
+            .events = self,
+            .frame_count = self.frame_count,
+            .bus_index = bus_index,
+            .channel = channel,
+        };
     }
 
     pub fn blockSegments(self: Events, frame_count: usize) EventBlockSegmentIterator {
@@ -1050,6 +1139,7 @@ pub const EventWriter = struct {
     }
 
     pub fn appendAllCount(self: *EventWriter, source: Events) !usize {
+        if (!self.valid()) return error.InvalidState;
         for (source.items) |event| {
             try event.validate(self.frame_count);
         }
@@ -1069,12 +1159,14 @@ pub const EventWriter = struct {
     }
 
     fn appendValidated(self: *EventWriter, event: Event) !void {
+        if (!self.valid()) return error.InvalidState;
         if (self.count >= self.storage.len) return error.EventStorageFull;
         self.storage[self.count] = event;
         self.count += 1;
     }
 
     pub fn canAppend(self: *const EventWriter, event_count: usize) bool {
+        if (!self.valid()) return false;
         return event_count <= self.remainingCapacity();
     }
 
@@ -1101,8 +1193,7 @@ pub const EventWriter = struct {
     }
 
     pub fn eventCount(self: *const EventWriter) usize {
-        std.debug.assert(self.count <= self.storage.len);
-        return self.count;
+        return if (self.valid()) self.count else 0;
     }
 
     pub fn isEmpty(self: *const EventWriter) bool {
@@ -1114,6 +1205,7 @@ pub const EventWriter = struct {
     }
 
     pub fn isFull(self: *const EventWriter) bool {
+        if (!self.valid()) return true;
         return self.count >= self.storage.len;
     }
 
@@ -1122,11 +1214,12 @@ pub const EventWriter = struct {
     }
 
     pub fn remainingCapacity(self: *const EventWriter) usize {
+        if (!self.valid()) return 0;
         return self.storage.len - self.eventCount();
     }
 
     pub fn frameCount(self: *const EventWriter) usize {
-        return self.frame_count;
+        return if (self.valid()) self.frame_count else 0;
     }
 
     pub fn firstSampleOffset(self: *const EventWriter) ?usize {
@@ -1394,11 +1487,22 @@ pub const EventWriter = struct {
     }
 
     pub fn blockSegments(self: *const EventWriter) EventBlockSegmentIterator {
-        return self.events().blockSegments(self.frame_count);
+        return self.events().blockSegments(self.frameCount());
     }
 
     pub fn events(self: *const EventWriter) Events {
-        return .{ .items = self.storage[0..self.eventCount()] };
+        return .{
+            .items = self.storage[0..self.eventCount()],
+            .frame_count = self.frame_count,
+        };
+    }
+
+    pub fn valid(self: *const EventWriter) bool {
+        if (self.count > self.storage.len) return false;
+        for (self.storage[0..self.count]) |event| {
+            event.validate(self.frame_count) catch return false;
+        }
+        return true;
     }
 };
 
@@ -1442,6 +1546,8 @@ test "events validate block offsets and count kinds" {
     };
     const view = try Events.init(&items, 4);
 
+    try std.testing.expect(view.valid(4));
+    try std.testing.expect(!view.valid(3));
     try std.testing.expectEqual(@as(usize, 10), view.eventCount());
     try std.testing.expect(!view.isEmpty());
     try std.testing.expect(view.hasEvents());
@@ -1547,12 +1653,18 @@ test "events iterate block segments split at event offsets" {
     };
     const view = try Events.init(&items, 8);
     var iterator = view.blockSegments(8);
+    try std.testing.expect(iterator.valid());
 
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 3 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 5, .end_offset = 8 }, iterator.next().?);
     try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+    try std.testing.expect(iterator.valid());
+    iterator.next_start = 9;
+    try std.testing.expect(!iterator.valid());
+    try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+    try std.testing.expectEqual(@as(usize, 9), iterator.next_start);
 
     var empty = (Events{}).blockSegments(4);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 4 }, empty.next().?);
@@ -1642,11 +1754,13 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(?Event, null), view.firstBus(2));
     try std.testing.expectEqual(@as(?Event, null), view.latestChannel(2));
     var note_ons = view.ofKind(.note_on);
+    try std.testing.expect(note_ons.valid());
     try std.testing.expectEqual(@as(i16, 60), note_ons.next().?.pitch);
     try std.testing.expectEqual(@as(i16, 64), note_ons.next().?.pitch);
     try std.testing.expectEqual(@as(i16, 67), note_ons.next().?.pitch);
     try std.testing.expectEqual(@as(i16, 72), note_ons.next().?.pitch);
     try std.testing.expectEqual(@as(?Event, null), note_ons.next());
+    try std.testing.expect(note_ons.valid());
     var bus_one_events = view.forBus(1);
     try std.testing.expectEqual(@as(i16, 64), bus_one_events.next().?.pitch);
     try std.testing.expectEqual(EventKind.note_off, bus_one_events.next().?.kind);
@@ -1659,6 +1773,16 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(i16, 64), bus_channel_events.next().?.pitch);
     try std.testing.expectEqual(EventKind.note_off, bus_channel_events.next().?.kind);
     try std.testing.expectEqual(@as(?Event, null), bus_channel_events.next());
+
+    note_ons.last_index = items.len;
+    try std.testing.expect(!note_ons.valid());
+    try std.testing.expectEqual(@as(?Event, null), note_ons.next());
+    try std.testing.expectEqual(items.len, note_ons.last_index);
+    var hostile_offset = view.atOffset(2);
+    hostile_offset.next_index = items.len + 1;
+    try std.testing.expect(!hostile_offset.valid());
+    try std.testing.expectEqual(@as(?Event, null), hostile_offset.next());
+    try std.testing.expectEqual(items.len + 1, hostile_offset.next_index);
     var missing_bus_events = view.forBus(2);
     try std.testing.expectEqual(@as(?Event, null), missing_bus_events.next());
 
@@ -1675,6 +1799,70 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(i16, 64), same_offset_view.latest().?.pitch);
     try std.testing.expectEqual(@as(i16, 60), same_offset_view.firstAtOffset(2).?.pitch);
     try std.testing.expectEqual(@as(i16, 64), same_offset_view.latestAtOffset(2).?.pitch);
+}
+
+test "event filters reject mutated borrowed events" {
+    var items = [_]Event{
+        Event.noteOn(0, 1, 60, 0.5),
+    };
+    const view = try Events.init(&items, 4);
+    var by_kind = view.ofKind(.note_on);
+    var by_offset = view.atOffset(0);
+    var by_bus = view.forBus(0);
+    var by_channel = view.forChannel(1);
+    var by_bus_channel = view.forBusChannel(0, 1);
+
+    items[0].velocity = std.math.nan(f32);
+    try std.testing.expect(!by_kind.valid());
+    try std.testing.expect(!by_offset.valid());
+    try std.testing.expect(!by_bus.valid());
+    try std.testing.expect(!by_channel.valid());
+    try std.testing.expect(!by_bus_channel.valid());
+    try std.testing.expect(by_kind.next() == null);
+    try std.testing.expect(by_offset.next() == null);
+    try std.testing.expect(by_bus.next() == null);
+    try std.testing.expect(by_channel.next() == null);
+    try std.testing.expect(by_bus_channel.next() == null);
+    try std.testing.expect(by_kind.last_offset == null);
+    try std.testing.expectEqual(@as(usize, 0), by_offset.next_index);
+    try std.testing.expect(by_bus.last_offset == null);
+    try std.testing.expect(by_channel.last_offset == null);
+    try std.testing.expect(by_bus_channel.last_offset == null);
+}
+
+test "event filters retain their construction frame extent" {
+    var items = [_]Event{
+        Event.noteOn(3, 1, 60, 0.5),
+    };
+    const view = try Events.init(&items, 4);
+    var by_kind = view.ofKind(.note_on);
+    var by_offset = view.atOffset(3);
+    var by_bus = view.forBus(0);
+    var by_channel = view.forChannel(1);
+    var by_bus_channel = view.forBusChannel(0, 1);
+
+    by_kind.events.frame_count = 8;
+    by_offset.events.frame_count = 8;
+    by_bus.events.frame_count = 8;
+    by_channel.events.frame_count = 8;
+    by_bus_channel.events.frame_count = 8;
+    items[0].sample_offset = 6;
+
+    try std.testing.expect(!by_kind.valid());
+    try std.testing.expect(!by_offset.valid());
+    try std.testing.expect(!by_bus.valid());
+    try std.testing.expect(!by_channel.valid());
+    try std.testing.expect(!by_bus_channel.valid());
+    try std.testing.expect(by_kind.next() == null);
+    try std.testing.expect(by_offset.next() == null);
+    try std.testing.expect(by_bus.next() == null);
+    try std.testing.expect(by_channel.next() == null);
+    try std.testing.expect(by_bus_channel.next() == null);
+    try std.testing.expect(by_kind.last_offset == null);
+    try std.testing.expectEqual(@as(usize, 0), by_offset.next_index);
+    try std.testing.expect(by_bus.last_offset == null);
+    try std.testing.expect(by_channel.last_offset == null);
+    try std.testing.expect(by_bus_channel.last_offset == null);
 }
 
 test "events generated queries match reference scans" {
@@ -2254,6 +2442,7 @@ test "events reject invalid normalized values" {
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&infinite_aftertouch, 4));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&wide_bend, 4));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&infinite_bend, 4));
+    try std.testing.expect(!(Events{ .items = &nan_cc }).valid(4));
 }
 
 test "events reject invalid MIDI metadata" {
@@ -2274,6 +2463,7 @@ test "events reject invalid MIDI metadata" {
     try std.testing.expectError(error.InvalidEventPitch, Events.init(&bad_pitch, 4));
     try std.testing.expectError(error.InvalidEventControlNumber, Events.init(&bad_control, 4));
     try std.testing.expectError(error.InvalidEventBusIndex, Events.init(&bad_bus, 4));
+    try std.testing.expect(!(Events{ .items = &bad_bus }).valid(4));
 }
 
 test "events expose stable MIDI pitch indexes" {
@@ -2525,6 +2715,34 @@ test "event writer validates offsets and capacity" {
     var empty_writer = EventWriter.init(&empty_storage, 4);
     try std.testing.expectError(error.EventOutsideBlock, empty_writer.append(Event.noteOn(4, 0, 60, 1.0)));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, empty_writer.append(Event.noteOn(0, 0, 60, -0.25)));
+}
+
+test "event writer rejects malformed retained state and clear recovers" {
+    var storage = [_]Event{Event.noteOn(0, 0, 60, 1.0)};
+    var writer = EventWriter.init(&storage, 4);
+
+    writer.count = storage.len + 1;
+    try std.testing.expect(!writer.valid());
+    try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
+    try std.testing.expectEqual(@as(usize, 0), writer.frameCount());
+    try std.testing.expectEqual(@as(usize, 0), writer.remainingCapacity());
+    try std.testing.expect(writer.isFull());
+    var invalid_segments = writer.blockSegments();
+    try std.testing.expectEqual(@as(?BlockSegment, null), invalid_segments.next());
+    try std.testing.expect(!writer.canAppend(0));
+    try std.testing.expectError(error.InvalidState, writer.append(Event.noteOn(1, 0, 64, 1.0)));
+    try std.testing.expectError(error.InvalidState, writer.appendAllCount(.{}));
+    try std.testing.expectEqual(@as(usize, 0), writer.clearCount());
+    try std.testing.expect(writer.valid());
+    try std.testing.expectEqual(storage.len, writer.remainingCapacity());
+
+    writer.count = 1;
+    storage[0] = Event.noteOn(4, 0, 60, 1.0);
+    try std.testing.expect(!writer.valid());
+    try std.testing.expectEqual(@as(?Event, null), writer.first());
+    writer.clear();
+    try writer.append(Event.noteOn(3, 0, 60, 1.0));
+    try std.testing.expect(writer.valid());
 }
 
 test "event writer queries written events by offset" {

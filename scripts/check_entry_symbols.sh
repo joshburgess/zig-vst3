@@ -34,3 +34,20 @@ for symbol in "${required_symbols[@]}"; do
         exit 1
     fi
 done
+
+if grep -Eq '(^|[[:space:]])_?zig_vst3_dense4_(portable|neon|avx2)$' <<<"$symbols"; then
+    echo "C kernel implementation symbols must remain private to the plugin bundle" >&2
+    exit 1
+fi
+
+if [ "$(uname -s)" = Darwin ]; then
+    if grep -Fq "OBJC_CLASS_\$_ZigVstguiAccessibilityElement" <<<"$symbols"; then
+        echo "fixed Objective-C accessibility class name would collide across plugin bundles" >&2
+        exit 1
+    fi
+    exports="$(xcrun dyld_info -exports "$artifact")"
+    if grep -Eq '(_ZN6VSTGUI|_ZN9ZigVstgui)' <<<"$exports"; then
+        echo "VSTGUI implementation symbols must remain private to each plugin bundle" >&2
+        exit 1
+    fi
+fi

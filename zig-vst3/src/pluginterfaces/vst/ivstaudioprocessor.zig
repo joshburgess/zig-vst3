@@ -66,16 +66,16 @@ pub const ProcessData = extern struct {
 };
 
 pub const IAudioProcessorVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     setBusArrangements: *const fn (*anyopaque, ?[*]vsttypes.SpeakerArrangement, base_types.int32, ?[*]vsttypes.SpeakerArrangement, base_types.int32) callconv(.c) base_types.tresult,
-    getBusArrangement: *const fn (*anyopaque, vsttypes.BusDirection, base_types.int32, *vsttypes.SpeakerArrangement) callconv(.c) base_types.tresult,
+    getBusArrangement: *const fn (*anyopaque, vsttypes.BusDirection, base_types.int32, [*c]vsttypes.SpeakerArrangement) callconv(.c) base_types.tresult,
     canProcessSampleSize: *const fn (*anyopaque, base_types.int32) callconv(.c) base_types.tresult,
     getLatencySamples: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    setupProcessing: *const fn (*anyopaque, *ProcessSetup) callconv(.c) base_types.tresult,
+    setupProcessing: *const fn (*anyopaque, [*c]ProcessSetup) callconv(.c) base_types.tresult,
     setProcessing: *const fn (*anyopaque, base_types.TBool) callconv(.c) base_types.tresult,
-    process: *const fn (*anyopaque, *ProcessData) callconv(.c) base_types.tresult,
+    process: *const fn (*anyopaque, [*c]ProcessData) callconv(.c) base_types.tresult,
     getTailSamples: *const fn (*anyopaque) callconv(.c) base_types.uint32,
 };
 
@@ -84,7 +84,7 @@ pub const IAudioProcessor = extern struct {
 };
 
 pub const IAudioPresentationLatencyVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     setAudioPresentationLatencySamples: *const fn (*anyopaque, vsttypes.BusDirection, base_types.int32, base_types.uint32) callconv(.c) base_types.tresult,
@@ -122,7 +122,7 @@ pub const ProcessContextRequirementFlags = packed struct(base_types.uint32) {
 };
 
 pub const IProcessContextRequirementsVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     getProcessContextRequirements: *const fn (*anyopaque) callconv(.c) base_types.uint32,

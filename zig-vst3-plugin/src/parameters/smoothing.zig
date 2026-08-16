@@ -5,7 +5,8 @@ const clampNormalized = common.clampNormalized;
 const clampNormalizedNonZero = common.clampNormalizedNonZero;
 
 fn withinTolerance(target_delta: f64, tolerance: f64) bool {
-    return target_delta <= @max(0.0, tolerance);
+    return std.math.isFinite(target_delta) and std.math.isFinite(tolerance) and
+        target_delta <= @max(0.0, tolerance);
 }
 
 pub const LinearSmoother = struct {
@@ -28,11 +29,11 @@ pub const LinearSmoother = struct {
     }
 
     pub fn currentValue(self: LinearSmoother) f64 {
-        return self.current;
+        return clampNormalized(self.current);
     }
 
     pub fn targetValue(self: LinearSmoother) f64 {
-        return self.target;
+        return clampNormalized(self.target);
     }
 
     pub fn remainingSamples(self: LinearSmoother) usize {
@@ -40,7 +41,7 @@ pub const LinearSmoother = struct {
     }
 
     pub fn targetDelta(self: LinearSmoother) f64 {
-        return @abs(self.target - self.current);
+        return @abs(self.targetValue() - self.currentValue());
     }
 
     pub fn atTarget(self: LinearSmoother, tolerance: f64) bool {
@@ -60,6 +61,7 @@ pub const LinearSmoother = struct {
     }
 
     pub fn setTarget(self: *LinearSmoother, target: f64, samples: usize) void {
+        if (!self.valid()) self.reset(self.target);
         self.target = clampNormalized(target);
         self.remaining = samples;
         if (samples == 0) {
@@ -71,14 +73,22 @@ pub const LinearSmoother = struct {
     }
 
     pub fn next(self: *LinearSmoother) f64 {
-        if (self.remaining == 0) return self.current;
+        if (self.remaining == 0) {
+            self.current = clampNormalized(self.current);
+            return self.current;
+        }
         self.remaining -= 1;
         if (self.remaining == 0) {
-            self.current = self.target;
+            self.current = clampNormalized(self.target);
         } else {
-            self.current += self.step;
+            self.current = clampNormalized(self.current + self.step);
         }
         return self.current;
+    }
+
+    pub fn valid(self: LinearSmoother) bool {
+        return common.isNormalized(self.current) and common.isNormalized(self.target) and
+            std.math.isFinite(self.step);
     }
 };
 
@@ -103,19 +113,19 @@ pub const ExponentialSmoother = struct {
     }
 
     pub fn currentValue(self: ExponentialSmoother) f64 {
-        return self.current;
+        return clampNormalized(self.current);
     }
 
     pub fn targetValue(self: ExponentialSmoother) f64 {
-        return self.target;
+        return clampNormalized(self.target);
     }
 
     pub fn coefficientValue(self: ExponentialSmoother) f64 {
-        return self.coefficient;
+        return clampNormalized(self.coefficient);
     }
 
     pub fn targetDelta(self: ExponentialSmoother) f64 {
-        return @abs(self.target - self.current);
+        return @abs(self.targetValue() - self.currentValue());
     }
 
     pub fn atTarget(self: ExponentialSmoother, tolerance: f64) bool {
@@ -135,8 +145,16 @@ pub const ExponentialSmoother = struct {
     }
 
     pub fn next(self: *ExponentialSmoother) f64 {
-        self.current += (self.target - self.current) * self.coefficient;
+        self.current = self.currentValue();
+        self.target = self.targetValue();
+        self.coefficient = self.coefficientValue();
+        self.current = clampNormalized(self.current + (self.target - self.current) * self.coefficient);
         return self.current;
+    }
+
+    pub fn valid(self: ExponentialSmoother) bool {
+        return common.isNormalized(self.current) and common.isNormalized(self.target) and
+            common.isNormalized(self.coefficient);
     }
 };
 
@@ -160,11 +178,11 @@ pub const LogSmoother = struct {
     }
 
     pub fn currentValue(self: LogSmoother) f64 {
-        return self.current;
+        return clampNormalizedNonZero(self.current);
     }
 
     pub fn targetValue(self: LogSmoother) f64 {
-        return self.target;
+        return clampNormalizedNonZero(self.target);
     }
 
     pub fn remainingSamples(self: LogSmoother) usize {
@@ -172,7 +190,7 @@ pub const LogSmoother = struct {
     }
 
     pub fn targetDelta(self: LogSmoother) f64 {
-        return @abs(self.target - self.current);
+        return @abs(self.targetValue() - self.currentValue());
     }
 
     pub fn atTarget(self: LogSmoother, tolerance: f64) bool {
@@ -192,6 +210,7 @@ pub const LogSmoother = struct {
     }
 
     pub fn setTarget(self: *LogSmoother, target: f64, samples: usize) void {
+        if (!self.valid()) self.reset(self.target);
         self.target = clampNormalizedNonZero(target);
         self.remaining = samples;
         if (samples == 0) {
@@ -203,14 +222,23 @@ pub const LogSmoother = struct {
     }
 
     pub fn next(self: *LogSmoother) f64 {
-        if (self.remaining == 0) return self.current;
+        if (self.remaining == 0) {
+            self.current = clampNormalizedNonZero(self.current);
+            return self.current;
+        }
         self.remaining -= 1;
         if (self.remaining == 0) {
-            self.current = self.target;
+            self.current = clampNormalizedNonZero(self.target);
         } else {
-            self.current *= self.ratio;
+            self.current = clampNormalizedNonZero(self.current * self.ratio);
         }
         return self.current;
+    }
+
+    pub fn valid(self: LogSmoother) bool {
+        return std.math.isFinite(self.current) and self.current > 0.0 and self.current <= 1.0 and
+            std.math.isFinite(self.target) and self.target > 0.0 and self.target <= 1.0 and
+            std.math.isFinite(self.ratio) and self.ratio > 0.0;
     }
 };
 test "linear smoother reaches target after requested samples" {
@@ -383,4 +411,37 @@ test "smoothers clamp generated inputs and preserve endpoint invariants" {
             }
         }
     }
+}
+
+test "smoothers contain malformed public state" {
+    var linear = LinearSmoother{
+        .current = std.math.nan(f64),
+        .target = std.math.inf(f64),
+        .step = std.math.nan(f64),
+        .remaining = 4,
+    };
+    try std.testing.expect(!linear.valid());
+    linear.setTarget(0.75, 2);
+    try std.testing.expect(linear.valid());
+    try std.testing.expect(std.math.isFinite(linear.next()));
+
+    var exponential = ExponentialSmoother{
+        .current = std.math.nan(f64),
+        .target = std.math.inf(f64),
+        .coefficient = -1.0,
+    };
+    try std.testing.expect(!exponential.valid());
+    try std.testing.expectEqual(@as(f64, 0.0), exponential.next());
+    try std.testing.expect(exponential.valid());
+
+    var logarithmic = LogSmoother{
+        .current = std.math.nan(f64),
+        .target = -1.0,
+        .ratio = std.math.inf(f64),
+        .remaining = 4,
+    };
+    try std.testing.expect(!logarithmic.valid());
+    logarithmic.setTarget(0.5, 2);
+    try std.testing.expect(logarithmic.valid());
+    try std.testing.expect(std.math.isFinite(logarithmic.next()));
 }

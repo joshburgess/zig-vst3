@@ -82,7 +82,7 @@ pub const RestartFlags = packed struct(base_types.int32) {
 };
 
 pub const IComponentHandlerVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     beginEdit: *const fn (*anyopaque, vsttypes.ParamID) callconv(.c) base_types.tresult,
@@ -96,7 +96,7 @@ pub const IComponentHandler = extern struct {
 };
 
 pub const IComponentHandler2VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     setDirty: *const fn (*anyopaque, base_types.TBool) callconv(.c) base_types.tresult,
@@ -110,7 +110,7 @@ pub const IComponentHandler2 = extern struct {
 };
 
 pub const IComponentHandlerBusActivationVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     requestBusActivation: *const fn (*anyopaque, vsttypes.MediaType, vsttypes.BusDirection, base_types.int32, base_types.TBool) callconv(.c) base_types.tresult,
@@ -128,10 +128,10 @@ pub const ProgressType = enum(base_types.uint32) {
 pub const ProgressID = base_types.uint64;
 
 pub const IProgressVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    start: *const fn (*anyopaque, base_types.uint32, ?[*]const base_types.char16, *ProgressID) callconv(.c) base_types.tresult,
+    start: *const fn (*anyopaque, base_types.uint32, ?[*]const base_types.char16, [*c]ProgressID) callconv(.c) base_types.tresult,
     update: *const fn (*anyopaque, ProgressID, vsttypes.ParamValue) callconv(.c) base_types.tresult,
     finish: *const fn (*anyopaque, ProgressID) callconv(.c) base_types.tresult,
 };
@@ -141,7 +141,7 @@ pub const IProgress = extern struct {
 };
 
 pub const IEditControllerVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     initialize: *const fn (*anyopaque, ?*anyopaque) callconv(.c) base_types.tresult,
@@ -150,15 +150,15 @@ pub const IEditControllerVTable = extern struct {
     setState: *const fn (*anyopaque, ?*ibstream.IBStream) callconv(.c) base_types.tresult,
     getState: *const fn (*anyopaque, ?*ibstream.IBStream) callconv(.c) base_types.tresult,
     getParameterCount: *const fn (*anyopaque) callconv(.c) base_types.int32,
-    getParameterInfo: *const fn (*anyopaque, base_types.int32, *ParameterInfo) callconv(.c) base_types.tresult,
-    getParamStringByValue: *const fn (*anyopaque, vsttypes.ParamID, vsttypes.ParamValue, [*]vsttypes.TChar) callconv(.c) base_types.tresult,
-    getParamValueByString: *const fn (*anyopaque, vsttypes.ParamID, [*]vsttypes.TChar, *vsttypes.ParamValue) callconv(.c) base_types.tresult,
+    getParameterInfo: *const fn (*anyopaque, base_types.int32, [*c]ParameterInfo) callconv(.c) base_types.tresult,
+    getParamStringByValue: *const fn (*anyopaque, vsttypes.ParamID, vsttypes.ParamValue, [*c]vsttypes.TChar) callconv(.c) base_types.tresult,
+    getParamValueByString: *const fn (*anyopaque, vsttypes.ParamID, [*c]vsttypes.TChar, [*c]vsttypes.ParamValue) callconv(.c) base_types.tresult,
     normalizedParamToPlain: *const fn (*anyopaque, vsttypes.ParamID, vsttypes.ParamValue) callconv(.c) vsttypes.ParamValue,
     plainParamToNormalized: *const fn (*anyopaque, vsttypes.ParamID, vsttypes.ParamValue) callconv(.c) vsttypes.ParamValue,
     getParamNormalized: *const fn (*anyopaque, vsttypes.ParamID) callconv(.c) vsttypes.ParamValue,
     setParamNormalized: *const fn (*anyopaque, vsttypes.ParamID, vsttypes.ParamValue) callconv(.c) base_types.tresult,
     setComponentHandler: *const fn (*anyopaque, ?*anyopaque) callconv(.c) base_types.tresult,
-    createView: *const fn (*anyopaque, base_types.FIDString) callconv(.c) ?*iplugview.IPlugView,
+    createView: *const fn (*anyopaque, ?base_types.FIDString) callconv(.c) ?*iplugview.IPlugView,
 };
 
 pub const IEditController = extern struct {
@@ -174,7 +174,7 @@ pub const KnobModes = enum(KnobMode) {
 };
 
 pub const IEditController2VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     setKnobMode: *const fn (*anyopaque, KnobMode) callconv(.c) base_types.tresult,
@@ -187,10 +187,10 @@ pub const IEditController2 = extern struct {
 };
 
 pub const IMidiMappingVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    getMidiControllerAssignment: *const fn (*anyopaque, base_types.int32, base_types.int16, vsttypes.CtrlNumber, *vsttypes.ParamID) callconv(.c) base_types.tresult,
+    getMidiControllerAssignment: *const fn (*anyopaque, base_types.int32, base_types.int16, vsttypes.CtrlNumber, [*c]vsttypes.ParamID) callconv(.c) base_types.tresult,
 };
 
 pub const IMidiMapping = extern struct {
@@ -198,7 +198,7 @@ pub const IMidiMapping = extern struct {
 };
 
 pub const IEditControllerHostEditingVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     beginEditFromHost: *const fn (*anyopaque, vsttypes.ParamID) callconv(.c) base_types.tresult,
@@ -210,10 +210,10 @@ pub const IEditControllerHostEditing = extern struct {
 };
 
 pub const IComponentHandlerSystemTimeVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    getSystemTime: *const fn (*anyopaque, *base_types.int64) callconv(.c) base_types.tresult,
+    getSystemTime: *const fn (*anyopaque, [*c]base_types.int64) callconv(.c) base_types.tresult,
 };
 
 pub const IComponentHandlerSystemTime = extern struct {

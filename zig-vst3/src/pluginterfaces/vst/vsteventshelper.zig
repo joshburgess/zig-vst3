@@ -31,12 +31,20 @@ pub fn getMIDINormValue(value: base.uint8) vsttypes.ParamValue {
 
 pub fn getMIDICCOutValue(value: vsttypes.ParamValue) base.int8 {
     if (!std.math.isFinite(value)) return 0;
-    return boundTo(base.int8, 0, 127, @intFromFloat(@min(@as(vsttypes.ParamValue, 127), value * 128)));
+    const normalized = std.math.clamp(value, 0, 1);
+    return @intFromFloat(@min(
+        @as(vsttypes.ParamValue, 127),
+        normalized * 128,
+    ));
 }
 
 pub fn getMIDI14BitValue(value: vsttypes.ParamValue) base.int16 {
     if (!std.math.isFinite(value)) return 0;
-    return boundTo(base.int16, 0, 0x3FFF, @intFromFloat(@min(@as(vsttypes.ParamValue, 0x3FFF), value * 0x4000)));
+    const normalized = std.math.clamp(value, 0, 1);
+    return @intFromFloat(@min(
+        @as(vsttypes.ParamValue, 0x3FFF),
+        normalized * 0x4000,
+    ));
 }
 
 pub fn getMIDI14BitNormValue(value: base.int16) vsttypes.ParamValue {
@@ -81,6 +89,22 @@ test "event helpers match expected MIDI behavior" {
     try @import("std").testing.expectEqual(@as(base.int16, 0), getMIDI14BitValue(std.math.nan(vsttypes.ParamValue)));
     try @import("std").testing.expectEqual(@as(base.int8, 0), getMIDICCOutValue(std.math.inf(vsttypes.ParamValue)));
     try @import("std").testing.expectEqual(@as(base.int16, 0), getMIDI14BitValue(-std.math.inf(vsttypes.ParamValue)));
+    try @import("std").testing.expectEqual(
+        @as(base.int8, 0),
+        getMIDICCOutValue(-std.math.floatMax(vsttypes.ParamValue)),
+    );
+    try @import("std").testing.expectEqual(
+        @as(base.int16, 0),
+        getMIDI14BitValue(-std.math.floatMax(vsttypes.ParamValue)),
+    );
+    try @import("std").testing.expectEqual(
+        @as(base.int8, 127),
+        getMIDICCOutValue(std.math.floatMax(vsttypes.ParamValue)),
+    );
+    try @import("std").testing.expectEqual(
+        @as(base.int16, 0x3FFF),
+        getMIDI14BitValue(std.math.floatMax(vsttypes.ParamValue)),
+    );
 
     var event = events.Event{};
     const midi = initLegacyMIDICCOutEvent(&event, 10, 2, 64, 1);
@@ -89,4 +113,16 @@ test "event helpers match expected MIDI behavior" {
 
     setPitchBendValue(midi, 1);
     try @import("std").testing.expectEqual(@as(base.int16, 0x3FFF), getPitchBendValue(midi));
+}
+
+test "legacy MIDI conversion contains generated floating point inputs" {
+    var bits: u64 = 0xd1b5_4a32_d192_ed03;
+    for (0..4_096) |_| {
+        bits = bits *% 6_364_136_223_846_793_005 +% 1_442_695_040_888_963_407;
+        const value: vsttypes.ParamValue = @bitCast(bits);
+        const value7 = getMIDICCOutValue(value);
+        const value14 = getMIDI14BitValue(value);
+        try std.testing.expect(value7 >= 0 and value7 <= 127);
+        try std.testing.expect(value14 >= 0 and value14 <= 0x3fff);
+    }
 }

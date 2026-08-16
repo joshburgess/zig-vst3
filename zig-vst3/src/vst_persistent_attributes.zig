@@ -27,7 +27,7 @@ pub fn Persistent(comptime Config: type) type {
             return Config.class_id;
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ipersistent.ipersistent_iid, .ptr = ptr },
@@ -43,7 +43,9 @@ pub fn Persistent(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPersistent");
         }
 
-        fn getClassID(_: *anyopaque, out: [*]types.char8) callconv(.c) types.tresult {
+        fn getClassID(_: *anyopaque, out_raw: [*c]types.char8) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: [*]types.char8 = @ptrCast(out_raw);
             @memcpy(out[0..tuid.byte_count], &classId());
             return types.kResultOk;
         }
@@ -116,8 +118,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
 
             fn setCopiedBinary(self: *Entry, data: ?*anyopaque, size: types.uint32) void {
                 self.resetValue(.{ .type = fvariant.kObject, .value = .{ .object = &self.binary } });
-                if (size > 0) {
-                    const source = data.?;
+                if (data) |source| {
                     const bytes: [*]const u8 = @ptrCast(source);
                     @memcpy(self.binary[0..size], bytes[0..size]);
                 }
@@ -190,7 +191,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return null;
         }
 
-        fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+        fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
                 .{ .iid = &ipersistent.iattributes_iid, .ptr = &self.iface },
@@ -199,11 +200,11 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return interface_map.queryWithAddRef(add_ref_ptr, attributesAddRef, &entries_for_query, requested_iid, out);
         }
 
-        fn attributesQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn attributesQuery(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             return ownerFromAttributes(ptr).queryCanonical(ptr, requested_iid, out);
         }
 
-        fn attributes2Query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn attributes2Query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromAttributes2(ptr);
             return self.queryCanonical(&self.iface, requested_iid, out);
         }
@@ -224,13 +225,16 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return funknown.decrementRefCount(&ownerFromAttributes2(ptr).ref_count, "IAttributes2");
         }
 
-        fn set(ptr: *anyopaque, id: ipersistent.IAttrID, value: *const fvariant.FVariant) callconv(.c) types.tresult {
+        fn set(ptr: *anyopaque, id: ipersistent.IAttrID, value_raw: [*c]const fvariant.FVariant) callconv(.c) types.tresult {
+            if (value_raw == null) return types.kInvalidArgument;
+            const value = &value_raw[0];
             const entry = ownerFromAttributes(ptr).slotFor(id) orelse return types.kResultFalse;
             entry.resetValue(value.*);
             return types.kResultOk;
         }
 
-        fn queue(ptr: *anyopaque, id: ipersistent.IAttrID, value: *const fvariant.FVariant) callconv(.c) types.tresult {
+        fn queue(ptr: *anyopaque, id: ipersistent.IAttrID, value: [*c]const fvariant.FVariant) callconv(.c) types.tresult {
+            if (value == null) return types.kInvalidArgument;
             const result = set(ptr, id, value);
             if (result != types.kResultOk) return result;
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse return types.kResultFalse;
@@ -255,13 +259,17 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return types.kResultFalse;
         }
 
-        fn get(ptr: *anyopaque, id: ipersistent.IAttrID, out: *fvariant.FVariant) callconv(.c) types.tresult {
+        fn get(ptr: *anyopaque, id: ipersistent.IAttrID, out_raw: [*c]fvariant.FVariant) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *fvariant.FVariant = @ptrCast(out_raw);
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse return failVariant(out);
             out.* = entry.value;
             return types.kResultOk;
         }
 
-        fn unqueue(ptr: *anyopaque, id: ipersistent.IAttrID, out: *fvariant.FVariant) callconv(.c) types.tresult {
+        fn unqueue(ptr: *anyopaque, id: ipersistent.IAttrID, out_raw: [*c]fvariant.FVariant) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *fvariant.FVariant = @ptrCast(out_raw);
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse return failVariant(out);
             if (!entry.queued) return failVariant(out);
             entry.queued = false;
@@ -374,6 +382,7 @@ test "persistent object returns class ID and counts save load calls" {
     const iface = object.asInterface();
 
     var out: tuid.TUID = tuid.zero;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getClassID(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getClassID(iface, &out));
     try std.testing.expectEqualSlices(u8, &expected_class_id, &out);
 
@@ -450,6 +459,9 @@ test "persistent attributes store and enumerate variants" {
     const attrs2 = store.asAttributes2();
     const gain = fvariant.FVariant{ .type = fvariant.kFloat, .value = .{ .floatValue = 0.75 } };
 
+    try std.testing.expectEqual(types.kInvalidArgument, attrs.vtable.set(attrs, "gain", null));
+    try std.testing.expectEqual(types.kInvalidArgument, attrs.vtable.queue(attrs, "gain", null));
+    try std.testing.expectEqual(@as(usize, 0), store.attributeCount());
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.set(attrs, "gain", &gain));
     try std.testing.expectEqual(@as(usize, 1), store.attributeCount());
     try std.testing.expectEqualStrings("gain", std.mem.span(store.attributeIDByIndex(0).?));
@@ -459,6 +471,8 @@ test "persistent attributes store and enumerate variants" {
     try std.testing.expectEqualStrings("gain", std.mem.span(attrs2.vtable.getAttributeID(attrs2, 0)));
 
     var out = fvariant.FVariant{};
+    try std.testing.expectEqual(types.kInvalidArgument, attrs.vtable.get(attrs, "gain", null));
+    try std.testing.expectEqual(types.kInvalidArgument, attrs.vtable.unqueue(attrs, "gain", null));
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.get(attrs, "gain", &out));
     try std.testing.expectEqual(fvariant.kFloat, out.type);
     try std.testing.expectEqual(@as(f64, 0.75), out.value.floatValue);

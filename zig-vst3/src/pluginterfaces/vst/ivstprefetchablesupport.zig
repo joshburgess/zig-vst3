@@ -13,10 +13,10 @@ pub const ePrefetchableSupport = enum(base_types.int32) {
 };
 
 pub const IPrefetchableSupportVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    getPrefetchableSupport: *const fn (*anyopaque, *PrefetchableSupport) callconv(.c) base_types.tresult,
+    getPrefetchableSupport: *const fn (*anyopaque, [*c]PrefetchableSupport) callconv(.c) base_types.tresult,
 };
 
 pub const IPrefetchableSupport = extern struct {

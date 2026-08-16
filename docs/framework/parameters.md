@@ -54,11 +54,11 @@ Descriptors can also set `can_automate`, `is_read_only`, and `unit_id`. `unit_id
 - `FloatParam`: bounded `f64` values with normalized/plain conversion and text formatting/parsing.
 - `IntParam`: bounded `i64` values with normalized/plain conversion and rounded denormalization.
 - `BoolParam`: midpoint conversion with `On` and `Off` display text. `is_bypass` marks a dedicated bypass control.
-- `EnumParam(Enum)`: declaration-order list parameter for Zig enums, including enums with sparse explicit tag values.
+- `EnumParam(Enum)`: declaration-order list parameter for exhaustive Zig enums, including enums with sparse explicit tag values.
 
 Float parameters are continuous. Bool parameters report one step. Int parameters report their integer range as discrete steps. Enum parameters report one step per enum transition and set the VST3 list flag.
 
-`FloatParam.initChecked` and `IntParam.initChecked` are available when descriptor ranges come from dynamic input and should return an error instead of panicking. The shorter `init` constructors are still convenient for compile-time declarations.
+Use `FloatParam.initChecked`, `LogFloatParam.initChecked`, and `IntParam.initChecked` when constructing descriptors from runtime input. A linear floating-point range must have a finite positive span. A logarithmic range must be positive and have a finite ratio. The shorter `init` constructors accept only compile-time arguments and turn an invalid fixed declaration into a compiler error.
 
 ## Read Parameters In Process
 
@@ -86,6 +86,10 @@ Use `process.ProcessContext` automation helpers when sample timing matters:
 ```zig
 const latest_gain = context.parameterNormalizedAtOrBeforeOr(0, sample_offset, 1.0);
 ```
+
+`ProcessAttachments.parameter_ramps` carries bounded linear ramps without expanding them into per-sample points. Each `ParameterRamp` has a signed start offset, a nonzero duration, normalized endpoints, and a sequence number for deterministic ties with point changes. Negative starts represent a ramp already in progress at the beginning of the block. `parameterNormalizedAtOrBeforeOr` interpolates active ramps and returns their endpoint after completion.
+
+`ParameterChanges.changeCount` reports the combined point and ramp total. The older point-query APIs, including `count`, `firstChange`, `latestChange`, `forId`, and the offset iterators, continue to enumerate point changes. Use `rampCount`, `hasRamp`, and `ProcessContext.parameterRamps` to inspect native ramps. Value-resolution and segment-boundary helpers combine both forms of automation and resolve equal-offset events by sequence number.
 
 `ParameterView` provides typed field reads with `load("field_name")`, normalized reads with `loadNormalized("field_name")`, and id/name/index reads for code that is not tied to reflected field names.
 

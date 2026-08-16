@@ -20,6 +20,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check retired comparison references
+        run: scripts/check_retired_reference.sh
+      - name: Check raw callback pointers
+        run: |
+          scripts/test_raw_callback_pointer_check.sh
+          scripts/check_raw_callback_pointers.sh
+      - name: Check production termination paths
+        run: |
+          scripts/test_production_termination_path_check.sh
+          scripts/check_production_termination_paths.sh
+      - name: Check quality inventory
+        run: |
+          scripts/test_quality_inventory_runner.sh
+          scripts/check_quality_inventory.sh
+          scripts/test_parser_inventory_runner.sh
+          scripts/check_parser_inventory.sh
       - name: Check prose punctuation
         run: |
           em_dash="$(printf '\342\200\224')"
@@ -31,23 +49,125 @@ jobs:
   test:
     name: Build and test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      VSTGUI_VISUAL_TEST_ARGS: --skip-performance
     strategy:
       fail-fast: false
       matrix:
         os:
           - ubuntu-latest
-          - macos-latest
+          - macos-15
           - windows-latest
     steps:
       - uses: actions/checkout@v6
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
-          use-cache: ${{ matrix.os != 'windows-latest' }}
+          use-cache: ${{ matrix.os == 'ubuntu-latest' }}
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            lame \
+            libgtk-3-dev \
+            libgtkmm-3.0-dev \
+            libnetcdf-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcb-cursor-dev \
+            libxcb-keysyms1-dev \
+            libxcb-util-dev \
+            libxcb-xkb-dev \
+            libxkbcommon-x11-dev \
+            vorbis-tools \
+            xauth \
+            xvfb
+      - name: Detect Windows SDK libraries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $libcFile = Join-Path $env:RUNNER_TEMP 'zig-libc.txt'
+          $libcLines = zig libc
+          [IO.File]::WriteAllText(
+            $libcFile,
+            ($libcLines -join "`n") + "`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+          zig libc $libcFile
+          "ZIG_LIBC_FILE=$libcFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Prepare Windows MIDI SDK
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: scripts/prepare_windows_midi_sdk.ps1
+      - name: Fetch pinned VST3 SDK
+        shell: bash
+        run: scripts/fetch_sdk.sh
+      - name: Fetch CC BY HRTF fixtures
+        if: runner.os == 'Linux'
+        run: |
+          scripts/fetch_hrtf_sofa_fixture.sh "$RUNNER_TEMP/viking-subj-A.sofa"
+          scripts/fetch_hutubs_hrtf_sofa_fixture.sh "$RUNNER_TEMP/hutubs-pp1-measured.sofa"
+      - name: Prepare pinned spatial renderers
+        if: runner.os == 'Linux'
+        run: |
+          scripts/prepare_libmysofa_renderer.sh "$RUNNER_TEMP/libmysofa"
+          scripts/prepare_libspatialaudio_renderer.sh "$RUNNER_TEMP/libspatialaudio"
+      - name: Prepare independent MP3 sources
+        if: runner.os == 'Linux'
+        run: |
+          scripts/fetch_androidx_vbri_fixture.sh "$RUNNER_TEMP/androidx-vbri.mp3"
+          scripts/prepare_helix_mp3_encoder.sh "$RUNNER_TEMP/hmp3"
+      - name: Prepare independent Vorbis reference
+        if: runner.os == 'Linux'
+        run: |
+          scripts/prepare_xiph_vorbis_reference.sh "$RUNNER_TEMP/xiph-vorbis"
+          scripts/prepare_stb_vorbis.sh "$RUNNER_TEMP/stb-vorbis"
+          scripts/prepare_tremor.sh "$RUNNER_TEMP/tremor"
+      - name: Test Windows UMP bridge
+        if: runner.os == 'Windows'
+        run: zig build test-winump -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
       - name: Build
+        if: runner.os != 'Windows'
         run: zig build
+      - name: Build
+        if: runner.os == 'Windows'
+        run: zig build -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
       - name: Test
+        if: runner.os == 'macOS'
         run: zig build test
+      - name: Test
+        if: runner.os == 'Linux'
+        env:
+          ZIG_VST3_HUTUBS_SOFA_TEST_FILE: ${{ runner.temp }}/hutubs-pp1-measured.sofa
+          ZIG_VST3_EXTERNAL_VBRI_TEST_FILE: ${{ runner.temp }}/androidx-vbri.mp3
+          ZIG_VST3_HELIX_MP3_ENCODER: ${{ runner.temp }}/hmp3
+          ZIG_VST3_LIBMYSOFA_PREFIX: ${{ runner.temp }}/libmysofa
+          ZIG_VST3_LIBSPATIALAUDIO_PREFIX: ${{ runner.temp }}/libspatialaudio
+          ZIG_VST3_VIKING_SOFA_TEST_FILE: ${{ runner.temp }}/viking-subj-A.sofa
+          ZIG_VST3_STB_VORBIS_PREFIX: ${{ runner.temp }}/stb-vorbis
+          ZIG_VST3_TREMOR_PREFIX: ${{ runner.temp }}/tremor
+          ZIG_VST3_XIPH_VORBIS_PREFIX: ${{ runner.temp }}/xiph-vorbis
+          MP3_INTEROP_REQUIRE_EXTENDED: 1
+          ZIG_VSTGUI_DIAGNOSTICS: 1
+          VORBIS_QUALITY_REQUIRE_EXTERNAL: 1
+          VSTGUI_RUN_VISUAL_TESTS: OFF
+        run: xvfb-run -a zig build test
+      - name: Test Debug native GUI ABI
+        if: runner.os == 'Linux'
+        env:
+          ZIG_VSTGUI_DIAGNOSTICS: 1
+        run: scripts/test_vstgui_debug_abi.sh
+      - name: Test realtime DSP concurrency
+        if: runner.os == 'Linux'
+        run: zig build test-dsp-thread-sanitizer --summary all
+      - name: Test
+        if: runner.os == 'Windows'
+        env:
+          ZIG_VSTGUI_DIAGNOSTICS: 1
+          VSTGUI_VISUAL_TEST_ARGS: --platform-smoke
+        run: zig build test-windows-native -Dtarget=x86_64-windows-msvc --libc "$env:ZIG_LIBC_FILE"
 
   raw-api-abi:
     name: Raw API ABI (${{ matrix.os }})
@@ -58,12 +178,26 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-latest
+          - macos-15
     steps:
       - uses: actions/checkout@v6
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libgtkmm-3.0-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcb-cursor-dev \
+            libxcb-keysyms1-dev \
+            libxcb-util-dev \
+            libxcb-xkb-dev \
+            libxkbcommon-x11-dev
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Run raw API ABI checks
@@ -78,7 +212,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-latest
+          - macos-15
     steps:
       - uses: actions/checkout@v6
       - uses: mlugg/setup-zig@v2
@@ -88,18 +222,77 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgtkmm-3.0-dev libx11-dev
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libgtkmm-3.0-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcb-cursor-dev \
+            libxcb-keysyms1-dev \
+            libxcb-util-dev \
+            libxcb-xkb-dev \
+            libxkbcommon-x11-dev
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Build Steinberg validator
         run: zig build validator
       - name: Validate example bundles
         run: zig build validate-examples
+      - name: Validate downstream adoption bundles
+        run: scripts/test_downstream_adoption.sh --optimize=ReleaseSafe --validate
       - name: Upload validated bundles
         uses: actions/upload-artifact@v7
         with:
           name: validated-vst3-bundles-${{ matrix.os }}
           path: zig-out/bundle/
+          if-no-files-found: error
+
+  lv2-distribution:
+    name: LV2 distribution
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 30
+    container: archlinux:base
+    steps:
+      - name: Install validation and UI build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            cmake \
+            gcc \
+            git \
+            gtk3 \
+            gtkmm3 \
+            libx11 \
+            lv2 \
+            lv2lint \
+            make \
+            ninja \
+            pkgconf \
+            sord \
+            xcb-util \
+            xcb-util-cursor \
+            xcb-util-keysyms \
+            libxkbcommon \
+            libxkbcommon-x11 \
+            wayland-protocols
+          pacman -Q lv2 lv2lint
+      - uses: actions/checkout@v6
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Fetch pinned VST3 SDK
+        run: scripts/fetch_sdk.sh
+      - name: Validate LV2 distribution
+        run: |
+          zig build lint-lv2-mono-gain -Doptimize=ReleaseFast
+          zig build lint-lv2-dynamic-topology -Doptimize=ReleaseFast
+      - name: Upload validated LV2 bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: validated-lv2-bundle
+          path: |
+            zig-out/bundle/zig_vst3_mono_gain.lv2/
+            zig-out/bundle/zig_vst3_dynamic_topology.lv2/
           if-no-files-found: error
 
   pluginval:
@@ -111,7 +304,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-latest
+          - macos-15
     env:
       PLUGINVAL_VERSION: v1.0.4
     steps:
@@ -131,14 +324,33 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            xvfb libfreetype6 libfontconfig1 libx11-6 libxext6 \
-            libxinerama1 libxrandr2 libxcursor1 libgl1 libasound2t64 libcurl4
+            libasound2t64 \
+            libcurl4 \
+            libfontconfig1 \
+            libfreetype6 \
+            libgl1 \
+            libgtk-3-dev \
+            libgtkmm-3.0-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcb-cursor-dev \
+            libxcb-keysyms1-dev \
+            libxcb-util-dev \
+            libxcb-xkb-dev \
+            libxcursor1 \
+            libxext6 \
+            libxinerama1 \
+            libxkbcommon-x11-dev \
+            libxrandr2 \
+            xvfb
           curl -fL -o pluginval.zip \
             "https://github.com/Tracktion/pluginval/releases/download/${PLUGINVAL_VERSION}/pluginval_Linux.zip"
           unzip -q pluginval.zip -d pluginval-dist
           chmod +x pluginval-dist/pluginval
           echo "PLUGINVAL=$PWD/pluginval-dist/pluginval" >> "$GITHUB_ENV"
           echo "PLUGINVAL_ARGS=--skip-gui-tests" >> "$GITHUB_ENV"
+      - name: Fetch pinned VST3 SDK
+        run: scripts/fetch_sdk.sh
       - name: Run pluginval
         run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}zig build pluginval-examples
       - name: Run pluginval (strictness 10)
@@ -154,25 +366,48 @@ jobs:
         include:
           - target: x86_64-linux-gnu
             bundle_step: bundle-examples-linux
+            target_args: ''
           - target: aarch64-linux-gnu
             bundle_step: bundle-examples-linux
+            target_args: -Dtarget=aarch64-linux-gnu
           - target: x86_64-macos
             bundle_step: bundle-examples
+            target_args: -Dtarget=x86_64-macos
           - target: aarch64-macos
             bundle_step: bundle-examples
+            target_args: -Dtarget=aarch64-macos
           - target: x86_64-windows-gnu
             bundle_step: bundle-examples-windows
+            target_args: -Dtarget=x86_64-windows-gnu
           - target: aarch64-windows-gnu
             bundle_step: bundle-examples-windows
+            target_args: -Dtarget=aarch64-windows-gnu
     steps:
       - uses: actions/checkout@v6
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+      - name: Install native Linux GUI dependencies
+        if: matrix.target == 'x86_64-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libgtkmm-3.0-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcb-cursor-dev \
+            libxcb-keysyms1-dev \
+            libxcb-util-dev \
+            libxcb-xkb-dev \
+            libxkbcommon-x11-dev
+      - name: Fetch pinned VST3 SDK for native Linux GUI
+        if: matrix.target == 'x86_64-linux-gnu'
+        run: scripts/fetch_sdk.sh
       - name: Build target
-        run: zig build -Dtarget=${{ matrix.target }}
+        run: zig build ${{ matrix.target_args }}
       - name: Build target bundles
-        run: zig build -Dtarget=${{ matrix.target }} ${{ matrix.bundle_step }}
+        run: zig build ${{ matrix.target_args }} ${{ matrix.bundle_step }}
       - name: Upload target bundles
         uses: actions/upload-artifact@v7
         with:
@@ -205,8 +440,8 @@ jobs:
         run: |
           # pluginval is a Windows GUI-subsystem app: the PowerShell call
           # operator does not block on it and its process exit code is
-          # unreliable (a non-zero code leaks from third-party framework teardown after a clean
-          # run). Use Start-Process -Wait to block until it fully exits, then
+          # unreliable after otherwise clean runs. Use Start-Process -Wait to
+          # block until it fully exits, then
           # read the verdict from its --output-dir log file (absolute path)
           # rather than trusting the exit code.
           $ErrorActionPreference = 'Continue'

@@ -2,6 +2,8 @@
 
 This page tracks the remaining work that cannot be proven by ABI fixtures alone.
 
+The [open-work tracker](open-work.md) is the consolidated index for automated checks, cleanup debt, feature work, and manual confirmation. This page retains the detailed host procedures.
+
 ## Automated Host-Like Gates
 
 Run these before recording new host rows:
@@ -19,8 +21,10 @@ zig build pluginval-strict-examples
 Current state:
 
 - Raw GUI interfaces and helpers are ABI-tested and unit-tested.
-- `editor-smoke` exposes a protocol-only `IPlugView` for automated attach, remove, resize, and focus smoke coverage.
-- There is no bundled GUI toolkit.
+- The production Gain, Channel Strip, IR Loader, Parametric EQ, Resonant Filter, and Sample Player examples expose visible VSTGUI editors in native builds and protocol-only fallbacks in cross-target builds.
+- `editor-smoke` remains toolkit-free and covers the editor protocol on all four platform identifiers.
+- The Steinberg validator and pluginval pass editor-open, open-while-processing, automation, and editor-automation tests on macOS.
+- REAPER rows cover Gain, Parametric EQ, and Resonant Filter. The Sample Player bundle and deterministic generated-audio smoke script are installed, but its interactive walkthrough remains pending. No host result is inferred from plugin installation, validator output, or pluginval.
 
 Useful next slices:
 
@@ -30,7 +34,26 @@ Useful next slices:
   - Linux X11: a host using `X11EmbedWindowID`.
   - Linux Wayland: a host using `WaylandSurfaceID` and `IWaylandFrame`.
 
-The editor smoke example should be protocol-focused. A visible, useful editor belongs in a separate GUI-toolkit integration.
+The editor smoke example is protocol-focused. The visible editors use the separate VSTGUI integration.
+See [the plugin GUI plan](gui-plan.md) for the implementation sequence and platform exit criteria.
+
+## LV2 Host Coverage
+
+Current state:
+
+- The core and UI ABI declarations have independent C layout checks.
+- Dynamically loaded fixtures exercise core processing, state, Worker calls, UI parent attachment, control-port updates, host writes, optional touch, idle, show, hide, resize, malformed host inputs, and teardown.
+- The native Mono Gain bundle links the production VSTGUI parameter backend, publishes the platform widget only after successful attachment, and declares the native UI class and parent feature in generated Turtle.
+- The UI fixture cross-builds for Linux aarch64, Linux x86-64, and Windows x86-64 GNU.
+- Generated Turtle can associate a plugin with a separate UI resource, class, and binary.
+- The complete generated bundle passes the LV2 1.18.10 RDF schema validator and warning-fatal `lv2lint` 0.16.2 in direct-distribution mode. The validator loads and verifies both native descriptors.
+- Automated smoke coverage proves native widget publication and descriptor loading without a physical host. External host scheduling and external Turtle discovery remain unproven.
+
+Useful next slices:
+
+- Load the linked VSTGUI UI on each supported platform and test it in at least two LV2 hosts.
+- Confirm native parent and child ownership, automation in both directions, gesture touch notifications, idle cadence, both resize directions, show and hide, two instances, close, reopen, session reload, and teardown.
+- Exercise Worker delivery on a real asynchronous host worker thread and confirm responses arrive on a later `run`.
 
 ## Advanced Host-Integration Coverage
 
@@ -48,6 +71,7 @@ Current state:
 
 Useful next slices:
 
+- Confirm the sidechain ducker and both auxiliary outputs of the splitter in a host that exposes explicit VST3 bus routing.
 - Add a host-smoke row for channel context and automation state using a host that sends those callbacks to the component.
 - Add a data-exchange probe once a host or harness that supports `IDataExchangeHandler` is available.
 - Record a physical UI mapping host row with a controller/host pair that observes the gain controller's pressure-to-expression map.

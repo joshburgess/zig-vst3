@@ -58,7 +58,7 @@ pub const Instance = plug.plugin.PluginInstance(SineSynth);
 pub const parameter_set = Spec.ParameterSet.init(.{});
 
 test "sine synth core example declares reflected metadata" {
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
     var instance = try Instance.init(std.testing.allocator, .{});
 
     try std.testing.expectEqualStrings("zig-vst3-plugin Core Sine Synth", Spec.name);

@@ -36,7 +36,7 @@ pub const Instance = plug.plugin.PluginInstance(ModeGain);
 pub const parameter_set = Spec.ParameterSet.init(.{});
 
 test "mode gain core example declares reflected enum parameter" {
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
 
     try std.testing.expectEqualStrings("zig-vst3-plugin Core Mode Gain", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);

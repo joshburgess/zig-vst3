@@ -13,7 +13,7 @@ The binary format is intentionally small:
 
 Loading ignores unknown parameter ids. That lets newer plugin versions remove parameters without breaking older saved states. Missing parameters keep their current values, so newer versions can add parameters and keep descriptor defaults when loading older state.
 
-Malformed headers, unsupported versions, truncated entries, duplicate restored ids, non-finite or out-of-range normalized values, and failed writes are rejected. Failed reads do not apply partial parameter entries.
+Malformed headers, unsupported versions, truncated entries, duplicate restored ids, non-finite or out-of-range normalized values, failed internal stores, inconsistent restore accounting, and failed writes are rejected. Failed reads do not apply partial parameter entries. Restore storage and accounting checks return errors rather than relying on process assertions.
 
 ## Write And Read State
 
@@ -43,7 +43,7 @@ try plug.state.writeParameterState(Params, &set, &values, writer);
 try plug.state.readParameterState(Params, &set, &values, reader);
 ```
 
-`zig-vst3.vst_stream.FixedBufferStream` is useful for exercising the `IBStream` path without writing a stream mock.
+`zig-vst3.vst_stream.FixedBufferStream` is useful for exercising the `IBStream` path without writing a stream mock. Negative, out-of-capacity, overflowing, and target-width-incompatible stream positions are rejected without changing the retained cursor.
 
 ## Migrations
 
@@ -58,7 +58,7 @@ const migrations = &.{
 try instance.readParameterStateWithMigrations(reader, migrations);
 ```
 
-Migration chains are allowed. Validation rejects identity mappings, duplicate old ids, independently converging target ids, and cycles before loading mutates parameter values. Use `state.migratedParameterId` or the instance-bound equivalent when diagnostics need to show where a saved id will land.
+Migration chains are allowed. A restore accepts at most `state.maximum_parameter_id_migrations` mappings, currently 256. Validation rejects identity mappings, duplicate old ids, independently converging target ids, and cycles before reading state or mutating parameter values. Restore builds one fixed-storage sorted index after validation, so each decoded id follows its migration chain through bounded binary lookups. Use `state.migratedParameterId` or the instance-bound equivalent when diagnostics need to show where a saved id will land.
 
 ## Restore Reports
 
@@ -107,5 +107,6 @@ The JSON uses the same format version and reflected parameter values as the bina
 - `state.writeParameterState`, `readParameterState`, and migration/report variants.
 - `state.writeParameterStateJson`: debug JSON output.
 - `state.validateParameterIdMigrations` and migration diagnostic helpers for identity, duplicate, cyclic, and ambiguous entries.
+- `state.maximum_parameter_id_migrations`: maximum migration mappings accepted by one restore.
 
 Program lists can also carry finite normalized parameter snapshots through `plug.units.ProgramParameter`. `PluginInstance.applyProgram` and related helpers validate the complete snapshot, then apply matching parameter ids.

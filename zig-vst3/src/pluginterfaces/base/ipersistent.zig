@@ -9,23 +9,23 @@ pub const iattributes2_iid = tuid.inlineUid(0x1382126A, 0xFECA4871, 0x97D52A45, 
 pub const IAttrID = base_types.FIDString;
 
 pub const IPersistentVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    getClassID: *const fn (*anyopaque, [*]base_types.char8) callconv(.c) base_types.tresult,
+    getClassID: *const fn (*anyopaque, [*c]base_types.char8) callconv(.c) base_types.tresult,
     saveAttributes: *const fn (*anyopaque, ?*IAttributes) callconv(.c) base_types.tresult,
     loadAttributes: *const fn (*anyopaque, ?*IAttributes) callconv(.c) base_types.tresult,
 };
 
 pub const IAttributesVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    set: *const fn (*anyopaque, IAttrID, *const fvariant.FVariant) callconv(.c) base_types.tresult,
-    queue: *const fn (*anyopaque, IAttrID, *const fvariant.FVariant) callconv(.c) base_types.tresult,
+    set: *const fn (*anyopaque, IAttrID, [*c]const fvariant.FVariant) callconv(.c) base_types.tresult,
+    queue: *const fn (*anyopaque, IAttrID, [*c]const fvariant.FVariant) callconv(.c) base_types.tresult,
     setBinaryData: *const fn (*anyopaque, IAttrID, ?*anyopaque, base_types.uint32, bool) callconv(.c) base_types.tresult,
-    get: *const fn (*anyopaque, IAttrID, *fvariant.FVariant) callconv(.c) base_types.tresult,
-    unqueue: *const fn (*anyopaque, IAttrID, *fvariant.FVariant) callconv(.c) base_types.tresult,
+    get: *const fn (*anyopaque, IAttrID, [*c]fvariant.FVariant) callconv(.c) base_types.tresult,
+    unqueue: *const fn (*anyopaque, IAttrID, [*c]fvariant.FVariant) callconv(.c) base_types.tresult,
     getQueueItemCount: *const fn (*anyopaque, IAttrID) callconv(.c) base_types.int32,
     resetQueue: *const fn (*anyopaque, IAttrID) callconv(.c) base_types.tresult,
     resetAllQueues: *const fn (*anyopaque) callconv(.c) base_types.tresult,
@@ -34,14 +34,14 @@ pub const IAttributesVTable = extern struct {
 };
 
 pub const IAttributes2VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    set: *const fn (*anyopaque, IAttrID, *const fvariant.FVariant) callconv(.c) base_types.tresult,
-    queue: *const fn (*anyopaque, IAttrID, *const fvariant.FVariant) callconv(.c) base_types.tresult,
+    set: *const fn (*anyopaque, IAttrID, [*c]const fvariant.FVariant) callconv(.c) base_types.tresult,
+    queue: *const fn (*anyopaque, IAttrID, [*c]const fvariant.FVariant) callconv(.c) base_types.tresult,
     setBinaryData: *const fn (*anyopaque, IAttrID, ?*anyopaque, base_types.uint32, bool) callconv(.c) base_types.tresult,
-    get: *const fn (*anyopaque, IAttrID, *fvariant.FVariant) callconv(.c) base_types.tresult,
-    unqueue: *const fn (*anyopaque, IAttrID, *fvariant.FVariant) callconv(.c) base_types.tresult,
+    get: *const fn (*anyopaque, IAttrID, [*c]fvariant.FVariant) callconv(.c) base_types.tresult,
+    unqueue: *const fn (*anyopaque, IAttrID, [*c]fvariant.FVariant) callconv(.c) base_types.tresult,
     getQueueItemCount: *const fn (*anyopaque, IAttrID) callconv(.c) base_types.int32,
     resetQueue: *const fn (*anyopaque, IAttrID) callconv(.c) base_types.tresult,
     resetAllQueues: *const fn (*anyopaque) callconv(.c) base_types.tresult,

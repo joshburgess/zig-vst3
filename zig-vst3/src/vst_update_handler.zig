@@ -27,7 +27,7 @@ pub fn Dependent(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, iupdatehandler.IDependent, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iupdatehandler.idependent_iid, .ptr = ptr },
@@ -159,7 +159,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             return matched;
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iupdatehandler.iupdate_handler_iid, .ptr = ptr },

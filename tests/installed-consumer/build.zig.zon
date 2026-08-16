@@ -1,0 +1,10 @@
+.{
+    .name = .zig_vst3_installed_consumer,
+    .version = "0.0.0",
+    .fingerprint = 0x36f632229934a2ed,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_vst3 = .{ .path = "../package" },
+    },
+    .paths = .{""},
+}

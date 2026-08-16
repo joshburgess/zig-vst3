@@ -3,6 +3,7 @@ const factory = @import("factory.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
+const vstgui_headless_host = @import("vstgui_headless_host.zig");
 const voice_mix_component = @import("voice_mix_component.zig");
 const voice_mix_controller = @import("voice_mix_controller.zig");
 const voice_mix_spec = @import("voice_mix_spec.zig");
@@ -48,4 +49,13 @@ test "voice mix plugin root exposes zig-vst3-plugin metadata" {
     try std.testing.expectEqual(@as(usize, 1), voice_mix_spec.Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 0), voice_mix_spec.voices_param_index);
     try std.testing.expectEqual(@as(f64, 0.0), spec.values.view(&voice_mix_spec.parameter_set).loadNormalized("voices"));
+}
+
+test "voice mix editor survives concurrent headless host lifecycle stress" {
+    const report = try vstgui_headless_host.run(struct {
+        pub const component_create = voice_mix_component.create;
+        pub const controller_create = voice_mix_controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
 }

@@ -21,11 +21,15 @@ This map separates what is already gated from what remains future hardening. `do
 
 ## Release Interpretation
 
-`zig-vst3-0.1.0` can be a useful raw API release with the host deferrals listed in `CHANGELOG.md`. It should not be described as full VST3 protocol completion. The release claim should be narrower:
+Stable `zig-vst3-0.3.0` retains the raw API boundary established by the `0.1.x`
+line and adds the separately documented framework compatibility boundary. It
+should not be described as full VST3 protocol completion. The raw API claim is
+narrower:
 
 - Raw bindings and helpers for the SDK 3.8.0 plugin-facing interface surface tracked in `docs/interface-inventory.md`
 - ABI fixtures for the translated interface groups used by the raw API
 - Validator-passing example bundles
 - CI-covered cross-target build and bundle generation
 
-Future releases can turn individual rows above from "ABI and helper covered" into "host-proven" as more DAWs and platforms are tested.
+Future maintenance releases can turn individual rows above from "ABI and
+helper covered" into "host-proven" as more DAWs and platforms are tested.
