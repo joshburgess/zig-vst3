@@ -1,8 +1,8 @@
 # Quality Program Status
 
-Current phase: Phase 6, Platform and ABI Review
+Current phase: Phase 7, Whole-Repository Verification
 
-Status: in progress; Phases 0 through 5 complete
+Status: in progress; Phases 0 through 6 complete
 
 Baseline commit: `08bf883e9d2d324f3a7933fa21851bbd9ffec513`
 
@@ -469,6 +469,16 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   VST3 atomic-order ledger found by the final policy pass. The ABI ledger now
   has 234 evidence and 67 review records. Physical devices, live Linux window
   systems, and native Windows UMP remain explicit external checks.
+- Completed the final 67-source Q19 A-VSTGUI-NATIVE review. Native interaction,
+  accessibility, visual, ASan/UBSan, four-process TSan, build-mode, and
+  cross-compilation gates pass. Ownership, timer and callback teardown,
+  platform attachment, clipboard, and visual fixture contracts reconcile with
+  the accepted evidence. The ABI ledger is complete with 301 evidence, zero
+  review, and zero excluded records. Real DAW editor embedding and live Linux
+  and Windows visuals remain explicit external checks.
+- Completed Phase 6 with every platform-facing source dispositioned, every
+  automated skip accounted for, adversarial reference and callback lifecycle
+  evidence current, and no open critical or high platform or ABI finding.
 
 ## Phase 5 Scope
 
@@ -483,7 +493,8 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the final 67-source A-VSTGUI-NATIVE family in Q19. Reconcile the C++
-bridge, ownership, callback and timer teardown, native accessibility, platform
-attachment, run loops, clipboard behavior, sanitizer evidence, and visual
-fixtures. Keep unavailable Linux and Windows visual checks explicit.
+Run the complete Phase 7 verification graph at one exact commit. Record the
+ReleaseSafe graph, sanitizers, fuzz campaigns, package archives, validators,
+downstream fixtures, benchmarks, formatting, repository hygiene, repeated
+stress count, environment, and every accounted skip. Reconcile all open
+findings before accepting the candidate.

@@ -2700,3 +2700,38 @@ are transactional, and retained non-finite state has explicit containment.
 | `scripts/check_quality_numerics_inventory.sh` | Passed after disposition updates: 75 evidence, 8 review, and 18 excluded sources |
 | `scripts/check_quality_inventory.sh` | Passed: 869 source files and 479,265 lines classified |
 | `git diff --check` | Passed |
+
+## 2026-08-15: A-VSTGUI-NATIVE Boundary Closure
+
+The final 67 Q19 sources implement the VSTGUI editor, retained view tree,
+controls, drawing, assets, file selection and drop, timers, native platform
+attachment, accessibility, clipboard, and C callback boundary. The ownership
+ledger establishes exact editor and view destruction, retained accessibility
+object detachment, timer reuse, foreign registration rollback, and borrowed
+callback state. Closed findings Q-GUI-002, Q-MEM-006, and Q-CONC-001 cover the
+highest-risk teardown and global lifecycle paths.
+
+The current native gate exercises editor construction and destruction, control
+interaction, focus, file drop, platform behavior, accessibility, clipboard,
+visual baselines, and the sample-player lifecycle benchmark. Its build script
+also compiles the Windows x86-64 and Linux x86-64 and AArch64 accessibility and
+Wayland paths. Separate ASan/UBSan and TSan gates exercise adapter, visual,
+accessibility, publication, and teardown behavior. Checked policy fixtures
+continue to reject unrecorded atomic-order changes, concurrency sources, raw
+callback storage, and production termination paths.
+
+| Check | Result |
+| --- | --- |
+| `zig build -j1 test-vstgui-native --summary all` with temporary caches | Passed: 4/4 steps; native interaction, accessibility, and every visual baseline passed |
+| Native lifecycle benchmark | Passed: sample-player editor creation and destruction averaged 9,694.4 microseconds |
+| Cross-platform compilation inside the native gate | Passed: Windows x86-64 plus Linux x86-64 and AArch64 accessibility and Wayland sources |
+| `zig build -j1 test-vstgui-sanitizers --summary all` | Passed: 2/2 steps; adapter, visual, and macOS accessibility suites passed under ASan/UBSan |
+| `zig build -j1 test-vstgui-thread-sanitizer --summary all` | Passed: 2/2 steps and four independent process runs |
+| TSan runner and build-mode fixtures | Passed |
+| Atomic-order, concurrency, production-termination, and raw-callback checks plus mutation fixtures | Passed: 61 Zig and 11 native atomic sources, and 86 concurrency sources tracked |
+| `scripts/check_quality_abi_inventory.sh` after disposition | Passed: 301 evidence, zero review, and zero excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 873 source files and 480,578 lines classified; Q19 contains 67 files and 32,694 lines |
+
+No real DAW editor embedding was available. This macOS run also cannot execute
+live Linux or Windows editor visuals. Native lifecycle, sanitizer, visual, and
+cross-compilation evidence does not claim those external checks.
