@@ -11,7 +11,7 @@ independent values, statistics, producer- or consumer-owned cursors, and retry
 loads whose successful edge has stronger order. Sequentially consistent uses
 are test observations, not production synchronization requirements.
 
-The Phase 2 semantic review covers all 60 Zig and 11 native sources in this
+The semantic review covers all 61 Zig and 11 native sources in this
 ledger. Their publication and teardown justifications are recorded in
 `concurrency.md`. Checked count fixtures and GitHub Actions run `31858188014`
 pass at the Phase 2 completion candidate `4466af3d`.
@@ -78,7 +78,8 @@ pass at the Phase 2 completion candidate `4466af3d`.
 | `zig-vst3/src/vst_wayland_frame.zig` | 0 | 0 | 0 | 0 | 0 | 2 |
 | `zig-vst3/src/vst_wayland_standalone_frame.zig` | 0 | 0 | 1 | 0 | 0 | 0 |
 | `zig-vst3/src/vstgui_headless_host.zig` | 0 | 0 | 4 | 7 | 0 | 0 |
-| `zig-vst3/src/zig_vst3_plugin_effect.zig` | 0 | 0 | 2 | 3 | 1 | 0 |
+| `zig-vst3/src/zig_vst3_plugin_effect.zig` | 0 | 2 | 5 | 5 | 1 | 0 |
+| `zig-vst3/src/zig_vst3_edit_controller.zig` | 0 | 0 | 1 | 0 | 0 | 0 |
 <!-- atomic-order-counts:end -->
 
 Native `relaxed` orders are limited to independent statistics, source-owned
