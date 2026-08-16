@@ -2393,6 +2393,44 @@ cache appears in the fixture working directory.
 | `scripts/check_quality_abi_inventory.sh` | Passed: 0 evidence, 301 review, and 0 excluded sources before A-VST3 dispositions |
 | `zig fmt --check build.zig` and `git diff --check` | Passed |
 
+## 2026-08-15: A-VST3 Lifecycle and Validator Closure
+
+Behavior commits: `2fbdebfa`, `b16bb585`
+
+The Q01 review reconciled all 116 raw VST3 and COM sources. The 53 raw
+declaration and aggregation files map to the pinned SDK matrix and native
+harnesses. The 63 implementation files contain factory, component, controller,
+host helper, transport, stream, event, parameter, message, view, and lifecycle
+behavior. Their source-local suite contains 565 tests. Direct shared-helper
+tests added in `2fbdebfa` cover query retention, optional release, self and
+cross-object peer replacement, disconnect mismatch, and host-visible failure
+output initialization.
+
+A clean validator attempt exposed Q-VER-015. The release-candidate command
+requested the validator build and all example checks as independent top-level
+steps. Twenty-two checks reached `validate.sh` before the binary existed; the
+last example passed after the build completed. No plugin failure was accepted
+from that run. Commit `b16bb585` makes each validation command depend directly
+on the shared validator-build command. After deleting the SDK build directory,
+the exact command rebuilt the pinned validator first and all 23 fresh bundle
+verdicts reported `classification=succeeded`.
+
+| Check | Result |
+| --- | --- |
+| Debug `test-vst3-module` with one job and temporary local and global caches | Passed: 7/7 steps and 800/800 tests |
+| ReleaseSafe `test-vst3-module` with one job and temporary local and global caches | Passed: 7/7 steps and 800/800 tests |
+| Clean negative control for combined `validator validate-examples` | Reproduced Q-VER-015: 22 validator lookup failures and one late success; not accepted as plugin evidence |
+| `zig build -j1 --cache-dir /private/tmp/zig-vst3-phase6-q01-validator-local --global-cache-dir /private/tmp/zig-vst3-phase6-q01-validator-global validator validate-examples --summary all` after the graph fix | Passed from a deleted SDK build: validator built first and 23/23 bundle verdicts succeeded |
+| Fresh validator artifact inspection | Passed: 23 status files, 23 `classification=succeeded`, zero other classifications |
+| `sh scripts/test_validator_runner.sh` | Passed |
+| `scripts/check_quality_abi_inventory.sh` and its fixture | Passed: 116 evidence, 185 review, zero excluded; missing, mismatched, and invalid records rejected |
+| `scripts/check_quality_inventory.sh` and its fixture | Passed: 872 source files and 479,846 lines classified; omission fixture rejected |
+| `zig fmt --check build.zig` and `git diff --check` | Passed |
+
+The validator does not prove actual DAW embedding, editor appearance, or
+host-specific callback ordering. Those checks remain explicit external
+evidence and are not required to accept the automated Q01 boundary evidence.
+
 ## 2026-08-15: Composite Effects Numerical Closure
 
 Behavior commit: `9b4ec47a`

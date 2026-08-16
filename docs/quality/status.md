@@ -414,6 +414,15 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   cache roots. All 33 VST3 and ARA comparators now route generated output and
   nested Zig work through the build graph's cache configuration. The routing
   fixture and corrected 135-step raw ABI matrix pass.
+- Closed Q-VER-015 after a clean combined validator run exposed missing build
+  ordering. Every example validation command now depends directly on the one
+  validator build. The clean rerun produced 23/23 successful bundle verdicts.
+- Completed the Q01 A-VST3 review across 53 raw declaration and aggregation
+  files plus 63 implementation files. The accepted evidence includes the
+  pinned SDK matrix, native harnesses, entry symbols, 565 colocated tests,
+  adversarial lifetime and concurrency checks, Debug and ReleaseSafe module
+  runs with 800/800 tests each, and the 23-bundle native validator run. The ABI
+  ledger now has 116 evidence and 185 review records.
 
 ## Phase 5 Scope
 
@@ -428,8 +437,8 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Continue the A-VST3 source reconciliation. The pinned declaration, calling-
-convention, controlling-identity, entry-symbol, and cache-routing evidence is
-accepted. Reconcile every Q01 implementation source with its lifecycle and
-behavior tests before moving to ARA, VSTGUI, LV2, AUv2, system audio, MIDI,
-windows, and dynamic libraries.
+Begin the A-ARA source reconciliation. Match the two vendored ARA headers and
+19 Zig integration sources to translated-layout checks, VST3 binding behavior,
+model and archive lifetimes, callback reentrancy, and teardown evidence. Then
+continue through VSTGUI, framework and runtime boundaries, LV2, AUv2, system
+audio, MIDI, windows, and dynamic libraries.
