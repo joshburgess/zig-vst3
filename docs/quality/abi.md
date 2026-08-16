@@ -24,7 +24,7 @@ adversarial lifecycle evidence.
 | --- | --- | --- |
 | A-VST3 | Raw VST3 and COM mirrors, helpers, and host interfaces | Pinned SDK declarations, layout and vtable parity, calling convention, reference lifetime, callback behavior, validators |
 | A-ARA | ARA declarations and integration | Pinned ARA headers, translated-layout parity, VST3 binding behavior, reference and callback lifecycle |
-| A-VSTGUI-RAW | Raw VSTGUI and Wayland host bridges | Pinned declarations, interface identity, native-handle behavior, attach-detach and callback teardown |
+| A-VSTGUI-RAW | Raw VSTGUI and Wayland host bridges | Translated C-header parity, interface identity, native-handle behavior, attach-detach and callback teardown |
 | A-VST3-FRAMEWORK | Framework component, controller, and bridge exports | Factory and interface behavior, reference saturation, reentrancy, failure translation, process and teardown lifecycle |
 | A-RUNTIME | Plugin runtime and dynamic-library boundaries | Symbol and entry-point contracts, loader ownership, error translation, unload ordering |
 | A-PLUGIN-ABI | LV2 and Audio Unit v2 adapters | Published C and Objective-C declarations, layout and constant parity, dynamic host behavior, state, worker, render, and teardown lifecycle |
@@ -175,13 +175,13 @@ Q02	zig-vst3/src/ara_tempo_warp.zig	EVIDENCE	A-ARA
 Q02	zig-vst3/src/ara_tuning_analysis.zig	EVIDENCE	A-ARA
 Q02	zig-vst3/src/ara_tuning_detector.zig	EVIDENCE	A-ARA
 Q02	zig-vst3/src/ara_vst3.zig	EVIDENCE	A-ARA
-Q03	zig-vst3/src/vst_wayland_frame.zig	REVIEW	A-VSTGUI-RAW
-Q03	zig-vst3/src/vst_wayland_standalone_frame.zig	REVIEW	A-VSTGUI-RAW
-Q03	zig-vst3/src/vstgui.zig	REVIEW	A-VSTGUI-RAW
-Q03	zig-vst3/src/vstgui_editor_view.zig	REVIEW	A-VSTGUI-RAW
-Q03	zig-vst3/src/vstgui_headless_host.zig	REVIEW	A-VSTGUI-RAW
-Q03	zig-vst3/src/vstgui_lv2_backend.zig	REVIEW	A-VSTGUI-RAW
-Q03	zig-vst3/src/vstgui_single_parameter_controller.zig	REVIEW	A-VSTGUI-RAW
+Q03	zig-vst3/src/vst_wayland_frame.zig	EVIDENCE	A-VSTGUI-RAW
+Q03	zig-vst3/src/vst_wayland_standalone_frame.zig	EVIDENCE	A-VSTGUI-RAW
+Q03	zig-vst3/src/vstgui.zig	EVIDENCE	A-VSTGUI-RAW
+Q03	zig-vst3/src/vstgui_editor_view.zig	EVIDENCE	A-VSTGUI-RAW
+Q03	zig-vst3/src/vstgui_headless_host.zig	EVIDENCE	A-VSTGUI-RAW
+Q03	zig-vst3/src/vstgui_lv2_backend.zig	EVIDENCE	A-VSTGUI-RAW
+Q03	zig-vst3/src/vstgui_single_parameter_controller.zig	EVIDENCE	A-VSTGUI-RAW
 Q04	zig-vst3/src/zig_vst3_plugin_bridge.zig	REVIEW	A-VST3-FRAMEWORK
 Q04	zig-vst3/src/zig_vst3_plugin_effect.zig	REVIEW	A-VST3-FRAMEWORK
 Q04	zig-vst3/src/zig_vst3_plugin_runtime_adapter.zig	REVIEW	A-VST3-FRAMEWORK

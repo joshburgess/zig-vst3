@@ -2461,6 +2461,42 @@ the current deterministic and sanitizer gates.
 No real ARA host was available. The automated evidence does not claim actual
 DAW binding, host-owned media exchange, or host-specific callback ordering.
 
+## 2026-08-15: A-VSTGUI-RAW Boundary Closure
+
+Behavior commit: `faaf154f`
+
+The Q03 review covers the seven Zig sources that aggregate the public editor
+API, bind VST3 and LV2 editors, emulate a headless host, and bridge standalone
+Wayland frames. The existing ownership evidence covers controlling identity,
+host frame replacement, native handle borrowing, run-loop registration,
+accepted peak-subscription teardown, repeated attach-detach, reentrant host
+callbacks, and concurrent processing while editors are created and destroyed.
+
+The missing declaration evidence exposed Q-ABI-001. Before the fix, translating
+`zig_vstgui_adapter.h` produced opaque `ZigVstguiEnvelopePoint` and
+`ZigVstguiProgressSnapshot` types because their structure tags first appeared
+inside callback parameter lists. Commit `faaf154f` declares both typedef names
+before the callback table and completes those same tags later. The new checked
+gate compares 36 structure layouts and every field, 22 enum widths, all shared
+enum values and capacity constants, 26 editor-view function signatures, and 12
+LV2 backend signatures against the translated public header.
+
+| Check | Result |
+| --- | --- |
+| Debug `vstgui-bridge-abi test-vst3-module test-gui-lifecycle test-lv2-ui-adapter` with one job and temporary caches | Passed: 59/59 steps and 3,234/3,234 tests. The ABI check passed on native macOS plus ReleaseSafe AArch64 Linux, x86-64 Linux, and x86-64 Windows; the module passed 800/800 and all 11 editor lifecycle suites passed |
+| ReleaseSafe `vstgui-bridge-abi test-vst3-module test-lv2-ui-adapter` with one job and temporary caches | Passed: 25/25 steps and 800/800 tests plus the LV2 UI adapter and four-target ABI check |
+| `zig build test-vstgui-native --summary all` | Passed: native interaction, accessibility, and visual regression targets, including all render baselines and the sample-player create/destroy benchmark |
+| `zig build test-wayland-standalone-frame --summary all` | Passed: 6/6 steps and 45/45 native tests plus ReleaseSafe AArch64 Linux, x86-64 Linux, and x86-64 Windows builds |
+| `zig build test-vstgui-sanitizers --summary all` | Passed: native adapter, visual, and accessibility tests under address and undefined-behavior sanitizers |
+| `zig build test-vstgui-thread-sanitizer --summary all` | Passed: four independent adapter thread-safety process runs |
+| Raw callback and production termination scans | Passed: no prohibited raw callback storage and no panic, unreachable, or `catch unreachable` path in the reviewed sources |
+| `scripts/check_quality_abi_inventory.sh` after disposition | Passed: 144 evidence, 157 review, and zero excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 873 source files and 480,376 lines classified; Q03 contains 7 files and 6,531 lines |
+
+No real DAW editor embedding was available, and macOS cannot execute native
+Linux or Windows editor visuals. Cross-compilation, headless lifecycle, and
+native macOS visual evidence do not claim those external checks.
+
 ## 2026-08-15: Composite Effects Numerical Closure
 
 Behavior commit: `9b4ec47a`

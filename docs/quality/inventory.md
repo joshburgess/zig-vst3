@@ -32,10 +32,10 @@ misstate review effort.
 
 | Unit | Scope | Files | Lines | C/E/X/T | Rank | Principal exposure | Required verification |
 | --- | --- | ---: | ---: | --- | --- | --- | --- |
-| Q00 | Build graph, CI, release and validation scripts | 135 | 19,247 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
+| Q00 | Build graph, CI, release and validation scripts | 135 | 19,389 | 4/4/5/4 | Elevated | Release contents, tool execution, cross-target gates | Script fixtures, package smoke, clean-tree release graph |
 | Q01 | Raw VST3 ABI mirrors and COM helpers | 116 | 30,496 | 5/5/4/5 | Elevated | Public ABI, pointers, reference counts, host callbacks | SDK layout parity, callback lifecycle, validators, sanitizers |
 | Q02 | ARA model, controller, analysis, cache, and official headers | 21 | 28,227 | 5/4/5/3 | High | Host callbacks, readers, atomics, persistence, untrusted host data | Header parity, lifecycle stress, allocator failure, TSan, state corruption |
-| Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,152 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
+| Q03 | Raw VSTGUI and Wayland bridges | 7 | 6,531 | 5/4/4/3 | Elevated | COM identities, native handles, callback teardown | ABI checks, ASan/UBSan/TSan, attach-detach and reentrancy stress |
 | Q04 | Raw-to-framework VST3 processor and controller adapters | 3 | 10,597 | 5/5/5/4 | High | Realtime host entry, dual state stores, resource publication | Lifecycle model, failure silence, host mutation, sanitizer stress |
 | Q05 | Raw-package example plugin declarations | 18 | 758 | 2/2/2/4 | Moderate | Factory examples and public construction patterns | Compile, validator, package examples |
 | Q06 | Framework declaration, lifecycle, topology, and runtime core | 16 | 9,606 | 5/5/5/4 | High | Public compatibility, ownership, realtime processing | API manifest, state-machine tests, allocator failure, bounded-work audit |
@@ -51,10 +51,10 @@ misstate review effort.
 | Q16 | Toolkit-neutral GUI state and models | 16 | 9,146 | 4/4/4/4 | Elevated | Callback lifetime, user input, resource transfer | State models, malformed input, lifecycle and concurrency stress |
 | Q17 | LV2 and Audio Unit adapters | 9 | 22,788 | 5/5/5/4 | High | C ABI, host pointers, realtime entry, state and worker callbacks | ABI fixtures, dynamic hosts, sanitizers, metadata lint, failure silence |
 | Q18 | Standalone runtime and native audio, MIDI, and window backends | 62 | 37,689 | 5/5/5/3 | High | OS callbacks, devices, threads, handles, recovery | TSan, callback drain, fault injection, cross-target and physical checks |
-| Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,691 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
+| Q19 | VSTGUI C++ adapter and native platform code | 67 | 32,694 | 5/4/5/4 | High | C++ ownership, native UI callbacks, C ABI bridge | ASan/UBSan/TSan, soak, visual fixtures, attach-detach stress |
 | Q20 | Product and API examples | 54 | 14,923 | 3/4/4/4 | Moderate | Consumer patterns, retained callbacks, package surface | Installed builds, validators, public-example policy checks |
 | Q21 | Test hosts, reference adapters, and downstream fixtures | 101 | 29,828 | 3/3/4/4 | Moderate | Oracle correctness and false confidence | Mutation review, independent provenance, fixture self-tests |
-| Q22 | ABI, fixture, codec, and parity tools | 57 | 11,121 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
+| Q22 | ABI, fixture, codec, and parity tools | 58 | 11,127 | 3/3/4/4 | Moderate | Generated evidence and oracle correctness | Reproducibility, independent comparison, negative controls |
 
 ## Lexical Concentrations
 
@@ -67,7 +67,7 @@ manual review. They include false positives and cannot establish absence.
 | Q00 | 1 | 9 | 3 | 82 | 468 | 1 |
 | Q01 | 138 | 2,265 | 94 | 1,190 | 99 | 2,520 |
 | Q02 | 7 | 445 | 38 | 190 | 196 | 358 |
-| Q03 | 39 | 272 | 8 | 194 | 32 | 280 |
+| Q03 | 39 | 272 | 8 | 207 | 32 | 285 |
 | Q04 | 62 | 269 | 3 | 64 | 131 | 448 |
 | Q05 | 0 | 2 | 0 | 0 | 0 | 114 |
 | Q06 | 23 | 15 | 0 | 14 | 167 | 1,313 |
@@ -86,7 +86,7 @@ manual review. They include false positives and cannot establish absence.
 | Q19 | 185 | 0 | 67 | 749 | 68 | 0 |
 | Q20 | 116 | 252 | 17 | 41 | 255 | 836 |
 | Q21 | 63 | 211 | 11 | 136 | 453 | 268 |
-| Q22 | 96 | 37 | 3 | 27 | 224 | 62 |
+| Q22 | 96 | 37 | 3 | 27 | 224 | 63 |
 
 ## Boundaries
 

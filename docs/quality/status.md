@@ -431,6 +431,14 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   the current TSan selection, and two current 100,000-execution fuzz campaigns.
   The ledger now has 137 evidence and 164 review records. Actual ARA-capable DAW
   behavior remains an explicit external check.
+- Completed the seven-source Q03 A-VSTGUI-RAW review. Q-ABI-001 exposed two
+  public C callback payload tags that translated as opaque Zig types. Commit
+  `faaf154f` corrects their declaration order and adds native plus three-target
+  ReleaseSafe parity for every shared structure, enum, constant, and function
+  signature. Current native behavior, visual, LV2 UI, Wayland, ASan/UBSan, and
+  four-process TSan gates pass. The ABI ledger now has 144 evidence and 157
+  review records. Real DAW embedding and Linux or Windows visual behavior
+  remain explicit external checks.
 
 ## Phase 5 Scope
 
@@ -445,9 +453,8 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the seven-source A-VSTGUI-RAW family. Reconcile VSTGUI and Wayland
-declarations, controlling identities, platform handles, frame attachment,
-callback reentrancy, host-loop registration, and attach-detach teardown with
-the native adapter, sanitizer, and headless lifecycle evidence. Then continue
-through framework and runtime boundaries, LV2, AUv2, system audio, MIDI,
-windows, dynamic libraries, and the native VSTGUI adapter.
+Review the three-source A-VST3-FRAMEWORK family. Reconcile component,
+controller, processor, view, state, factory, callback, process, and teardown
+behavior at the raw-to-framework boundary. Then continue through runtime
+boundaries, LV2, AUv2, system audio, MIDI, windows, dynamic libraries, and the
+native VSTGUI adapter.
