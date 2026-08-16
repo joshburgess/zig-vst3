@@ -2606,6 +2606,48 @@ with normal filesystem access and is the accepted result. No real LV2 or Audio
 Unit host was available, so the loaded fixtures and cross-builds do not claim
 external-host behavior.
 
+## 2026-08-15: A-NATIVE Boundary Closure
+
+The 62 Q18 sources cover public wrappers, format-neutral standalone routing,
+device catalogs, callback admission, bounded capture and MIDI scheduling, and
+the Zig plus C, Objective-C, and C++ implementations for CoreAudio, CoreMIDI,
+ALSA, PipeWire, WASAPI, Windows MIDI and UMP, Cocoa, Win32, X11, and Wayland.
+The ownership and concurrency ledgers specify handle transfer, dynamic symbol
+lifetime, callback admission and drain, thread joins, scheduler cancellation,
+failure rollback, recovery, and teardown order for each family.
+
+The current matrix compiles native shims with undefined-behavior
+instrumentation, executes every available host branch, runs callback-drain and
+scheduler tests, and builds or links each supported non-native platform path.
+The standalone selection covers fixed-capacity capture, clock drift, device
+routing, and Windows compilation. The aggregate TSan selection covers callback
+admission, queue transfer, lifecycle overlap, VST3 references, and ARA readers.
+
+The final policy pass exposed Q-VER-016: two VST3 files had current explicit
+atomic orders but stale checked counts. Commit `8ab967bd` updates the exact
+ledger without changing production behavior. The controller acquire load is
+the reviewed final-release observation for its saturated reference count. The
+new Q04 monotonic, acquire, and release operations are test-only progress and
+failure observations. The live checker and both mutation controls now pass.
+
+| Check | Result |
+| --- | --- |
+| ReleaseSafe 13-backend matrix with one job and temporary caches | Passed: 106/106 steps; 112/114 tests passed and two explicit environment branches skipped |
+| Audio and MIDI native behavior plus cross-target links | Passed: CoreAudio, CoreMIDI, ALSA, PipeWire, WASAPI, ALSA MIDI and UMP, Windows MIDI and UMP, both scheduler queues, and current link fixtures |
+| Native window behavior plus cross-target links | Passed: Cocoa, Win32, X11, and Wayland tests and applicable AArch64 Linux, x86-64 Linux, and x86-64 Windows outputs |
+| ReleaseSafe standalone capture plus aggregate TSan | Passed: 18/18 steps and 47/47 tests, including Windows capture compilation |
+| `scripts/check_quality_atomic_orders.sh` and its mutation fixture | Passed: 61 Zig and 11 native sources tracked; changed Zig and native counts rejected |
+| Production termination and raw callback scans plus fixtures | Passed |
+| `scripts/check_quality_abi_inventory.sh` after disposition | Passed: 234 evidence, 67 review, and zero excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 873 source files and 480,578 lines classified; Q18 contains 62 files and 37,689 lines |
+
+The skipped native tests require a discoverable CoreAudio device and a Linux
+PipeWire host. This macOS run also cannot execute live X11 or Wayland windows,
+Windows devices, or the SDK-backed Windows UMP implementation. Existing public
+Windows CI proves the pinned UMP bridge at its earlier reviewed source, while
+the current fallback, cross-build, reference-count, and link checks pass. These
+limits remain external checks rather than inferred successes.
+
 ## 2026-08-15: Composite Effects Numerical Closure
 
 Behavior commit: `9b4ec47a`

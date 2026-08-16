@@ -461,6 +461,14 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   Audio Unit hosts, class-info state, two bundles, and six cross-target outputs
   pass. The ABI ledger now has 172 evidence and 129 review records. Real LV2
   and Audio Unit host behavior remains an external check.
+- Completed the 62-source Q18 A-NATIVE review across system audio, MIDI,
+  windows, schedulers, dynamic symbols, callback admission, recovery, and
+  teardown. The current 13-backend matrix passes 106/106 steps with 112 tests
+  passed and two explicit environment skips. Standalone and aggregate TSan
+  selections pass 18/18 steps and 47/47 tests. Q-VER-016 also closes the stale
+  VST3 atomic-order ledger found by the final policy pass. The ABI ledger now
+  has 234 evidence and 67 review records. Physical devices, live Linux window
+  systems, and native Windows UMP remain explicit external checks.
 
 ## Phase 5 Scope
 
@@ -475,7 +483,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the 62-source A-NATIVE family in Q18. Reconcile system audio, MIDI,
-windows, schedulers, callback admission and drain, native handles, dynamic
-library symbols and unload ordering, failure translation, recovery, and
-teardown. Then complete the native VSTGUI adapter review.
+Review the final 67-source A-VSTGUI-NATIVE family in Q19. Reconcile the C++
+bridge, ownership, callback and timer teardown, native accessibility, platform
+attachment, run loops, clipboard behavior, sanitizer evidence, and visual
+fixtures. Keep unavailable Linux and Windows visual checks explicit.
