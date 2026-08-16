@@ -2535,6 +2535,39 @@ and installed-package gates continue to cover these framework sources. No real
 DAW was available, so simulated host and cross-compiled evidence does not claim
 real-host behavior.
 
+## 2026-08-15: A-RUNTIME Boundary Closure
+
+The 16 Q06 sources define the format-neutral plugin specification, instance,
+processor runtime, offline renderer, bus topology, lifecycle validator, host
+request sink, realtime audit, generation ordering, and public aggregation
+surface. The ownership ledger already establishes the allocator transfer and
+exact-once teardown contracts for `PluginInstance`, `ProcessorRuntime`, and
+`OfflineRenderer`. Closed findings Q-MEM-002 and Q-RT-001 prove exhaustive
+initializer failure handling and rejection of realtime host or topology work.
+
+Source inspection found no dynamic-library open, lookup, close, or foreign
+symbol implementation in these exact paths. Such loaders remain assigned to
+the Q18 A-NATIVE review. Q06 evidence therefore covers only the runtime
+contracts it implements and makes no claim about later unload ordering.
+
+| Check | Result |
+| --- | --- |
+| Native Debug Q06 plugin, topology, host-request, and preparation selection | Passed: 79/79 tests |
+| Native Debug processor-runtime selection through the core module root | Passed: 13/13 tests, including six direct runtime cases |
+| Native Debug offline-renderer selection through the core module root | Passed: 11/11 tests, including four direct renderer cases |
+| Native Debug realtime-audit selection through the core module root | Passed: 13/13 tests, including malformed scope and saturation containment |
+| Native ReleaseSafe Q06 plugin, topology, host-request, and preparation selection | Passed: 79/79 tests |
+| Native ReleaseSafe processor-runtime and offline-renderer selection | Passed: 17/17 tests |
+| Native ReleaseSafe common contracts and serial generation | Passed: 13/13 common tests and 1/1 generation test |
+| Production termination and raw callback scans plus fixtures | Passed |
+| `scripts/check_quality_abi_inventory.sh` after disposition | Passed: 163 evidence, 138 review, and zero excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 873 source files and 480,578 lines classified; Q06 contains 16 files and 9,606 lines |
+
+The established installed-package, Windows cross-build, and Q04 adapter gates
+exercise these same public modules at the format boundaries. No real plugin
+host was available, and no host behavior is inferred from the focused runtime
+tests.
+
 ## 2026-08-15: Composite Effects Numerical Closure
 
 Behavior commit: `9b4ec47a`

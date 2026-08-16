@@ -447,6 +447,13 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   ReleaseSafe module gates each pass 800/800 tests, and the Linux ReleaseSafe
   matrix builds all 23 example bundles. The ABI ledger now has 147 evidence
   and 154 review records. Real DAW behavior remains an external check.
+- Completed the 16-source Q06 A-RUNTIME review. Plugin declaration validation,
+  instance ownership, allocation failure, lifecycle state transitions, dynamic
+  topology, host requests, f32 and f64 processing, offline rendering, state,
+  realtime auditing, generation rollover, and teardown have direct Debug and
+  ReleaseSafe evidence. The exact Q06 sources implement no dynamic-library
+  loading or foreign symbol ownership. Those boundaries remain in Q18. The ABI
+  ledger now has 163 evidence and 138 review records.
 
 ## Phase 5 Scope
 
@@ -461,7 +468,8 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the A-RUNTIME family. Reconcile plugin runtime entry points, dynamic
-library loading, symbol ownership, error translation, lifecycle transitions,
-and unload ordering. Then continue through LV2, AUv2, system audio, MIDI,
-windows, native schedulers, and the native VSTGUI adapter.
+Review the A-PLUGIN-ABI family in Q17. Reconcile published LV2 and Audio Unit
+declarations, layout and constant parity, dynamic host behavior, state, worker,
+render, callback, and teardown lifecycles. Then continue through system audio,
+MIDI, windows, native schedulers, dynamic libraries, and the native VSTGUI
+adapter.
