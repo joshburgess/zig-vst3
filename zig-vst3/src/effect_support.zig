@@ -1,3 +1,4 @@
+const std = @import("std");
 const funknown = @import("funknown.zig");
 const gui_telemetry_source = @import("gui_telemetry_source.zig");
 const ivstautomationstate = @import("pluginterfaces/vst/ivstautomationstate.zig");
@@ -10,6 +11,7 @@ const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_message = @import("vst_message.zig");
 
 pub fn queryInterfaceAs(comptime Base: type, comptime Interface: type, source: ?*anyopaque, iid: *const tuid.TUID) ?*Interface {
     const raw = source orelse return null;
@@ -151,4 +153,102 @@ pub fn releaseComponentHandlers(controller: anytype) void {
     releaseOptionalInterface(ivstcontextmenu.IComponentHandler3, &controller.component_handler3);
     releaseOptionalInterface(ivsteditcontroller.IComponentHandler2, &controller.component_handler2);
     releaseOptionalInterface(ivsteditcontroller.IComponentHandler, &controller.component_handler);
+}
+
+test "interface query retains and optional release clears its slot" {
+    const Point = vst_message.ConnectionPoint(struct {});
+    var point = Point{};
+
+    try std.testing.expectEqual(
+        @as(?*ivstmessage.IConnectionPoint, null),
+        queryInterfaceAs(
+            ivstmessage.IConnectionPoint,
+            ivstmessage.IConnectionPoint,
+            null,
+            &ivstmessage.iconnection_point_iid,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(?*ivstmessage.IConnectionPoint, null),
+        queryInterfaceAs(
+            ivstmessage.IConnectionPoint,
+            ivstmessage.IConnectionPoint,
+            point.asInterface(),
+            &tuid.zero,
+        ),
+    );
+
+    var retained = queryInterfaceAs(
+        ivstmessage.IConnectionPoint,
+        ivstmessage.IConnectionPoint,
+        point.asInterface(),
+        &ivstmessage.iconnection_point_iid,
+    );
+    try std.testing.expectEqual(point.asInterface(), retained.?);
+    try std.testing.expectEqual(@as(types.uint32, 1), point.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), point.ref_count.load(.monotonic));
+
+    releaseOptionalInterface(ivstmessage.IConnectionPoint, &retained);
+    try std.testing.expectEqual(@as(?*ivstmessage.IConnectionPoint, null), retained);
+    try std.testing.expectEqual(@as(types.uint32, 1), point.release_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), point.ref_count.load(.monotonic));
+
+    releaseOptionalInterface(ivstmessage.IConnectionPoint, &retained);
+    try std.testing.expectEqual(@as(types.uint32, 1), point.release_count);
+}
+
+test "connection replacement retains next peer before releasing previous peer" {
+    const Point = vst_message.ConnectionPoint(struct {});
+    var first = Point{};
+    var second = Point{};
+    var slot: ?*ivstmessage.IConnectionPoint = null;
+
+    try std.testing.expectEqual(types.kInvalidArgument, replaceConnectionPeer(&slot, null));
+    try std.testing.expectEqual(@as(?*ivstmessage.IConnectionPoint, null), slot);
+
+    try std.testing.expectEqual(types.kResultOk, replaceConnectionPeer(&slot, first.asInterface()));
+    try std.testing.expectEqual(first.asInterface(), slot.?);
+    try std.testing.expectEqual(@as(types.uint32, 2), first.ref_count.load(.monotonic));
+
+    try std.testing.expectEqual(types.kResultOk, replaceConnectionPeer(&slot, first.asInterface()));
+    try std.testing.expectEqual(first.asInterface(), slot.?);
+    try std.testing.expectEqual(@as(types.uint32, 2), first.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(types.uint32, 2), first.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), first.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, replaceConnectionPeer(&slot, second.asInterface()));
+    try std.testing.expectEqual(second.asInterface(), slot.?);
+    try std.testing.expectEqual(@as(types.uint32, 1), first.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(types.uint32, 2), second.ref_count.load(.monotonic));
+
+    try std.testing.expectEqual(types.kResultFalse, disconnectConnectionPeer(&slot, first.asInterface()));
+    try std.testing.expectEqual(second.asInterface(), slot.?);
+    try std.testing.expectEqual(@as(types.uint32, 0), second.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, disconnectConnectionPeer(&slot, null));
+    try std.testing.expectEqual(@as(?*ivstmessage.IConnectionPoint, null), slot);
+    try std.testing.expectEqual(@as(types.uint32, 1), second.release_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), second.ref_count.load(.monotonic));
+}
+
+test "failed data exchange operations reset host-visible outputs" {
+    var queue_id: ivstdataexchange.DataExchangeQueueID = 17;
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        failOpenedDataExchangeQueue(&queue_id, types.kResultFalse),
+    );
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
+
+    var block = ivstdataexchange.DataExchangeBlock{
+        .blockID = 23,
+        .size = 64,
+        .data = @ptrFromInt(0x1000),
+    };
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        failLockedDataExchangeBlock(&block, types.kInvalidArgument),
+    );
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeBlockID, block.blockID);
+    try std.testing.expectEqual(@as(types.uint32, 0), block.size);
+    try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
 }
