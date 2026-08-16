@@ -423,6 +423,14 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   adversarial lifetime and concurrency checks, Debug and ReleaseSafe module
   runs with 800/800 tests each, and the 23-bundle native validator run. The ABI
   ledger now has 116 evidence and 185 review records.
+- Completed the 21-source Q02 A-ARA review. The official ARA SDK 2.3.001
+  headers drive target-specific translated declarations, while the handwritten
+  VST3 companion has direct native C++ parity. Factory, controller, model,
+  extension, reader, cache, renderer, archive, analysis, callback, and teardown
+  evidence passes in Debug, native ReleaseSafe, three ReleaseSafe cross-targets,
+  the current TSan selection, and two current 100,000-execution fuzz campaigns.
+  The ledger now has 137 evidence and 164 review records. Actual ARA-capable DAW
+  behavior remains an explicit external check.
 
 ## Phase 5 Scope
 
@@ -437,8 +445,9 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Begin the A-ARA source reconciliation. Match the two vendored ARA headers and
-19 Zig integration sources to translated-layout checks, VST3 binding behavior,
-model and archive lifetimes, callback reentrancy, and teardown evidence. Then
-continue through VSTGUI, framework and runtime boundaries, LV2, AUv2, system
-audio, MIDI, windows, and dynamic libraries.
+Review the seven-source A-VSTGUI-RAW family. Reconcile VSTGUI and Wayland
+declarations, controlling identities, platform handles, frame attachment,
+callback reentrancy, host-loop registration, and attach-detach teardown with
+the native adapter, sanitizer, and headless lifecycle evidence. Then continue
+through framework and runtime boundaries, LV2, AUv2, system audio, MIDI,
+windows, dynamic libraries, and the native VSTGUI adapter.

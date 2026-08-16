@@ -154,27 +154,27 @@ Q01	zig-vst3/src/vst_unit_data.zig	EVIDENCE	A-VST3
 Q01	zig-vst3/src/vst_update_handler.zig	EVIDENCE	A-VST3
 Q01	zig-vst3/src/vst_value.zig	EVIDENCE	A-VST3
 Q01	zig-vst3/src/zig_vst3_edit_controller.zig	EVIDENCE	A-VST3
-Q02	vendor/ARA_API/ARAInterface.h	REVIEW	A-ARA
-Q02	vendor/ARA_API/ARAVST3.h	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_analysis_common.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_analysis_model.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_api.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_content_fades.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_document_controller.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_extension.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_factory.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_harmony_analysis.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_model.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_note_analysis.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_playback_renderer.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_registration.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_source_cache.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_spectral_transform.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_tempo_analysis.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_tempo_warp.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_tuning_analysis.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_tuning_detector.zig	REVIEW	A-ARA
-Q02	zig-vst3/src/ara_vst3.zig	REVIEW	A-ARA
+Q02	vendor/ARA_API/ARAInterface.h	EVIDENCE	A-ARA
+Q02	vendor/ARA_API/ARAVST3.h	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_analysis_common.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_analysis_model.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_api.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_content_fades.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_document_controller.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_extension.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_factory.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_harmony_analysis.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_model.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_note_analysis.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_playback_renderer.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_registration.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_source_cache.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_spectral_transform.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_tempo_analysis.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_tempo_warp.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_tuning_analysis.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_tuning_detector.zig	EVIDENCE	A-ARA
+Q02	zig-vst3/src/ara_vst3.zig	EVIDENCE	A-ARA
 Q03	zig-vst3/src/vst_wayland_frame.zig	REVIEW	A-VSTGUI-RAW
 Q03	zig-vst3/src/vst_wayland_standalone_frame.zig	REVIEW	A-VSTGUI-RAW
 Q03	zig-vst3/src/vstgui.zig	REVIEW	A-VSTGUI-RAW
@@ -381,11 +381,36 @@ artifacts with no failure classification. Actual DAW embedding, visual editor
 inspection, and host-specific callback traces remain external checks. They are
 not inferred from the validator.
 
+## Accepted A-ARA Evidence
+
+The ARA boundary is pinned to the official ARA SDK 2.3.001 declaration subset.
+`ARAInterface.h` is translated for each target during the build; x86 targets
+also run the checked packing adjustment required by the header's ABI policy.
+The handwritten VST3 companion is compared directly with `ARAVST3.h` and the
+pinned Steinberg declarations.
+
+| Boundary | Declaration source | Automated evidence | Result |
+| --- | --- | --- | --- |
+| ARA C API | Vendored official `ARAInterface.h` from ARA SDK 2.3.001 | Target-specific `translate-c`, generation and configuration validation, full native compilation, and ReleaseSafe AArch64 Linux, x86-64 Linux, and x86-64 Windows compilation | Passed |
+| ARA VST3 companion | Vendored `ARAVST3.h` plus pinned Steinberg VST3 SDK declarations | Native C++ and Zig size, alignment, IID, vtable-slot, selected offset, role, and generation comparison | Passed |
+| Factory, controller, model, and extension lifecycle | Official ARA factory, host-instance, controller-instance, and extension declarations | Bounded pool exhaustion, rollback and reuse, static identity, graph lifecycle through C callbacks, reentrant observer mutation, role-specific and legacy binding, and teardown tests | Passed in Debug and ReleaseSafe |
+| Host reader and publication concurrency | Official host audio-reader callback table and repository cache, renderer, and transform contracts | Missing-callback rejection, indivisible close and lease admission, synchronous drain, immutable generation publication, coherent-reader stress, and current TSan selection | Passed; Q-MEM-010 and Q-CONC-005 remain closed |
+| Archives and callback input | Official archive, filter, content-reader, analysis-request, and notification declarations | Capacity-before-pointer-traversal tests, failure-atomic round trips, staged publication, exact one-over limits, current controller and analysis archive fuzzing, content-provider behavior, and host notification routing | Passed; Q-ARA-001 remains closed |
+| Cached and analyzed playback behavior | Official source, modification, playback-region, content, renderer, and analysis declarations | Transactional f32 and f64 caches, paged eviction, linear, cubic, and sinc playback, fades, tempo maps, spectral publication, tuning, tempo, harmony, and polyphonic-note behavior | Passed in native tests and cross-target compilation |
+
+The 19 Zig sources contain 89 direct test blocks. Their current aggregate ARA
+gate executes 445 tests because imported API and shared behavior tests are also
+selected. The current Debug ARA gate plus Phase 2 sanitizer selection passed
+87/87 steps and 463/463 tests. Native ReleaseSafe separately passed 77/77 steps
+and 445/445 tests. An actual ARA-capable DAW, host-owned media, and host-specific
+callback traces remain external checks. The ARA playback example's Steinberg
+validator result does not substitute for those checks.
+
 ## Current Disposition
 
-The ledger contains 116 `EVIDENCE` and 185 `REVIEW` records. All Q01 sources are
-accepted. Review proceeds through the remaining boundary families, replacing
-each record with accepted evidence or a precise exclusion. Phase 6 remains
-open until no `REVIEW` record remains, every boundary has a declaration source
-and the strongest technically possible automated check, every skip is
+The ledger contains 137 `EVIDENCE` and 164 `REVIEW` records. All Q01 and Q02
+sources are accepted. Review proceeds through the remaining boundary families,
+replacing each record with accepted evidence or a precise exclusion. Phase 6
+remains open until no `REVIEW` record remains, every boundary has a declaration
+source and the strongest technically possible automated check, every skip is
 explicit, and no critical or high platform or ABI finding is open.

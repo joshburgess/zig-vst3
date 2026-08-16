@@ -2431,6 +2431,36 @@ The validator does not prove actual DAW embedding, editor appearance, or
 host-specific callback ordering. Those checks remain explicit external
 evidence and are not required to accept the automated Q01 boundary evidence.
 
+## 2026-08-15: A-ARA Boundary Closure
+
+The Q02 review covers two vendored ARA SDK 2.3.001 declaration headers and 19
+Zig sources. `ARAInterface.h` is translated per target, with the header-required
+x86 packing adjustment. The native ABI comparator checks selected raw C types
+and offsets plus all three handwritten VST3 companion interfaces, their IIDs,
+entry-point slots, role flags, and generation against `ARAVST3.h` and the pinned
+Steinberg SDK.
+
+The 89 direct Q02 test blocks exercise factory and controller pools, extension
+binding, COM identity, model generation, reentrant observer callbacks, reader
+lease closure, provider content, host notifications, archive transactionality,
+source cache and spectral publication, render assignment, fades, tempo warps,
+and bounded analysis. The aggregate executes 445 tests after imported API and
+shared selections are included. Both archive fuzz targets were rerun at the
+current commit, so the closed Q-ARA-001 evidence does not depend on an earlier
+source layout. The Q-MEM-010 and Q-CONC-005 lifecycle regressions execute in
+the current deterministic and sanitizer gates.
+
+| Check | Result |
+| --- | --- |
+| `zig build -j1 --cache-dir /private/tmp/zig-vst3-phase6-ara-local --global-cache-dir /private/tmp/zig-vst3-phase6-ara-global test-ara test-phase2-thread-sanitizers --summary all` | Passed: 87/87 steps and 463/463 tests, including 445 Debug ARA tests, 18 TSan tests, the native ABI comparator, and ReleaseSafe cross-compilation for AArch64 Linux, x86-64 Linux, and x86-64 Windows |
+| `zig build -j1 -Doptimize=ReleaseSafe --cache-dir /private/tmp/zig-vst3-phase6-ara-local --global-cache-dir /private/tmp/zig-vst3-phase6-ara-global test-ara --summary all` | Passed: 77/77 steps and 445/445 native ReleaseSafe tests plus the three ReleaseSafe cross-targets and ARA VST3 ABI comparator |
+| `zig build -j1 --cache-dir /private/tmp/zig-vst3-phase6-ara-local --global-cache-dir /private/tmp/zig-vst3-phase6-ara-global test-ara-controller-archive-fuzz test-ara-archive-fuzz --fuzz=100K --summary all` | Passed: 7/7 steps and 2/2 targets; controller archive reached 100,038 executions and 148/8,995 branches, analysis archive reached 100,063 executions and 174/9,338 branches |
+| Q02 production termination scan | Passed: no panic, unreachable, or `catch unreachable` path |
+| `scripts/check_quality_abi_inventory.sh` after disposition | Passed: 137 evidence, 164 review, zero excluded sources |
+
+No real ARA host was available. The automated evidence does not claim actual
+DAW binding, host-owned media exchange, or host-specific callback ordering.
+
 ## 2026-08-15: Composite Effects Numerical Closure
 
 Behavior commit: `9b4ec47a`
