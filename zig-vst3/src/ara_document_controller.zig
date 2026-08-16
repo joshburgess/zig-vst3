@@ -4649,6 +4649,7 @@ fn fuzzControllerArchiveRestore(_: void, smith: *std.testing.Smith) !void {
     const TestController = Controller(.{
         .audio_sources = 1,
         .audio_modifications = 1,
+        .content_readers = 1,
         .name_bytes = 16,
         .persistent_id_bytes = 16,
         .archive_extension_bytes = 256,
@@ -4719,6 +4720,7 @@ fn fuzzControllerArchiveRestore(_: void, smith: *std.testing.Smith) !void {
     var controller = TestController{
         .host = std.mem.zeroes(raw.ARADocumentControllerHostInstance),
         .factory = &factory,
+        .content_readers = @splat(.{}),
     };
     try controller.document.beginEditing();
     const source_id = try controller.document.createAudioSource(

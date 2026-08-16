@@ -15,7 +15,7 @@ split.
 
 | Source | Production / test lines | Role and state contract | Decision |
 | --- | ---: | --- | --- |
-| `build.zig` | 7,763 / 0 | Owns the repository build graph. Its steps share resolved targets, package modules, feature options, and named aggregate gates. | KEEP. Splitting would require a broad mutable build context without creating an independently meaningful package contract. |
+| `build.zig` | 7,758 / 0 | Owns the repository build graph. Its steps share resolved targets, package modules, feature options, and named aggregate gates. | KEEP. Splitting would require a broad mutable build context without creating an independently meaningful package contract. |
 | `gui-adapters/vstgui/zig_vstgui_accessibility_bridge.cpp` | 2,840 / 0 | Owns the native accessibility peer bridge and the lifetime transfer between VSTGUI objects and platform accessibility objects. | KEEP. The translation unit already matches one foreign-lifetime boundary. |
 | `gui-adapters/vstgui/zig_vstgui_editor.cpp` | 2,417 / 0 | Owns native editor creation, attachment, resize, and teardown behind the Zig VSTGUI ABI. | KEEP. Its state is one editor lifecycle and is separate from graph and accessibility implementations. |
 | `gui-adapters/vstgui/zig_vstgui_graphs.cpp` | 2,053 / 0 | Owns graph widgets, retained plot data, and graph-specific draw and input callbacks. | KEEP. Graph state and invalidation form one adapter contract. |
@@ -46,7 +46,7 @@ split.
 | `zig-vst3-plugin/src/plugin/standalone.zig` | 1,953 / 3,063 | Owns callback adaptation, channel routing, MIDI and UMP scheduling, device lifecycle, and the standalone host shell. Capture FIFO, drift control, and disparate-clock transport live in `plugin/standalone/capture.zig`. | KEEP. The remaining production code coordinates one host lifecycle; every moved public name is an exact alias. |
 | `zig-vst3-plugin/src/process/context.zig` | 2,058 / 1,610 | Defines one bounded process block view over transport, audio buses, parameters, events, data exchange, and host requests. | KEEP. These borrowed views share the lifetime of one host process call and expose no independent ownership. |
 | `zig-vst3-plugin/src/process/events.zig` | 1,557 / 1,529 | Defines bounded event values, validation, ordering, iteration, and note tracking for a process block. | KEEP. Validation and iteration preserve the same event representation and block-lifetime contract. |
-| `zig-vst3/src/ara_document_controller.zig` | 4,090 / 1,908 | Owns the bounded ARA document model, archive store and restore, audio-reader leases, host notifications, and model-update sequencing. | KEEP. These operations mutate one controller model and share its generation, capacity, and host-lifetime invariants. |
+| `zig-vst3/src/ara_document_controller.zig` | 4,092 / 1,908 | Owns the bounded ARA document model, archive store and restore, audio-reader leases, host notifications, and model-update sequencing. | KEEP. These operations mutate one controller model and share its generation, capacity, and host-lifetime invariants. |
 | `zig-vst3/src/ara_source_cache.zig` | 1,568 / 635 | Owns fixed or paged source audio populated on control threads and published as immutable generations to realtime readers. | KEEP. Fill, directory publication, lookup, and teardown form one cache ownership contract. |
 | `zig-vst3/src/ara_tuning_analysis.zig` | 2,508 / 3,054 | Owns bounded per-source analysis state, request fulfillment, content publication, invalidation, and failure-atomic archive persistence. Tuning, tempo, meter, harmony, and note detectors live behind shared model and validation modules. | KEEP. The remaining state and archive code form one analyzer lifecycle, while every detector is now independently reviewable and the facade preserves exact public identities. |
 | `zig-vst3/src/zig_vst3_plugin_bridge.zig` | 2,439 / 2,836 | Converts VST3 process, parameter, event, bus, and state interfaces into the framework's bounded process model. | KEEP. The conversions share one host-call lifetime and negotiated bus and capacity state. |
@@ -59,7 +59,7 @@ rejects missing or stale sources, changed metrics, duplicate paths, and unknown
 decisions.
 
 <!-- cohesion-files:start -->
-- `build.zig` | 7763 | 7763 | 0 | KEEP
+- `build.zig` | 7758 | 7758 | 0 | KEEP
 - `gui-adapters/vstgui/zig_vstgui_accessibility_bridge.cpp` | 2840 | 2840 | 0 | KEEP
 - `gui-adapters/vstgui/zig_vstgui_editor.cpp` | 2417 | 2417 | 0 | KEEP
 - `gui-adapters/vstgui/zig_vstgui_graphs.cpp` | 2053 | 2053 | 0 | KEEP
@@ -90,7 +90,7 @@ decisions.
 - `zig-vst3-plugin/src/plugin/standalone.zig` | 5016 | 1953 | 3063 | KEEP
 - `zig-vst3-plugin/src/process/context.zig` | 3668 | 2058 | 1610 | KEEP
 - `zig-vst3-plugin/src/process/events.zig` | 3086 | 1557 | 1529 | KEEP
-- `zig-vst3/src/ara_document_controller.zig` | 5998 | 4090 | 1908 | KEEP
+- `zig-vst3/src/ara_document_controller.zig` | 6000 | 4092 | 1908 | KEEP
 - `zig-vst3/src/ara_source_cache.zig` | 2203 | 1568 | 635 | KEEP
 - `zig-vst3/src/ara_tuning_analysis.zig` | 5562 | 2508 | 3054 | KEEP
 - `zig-vst3/src/zig_vst3_plugin_bridge.zig` | 5275 | 2439 | 2836 | KEEP

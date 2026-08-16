@@ -323,20 +323,15 @@ pub fn build(b: *std.Build) void {
         "vstgui-adapter-raw",
         vstgui_adapter_raw,
     );
-    const vstgui_bridge_abi = b.addExecutable(.{
+    const vstgui_bridge_abi = b.addObject(.{
         .name = "check-vstgui-bridge-abi",
         .root_module = vstgui_bridge_abi_module,
     });
-    const run_vstgui_bridge_abi = b.addRunArtifact(
-        vstgui_bridge_abi,
-    );
     const vstgui_bridge_abi_step = b.step(
         "vstgui-bridge-abi",
         "Verify handwritten VSTGUI bridge declarations against the C header",
     );
-    vstgui_bridge_abi_step.dependOn(
-        &run_vstgui_bridge_abi.step,
-    );
+    vstgui_bridge_abi_step.dependOn(&vstgui_bridge_abi.step);
     const vstgui_bridge_abi_targets = [_]std.Build.ResolvedTarget{
         b.resolveTargetQuery(.{
             .cpu_arch = .aarch64,
@@ -401,7 +396,7 @@ pub fn build(b: *std.Build) void {
                 .ReleaseSafe,
             ),
         );
-        const abi_tool = b.addExecutable(.{
+        const abi_tool = b.addObject(.{
             .name = b.fmt(
                 "check-vstgui-bridge-abi-{s}-{s}",
                 .{
