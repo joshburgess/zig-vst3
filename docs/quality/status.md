@@ -454,6 +454,13 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   ReleaseSafe evidence. The exact Q06 sources implement no dynamic-library
   loading or foreign symbol ownership. Those boundaries remain in Q18. The ABI
   ledger now has 163 evidence and 138 review records.
+- Completed the nine-source Q17 A-PLUGIN-ABI review against the current split
+  LV2 and Audio Unit declaration modules. The LV2 C harness, five loaded host
+  fixtures, entry symbols, metadata, bundles, UI lifecycle, and twelve Linux
+  and Windows cross-libraries pass. The native AudioToolbox harness, two loaded
+  Audio Unit hosts, class-info state, two bundles, and six cross-target outputs
+  pass. The ABI ledger now has 172 evidence and 129 review records. Real LV2
+  and Audio Unit host behavior remains an external check.
 
 ## Phase 5 Scope
 
@@ -468,8 +475,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the A-PLUGIN-ABI family in Q17. Reconcile published LV2 and Audio Unit
-declarations, layout and constant parity, dynamic host behavior, state, worker,
-render, callback, and teardown lifecycles. Then continue through system audio,
-MIDI, windows, native schedulers, dynamic libraries, and the native VSTGUI
-adapter.
+Review the 62-source A-NATIVE family in Q18. Reconcile system audio, MIDI,
+windows, schedulers, callback admission and drain, native handles, dynamic
+library symbols and unload ordering, failure translation, recovery, and
+teardown. Then complete the native VSTGUI adapter review.

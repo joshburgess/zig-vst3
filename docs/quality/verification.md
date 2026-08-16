@@ -2568,6 +2568,44 @@ exercise these same public modules at the format boundaries. No real plugin
 host was available, and no host behavior is inferred from the focused runtime
 tests.
 
+## 2026-08-15: A-PLUGIN-ABI Boundary Closure
+
+The nine Q17 sources define the published LV2 processing, state, Worker,
+Programs, Options, logging, resize, metadata, and UI surfaces plus the Audio
+Unit render core, AUv2 dispatch ABI, and native Core Foundation class-info
+bridge. The dedicated declaration modules introduced after the earlier
+ownership pass remain exact public aliases, so this closure reruns the current
+independent C harnesses rather than relying on the pre-split results.
+
+LV2 verification dynamically loads the processing, component-state, dynamic
+topology, toolkit-neutral UI, and native VSTGUI UI libraries through host
+fixtures. It also checks exported entry symbols, generated metadata, two bundle
+forms, bounded host features, state and Worker behavior, and four libraries on
+each supported cross-target. Audio Unit verification compares the Zig ABI with
+the native AudioToolbox declarations, dynamically loads the mono and
+multi-output components, exercises class-info state and callback lifecycles,
+checks both registered bundles, and compiles the implementation plus example
+library on every supported cross-target.
+
+| Check | Result |
+| --- | --- |
+| ReleaseSafe `zig build -j1 test-lv2 --summary all` with temporary caches | Passed: 56/56 steps and 659/659 tests |
+| LV2 native ABI, hosts, symbols, metadata, bundles, and UI | Passed: C layout harness, five loaded-library host paths, three entry-symbol checks, and both bundle validators |
+| LV2 ReleaseSafe cross-target matrix | Passed: processing, component-state, dynamic-topology, and UI libraries on AArch64 Linux, x86-64 Linux, and x86-64 Windows |
+| ReleaseSafe `zig build -j1 test-audio-unit --summary all` with temporary caches | Passed: 30/30 steps and 333/333 tests |
+| Audio Unit native ABI, hosts, class-info state, and bundles | Passed: AudioToolbox C harness, mono and multi-output loaded hosts, and both bundle validators |
+| Audio Unit ReleaseSafe cross-target matrix | Passed: AUv2 implementation tests and multi-output libraries on AArch64 Linux, x86-64 Linux, and x86-64 Windows |
+| Production termination and raw callback scans plus fixtures | Passed |
+| `scripts/check_quality_abi_inventory.sh` after disposition | Passed: 172 evidence, 129 review, and zero excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 873 source files and 480,578 lines classified; Q17 contains 9 files and 22,788 lines |
+
+The first restricted LV2 invocation completed 47/56 steps and all 658 tests
+that ran, but its native VSTGUI `translate-c` worker could not open compiler
+cache metadata outside the sandbox. The same exact command passed completely
+with normal filesystem access and is the accepted result. No real LV2 or Audio
+Unit host was available, so the loaded fixtures and cross-builds do not claim
+external-host behavior.
+
 ## 2026-08-15: Composite Effects Numerical Closure
 
 Behavior commit: `9b4ec47a`
