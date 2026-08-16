@@ -6205,6 +6205,10 @@ pub fn build(b: *std.Build) void {
 
     const plugin_path_option = b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate");
 
+    const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
+    const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
+    validator_step.dependOn(&build_validator.step);
+
     const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");
     if (plugin_path_option) |plugin_path| {
         const validate = b.addSystemCommand(&.{ "scripts/validate.sh", plugin_path });
@@ -6225,11 +6229,17 @@ pub fn build(b: *std.Build) void {
 
     var validate_example_steps: [example_plugin_options.len]*std.Build.Step = undefined;
     for (example_plugin_options, example_plugins, 0..) |options, plugin, index| {
-        validate_example_steps[index] = addVst3ValidationStep(b, target, plugin.bundles.native, .{
-            .short_name = options.short_name,
-            .display_name = options.display_name,
-            .artifact_name = options.artifact_name,
-        });
+        validate_example_steps[index] = addVst3ValidationStep(
+            b,
+            target,
+            plugin.bundles.native,
+            &build_validator.step,
+            .{
+                .short_name = options.short_name,
+                .display_name = options.display_name,
+                .artifact_name = options.artifact_name,
+            },
+        );
     }
     const validate_examples_step = b.step("validate-examples", "Build and validate all native VST3 example bundles");
     addStepDependencies(validate_examples_step, &validate_example_steps);
@@ -6272,10 +6282,6 @@ pub fn build(b: *std.Build) void {
     addVst3BundleDependencies(bundle_examples_windows_step, &example_bundle_steps, .windows);
     const c_kernel_matrix_step = b.step("test-c-kernel-builds", "Build and inspect the C Kernel Probe platform matrix");
     c_kernel_matrix_step.dependOn(&b.addSystemCommand(&.{"scripts/build_c_kernel_matrix.sh"}).step);
-    const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
-    const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
-    validator_step.dependOn(&build_validator.step);
-
     const raw_api_script_checks = [_]ScriptCheckOptions{
         .{ .step_name = "tuid-abi", .description = "Compare Zig TUID bytes against the pinned VST3 SDK", .script = "scripts/check_tuid_abi.sh" },
         .{ .step_name = "pluginbase-abi", .description = "Compare Zig pluginbase layouts against the pinned VST3 SDK", .script = "scripts/check_pluginbase_abi.sh" },
@@ -6967,6 +6973,7 @@ fn addVst3ValidationStep(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     bundle_step: *std.Build.Step,
+    validator_dependency: *std.Build.Step,
     options: Vst3ValidationOptions,
 ) *std.Build.Step {
     const step_name = b.fmt("validate-{s}", .{options.short_name});
@@ -6978,6 +6985,7 @@ fn addVst3ValidationStep(
             b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
         });
         validate.step.dependOn(bundle_step);
+        validate.step.dependOn(validator_dependency);
         validate_step.dependOn(&validate.step);
     } else {
         validate_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS and Linux targets", .{step_name})).step);
