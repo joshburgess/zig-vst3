@@ -2185,6 +2185,110 @@ test "simple effect binds dynamic topology across host metadata negotiation acti
         types.kResultOk,
         processor.vtable.process(processor, &flush),
     );
+    const ConcurrentTopology = struct {
+        const Context = struct {
+            component: *ivstcomponent.IComponent,
+            processor: *ivstaudioprocessor.IAudioProcessor,
+            flush: *ivstaudioprocessor.ProcessData,
+            audio: types.int32,
+            input: types.int32,
+            invalid_read: std.atomic.Value(bool) = .init(false),
+            successful_reads: std.atomic.Value(u32) = .init(0),
+            invalid_write: std.atomic.Value(bool) = .init(false),
+            successful_writes: std.atomic.Value(u32) = .init(0),
+        };
+
+        fn read(context: *Context) void {
+            for (0..256) |_| {
+                const result = context.processor.vtable.process(
+                    context.processor,
+                    context.flush,
+                );
+                if (result == types.kResultOk) {
+                    _ = context.successful_reads.fetchAdd(
+                        1,
+                        .monotonic,
+                    );
+                } else if (result != types.kResultFalse) {
+                    context.invalid_read.store(true, .release);
+                    return;
+                }
+            }
+        }
+
+        fn write(context: *Context) void {
+            for (0..256) |index| {
+                const result = context.component.vtable.activateBus(
+                    context.component,
+                    context.audio,
+                    context.input,
+                    1,
+                    @intFromBool(index & 1 != 0),
+                );
+                if (result == types.kResultOk) {
+                    _ = context.successful_writes.fetchAdd(
+                        1,
+                        .monotonic,
+                    );
+                } else if (result != types.kResultFalse) {
+                    context.invalid_write.store(true, .release);
+                    return;
+                }
+            }
+        }
+    };
+    var concurrent_topology = ConcurrentTopology.Context{
+        .component = component,
+        .processor = processor,
+        .flush = &flush,
+        .audio = audio,
+        .input = input,
+    };
+    const topology_reader = try std.Thread.spawn(
+        .{},
+        ConcurrentTopology.read,
+        .{&concurrent_topology},
+    );
+    const topology_writer = std.Thread.spawn(
+        .{},
+        ConcurrentTopology.write,
+        .{&concurrent_topology},
+    ) catch |err| {
+        topology_reader.join();
+        return err;
+    };
+    topology_reader.join();
+    topology_writer.join();
+    try std.testing.expect(
+        !concurrent_topology.invalid_read.load(.acquire),
+    );
+    try std.testing.expect(
+        concurrent_topology.successful_reads.load(.acquire) != 0,
+    );
+    try std.testing.expect(
+        !concurrent_topology.invalid_write.load(.acquire),
+    );
+    try std.testing.expect(
+        concurrent_topology.successful_writes.load(.acquire) != 0,
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.activateBus(
+            component,
+            audio,
+            input,
+            1,
+            1,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.process(processor, &flush),
+    );
+    try std.testing.expect(
+        Effect.audioBusTopologySnapshot(component, &snapshot),
+    );
+
     flush.numOutputs = output_buses.len + 1;
     try std.testing.expectEqual(
         types.kInvalidArgument,

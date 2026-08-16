@@ -5998,6 +5998,55 @@ pub fn build(b: *std.Build) void {
     phase2_thread_sanitizer_step.dependOn(
         &b.addRunArtifact(gui_thread_sanitizer_tests).step,
     );
+    const q04_thread_sanitizer_raw = createAraRawModule(
+        b,
+        b.graph.host,
+        .Debug,
+    );
+    const q04_thread_sanitizer_ara = b.createModule(.{
+        .root_source_file = b.path("zig-vst3/src/ara_api.zig"),
+        .target = b.graph.host,
+        .optimize = .Debug,
+    });
+    q04_thread_sanitizer_ara.addImport(
+        "ara-raw",
+        q04_thread_sanitizer_raw,
+    );
+    const q04_thread_sanitizer_options = b.addOptions();
+    q04_thread_sanitizer_options.addOption(
+        bool,
+        "vstgui_adapter_enabled",
+        false,
+    );
+    const q04_thread_sanitizer_module = b.createModule(.{
+        .root_source_file = b.path(
+            "zig-vst3/src/zig_vst3_plugin_effect.zig",
+        ),
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .sanitize_thread = true,
+    });
+    q04_thread_sanitizer_module.addImport(
+        "zig-vst3-plugin-core",
+        phase2_core_module,
+    );
+    q04_thread_sanitizer_module.addImport(
+        "zig-vst3-ara",
+        q04_thread_sanitizer_ara,
+    );
+    q04_thread_sanitizer_module.addOptions(
+        "zig-vst3-gui-options",
+        q04_thread_sanitizer_options,
+    );
+    const q04_thread_sanitizer_tests = b.addTest(.{
+        .root_module = q04_thread_sanitizer_module,
+        .filters = &.{
+            "simple effect binds dynamic topology across host metadata negotiation activation and flush validation",
+        },
+    });
+    phase2_thread_sanitizer_step.dependOn(
+        &b.addRunArtifact(q04_thread_sanitizer_tests).step,
+    );
 
     const ara_thread_sanitizer_raw = createAraRawModule(
         b,

@@ -502,7 +502,56 @@ test "VST3 processor adapter carries lifecycle, parameters, and precision suppor
     );
 
     try adapter.deactivateChecked();
+    output = .{ 0.75, -0.75 };
+    adapter.process(&state, f32, &context);
+    try std.testing.expect(!adapter.processSucceeded());
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 0.75, -0.75 },
+        &output,
+    );
+
     try adapter.activateChecked();
+    var mismatched_output = [_]f32{ 0.5, -0.5 };
+    const mismatched_outputs = [_][]f32{&mismatched_output};
+    var mismatched_context = try core.process.ProcessContext(f32).init(
+        44_100.0,
+        &inputs,
+        &mismatched_outputs,
+    );
+    adapter.process(&state, f32, &mismatched_context);
+    try std.testing.expect(!adapter.processSucceeded());
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 0.5, -0.5 },
+        &mismatched_output,
+    );
+
+    const input64 = [_]f64{ 1.0, -1.0 };
+    var output64 = [_]f64{ 0.25, -0.25 };
+    const inputs64 = [_][]const f64{&input64};
+    const outputs64 = [_][]f64{&output64};
+    var context64 = try core.process.ProcessContext(f64).init(
+        48_000.0,
+        &inputs64,
+        &outputs64,
+    );
+    adapter.process(&state, f64, &context64);
+    try std.testing.expect(!adapter.processSucceeded());
+    try std.testing.expectEqualSlices(
+        f64,
+        &.{ 0.25, -0.25 },
+        &output64,
+    );
+
+    output = .{ 0.0, 0.0 };
+    adapter.process(&state, f32, &context);
+    try std.testing.expect(adapter.processSucceeded());
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 0.25, -0.125 },
+        &output,
+    );
     try std.testing.expectEqual(
         @as(usize, 2),
         adapter.runtime.instance.plugin.prepare_count,
