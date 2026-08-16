@@ -2735,3 +2735,63 @@ callback storage, and production termination paths.
 No real DAW editor embedding was available. This macOS run also cannot execute
 live Linux or Windows editor visuals. Native lifecycle, sanitizer, visual, and
 cross-compilation evidence does not claim those external checks.
+
+## 2026-08-15: Phase 7 Whole-Repository Verification
+
+Candidate commit: `f8600fffbcf9faf0b9007cc267313b1cd125001e`
+
+The local environment was AArch64 macOS 15.4.1 with Zig 0.16.0 and AppleClang
+17.0.0. All Zig build commands used one job, a requested 2 GiB compiler RSS
+limit, and isolated caches under `/private/tmp/zig-vst3-qver-fix-*`. One
+aggregate compiler process reported a 5 GiB peak despite the requested limit,
+so the one-job restriction remains necessary on this machine.
+
+The first public candidate at `cb15b6e8` found Q-VER-018 and Q-VER-019. Ubuntu
+Debug unnecessarily linked the compile-time VSTGUI declaration comparator,
+and native Windows found an uninitialized reader-slot state in the bounded ARA
+archive fuzz harness. Commit `f8600fff` compiles the comparators as objects and
+gives the archive-only harness one explicitly empty reader slot. The focused
+Debug and ReleaseSafe ARA matrices each pass 90/90 steps and 445/445 tests.
+The Debug and ReleaseSafe native plus three-target VSTGUI comparator matrices
+each pass 13/13 steps.
+
+| Check | Result |
+| --- | --- |
+| Complete ReleaseSafe `test` graph | Passed: 465/465 steps, 7,727/7,731 tests, and four accounted Zig test skips |
+| Sanitizer matrix | Passed: 39/39 steps and 240/240 tests, including ASan/UBSan and four VSTGUI TSan processes |
+| Repeated concurrency stress | Passed: 16 Phase 2, 16 MIDI, eight resource/importer, and eight DSP/HRTF/snapshot repetitions; 48 aggregate repetitions plus four VSTGUI processes |
+| All 18 `--fuzz=100K` targets | Passed: 55/55 steps and 130/130 selected tests; 1,862,471 new executions without a failure |
+| Exact Git archive through `test_published_release.sh` | Passed: installed package 18/18 steps and 96/96 tests plus effect, instrument, bundle, and upgrade consumers |
+| Steinberg validator and `validate-examples` | Passed: validator self-test 43/43 and all 23 native bundles at 47/47 tests with zero failures |
+| Validated downstream adoption | Passed: effect and instrument bundles each pass 47/47 validator tests; upgrade consumer passed |
+| Complete benchmark and scaling matrix | Passed: 17/17 steps and every checked regression budget |
+| Formatting, diff, prose, inventories, and repository hygiene | Passed: 873 files and 480,575 lines classified, 201 parser sources, 86 concurrency sources, 61 Zig plus 11 native atomic-order sources, 301 ABI evidence records, and 36 cohesion records |
+
+The fresh fuzz executions by target were: state 100,113; MIDI file 100,451;
+editor state 100,027; Ogg 100,511; MP3 101,617; audio file 100,479;
+resource state 100,054; ARA analysis archive 100,085; MIDI stream 102,722;
+audio metadata 100,333; iXML 100,401; MIDI-CI wire 100,027; ADM XML
+100,701; ARA controller archive 100,006; UMP 100,322; MIDI-CI resource
+137,196; FLAC 101,307; and MIDI-CI JSON 116,119. The repaired ARA controller
+target reached 300,027 cumulative executions across its focused campaigns.
+
+The exact archive SHA-256 was
+`cd70f5462df2ceb1fcd0bd50dd5cc961c8543eb2372085620612b300f299e767`.
+The benchmark recorded 88.14 ms for the least-squares FIR setup, 6.04 ms for
+IR preparation, 1,277.3 ns per IR sample at 6.1 percent of one 48 kHz core,
+10.70 ns per UMP packet at 4,096 packets, 18.83 ns per MIDI event at 4,000
+events, 69.5 microseconds per ADM pair at 512 pairs, and a maximum 18.66 ns per
+metadata entry at 1,024 entries. Fixed-storage ceilings remained unchanged.
+
+The four Zig skips require the two external HRTF datasets, a discoverable
+CoreAudio device, and a live PipeWire host. The optional AndroidX VBRI fixture
+was also unavailable, while the repository VBRI and AudioToolbox paths passed.
+Real DAW embedding, physical devices, and live Linux and Windows visuals remain
+external checks and are not inferred from automated coverage.
+
+GitHub Actions run `31921757212` at the exact candidate passes macOS, Ubuntu,
+native Windows, repository hygiene, raw ABI, validator, pluginval, six cross
+targets, LV2 distribution, and the repaired Debug VSTGUI and Windows ARA gates.
+Q-VER-018 and Q-VER-019 are closed, and no Phase 7 finding is deferred. The
+subsequent Phase 8 public-document review opened Q-DOC-001 for stale release
+framing and incomplete Unreleased notes.

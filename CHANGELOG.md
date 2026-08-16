@@ -14,6 +14,10 @@
 - Added `dsp.Id3Limits`, `dsp.AudioMetadataLimits`, and bounded ID3, RIFF INFO, AIFF text, and RIFF XML constructors for explicit encoded-byte policies.
 - Added `dsp.HrtfSofaLimits` and bounded SOFA loader methods for an explicit NetCDF file-byte policy.
 - Added `state.maximum_parameter_id_migrations` and a dedicated failure-atomic parameter-state fuzz target.
+- Added `process.UmpLimits`, `process.default_ump_limits`, and retained iterator
+  policies for explicit UMP word and packet bounds.
+- Added `editor_state.maximum_migrations` and a dedicated failure-atomic editor
+  state fuzz target.
 
 ### Changed
 
@@ -27,6 +31,36 @@
 - Direct ID3 and audio-metadata parsing now applies a 256 MiB default encoded-byte limit. XML elements accept at most 1,024 attributes and 256 KiB of attribute source, bounding duplicate and expanded-name validation work.
 - SOFA loading now applies a 1 GiB default file-byte limit before passing a dataset to the NetCDF runtime.
 - Parameter-state restore now accepts at most 256 ID migrations and indexes them once before decoding entries, bounding migration validation and lookup work.
+- UMP iteration now applies documented default word and packet limits, validates
+  ordinary traversal in linear time, and preserves bounded fallback for
+  caller-modified iterator state.
+- Editor-state restore now accepts at most 256 migrations, validates and orders
+  them once before decoding fields, and remains failure-atomic.
+
+### Fixed
+
+- Fixed callback admission and teardown races in ARA audio readers, CoreAudio,
+  CoreMIDI, ALSA MIDI and UMP, Windows MIDI and UMP, resource workers, and the
+  VSTGUI runtime. Saturated reference and editor-activity counts now remain
+  permanently pinned instead of becoming representable again.
+- Fixed allocator provenance, rollback, and foreign-resource cleanup across
+  VST3 objects, LV2, AUv2, PipeWire, VSTGUI construction, accessibility peers,
+  native MIDI initialization, and owning product examples.
+- Fixed realtime policy gaps by rejecting control-thread resource, topology,
+  host-request, and host-context operations before mutation, enforcing the
+  negotiated maximum VST3 block size, and bounding hostile parameter, event,
+  data-exchange, MIDI, and UMP callback traversal.
+- Fixed shifted and cross-channel buffer aliasing in audio blocks, primitive
+  filters, processor composition, panning, modulation, delay effects, and
+  reverb. Exact in-place operation remains supported where its ordering is
+  safe, and rejected layouts leave output and processor state unchanged.
+- Fixed non-finite window and dry/wet output, large-domain fast exponential
+  error, tangent behavior near its poles, and an over-budget least-squares FIR
+  setup path. Reference sweeps, transactionality checks, and performance
+  thresholds cover the corrected behavior.
+- Fixed malformed resource-reference restore so rejection preserves the active
+  snapshot, and bounded MIDI-CI Property Exchange headers to their 14-bit wire
+  extent before parsing or allocation.
 
 ## zig-vst3-0.3.0 - 2026-08-14
 

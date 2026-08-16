@@ -1301,7 +1301,9 @@ The checked examples in `examples/*_core.zig` cover the public framework API. Th
 
 ## Current Limits
 
-- The API is pre-release. Names and helper organization can still change before a public compatibility promise.
+- Declarations classified compatibility-ready follow the documented `0.3.x`
+  compatibility policy. Experimental declarations and optional platform
+  modules can still change before promotion.
 - Host smoke rows for Note Gate, Event Echo output observation, Event Monitor, and Sine Synth are still deferred.
 - LV2 independent metadata validation is complete. External-host testing remains deferred, and the in-process and dynamically loaded host fixtures do not replace interoperability confirmation.
 - ARA factory, controller, graph, backward-compatible generic and product-extension archives, concurrent non-realtime audio-reader, validated analysis-request and notification routing, persisted bounded polyphonic-note, static-tuning, piecewise variable-tempo, constant or changing meter, and constant or changing major or minor key-signature detection, and bounded sheet-chord detection, approved tuning editing, content-reader, bounded assignments, editor-view state, transactional source caching, cached realtime playback rendering, main-factory class registration, compile-time class-list assembly, audio-component aggregation, VST3 companion behavior, and a concrete playback reference product are covered internally. Advanced transformation algorithms, and external ARA-host behavior remain deferred.

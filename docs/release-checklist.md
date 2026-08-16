@@ -192,10 +192,7 @@ Stable result on 2026-08-14:
 - The public stable source archive is `https://github.com/joshburgess/zig-vst3/archive/refs/tags/zig-vst3-0.3.0.tar.gz` with SHA-256 `312800a89240318e29fcf397e056e3f11bf9ee4694ff99f5d6f4d77447e5d446`.
 - The downloaded archive reports `0.3.0`, contains the required package and policy files, passes 18/18 installed-package steps and 96/96 tests, and passes every ReleaseSafe downstream effect, instrument, bundle, and upgrade fixture.
 
-After the raw release checks and required host matrix rows are in place for a
-raw-only maintenance release:
-
-```sh
-git tag zig-vst3-0.2.1
-git push origin zig-vst3-0.2.1
-```
+For a future raw-only maintenance release, select a new version explicitly,
+update the changelog and release pins, run the current gates, and obtain
+explicit authorization before creating or pushing its tag. Existing public
+tags are immutable and must never be reused.

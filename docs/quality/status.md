@@ -1,8 +1,8 @@
 # Quality Program Status
 
-Current phase: Phase 7, Whole-Repository Verification
+Current phase: Phase 8, Merge Readiness
 
-Status: in progress; Phases 0 through 6 complete
+Status: in progress; Phases 0 through 7 complete
 
 Baseline commit: `08bf883e9d2d324f3a7933fa21851bbd9ffec513`
 
@@ -479,22 +479,33 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 - Completed Phase 6 with every platform-facing source dispositioned, every
   automated skip accounted for, adversarial reference and callback lifecycle
   evidence current, and no open critical or high platform or ABI finding.
+- Completed Phase 7 at `f8600fffbcf9faf0b9007cc267313b1cd125001e`.
+  The complete ReleaseSafe graph, sanitizer matrix, 48 repeated concurrency
+  stress runs, all 18 100,000-execution fuzz targets, exact archive, installed
+  package and downstream consumers, Steinberg validators, benchmarks, and
+  checked repository policies pass. Four Zig skips and the unavailable
+  AndroidX VBRI fixture are explicitly accounted for. Public GitHub Actions
+  run `31921757212` passes every macOS, Ubuntu, native Windows, raw ABI,
+  validator, pluginval, cross-compile, and LV2 distribution job.
+- Began Phase 8 with a complete branch history and public-document review.
+  Q-DOC-001 records stale installation, release, compatibility, and changelog
+  framing that must be reconciled before accepting the merge candidate.
 
-## Phase 5 Scope
+## Phase 8 Scope
 
-- Map critical DSP algorithms to independent numerical vectors, identities,
-  or reference implementations with stated tolerances.
-- Review finite-value, overflow, precision, latency, channel, layout, and
-  transactional-output contracts.
-- Record representative setup, realtime, memory, and hostile-scaling
-  benchmarks with explicit inputs and regression thresholds.
-- Optimize only measured failures while preserving readable invariants and
-  numerical evidence.
+- Reconcile every public release and compatibility statement with stable
+  `0.3.0` and the implemented compatibility-ready boundary.
+- Review the complete branch diff and commit history for unreviewed changes,
+  temporary commits, accidental attribution, and merge structure.
+- Confirm that the exact candidate is clean, pushed, and green in public CI.
+- Record remaining external checks and deferred findings without extending
+  automated evidence beyond what it proves.
+- Prepare the final evidence summary and stop before changing pull request 6
+  or merging it.
 
 ## Next Review Target
 
-Run the complete Phase 7 verification graph at one exact commit. Record the
-ReleaseSafe graph, sanitizers, fuzz campaigns, package archives, validators,
-downstream fixtures, benchmarks, formatting, repository hygiene, repeated
-stress count, environment, and every accounted skip. Reconcile all open
-findings before accepting the candidate.
+Close Q-DOC-001 with checked public documentation and a green exact-commit CI
+run. Complete the final diff, history, remote, tag, and pull-request audit,
+record the remaining external checks, and present the exact candidate without
+changing pull request 6 or merging it.
