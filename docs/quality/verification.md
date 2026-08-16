@@ -2497,6 +2497,44 @@ No real DAW editor embedding was available, and macOS cannot execute native
 Linux or Windows editor visuals. Cross-compilation, headless lifecycle, and
 native macOS visual evidence do not claim those external checks.
 
+## 2026-08-15: A-VST3-FRAMEWORK Boundary Closure
+
+Behavior commit: `0382b87f`
+
+The three Q04 sources connect the raw VST3 component, controller, processor,
+view, state, factory, and host callback surfaces to the format-neutral plugin
+runtime. Existing direct tests cover every exposed interface identity, shared
+reference saturation, peer replacement and disconnect, retained host handlers,
+allocator provenance and injected allocation failure, reentrant callbacks,
+parameter and event collection bounds, state transactionality, f32 and f64
+processing, failure silence, editor lifecycle, ARA binding, and teardown.
+
+The closing pass adds direct evidence for the runtime adapter's explicit
+`processSucceeded` channel. Inactive processing, a mismatched sample rate, and
+unsupported f64 processing all reject without changing output, and subsequent
+valid f32 processing recovers. Dynamic bus topology now overlaps 256 process
+reads with 256 control-thread publications under ThreadSanitizer. The test
+accepts only successful operations or the documented bounded snapshot
+backpressure result, requires progress on both threads, and proves publication
+and processing recover after the reader drains.
+
+| Check | Result |
+| --- | --- |
+| Debug `zig build -j1 test-vst3-module --summary all` with temporary caches | Passed: 7/7 steps and 800/800 tests |
+| ReleaseSafe `zig build -j1 -Doptimize=ReleaseSafe test-vst3-module --summary all` with temporary caches | Passed: 7/7 steps and 800/800 tests |
+| Direct runtime-adapter lifecycle and failure selection | Passed: 1/1 test |
+| `zig build -j1 test-phase2-thread-sanitizers --summary all` | Passed: 14/14 steps and 19/19 tests, including the concurrent Q04 topology selection |
+| ReleaseSafe Linux x86-64 example bundle matrix | Passed: 74/74 steps and all 23 bundles |
+| Raw callback and production termination scans plus fixtures | Passed |
+| `scripts/check_quality_abi_inventory.sh` after disposition | Passed: 147 evidence, 154 review, and zero excluded sources |
+| `scripts/check_quality_inventory.sh` | Passed: 873 source files and 480,578 lines classified; Q04 contains 3 files and 10,750 lines |
+
+The local Windows bundle rerun was interrupted during resource cleanup and is
+not counted as current closing evidence. Earlier checked Windows cross-bundle
+and installed-package gates continue to cover these framework sources. No real
+DAW was available, so simulated host and cross-compiled evidence does not claim
+real-host behavior.
+
 ## 2026-08-15: Composite Effects Numerical Closure
 
 Behavior commit: `9b4ec47a`

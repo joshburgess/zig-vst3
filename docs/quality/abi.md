@@ -182,9 +182,9 @@ Q03	zig-vst3/src/vstgui_editor_view.zig	EVIDENCE	A-VSTGUI-RAW
 Q03	zig-vst3/src/vstgui_headless_host.zig	EVIDENCE	A-VSTGUI-RAW
 Q03	zig-vst3/src/vstgui_lv2_backend.zig	EVIDENCE	A-VSTGUI-RAW
 Q03	zig-vst3/src/vstgui_single_parameter_controller.zig	EVIDENCE	A-VSTGUI-RAW
-Q04	zig-vst3/src/zig_vst3_plugin_bridge.zig	REVIEW	A-VST3-FRAMEWORK
-Q04	zig-vst3/src/zig_vst3_plugin_effect.zig	REVIEW	A-VST3-FRAMEWORK
-Q04	zig-vst3/src/zig_vst3_plugin_runtime_adapter.zig	REVIEW	A-VST3-FRAMEWORK
+Q04	zig-vst3/src/zig_vst3_plugin_bridge.zig	EVIDENCE	A-VST3-FRAMEWORK
+Q04	zig-vst3/src/zig_vst3_plugin_effect.zig	EVIDENCE	A-VST3-FRAMEWORK
+Q04	zig-vst3/src/zig_vst3_plugin_runtime_adapter.zig	EVIDENCE	A-VST3-FRAMEWORK
 Q06	zig-vst3-plugin/src/common.zig	REVIEW	A-RUNTIME
 Q06	zig-vst3-plugin/src/core.zig	REVIEW	A-RUNTIME
 Q06	zig-vst3-plugin/src/plugin.zig	REVIEW	A-RUNTIME

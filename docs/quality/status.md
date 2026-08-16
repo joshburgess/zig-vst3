@@ -439,6 +439,14 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
   four-process TSan gates pass. The ABI ledger now has 144 evidence and 157
   review records. Real DAW embedding and Linux or Windows visual behavior
   remain explicit external checks.
+- Completed the three-source Q04 A-VST3-FRAMEWORK review. Existing factory,
+  interface, ownership, allocation-failure, reference-saturation, reentrancy,
+  host-callback, state, process, and teardown tests cover the raw-to-framework
+  boundary. Commit `0382b87f` adds direct lifecycle and precision rejection
+  checks plus concurrent topology publication under ThreadSanitizer. Debug and
+  ReleaseSafe module gates each pass 800/800 tests, and the Linux ReleaseSafe
+  matrix builds all 23 example bundles. The ABI ledger now has 147 evidence
+  and 154 review records. Real DAW behavior remains an external check.
 
 ## Phase 5 Scope
 
@@ -453,8 +461,7 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-Review the three-source A-VST3-FRAMEWORK family. Reconcile component,
-controller, processor, view, state, factory, callback, process, and teardown
-behavior at the raw-to-framework boundary. Then continue through runtime
-boundaries, LV2, AUv2, system audio, MIDI, windows, dynamic libraries, and the
-native VSTGUI adapter.
+Review the A-RUNTIME family. Reconcile plugin runtime entry points, dynamic
+library loading, symbol ownership, error translation, lifecycle transitions,
+and unload ordering. Then continue through LV2, AUv2, system audio, MIDI,
+windows, native schedulers, and the native VSTGUI adapter.
