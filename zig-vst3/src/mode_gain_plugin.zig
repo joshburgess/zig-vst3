@@ -6,6 +6,7 @@ const mode_gain_controller = @import("mode_gain_controller.zig");
 const mode_gain_spec = @import("mode_gain_spec.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
+const vstgui_headless_host = @import("vstgui_headless_host.zig");
 
 const ModeGainFactory = factory.StaticFactory3(.{
     .vendor = mode_gain_spec.Spec.vendor,
@@ -48,4 +49,13 @@ test "mode gain plugin root exposes zig-vst3-plugin metadata" {
     try std.testing.expectEqual(@as(usize, 1), mode_gain_spec.Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 0), mode_gain_spec.mode_param_index);
     try std.testing.expectEqual(@as(f64, 0.0), spec.values.view(&mode_gain_spec.parameter_set).loadNormalized("mode"));
+}
+
+test "mode gain editor survives concurrent headless host lifecycle stress" {
+    const report = try vstgui_headless_host.run(struct {
+        pub const component_create = mode_gain_component.create;
+        pub const controller_create = mode_gain_controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
 }

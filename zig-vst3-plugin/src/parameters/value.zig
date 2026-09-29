@@ -14,8 +14,7 @@ pub const NormalizedValue = struct {
 
     pub fn load(self: *const NormalizedValue) f64 {
         const value: f64 = @bitCast(@constCast(&self.bits).load(.monotonic));
-        std.debug.assert(common.isNormalized(value));
-        return value;
+        return clampNormalized(value);
     }
 
     pub fn store(self: *NormalizedValue, value: f64) void {
@@ -121,4 +120,17 @@ test "normalized and modulated values clamp generated inputs" {
             try std.testing.expectApproxEqAbs(std.math.clamp(expected_base + expected_modulation, 0.0, 1.0), value.load(), 0.000001);
         }
     }
+}
+
+test "normalized value contains malformed direct atomic bits" {
+    var value = NormalizedValue.init(0.5);
+
+    value.bits.store(@bitCast(std.math.nan(f64)), .monotonic);
+    try std.testing.expectEqual(@as(f64, 0.0), value.load());
+
+    value.bits.store(@bitCast(std.math.inf(f64)), .monotonic);
+    try std.testing.expectEqual(@as(f64, 1.0), value.load());
+
+    value.bits.store(@bitCast(@as(f64, -1.0)), .monotonic);
+    try std.testing.expectEqual(@as(f64, 0.0), value.load());
 }

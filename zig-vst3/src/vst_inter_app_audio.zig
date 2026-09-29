@@ -41,7 +41,7 @@ pub fn InterAppAudioHost(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstinterappaudio.IInterAppAudioHost, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstinterappaudio.iinter_app_audio_host_iid, .ptr = ptr },
@@ -63,7 +63,10 @@ pub fn InterAppAudioHost(comptime Config: type) type {
             return result;
         }
 
-        fn getScreenSize(ptr: *anyopaque, out_rect: *iplugview.ViewRect, out_scale: *f32) callconv(.c) types.tresult {
+        fn getScreenSize(ptr: *anyopaque, out_rect_raw: [*c]iplugview.ViewRect, out_scale_raw: [*c]f32) callconv(.c) types.tresult {
+            if (out_rect_raw == null or out_scale_raw == null) return types.kInvalidArgument;
+            const out_rect: *iplugview.ViewRect = @ptrCast(out_rect_raw);
+            const out_scale: *f32 = @ptrCast(out_scale_raw);
             const self = owner(ptr);
             out_rect.* = self.screen;
             out_scale.* = self.scale_factor;
@@ -105,7 +108,9 @@ pub fn InterAppAudioHost(comptime Config: type) type {
             return result;
         }
 
-        fn getHostIcon(ptr: *anyopaque, out_icon: *?*anyopaque) callconv(.c) types.tresult {
+        fn getHostIcon(ptr: *anyopaque, out_icon_raw: [*c]?*anyopaque) callconv(.c) types.tresult {
+            if (out_icon_raw == null) return types.kInvalidArgument;
+            const out_icon: *?*anyopaque = @ptrCast(out_icon_raw);
             const self = owner(ptr);
             out_icon.* = self.host_icon;
             if (@hasDecl(Config, "getHostIcon")) {
@@ -116,14 +121,18 @@ pub fn InterAppAudioHost(comptime Config: type) type {
             return if (self.host_icon == null) types.kResultFalse else types.kResultOk;
         }
 
-        fn scheduleEventFromUI(ptr: *anyopaque, event: *events.Event) callconv(.c) types.tresult {
+        fn scheduleEventFromUI(ptr: *anyopaque, event_raw: [*c]events.Event) callconv(.c) types.tresult {
+            if (event_raw == null) return types.kInvalidArgument;
+            const event: *events.Event = @ptrCast(event_raw);
             const self = owner(ptr);
             self.scheduled_event_count +|= 1;
             if (@hasDecl(Config, "scheduleEventFromUI")) return Config.scheduleEventFromUI(self, event);
             return types.kResultOk;
         }
 
-        fn createPresetManager(ptr: *anyopaque, uid: *const tuid.TUID) callconv(.c) ?*ivstinterappaudio.IInterAppAudioPresetManager {
+        fn createPresetManager(ptr: *anyopaque, uid_raw: [*c]const tuid.TUID) callconv(.c) ?*ivstinterappaudio.IInterAppAudioPresetManager {
+            if (uid_raw == null) return null;
+            const uid: *const tuid.TUID = @ptrCast(uid_raw);
             const self = owner(ptr);
             self.recordPresetManagerRequest(uid);
             if (@hasDecl(Config, "createPresetManager")) return Config.createPresetManager(self, uid);
@@ -168,7 +177,7 @@ pub fn InterAppAudioConnectionNotification(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstinterappaudio.IInterAppAudioConnectionNotification, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstinterappaudio.iinter_app_audio_connection_notification_iid, .ptr = ptr },
@@ -219,7 +228,7 @@ pub fn InterAppAudioPresetManager(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, ivstinterappaudio.IInterAppAudioPresetManager, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstinterappaudio.iinter_app_audio_preset_manager_iid, .ptr = ptr },
@@ -282,6 +291,9 @@ test "inter-app audio host returns default state and tracks callbacks" {
 
     var screen = iplugview.ViewRect{};
     var scale: f32 = 0;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getScreenSize(iface, null, &scale));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getScreenSize(iface, &screen, null));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.scheduleEventFromUI(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getScreenSize(iface, &screen, &scale));
     try std.testing.expectEqual(@as(types.int32, 101), screen.right);
     try std.testing.expectEqual(@as(f32, 2.0), scale);
@@ -309,6 +321,9 @@ test "inter-app audio host returns icon and preset manager" {
     const iface = host.asInterface();
 
     var out_icon: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getHostIcon(iface, null));
+    try std.testing.expectEqual(@as(?*ivstinterappaudio.IInterAppAudioPresetManager, null), iface.vtable.createPresetManager(iface, null));
+    try std.testing.expect(!host.has_last_preset_uid);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getHostIcon(iface, &out_icon));
     try std.testing.expectEqual(icon, out_icon.?);
     try std.testing.expectEqual(presets.asInterface(), iface.vtable.createPresetManager(iface, &preset_uid).?);

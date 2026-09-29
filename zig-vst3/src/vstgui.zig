@@ -1,0 +1,85 @@
+//! Declarative plugin editor authoring on the public VSTGUI adapter.
+//!
+//! Start with `EditorDescription` and `createEditor`. The smaller `create*View`
+//! functions remain compatibility conveniences for simple parameter-only editors.
+
+const implementation = @import("vstgui_single_parameter_controller.zig");
+const plugin_core = @import("zig-vst3-plugin-core");
+
+pub const Parameter = implementation.Parameter;
+pub const Meter = implementation.Meter;
+pub const GraphPoint = implementation.GraphPoint;
+pub const EnvelopePoint = implementation.EnvelopePoint;
+pub const GraphScale = implementation.GraphScale;
+pub const GraphKind = implementation.GraphKind;
+pub const GraphStyleRole = implementation.GraphStyleRole;
+pub const GraphSource = implementation.GraphSource;
+pub const Viewport = implementation.Viewport;
+pub const ViewportAxes = implementation.ViewportAxes;
+pub const RangeSelection = implementation.RangeSelection;
+pub const RangeSelectionHandle = implementation.RangeSelectionHandle;
+pub const GraphAxis = implementation.GraphAxis;
+pub const Graph = implementation.Graph;
+pub const XYPad = implementation.XYPad;
+pub const Preset = implementation.Preset;
+pub const PresetBrowser = implementation.PresetBrowser;
+pub const MenuItemKind = implementation.MenuItemKind;
+pub const MenuItem = implementation.MenuItem;
+pub const ActionMenu = implementation.ActionMenu;
+pub const ActionButton = implementation.ActionButton;
+pub const ActionButtonError = implementation.ActionButtonError;
+pub const ActionIcon = implementation.ActionIcon;
+pub const ActionRole = implementation.ActionRole;
+pub const validateActionButtons = implementation.validateActionButtons;
+pub const EditableLabel = implementation.EditableLabel;
+pub const EditableLabelError = implementation.EditableLabelError;
+pub const validateEditableLabels = implementation.validateEditableLabels;
+pub const ProgressIndicator = implementation.ProgressIndicator;
+pub const ProgressIndicatorError = implementation.ProgressIndicatorError;
+pub const ProgressMode = implementation.ProgressMode;
+pub const ProgressSnapshot = implementation.ProgressSnapshot;
+pub const ProgressState = implementation.ProgressState;
+pub const validateProgressIndicators = implementation.validateProgressIndicators;
+pub const Piano = implementation.Piano;
+pub const StepSequencer = implementation.StepSequencer;
+/// Compatibility name for `FileImporter`. New editors should use `FileImporter`.
+pub const FileDrop = implementation.FileDrop;
+pub const FileImporter = implementation.FileImporter;
+pub const FileImporterError = implementation.FileImporterError;
+pub const validateFileImporter = implementation.validateFileImporter;
+pub const FileImportEntryPoint = plugin_core.gui_file_importer.EntryPoint;
+pub const FileImportCommand = plugin_core.gui_file_importer.Command;
+pub const FileImportStatus = plugin_core.gui_file_importer.Status;
+pub const AudioFileImporter = plugin_core.gui_audio_file_importer.Importer;
+pub const DecodedAudioFileImporter = plugin_core.gui_audio_file_importer.DecodedImporter;
+pub const AudioFileImportSnapshot = plugin_core.gui_audio_file_importer.Snapshot;
+pub const AudioFilePreviewPoint = plugin_core.gui_audio_file_importer.PreviewPoint;
+pub const audio_file_preview_capacity = plugin_core.gui_audio_file_importer.preview_capacity;
+pub const Asset = implementation.Asset;
+pub const AssetFormat = implementation.AssetFormat;
+pub const AssetScale = implementation.AssetScale;
+pub const Canvas = implementation.Canvas;
+pub const DrawingCallbacks = implementation.DrawingCallbacks;
+pub const DrawingComponent = implementation.DrawingComponent;
+pub const DrawingState = implementation.DrawingState;
+pub const DrawRequest = implementation.DrawRequest;
+pub const Fonts = implementation.Fonts;
+pub const Skin = implementation.Skin;
+pub const Theme = implementation.Theme;
+pub const Layout = implementation.Layout;
+pub const StyleOverride = implementation.StyleOverride;
+pub const Group = implementation.Group;
+pub const Composition = implementation.Composition;
+pub const EditorDescription = implementation.EditorDescription;
+
+pub const drawAsset = implementation.drawAsset;
+pub const fillEllipse = implementation.fillEllipse;
+pub const fillRect = implementation.fillRect;
+pub const line = implementation.line;
+pub const strokeRect = implementation.strokeRect;
+
+pub const createView = implementation.createView;
+pub const createMultiView = implementation.createMultiView;
+pub const createMultiViewWithMeters = implementation.createMultiViewWithMeters;
+pub const createMultiViewWithSkin = implementation.createMultiViewWithSkin;
+pub const createEditor = implementation.createEditor;

@@ -25,7 +25,7 @@ pub fn XmlRepresentation(comptime xml: []const u8) type {
 
         const owner = interface_map.ownerFromField(Self, ivstrepresentation.IXmlRepresentationController, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstrepresentation.ixml_representation_controller_iid, .ptr = ptr },
@@ -41,7 +41,9 @@ pub fn XmlRepresentation(comptime xml: []const u8) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IXmlRepresentationController");
         }
 
-        fn getXmlRepresentationStream(ptr: *anyopaque, info: *ivstrepresentation.RepresentationInfo, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
+        fn getXmlRepresentationStream(ptr: *anyopaque, info_raw: [*c]ivstrepresentation.RepresentationInfo, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
+            if (info_raw == null) return types.kInvalidArgument;
+            const info = &info_raw[0];
             const self = owner(ptr);
             self.request_count +|= 1;
             self.last_info = info.*;
@@ -65,6 +67,8 @@ test "xml representation writes XML and records host info" {
     var info = ivstrepresentation.RepresentationInfo{};
     @memcpy(info.vendor[0..4], "Host");
 
+    try std.testing.expectEqual(types.kInvalidArgument, xml.asInterface().vtable.getXmlRepresentationStream(xml.asInterface(), null, stream.asStream()));
+    try std.testing.expectEqual(@as(types.uint32, 0), xml.request_count);
     try std.testing.expectEqual(types.kResultOk, xml.asInterface().vtable.getXmlRepresentationStream(xml.asInterface(), &info, stream.asStream()));
     try std.testing.expectEqualStrings("<vstXML/>", stream.data());
     try std.testing.expectEqual(@as(types.uint32, 1), xml.request_count);

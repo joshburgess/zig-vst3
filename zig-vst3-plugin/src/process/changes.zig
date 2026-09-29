@@ -3,9 +3,9 @@ const common = @import("../common.zig");
 const ordered = @import("ordered.zig");
 
 pub const ParameterChange = struct {
-    id: u32,
-    sample_offset: usize,
-    normalized: f64,
+    id: u32 = 0,
+    sample_offset: usize = 0,
+    normalized: f64 = 0,
 
     pub fn isForId(self: ParameterChange, wanted_id: u32) bool {
         return self.id == wanted_id;
@@ -22,6 +22,119 @@ pub const ParameterChange = struct {
     pub fn validate(self: ParameterChange, frame_count: usize) !void {
         if (self.sample_offset >= frame_count) return error.ParameterChangeOutsideBlock;
         if (!common.isNormalized(self.normalized)) return error.ParameterChangeOutsideNormalizedRange;
+    }
+};
+
+pub const ParameterRamp = struct {
+    id: u32 = 0,
+    start_offset: i32 = 0,
+    duration_frames: u32 = 0,
+    start_normalized: f64 = 0,
+    end_normalized: f64 = 0,
+    sequence: usize = 0,
+
+    pub fn validate(self: ParameterRamp, frame_count: usize) !void {
+        if (self.duration_frames == 0)
+            return error.ParameterRampHasZeroDuration;
+        if (!common.isNormalized(self.start_normalized) or
+            !common.isNormalized(self.end_normalized))
+            return error.ParameterRampOutsideNormalizedRange;
+        const signed_frame_count = std.math.cast(
+            i64,
+            frame_count,
+        ) orelse return error.ParameterRampOutsideBlock;
+        if (@as(i64, self.start_offset) >= signed_frame_count)
+            return error.ParameterRampOutsideBlock;
+    }
+
+    pub fn valueAt(self: ParameterRamp, sample_offset: usize) ?f64 {
+        const offset = std.math.cast(i64, sample_offset) orelse
+            return null;
+        const start = @as(i64, self.start_offset);
+        if (offset < start) return null;
+        const elapsed_signed = std.math.sub(
+            i64,
+            offset,
+            start,
+        ) catch return self.end_normalized;
+        const elapsed: u64 = @intCast(elapsed_signed);
+        const duration = @as(u64, self.duration_frames);
+        if (elapsed >= duration) return self.end_normalized;
+        const progress = @as(f64, @floatFromInt(elapsed)) /
+            @as(f64, @floatFromInt(duration));
+        return self.start_normalized +
+            (self.end_normalized - self.start_normalized) * progress;
+    }
+
+    pub fn activeAt(self: ParameterRamp, sample_offset: usize) bool {
+        const offset = std.math.cast(i64, sample_offset) orelse
+            return false;
+        const start = @as(i64, self.start_offset);
+        if (offset < start) return false;
+        return @as(u64, @intCast(offset - start)) <
+            @as(u64, self.duration_frames);
+    }
+};
+
+/// Preserves a normalized parameter baseline across process blocks without allocation or locking.
+pub const BlockParameterLatch = struct {
+    parameter_id: u32,
+    current_normalized: f64,
+    next_normalized: f64,
+
+    pub fn init(parameter_id: u32, initial_normalized: f64) BlockParameterLatch {
+        const normalized = common.clampNormalized(initial_normalized);
+        return .{
+            .parameter_id = parameter_id,
+            .current_normalized = normalized,
+            .next_normalized = normalized,
+        };
+    }
+
+    pub fn valid(self: BlockParameterLatch) bool {
+        return common.isNormalized(self.current_normalized) and
+            common.isNormalized(self.next_normalized);
+    }
+
+    /// Starts a block and returns its offset-zero value. Later changes become the next block baseline.
+    pub fn beginBlock(self: *BlockParameterLatch, changes: ParameterChanges, persisted_normalized: f64) f64 {
+        const baseline = if (changes.has(self.parameter_id))
+            common.clampNormalized(self.next_normalized)
+        else
+            common.clampNormalized(persisted_normalized);
+        const current = changes.normalizedAtOrBeforeOr(
+            self.parameter_id,
+            0,
+            baseline,
+        );
+        self.current_normalized = current;
+        self.next_normalized = common.clampNormalized(
+            changes.latestNormalized(self.parameter_id) orelse current,
+        );
+        return current;
+    }
+
+    /// Returns the current block baseline or the latest change at or before `sample_offset`.
+    pub fn valueAt(self: *const BlockParameterLatch, changes: ParameterChanges, sample_offset: usize) f64 {
+        return changes.normalizedAtOrBeforeOr(
+            self.parameter_id,
+            sample_offset,
+            common.clampNormalized(self.current_normalized),
+        );
+    }
+
+    pub fn currentBlockValue(self: *const BlockParameterLatch) f64 {
+        return common.clampNormalized(self.current_normalized);
+    }
+
+    pub fn nextBlockValue(self: *const BlockParameterLatch) f64 {
+        return common.clampNormalized(self.next_normalized);
+    }
+
+    pub fn reset(self: *BlockParameterLatch, normalized: f64) void {
+        const clamped = common.clampNormalized(normalized);
+        self.current_normalized = clamped;
+        self.next_normalized = clamped;
     }
 };
 
@@ -48,6 +161,7 @@ fn changeSampleOffset(change: ?ParameterChange) ?usize {
 
 fn changeNormalized(change: ?ParameterChange) ?f64 {
     const item = change orelse return null;
+    if (!common.isNormalized(item.normalized)) return null;
     return item.normalized;
 }
 
@@ -136,13 +250,18 @@ pub const BlockSegment = struct {
     }
 };
 
-/// Advance a block-segment cursor up to `boundary`, clamp it to the block, and return the spanned segment.
+/// Return an empty terminal segment when the public cursor or boundary is invalid.
 pub fn advanceBlockSegment(next_start: *usize, frame_count: usize, boundary: usize) BlockSegment {
     const start = next_start.*;
-    std.debug.assert(start < frame_count);
-    std.debug.assert(boundary > start);
+    if (start >= frame_count) {
+        next_start.* = frame_count;
+        return .{ .start_offset = frame_count, .end_offset = frame_count };
+    }
+    if (boundary <= start) {
+        next_start.* = frame_count;
+        return .{ .start_offset = start, .end_offset = start };
+    }
     next_start.* = @min(boundary, frame_count);
-    std.debug.assert(next_start.* > start and next_start.* <= frame_count);
     return .{ .start_offset = start, .end_offset = next_start.* };
 }
 
@@ -152,9 +271,15 @@ pub const BlockSegmentIterator = struct {
     next_start: usize = 0,
 
     pub fn next(self: *BlockSegmentIterator) ?BlockSegment {
+        if (!self.valid()) return null;
         if (self.next_start >= self.frame_count) return null;
         const boundary = self.changes.nextSampleOffset(self.next_start) orelse self.frame_count;
         return advanceBlockSegment(&self.next_start, self.frame_count, boundary);
+    }
+
+    pub fn valid(self: *const BlockSegmentIterator) bool {
+        return self.next_start <= self.frame_count and
+            self.changes.valid(self.frame_count);
     }
 };
 
@@ -166,19 +291,27 @@ pub const ParameterSegmentIterator = struct {
     next_start: usize = 0,
 
     pub fn next(self: *ParameterSegmentIterator) ?ParameterSegment {
+        if (!self.valid()) return null;
         const segment = self.changes.segmentAt(self.id, self.next_start, self.frame_count, self.default) orelse return null;
         self.next_start = segment.end_offset;
         return segment;
+    }
+
+    pub fn valid(self: *const ParameterSegmentIterator) bool {
+        return self.next_start <= self.frame_count and
+            self.changes.valid(self.frame_count);
     }
 };
 
 pub const ParameterChangeIdIterator = struct {
     changes: ParameterChanges,
+    frame_count: usize,
     id: u32,
     last_offset: ?usize = null,
     last_index: usize = 0,
 
     pub fn next(self: *ParameterChangeIdIterator) ?ParameterChange {
+        if (!self.valid()) return null;
         if (nextMatchingChange(self.changes.items, self.last_offset, self.last_index, self.id, matchesId)) |result| {
             self.last_offset = result.item.sample_offset;
             self.last_index = result.index;
@@ -186,50 +319,124 @@ pub const ParameterChangeIdIterator = struct {
         }
         return null;
     }
+
+    pub fn valid(self: *const ParameterChangeIdIterator) bool {
+        return self.changes.frame_count == self.frame_count and
+            self.changes.valid(self.frame_count) and
+            ordered.indexedCursorValid(
+                self.changes.items,
+                self.last_offset,
+                self.last_index,
+                self.id,
+                matchesId,
+            );
+    }
 };
 
 pub const ParameterChangeOffsetIterator = struct {
     changes: ParameterChanges,
+    frame_count: usize,
     sample_offset: usize,
     next_index: usize = 0,
 
     pub fn next(self: *ParameterChangeOffsetIterator) ?ParameterChange {
+        if (!self.valid()) return null;
         return nextStoredMatchingChange(self.changes.items, &self.next_index, self.sample_offset, matchesOffset);
+    }
+
+    pub fn valid(self: *const ParameterChangeOffsetIterator) bool {
+        return self.changes.frame_count == self.frame_count and
+            self.changes.valid(self.frame_count) and
+            ordered.storedCursorValid(
+                self.changes.items.len,
+                self.next_index,
+            );
     }
 };
 
 pub const ParameterChangeIdOffsetIterator = struct {
     changes: ParameterChanges,
+    frame_count: usize,
     id: u32,
     sample_offset: usize,
     next_index: usize = 0,
 
     pub fn next(self: *ParameterChangeIdOffsetIterator) ?ParameterChange {
+        if (!self.valid()) return null;
         const context = IdOffset{ .id = self.id, .sample_offset = self.sample_offset };
         return nextStoredMatchingChange(self.changes.items, &self.next_index, context, matchesIdOffset);
+    }
+
+    pub fn valid(self: *const ParameterChangeIdOffsetIterator) bool {
+        return self.changes.frame_count == self.frame_count and
+            self.changes.valid(self.frame_count) and
+            ordered.storedCursorValid(
+                self.changes.items.len,
+                self.next_index,
+            );
     }
 };
 
 pub const ParameterChanges = struct {
     items: []const ParameterChange = &.{},
+    item_sequences: []const usize = &.{},
+    ramps: []const ParameterRamp = &.{},
+    frame_count: usize = 0,
 
     pub fn init(items: []const ParameterChange, frame_count: usize) !ParameterChanges {
+        return initWithRamps(items, &.{}, &.{}, frame_count);
+    }
+
+    pub fn initWithRamps(
+        items: []const ParameterChange,
+        item_sequences: []const usize,
+        ramps: []const ParameterRamp,
+        frame_count: usize,
+    ) !ParameterChanges {
+        if (item_sequences.len != 0 and
+            item_sequences.len != items.len)
+            return error.InvalidParameterChangeSequences;
         for (items) |item| {
             try item.validate(frame_count);
         }
-        return .{ .items = items };
+        for (ramps) |ramp| {
+            try ramp.validate(frame_count);
+        }
+        return .{
+            .items = items,
+            .item_sequences = item_sequences,
+            .ramps = ramps,
+            .frame_count = frame_count,
+        };
+    }
+
+    pub fn valid(self: ParameterChanges, frame_count: usize) bool {
+        if (self.item_sequences.len != 0 and
+            self.item_sequences.len != self.items.len)
+            return false;
+        for (self.items) |item| {
+            item.validate(frame_count) catch return false;
+        }
+        for (self.ramps) |ramp| {
+            ramp.validate(frame_count) catch return false;
+        }
+        return true;
     }
 
     pub fn changeCount(self: ParameterChanges) usize {
-        return self.items.len;
+        return std.math.add(
+            usize,
+            self.items.len,
+            self.ramps.len,
+        ) catch std.math.maxInt(usize);
     }
 
     pub fn isEmpty(self: ParameterChanges) bool {
-        return self.items.len == 0;
+        return self.items.len == 0 and self.ramps.len == 0;
     }
 
     pub fn hasChanges(self: ParameterChanges) bool {
-        return self.items.len != 0;
+        return !self.isEmpty();
     }
 
     pub fn firstSampleOffset(self: ParameterChanges) ?usize {
@@ -296,7 +503,12 @@ pub const ParameterChanges = struct {
     }
 
     pub fn has(self: ParameterChanges, id: u32) bool {
-        return hasMatchingChange(self.items, id, matchesId);
+        if (hasMatchingChange(self.items, id, matchesId))
+            return true;
+        for (self.ramps) |ramp| {
+            if (ramp.id == id) return true;
+        }
+        return false;
     }
 
     pub fn hasAtOffset(self: ParameterChanges, sample_offset: usize) bool {
@@ -334,7 +546,45 @@ pub const ParameterChanges = struct {
     }
 
     pub fn latestNormalized(self: ParameterChanges, id: u32) ?f64 {
-        return changeNormalized(self.latest(id));
+        var value: ?f64 = null;
+        var selected_start: i64 = std.math.minInt(i64);
+        var selected_sequence: usize = 0;
+        for (self.items, 0..) |item, index| {
+            if (item.id != id or
+                !common.isNormalized(item.normalized))
+                continue;
+            const start = std.math.cast(
+                i64,
+                item.sample_offset,
+            ) orelse continue;
+            const sequence = if (self.item_sequences.len == self.items.len)
+                self.item_sequences[index]
+            else
+                index;
+            if (value == null or start > selected_start or
+                (start == selected_start and
+                    sequence >= selected_sequence))
+            {
+                value = item.normalized;
+                selected_start = start;
+                selected_sequence = sequence;
+            }
+        }
+        for (self.ramps) |ramp| {
+            if (ramp.id != id or
+                !common.isNormalized(ramp.end_normalized))
+                continue;
+            const start = @as(i64, ramp.start_offset);
+            if (value == null or start > selected_start or
+                (start == selected_start and
+                    ramp.sequence >= selected_sequence))
+            {
+                value = ramp.end_normalized;
+                selected_start = start;
+                selected_sequence = ramp.sequence;
+            }
+        }
+        return value;
     }
 
     pub fn firstAnyNormalized(self: ParameterChanges) ?f64 {
@@ -416,15 +666,114 @@ pub const ParameterChanges = struct {
     }
 
     pub fn normalizedAtOrBeforeOr(self: ParameterChanges, id: u32, sample_offset: usize, default: f64) f64 {
-        return self.latestNormalizedAtOrBefore(id, sample_offset) orelse common.clampNormalized(default);
+        var value = common.clampNormalized(default);
+        var selected_start: i64 = std.math.minInt(i64);
+        var selected_sequence: usize = 0;
+        var selected = false;
+        for (self.items, 0..) |item, index| {
+            if (item.id != id or item.sample_offset > sample_offset)
+                continue;
+            if (!common.isNormalized(item.normalized)) continue;
+            const start = std.math.cast(i64, item.sample_offset) orelse
+                continue;
+            const sequence = if (self.item_sequences.len == self.items.len)
+                self.item_sequences[index]
+            else
+                index;
+            if (!selected or start > selected_start or
+                (start == selected_start and
+                    sequence >= selected_sequence))
+            {
+                value = common.clampNormalized(item.normalized);
+                selected_start = start;
+                selected_sequence = sequence;
+                selected = true;
+            }
+        }
+        for (self.ramps) |ramp| {
+            if (ramp.id != id) continue;
+            const ramp_value = ramp.valueAt(sample_offset) orelse
+                continue;
+            const start = @as(i64, ramp.start_offset);
+            if (!selected or start > selected_start or
+                (start == selected_start and
+                    ramp.sequence >= selected_sequence))
+            {
+                value = common.clampNormalized(ramp_value);
+                selected_start = start;
+                selected_sequence = ramp.sequence;
+                selected = true;
+            }
+        }
+        return value;
+    }
+
+    pub fn hasRamp(self: ParameterChanges, id: u32) bool {
+        for (self.ramps) |ramp| {
+            if (ramp.id == id) return true;
+        }
+        return false;
+    }
+
+    pub fn rampCount(self: ParameterChanges) usize {
+        return self.ramps.len;
     }
 
     pub fn nextSampleOffset(self: ParameterChanges, after_sample_offset: usize) ?usize {
-        return nextMatchingSampleOffset(self.items, after_sample_offset, {}, matchesAny);
+        var result = nextMatchingSampleOffset(
+            self.items,
+            after_sample_offset,
+            {},
+            matchesAny,
+        );
+        for (self.ramps) |ramp| {
+            const candidate = if (ramp.activeAt(after_sample_offset))
+                std.math.add(
+                    usize,
+                    after_sample_offset,
+                    1,
+                ) catch continue
+            else if (ramp.start_offset > 0)
+                @as(usize, @intCast(ramp.start_offset))
+            else
+                continue;
+            if (candidate <= after_sample_offset) continue;
+            if (result) |current| {
+                if (candidate < current) result = candidate;
+            } else {
+                result = candidate;
+            }
+        }
+        return result;
     }
 
     pub fn nextSampleOffsetForId(self: ParameterChanges, id: u32, after_sample_offset: usize) ?usize {
-        return nextMatchingSampleOffset(self.items, after_sample_offset, id, matchesId);
+        var result = nextMatchingSampleOffset(
+            self.items,
+            after_sample_offset,
+            id,
+            matchesId,
+        );
+        for (self.ramps) |ramp| {
+            if (ramp.id != id) continue;
+            const candidate = if (ramp.activeAt(after_sample_offset))
+                std.math.add(
+                    usize,
+                    after_sample_offset,
+                    1,
+                ) catch continue
+            else if (ramp.start_offset > 0)
+                @as(usize, @intCast(ramp.start_offset))
+            else
+                continue;
+            if (candidate <= after_sample_offset) continue;
+            if (result) |current| {
+                if (candidate < current) result = candidate;
+            } else {
+                result = candidate;
+            }
+        }
+        return result;
     }
 
     pub fn segmentAt(self: ParameterChanges, id: u32, start_offset: usize, frame_count: usize, default: f64) ?ParameterSegment {
@@ -456,6 +805,7 @@ pub const ParameterChanges = struct {
     pub fn forId(self: ParameterChanges, id: u32) ParameterChangeIdIterator {
         return .{
             .changes = self,
+            .frame_count = self.frame_count,
             .id = id,
         };
     }
@@ -463,6 +813,7 @@ pub const ParameterChanges = struct {
     pub fn atOffset(self: ParameterChanges, sample_offset: usize) ParameterChangeOffsetIterator {
         return .{
             .changes = self,
+            .frame_count = self.frame_count,
             .sample_offset = sample_offset,
         };
     }
@@ -470,6 +821,7 @@ pub const ParameterChanges = struct {
     pub fn forIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) ParameterChangeIdOffsetIterator {
         return .{
             .changes = self,
+            .frame_count = self.frame_count,
             .id = id,
             .sample_offset = sample_offset,
         };
@@ -643,6 +995,221 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(?f64, null), (ParameterChanges{}).latestNormalizedForIdAtOffset(7, 0));
 }
 
+test "block parameter latch applies boundary changes and defers later changes" {
+    var latch = BlockParameterLatch.init(7, 0.0);
+    try std.testing.expect(latch.valid());
+    const first_changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 0, .normalized = 0.25 },
+        .{ .id = 7, .sample_offset = 3, .normalized = 0.75 },
+        .{ .id = 9, .sample_offset = 1, .normalized = 1.0 },
+    };
+    const first = try ParameterChanges.init(&first_changes, 4);
+
+    try std.testing.expectEqual(@as(f64, 0.25), latch.beginBlock(first, 0.75));
+    try std.testing.expectEqual(@as(f64, 0.25), latch.currentBlockValue());
+    try std.testing.expectEqual(@as(f64, 0.25), latch.valueAt(first, 2));
+    try std.testing.expectEqual(@as(f64, 0.75), latch.valueAt(first, 3));
+    try std.testing.expectEqual(@as(f64, 0.75), latch.nextBlockValue());
+    try std.testing.expectEqual(@as(f64, 0.75), latch.beginBlock(.{}, 0.75));
+
+    const deferred_changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 2, .normalized = 1.0 },
+    };
+    const deferred = try ParameterChanges.init(&deferred_changes, 4);
+    try std.testing.expectEqual(@as(f64, 0.75), latch.beginBlock(deferred, 1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), latch.nextBlockValue());
+    try std.testing.expectEqual(@as(f64, 1.0), latch.beginBlock(.{}, 1.0));
+
+    latch.reset(std.math.nan(f64));
+    try std.testing.expectEqual(@as(f64, 0.0), latch.currentBlockValue());
+    try std.testing.expectEqual(@as(f64, 0.0), latch.nextBlockValue());
+}
+
+test "parameter changes and latch contain malformed public state" {
+    const malformed_items = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 0, .normalized = std.math.nan(f64) },
+        .{ .id = 7, .sample_offset = 2, .normalized = std.math.inf(f64) },
+    };
+    const malformed = ParameterChanges{ .items = &malformed_items };
+    try std.testing.expect(!malformed.valid(4));
+    try std.testing.expectEqual(@as(?f64, null), malformed.firstNormalized(7));
+    try std.testing.expectEqual(@as(?f64, null), malformed.latestNormalized(7));
+    try std.testing.expectEqual(@as(f64, 0.5), malformed.normalizedAtOrBeforeOr(7, 3, 0.5));
+
+    const outside_block = ParameterChanges{ .items = &.{
+        .{ .id = 7, .sample_offset = 4, .normalized = 0.5 },
+    } };
+    try std.testing.expect(!outside_block.valid(4));
+
+    var latch = BlockParameterLatch{
+        .parameter_id = 7,
+        .current_normalized = std.math.nan(f64),
+        .next_normalized = std.math.inf(f64),
+    };
+    try std.testing.expect(!latch.valid());
+    try std.testing.expectEqual(@as(f64, 0.0), latch.currentBlockValue());
+    try std.testing.expectEqual(@as(f64, 1.0), latch.nextBlockValue());
+    try std.testing.expectEqual(@as(f64, 0.0), latch.valueAt(.{}, 0));
+    try std.testing.expectEqual(@as(f64, 1.0), latch.beginBlock(malformed, 0.75));
+    try std.testing.expect(latch.valid());
+}
+
+test "parameter ramps interpolate across block boundaries without expansion" {
+    const ramps = [_]ParameterRamp{
+        .{
+            .id = 7,
+            .start_offset = -2,
+            .duration_frames = 6,
+            .start_normalized = 0.0,
+            .end_normalized = 1.0,
+            .sequence = 0,
+        },
+        .{
+            .id = 8,
+            .start_offset = 2,
+            .duration_frames = 4,
+            .start_normalized = 1.0,
+            .end_normalized = 0.0,
+            .sequence = 1,
+        },
+    };
+    const view = try ParameterChanges.initWithRamps(
+        &.{},
+        &.{},
+        &ramps,
+        6,
+    );
+
+    try std.testing.expectEqual(@as(usize, 2), view.changeCount());
+    try std.testing.expectEqual(@as(usize, 2), view.rampCount());
+    try std.testing.expect(view.hasChanges());
+    try std.testing.expect(view.hasRamp(7));
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 1.0 / 3.0),
+        view.normalizedAtOrBeforeOr(7, 0, 0.75),
+        0.000001,
+    );
+    try std.testing.expectApproxEqAbs(
+        @as(f64, 0.5),
+        view.normalizedAtOrBeforeOr(7, 1, 0.75),
+        0.000001,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 1.0),
+        view.normalizedAtOrBeforeOr(7, 4, 0.75),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.25),
+        view.normalizedAtOrBeforeOr(8, 1, 0.25),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 1.0),
+        view.normalizedAtOrBeforeOr(8, 2, 0.25),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.75),
+        view.normalizedAtOrBeforeOr(8, 3, 0.25),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.0),
+        view.normalizedAtOrBeforeOr(8, 6, 0.25),
+    );
+    try std.testing.expectEqual(
+        @as(?usize, 1),
+        view.nextSampleOffset(0),
+    );
+    try std.testing.expectEqual(
+        @as(?usize, 2),
+        view.nextSampleOffsetForId(8, 0),
+    );
+
+    const zero_duration = ParameterRamp{
+        .id = 7,
+        .start_offset = 0,
+        .duration_frames = 0,
+        .start_normalized = 0.0,
+        .end_normalized = 1.0,
+        .sequence = 0,
+    };
+    try std.testing.expectError(
+        error.ParameterRampHasZeroDuration,
+        zero_duration.validate(6),
+    );
+}
+
+test "parameter automation resolves point and ramp ordering transactionally" {
+    const point = [_]ParameterChange{.{
+        .id = 7,
+        .sample_offset = 1,
+        .normalized = 0.25,
+    }};
+    const ramp = [_]ParameterRamp{.{
+        .id = 7,
+        .start_offset = 1,
+        .duration_frames = 4,
+        .start_normalized = 0.5,
+        .end_normalized = 1.0,
+        .sequence = 1,
+    }};
+    const ramp_wins = try ParameterChanges.initWithRamps(
+        &point,
+        &.{0},
+        &ramp,
+        6,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.5),
+        ramp_wins.normalizedAtOrBeforeOr(7, 1, 0.0),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.75),
+        ramp_wins.normalizedAtOrBeforeOr(7, 3, 0.0),
+    );
+
+    const point_wins = try ParameterChanges.initWithRamps(
+        &point,
+        &.{2},
+        &ramp,
+        6,
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.25),
+        point_wins.normalizedAtOrBeforeOr(7, 3, 0.0),
+    );
+    try std.testing.expectError(
+        error.InvalidParameterChangeSequences,
+        ParameterChanges.initWithRamps(
+            &point,
+            &.{ 0, 1 },
+            &ramp,
+            6,
+        ),
+    );
+}
+
+test "block segment advancement contains malformed public cursors" {
+    var cursor: usize = 8;
+    try std.testing.expectEqual(
+        BlockSegment{ .start_offset = 4, .end_offset = 4 },
+        advanceBlockSegment(&cursor, 4, 12),
+    );
+    try std.testing.expectEqual(@as(usize, 4), cursor);
+
+    cursor = 2;
+    try std.testing.expectEqual(
+        BlockSegment{ .start_offset = 2, .end_offset = 2 },
+        advanceBlockSegment(&cursor, 4, 2),
+    );
+    try std.testing.expectEqual(@as(usize, 4), cursor);
+
+    cursor = 1;
+    try std.testing.expectEqual(
+        BlockSegment{ .start_offset = 1, .end_offset = 4 },
+        advanceBlockSegment(&cursor, 4, std.math.maxInt(usize)),
+    );
+    try std.testing.expectEqual(@as(usize, 4), cursor);
+}
+
 test "parameter changes validate generated boundary cases" {
     const valid_offsets = [_]usize{ 0, 1, 3 };
     const valid_values = [_]f64{ 0.0, 0.25, 1.0 };
@@ -709,12 +1276,15 @@ test "parameter changes query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 5, .normalized = 0.25 }, view.segmentAt(7, 1, 8, 0.0).?);
 
     var id_changes = view.forId(7);
+    try std.testing.expect(id_changes.valid());
     try std.testing.expectEqual(changes[2], id_changes.next().?);
     try std.testing.expectEqual(changes[0], id_changes.next().?);
     try std.testing.expectEqual(changes[3], id_changes.next().?);
     try std.testing.expectEqual(@as(?ParameterChange, null), id_changes.next());
+    try std.testing.expect(id_changes.valid());
 
     var offset_changes = view.atOffset(5);
+    try std.testing.expect(offset_changes.valid());
     try std.testing.expectEqual(changes[0], offset_changes.next().?);
     try std.testing.expectEqual(changes[3], offset_changes.next().?);
     try std.testing.expectEqual(@as(?ParameterChange, null), offset_changes.next());
@@ -724,8 +1294,70 @@ test "parameter changes query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(changes[3], id_offset_changes.next().?);
     try std.testing.expectEqual(@as(?ParameterChange, null), id_offset_changes.next());
 
+    id_changes.last_index = changes.len;
+    try std.testing.expect(!id_changes.valid());
+    try std.testing.expectEqual(@as(?ParameterChange, null), id_changes.next());
+    try std.testing.expectEqual(changes.len, id_changes.last_index);
+    offset_changes.next_index = changes.len + 1;
+    try std.testing.expect(!offset_changes.valid());
+    try std.testing.expectEqual(
+        @as(?ParameterChange, null),
+        offset_changes.next(),
+    );
+    try std.testing.expectEqual(changes.len + 1, offset_changes.next_index);
+
     var missing_changes = view.forId(99);
     try std.testing.expectEqual(@as(?ParameterChange, null), missing_changes.next());
+}
+
+test "parameter filters reject mutated borrowed changes" {
+    var changes = [_]ParameterChange{.{
+        .id = 7,
+        .sample_offset = 0,
+        .normalized = 0.5,
+    }};
+    const view = try ParameterChanges.init(&changes, 4);
+    var by_id = view.forId(7);
+    var by_offset = view.atOffset(0);
+    var by_id_offset = view.forIdAtOffset(7, 0);
+
+    changes[0].normalized = std.math.nan(f64);
+    try std.testing.expect(!by_id.valid());
+    try std.testing.expect(!by_offset.valid());
+    try std.testing.expect(!by_id_offset.valid());
+    try std.testing.expect(by_id.next() == null);
+    try std.testing.expect(by_offset.next() == null);
+    try std.testing.expect(by_id_offset.next() == null);
+    try std.testing.expect(by_id.last_offset == null);
+    try std.testing.expectEqual(@as(usize, 0), by_offset.next_index);
+    try std.testing.expectEqual(@as(usize, 0), by_id_offset.next_index);
+}
+
+test "parameter filters retain their construction frame extent" {
+    var changes = [_]ParameterChange{.{
+        .id = 7,
+        .sample_offset = 3,
+        .normalized = 0.5,
+    }};
+    const view = try ParameterChanges.init(&changes, 4);
+    var by_id = view.forId(7);
+    var by_offset = view.atOffset(3);
+    var by_id_offset = view.forIdAtOffset(7, 3);
+
+    by_id.changes.frame_count = 8;
+    by_offset.changes.frame_count = 8;
+    by_id_offset.changes.frame_count = 8;
+    changes[0].sample_offset = 6;
+
+    try std.testing.expect(!by_id.valid());
+    try std.testing.expect(!by_offset.valid());
+    try std.testing.expect(!by_id_offset.valid());
+    try std.testing.expect(by_id.next() == null);
+    try std.testing.expect(by_offset.next() == null);
+    try std.testing.expect(by_id_offset.next() == null);
+    try std.testing.expect(by_id.last_offset == null);
+    try std.testing.expectEqual(@as(usize, 0), by_offset.next_index);
+    try std.testing.expectEqual(@as(usize, 0), by_id_offset.next_index);
 }
 
 test "parameter changes generated queries match reference scans" {
@@ -927,11 +1559,17 @@ test "parameter changes iterate stable automation segments without allocation" {
     };
     const view = try ParameterChanges.init(&changes, 8);
     var iterator = view.segments(7, 8, 0.0);
+    try std.testing.expect(iterator.valid());
 
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 0.0 }, iterator.next().?);
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 5, .normalized = 0.25 }, iterator.next().?);
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 5, .end_offset = 8, .normalized = 0.75 }, iterator.next().?);
     try std.testing.expectEqual(@as(?ParameterSegment, null), iterator.next());
+    try std.testing.expect(iterator.valid());
+    iterator.next_start = 9;
+    try std.testing.expect(!iterator.valid());
+    try std.testing.expectEqual(@as(?ParameterSegment, null), iterator.next());
+    try std.testing.expectEqual(@as(usize, 9), iterator.next_start);
 }
 
 test "parameter changes collapse same-offset values into one segment" {
@@ -958,6 +1596,7 @@ test "parameter changes iterate block segments split at change offsets" {
     };
     const view = try ParameterChanges.init(&changes, 8);
     var iterator = view.blockSegments(8);
+    try std.testing.expect(iterator.valid());
 
     const first_segment = iterator.next().?;
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, first_segment);
@@ -973,6 +1612,11 @@ test "parameter changes iterate block segments split at change offsets" {
     try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 5, .end_offset = 8 }, iterator.next().?);
     try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+    try std.testing.expect(iterator.valid());
+    iterator.next_start = 9;
+    try std.testing.expect(!iterator.valid());
+    try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+    try std.testing.expectEqual(@as(usize, 9), iterator.next_start);
     try std.testing.expect((BlockSegment{ .start_offset = 2, .end_offset = 2 }).isEmpty());
     const reversed_block_segment = BlockSegment{ .start_offset = 4, .end_offset = 2 };
     try std.testing.expectEqual(@as(usize, 0), reversed_block_segment.frameCount());

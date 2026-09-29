@@ -6,6 +6,7 @@ const sine_synth_controller = @import("sine_synth_controller.zig");
 const sine_synth_spec = @import("sine_synth_spec.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
+const vstgui_headless_host = @import("vstgui_headless_host.zig");
 
 const SineSynthFactory = factory.StaticFactory3(.{
     .vendor = sine_synth_spec.Spec.vendor,
@@ -45,7 +46,16 @@ test "sine synth plugin root exposes zig-vst3-plugin metadata" {
     try std.testing.expectEqualStrings("zig-vst3 Sine Synth", sine_synth_spec.Spec.name);
     try std.testing.expectEqualStrings("zig-vst3 Sine Synth Controller", sine_synth_spec.controller_class_name);
     try std.testing.expectEqualStrings("zig-vst3", sine_synth_spec.Spec.vendor);
-    try std.testing.expectEqual(@as(usize, 1), sine_synth_spec.Spec.ParameterSet.count);
+    try std.testing.expectEqual(@as(usize, 9), sine_synth_spec.Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 0), sine_synth_spec.level_param_index);
     try std.testing.expectEqual(@as(f64, 0.1), spec.values.view(&sine_synth_spec.parameter_set).loadNormalized("level"));
+}
+
+test "sine synth editor survives concurrent headless host lifecycle stress" {
+    const report = try vstgui_headless_host.run(struct {
+        pub const component_create = sine_synth_component.create;
+        pub const controller_create = sine_synth_controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
 }

@@ -11,8 +11,14 @@ const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 pub const cid = tuid.inlineUid(0xDD49909F, 0x3FF84D0B, 0x84B8D39C, 0x59666363);
 
 const ModeGainProcessor = struct {
-    pub fn process(_: ModeGainProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        const gain: Sample = @floatCast(mode_gain_controller.gain());
+    pub fn process(_: *ModeGainProcessor, parameters: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+        const mode_param = mode_gain_spec.ModeParam{ .id = mode_gain_controller.mode_param_id, .name = "Mode", .default = .clean };
+        const scalar: f64 = switch (mode_param.denormalize(parameters.getNormalizedById(mode_gain_controller.mode_param_id))) {
+            .clean => 1.0,
+            .boost => 2.0,
+            .mute => 0.0,
+        };
+        const gain: Sample = @floatCast(scalar);
         for (0..context.outputChannelCount()) |channel| {
             const input = context.inputChannel(channel) orelse continue;
             const output = context.outputChannel(channel) orelse continue;
@@ -26,19 +32,9 @@ const ModeGainProcessor = struct {
 const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
     pub const component_name = "ModeGainComponent";
     pub const controller_cid = mode_gain_controller.cid;
+    pub const Params = mode_gain_spec.Spec.Params;
+    pub const parameter_set = &mode_gain_spec.parameter_set;
     pub const Processor = ModeGainProcessor;
-
-    pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
-        mode_gain_controller.applyParameterChanges(changes);
-    }
-
-    pub fn readState(state: ?*ibstream.IBStream) types.tresult {
-        return mode_gain_controller.readState(state);
-    }
-
-    pub fn writeState(state: ?*ibstream.IBStream) types.tresult {
-        return mode_gain_controller.writeState(state);
-    }
 });
 
 pub const create = Effect.create;
@@ -53,7 +49,7 @@ test "mode gain component can be created as IComponent" {
     try std.testing.expect(out != null);
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);
+    try std.testing.expectEqual(@as(types.uint32, 0), component_iface.vtable.release(component_iface));
 }
 
 test "mode gain component applies host parameter changes through processor shell" {
@@ -62,12 +58,6 @@ test "mode gain component applies host parameter changes through processor shell
     const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_parameter_changes = @import("vst_parameter_changes.zig");
-
-    defer mode_gain_controller.applyParameterChanges(.{ .items = &.{.{
-        .id = mode_gain_controller.mode_param_id,
-        .sample_offset = 0,
-        .normalized = 0.0,
-    }} });
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -115,7 +105,7 @@ test "mode gain component applies host parameter changes through processor shell
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f32, &.{ 2.0, -1.0, 0.5 }, &output_samples);
-    try std.testing.expectEqual(@as(f64, 2.0), mode_gain_controller.gain());
+    try std.testing.expectEqual(@as(f64, 0.5), Effect.getParameterNormalized(component_iface, mode_gain_controller.mode_param_id));
 }
 
 test "mode gain component applies host parameter changes through double precision processor shell" {
@@ -124,12 +114,6 @@ test "mode gain component applies host parameter changes through double precisio
     const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_parameter_changes = @import("vst_parameter_changes.zig");
-
-    defer mode_gain_controller.applyParameterChanges(.{ .items = &.{.{
-        .id = mode_gain_controller.mode_param_id,
-        .sample_offset = 0,
-        .normalized = 0.0,
-    }} });
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -177,42 +161,26 @@ test "mode gain component applies host parameter changes through double precisio
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f64, &.{ 2.0, -1.0, 0.5 }, &output_samples);
-    try std.testing.expectEqual(@as(f64, 2.0), mode_gain_controller.gain());
+    try std.testing.expectEqual(@as(f64, 0.5), Effect.getParameterNormalized(component_iface, mode_gain_controller.mode_param_id));
 }
 
 test "mode gain component round-trips mode state through host callbacks" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
-
-    mode_gain_controller.applyParameterChanges(.{ .items = &.{.{
-        .id = mode_gain_controller.mode_param_id,
-        .sample_offset = 0,
-        .normalized = 0.5,
-    }} });
-    defer mode_gain_controller.applyParameterChanges(.{ .items = &.{.{
-        .id = mode_gain_controller.mode_param_id,
-        .sample_offset = 0,
-        .normalized = 0.0,
-    }} });
-
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     defer _ = component_iface.vtable.release(component_iface);
+    try std.testing.expectEqual(types.kResultOk, Effect.setParameterNormalized(component_iface, mode_gain_controller.mode_param_id, 0.5));
 
     const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(mode_gain_spec.Spec.Params));
     var stream = Stream{};
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
     try std.testing.expectEqual(@as(usize, plug_state.encodedSize(mode_gain_spec.Spec.Params)), stream.data().len);
-
-    mode_gain_controller.applyParameterChanges(.{ .items = &.{.{
-        .id = mode_gain_controller.mode_param_id,
-        .sample_offset = 0,
-        .normalized = 0.0,
-    }} });
-    try std.testing.expectEqual(@as(f64, 1.0), mode_gain_controller.gain());
+    try std.testing.expectEqual(types.kResultOk, Effect.setParameterNormalized(component_iface, mode_gain_controller.mode_param_id, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.0), Effect.getParameterNormalized(component_iface, mode_gain_controller.mode_param_id));
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
-    try std.testing.expectEqual(@as(f64, 2.0), mode_gain_controller.gain());
+    try std.testing.expectEqual(@as(f64, 0.5), Effect.getParameterNormalized(component_iface, mode_gain_controller.mode_param_id));
 }

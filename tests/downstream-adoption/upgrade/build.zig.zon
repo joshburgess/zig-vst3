@@ -1,0 +1,10 @@
+.{
+    .name = .downstream_upgrade,
+    .version = "1.0.0",
+    .fingerprint = 0x83794414983cf5e7,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_vst3 = .{ .path = "../zig-vst3-package" },
+    },
+    .paths = .{ "build.zig", "src" },
+}

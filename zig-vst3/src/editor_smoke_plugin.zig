@@ -6,6 +6,7 @@ const factory = @import("factory.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
+const vstgui_headless_host = @import("vstgui_headless_host.zig");
 
 const EditorSmokeFactory = factory.StaticFactory3(.{
     .vendor = editor_smoke_spec.Spec.vendor,
@@ -37,4 +38,13 @@ test "editor smoke export returns enumerable factory" {
     try std.testing.expectEqual(@as(i32, 2), plugin_factory.vtable.countClasses(plugin_factory));
     try std.testing.expectEqual(types.kResultOk, plugin_factory.vtable.getClassInfo(plugin_factory, 0, &class_info));
     try std.testing.expectEqualStrings("zig-vst3 Editor Smoke", std.mem.sliceTo(&class_info.name, 0));
+}
+
+test "editor smoke survives concurrent headless host lifecycle stress" {
+    const report = try vstgui_headless_host.run(struct {
+        pub const component_create = editor_smoke_component.create;
+        pub const controller_create = editor_smoke_controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
 }

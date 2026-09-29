@@ -65,38 +65,24 @@ const NoteGateState = struct {
     }
 };
 
-var gate = NoteGateState{};
-
-fn resetNoteGateState() void {
-    gate = .{};
-}
-
 const NoteGateProcessor = struct {
-    pub fn process(_: NoteGateProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        gate.process(Sample, context);
+    state: NoteGateState = .{},
+
+    pub fn reset(self: *NoteGateProcessor) void {
+        self.state = .{};
+    }
+
+    pub fn process(self: *NoteGateProcessor, _: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+        self.state.process(Sample, context);
     }
 };
 
 const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
     pub const component_name = "NoteGateComponent";
     pub const controller_cid = note_gate_controller.cid;
+    pub const Params = note_gate_spec.Spec.Params;
+    pub const parameter_set = &note_gate_spec.parameter_set;
     pub const Processor = NoteGateProcessor;
-
-    pub fn resetProcessState() void {
-        resetNoteGateState();
-    }
-
-    pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
-        note_gate_controller.applyParameterChanges(changes);
-    }
-
-    pub fn readState(state: ?*ibstream.IBStream) types.tresult {
-        return note_gate_controller.readState(state);
-    }
-
-    pub fn writeState(state: ?*ibstream.IBStream) types.tresult {
-        return note_gate_controller.writeState(state);
-    }
 });
 
 pub const create = Effect.create;
@@ -111,7 +97,7 @@ test "note gate component can be created as IComponent" {
     try std.testing.expect(out != null);
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);
+    try std.testing.expectEqual(@as(types.uint32, 0), component_iface.vtable.release(component_iface));
 }
 
 test "note gate processor follows event offsets inside a block" {
@@ -162,7 +148,6 @@ test "note gate component gates host event list input through processor shell" {
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_event_list = @import("vst_event_list.zig");
 
-    resetNoteGateState();
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
@@ -228,8 +213,8 @@ test "note gate component gates host event list input through processor shell" {
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f32, &.{ 0.0, -0.5, 1.0, 0.0 }, &output_samples);
-    try std.testing.expect(!gate.open);
-    try std.testing.expectEqual(@as(usize, 0), gate.held_note_count);
+    try std.testing.expect(!Effect.processorInstance(component_iface).state.open);
+    try std.testing.expectEqual(@as(usize, 0), Effect.processorInstance(component_iface).state.held_note_count);
 }
 
 test "note gate component gates host event list input through double precision processor shell" {
@@ -240,7 +225,6 @@ test "note gate component gates host event list input through double precision p
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_event_list = @import("vst_event_list.zig");
 
-    resetNoteGateState();
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
@@ -306,8 +290,8 @@ test "note gate component gates host event list input through double precision p
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f64, &.{ 0.0, -0.5, 1.0, 0.0 }, &output_samples);
-    try std.testing.expect(!gate.open);
-    try std.testing.expectEqual(@as(usize, 0), gate.held_note_count);
+    try std.testing.expect(!Effect.processorInstance(component_iface).state.open);
+    try std.testing.expectEqual(@as(usize, 0), Effect.processorInstance(component_iface).state.held_note_count);
 }
 
 test "note gate processor stays open while overlapping notes are held" {
@@ -391,7 +375,6 @@ test "note gate component resets process state when deactivated" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 
-    resetNoteGateState();
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
@@ -408,19 +391,40 @@ test "note gate component resets process state when deactivated" {
     var context = try plug_process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
         .events = &events,
     });
-    (NoteGateProcessor{}).process(f32, &context);
-    try std.testing.expect(gate.open);
+    Effect.processorInstance(component_iface).state.process(f32, &context);
+    try std.testing.expect(Effect.processorInstance(component_iface).state.open);
 
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setActive(component_iface, 0));
-    try std.testing.expect(!gate.open);
-    try std.testing.expectEqual(@as(usize, 0), gate.held_note_count);
+    try std.testing.expect(!Effect.processorInstance(component_iface).state.open);
+    try std.testing.expectEqual(@as(usize, 0), Effect.processorInstance(component_iface).state.held_note_count);
+}
+
+test "note gate component instances isolate processor state" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    var first_out: ?*anyopaque = null;
+    var second_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &first_out));
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &second_out));
+    const first: *ivstcomponent.IComponent = @ptrCast(@alignCast(first_out.?));
+    defer _ = first.vtable.release(first);
+    const second: *ivstcomponent.IComponent = @ptrCast(@alignCast(second_out.?));
+    defer _ = second.vtable.release(second);
+
+    Effect.processorInstance(first).state.holdNote(60);
+    try std.testing.expect(Effect.processorInstance(first).state.open);
+    try std.testing.expect(!Effect.processorInstance(second).state.open);
+
+    try std.testing.expectEqual(types.kResultOk, first.vtable.setActive(first, 0));
+    try std.testing.expect(!Effect.processorInstance(first).state.open);
+    try std.testing.expect(!Effect.processorInstance(second).state.open);
 }
 
 test "note gate component round-trips empty state through host callbacks" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 
-    resetNoteGateState();
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);

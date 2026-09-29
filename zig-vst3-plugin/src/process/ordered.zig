@@ -44,6 +44,23 @@ pub fn earliestOffset(first: ?usize, second: ?usize, fallback: usize) usize {
     return @min(a, b);
 }
 
+pub fn storedCursorValid(item_count: usize, next_index: usize) bool {
+    return next_index <= item_count;
+}
+
+pub fn indexedCursorValid(
+    items: anytype,
+    last_offset: ?usize,
+    last_index: usize,
+    context: anytype,
+    comptime matches: anytype,
+) bool {
+    const offset = last_offset orelse return last_index == 0;
+    if (last_index >= items.len) return false;
+    const item = items[last_index];
+    return item.sample_offset == offset and matches(item, context);
+}
+
 pub fn Matchers(comptime Item: type) type {
     return struct {
         pub const Indexed = struct {

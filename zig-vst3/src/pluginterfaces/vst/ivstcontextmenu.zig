@@ -8,7 +8,7 @@ pub const icontext_menu_target_iid = tuid.inlineUid(0x3CDF2E75, 0x85D34144, 0xBF
 pub const icontext_menu_iid = tuid.inlineUid(0x2E93C863, 0x0C9C4588, 0x97DBECF5, 0xAD17817D);
 
 pub const IComponentHandler3VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     createContextMenu: *const fn (*anyopaque, ?*iplugview.IPlugView, ?*const vsttypes.ParamID) callconv(.c) ?*IContextMenu,
@@ -19,7 +19,7 @@ pub const IComponentHandler3 = extern struct {
 };
 
 pub const IContextMenuTargetVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     executeMenuItem: *const fn (*anyopaque, base_types.int32) callconv(.c) base_types.tresult,
@@ -47,13 +47,13 @@ pub const IContextMenuItem = extern struct {
 };
 
 pub const IContextMenuVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     getItemCount: *const fn (*anyopaque) callconv(.c) base_types.int32,
-    getItem: *const fn (*anyopaque, base_types.int32, *IContextMenuItem, *?*IContextMenuTarget) callconv(.c) base_types.tresult,
-    addItem: *const fn (*anyopaque, *const IContextMenuItem, ?*IContextMenuTarget) callconv(.c) base_types.tresult,
-    removeItem: *const fn (*anyopaque, *const IContextMenuItem, ?*IContextMenuTarget) callconv(.c) base_types.tresult,
+    getItem: *const fn (*anyopaque, base_types.int32, [*c]IContextMenuItem, [*c]?*IContextMenuTarget) callconv(.c) base_types.tresult,
+    addItem: *const fn (*anyopaque, [*c]const IContextMenuItem, ?*IContextMenuTarget) callconv(.c) base_types.tresult,
+    removeItem: *const fn (*anyopaque, [*c]const IContextMenuItem, ?*IContextMenuTarget) callconv(.c) base_types.tresult,
     popup: *const fn (*anyopaque, base_types.UCoord, base_types.UCoord) callconv(.c) base_types.tresult,
 };
 

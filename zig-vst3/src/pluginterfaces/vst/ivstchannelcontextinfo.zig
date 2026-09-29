@@ -6,7 +6,7 @@ const vsttypes = @import("vsttypes.zig");
 pub const iinfo_listener_iid = tuid.inlineUid(0x0F194781, 0x8D984ADA, 0xBBA0C1EF, 0xC011D8D0);
 
 pub const IInfoListenerVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     setChannelContextInfos: *const fn (*anyopaque, ?*attributes.IAttributeList) callconv(.c) base_types.tresult,

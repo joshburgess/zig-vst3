@@ -1,12 +1,15 @@
 const gain_spec = @import("gain_spec.zig");
+const builtin = @import("builtin");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+const edit_controller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
 const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
 const string128 = @import("string128.zig");
+const single_parameter_editor = @import("vstgui_single_parameter_controller.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_component_handler = @import("vst_component_handler.zig");
@@ -27,96 +30,106 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
             .noteExpressionTypeID = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kExpressionTypeID),
         },
     };
+
+    pub fn createView(controller: *edit_controller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
+        return single_parameter_editor.createView(Controller, controller, name, .{
+            .id = gain_param_id,
+            .title = "zig-vst3 Gain",
+            .units = "x",
+            .step_count = 0,
+            .default_normalized = 1.0,
+        });
+    }
 });
 
 pub const create = Controller.create;
 
-pub fn gain() vsttypes.ParamValue {
-    return Controller.getNormalized(gain_param_id);
+pub fn gain(iface: *edit_controller.IEditController) vsttypes.ParamValue {
+    return Controller.getNormalized(iface, gain_param_id);
 }
 
-pub fn setGain(value: vsttypes.ParamValue) void {
-    _ = Controller.setNormalized(gain_param_id, value);
+pub fn setGain(iface: *edit_controller.IEditController, value: vsttypes.ParamValue) void {
+    _ = Controller.setNormalized(iface, gain_param_id, value);
 }
 
-pub fn beginEdit(id: vsttypes.ParamID) types.tresult {
-    return Controller.beginEdit(id);
+pub fn beginEdit(iface: *edit_controller.IEditController, id: vsttypes.ParamID) types.tresult {
+    return Controller.beginEdit(iface, id);
 }
 
-pub fn performEdit(id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
-    return Controller.performEdit(id, value);
+pub fn performEdit(iface: *edit_controller.IEditController, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+    return Controller.performEdit(iface, id, value);
 }
 
-pub fn endEdit(id: vsttypes.ParamID) types.tresult {
-    return Controller.endEdit(id);
+pub fn endEdit(iface: *edit_controller.IEditController, id: vsttypes.ParamID) types.tresult {
+    return Controller.endEdit(iface, id);
 }
 
-pub fn setDirty(state: types.TBool) types.tresult {
-    return Controller.setDirty(state);
+pub fn setDirty(iface: *edit_controller.IEditController, state: types.TBool) types.tresult {
+    return Controller.setDirty(iface, state);
 }
 
-pub fn requestOpenEditor(name: types.FIDString) types.tresult {
-    return Controller.requestOpenEditor(name);
+pub fn requestOpenEditor(iface: *edit_controller.IEditController, name: types.FIDString) types.tresult {
+    return Controller.requestOpenEditor(iface, name);
 }
 
-pub fn startGroupEdit() types.tresult {
-    return Controller.startGroupEdit();
+pub fn startGroupEdit(iface: *edit_controller.IEditController) types.tresult {
+    return Controller.startGroupEdit(iface);
 }
 
-pub fn finishGroupEdit() types.tresult {
-    return Controller.finishGroupEdit();
+pub fn finishGroupEdit(iface: *edit_controller.IEditController) types.tresult {
+    return Controller.finishGroupEdit(iface);
 }
 
-pub fn createContextMenu(param_id: ?*const vsttypes.ParamID) ?*@import("pluginterfaces/vst/ivstcontextmenu.zig").IContextMenu {
-    return Controller.createContextMenu(null, param_id);
+pub fn createContextMenu(iface: *edit_controller.IEditController, param_id: ?*const vsttypes.ParamID) ?*@import("pluginterfaces/vst/ivstcontextmenu.zig").IContextMenu {
+    return Controller.createContextMenu(iface, null, param_id);
 }
 
-pub fn requestBusActivation(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool) types.tresult {
-    return Controller.requestBusActivation(media_type, direction, index, state);
+pub fn requestBusActivation(iface: *edit_controller.IEditController, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool) types.tresult {
+    return Controller.requestBusActivation(iface, media_type, direction, index, state);
 }
 
-pub fn getSystemTime(out: *types.int64) types.tresult {
-    return Controller.getSystemTime(out);
+pub fn getSystemTime(iface: *edit_controller.IEditController, out: *types.int64) types.tresult {
+    return Controller.getSystemTime(iface, out);
 }
 
-pub fn startProgress(progress_type: types.uint32, title: ?[*]const types.char16, out: *@import("pluginterfaces/vst/ivsteditcontroller.zig").ProgressID) types.tresult {
-    return Controller.startProgress(progress_type, title, out);
+pub fn startProgress(iface: *edit_controller.IEditController, progress_type: types.uint32, title: ?[*]const types.char16, out: *edit_controller.ProgressID) types.tresult {
+    return Controller.startProgress(iface, progress_type, title, out);
 }
 
-pub fn updateProgress(id: @import("pluginterfaces/vst/ivsteditcontroller.zig").ProgressID, value: vsttypes.ParamValue) types.tresult {
-    return Controller.updateProgress(id, value);
+pub fn updateProgress(iface: *edit_controller.IEditController, id: edit_controller.ProgressID, value: vsttypes.ParamValue) types.tresult {
+    return Controller.updateProgress(iface, id, value);
 }
 
-pub fn finishProgress(id: @import("pluginterfaces/vst/ivsteditcontroller.zig").ProgressID) types.tresult {
-    return Controller.finishProgress(id);
+pub fn finishProgress(iface: *edit_controller.IEditController, id: edit_controller.ProgressID) types.tresult {
+    return Controller.finishProgress(iface, id);
 }
 
-pub fn notifyUnitSelection(unit_id: vsttypes.UnitID) types.tresult {
-    return Controller.notifyUnitSelection(unit_id);
+pub fn notifyUnitSelection(iface: *edit_controller.IEditController, unit_id: vsttypes.UnitID) types.tresult {
+    return Controller.notifyUnitSelection(iface, unit_id);
 }
 
-pub fn notifyProgramListChange(list_id: vsttypes.ProgramListID, program_index: types.int32) types.tresult {
-    return Controller.notifyProgramListChange(list_id, program_index);
+pub fn notifyProgramListChange(iface: *edit_controller.IEditController, list_id: vsttypes.ProgramListID, program_index: types.int32) types.tresult {
+    return Controller.notifyProgramListChange(iface, list_id, program_index);
 }
 
-pub fn notifyUnitByBusChange() types.tresult {
-    return Controller.notifyUnitByBusChange();
+pub fn notifyUnitByBusChange(iface: *edit_controller.IEditController) types.tresult {
+    return Controller.notifyUnitByBusChange(iface);
 }
 
-pub fn openView(name: types.FIDString) ?*iplugview.IPlugView {
-    return Controller.openView(name);
+pub fn openView(iface: *edit_controller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
+    return Controller.openView(iface, name);
 }
 
-pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
-    Controller.applyParameterChanges(changes);
+pub fn applyParameterChanges(iface: *edit_controller.IEditController, changes: plug_process.ParameterChanges) void {
+    Controller.applyParameterChanges(iface, changes);
 }
 
-pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
-    return Controller.readState(state);
+pub fn readGainState(iface: *edit_controller.IEditController, state: ?*ibstream.IBStream) types.tresult {
+    return Controller.readState(iface, state);
 }
 
-pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
-    return Controller.writeState(state);
+pub fn writeGainState(iface: *edit_controller.IEditController, state: ?*ibstream.IBStream) types.tresult {
+    return Controller.writeState(iface, state);
 }
 
 test "gain controller can be created as IEditController" {
@@ -129,7 +142,44 @@ test "gain controller can be created as IEditController" {
     try std.testing.expect(out != null);
     const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(out.?));
     try std.testing.expectEqual(@as(types.int32, 1), controller_iface.vtable.getParameterCount(controller_iface));
-    try std.testing.expect(controller_iface.vtable.release(controller_iface) >= 1);
+    try std.testing.expectEqual(@as(types.uint32, 0), controller_iface.vtable.release(controller_iface));
+}
+
+test "gain controller instances isolate parameters and handlers" {
+    const std = @import("std");
+    const Handler = vst_component_handler.ComponentHandler(struct {});
+
+    var first_out: ?*anyopaque = null;
+    var second_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&edit_controller.iedit_controller_iid), &first_out));
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&edit_controller.iedit_controller_iid), &second_out));
+    const first: *edit_controller.IEditController = @ptrCast(@alignCast(first_out.?));
+    defer _ = first.vtable.release(first);
+    const second: *edit_controller.IEditController = @ptrCast(@alignCast(second_out.?));
+    defer _ = second.vtable.release(second);
+
+    try std.testing.expectEqual(types.kResultOk, first.vtable.setParamNormalized(first, gain_param_id, 0.25));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), first.vtable.getParamNormalized(first, gain_param_id));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), second.vtable.getParamNormalized(second, gain_param_id));
+
+    var first_handler = Handler{};
+    var second_handler = Handler{};
+    try std.testing.expectEqual(types.kResultOk, first.vtable.setComponentHandler(first, first_handler.asHandler()));
+    try std.testing.expectEqual(types.kResultOk, second.vtable.setComponentHandler(second, second_handler.asHandler()));
+    try std.testing.expectEqual(types.kResultOk, beginEdit(first, gain_param_id));
+    try std.testing.expectEqual(@as(types.uint32, 1), first_handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), second_handler.begin_count);
+}
+
+test "gain controller can be repeatedly created and destroyed" {
+    const std = @import("std");
+
+    for (0..64) |_| {
+        var out: ?*anyopaque = null;
+        try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&edit_controller.iedit_controller_iid), &out));
+        const controller_iface: *edit_controller.IEditController = @ptrCast(@alignCast(out.?));
+        try std.testing.expectEqual(@as(types.uint32, 0), controller_iface.vtable.release(controller_iface));
+    }
 }
 
 test "gain controller exposes edit controller extension interfaces" {
@@ -178,10 +228,25 @@ test "gain controller exposes edit controller extension interfaces" {
     try std.testing.expectEqual(types.kResultFalse, xml.vtable.getXmlRepresentationStream(xml, &info, null));
 }
 
-test "gain controller returns no plug view by default" {
+test "gain controller creates a parameter editor view" {
     const std = @import("std");
 
-    try std.testing.expectEqual(@as(?*iplugview.IPlugView, null), openView("editor"));
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&edit_controller.iedit_controller_iid), &out));
+    const controller_iface: *edit_controller.IEditController = @ptrCast(@alignCast(out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+    const view = openView(controller_iface, edit_controller.ViewType.kEditor) orelse return error.MissingEditorView;
+    defer _ = view.vtable.release(view);
+    const platform_type = switch (builtin.os.tag) {
+        .macos => iplugview.PlatformType.kPlatformTypeNSView,
+        .windows => iplugview.PlatformType.kPlatformTypeHWND,
+        .linux => iplugview.PlatformType.kPlatformTypeX11EmbedWindowID,
+        else => return error.UnsupportedTestPlatform,
+    };
+    try std.testing.expectEqual(
+        types.kResultOk,
+        view.vtable.isPlatformTypeSupported(view, platform_type),
+    );
 }
 
 test "gain controller stores component handler for automation callbacks" {
@@ -196,7 +261,7 @@ test "gain controller stores component handler for automation callbacks" {
     const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
     defer _ = controller_iface.vtable.release(controller_iface);
 
-    try std.testing.expectEqual(types.kResultFalse, beginEdit(gain_param_id));
+    try std.testing.expectEqual(types.kResultFalse, beginEdit(controller_iface, gain_param_id));
 
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
@@ -204,19 +269,19 @@ test "gain controller stores component handler for automation callbacks" {
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
     try std.testing.expectEqual(@as(types.uint32, 2), handler.add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.release_count);
-    try std.testing.expectEqual(types.kResultOk, beginEdit(gain_param_id));
-    try std.testing.expectEqual(types.kResultOk, performEdit(gain_param_id, 0.25));
-    try std.testing.expectEqual(types.kResultOk, endEdit(gain_param_id));
+    try std.testing.expectEqual(types.kResultOk, beginEdit(controller_iface, gain_param_id));
+    try std.testing.expectEqual(types.kResultOk, performEdit(controller_iface, gain_param_id, 0.25));
+    try std.testing.expectEqual(types.kResultOk, endEdit(controller_iface, gain_param_id));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.begin_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.end_count);
     try std.testing.expectEqual(gain_param_id, handler.last_param_id);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), handler.last_value);
-    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), gain());
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), gain(controller_iface));
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
     try std.testing.expectEqual(@as(types.uint32, 2), handler.release_count);
-    try std.testing.expectEqual(types.kResultFalse, endEdit(gain_param_id));
+    try std.testing.expectEqual(types.kResultFalse, endEdit(controller_iface, gain_param_id));
 }
 
 test "gain controller rolls back perform edit when host rejects automation" {
@@ -235,12 +300,12 @@ test "gain controller rolls back perform edit when host rejects automation" {
     const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
     defer _ = controller_iface.vtable.release(controller_iface);
 
-    setGain(0.5);
+    setGain(controller_iface, 0.5);
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
     defer _ = controller_iface.vtable.setComponentHandler(controller_iface, null);
-    try std.testing.expectEqual(types.kResultFalse, performEdit(gain_param_id, 0.25));
-    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), gain());
+    try std.testing.expectEqual(types.kResultFalse, performEdit(controller_iface, gain_param_id, 0.25));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), gain(controller_iface));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), handler.last_value);
 }
@@ -257,17 +322,17 @@ test "gain controller stores component handler 2 callbacks" {
     const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
     defer _ = controller_iface.vtable.release(controller_iface);
 
-    try std.testing.expectEqual(types.kResultFalse, setDirty(1));
+    try std.testing.expectEqual(types.kResultFalse, setDirty(controller_iface, 1));
 
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
     try std.testing.expectEqual(@as(types.uint32, 2), handler.handler2_add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler2_release_count);
-    try std.testing.expectEqual(types.kResultOk, setDirty(1));
-    try std.testing.expectEqual(types.kResultOk, requestOpenEditor(""));
-    try std.testing.expectEqual(types.kResultOk, startGroupEdit());
-    try std.testing.expectEqual(types.kResultOk, finishGroupEdit());
+    try std.testing.expectEqual(types.kResultOk, setDirty(controller_iface, 1));
+    try std.testing.expectEqual(types.kResultOk, requestOpenEditor(controller_iface, ""));
+    try std.testing.expectEqual(types.kResultOk, startGroupEdit(controller_iface));
+    try std.testing.expectEqual(types.kResultOk, finishGroupEdit(controller_iface));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.dirty_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.open_editor_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.start_group_count);
@@ -275,7 +340,7 @@ test "gain controller stores component handler 2 callbacks" {
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
     try std.testing.expectEqual(@as(types.uint32, 2), handler.handler2_release_count);
-    try std.testing.expectEqual(types.kResultFalse, setDirty(1));
+    try std.testing.expectEqual(types.kResultFalse, setDirty(controller_iface, 1));
 }
 
 test "gain controller stores component handler 3 context menu callback" {
@@ -291,11 +356,14 @@ test "gain controller stores component handler 3 context menu callback" {
     const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
     defer _ = controller_iface.vtable.release(controller_iface);
 
-    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), createContextMenu(null));
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), createContextMenu(controller_iface, null));
 
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
-    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), createContextMenu(&gain_param_id));
+    var invalid_param_id = vsttypes.kNoParamId;
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), createContextMenu(controller_iface, &invalid_param_id));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.context_menu_count);
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), createContextMenu(controller_iface, &gain_param_id));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.context_menu_count);
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
@@ -317,7 +385,7 @@ test "gain controller stores bus activation and system time handlers" {
     defer _ = controller_iface.vtable.release(controller_iface);
 
     var time_value: types.int64 = -1;
-    try std.testing.expectEqual(types.kResultFalse, getSystemTime(&time_value));
+    try std.testing.expectEqual(types.kResultFalse, getSystemTime(controller_iface, &time_value));
     try std.testing.expectEqual(@as(types.int64, 0), time_value);
 
     var handler = HostHandler{};
@@ -325,13 +393,14 @@ test "gain controller stores bus activation and system time handlers" {
     try std.testing.expectEqual(
         types.kResultOk,
         requestBusActivation(
+            controller_iface,
             @intFromEnum(ivstcomponent.MediaTypes.kEvent),
             @intFromEnum(ivstcomponent.BusDirections.kInput),
             0,
             1,
         ),
     );
-    try std.testing.expectEqual(types.kResultOk, getSystemTime(&time_value));
+    try std.testing.expectEqual(types.kResultOk, getSystemTime(controller_iface, &time_value));
     try std.testing.expectEqual(@as(types.int64, 12345), time_value);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.bus_activation_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.system_time_count);
@@ -356,15 +425,15 @@ test "gain controller stores progress callbacks" {
     defer _ = controller_iface.vtable.release(controller_iface);
 
     var progress_id: ivsteditcontroller.ProgressID = 999;
-    try std.testing.expectEqual(types.kResultFalse, startProgress(@intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
+    try std.testing.expectEqual(types.kResultFalse, startProgress(controller_iface, @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
     try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 0), progress_id);
 
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
-    try std.testing.expectEqual(types.kResultOk, startProgress(@intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
+    try std.testing.expectEqual(types.kResultOk, startProgress(controller_iface, @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
     try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 77), progress_id);
-    try std.testing.expectEqual(types.kResultOk, updateProgress(progress_id, 0.5));
-    try std.testing.expectEqual(types.kResultOk, finishProgress(progress_id));
+    try std.testing.expectEqual(types.kResultOk, updateProgress(controller_iface, progress_id, 0.5));
+    try std.testing.expectEqual(types.kResultOk, finishProgress(controller_iface, progress_id));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.start_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.update_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.finish_count);
@@ -373,7 +442,7 @@ test "gain controller stores progress callbacks" {
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.progress_release_count);
-    try std.testing.expectEqual(types.kResultFalse, updateProgress(progress_id, 1.0));
+    try std.testing.expectEqual(types.kResultFalse, updateProgress(controller_iface, progress_id, 1.0));
 }
 
 test "gain controller stores unit handler callbacks" {
@@ -388,15 +457,15 @@ test "gain controller stores unit handler callbacks" {
     const controller_iface: *ivstedit.IEditController = @ptrCast(@alignCast(controller_out.?));
     defer _ = controller_iface.vtable.release(controller_iface);
 
-    try std.testing.expectEqual(types.kResultFalse, notifyUnitSelection(ivstunits.kRootUnitId));
-    try std.testing.expectEqual(types.kResultFalse, notifyProgramListChange(ivstunits.kNoProgramListId, ivstunits.kAllProgramInvalid));
-    try std.testing.expectEqual(types.kResultFalse, notifyUnitByBusChange());
+    try std.testing.expectEqual(types.kResultFalse, notifyUnitSelection(controller_iface, ivstunits.kRootUnitId));
+    try std.testing.expectEqual(types.kResultFalse, notifyProgramListChange(controller_iface, ivstunits.kNoProgramListId, ivstunits.kAllProgramInvalid));
+    try std.testing.expectEqual(types.kResultFalse, notifyUnitByBusChange(controller_iface));
 
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
-    try std.testing.expectEqual(types.kResultOk, notifyUnitSelection(ivstunits.kRootUnitId));
-    try std.testing.expectEqual(types.kResultOk, notifyProgramListChange(ivstunits.kNoProgramListId, ivstunits.kAllProgramInvalid));
-    try std.testing.expectEqual(types.kResultOk, notifyUnitByBusChange());
+    try std.testing.expectEqual(types.kResultOk, notifyUnitSelection(controller_iface, ivstunits.kRootUnitId));
+    try std.testing.expectEqual(types.kResultOk, notifyProgramListChange(controller_iface, ivstunits.kNoProgramListId, ivstunits.kAllProgramInvalid));
+    try std.testing.expectEqual(types.kResultOk, notifyUnitByBusChange(controller_iface));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.unit_selection_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.program_list_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.unit_by_bus_count);

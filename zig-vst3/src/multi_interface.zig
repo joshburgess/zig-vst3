@@ -8,21 +8,21 @@ pub const test_b_iid = tuid.inlineUid(0x22222222, 0x22222222, 0x22222222, 0x2222
 pub const test_c_iid = tuid.inlineUid(0x33333333, 0x33333333, 0x33333333, 0x33333333);
 
 pub const TestAVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) funknown.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) funknown.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) funknown.uint32,
     release: *const fn (*anyopaque) callconv(.c) funknown.uint32,
     callA: *const fn (*anyopaque) callconv(.c) funknown.uint32,
 };
 
 pub const TestBVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) funknown.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) funknown.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) funknown.uint32,
     release: *const fn (*anyopaque) callconv(.c) funknown.uint32,
     callB: *const fn (*anyopaque) callconv(.c) funknown.uint32,
 };
 
 pub const TestCVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) funknown.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) funknown.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) funknown.uint32,
     release: *const fn (*anyopaque) callconv(.c) funknown.uint32,
     callC: *const fn (*anyopaque) callconv(.c) funknown.uint32,
@@ -82,7 +82,7 @@ const objectFromA = interface_map.ownerFromField(TestObject, InterfaceHeader, "a
 const objectFromB = interface_map.ownerFromField(TestObject, InterfaceHeader, "b");
 const objectFromC = interface_map.ownerFromField(TestObject, InterfaceHeader, "c");
 
-fn query(object: *TestObject, requested_iid: *const tuid.TUID, out: *?*anyopaque) funknown.tresult {
+fn query(object: *TestObject, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) funknown.tresult {
     const entries = [_]interface_map.Entry{
         interface_map.fieldEntry("unknown", object, &funknown.iid),
         interface_map.fieldEntry("a", object, &test_a_iid),
@@ -92,7 +92,7 @@ fn query(object: *TestObject, requested_iid: *const tuid.TUID, out: *?*anyopaque
     return interface_map.query(&object.unknown, &entries, requested_iid, out);
 }
 
-fn queryFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *TestObject, ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) funknown.tresult {
+fn queryFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *TestObject, ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) funknown.tresult {
     return query(ownerFn(ptr), requested_iid, out);
 }
 
@@ -100,7 +100,7 @@ const ADelegate = interface_map.DelegatedInterface(TestObject, objectFromA, "unk
 const BDelegate = interface_map.DelegatedInterface(TestObject, objectFromB, "unknown", queryFromUnknown, addRefFromUnknown, releaseFromUnknown);
 const CDelegate = interface_map.DelegatedInterface(TestObject, objectFromC, "unknown", queryFromUnknown, addRefFromUnknown, releaseFromUnknown);
 
-fn queryFromUnknown(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
+fn queryFromUnknown(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) funknown.tresult {
     return queryFromOwnedInterface(objectFromUnknown, ptr, requested_iid, out);
 }
 

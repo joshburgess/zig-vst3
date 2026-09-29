@@ -2,6 +2,7 @@ const std = @import("std");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
+const scale_support = @import("pluginterfaces/gui/iplugviewcontentscalesupport.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_index = @import("vst_index.zig");
@@ -10,11 +11,13 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
     if (max_platforms == 0) @compileError("PlugView requires at least one platform slot");
     vst_index.requireUint32Capacity(max_platforms, "PlugView platform capacity");
 
-    return extern struct {
+    return struct {
         const Self = @This();
 
         iface: iplugview.IPlugView = .{ .vtable = &vtable },
+        scale_iface: scale_support.IPlugViewContentScaleSupport = .{ .vtable = &scale_vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        allocator: std.mem.Allocator = std.heap.page_allocator,
         platforms: [max_platforms]types.FIDString = [_]types.FIDString{iplugview.PlatformType.kPlatformTypeNSView} ** max_platforms,
         platform_count: types.uint32 = 0,
         frame: ?*iplugview.IPlugFrame = null,
@@ -32,6 +35,20 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         last_key_code: types.int16 = 0,
         last_key_modifiers: types.int16 = 0,
         has_focus: bool = false,
+        owned: bool = false,
+        context: ?*anyopaque = null,
+        owner_context: ?*anyopaque = null,
+        scale_factor: scale_support.ScaleFactor = 1.0,
+
+        pub fn create() ?*Self {
+            return createWithAllocator(std.heap.page_allocator) catch null;
+        }
+
+        fn createWithAllocator(allocator: std.mem.Allocator) !*Self {
+            const self = try allocator.create(Self);
+            self.* = .{ .allocator = allocator, .owned = true };
+            return self;
+        }
 
         pub fn asInterface(self: *Self) *iplugview.IPlugView {
             return &self.iface;
@@ -51,6 +68,14 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         pub fn addPlatform(self: *Self, platform: types.FIDString) types.tresult {
             _ = self.appendPlatformIndex(platform) orelse return types.kResultFalse;
             return types.kResultOk;
+        }
+
+        pub fn requestResize(self: *Self, requested: iplugview.ViewRect) types.tresult {
+            var constrained = requested;
+            const constraint_result = checkSizeConstraint(&self.iface, &constrained);
+            if (constraint_result != types.kResultOk) return constraint_result;
+            const frame = self.frame orelse return types.kResultFalse;
+            return frame.vtable.resizeView(frame, &self.iface, &constrained);
         }
 
         fn acceptAttachment(self: *Self, parent: ?*anyopaque, platform: types.FIDString) void {
@@ -88,13 +113,23 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         }
 
         const owner = interface_map.ownerFromField(Self, iplugview.IPlugView, "iface");
+        const ownerFromScale = interface_map.ownerFromField(Self, scale_support.IPlugViewContentScaleSupport, "scale_iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
+            return queryInstance(owner(ptr), ptr, addRef, requested_iid, out);
+        }
+
+        fn queryFromScale(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
+            return queryInstance(ownerFromScale(ptr), ptr, addRefFromScale, requested_iid, out);
+        }
+
+        fn queryInstance(self: *Self, ptr: *anyopaque, add_ref: *const fn (*anyopaque) callconv(.c) types.uint32, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{
-                .{ .iid = &funknown.iid, .ptr = ptr },
-                .{ .iid = &iplugview.iplug_view_iid, .ptr = ptr },
+                interface_map.fieldEntry("iface", self, &funknown.iid),
+                interface_map.fieldEntry("iface", self, &iplugview.iplug_view_iid),
+                interface_map.fieldEntry("scale_iface", self, &scale_support.iplug_view_content_scale_support_iid),
             };
-            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+            return interface_map.queryWithAddRef(ptr, add_ref, &entries, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -102,26 +137,55 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return funknown.decrementRefCount(&owner(ptr).ref_count, "IPlugView");
+            const self = owner(ptr);
+            const next = funknown.decrementRefCount(&self.ref_count, "IPlugView");
+            if (next == 0 and self.owned) {
+                _ = self.ref_count.load(.acquire);
+                const allocator = self.allocator;
+                if (@hasDecl(Config, "destroy")) Config.destroy(self);
+                allocator.destroy(self);
+            }
+            return next;
         }
 
-        fn isPlatformTypeSupported(ptr: *anyopaque, platform: types.FIDString) callconv(.c) types.tresult {
+        fn addRefFromScale(ptr: *anyopaque) callconv(.c) types.uint32 {
+            return addRef(&ownerFromScale(ptr).iface);
+        }
+
+        fn releaseFromScale(ptr: *anyopaque) callconv(.c) types.uint32 {
+            return release(&ownerFromScale(ptr).iface);
+        }
+
+        fn setContentScaleFactor(ptr: *anyopaque, factor: scale_support.ScaleFactor) callconv(.c) types.tresult {
+            const self = ownerFromScale(ptr);
+            if (!std.math.isFinite(factor) or factor <= 0) return types.kInvalidArgument;
+            if (@hasDecl(Config, "setContentScaleFactor")) {
+                const result = Config.setContentScaleFactor(self, factor);
+                if (result != types.kResultOk) return result;
+            }
+            self.scale_factor = factor;
+            return types.kResultOk;
+        }
+
+        fn isPlatformTypeSupported(ptr: *anyopaque, platform: ?types.FIDString) callconv(.c) types.tresult {
             const self = owner(ptr);
-            if (@hasDecl(Config, "isPlatformTypeSupported")) return Config.isPlatformTypeSupported(self, platform);
+            const platform_type = platform orelse return types.kInvalidArgument;
+            if (@hasDecl(Config, "isPlatformTypeSupported")) return Config.isPlatformTypeSupported(self, platform_type);
             for (self.platforms[0..self.safePlatformCount()]) |supported| {
-                if (std.mem.eql(u8, std.mem.span(supported), std.mem.span(platform))) return types.kResultOk;
+                if (std.mem.eql(u8, std.mem.span(supported), std.mem.span(platform_type))) return types.kResultOk;
             }
             return types.kResultFalse;
         }
 
-        fn attached(ptr: *anyopaque, parent: ?*anyopaque, platform: types.FIDString) callconv(.c) types.tresult {
+        fn attached(ptr: *anyopaque, parent: ?*anyopaque, platform: ?types.FIDString) callconv(.c) types.tresult {
             const self = owner(ptr);
-            if (isPlatformTypeSupported(ptr, platform) != types.kResultOk) return types.kInvalidArgument;
+            const platform_type = platform orelse return types.kInvalidArgument;
+            if (isPlatformTypeSupported(ptr, platform_type) != types.kResultOk) return types.kInvalidArgument;
             if (@hasDecl(Config, "attached")) {
-                const result = Config.attached(self, parent, platform);
+                const result = Config.attached(self, parent, platform_type);
                 if (result != types.kResultOk) return result;
             }
-            self.acceptAttachment(parent, platform);
+            self.acceptAttachment(parent, platform_type);
             return types.kResultOk;
         }
 
@@ -168,15 +232,28 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getSize(ptr: *anyopaque, out: *iplugview.ViewRect) callconv(.c) types.tresult {
+        fn getSize(ptr: *anyopaque, out_raw: [*c]iplugview.ViewRect) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *iplugview.ViewRect = @ptrCast(out_raw);
             out.* = owner(ptr).rect;
             return types.kResultOk;
         }
 
-        fn onSize(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
+        fn onSize(ptr: *anyopaque, rect_raw: [*c]iplugview.ViewRect) callconv(.c) types.tresult {
+            if (rect_raw == null) return types.kInvalidArgument;
+            const rect: *iplugview.ViewRect = @ptrCast(rect_raw);
+            const requested = rect.*;
+            if (!iplugview.hasValidDimensions(requested)) return types.kInvalidArgument;
             if (@hasDecl(Config, "onSize")) {
                 const result = Config.onSize(owner(ptr), rect);
-                if (result != types.kResultOk) return result;
+                if (result != types.kResultOk) {
+                    rect.* = requested;
+                    return result;
+                }
+            }
+            if (!iplugview.hasValidDimensions(rect.*)) {
+                rect.* = requested;
+                return types.kInvalidArgument;
             }
             owner(ptr).acceptSize(rect);
             return types.kResultOk;
@@ -207,8 +284,22 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn checkSizeConstraint(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
-            if (@hasDecl(Config, "checkSizeConstraint")) return Config.checkSizeConstraint(owner(ptr), rect);
+        fn checkSizeConstraint(ptr: *anyopaque, rect_raw: [*c]iplugview.ViewRect) callconv(.c) types.tresult {
+            if (rect_raw == null) return types.kInvalidArgument;
+            const rect: *iplugview.ViewRect = @ptrCast(rect_raw);
+            const requested = rect.*;
+            if (!iplugview.hasValidDimensions(requested)) return types.kInvalidArgument;
+            if (@hasDecl(Config, "checkSizeConstraint")) {
+                const result = Config.checkSizeConstraint(owner(ptr), rect);
+                if (result != types.kResultOk) {
+                    rect.* = requested;
+                    return result;
+                }
+            }
+            if (!iplugview.hasValidDimensions(rect.*)) {
+                rect.* = requested;
+                return types.kInvalidArgument;
+            }
             return types.kResultOk;
         }
 
@@ -229,7 +320,32 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             .canResize = canResize,
             .checkSizeConstraint = checkSizeConstraint,
         };
+
+        const scale_vtable = scale_support.IPlugViewContentScaleSupportVTable{
+            .queryInterface = queryFromScale,
+            .addRef = addRefFromScale,
+            .release = releaseFromScale,
+            .setContentScaleFactor = setContentScaleFactor,
+        };
     };
+}
+
+test "plug view allocation preserves allocator ownership" {
+    const View = PlugView(1, struct {});
+    var failing = std.testing.FailingAllocator.init(
+        std.testing.allocator,
+        .{ .fail_index = 0 },
+    );
+    try std.testing.expectError(
+        error.OutOfMemory,
+        View.createWithAllocator(failing.allocator()),
+    );
+
+    const view = try View.createWithAllocator(std.testing.allocator);
+    try std.testing.expectEqual(
+        @as(types.uint32, 0),
+        view.iface.vtable.release(&view.iface),
+    );
 }
 
 test "plug view stores platform attachment and removal" {
@@ -240,6 +356,8 @@ test "plug view stores platform attachment and removal" {
     try std.testing.expectEqual(types.kResultFalse, view.addPlatform(iplugview.PlatformType.kPlatformTypeWaylandSurfaceID));
     const iface = view.asInterface();
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.isPlatformTypeSupported(iface, null));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.attached(iface, @ptrFromInt(0x1234), null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.isPlatformTypeSupported(iface, iplugview.PlatformType.kPlatformTypeX11EmbedWindowID));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.isPlatformTypeSupported(iface, iplugview.PlatformType.kPlatformTypeWaylandSurfaceID));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.attached(iface, null, iplugview.PlatformType.kPlatformTypeWaylandSurfaceID));
@@ -249,6 +367,19 @@ test "plug view stores platform attachment and removal" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.removed(iface));
     try std.testing.expectEqual(@as(types.uint32, 1), view.removed_count);
     try std.testing.expectEqual(@as(?*anyopaque, null), view.attached_parent);
+}
+
+test "plug view exposes content scale support with shared lifetime" {
+    const View = PlugView(1, struct {});
+    var view = View{};
+    var out: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, view.iface.vtable.queryInterface(&view.iface, &scale_support.iplug_view_content_scale_support_iid, &out));
+    const scale: *scale_support.IPlugViewContentScaleSupport = @ptrCast(@alignCast(out.?));
+    try std.testing.expectEqual(types.kResultOk, scale.vtable.setContentScaleFactor(scale, 2.0));
+    try std.testing.expectEqual(@as(scale_support.ScaleFactor, 2.0), view.scale_factor);
+    try std.testing.expectEqual(types.kInvalidArgument, scale.vtable.setContentScaleFactor(scale, 0.0));
+    try std.testing.expectEqual(@as(types.uint32, 1), scale.vtable.release(scale));
 }
 
 test "plug view clamps inflated platform counts" {
@@ -270,10 +401,13 @@ test "plug view tracks input size focus and frame state" {
     const iface = view.asInterface();
 
     var rect = iplugview.ViewRect{ .left = 0, .top = 0, .right = 640, .bottom = 480 };
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.onSize(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.onSize(iface, &rect));
     var size = iplugview.ViewRect{};
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getSize(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getSize(iface, &size));
     try std.testing.expectEqual(rect, size);
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.checkSizeConstraint(iface, null));
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.onWheel(iface, -1.5));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.onKeyDown(iface, 'a', 12, 3));
@@ -285,6 +419,28 @@ test "plug view tracks input size focus and frame state" {
     try std.testing.expect(view.has_focus);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setFrame(iface, null));
     try std.testing.expectEqual(@as(?*iplugview.IPlugFrame, null), view.frame);
+}
+
+test "plug view requests constrained host resize" {
+    const Frame = @import("vst_plug_frame.zig").PlugFrame(struct {
+        pub fn resizeView(_: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) types.tresult {
+            return if (rect.right == 600 and rect.bottom == 400) types.kResultOk else types.kResultFalse;
+        }
+    });
+    const View = PlugView(1, struct {
+        pub fn checkSizeConstraint(_: anytype, rect: *iplugview.ViewRect) types.tresult {
+            rect.right = std.math.clamp(rect.right, 320, 600);
+            rect.bottom = std.math.clamp(rect.bottom, 240, 400);
+            return types.kResultOk;
+        }
+    });
+    var frame = Frame{};
+    var view = View{};
+    try std.testing.expectEqual(types.kResultFalse, view.requestResize(.{ .right = 800, .bottom = 600 }));
+    try std.testing.expectEqual(types.kResultOk, view.iface.vtable.setFrame(&view.iface, frame.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, view.requestResize(.{ .right = 800, .bottom = 600 }));
+    try std.testing.expectEqual(@as(types.int32, 400), view.rect.right);
+    try std.testing.expectEqual(@as(types.int32, 300), view.rect.bottom);
 }
 
 test "plug view preserves accepted state when delegated hooks reject changes" {
@@ -398,6 +554,77 @@ test "plug view delegates size constraints and query interface" {
     try std.testing.expectEqual(@as(types.uint32, 2), view.ref_count.load(.seq_cst));
     const queried_unknown: *iplugview.IPlugView = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
+}
+
+test "plug view rejects malformed resize rectangles before delegation" {
+    const Frame = @import("vst_plug_frame.zig").PlugFrame(struct {});
+    const Config = struct {
+        var size_calls: usize = 0;
+        var constraint_calls: usize = 0;
+
+        pub fn onSize(_: anytype, _: *iplugview.ViewRect) types.tresult {
+            size_calls += 1;
+            return types.kResultOk;
+        }
+
+        pub fn checkSizeConstraint(_: anytype, _: *iplugview.ViewRect) types.tresult {
+            constraint_calls += 1;
+            return types.kResultOk;
+        }
+    };
+    const View = PlugView(1, Config);
+    var frame = Frame{};
+    var view = View{};
+    const iface = view.asInterface();
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setFrame(iface, frame.asInterface()));
+    const accepted = view.rect;
+    const malformed = [_]iplugview.ViewRect{
+        .{ .left = 10, .top = 0, .right = 10, .bottom = 100 },
+        .{ .left = 20, .top = 0, .right = 10, .bottom = 100 },
+        .{ .left = std.math.minInt(types.int32), .top = 0, .right = std.math.maxInt(types.int32), .bottom = 100 },
+    };
+
+    for (malformed) |input| {
+        var rect = input;
+        try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.onSize(iface, &rect));
+        try std.testing.expectEqual(input, rect);
+        try std.testing.expectEqual(accepted, view.rect);
+
+        try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.checkSizeConstraint(iface, &rect));
+        try std.testing.expectEqual(input, rect);
+        try std.testing.expectEqual(types.kInvalidArgument, view.requestResize(input));
+    }
+    try std.testing.expectEqual(@as(usize, 0), Config.size_calls);
+    try std.testing.expectEqual(@as(usize, 0), Config.constraint_calls);
+    try std.testing.expectEqual(@as(types.uint32, 0), frame.resize_count);
+}
+
+test "plug view rejects malformed rectangles produced by delegated hooks" {
+    const Config = struct {
+        pub fn onSize(_: anytype, rect: *iplugview.ViewRect) types.tresult {
+            rect.right = rect.left;
+            return types.kResultOk;
+        }
+
+        pub fn checkSizeConstraint(_: anytype, rect: *iplugview.ViewRect) types.tresult {
+            rect.bottom = rect.top - 1;
+            return types.kResultOk;
+        }
+    };
+    const View = PlugView(1, Config);
+    var view = View{};
+    const iface = view.asInterface();
+    const accepted = view.rect;
+    const requested = iplugview.ViewRect{ .left = 10, .top = 20, .right = 650, .bottom = 500 };
+
+    var size = requested;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.onSize(iface, &size));
+    try std.testing.expectEqual(requested, size);
+    try std.testing.expectEqual(accepted, view.rect);
+
+    var constrained = requested;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.checkSizeConstraint(iface, &constrained));
+    try std.testing.expectEqual(requested, constrained);
 }
 
 test "plug view clears unsupported query output" {

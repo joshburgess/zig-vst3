@@ -51,7 +51,7 @@ pub fn EventList(comptime max_events: usize) type {
 
         const owner = interface_map.ownerFromField(Self, ivstevents.IEventList, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstevents.ievent_list_iid, .ptr = ptr },
@@ -76,7 +76,9 @@ pub fn EventList(comptime max_events: usize) type {
             return result;
         }
 
-        fn getEvent(ptr: *anyopaque, index: types.int32, event: *ivstevents.Event) callconv(.c) types.tresult {
+        fn getEvent(ptr: *anyopaque, index: types.int32, event_raw: [*c]ivstevents.Event) callconv(.c) types.tresult {
+            if (event_raw == null) return types.kInvalidArgument;
+            const event: *ivstevents.Event = @ptrCast(event_raw);
             if (index < 0) return failEvent(event, types.kInvalidArgument);
             const self = owner(ptr);
             if (index == self.fail_get_index) return failEvent(event, types.kResultFalse);
@@ -84,10 +86,11 @@ pub fn EventList(comptime max_events: usize) type {
             return types.kResultOk;
         }
 
-        fn addEvent(ptr: *anyopaque, event: *ivstevents.Event) callconv(.c) types.tresult {
+        fn addEvent(ptr: *anyopaque, event: [*c]ivstevents.Event) callconv(.c) types.tresult {
+            if (event == null) return types.kInvalidArgument;
             const self = owner(ptr);
             if (self.count == self.fail_add_index) return types.kResultFalse;
-            return self.append(event.*);
+            return self.append(event[0]);
         }
 
         const vtable = ivstevents.IEventListVTable{
@@ -127,6 +130,10 @@ test "event list enforces bounds and supports query interface" {
     var list = List{};
     const iface = list.asInterface();
     var event = ivstevents.Event{};
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getEvent(iface, 0, null));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addEvent(iface, null));
+    try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getEventCount(iface));
 
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getEvent(iface, 0, &event));
     try std.testing.expectEqual(@as(types.int32, 0), event.sampleOffset);

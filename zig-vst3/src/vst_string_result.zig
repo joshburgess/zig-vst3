@@ -51,7 +51,7 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
             self.wide = true;
         }
 
-        fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+        fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.result_iface },
                 .{ .iid = &istringresult.istring_result_iid, .ptr = &self.result_iface },
@@ -60,11 +60,11 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
             return interface_map.queryWithAddRef(add_ref_ptr, resultAddRef, &entries, requested_iid, out);
         }
 
-        fn resultQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn resultQuery(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             return ownerFromResult(ptr).queryCanonical(ptr, requested_iid, out);
         }
 
-        fn stringQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn stringQuery(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromString(ptr);
             return self.queryCanonical(&self.result_iface, requested_iid, out);
         }

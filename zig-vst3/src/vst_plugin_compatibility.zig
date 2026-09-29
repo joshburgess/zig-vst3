@@ -37,7 +37,7 @@ pub fn PluginCompatibility(comptime json: []const u8) type {
 
         const owner = interface_map.ownerFromField(Self, iplugincompatibility.IPluginCompatibility, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugincompatibility.iplugin_compatibility_iid, .ptr = ptr },
@@ -85,7 +85,7 @@ pub fn StaticPluginCompatibility(comptime json: []const u8) type {
 
         const owner = interface_map.ownerFromField(Instance, iplugincompatibility.IPluginCompatibility, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugincompatibility.iplugin_compatibility_iid, .ptr = ptr },
@@ -132,6 +132,7 @@ fn releaseStaticRef(ref_count: *std.atomic.Value(types.uint32)) types.uint32 {
     while (true) {
         const previous = ref_count.load(.monotonic);
         if (previous <= 1) return 1;
+        if (previous == std.math.maxInt(types.uint32)) return previous;
 
         const next = previous - 1;
         if (ref_count.cmpxchgWeak(previous, next, .release, .monotonic)) |_| {
@@ -150,6 +151,21 @@ test "plugin compatibility writes JSON to stream" {
 
     try std.testing.expectEqual(types.kResultOk, compatibility.asInterface().vtable.getCompatibilityJSON(compatibility.asInterface(), stream.asStream()));
     try std.testing.expectEqualStrings("{\"vendor\":\"zig-vst3\"}", stream.data());
+}
+
+test "static compatibility release pins a saturated reference count" {
+    var ref_count = std.atomic.Value(types.uint32).init(
+        std.math.maxInt(types.uint32),
+    );
+
+    try std.testing.expectEqual(
+        std.math.maxInt(types.uint32),
+        releaseStaticRef(&ref_count),
+    );
+    try std.testing.expectEqual(
+        std.math.maxInt(types.uint32),
+        ref_count.load(.monotonic),
+    );
 }
 
 test "plugin compatibility basic metadata JSON is valid and streamable" {

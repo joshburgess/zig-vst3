@@ -19,7 +19,7 @@ pub fn Cloneable(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, icloneable.ICloneable, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &icloneable.icloneable_iid, .ptr = ptr },

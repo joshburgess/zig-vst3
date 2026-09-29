@@ -1,15 +1,26 @@
 const std = @import("std");
 
+pub fn isFinite(comptime T: type, value: T) bool {
+    switch (@typeInfo(T)) {
+        .float => {},
+        else => @compileError("finite classification requires a floating-point type"),
+    }
+    return value - value == 0;
+}
+
 pub fn isFiniteInRange(comptime T: type, value: T, min: T, max: T) bool {
-    return std.math.isFinite(value) and value >= min and value <= max;
+    return isFinite(T, value) and value >= min and value <= max;
 }
 
 pub fn isPositiveFinite(value: f64) bool {
-    return std.math.isFinite(value) and value > 0.0;
+    return isFinite(f64, value) and value > 0.0;
 }
 
 pub fn isValidRange(min: f64, max: f64) bool {
-    return std.math.isFinite(min) and std.math.isFinite(max) and max > min;
+    return isFinite(f64, min) and
+        isFinite(f64, max) and
+        max > min and
+        isFinite(f64, max - min);
 }
 
 pub fn isNormalized(value: f64) bool {
@@ -53,6 +64,13 @@ test "isFiniteInRange accepts inclusive finite bounds" {
     try std.testing.expect(isFiniteInRange(f32, 1.0, -1.0, 1.0));
 }
 
+test "finite classification is bounded at compile time" {
+    try std.testing.expect(comptime isFinite(f32, 1.0));
+    try std.testing.expect(comptime isFinite(f64, -1.0));
+    try std.testing.expect(!(comptime isFinite(f32, std.math.nan(f32))));
+    try std.testing.expect(!(comptime isFinite(f64, std.math.inf(f64))));
+}
+
 test "isFiniteInRange rejects non-finite and out-of-range values" {
     try std.testing.expect(!isFiniteInRange(f32, -1.1, -1.0, 1.0));
     try std.testing.expect(!isFiniteInRange(f32, 1.1, -1.0, 1.0));
@@ -74,6 +92,10 @@ test "isValidRange accepts only finite increasing ranges" {
     try std.testing.expect(!isValidRange(2.0, 1.0));
     try std.testing.expect(!isValidRange(std.math.nan(f64), 1.0));
     try std.testing.expect(!isValidRange(0.0, std.math.inf(f64)));
+    try std.testing.expect(!isValidRange(
+        -std.math.floatMax(f64),
+        std.math.floatMax(f64),
+    ));
 }
 
 test "isNormalized accepts only finite zero-to-one values" {

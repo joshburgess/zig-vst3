@@ -2,7 +2,7 @@
 set -eu
 
 sdk_dir="${VST3_SDK_DIR:-.vst3-sdk/vst3sdk}"
-out_dir=".zig-cache/test-plug-provider-abi"
+out_dir="${ZIG_LOCAL_CACHE_DIR:-.zig-cache}/test-plug-provider-abi"
 
 if [ ! -d "$sdk_dir/pluginterfaces" ]; then
     printf 'SDK checkout not found at %s. Run scripts/fetch_sdk.sh first.\n' "$sdk_dir" >&2

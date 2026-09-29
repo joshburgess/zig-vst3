@@ -1,0 +1,467 @@
+# Plugin GUI Component System Plan
+
+This plan extends the host integration work in [gui-plan.md](gui-plan.md). It builds a reusable, customizable component layer for plugin editors without turning `zig-vst3` into a general desktop GUI toolkit.
+
+The immediate target is a multi-parameter component gallery that runs through the existing VSTGUI adapter. The broader target is a project-owned component and theme model with plugin-focused editor ergonomics.
+
+## Current Position
+
+The framework already provides:
+
+- Per-instance editor and controller state
+- Parameter metadata, formatting, parsing, normalization, and quantization
+- Complete begin, perform, and end automation gestures
+- Host-to-editor parameter notifications
+- Host parameter context menus
+- Resize, scale, focus, and lifecycle handling
+- Scalar snapshots and bounded telemetry queues
+- Native VSTGUI attachment on macOS, Windows, X11, and Wayland
+
+The visible adapter remains a hard-coded single-parameter editor in `gui-adapters/vstgui/zig_vstgui_adapter.cpp`. Control construction, layout, styling, parameter behavior, and editor composition are coupled in that file. Adding controls directly to that implementation would produce a collection of one-off widgets instead of a component library.
+
+## Design Targets
+
+### NIH-plug parity
+
+Match the useful shape of NIH-plug's GUI support:
+
+- Keep editor lifecycle and parameter semantics independent of the rendering toolkit.
+- Let toolkit adapters provide their own component implementations.
+- Provide parameter-aware sliders, buttons, meters, generic panels, and resize controls.
+- Notify open editors about host value changes and bulk state changes.
+- Keep editor size and scale in logical coordinates.
+
+NIH-plug is a framework and adapter reference, not a complete widget toolkit. Its VIZIA adapter currently includes a generic UI, parameter base, parameter button, parameter slider, peak meter, and resize handle.
+
+### Independent Customization
+
+The component system uses project-owned contracts:
+
+- A component tree with bounds, visibility, enabled state, child ownership, focus, input, and invalidation
+- A separate theme and drawing policy
+- Standard controls that retain behavior when their appearance changes
+- Per-editor, per-container, and per-control style overrides
+- Semantic accessibility roles, names, values, and states
+
+Do not add application windows, a document model, networking, media, or other general desktop facilities to the component layer.
+
+## Architecture
+
+```text
+Plugin editor declaration
+  |
+  v
+VSTGUI editor builder and component tree
+  |
+  +--> layout and focus order
+  +--> theme and component styles
+  +--> parameter-aware controls
+  +--> telemetry controls
+  |
+  v
+zig-vst3-plugin GUI context
+  |
+  +--> parameter attachments and gestures
+  +--> formatting, parsing, and metadata
+  +--> resize and host context menus
+  |
+  v
+VST3 host
+```
+
+The toolkit-neutral layer continues to own parameter semantics and host communication. The VSTGUI package owns the component tree, layout, input routing, drawing, and toolkit resources. Toolkit-specific types must not enter `zig-vst3-plugin`.
+
+## Component Contract
+
+Every visible component needs:
+
+- Logical bounds
+- Visible and enabled states
+- Optional focus participation and deterministic focus order
+- Invalidation when visual state changes
+- Pointer, wheel, and keyboard event handling where applicable
+- Semantic name, description, role, value, and state
+- Theme lookup with local overrides
+
+Every parameter control also needs:
+
+- One `ParameterAttachment`
+- Reflected name, units, default, step count, and text conversion
+- One active gesture at most
+- Host automation updates without creating a new gesture
+- Default reset
+- Fine adjustment
+- Exact entry when the value is numeric
+- Host context menu access
+- Normal, hovered, pressed, focused, disabled, and editing visual states
+
+## Theme and Drawing Model
+
+Use semantic tokens instead of colors and dimensions embedded in controls:
+
+```zig
+const theme = Theme{
+    .colors = .{
+        .surface = rgb(22, 25, 31),
+        .surface_raised = rgb(37, 42, 51),
+        .control_track = rgb(73, 82, 97),
+        .control_fill = rgb(17, 113, 91),
+        .text_primary = rgb(238, 241, 246),
+        .text_secondary = rgb(157, 166, 181),
+        .focus_ring = rgb(89, 201, 165),
+    },
+    .spacing = .{},
+    .typography = .{},
+    .radii = .{},
+    .control_metrics = .{},
+};
+```
+
+Resolve styles in this order:
+
+1. Library defaults
+2. Editor theme
+3. Container override
+4. Component-type override
+5. Component-instance override
+6. Interaction-state override
+
+Appearance changes must not replace parameter behavior. Advanced editors may provide component-specific drawing callbacks after the standard style path works.
+
+## Author-Facing API Direction
+
+The final spelling should follow implementation experience from the gallery. The intended shape is a declarative, adapter-specific builder:
+
+```zig
+var editor = try vstgui.Editor.init(allocator, .{
+    .size = .{ .width = 640, .height = 420 },
+    .theme = studio_theme,
+});
+
+try editor.add(.knob(.gain, .{
+    .label = "Gain",
+    .layout = .{ .column = 0, .row = 0 },
+}));
+
+try editor.add(.toggle(.bypass, .{
+    .label = "Bypass",
+    .layout = .{ .column = 1, .row = 0 },
+}));
+
+try editor.add(.choice(.mode, .{
+    .label = "Mode",
+    .layout = .{ .column = 0, .row = 1, .column_span = 2 },
+}));
+```
+
+Do not freeze this public API until the gallery uses every core parameter kind and survives a second editor design.
+
+## Work Plan
+
+Each milestone must leave the validator, pluginval, existing examples, and cross-target bundles passing. Real-host rows remain release evidence, but unavailable platform checks do not block component work that can be validated locally.
+
+### Milestone 1: Extract the Component Foundation
+
+- [x] Split the VSTGUI adapter into lifecycle, component, control, theme, and editor-composition units.
+- [x] Extract the current slider and numeric field from `ZigVstguiEditor`.
+- [x] Define component bounds, visibility, enabled state, focus participation, and invalidation.
+- [x] Define shared parameter-control gesture and host-update behavior.
+- [x] Preserve the current gain editor appearance and confirmed interactions.
+- [x] Add unit tests for state transitions and gesture ownership.
+
+Exit criteria:
+
+- The gain editor is composed from reusable components.
+- No control duplicates begin, perform, end, reset, parse, or host-update logic.
+- The existing REAPER behavior remains unchanged.
+
+Completion evidence:
+
+- `zig_vstgui_adapter.cpp` now contains only the public C ABI. Editor composition, platform attachment, component state, parameter controls, profiling, and theme values live in separate units.
+- `ParameterControlModel` owns accepted values and gesture lifetime. `ParameterControl` binds that model to the reusable slider and numeric field.
+- Native adapter tests cover visual-state precedence, single-gesture ownership, rejected values, clamping, idempotent completion, and teardown during an active gesture.
+- Unit tests, raw ABI checks, all example validators, pluginval editor and automation checks, and Linux and Windows cross-target bundles pass.
+
+### Milestone 2: Add Theme and Style Resolution
+
+- [x] Define semantic color, spacing, typography, radius, and control-metric tokens.
+- [x] Move all current literals into the default theme.
+- [x] Add editor-wide and per-component overrides.
+- [x] Define styles for normal, hovered, pressed, focused, disabled, and editing states.
+- [x] Add one alternate theme that changes appearance without changing component code.
+
+Exit criteria:
+
+- The gain editor contains no embedded presentation colors or sizes outside layout specifications.
+- The default and alternate themes render the same component tree.
+
+Completion evidence:
+
+- `Theme` groups semantic colors, spacing, typography, radii, and control metrics. Editor composition and controls resolve presentation through `ThemeResolver`.
+- Resolution tests prove editor overrides, component overrides, and interaction-state overrides apply in the documented order.
+- The slider resolves normal, hovered, pressed, focused, disabled, and editing states at draw time.
+- The alternate theme changes the full palette while retaining the same component styles, metrics, editor composition, and behavior.
+- The default and alternate themes pass native adapter tests and pluginval editor checks. Unit tests, raw ABI checks, all example validators, the full default-theme pluginval suite, and Linux and Windows cross-target bundles pass.
+
+### Milestone 3: Support Multi-parameter Editors
+
+- [x] Replace the single-parameter C ABI creation contract with a bounded multi-parameter description or builder.
+- [x] Route host updates to the matching attachment and component.
+- [x] Cancel all active gestures safely during detach and destruction.
+- [x] Preserve per-instance isolation with multiple parameters and multiple editors.
+- [x] Support bulk refresh after project or preset state restoration.
+
+Exit criteria:
+
+- One editor binds continuous, integer, boolean, and enum parameters at the same time.
+- Host automation updates only the matching controls.
+- Two gallery instances remain isolated.
+
+Completion evidence:
+
+- Adapter ABI version 2 accepts up to 64 parameter descriptions and addresses host updates by parameter ID.
+- The editor-smoke integration binds float, integer, boolean, and enum parameters in one editor. VST3 validation reports all four reflected parameter kinds.
+- Native routing tests verify matching-control updates, duplicate-ID rejection, two-editor isolation, and all-or-nothing bulk refresh.
+- Closing an attached editor clears every control and ends its active gesture. Destruction also cancels gestures for editors that were never attached or already detached.
+- The editor-smoke plugin passes pluginval editor, processing, state, automation, and editor-automation checks. Unit tests, raw ABI checks, all example validators, and Linux and Windows cross-target bundles pass.
+
+### Milestone 4: Build Core Parameter Components
+
+Implement controls in this order:
+
+- [x] Linear slider
+- [x] Numeric value field
+- [x] Rotary knob
+- [x] Toggle button
+- [x] Enum dropdown
+- [x] Segmented enum control
+- [x] Parameter label with units
+- [x] Resize handle
+
+Each interactive control must pass:
+
+- [x] Pointer interaction
+- [x] Wheel interaction where appropriate
+- [x] Keyboard interaction
+- [x] Fine adjustment
+- [x] Exact entry where appropriate
+- [x] Default reset
+- [x] Host context menu
+- [x] Correct automation gesture boundaries
+- [x] Host automation playback
+- [x] Disabled-state behavior
+- [x] Visible focus
+
+Exit criteria:
+
+- The component gallery demonstrates all four reflected parameter kinds.
+- A plugin author does not write custom gesture or normalization code to use a standard control.
+
+Completion evidence:
+
+- Adapter ABI version 3 adds an explicit presentation kind without coupling widget choice to reflected parameter type. Existing single-parameter declarations default to a linear slider.
+- The shared parameter control builds sliders, knobs, toggles, dropdowns, and segmented choices from one attachment model. Numeric entry, formatted labels, units, default reset, fine adjustment, focus, disabled state, host updates, and automation gestures remain shared behavior.
+- Right-click events request the host parameter context menu through `IComponentHandler3`. A draggable corner handle and the existing compact/expand action use the same bounded host resize callback.
+- Native tests cover gesture boundaries, stepped quantization, rejected edits, host updates, context-menu routing, bulk refresh, and instance isolation. The editor-smoke fixture constructs the knob, toggle, dropdown, and segmented variants together.
+- The typed gallery passes VST3 validation and pluginval editor, processing, state, automation, and editor-automation checks.
+
+### Milestone 5: Add Layout and Focus Navigation
+
+- [x] Add fixed bounds for art-directed interfaces.
+- [x] Add row and column stacks.
+- [x] Add grid layout with spans.
+- [x] Add padding, gap, alignment, minimum size, and flexible growth.
+- [x] Add compact and expanded layout breakpoints.
+- [x] Add deterministic Tab and Shift+Tab traversal.
+- [x] Keep layout coordinates logical and scale-independent.
+
+Exit criteria:
+
+- The gallery remains usable at its minimum and maximum supported sizes.
+- Resize does not overlap, clip, or strand interactive controls.
+- Focus traversal follows the visible reading order.
+
+Completion evidence:
+
+- The VSTGUI package provides bounded stack and grid solvers with fixed rectangles, horizontal and vertical axes, alignment, padding, gaps, minimum track sizes, flexible growth, and grid spans. The solvers use fixed-capacity scratch storage and do not allocate while laying out an editor.
+- The four-parameter gallery switches between compact and expanded compositions at a logical 520 by 360 breakpoint. Compact mode hides secondary headings and preserves all control rows at 320 by 240. Expanded mode restores the headings and roomier label, value, row, and gap measurements through 1000 by 700.
+- VSTGUI zoom remains the only conversion from logical coordinates to display scale. Layout inputs do not depend on backing pixels or platform scale factors.
+- Tab and Shift+Tab walk each visible row from its primary control to exact value entry, then reach the resize action and wrap. Native tests verify forward and reverse traversal.
+- Native extent tests run the gallery specifications at both supported size limits and verify row separation, grid containment, cell order, and footer separation. The full Zig test and raw ABI suites pass. Every example passes the VST3 validator and strictness-5 pluginval, and the Linux and Windows example bundle sets cross-compile successfully.
+
+### Milestone 6: Add Accessibility Semantics
+
+- [x] Define semantic roles for sliders, buttons, toggles, choices, text fields, meters, and groups.
+- [x] Expose accessible name, description, value text, range, and state.
+- [x] Notify the platform accessibility layer when values or states change where the backend supports it.
+- [x] Ensure custom drawing does not remove native keyboard or accessibility behavior.
+- [x] Document unsupported VSTGUI or platform accessibility paths explicitly.
+
+Exit criteria:
+
+- Every gallery control has a semantic name, role, value, and state.
+- Focus and value changes are observable through the platform accessibility API where VSTGUI supports it.
+
+Completion evidence:
+
+- Each component owns a semantic node with a role, name, description, formatted value, optional numeric range, enabled state, focus state, toggle state, selection state, and read-only state. The role vocabulary covers the current controls plus meters and groups needed by later milestones.
+- Slider and knob controls expose slider semantics. Toggles expose checked state, dropdowns and segmented controls expose choice semantics, exact entry exposes text-field semantics, and both resize interactions expose button semantics. Labels and editor headings provide read-only group context.
+- Accepted user edits and host updates refresh semantic value text, range, and state through the same synchronization path used by visible controls. Focus listeners and deterministic keyboard traversal refresh semantic focus. Changes increment a generation and invoke an optional backend observer without affecting the audio thread.
+- Custom-drawn sliders and resize handles retain the existing keyboard path, visible focus, exact value entry, and equivalent resize button action. No semantic behavior depends on color or drawing output.
+- The pinned VSTGUI revision has no native semantic accessibility or screen-reader bridge on macOS, Windows, X11, or Wayland. The adapter therefore preserves complete internal semantics and change notifications, but it cannot expose them to platform assistive technology until a backend bridge exists. Native screen-reader verification remains a release gate rather than a claimed pass.
+- Native tests cover semantic change notifications, stable no-op updates, every gallery role, value and range updates, checked state, enabled and read-only state, focus changes, missing exact fields, and resize semantics.
+- The complete Zig and raw ABI suites pass. Every example passes the VST3 validator and strictness-5 pluginval, and the Linux and Windows bundle sets cross-compile successfully with the semantic layer linked into native editors.
+
+### Milestone 7: Add Audio Visualization Components
+
+- [x] Add a scalar peak meter using `gui_telemetry.ScalarSnapshot`.
+- [x] Add peak hold and decay on the GUI thread.
+- [x] Stop meter production and repaint requests when the editor closes.
+- [x] Add stereo and gain-reduction meter variants.
+- [x] Add an analyzer component only after defining a representative plugin and data rate. No analyzer is added yet because those prerequisites are not defined.
+
+Exit criteria:
+
+- Meter updates allocate and lock nothing on the audio thread.
+- Overflow or coalescing affects only visual freshness.
+- Static editors retain no continuous repaint loop.
+
+Completion evidence:
+
+- `gui_telemetry.MeterBank` composes a fixed array of `ScalarSnapshot` values with `EditorActivity`. Publishing performs one bounded index check and one atomic store only while an editor is active. Closed editors reject production without changing the last snapshot.
+- Adapter ABI version 4 accepts up to eight meter descriptions and a latest-value loader. The loader reads scalar snapshots without a lock, allocation, queue, or call into VSTGUI.
+- The shared VSTGUI meter component samples sources on a 33 millisecond GUI timer. GUI-thread ballistics clamp invalid input, apply attack, decay, and a 500 millisecond peak hold, update read-only meter semantics, and invalidate only when a displayed value changes.
+- Peak, stereo, and gain-reduction variants share the source and ballistics path. Stereo uses two source IDs. Gain reduction changes its value formatting and drawing direction without changing transport.
+- Meter timers start only after native attachment succeeds. They stop before editor removal or destruction. Static editors create no meter controls and retain no periodic timer.
+- The editor-smoke gallery contains all three meter variants at compact and expanded sizes. Native tests cover attack, hold, decay, clamping, invalid samples, reset, source routing, stereo independence, gain-reduction routing, semantic values, and invalid meter indices.
+- An analyzer remains deferred. No representative plugin, spectrum resolution, update rate, or transport budget has been accepted, so adding a queue and continuous high-rate drawing would be premature.
+- The full Zig and raw ABI suites pass. Every example passes the VST3 validator and strictness-5 pluginval, including editor open and close while processing, and the Linux and Windows bundle sets cross-compile successfully.
+
+### Milestone 8: Add Asset and Custom Drawing Support
+
+- [x] Load bundled bitmap and SVG assets with explicit scale behavior.
+- [x] Support custom fonts with documented licensing and fallback behavior.
+- [x] Add component-specific drawing callbacks.
+- [x] Add filmstrip or sprite controls only if a reference design requires them. No reference design currently requires them, so none are added.
+- [x] Define resource ownership and teardown across editor recreation.
+
+Exit criteria:
+
+- A plugin can create an art-directed skin without replacing parameter attachment behavior.
+- Missing assets fail visibly and do not create blank interactive regions.
+
+Completion evidence:
+
+- Adapter ABI version 5 accepts up to 16 PNG or SVG assets. Editor creation copies the source bytes, validates unique IDs, decodes PNG through VSTGUI, and parses SVG into editor-owned vector commands.
+- `pixel_exact`, `contain`, `cover`, and `stretch` placement rules use logical coordinates. SVG paths remain vector-rendered at the active content scale. PNG interpolation uses VSTGUI's high-quality platform path.
+- The documented SVG subset requires a `viewBox` and supports path commands `M`, `L`, `H`, `V`, `C`, and `Z`, solid fill and stroke colors, and stroke width. Unsupported features reject the asset instead of rendering an incomplete result.
+- A skin selects preferred title, body, and value font families plus a fallback family. Resolution checks operating-system font families and falls back to the existing theme font if neither requested family exists. The guide documents licensing responsibility and makes clear that the adapter does not register font files.
+- Toolkit-neutral drawing callbacks receive component, state, parameter, normalized value, logical size, and scale. The opaque canvas provides rectangles, ellipses, lines, and asset drawing. Non-interactive overlays preserve the underlying parameter control, gestures, text entry, keyboard behavior, focus, and semantic metadata.
+- Invalid asset bytes reject editor creation. Unknown IDs paint a red crossed placeholder and report failure to the callback, so a missing image cannot silently create a blank control.
+- Asset bytes, decoded bitmaps, vector commands, font descriptors, and callbacks belong to one editor. Views may be torn down and recreated while those resources remain valid, and all resources are released after the final frame closes.
+- The editor-smoke gallery embeds one PNG and one SVG, selects missing preferred families to exercise explicit font fallback, and draws through the Zig canvas callback. Native tests cover scaling geometry, SVG acceptance and rejection, PNG decoding, duplicate IDs, font selection, asset limits, and editor-owned teardown.
+- Filmstrip controls remain deferred because the gallery and current production examples have no multi-frame reference artwork or frame-state contract.
+- The full Zig and raw ABI suites pass. Every example passes the VST3 validator and strictness-5 pluginval, including the skinned editor while processing. Linux and Windows example bundle sets cross-compile successfully with native canvas symbols excluded from the protocol-only fallback.
+
+### Milestone 9: Visual and Interaction Regression Tests
+
+- [x] Make the gallery render deterministically at fixed logical sizes.
+- [x] Capture reference images for default, hover, pressed, focused, disabled, and editing states where automation permits.
+- [x] Add image comparison with an explicit tolerance.
+- [x] Add scripted gesture, keyboard, resize, and host-update tests.
+- [x] Keep performance profiling available for static controls and active meters.
+
+Exit criteria:
+
+- Component appearance changes produce reviewable image diffs.
+- Interaction regressions fail before a real-host test.
+- Warm frame cost stays within the budget recorded in `docs/gui-baseline.md`.
+
+Completion evidence:
+
+- A headless VSTGUI harness renders fixed 384 by 64 control-state images at 1x and 2x plus a 320 by 112 meter and asset image. The control reference presents normal, hovered, pressed, focused, disabled, and editing states in a fixed order.
+- Committed PNG references are decoded before comparison. Each channel allows a difference of 80 and no more than 2 percent of pixels may exceed that threshold. The channel tolerance accounts for display-profile conversion; exact semantic theme colors remain asserted separately. Failures write the actual image and a magenta difference mask in the adapter build directory.
+- The meter and asset reference covers SVG drawing, an unknown-asset sentinel, and peak, stereo, and gain-reduction rendering. Native resource tests separately decode the embedded PNG because the one-pixel fixture is not a useful visual specimen.
+- Native interaction tests script Tab and Shift+Tab traversal, an arrow-key parameter gesture with exact begin, perform, and end counts, host parameter updates, atomic bulk refresh, instance isolation, accepted resize, and rejected undersize requests. Pluginval continues to exercise editor automation and editor open and close while processing.
+- The existing opt-in full-editor profiler remains available. The headless harness also repeats warm draws of a live slider and active peak meter, reports the average, and fails above 300 microseconds. The measured local average is 17 microseconds.
+- `scripts/build_vstgui.sh` and its PowerShell counterpart run native unit, interaction, visual, and warm-render tests. The full Zig and raw ABI suites, every VST3 validator suite, strictness-5 pluginval across all examples, and Linux and Windows cross-bundles remain passing.
+
+### Milestone 10: Author Documentation and Stability Review
+
+- [x] Document the component gallery and one production-style editor.
+- [x] Document theming, layout, parameter binding, telemetry, and custom drawing.
+- [x] Mark experimental APIs clearly.
+- [x] Test the API against a second editor with a different layout and theme.
+- [x] Stabilize only the pieces used successfully by both editors.
+
+Exit criteria:
+
+- A plugin author can build a multi-parameter editor without editing the adapter internals.
+- Standard components require no direct VST3 calls.
+- Custom components can reuse standard parameter behavior and theme resolution.
+
+Completion evidence:
+
+- `docs/framework/vstgui-components.md` starts from the public `@import("zig-vst3").vstgui` surface and documents a complete `createView`, the gallery, Voice Mix, themes, layouts, binding behavior, telemetry, assets, fonts, custom drawing, ownership, and verification commands.
+- Adapter ABI version 6 carries explicit default or alternate theme selection and adaptive or compact-strip layout selection in `Skin`. Invalid enum values reject editor creation.
+- The editor-smoke gallery uses the default theme and adaptive multi-parameter layout. Voice Mix calls the same `createMultiViewWithSkin` path with the alternate theme and compact-strip layout. Native tests assert that both explicit selections reach separate editor instances.
+- `Parameter`, `ControlKind`, `Theme`, `Layout`, the `create*View` functions, standard host binding, and per-instance lifecycle formed the initial reviewed authoring surface because both editors exercised them. Later production phases promoted meters through the channel strip and promoted assets, fonts, canvas drawing, and drawing callbacks through the Parametric EQ and IR Loader. Native accessibility bridges remain experimental pending native assistive-technology workflows.
+- Standard controls keep all VST3 calls inside the controller bridge. Custom drawing remains a non-interactive overlay on the same parameter control, so it reuses gestures, automation playback, formatting, theme resolution, focus, and semantic metadata.
+- Native unit, interaction, visual, and warm-render tests pass. Zig tests, raw ABI checks, every Steinberg example validator, and Linux and Windows cross-target bundle builds pass. Voice Mix also completes pluginval strictness 5 in isolation, including editor automation and opening its editor while processing. The aggregate parallel pluginval run is deferred because the pluginval application produced repeated macOS crash dialogs during this pass.
+
+## Component Gallery
+
+The gallery is a real plugin example, not a standalone mockup. It should contain:
+
+| Area | Components | Data source |
+| --- | --- | --- |
+| Continuous | Linear slider, rotary knob, numeric field | Float parameter |
+| Discrete | Toggle, dropdown, segmented control | Boolean and enum parameters |
+| Stepped | Slider or stepper with exact value | Integer parameter |
+| Telemetry | Peak meter | Scalar snapshot |
+| Structure | Labels, groups, row, grid | Editor model |
+| Lifecycle | Resize handle and breakpoint change | Host resize contract |
+
+Keep one primary action or value per visual group. Large flat panels make control relationships harder to scan, so group the gallery by continuous, discrete, and telemetry behavior.
+
+## Deeper Capabilities After the Core Library
+
+Add these only when a reference plugin needs them:
+
+- XY pad and multi-parameter gestures
+- Modulation value overlays distinct from base parameter values
+- Transfer-function and envelope editors
+- Waveform and spectrum views
+- Piano keyboard and step sequencer
+- Tooltips, popovers, and richer host menus
+- Preset browser and editor-persistent non-parameter state
+- Drag-and-drop files
+- Animation timelines with activity-based repaint scheduling
+- GPU-backed custom views after profiling demonstrates a need
+
+## Validation Gates
+
+Run for each milestone:
+
+```sh
+env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache zig build test raw-api-abi validate-examples
+env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache zig build pluginval-examples
+env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu
+env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu
+```
+
+Also verify:
+
+- `git diff --check`
+- No continuous repaint for static controls
+- No audio-thread allocation, lock, operating-system call, or unbounded work
+- No shared mutable editor or parameter state across plugin instances
+- No toolkit-specific type in the toolkit-neutral API
+
+## References
+
+- [Existing zig-vst3 GUI plan](gui-plan.md)
+- [Existing framework GUI guide](framework/gui.md)
+- [NIH-plug repository and GUI overview](https://github.com/robbert-vdh/nih-plug)
+- [NIH-plug Editor contract](https://nih-plug.robbertvanderhelm.nl/nih_plug/editor/trait.Editor.html)
+- [NIH-plug VIZIA widgets](https://github.com/robbert-vdh/nih-plug/tree/master/nih_plug_vizia/src/widgets)

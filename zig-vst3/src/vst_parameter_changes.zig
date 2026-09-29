@@ -59,7 +59,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
 
         const owner = interface_map.ownerFromField(Self, ivstparameterchanges.IParamValueQueue, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstparameterchanges.iparam_value_queue_iid, .ptr = ptr },
@@ -89,7 +89,10 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             return types.kInvalidArgument;
         }
 
-        fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.c) types.tresult {
+        fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset_raw: [*c]types.int32, value_raw: [*c]vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (sample_offset_raw == null or value_raw == null) return types.kInvalidArgument;
+            const sample_offset: *types.int32 = @ptrCast(sample_offset_raw);
+            const value: *vsttypes.ParamValue = @ptrCast(value_raw);
             const self = owner(ptr);
             const point = self.pointByIndex(index) orelse return failPoint(sample_offset, value);
             sample_offset.* = point.sample_offset;
@@ -102,7 +105,9 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             return types.kResultFalse;
         }
 
-        fn addPoint(ptr: *anyopaque, sample_offset: types.int32, value: vsttypes.ParamValue, index: *types.int32) callconv(.c) types.tresult {
+        fn addPoint(ptr: *anyopaque, sample_offset: types.int32, value: vsttypes.ParamValue, index_raw: [*c]types.int32) callconv(.c) types.tresult {
+            if (index_raw == null) return types.kInvalidArgument;
+            const index: *types.int32 = @ptrCast(index_raw);
             const self = owner(ptr);
             index.* = self.appendPointIndex(sample_offset, value) orelse return failAddedPoint(index);
             return types.kResultOk;
@@ -172,7 +177,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
 
         const owner = interface_map.ownerFromField(Self, ivstparameterchanges.IParameterChanges, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstparameterchanges.iparameter_changes_iid, .ptr = ptr },
@@ -203,14 +208,17 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
             return null;
         }
 
-        fn addParameterData(ptr: *anyopaque, id: *const vsttypes.ParamID, index: *types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
+        fn addParameterData(ptr: *anyopaque, id: [*c]const vsttypes.ParamID, index: [*c]types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
+            if (id == null or index == null) return null;
+            const index_out: *types.int32 = @ptrCast(index);
             const self = owner(ptr);
-            if (self.findQueueIndex(id.*)) |queue_index| {
-                index.* = vst_index.int32Count(queue_index);
+            if (self.findQueueIndex(id[0])) |queue_index| {
+                index_out.* = vst_index.int32Count(queue_index);
                 return self.queues[queue_index].asInterface();
             }
-            const queue_index = self.addQueueIndex(id.*) orelse return failAddedParameterData(index);
-            index.* = vst_index.int32Count(queue_index);
+            const queue_index = self.addQueueIndex(id[0]) orelse
+                return failAddedParameterData(index_out);
+            index_out.* = vst_index.int32Count(queue_index);
             return self.queues[queue_index].asInterface();
         }
 
@@ -244,6 +252,21 @@ test "parameter changes expose queued points" {
 
     var sample_offset: types.int32 = -1;
     var value: vsttypes.ParamValue = -1;
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        queue_iface.vtable.getPoint(queue_iface, 0, null, &value),
+    );
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, -1), value);
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        queue_iface.vtable.getPoint(queue_iface, 0, &sample_offset, null),
+    );
+    try std.testing.expectEqual(@as(types.int32, -1), sample_offset);
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        queue_iface.vtable.addPoint(queue_iface, 4, 0.5, null),
+    );
+    try std.testing.expectEqual(@as(types.int32, 2), queue_iface.vtable.getPointCount(queue_iface));
     try std.testing.expectEqual(types.kResultOk, queue_iface.vtable.getPoint(queue_iface, 1, &sample_offset, &value));
     try std.testing.expectEqual(@as(types.int32, 3), sample_offset);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), value);
@@ -268,6 +291,10 @@ test "parameter changes add parameter data and support query interface" {
     const iface = changes.asInterface();
     var id: vsttypes.ParamID = 9;
     var index: types.int32 = -1;
+    try std.testing.expect(iface.vtable.addParameterData(iface, null, &index) == null);
+    try std.testing.expectEqual(@as(types.int32, -1), index);
+    try std.testing.expect(iface.vtable.addParameterData(iface, &id, null) == null);
+    try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getParameterCount(iface));
     const queue_iface = iface.vtable.addParameterData(iface, &id, &index).?;
 
     try std.testing.expectEqual(@as(types.int32, 0), index);

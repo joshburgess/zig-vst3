@@ -1,4 +1,5 @@
 const std = @import("std");
+const funknown = @import("funknown.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
@@ -15,6 +16,10 @@ const events_helper = @import("pluginterfaces/vst/vsteventshelper.zig");
 const fixed_string = @import("fixed_string.zig");
 const vstspeaker = @import("pluginterfaces/vst/vstspeaker.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+
+pub const input_parameter_change_capacity: usize = 64;
+pub const input_event_capacity: usize = 64;
+pub const input_data_exchange_block_capacity: usize = 64;
 const string128 = @import("string128.zig");
 const tuid = @import("tuid.zig");
 const vst_event_list = @import("vst_event_list.zig");
@@ -26,7 +31,59 @@ const vst_stream = @import("vst_stream.zig");
 const max_audio_channels = plug.process.max_audio_channels;
 const max_data_event_bytes = plug.process.max_data_event_bytes;
 const empty_arrangement = vstspeaker.SpeakerArr.kEmpty;
+const mono_arrangement = vstspeaker.SpeakerArr.kMono;
 const stereo_arrangement = vstspeaker.SpeakerArr.kStereo;
+const stereo_wide_arrangement = vstspeaker.SpeakerArr.kStereoWide;
+const stereo_surround_arrangement =
+    vstspeaker.SpeakerArr.kStereoSurround;
+const stereo_center_arrangement =
+    vstspeaker.SpeakerArr.kStereoCenter;
+const stereo_side_arrangement = vstspeaker.SpeakerArr.kStereoSide;
+const surround_3_0_arrangement = vstspeaker.SpeakerArr.k30Cine;
+const surround_3_0_music_arrangement =
+    vstspeaker.SpeakerArr.k30Music;
+const surround_3_1_arrangement = vstspeaker.SpeakerArr.k31Cine;
+const surround_3_1_music_arrangement =
+    vstspeaker.SpeakerArr.k31Music;
+const quadraphonic_arrangement = vstspeaker.SpeakerArr.k40Music;
+const surround_4_0_cine_arrangement =
+    vstspeaker.SpeakerArr.k40Cine;
+const surround_4_1_arrangement = vstspeaker.SpeakerArr.k41Music;
+const surround_4_1_cine_arrangement =
+    vstspeaker.SpeakerArr.k41Cine;
+const surround_5_0_arrangement = vstspeaker.SpeakerArr.k50;
+const surround_5_1_arrangement = vstspeaker.SpeakerArr.k51;
+const surround_6_0_arrangement = vstspeaker.SpeakerArr.k60Music;
+const surround_6_0_cine_arrangement =
+    vstspeaker.SpeakerArr.k60Cine;
+const surround_6_1_arrangement = vstspeaker.SpeakerArr.k61Music;
+const surround_6_1_cine_arrangement =
+    vstspeaker.SpeakerArr.k61Cine;
+const surround_7_0_arrangement = vstspeaker.SpeakerArr.k70Music;
+const surround_7_0_sdds_arrangement =
+    vstspeaker.SpeakerArr.k70Cine;
+const surround_7_1_arrangement = vstspeaker.SpeakerArr.k71Music;
+const surround_7_1_sdds_arrangement =
+    vstspeaker.SpeakerArr.k71Cine;
+const surround_5_0_2_arrangement = vstspeaker.SpeakerArr.k50_2;
+const surround_5_1_2_arrangement = vstspeaker.SpeakerArr.k51_2;
+const surround_5_0_4_arrangement = vstspeaker.SpeakerArr.k50_4;
+const surround_5_1_4_arrangement = vstspeaker.SpeakerArr.k51_4;
+const surround_7_0_2_arrangement = vstspeaker.SpeakerArr.k70_2;
+const surround_7_1_2_arrangement = vstspeaker.SpeakerArr.k71_2;
+const surround_7_0_4_arrangement = vstspeaker.SpeakerArr.k70_4;
+const surround_7_1_4_arrangement = vstspeaker.SpeakerArr.k71_4;
+const ambisonic_first_order_arrangement = vstspeaker.SpeakerArr.kAmbi1stOrderACN;
+const ambisonic_second_order_arrangement = vstspeaker.SpeakerArr.kAmbi2cdOrderACN;
+const ambisonic_third_order_arrangement = vstspeaker.SpeakerArr.kAmbi3rdOrderACN;
+const ambisonic_fourth_order_arrangement =
+    vstspeaker.SpeakerArr.kAmbi4thOrderACN;
+const ambisonic_fifth_order_arrangement =
+    vstspeaker.SpeakerArr.kAmbi5thOrderACN;
+const ambisonic_sixth_order_arrangement =
+    vstspeaker.SpeakerArr.kAmbi6thOrderACN;
+const ambisonic_seventh_order_arrangement =
+    vstspeaker.SpeakerArr.kAmbi7thOrderACN;
 const test_sample_rate: f64 = 48_000.0;
 const formatted_parameter_value_bytes = 64;
 const parsed_parameter_value_bytes = 128;
@@ -60,12 +117,98 @@ const FixedBufferStream = struct {
     }
 };
 
-pub const StereoAudioBuses = struct {
+pub const AudioBuses = struct {
     pub const Config = struct {
         audio_input: bool = true,
         audio_output: bool = true,
+        audio_input_layout: plug.plugin.AudioBusLayout = .stereo,
+        audio_output_layout: plug.plugin.AudioBusLayout = .stereo,
+        audio_sidechain_layout: plug.plugin.AudioBusLayout = .none,
+        audio_auxiliary_output_layout: plug.plugin.AudioBusLayout = .none,
+        audio_auxiliary_input_layouts: []const plug.plugin.AudioBusLayout = &.{},
+        audio_auxiliary_output_layouts: []const plug.plugin.AudioBusLayout = &.{},
         event_input: bool = true,
         event_output: bool = false,
+
+        pub fn inputLayout(self: Config) plug.plugin.AudioBusLayout {
+            return if (self.audio_input) self.audio_input_layout else .none;
+        }
+
+        pub fn outputLayout(self: Config) plug.plugin.AudioBusLayout {
+            return if (self.audio_output) self.audio_output_layout else .none;
+        }
+
+        pub fn sidechainLayout(self: Config) plug.plugin.AudioBusLayout {
+            return self.auxiliaryInputLayout(0) orelse .none;
+        }
+
+        pub fn auxiliaryOutputLayout(self: Config) plug.plugin.AudioBusLayout {
+            return self.auxiliaryOutputLayoutAt(0) orelse .none;
+        }
+
+        pub fn auxiliaryInputCount(self: Config) usize {
+            if (!self.inputLayout().hasBus()) return 0;
+            if (self.audio_auxiliary_input_layouts.len != 0)
+                return self.audio_auxiliary_input_layouts.len;
+            return @intFromBool(self.audio_sidechain_layout.hasBus());
+        }
+
+        pub fn auxiliaryOutputCount(self: Config) usize {
+            if (!self.outputLayout().hasBus()) return 0;
+            if (self.audio_auxiliary_output_layouts.len != 0)
+                return self.audio_auxiliary_output_layouts.len;
+            return @intFromBool(self.audio_auxiliary_output_layout.hasBus());
+        }
+
+        pub fn auxiliaryInputLayout(
+            self: Config,
+            index: usize,
+        ) ?plug.plugin.AudioBusLayout {
+            if (index >= self.auxiliaryInputCount()) return null;
+            if (self.audio_auxiliary_input_layouts.len != 0)
+                return self.audio_auxiliary_input_layouts[index];
+            return self.audio_sidechain_layout;
+        }
+
+        pub fn auxiliaryOutputLayoutAt(
+            self: Config,
+            index: usize,
+        ) ?plug.plugin.AudioBusLayout {
+            if (index >= self.auxiliaryOutputCount()) return null;
+            if (self.audio_auxiliary_output_layouts.len != 0)
+                return self.audio_auxiliary_output_layouts[index];
+            return self.audio_auxiliary_output_layout;
+        }
+
+        pub fn valid(self: Config) bool {
+            const declared_auxiliary_inputs = if (self.audio_auxiliary_input_layouts.len != 0)
+                self.audio_auxiliary_input_layouts.len
+            else
+                @intFromBool(self.audio_sidechain_layout.hasBus());
+            const declared_auxiliary_outputs = if (self.audio_auxiliary_output_layouts.len != 0)
+                self.audio_auxiliary_output_layouts.len
+            else
+                @intFromBool(self.audio_auxiliary_output_layout.hasBus());
+            if (self.audio_auxiliary_input_layouts.len >=
+                std.math.maxInt(u8) or
+                self.audio_auxiliary_output_layouts.len >=
+                    std.math.maxInt(u8))
+                return false;
+            if (self.audio_auxiliary_input_layouts.len != 0 and
+                self.audio_sidechain_layout.hasBus())
+                return false;
+            if (self.audio_auxiliary_output_layouts.len != 0 and
+                self.audio_auxiliary_output_layout.hasBus())
+                return false;
+            for (self.audio_auxiliary_input_layouts) |layout| {
+                if (!layout.hasBus()) return false;
+            }
+            for (self.audio_auxiliary_output_layouts) |layout| {
+                if (!layout.hasBus()) return false;
+            }
+            return (declared_auxiliary_inputs == 0 or self.inputLayout().hasBus()) and
+                (declared_auxiliary_outputs == 0 or self.outputLayout().hasBus());
+        }
     };
 
     pub fn busCount(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) types.int32 {
@@ -77,13 +220,46 @@ pub const StereoAudioBuses = struct {
     }
 
     pub fn busCountConfigured(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, config: Config) types.int32 {
-        if (mediaIs(media_type, .kAudio) and hasConfiguredAudioBus(config, direction)) {
-            return 1;
+        if (!config.valid()) return 0;
+        if (mediaIs(media_type, .kAudio)) {
+            return configuredAudioBusCount(config, direction);
         }
         if (mediaIs(media_type, .kEvent) and hasConfiguredEventBus(config, direction)) {
             return 1;
         }
         return 0;
+    }
+
+    pub fn configFromSnapshot(
+        snapshot: anytype,
+        event_input: bool,
+        event_output: bool,
+    ) ?Config {
+        if (!snapshot.valid()) return null;
+        const input_count: usize = snapshot.input_count;
+        const output_count: usize = snapshot.output_count;
+        return .{
+            .audio_input = input_count != 0,
+            .audio_output = output_count != 0,
+            .audio_input_layout = if (input_count != 0)
+                snapshot.input_layouts[0]
+            else
+                .none,
+            .audio_output_layout = if (output_count != 0)
+                snapshot.output_layouts[0]
+            else
+                .none,
+            .audio_auxiliary_input_layouts = if (input_count > 1)
+                snapshot.input_layouts[1..input_count]
+            else
+                &.{},
+            .audio_auxiliary_output_layouts = if (output_count > 1)
+                snapshot.output_layouts[1..output_count]
+            else
+                &.{},
+            .event_input = event_input,
+            .event_output = event_output,
+        };
     }
 
     pub fn busInfo(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo) types.tresult {
@@ -95,23 +271,22 @@ pub const StereoAudioBuses = struct {
     }
 
     pub fn busInfoConfigured(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo, config: Config) types.tresult {
-        if (index != 0) {
-            return failBusInfo(out);
-        }
-
-        if (mediaIs(media_type, .kAudio) and hasConfiguredAudioBus(config, direction)) {
+        if (!config.valid()) return failBusInfo(out);
+        if (mediaIs(media_type, .kAudio)) {
+            const layout = audioLayoutAt(config, direction, index) orelse return failBusInfo(out);
+            const main_bus = index == 0;
             out.* = .{
                 .mediaType = media_type,
                 .direction = direction,
-                .channelCount = 2,
-                .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
-                .flags = ivstcomponent.BusFlags.kDefaultActive,
+                .channelCount = @intCast(layout.channelCount()),
+                .busType = @intFromEnum(if (main_bus) ivstcomponent.BusTypes.kMain else ivstcomponent.BusTypes.kAux),
+                .flags = if (main_bus) ivstcomponent.BusFlags.kDefaultActive else 0,
             };
-            string128.copy(&out.name, if (directionIs(direction, .kInput)) "Stereo In" else "Stereo Out");
+            string128.copy(&out.name, audioBusName(config, direction, index));
             return types.kResultOk;
         }
 
-        if (mediaIs(media_type, .kEvent) and hasConfiguredEventBus(config, direction)) {
+        if (index == 0 and mediaIs(media_type, .kEvent) and hasConfiguredEventBus(config, direction)) {
             out.* = .{
                 .mediaType = media_type,
                 .direction = direction,
@@ -126,10 +301,61 @@ pub const StereoAudioBuses = struct {
         return failBusInfo(out);
     }
 
-    fn hasConfiguredAudioBus(config: Config, direction: vsttypes.BusDirection) bool {
-        if (config.audio_input and directionIs(direction, .kInput)) return true;
-        if (config.audio_output and directionIs(direction, .kOutput)) return true;
-        return false;
+    pub fn busInfoSnapshot(
+        media_type: vsttypes.MediaType,
+        direction: vsttypes.BusDirection,
+        index: types.int32,
+        out: *ivstcomponent.BusInfo,
+        snapshot: anytype,
+        event_input: bool,
+        event_output: bool,
+    ) types.tresult {
+        const config = configFromSnapshot(
+            snapshot,
+            event_input,
+            event_output,
+        ) orelse return failBusInfo(out);
+        const result = busInfoConfigured(
+            media_type,
+            direction,
+            index,
+            out,
+            config,
+        );
+        if (result != types.kResultOk or !mediaIs(media_type, .kAudio))
+            return result;
+        const bus_direction: plug.plugin.AudioBusDirection =
+            if (directionIs(direction, .kInput))
+                .input
+            else if (directionIs(direction, .kOutput))
+                .output
+            else
+                return failBusInfo(out);
+        const bus_state = snapshot.bus(
+            bus_direction,
+            std.math.cast(usize, index) orelse return failBusInfo(out),
+        ) orelse return failBusInfo(out);
+        out.flags = if (bus_state.default_active)
+            ivstcomponent.BusFlags.kDefaultActive
+        else
+            0;
+        return types.kResultOk;
+    }
+
+    pub fn activateBusConfigured(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool, config: Config) types.tresult {
+        if (!config.valid()) return types.kInvalidArgument;
+        if (state > 1 or index < 0 or index >= busCountConfigured(media_type, direction, config)) return types.kInvalidArgument;
+        return types.kResultOk;
+    }
+
+    fn configuredAudioBusCount(config: Config, direction: vsttypes.BusDirection) types.int32 {
+        if (directionIs(direction, .kOutput)) {
+            return configuredBusCount(config.outputLayout().hasBus()) +
+                @as(types.int32, @intCast(config.auxiliaryOutputCount()));
+        }
+        if (!directionIs(direction, .kInput)) return 0;
+        return configuredBusCount(config.inputLayout().hasBus()) +
+            @as(types.int32, @intCast(config.auxiliaryInputCount()));
     }
 
     fn hasConfiguredEventBus(config: Config, direction: vsttypes.BusDirection) bool {
@@ -156,16 +382,29 @@ pub const StereoAudioBuses = struct {
     }
 
     pub fn setArrangementsConfigured(inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32, config: Config) types.tresult {
+        if (!config.valid()) return types.kInvalidArgument;
         const expected_inputs = configuredAudioInputCount(config);
         const expected_outputs = configuredAudioOutputCount(config);
         if (num_inputs != expected_inputs or num_outputs != expected_outputs) {
             return types.kResultFalse;
         }
-        if (config.audio_input) {
-            if (!arrangementIsStereo(inputs)) return types.kResultFalse;
+        for (0..@as(usize, @intCast(expected_inputs))) |index| {
+            const layout = audioLayoutAt(
+                config,
+                @intFromEnum(ivstcomponent.BusDirections.kInput),
+                @intCast(index),
+            ) orelse return types.kResultFalse;
+            if (!arrangementMatches(inputs, index, layout))
+                return types.kResultFalse;
         }
-        if (config.audio_output) {
-            if (!arrangementIsStereo(outputs)) return types.kResultFalse;
+        for (0..@as(usize, @intCast(expected_outputs))) |index| {
+            const layout = audioLayoutAt(
+                config,
+                @intFromEnum(ivstcomponent.BusDirections.kOutput),
+                @intCast(index),
+            ) orelse return types.kResultFalse;
+            if (!arrangementMatches(outputs, index, layout))
+                return types.kResultFalse;
         }
         return types.kResultOk;
     }
@@ -175,31 +414,177 @@ pub const StereoAudioBuses = struct {
     }
 
     pub fn arrangementConfigured(direction: vsttypes.BusDirection, index: types.int32, out: *vsttypes.SpeakerArrangement, config: Config) types.tresult {
-        if (index != 0 or !hasConfiguredAudioBus(config, direction)) {
+        if (!config.valid()) {
             out.* = empty_arrangement;
             return types.kInvalidArgument;
         }
-        out.* = stereo_arrangement;
+        const layout = audioLayoutAt(config, direction, index) orelse {
+            out.* = empty_arrangement;
+            return types.kInvalidArgument;
+        };
+        out.* = speakerArrangement(layout);
         return types.kResultOk;
     }
 
+    pub fn layoutForSpeakerArrangement(
+        arrangement_value: vsttypes.SpeakerArrangement,
+    ) ?plug.plugin.AudioBusLayout {
+        inline for (@typeInfo(plug.plugin.AudioBusLayout).@"enum".fields) |field| {
+            const layout: plug.plugin.AudioBusLayout = @enumFromInt(field.value);
+            if (speakerArrangement(layout) == arrangement_value)
+                return layout;
+        }
+        return null;
+    }
+
     fn configuredAudioInputCount(config: Config) types.int32 {
-        return configuredBusCount(config.audio_input);
+        return configuredAudioBusCount(config, @intFromEnum(ivstcomponent.BusDirections.kInput));
     }
 
     fn configuredAudioOutputCount(config: Config) types.int32 {
-        return configuredBusCount(config.audio_output);
+        return configuredAudioBusCount(config, @intFromEnum(ivstcomponent.BusDirections.kOutput));
     }
 
     fn configuredBusCount(enabled: bool) types.int32 {
         return if (enabled) 1 else 0;
     }
 
-    fn arrangementIsStereo(arrangements: ?[*]vsttypes.SpeakerArrangement) bool {
+    fn arrangementMatches(arrangements: ?[*]vsttypes.SpeakerArrangement, index: usize, layout: plug.plugin.AudioBusLayout) bool {
         const values = arrangements orelse return false;
-        return values[0] == stereo_arrangement;
+        return values[index] == speakerArrangement(layout);
+    }
+
+    fn audioLayoutAt(config: Config, direction: vsttypes.BusDirection, index: types.int32) ?plug.plugin.AudioBusLayout {
+        if (index < 0) return null;
+        if (directionIs(direction, .kOutput)) {
+            if (index == 0 and config.outputLayout().hasBus()) return config.outputLayout();
+            if (!config.outputLayout().hasBus()) return null;
+            return config.auxiliaryOutputLayoutAt(@intCast(index - 1));
+        }
+        if (!directionIs(direction, .kInput)) return null;
+        if (index == 0 and config.inputLayout().hasBus()) return config.inputLayout();
+        if (!config.inputLayout().hasBus()) return null;
+        return config.auxiliaryInputLayout(@intCast(index - 1));
+    }
+
+    fn speakerArrangement(layout: plug.plugin.AudioBusLayout) vsttypes.SpeakerArrangement {
+        return switch (layout) {
+            .none => empty_arrangement,
+            .mono => mono_arrangement,
+            .stereo => stereo_arrangement,
+            .stereo_wide => stereo_wide_arrangement,
+            .stereo_surround => stereo_surround_arrangement,
+            .stereo_center => stereo_center_arrangement,
+            .stereo_side => stereo_side_arrangement,
+            .surround_3_0 => surround_3_0_arrangement,
+            .surround_3_0_music => surround_3_0_music_arrangement,
+            .surround_3_1 => surround_3_1_arrangement,
+            .surround_3_1_music => surround_3_1_music_arrangement,
+            .quadraphonic => quadraphonic_arrangement,
+            .surround_4_0_cine => surround_4_0_cine_arrangement,
+            .surround_4_1 => surround_4_1_arrangement,
+            .surround_4_1_cine => surround_4_1_cine_arrangement,
+            .surround_5_0 => surround_5_0_arrangement,
+            .surround_5_1 => surround_5_1_arrangement,
+            .surround_6_0 => surround_6_0_arrangement,
+            .surround_6_0_cine => surround_6_0_cine_arrangement,
+            .surround_6_1 => surround_6_1_arrangement,
+            .surround_6_1_cine => surround_6_1_cine_arrangement,
+            .surround_7_0 => surround_7_0_arrangement,
+            .surround_7_0_sdds => surround_7_0_sdds_arrangement,
+            .surround_7_1 => surround_7_1_arrangement,
+            .surround_7_1_sdds => surround_7_1_sdds_arrangement,
+            .surround_5_0_2 => surround_5_0_2_arrangement,
+            .surround_5_1_2 => surround_5_1_2_arrangement,
+            .surround_5_0_4 => surround_5_0_4_arrangement,
+            .surround_5_1_4 => surround_5_1_4_arrangement,
+            .surround_7_0_2 => surround_7_0_2_arrangement,
+            .surround_7_1_2 => surround_7_1_2_arrangement,
+            .surround_7_0_4 => surround_7_0_4_arrangement,
+            .surround_7_1_4 => surround_7_1_4_arrangement,
+            .ambisonic_first_order => ambisonic_first_order_arrangement,
+            .ambisonic_second_order => ambisonic_second_order_arrangement,
+            .ambisonic_third_order => ambisonic_third_order_arrangement,
+            .ambisonic_fourth_order => ambisonic_fourth_order_arrangement,
+            .ambisonic_fifth_order => ambisonic_fifth_order_arrangement,
+            .ambisonic_sixth_order => ambisonic_sixth_order_arrangement,
+            .ambisonic_seventh_order => ambisonic_seventh_order_arrangement,
+        };
+    }
+
+    fn audioBusName(config: Config, direction: vsttypes.BusDirection, index: types.int32) []const u8 {
+        const auxiliary_input_names = [_][]const u8{
+            "Sidechain In",
+            "Auxiliary In 2",
+            "Auxiliary In 3",
+            "Auxiliary In 4",
+            "Auxiliary In 5",
+            "Auxiliary In 6",
+            "Auxiliary In 7",
+            "Auxiliary In 8",
+        };
+        const auxiliary_output_names = [_][]const u8{
+            "Auxiliary Out",
+            "Auxiliary Out 2",
+            "Auxiliary Out 3",
+            "Auxiliary Out 4",
+            "Auxiliary Out 5",
+            "Auxiliary Out 6",
+            "Auxiliary Out 7",
+            "Auxiliary Out 8",
+        };
+        if (index > 0 and directionIs(direction, .kInput))
+            return auxiliary_input_names[@intCast(index - 1)];
+        if (index > 0 and directionIs(direction, .kOutput))
+            return auxiliary_output_names[@intCast(index - 1)];
+        const input = directionIs(direction, .kInput);
+        const layout = audioLayoutAt(config, direction, index) orelse return "";
+        return switch (layout) {
+            .none => "",
+            .mono => if (input) "Mono In" else "Mono Out",
+            .stereo => if (input) "Stereo In" else "Stereo Out",
+            .stereo_wide => if (input) "Stereo Wide In" else "Stereo Wide Out",
+            .stereo_surround => if (input) "Stereo Surround In" else "Stereo Surround Out",
+            .stereo_center => if (input) "Stereo Center In" else "Stereo Center Out",
+            .stereo_side => if (input) "Stereo Side In" else "Stereo Side Out",
+            .surround_3_0 => if (input) "3.0 Surround In" else "3.0 Surround Out",
+            .surround_3_0_music => if (input) "3.0 Music In" else "3.0 Music Out",
+            .surround_3_1 => if (input) "3.1 Surround In" else "3.1 Surround Out",
+            .surround_3_1_music => if (input) "3.1 Music In" else "3.1 Music Out",
+            .quadraphonic => if (input) "Quadraphonic In" else "Quadraphonic Out",
+            .surround_4_0_cine => if (input) "4.0 Cine In" else "4.0 Cine Out",
+            .surround_4_1 => if (input) "4.1 Surround In" else "4.1 Surround Out",
+            .surround_4_1_cine => if (input) "4.1 Cine In" else "4.1 Cine Out",
+            .surround_5_0 => if (input) "5.0 Surround In" else "5.0 Surround Out",
+            .surround_5_1 => if (input) "5.1 Surround In" else "5.1 Surround Out",
+            .surround_6_0 => if (input) "6.0 Surround In" else "6.0 Surround Out",
+            .surround_6_0_cine => if (input) "6.0 Cine In" else "6.0 Cine Out",
+            .surround_6_1 => if (input) "6.1 Surround In" else "6.1 Surround Out",
+            .surround_6_1_cine => if (input) "6.1 Cine In" else "6.1 Cine Out",
+            .surround_7_0 => if (input) "7.0 Surround In" else "7.0 Surround Out",
+            .surround_7_0_sdds => if (input) "7.0 SDDS In" else "7.0 SDDS Out",
+            .surround_7_1 => if (input) "7.1 Surround In" else "7.1 Surround Out",
+            .surround_7_1_sdds => if (input) "7.1 SDDS In" else "7.1 SDDS Out",
+            .surround_5_0_2 => if (input) "5.0.2 Surround In" else "5.0.2 Surround Out",
+            .surround_5_1_2 => if (input) "5.1.2 Surround In" else "5.1.2 Surround Out",
+            .surround_5_0_4 => if (input) "5.0.4 Surround In" else "5.0.4 Surround Out",
+            .surround_5_1_4 => if (input) "5.1.4 Surround In" else "5.1.4 Surround Out",
+            .surround_7_0_2 => if (input) "7.0.2 Surround In" else "7.0.2 Surround Out",
+            .surround_7_1_2 => if (input) "7.1.2 Surround In" else "7.1.2 Surround Out",
+            .surround_7_0_4 => if (input) "7.0.4 Surround In" else "7.0.4 Surround Out",
+            .surround_7_1_4 => if (input) "7.1.4 Surround In" else "7.1.4 Surround Out",
+            .ambisonic_first_order => if (input) "First-Order Ambisonic In" else "First-Order Ambisonic Out",
+            .ambisonic_second_order => if (input) "Second-Order Ambisonic In" else "Second-Order Ambisonic Out",
+            .ambisonic_third_order => if (input) "Third-Order Ambisonic In" else "Third-Order Ambisonic Out",
+            .ambisonic_fourth_order => if (input) "Fourth-Order Ambisonic In" else "Fourth-Order Ambisonic Out",
+            .ambisonic_fifth_order => if (input) "Fifth-Order Ambisonic In" else "Fifth-Order Ambisonic Out",
+            .ambisonic_sixth_order => if (input) "Sixth-Order Ambisonic In" else "Sixth-Order Ambisonic Out",
+            .ambisonic_seventh_order => if (input) "Seventh-Order Ambisonic In" else "Seventh-Order Ambisonic Out",
+        };
     }
 };
+
+pub const StereoAudioBuses = AudioBuses;
 
 pub const RealtimeProcessorDefaults = struct {
     pub fn canProcessSampleSize(symbolic_sample_size: types.int32) types.tresult {
@@ -210,6 +595,7 @@ pub const RealtimeProcessorDefaults = struct {
         const sample_size_result = canProcessSampleSize(setup.symbolicSampleSize);
         if (sample_size_result != types.kResultOk) return sample_size_result;
 
+        _ = processMode(setup.processMode) orelse return types.kInvalidArgument;
         const max_block_size = vst_index.nonNegativeU32Count(setup.maxSamplesPerBlock) orelse return types.kInvalidArgument;
         if (max_block_size == 0) return types.kInvalidArgument;
         const prepare_config = plug.plugin.PrepareConfig{
@@ -218,6 +604,13 @@ pub const RealtimeProcessorDefaults = struct {
         };
         prepare_config.validate() catch return types.kInvalidArgument;
         return types.kResultOk;
+    }
+
+    pub fn processMode(value: types.int32) ?plug.process.ProcessMode {
+        if (value == @intFromEnum(ivstaudioprocessor.ProcessModes.kRealtime)) return .realtime;
+        if (value == @intFromEnum(ivstaudioprocessor.ProcessModes.kPrefetch)) return .prefetch;
+        if (value == @intFromEnum(ivstaudioprocessor.ProcessModes.kOffline)) return .offline;
+        return null;
     }
 
     pub fn latencySamples() types.uint32 {
@@ -261,12 +654,20 @@ pub fn ParameterState(comptime Params: type) type {
 
         pub fn setNormalizedById(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
             if (self.set.isReadOnlyById(id) orelse return types.kInvalidArgument) return types.kResultFalse;
+            if (!vst_value.isNormalized(value)) return types.kInvalidArgument;
             if (!self.values.storeById(self.set, id, value)) return types.kInvalidArgument;
             return types.kResultOk;
         }
 
         pub fn applyChanges(self: *Self, changes: plug.process.ParameterChanges) void {
             self.values.applyChanges(self.set, changes);
+        }
+
+        pub fn snapshotAtOffset(self: *const Self, changes: plug.process.ParameterChanges, sample_offset: usize) Self {
+            var snapshot = Self.init(self.set);
+            snapshot.values.copyFrom(&self.values);
+            snapshot.values.applyChangesAtOffset(self.set, changes, sample_offset);
+            return snapshot;
         }
 
         pub fn encodedSize(_: *const Self) usize {
@@ -301,16 +702,25 @@ pub fn ParameterController(comptime Params: type) type {
             return vst_index.int32Count(Set.count);
         }
 
-        pub fn parameterInfo(self: *const Self, index: types.int32, out: *ivsteditcontroller.ParameterInfo) types.tresult {
-            return fillParameterInfo(Params, self.set, index, out);
+        pub fn parameterInfo(self: *const Self, index: types.int32, out: [*c]ivsteditcontroller.ParameterInfo) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            return fillParameterInfo(Params, self.set, index, @ptrCast(out));
         }
 
-        pub fn stringByValue(self: *const Self, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*]vsttypes.TChar) types.tresult {
-            return getParamStringByValue(Params, self.set, id, value, out);
+        pub fn stringByValue(self: *const Self, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*c]vsttypes.TChar) types.tresult {
+            if (out == null) return types.kInvalidArgument;
+            return getParamStringByValue(Params, self.set, id, value, @ptrCast(out));
         }
 
-        pub fn valueByString(self: *const Self, id: vsttypes.ParamID, text: [*]vsttypes.TChar, out: *vsttypes.ParamValue) types.tresult {
-            return getParamValueByString(Params, self.set, id, text, out);
+        pub fn valueByString(self: *const Self, id: vsttypes.ParamID, text: [*c]vsttypes.TChar, out: [*c]vsttypes.ParamValue) types.tresult {
+            if (text == null or out == null) return types.kInvalidArgument;
+            return getParamValueByString(
+                Params,
+                self.set,
+                id,
+                @ptrCast(text),
+                @ptrCast(out),
+            );
         }
 
         pub fn plainFromNormalized(self: *const Self, id: vsttypes.ParamID, normalized: vsttypes.ParamValue) vsttypes.ParamValue {
@@ -357,12 +767,14 @@ pub fn fillParameterInfo(
     const name = set.name(parameter_index) orelse return failParameterInfo(out);
     const short_name = set.shortName(parameter_index) orelse return failParameterInfo(out);
     const units = set.units(parameter_index) orelse return failParameterInfo(out);
+    const flags = parameterInfoFlags(Params, set, parameter_index) orelse
+        return failParameterInfo(out);
     out.* = .{
         .id = id,
         .stepCount = step_count,
         .defaultNormalizedValue = default_normalized,
         .unitId = unit_id,
-        .flags = parameterInfoFlags(Params, set, parameter_index),
+        .flags = flags,
     };
     string128.copy(&out.title, name);
     string128.copy(&out.shortTitle, short_name);
@@ -383,12 +795,12 @@ fn parameterInfoFlags(
     comptime Params: type,
     set: *const plug.parameters.ParameterSet(Params),
     index: usize,
-) types.int32 {
+) ?types.int32 {
     var flags: types.int32 = 0;
-    addParameterFlag(&flags, set.canAutomate(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate);
-    addParameterFlag(&flags, set.isReadOnly(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsReadOnly);
-    addParameterFlag(&flags, set.isList(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList);
-    addParameterFlag(&flags, set.isBypass(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsBypass);
+    addParameterFlag(&flags, set.canAutomate(index) orelse return null, ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate);
+    addParameterFlag(&flags, set.isReadOnly(index) orelse return null, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsReadOnly);
+    addParameterFlag(&flags, set.isList(index) orelse return null, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList);
+    addParameterFlag(&flags, set.isBypass(index) orelse return null, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsBypass);
     return flags;
 }
 
@@ -432,8 +844,10 @@ pub fn normalizedParamToPlain(
     id: vsttypes.ParamID,
     normalized: vsttypes.ParamValue,
 ) vsttypes.ParamValue {
+    if (!std.math.isFinite(normalized)) return 0;
     const index = set.indexOfId(id) orelse return 0;
-    return set.plainFromNormalized(index, normalized) orelse unreachable;
+    const plain = set.plainFromNormalized(index, normalized) orelse return 0;
+    return if (std.math.isFinite(plain)) plain else 0;
 }
 
 pub fn plainParamToNormalized(
@@ -442,8 +856,10 @@ pub fn plainParamToNormalized(
     id: vsttypes.ParamID,
     plain: vsttypes.ParamValue,
 ) vsttypes.ParamValue {
+    if (!std.math.isFinite(plain)) return 0;
     const index = set.indexOfId(id) orelse return 0;
-    return set.normalizedFromPlain(index, plain) orelse unreachable;
+    const normalized = set.normalizedFromPlain(index, plain) orelse return 0;
+    return if (std.math.isFinite(normalized)) normalized else 0;
 }
 
 pub fn frameCountOrZero(data: *const ivstaudioprocessor.ProcessData) usize {
@@ -465,10 +881,74 @@ fn processSampleRate(data: *const ivstaudioprocessor.ProcessData, fallback: f64)
     return fallback;
 }
 
+fn processTransport(
+    data: *const ivstaudioprocessor.ProcessData,
+) ?plug.process.Transport {
+    const context = data.processContext orelse return null;
+    const state: ivstprocesscontext.StatesAndFlags =
+        @bitCast(context.state);
+    const tempo = if (state.tempo_valid and
+        std.math.isFinite(context.tempo) and
+        context.tempo > 0.0 and
+        context.tempo <= 1_000.0)
+        context.tempo
+    else
+        null;
+    const project_quarter_notes = if (state.project_time_music_valid and
+        std.math.isFinite(context.projectTimeMusic))
+        context.projectTimeMusic
+    else
+        null;
+    const bar_position = if (state.bar_position_valid and
+        std.math.isFinite(context.barPositionMusic))
+        context.barPositionMusic
+    else
+        null;
+    const cycle: ?plug.process.CycleRange =
+        if (state.cycle_valid and
+        std.math.isFinite(context.cycleStartMusic) and
+        std.math.isFinite(context.cycleEndMusic) and
+        context.cycleEndMusic >= context.cycleStartMusic)
+            .{
+                .start_quarter_notes = context.cycleStartMusic,
+                .end_quarter_notes = context.cycleEndMusic,
+            }
+        else
+            null;
+    const time_signature: ?plug.process.TimeSignature =
+        if (state.time_sig_valid and
+        context.timeSigNumerator > 0 and
+        context.timeSigNumerator <= std.math.maxInt(u16) and
+        context.timeSigDenominator > 0 and
+        context.timeSigDenominator <= std.math.maxInt(u16) and
+        std.math.isPowerOfTwo(
+            @as(u16, @intCast(context.timeSigDenominator)),
+        ))
+            .{
+                .numerator = @intCast(context.timeSigNumerator),
+                .denominator = @intCast(context.timeSigDenominator),
+            }
+        else
+            null;
+
+    return .{
+        .project_time_samples = context.projectTimeSamples,
+        .state_valid = true,
+        .playing = state.playing,
+        .recording = state.recording,
+        .cycle_active = state.cycle_active,
+        .tempo_bpm = tempo,
+        .project_quarter_notes = project_quarter_notes,
+        .bar_position_quarter_notes = bar_position,
+        .cycle = cycle,
+        .time_signature = time_signature,
+    };
+}
+
 pub fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, storage: []plug.process.ParameterChange) plug.process.ParameterChanges {
     var collector = ParameterChangeCollector{
         .storage = storage,
-        .frame_count = frameCountOrZero(data),
+        .frame_count = @max(frameCountOrZero(data), 1),
     };
     audio_processor_algo.forEachParameterChangesUntil(data.inputParameterChanges, &collector, collectParameterQueue);
     return plug.process.ParameterChanges.init(collector.items(), collector.frame_count) catch .{};
@@ -483,6 +963,45 @@ pub fn collectInputEvents(data: *ivstaudioprocessor.ProcessData, storage: []plug
     return plug.process.Events.init(collector.items(), collector.frame_count) catch .{};
 }
 
+pub fn validateParameterFlushData(data: *const ivstaudioprocessor.ProcessData, bus_config: StereoAudioBuses.Config) types.tresult {
+    if (!bus_config.valid()) return types.kInvalidArgument;
+    if (data.numSamples != 0) return types.kInvalidArgument;
+    const input_count = vst_index.nonNegativeCount(data.numInputs) orelse return types.kInvalidArgument;
+    const output_count = vst_index.nonNegativeCount(data.numOutputs) orelse return types.kInvalidArgument;
+    const maximum_input_count: usize =
+        @as(usize, @intFromBool(bus_config.inputLayout().hasBus())) +
+        bus_config.auxiliaryInputCount();
+    const maximum_output_count: usize =
+        @as(usize, @intFromBool(bus_config.outputLayout().hasBus())) +
+        bus_config.auxiliaryOutputCount();
+    if (input_count > maximum_input_count or output_count > maximum_output_count) return types.kInvalidArgument;
+    if (input_count != 0) {
+        const inputs = data.inputs orelse return types.kInvalidArgument;
+        for (inputs[0..input_count], 0..) |input, index| {
+            const channel_count = vst_index.nonNegativeCount(input.numChannels) orelse return types.kInvalidArgument;
+            const layout = AudioBuses.audioLayoutAt(
+                bus_config,
+                @intFromEnum(ivstcomponent.BusDirections.kInput),
+                @intCast(index),
+            ) orelse return types.kInvalidArgument;
+            if (channel_count > layout.channelCount()) return types.kInvalidArgument;
+        }
+    }
+    if (output_count != 0) {
+        const outputs = data.outputs orelse return types.kInvalidArgument;
+        for (outputs[0..output_count], 0..) |output, index| {
+            const channel_count = vst_index.nonNegativeCount(output.numChannels) orelse return types.kInvalidArgument;
+            const layout = AudioBuses.audioLayoutAt(
+                bus_config,
+                @intFromEnum(ivstcomponent.BusDirections.kOutput),
+                @intCast(index),
+            ) orelse return types.kInvalidArgument;
+            if (channel_count > layout.channelCount()) return types.kInvalidArgument;
+        }
+    }
+    return RealtimeProcessorDefaults.canProcessSampleSize(data.symbolicSampleSize);
+}
+
 pub fn writeOutputEvents(data: *ivstaudioprocessor.ProcessData, events: plug.process.Events) types.tresult {
     const output_events = data.outputEvents orelse return types.kResultOk;
     const frame_count = validFrameCount(data) catch return types.kInvalidArgument;
@@ -493,6 +1012,20 @@ pub fn writeOutputEvents(data: *ivstaudioprocessor.ProcessData, events: plug.pro
         if (output_events.vtable.addEvent(output_events, &vst_event) != types.kResultOk) return types.kResultFalse;
     }
     return types.kResultOk;
+}
+
+pub fn validateParameterFlushSnapshot(
+    data: *const ivstaudioprocessor.ProcessData,
+    snapshot: anytype,
+    event_input: bool,
+    event_output: bool,
+) types.tresult {
+    const config = StereoAudioBuses.configFromSnapshot(
+        snapshot,
+        event_input,
+        event_output,
+    ) orelse return types.kInvalidArgument;
+    return validateParameterFlushData(data, config);
 }
 
 pub fn makeProcessContext(
@@ -529,21 +1062,30 @@ pub fn makeProcessContextWithSampleRate(
         output_channels[channel] = output_buffers[channel][0..frame_count];
     }
 
-    return try plug.process.ProcessContext(Sample).initWith(
-        processSampleRate(data, fallback_sample_rate),
-        input_channels[0..channel_count],
-        output_channels[0..channel_count],
-        .{
+    const process_mode = RealtimeProcessorDefaults.processMode(data.processMode) orelse return error.InvalidProcessMode;
+    return try plug.process.ProcessContext(Sample).initWithOptions(.{
+        .sample_rate = processSampleRate(data, fallback_sample_rate),
+        .process_mode = process_mode,
+        .input_channels = input_channels[0..channel_count],
+        .output_channels = output_channels[0..channel_count],
+        .transport = processTransport(data),
+        .attachments = .{
             .parameter_changes = parameter_changes.items,
             .events = events.items,
             .output_events = output_events,
         },
-    );
+    });
 }
 
-fn fillInputChannels(comptime Sample: type, bus: ivstaudioprocessor.AudioBusBuffers, frame_count: usize, out: *[max_audio_channels][]const Sample) !usize {
+fn fillInputChannels(
+    comptime Sample: type,
+    bus: ivstaudioprocessor.AudioBusBuffers,
+    frame_count: usize,
+    out: [][]const Sample,
+) !usize {
     const channel_count = try boundedAudioChannelCount(bus);
     if (channel_count == 0) return 0;
+    if (channel_count > out.len) return error.TooManyChannels;
     const buffers = vstAudioBuffers(Sample, bus) orelse return error.MissingInputBuffers;
     for (0..channel_count) |channel| {
         out[channel] = buffers[channel][0..frame_count];
@@ -551,9 +1093,15 @@ fn fillInputChannels(comptime Sample: type, bus: ivstaudioprocessor.AudioBusBuff
     return channel_count;
 }
 
-fn fillOutputChannels(comptime Sample: type, bus: ivstaudioprocessor.AudioBusBuffers, frame_count: usize, out: *[max_audio_channels][]Sample) !usize {
+fn fillOutputChannels(
+    comptime Sample: type,
+    bus: ivstaudioprocessor.AudioBusBuffers,
+    frame_count: usize,
+    out: [][]Sample,
+) !usize {
     const channel_count = try boundedAudioChannelCount(bus);
     if (channel_count == 0) return 0;
+    if (channel_count > out.len) return error.TooManyChannels;
     const buffers = vstAudioBuffers(Sample, bus) orelse return error.MissingOutputBuffers;
     for (0..channel_count) |channel| {
         out[channel] = buffers[channel][0..frame_count];
@@ -591,35 +1139,152 @@ pub fn makeMainAudioProcessContextConfiguredWithSampleRate(
     bus_config: StereoAudioBuses.Config,
     fallback_sample_rate: f64,
 ) !plug.process.ProcessContext(Sample) {
+    return makeMainAudioProcessContextBoundedWithSampleRate(
+        Sample,
+        plug.process.max_auxiliary_audio_buses,
+        data,
+        parameter_changes,
+        events,
+        output_events,
+        bus_config,
+        fallback_sample_rate,
+    );
+}
+
+pub fn makeMainAudioProcessContextBoundedWithSampleRate(
+    comptime Sample: type,
+    comptime maximum_auxiliary_buses: usize,
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug.process.ParameterChanges,
+    events: plug.process.Events,
+    output_events: ?*plug.process.EventWriter,
+    bus_config: StereoAudioBuses.Config,
+    fallback_sample_rate: f64,
+) !plug.process.BoundedProcessContext(
+    Sample,
+    maximum_auxiliary_buses,
+) {
     const frame_count = try validFrameCount(data);
     var input_channels: [max_audio_channels][]const Sample = undefined;
+    var sidechain_input_channels: [max_audio_channels][]const Sample = undefined;
+    var auxiliary_input_bus_channel_counts: [maximum_auxiliary_buses]usize = @splat(0);
     var output_channels: [max_audio_channels][]Sample = undefined;
-    const input_count = if (bus_config.audio_input) input: {
+    var auxiliary_output_channels: [max_audio_channels][]Sample = undefined;
+    var auxiliary_output_bus_channel_counts: [maximum_auxiliary_buses]usize = @splat(0);
+    if (!bus_config.valid()) return error.InvalidAudioBusConfiguration;
+    if (bus_config.auxiliaryInputCount() >
+        maximum_auxiliary_buses or
+        bus_config.auxiliaryOutputCount() >
+            maximum_auxiliary_buses)
+        return error.TooManyAudioBuses;
+    const input_layout = bus_config.inputLayout();
+    const output_layout = bus_config.outputLayout();
+    const input_count = if (input_layout.hasBus()) input: {
         if (data.numInputs <= 0) return error.MissingMainAudioBus;
         const inputs = data.inputs orelse return error.MissingMainAudioBus;
-        break :input try fillInputChannels(Sample, inputs[0], frame_count, &input_channels);
+        break :input try fillInputChannels(
+            Sample,
+            inputs[0],
+            frame_count,
+            &input_channels,
+        );
     } else 0;
-    const output_count = if (bus_config.audio_output) output: {
+    const raw_input_bus_count = if (data.numInputs <= 0)
+        0
+    else
+        vst_index.nonNegativeCount(data.numInputs) orelse return error.InvalidAudioBusCount;
+    const maximum_input_bus_count: usize =
+        @as(usize, @intFromBool(input_layout.hasBus())) +
+        bus_config.auxiliaryInputCount();
+    if (input_layout.hasBus() and raw_input_bus_count > maximum_input_bus_count)
+        return error.InvalidAudioBusCount;
+    var sidechain_input_count: usize = 0;
+    if (bus_config.auxiliaryInputCount() != 0 and raw_input_bus_count > 1) {
+        const inputs = data.inputs orelse return error.MissingMainAudioBus;
+        const present = @min(
+            raw_input_bus_count - 1,
+            bus_config.auxiliaryInputCount(),
+        );
+        for (0..present) |bus_index| {
+            const layout = bus_config.auxiliaryInputLayout(bus_index) orelse
+                return error.InvalidAudioBusConfiguration;
+            const channel_count = try fillInputChannels(
+                Sample,
+                inputs[bus_index + 1],
+                frame_count,
+                sidechain_input_channels[sidechain_input_count..],
+            );
+            if (channel_count > layout.channelCount())
+                return error.InvalidChannelCount;
+            auxiliary_input_bus_channel_counts[bus_index] = channel_count;
+            sidechain_input_count += channel_count;
+        }
+    }
+    const output_count = if (output_layout.hasBus()) output: {
         if (data.numOutputs <= 0) return error.MissingMainAudioBus;
         const outputs = data.outputs orelse return error.MissingMainAudioBus;
-        break :output try fillOutputChannels(Sample, outputs[0], frame_count, &output_channels);
+        break :output try fillOutputChannels(
+            Sample,
+            outputs[0],
+            frame_count,
+            &output_channels,
+        );
     } else 0;
-    if (bus_config.audio_input and input_count == 0) {
-        return error.MissingMainAudioChannels;
+    const raw_output_bus_count = if (data.numOutputs <= 0)
+        0
+    else
+        vst_index.nonNegativeCount(data.numOutputs) orelse return error.InvalidAudioBusCount;
+    const maximum_output_bus_count: usize =
+        @as(usize, @intFromBool(output_layout.hasBus())) +
+        bus_config.auxiliaryOutputCount();
+    if (output_layout.hasBus() and raw_output_bus_count > maximum_output_bus_count)
+        return error.InvalidAudioBusCount;
+    var auxiliary_output_count: usize = 0;
+    if (bus_config.auxiliaryOutputCount() != 0 and raw_output_bus_count > 1) {
+        const outputs = data.outputs orelse return error.MissingMainAudioBus;
+        const present = @min(
+            raw_output_bus_count - 1,
+            bus_config.auxiliaryOutputCount(),
+        );
+        for (0..present) |bus_index| {
+            const layout = bus_config.auxiliaryOutputLayoutAt(bus_index) orelse
+                return error.InvalidAudioBusConfiguration;
+            const channel_count = try fillOutputChannels(
+                Sample,
+                outputs[bus_index + 1],
+                frame_count,
+                auxiliary_output_channels[auxiliary_output_count..],
+            );
+            if (channel_count > layout.channelCount())
+                return error.InvalidChannelCount;
+            auxiliary_output_bus_channel_counts[bus_index] = channel_count;
+            auxiliary_output_count += channel_count;
+        }
     }
-    if (bus_config.audio_output and output_count == 0) {
-        return error.MissingMainAudioChannels;
-    }
-    return try plug.process.ProcessContext(Sample).initWith(
-        processSampleRate(data, fallback_sample_rate),
-        input_channels[0..input_count],
-        output_channels[0..output_count],
-        .{
+    if (input_layout.hasBus() and input_count == 0) return error.MissingMainAudioChannels;
+    if (output_layout.hasBus() and output_count == 0) return error.MissingMainAudioChannels;
+    if (input_count > input_layout.channelCount()) return error.InvalidChannelCount;
+    if (output_count > output_layout.channelCount()) return error.InvalidChannelCount;
+    const process_mode = RealtimeProcessorDefaults.processMode(data.processMode) orelse return error.InvalidProcessMode;
+    return try plug.process.BoundedProcessContext(
+        Sample,
+        maximum_auxiliary_buses,
+    ).initWithOptions(.{
+        .sample_rate = processSampleRate(data, fallback_sample_rate),
+        .process_mode = process_mode,
+        .input_channels = input_channels[0..input_count],
+        .sidechain_input_channels = sidechain_input_channels[0..sidechain_input_count],
+        .auxiliary_input_bus_channel_counts = auxiliary_input_bus_channel_counts[0..bus_config.auxiliaryInputCount()],
+        .output_channels = output_channels[0..output_count],
+        .auxiliary_output_channels = auxiliary_output_channels[0..auxiliary_output_count],
+        .auxiliary_output_bus_channel_counts = auxiliary_output_bus_channel_counts[0..bus_config.auxiliaryOutputCount()],
+        .transport = processTransport(data),
+        .attachments = .{
             .parameter_changes = parameter_changes.items,
             .events = events.items,
             .output_events = output_events,
         },
-    );
+    });
 }
 
 pub fn processMainAudio(
@@ -665,6 +1330,62 @@ pub fn processMainAudioConfiguredWithSampleRate(
     return types.kResultOk;
 }
 
+pub fn processMainAudioSnapshotWithSampleRate(
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug.process.ParameterChanges,
+    events: plug.process.Events,
+    output_events: ?*plug.process.EventWriter,
+    processor: anytype,
+    snapshot: anytype,
+    event_input: bool,
+    event_output: bool,
+    fallback_sample_rate: f64,
+) types.tresult {
+    const config = StereoAudioBuses.configFromSnapshot(
+        snapshot,
+        event_input,
+        event_output,
+    ) orelse return types.kInvalidArgument;
+    const Snapshot = @TypeOf(snapshot.*);
+    const maximum_auxiliary_buses =
+        Snapshot.auxiliary_capacity;
+    const sample_size_result =
+        RealtimeProcessorDefaults.canProcessSampleSize(
+            data.symbolicSampleSize,
+        );
+    if (sample_size_result != types.kResultOk)
+        return sample_size_result;
+
+    if (processDataUses32BitSamples(data)) {
+        var context =
+            makeMainAudioProcessContextBoundedWithSampleRate(
+                f32,
+                maximum_auxiliary_buses,
+                data,
+                parameter_changes,
+                events,
+                output_events,
+                config,
+                fallback_sample_rate,
+            ) catch |err| return processContextErrorResult(err);
+        processor.process(f32, &context);
+    } else {
+        var context =
+            makeMainAudioProcessContextBoundedWithSampleRate(
+                f64,
+                maximum_auxiliary_buses,
+                data,
+                parameter_changes,
+                events,
+                output_events,
+                config,
+                fallback_sample_rate,
+            ) catch |err| return processContextErrorResult(err);
+        processor.process(f64, &context);
+    }
+    return types.kResultOk;
+}
+
 fn processDataUses32BitSamples(data: *const ivstaudioprocessor.ProcessData) bool {
     return data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32);
 }
@@ -678,7 +1399,13 @@ fn processContextErrorResult(err: anyerror) types.tresult {
         error.InvalidSampleRate,
         => types.kResultOk,
         error.InvalidFrameCount,
+        error.InvalidProcessMode,
         error.InvalidChannelCount,
+        error.InvalidAudioBusConfiguration,
+        error.InvalidAudioBusCount,
+        error.InvalidAudioBusChannels,
+        error.TooManyAudioBuses,
+        error.TooManyChannels,
         error.MismatchedFrameCount,
         error.ParameterChangeOutsideBlock,
         error.ParameterChangeOutsideNormalizedRange,
@@ -717,6 +1444,547 @@ pub fn writeParameterState(
     var output_writer: IBStreamWriter = undefined;
     output_writer.init(output);
     plug.state.writeParameterState(Params, set, values, output_writer.writer()) catch return types.kResultFalse;
+    return types.kResultOk;
+}
+
+const component_state_magic = "ZCMPSTAT";
+const component_state_version: u16 = 1;
+const component_state_topology_version: u16 = 2;
+
+fn streamHasMagic(stream: *ibstream.IBStream, comptime wanted_magic: []const u8) bool {
+    var start: types.int64 = 0;
+    if (stream.vtable.seek(stream, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur), &start) != types.kResultOk) return false;
+    var probe: [wanted_magic.len]u8 = undefined;
+    var probe_count: types.int32 = 0;
+    const probe_result = stream.vtable.read(stream, &probe, @intCast(probe.len), &probe_count);
+    if (stream.vtable.seek(stream, start, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null) != types.kResultOk) return false;
+    return probe_result == types.kResultOk and
+        probe_count == @as(types.int32, @intCast(probe.len)) and
+        std.mem.eql(u8, &probe, wanted_magic);
+}
+
+pub fn readComponentParameterState(
+    comptime Params: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *plug.parameters.ParameterValues(Params),
+) types.tresult {
+    const input = stream orelse return types.kInvalidArgument;
+    if (!streamHasMagic(input, component_state_magic)) return readParameterState(Params, input, set, values);
+
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
+    const reader = input_reader.reader();
+    var stored_magic: [component_state_magic.len]u8 = undefined;
+    reader.readSliceAll(&stored_magic) catch return types.kResultFalse;
+    const version = reader.takeInt(u16, .little) catch return types.kResultFalse;
+    if (version != component_state_version and
+        version != component_state_topology_version)
+        return types.kResultFalse;
+    const parameter_size = reader.takeInt(u32, .little) catch return types.kResultFalse;
+    _ = reader.takeInt(u32, .little) catch return types.kResultFalse;
+    if (version == component_state_topology_version)
+        _ = reader.takeInt(u32, .little) catch
+            return types.kResultFalse;
+    if (parameter_size != plug.state.encodedSize(Params)) return types.kResultFalse;
+    var parameter_bytes: [plug.state.encodedSize(Params)]u8 = undefined;
+    reader.readSliceAll(&parameter_bytes) catch return types.kResultFalse;
+    var parameter_reader = std.Io.Reader.fixed(&parameter_bytes);
+    var restored = plug.parameters.ParameterValues(Params).init(set);
+    plug.state.readParameterState(Params, set, &restored, &parameter_reader) catch return types.kResultFalse;
+    values.copyFrom(&restored);
+    return types.kResultOk;
+}
+
+pub fn readProcessorComponentState(
+    comptime Params: type,
+    comptime Processor: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *plug.parameters.ParameterValues(Params),
+    processor: *Processor,
+) types.tresult {
+    const input = stream orelse return types.kInvalidArgument;
+    if (!streamHasMagic(input, component_state_magic)) return readParameterState(Params, input, set, values);
+
+    comptime validateProcessorComponentStateHooks(Processor);
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
+    const reader = input_reader.reader();
+    var stored_magic: [component_state_magic.len]u8 = undefined;
+    reader.readSliceAll(&stored_magic) catch return types.kResultFalse;
+    const version = reader.takeInt(u16, .little) catch return types.kResultFalse;
+    if (version != component_state_version and
+        version != component_state_topology_version)
+        return types.kResultFalse;
+    const parameter_size = reader.takeInt(u32, .little) catch return types.kResultFalse;
+    const processor_size = reader.takeInt(u32, .little) catch return types.kResultFalse;
+    if (version == component_state_topology_version)
+        _ = reader.takeInt(u32, .little) catch
+            return types.kResultFalse;
+    if (parameter_size != plug.state.encodedSize(Params) or processor_size > Processor.component_state_maximum_encoded_size) {
+        return types.kResultFalse;
+    }
+
+    var parameter_bytes: [plug.state.encodedSize(Params)]u8 = undefined;
+    var processor_bytes: [Processor.component_state_maximum_encoded_size]u8 = undefined;
+    reader.readSliceAll(&parameter_bytes) catch return types.kResultFalse;
+    reader.readSliceAll(processor_bytes[0..processor_size]) catch return types.kResultFalse;
+    var parameter_reader = std.Io.Reader.fixed(&parameter_bytes);
+    var processor_reader = std.Io.Reader.fixed(processor_bytes[0..processor_size]);
+    var restored = plug.parameters.ParameterValues(Params).init(set);
+    plug.state.readParameterState(Params, set, &restored, &parameter_reader) catch return types.kResultFalse;
+    processor.readComponentState(&processor_reader) catch return types.kResultFalse;
+    values.copyFrom(&restored);
+    return types.kResultOk;
+}
+
+pub fn writeProcessorComponentState(
+    comptime Params: type,
+    comptime Processor: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *const plug.parameters.ParameterValues(Params),
+    processor: *const Processor,
+) types.tresult {
+    comptime validateProcessorComponentStateHooks(Processor);
+    const output = stream orelse return types.kInvalidArgument;
+    var processor_bytes: [Processor.component_state_maximum_encoded_size]u8 = undefined;
+    var processor_writer = std.Io.Writer.fixed(&processor_bytes);
+    processor.writeComponentState(&processor_writer) catch return types.kResultFalse;
+    const processor_size = processor_writer.end;
+    const encoded_processor_size = std.math.cast(u32, processor_size) orelse return types.kResultFalse;
+    var output_writer: IBStreamWriter = undefined;
+    output_writer.init(output);
+    const writer = output_writer.writer();
+    writer.writeAll(component_state_magic) catch return types.kResultFalse;
+    writer.writeInt(u16, component_state_version, .little) catch return types.kResultFalse;
+    writer.writeInt(u32, @intCast(plug.state.encodedSize(Params)), .little) catch return types.kResultFalse;
+    writer.writeInt(u32, encoded_processor_size, .little) catch return types.kResultFalse;
+    plug.state.writeParameterState(Params, set, values, writer) catch return types.kResultFalse;
+    writer.writeAll(processor_bytes[0..processor_size]) catch return types.kResultFalse;
+    return types.kResultOk;
+}
+
+pub fn readComponentParameterStateWithTopology(
+    comptime Params: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *plug.parameters.ParameterValues(Params),
+    topology: anytype,
+) types.tresult {
+    const Topology = @TypeOf(topology.*);
+    const input = stream orelse return types.kInvalidArgument;
+    if (!streamHasMagic(input, component_state_magic))
+        return readParameterState(Params, input, set, values);
+
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
+    const reader = input_reader.reader();
+    var stored_magic: [component_state_magic.len]u8 = undefined;
+    reader.readSliceAll(&stored_magic) catch return types.kResultFalse;
+    const version = reader.takeInt(u16, .little) catch return types.kResultFalse;
+    if (version == component_state_version)
+        return readVersionOneParameterPayload(Params, reader, set, values);
+    if (version != component_state_topology_version)
+        return types.kResultFalse;
+    const parameter_size = reader.takeInt(u32, .little) catch
+        return types.kResultFalse;
+    const processor_size = reader.takeInt(u32, .little) catch
+        return types.kResultFalse;
+    const topology_size = reader.takeInt(u32, .little) catch
+        return types.kResultFalse;
+    if (parameter_size != plug.state.encodedSize(Params) or
+        processor_size != 0 or
+        topology_size == 0 or
+        topology_size > Topology.maximum_encoded_size)
+        return types.kResultFalse;
+    var parameter_bytes: [plug.state.encodedSize(Params)]u8 = undefined;
+    var topology_bytes: [Topology.maximum_encoded_size]u8 =
+        undefined;
+    reader.readSliceAll(&parameter_bytes) catch return types.kResultFalse;
+    reader.readSliceAll(topology_bytes[0..topology_size]) catch
+        return types.kResultFalse;
+    var topology_reader =
+        std.Io.Reader.fixed(topology_bytes[0..topology_size]);
+    const restored_topology =
+        Topology.readState(
+            &topology_reader,
+        ) catch return types.kResultFalse;
+    var parameter_reader = std.Io.Reader.fixed(&parameter_bytes);
+    var restored_values =
+        plug.parameters.ParameterValues(Params).init(set);
+    plug.state.readParameterState(
+        Params,
+        set,
+        &restored_values,
+        &parameter_reader,
+    ) catch return types.kResultFalse;
+    values.copyFrom(&restored_values);
+    topology.* = restored_topology;
+    return types.kResultOk;
+}
+
+pub fn writeComponentParameterStateWithTopology(
+    comptime Params: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *const plug.parameters.ParameterValues(Params),
+    topology: anytype,
+) types.tresult {
+    const Topology = @TypeOf(topology.*);
+    const output = stream orelse return types.kInvalidArgument;
+    var topology_bytes: [Topology.maximum_encoded_size]u8 =
+        undefined;
+    var topology_writer = std.Io.Writer.fixed(&topology_bytes);
+    topology.writeState(&topology_writer) catch
+        return types.kResultFalse;
+    const topology_size =
+        std.math.cast(u32, topology_writer.end) orelse
+        return types.kResultFalse;
+    var output_writer: IBStreamWriter = undefined;
+    output_writer.init(output);
+    const writer = output_writer.writer();
+    writer.writeAll(component_state_magic) catch return types.kResultFalse;
+    writer.writeInt(
+        u16,
+        component_state_topology_version,
+        .little,
+    ) catch return types.kResultFalse;
+    writer.writeInt(
+        u32,
+        @intCast(plug.state.encodedSize(Params)),
+        .little,
+    ) catch return types.kResultFalse;
+    writer.writeInt(u32, 0, .little) catch return types.kResultFalse;
+    writer.writeInt(u32, topology_size, .little) catch
+        return types.kResultFalse;
+    plug.state.writeParameterState(
+        Params,
+        set,
+        values,
+        writer,
+    ) catch return types.kResultFalse;
+    writer.writeAll(topology_writer.buffered()) catch
+        return types.kResultFalse;
+    return types.kResultOk;
+}
+
+pub fn readProcessorComponentStateWithTopology(
+    comptime Params: type,
+    comptime Processor: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *plug.parameters.ParameterValues(Params),
+    processor: *Processor,
+    topology: anytype,
+) types.tresult {
+    const Topology = @TypeOf(topology.*);
+    const input = stream orelse return types.kInvalidArgument;
+    if (!streamHasMagic(input, component_state_magic))
+        return readParameterState(Params, input, set, values);
+
+    comptime validateProcessorComponentStateHooks(Processor);
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
+    const reader = input_reader.reader();
+    var stored_magic: [component_state_magic.len]u8 = undefined;
+    reader.readSliceAll(&stored_magic) catch return types.kResultFalse;
+    const version = reader.takeInt(u16, .little) catch return types.kResultFalse;
+    if (version == component_state_version)
+        return readVersionOneProcessorPayload(
+            Params,
+            Processor,
+            reader,
+            set,
+            values,
+            processor,
+        );
+    if (version != component_state_topology_version)
+        return types.kResultFalse;
+    const parameter_size = reader.takeInt(u32, .little) catch
+        return types.kResultFalse;
+    const processor_size = reader.takeInt(u32, .little) catch
+        return types.kResultFalse;
+    const topology_size = reader.takeInt(u32, .little) catch
+        return types.kResultFalse;
+    if (parameter_size != plug.state.encodedSize(Params) or
+        processor_size > Processor.component_state_maximum_encoded_size or
+        topology_size == 0 or
+        topology_size > Topology.maximum_encoded_size)
+        return types.kResultFalse;
+    var parameter_bytes: [plug.state.encodedSize(Params)]u8 = undefined;
+    var processor_bytes: [Processor.component_state_maximum_encoded_size]u8 = undefined;
+    var topology_bytes: [Topology.maximum_encoded_size]u8 =
+        undefined;
+    reader.readSliceAll(&parameter_bytes) catch return types.kResultFalse;
+    reader.readSliceAll(processor_bytes[0..processor_size]) catch
+        return types.kResultFalse;
+    reader.readSliceAll(topology_bytes[0..topology_size]) catch
+        return types.kResultFalse;
+    var topology_reader =
+        std.Io.Reader.fixed(topology_bytes[0..topology_size]);
+    const restored_topology =
+        Topology.readState(
+            &topology_reader,
+        ) catch return types.kResultFalse;
+    var parameter_reader = std.Io.Reader.fixed(&parameter_bytes);
+    var processor_reader =
+        std.Io.Reader.fixed(processor_bytes[0..processor_size]);
+    var restored_values =
+        plug.parameters.ParameterValues(Params).init(set);
+    plug.state.readParameterState(
+        Params,
+        set,
+        &restored_values,
+        &parameter_reader,
+    ) catch return types.kResultFalse;
+    processor.readComponentState(&processor_reader) catch
+        return types.kResultFalse;
+    values.copyFrom(&restored_values);
+    topology.* = restored_topology;
+    return types.kResultOk;
+}
+
+pub fn writeProcessorComponentStateWithTopology(
+    comptime Params: type,
+    comptime Processor: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *const plug.parameters.ParameterValues(Params),
+    processor: *const Processor,
+    topology: anytype,
+) types.tresult {
+    const Topology = @TypeOf(topology.*);
+    comptime validateProcessorComponentStateHooks(Processor);
+    const output = stream orelse return types.kInvalidArgument;
+    var processor_bytes: [Processor.component_state_maximum_encoded_size]u8 = undefined;
+    var processor_writer = std.Io.Writer.fixed(&processor_bytes);
+    processor.writeComponentState(&processor_writer) catch
+        return types.kResultFalse;
+    var topology_bytes: [Topology.maximum_encoded_size]u8 =
+        undefined;
+    var topology_writer = std.Io.Writer.fixed(&topology_bytes);
+    topology.writeState(&topology_writer) catch
+        return types.kResultFalse;
+    const processor_size =
+        std.math.cast(u32, processor_writer.end) orelse
+        return types.kResultFalse;
+    const topology_size =
+        std.math.cast(u32, topology_writer.end) orelse
+        return types.kResultFalse;
+    var output_writer: IBStreamWriter = undefined;
+    output_writer.init(output);
+    const writer = output_writer.writer();
+    writer.writeAll(component_state_magic) catch return types.kResultFalse;
+    writer.writeInt(
+        u16,
+        component_state_topology_version,
+        .little,
+    ) catch return types.kResultFalse;
+    writer.writeInt(
+        u32,
+        @intCast(plug.state.encodedSize(Params)),
+        .little,
+    ) catch return types.kResultFalse;
+    writer.writeInt(u32, processor_size, .little) catch
+        return types.kResultFalse;
+    writer.writeInt(u32, topology_size, .little) catch
+        return types.kResultFalse;
+    plug.state.writeParameterState(
+        Params,
+        set,
+        values,
+        writer,
+    ) catch return types.kResultFalse;
+    writer.writeAll(processor_writer.buffered()) catch
+        return types.kResultFalse;
+    writer.writeAll(topology_writer.buffered()) catch
+        return types.kResultFalse;
+    return types.kResultOk;
+}
+
+fn readVersionOneParameterPayload(
+    comptime Params: type,
+    reader: *std.Io.Reader,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *plug.parameters.ParameterValues(Params),
+) types.tresult {
+    const parameter_size = reader.takeInt(u32, .little) catch
+        return types.kResultFalse;
+    _ = reader.takeInt(u32, .little) catch return types.kResultFalse;
+    if (parameter_size != plug.state.encodedSize(Params))
+        return types.kResultFalse;
+    var parameter_bytes: [plug.state.encodedSize(Params)]u8 = undefined;
+    reader.readSliceAll(&parameter_bytes) catch return types.kResultFalse;
+    var parameter_reader = std.Io.Reader.fixed(&parameter_bytes);
+    var restored_values =
+        plug.parameters.ParameterValues(Params).init(set);
+    plug.state.readParameterState(
+        Params,
+        set,
+        &restored_values,
+        &parameter_reader,
+    ) catch return types.kResultFalse;
+    values.copyFrom(&restored_values);
+    return types.kResultOk;
+}
+
+fn readVersionOneProcessorPayload(
+    comptime Params: type,
+    comptime Processor: type,
+    reader: *std.Io.Reader,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *plug.parameters.ParameterValues(Params),
+    processor: *Processor,
+) types.tresult {
+    const parameter_size = reader.takeInt(u32, .little) catch
+        return types.kResultFalse;
+    const processor_size = reader.takeInt(u32, .little) catch
+        return types.kResultFalse;
+    if (parameter_size != plug.state.encodedSize(Params) or
+        processor_size > Processor.component_state_maximum_encoded_size)
+        return types.kResultFalse;
+    var parameter_bytes: [plug.state.encodedSize(Params)]u8 = undefined;
+    var processor_bytes: [Processor.component_state_maximum_encoded_size]u8 = undefined;
+    reader.readSliceAll(&parameter_bytes) catch return types.kResultFalse;
+    reader.readSliceAll(processor_bytes[0..processor_size]) catch
+        return types.kResultFalse;
+    var parameter_reader = std.Io.Reader.fixed(&parameter_bytes);
+    var processor_reader =
+        std.Io.Reader.fixed(processor_bytes[0..processor_size]);
+    var restored_values =
+        plug.parameters.ParameterValues(Params).init(set);
+    plug.state.readParameterState(
+        Params,
+        set,
+        &restored_values,
+        &parameter_reader,
+    ) catch return types.kResultFalse;
+    processor.readComponentState(&processor_reader) catch
+        return types.kResultFalse;
+    values.copyFrom(&restored_values);
+    return types.kResultOk;
+}
+
+fn validateProcessorComponentStateHooks(comptime Processor: type) void {
+    if (!@hasDecl(Processor, "component_state_maximum_encoded_size") or
+        !@hasDecl(Processor, "readComponentState") or
+        !@hasDecl(Processor, "writeComponentState"))
+    {
+        @compileError("processor component state requires maximum size, read, and write declarations");
+    }
+    if (Processor.component_state_maximum_encoded_size == 0) {
+        @compileError("processor component state maximum size must be positive");
+    }
+    if (Processor.component_state_maximum_encoded_size > 64 * 1024) {
+        @compileError("processor component state maximum size exceeds 64 KiB");
+    }
+}
+
+pub fn readEditorState(
+    comptime State: type,
+    stream: ?*ibstream.IBStream,
+    state: *State,
+    migrations: []const plug.editor_state.Migration,
+) types.tresult {
+    const input = stream orelse return types.kInvalidArgument;
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
+    _ = state.read(input_reader.reader(), migrations) catch return types.kResultFalse;
+    return types.kResultOk;
+}
+
+pub fn writeEditorState(
+    comptime State: type,
+    stream: ?*ibstream.IBStream,
+    state: *const State,
+) types.tresult {
+    const output = stream orelse return types.kInvalidArgument;
+    var output_writer: IBStreamWriter = undefined;
+    output_writer.init(output);
+    state.write(output_writer.writer()) catch return types.kResultFalse;
+    return types.kResultOk;
+}
+
+const controller_state_magic = "ZCTRLSTA";
+const controller_state_version: u16 = 1;
+
+pub fn readControllerState(
+    comptime Params: type,
+    comptime EditorState: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *plug.parameters.ParameterValues(Params),
+    editor: *EditorState,
+    migrations: []const plug.editor_state.Migration,
+) types.tresult {
+    const input = stream orelse return types.kInvalidArgument;
+    var start: types.int64 = 0;
+    if (input.vtable.seek(input, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur), &start) != types.kResultOk) {
+        return types.kResultFalse;
+    }
+    var probe: [controller_state_magic.len]u8 = undefined;
+    var probe_count: types.int32 = 0;
+    const probe_result = input.vtable.read(input, &probe, @intCast(probe.len), &probe_count);
+    if (input.vtable.seek(input, start, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null) != types.kResultOk) {
+        return types.kResultFalse;
+    }
+    if (probe_result != types.kResultOk or probe_count != @as(types.int32, @intCast(probe.len)) or !std.mem.eql(u8, &probe, controller_state_magic)) {
+        var restored_values = plug.parameters.ParameterValues(Params).init(set);
+        const result = readParameterState(Params, input, set, &restored_values);
+        if (result != types.kResultOk) return result;
+        values.copyFrom(&restored_values);
+        return types.kResultOk;
+    }
+
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
+    var header_magic: [controller_state_magic.len]u8 = undefined;
+    input_reader.reader().readSliceAll(&header_magic) catch return types.kResultFalse;
+    const version = input_reader.reader().takeInt(u16, .little) catch return types.kResultFalse;
+    if (version != controller_state_version) return types.kResultFalse;
+    const parameter_size = input_reader.reader().takeInt(u32, .little) catch return types.kResultFalse;
+    const editor_size = input_reader.reader().takeInt(u32, .little) catch return types.kResultFalse;
+    const expected_parameter_size = plug.state.encodedSize(Params);
+    if (parameter_size != expected_parameter_size or editor_size > EditorState.maximumEncodedSize()) return types.kResultFalse;
+
+    var parameter_bytes: [plug.state.encodedSize(Params)]u8 = undefined;
+    var editor_bytes: [EditorState.maximumEncodedSize()]u8 = undefined;
+    input_reader.reader().readSliceAll(parameter_bytes[0..@intCast(parameter_size)]) catch return types.kResultFalse;
+    input_reader.reader().readSliceAll(editor_bytes[0..@intCast(editor_size)]) catch return types.kResultFalse;
+    var parameter_reader = std.Io.Reader.fixed(parameter_bytes[0..@intCast(parameter_size)]);
+    var editor_reader = std.Io.Reader.fixed(editor_bytes[0..@intCast(editor_size)]);
+    var restored_values = plug.parameters.ParameterValues(Params).init(set);
+    var restored_editor = EditorState.init();
+    plug.state.readParameterState(Params, set, &restored_values, &parameter_reader) catch return types.kResultFalse;
+    _ = restored_editor.read(&editor_reader, migrations) catch return types.kResultFalse;
+    values.copyFrom(&restored_values);
+    editor.* = restored_editor;
+    return types.kResultOk;
+}
+
+pub fn writeControllerState(
+    comptime Params: type,
+    comptime EditorState: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *const plug.parameters.ParameterValues(Params),
+    editor: *const EditorState,
+) types.tresult {
+    const output = stream orelse return types.kInvalidArgument;
+    const parameter_size = std.math.cast(u32, plug.state.encodedSize(Params)) orelse return types.kResultFalse;
+    const editor_size = std.math.cast(u32, editor.encodedSize()) orelse return types.kResultFalse;
+    if (editor_size > EditorState.maximumEncodedSize()) return types.kResultFalse;
+    var output_writer: IBStreamWriter = undefined;
+    output_writer.init(output);
+    const writer = output_writer.writer();
+    writer.writeAll(controller_state_magic) catch return types.kResultFalse;
+    writer.writeInt(u16, controller_state_version, .little) catch return types.kResultFalse;
+    writer.writeInt(u32, parameter_size, .little) catch return types.kResultFalse;
+    writer.writeInt(u32, editor_size, .little) catch return types.kResultFalse;
+    plug.state.writeParameterState(Params, set, values, writer) catch return types.kResultFalse;
+    editor.write(writer) catch return types.kResultFalse;
     return types.kResultOk;
 }
 
@@ -847,6 +2115,29 @@ fn BoundedCollector(comptime T: type) type {
         storage: []T,
         count: usize = 0,
         frame_count: usize,
+        source_visits: usize = 0,
+        item_visits: usize = 0,
+
+        fn visitSource(self: *@This()) bool {
+            if (self.source_visits == input_parameter_change_capacity)
+                return false;
+            self.source_visits += 1;
+            return true;
+        }
+
+        fn visitItem(self: *@This(), limit: usize) bool {
+            if (self.item_visits == limit) return false;
+            self.item_visits += 1;
+            return true;
+        }
+
+        fn canVisitSource(self: *const @This()) bool {
+            return self.source_visits < input_parameter_change_capacity;
+        }
+
+        fn canVisitItem(self: *const @This(), limit: usize) bool {
+            return self.item_visits < limit;
+        }
 
         fn append(self: *@This(), item: T) bool {
             if (!self.hasCapacity()) return false;
@@ -860,7 +2151,7 @@ fn BoundedCollector(comptime T: type) type {
         }
 
         fn items(self: *const @This()) []const T {
-            std.debug.assert(self.count <= self.storage.len);
+            if (self.count > self.storage.len) return self.storage[0..0];
             return self.storage[0..self.count];
         }
     };
@@ -870,22 +2161,31 @@ const ParameterChangeCollector = BoundedCollector(plug.process.ParameterChange);
 const EventCollector = BoundedCollector(plug.process.Event);
 
 fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *ivstparameterchanges.IParamValueQueue) bool {
+    if (!collector.visitSource()) return false;
     audio_processor_algo.forEachParamValueQueueUntil(queue, collector, collectParameterPoint);
-    return collector.hasCapacity();
+    return collector.hasCapacity() and
+        collector.canVisitSource() and
+        collector.canVisitItem(input_parameter_change_capacity);
 }
 
 fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.ParamID, sample_offset: types.int32, value: vsttypes.ParamValue) bool {
-    const offset = sampleOffsetInBlock(sample_offset, collector.frame_count) orelse return true;
-    if (!isNormalizedValue(value)) return true;
-    return collector.append(.{
+    if (!collector.visitItem(input_parameter_change_capacity)) return false;
+    const offset = sampleOffsetInBlock(sample_offset, collector.frame_count) orelse
+        return collector.canVisitItem(input_parameter_change_capacity);
+    if (!isNormalizedValue(value))
+        return collector.canVisitItem(input_parameter_change_capacity);
+    if (!collector.append(.{
         .id = id,
         .sample_offset = offset,
         .normalized = value,
-    });
+    })) return false;
+    return collector.canVisitItem(input_parameter_change_capacity);
 }
 
 fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) bool {
-    const offset = sampleOffsetInBlock(event.sampleOffset, collector.frame_count) orelse return true;
+    if (!collector.visitItem(input_event_capacity)) return false;
+    const offset = sampleOffsetInBlock(event.sampleOffset, collector.frame_count) orelse
+        return collector.canVisitItem(input_event_capacity);
     const converted: ?plug.process.Event = switch (event.type) {
         @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isNormalizedValue(event.data.noteOn.velocity))
             plug.process.Event.noteOn(offset, event.data.noteOn.channel, event.data.noteOn.pitch, event.data.noteOn.velocity).withBusIndex(event.busIndex)
@@ -912,9 +2212,12 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) bool
         @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent) => plug.process.Event.noteExpressionText(offset, event.data.noteExpressionText.noteId, event.data.noteExpressionText.typeId).withBusIndex(event.busIndex),
         else => plug.process.Event.other(offset).withBusIndex(event.busIndex),
     };
-    const output = converted orelse return true;
-    output.validate(collector.frame_count) catch return true;
-    return collector.append(output);
+    const output = converted orelse
+        return collector.canVisitItem(input_event_capacity);
+    output.validate(collector.frame_count) catch
+        return collector.canVisitItem(input_event_capacity);
+    if (!collector.append(output)) return false;
+    return collector.canVisitItem(input_event_capacity);
 }
 
 fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.process.Event {
@@ -1073,6 +2376,276 @@ test "zig-vst3-plugin bridge round-trips parameter state through IBStream" {
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
 }
 
+test "component state envelope round trips processor state and remains controller-readable" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const Processor = struct {
+        pub const component_state_maximum_encoded_size = 4;
+        value: u32,
+
+        pub fn componentStateEncodedSize(_: *const @This()) usize {
+            return 4;
+        }
+
+        pub fn writeComponentState(self: *const @This(), writer: anytype) !void {
+            try writer.writeInt(u32, self.value, .little);
+        }
+
+        pub fn readComponentState(self: *@This(), reader: anytype) !void {
+            self.value = try reader.takeInt(u32, .little);
+        }
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const Values = plug.parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var restored_values = Values.init(&set);
+    var controller_values = Values.init(&set);
+    var source = Processor{ .value = 0x1234abcd };
+    var restored = Processor{ .value = 0 };
+    const envelope_header_size = component_state_magic.len + 2 + 4 + 4;
+    const Stream = vst_stream.FixedBufferStream(envelope_header_size + plug.state.encodedSize(Params) + Processor.component_state_maximum_encoded_size);
+    var stream = Stream{};
+
+    try std.testing.expect(values.storeField(&set, "gain", 0.375));
+    try std.testing.expectEqual(types.kResultOk, writeProcessorComponentState(Params, Processor, stream.asStream(), &set, &values, &source));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, readProcessorComponentState(Params, Processor, stream.asStream(), &set, &restored_values, &restored));
+    try std.testing.expectEqual(@as(f64, 0.375), restored_values.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(u32, 0x1234abcd), restored.value);
+
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, readComponentParameterState(Params, stream.asStream(), &set, &controller_values));
+    try std.testing.expectEqual(@as(f64, 0.375), controller_values.loadField(&set, "gain"));
+}
+
+test "component state envelope round trips dynamic topology and processor state transactionally" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam =
+            plug.parameters.FloatParam.init(
+                0,
+                "Gain",
+                0.0,
+                1.0,
+                1.0,
+            ),
+    };
+    const Processor = struct {
+        pub const component_state_maximum_encoded_size = 4;
+        value: u32,
+
+        pub fn writeComponentState(
+            self: *const @This(),
+            writer: anytype,
+        ) !void {
+            try writer.writeInt(u32, self.value, .little);
+        }
+
+        pub fn readComponentState(
+            self: *@This(),
+            reader: anytype,
+        ) !void {
+            self.value = try reader.takeInt(u32, .little);
+        }
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const Values = plug.parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var restored_values = Values.init(&set);
+    var controller_values = Values.init(&set);
+    var source = Processor{ .value = 0x1234abcd };
+    var restored = Processor{ .value = 7 };
+    const supported = try plug.plugin.AudioBusLayoutSet.init(
+        &.{ .mono, .stereo },
+    );
+    var topology = try plug.plugin.DynamicAudioBusTopology.init(
+        try plug.plugin.DynamicAudioBus.init(
+            .stereo,
+            supported,
+            true,
+        ),
+        try plug.plugin.DynamicAudioBus.fixed(.stereo, true),
+    );
+    _ = try topology.addAuxiliary(
+        .input,
+        try plug.plugin.DynamicAudioBus.fixed(.mono, false),
+    );
+    var restored_topology =
+        try plug.plugin.DynamicAudioBusTopology.init(null, null);
+    const header_size = component_state_magic.len + 2 + 4 + 4 + 4;
+    const Stream = vst_stream.FixedBufferStream(
+        header_size +
+            plug.state.encodedSize(Params) +
+            Processor.component_state_maximum_encoded_size +
+            plug.plugin.DynamicAudioBusTopology.maximum_encoded_size,
+    );
+    var stream = Stream{};
+
+    try std.testing.expect(values.storeField(&set, "gain", 0.375));
+    try std.testing.expectEqual(
+        types.kResultOk,
+        writeProcessorComponentStateWithTopology(
+            Params,
+            Processor,
+            stream.asStream(),
+            &set,
+            &values,
+            &source,
+            &topology,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        stream.asStream().vtable.seek(
+            stream.asStream(),
+            0,
+            @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet),
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        readProcessorComponentStateWithTopology(
+            Params,
+            Processor,
+            stream.asStream(),
+            &set,
+            &restored_values,
+            &restored,
+            &restored_topology,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.375),
+        restored_values.loadField(&set, "gain"),
+    );
+    try std.testing.expectEqual(@as(u32, 0x1234abcd), restored.value);
+    var expected_snapshot = try topology.snapshot();
+    expected_snapshot.generation = 0;
+    try std.testing.expectEqualDeep(
+        expected_snapshot,
+        try restored_topology.snapshot(),
+    );
+
+    try std.testing.expectEqual(
+        types.kResultOk,
+        stream.asStream().vtable.seek(
+            stream.asStream(),
+            0,
+            @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet),
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        readComponentParameterState(
+            Params,
+            stream.asStream(),
+            &set,
+            &controller_values,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 0.375),
+        controller_values.loadField(&set, "gain"),
+    );
+
+    const before_values = restored_values;
+    const before_processor = restored;
+    const before_topology = restored_topology;
+    stream.bytes[stream.len - 1] = 2;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        stream.asStream().vtable.seek(
+            stream.asStream(),
+            0,
+            @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet),
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        readProcessorComponentStateWithTopology(
+            Params,
+            Processor,
+            stream.asStream(),
+            &set,
+            &restored_values,
+            &restored,
+            &restored_topology,
+        ),
+    );
+    try std.testing.expectEqualDeep(before_values, restored_values);
+    try std.testing.expectEqualDeep(before_processor, restored);
+    try std.testing.expectEqualDeep(before_topology, restored_topology);
+}
+
+test "component state envelope rejects oversized processor state without mutation" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const Processor = struct {
+        pub const component_state_maximum_encoded_size = 4;
+        value: u32,
+
+        pub fn componentStateEncodedSize(_: *const @This()) usize {
+            return 4;
+        }
+
+        pub fn writeComponentState(self: *const @This(), writer: anytype) !void {
+            try writer.writeInt(u32, self.value, .little);
+        }
+
+        pub fn readComponentState(self: *@This(), reader: anytype) !void {
+            self.value = try reader.takeInt(u32, .little);
+        }
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const Values = plug.parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var source_values = Values.init(&set);
+    var restored_values = Values.init(&set);
+    var source = Processor{ .value = 9 };
+    var restored = Processor{ .value = 7 };
+    const envelope_header_size = component_state_magic.len + 2 + 4 + 4;
+    const Stream = vst_stream.FixedBufferStream(envelope_header_size + plug.state.encodedSize(Params) + Processor.component_state_maximum_encoded_size);
+    var stream = Stream{};
+    try std.testing.expect(source_values.storeField(&set, "gain", 0.75));
+    try std.testing.expect(restored_values.storeField(&set, "gain", 0.25));
+    try std.testing.expectEqual(types.kResultOk, writeProcessorComponentState(Params, Processor, stream.asStream(), &set, &source_values, &source));
+    const processor_size_offset = component_state_magic.len + 2 + 4;
+    std.mem.writeInt(u32, stream.bytes[processor_size_offset..][0..4], 5, .little);
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultFalse, readProcessorComponentState(Params, Processor, stream.asStream(), &set, &restored_values, &restored));
+    try std.testing.expectEqual(@as(f64, 0.25), restored_values.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(u32, 7), restored.value);
+}
+
+test "controller state rejects invalid editor state before writing its envelope" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const EditorState = plug.editor_state.Store(1, &.{
+        .{ .id = 1, .default = .{ .scalar = 0.0 } },
+    });
+    const Set = plug.parameters.ParameterSet(Params);
+    const Values = plug.parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var editor = EditorState.init();
+    editor.values[0] = .{ .scalar = std.math.nan(f64) };
+    const Stream = vst_stream.FixedBufferStream(256);
+    var stream = Stream{};
+
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        writeControllerState(Params, EditorState, stream.asStream(), &set, &values, &editor),
+    );
+    try std.testing.expectEqual(@as(usize, 0), stream.data().len);
+}
+
 test "zig-vst3-plugin bridge reads older parameter state without requiring current encoded size" {
     const OldParams = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
@@ -1182,8 +2755,9 @@ test "zig-vst3-plugin bridge rejects overreported IBStream byte counts" {
             .tell = tell,
         };
 
-        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, obj: *?*anyopaque) callconv(.c) types.tresult {
-            obj.* = null;
+        fn queryInterface(_: *anyopaque, requested_iid: [*c]const tuid.TUID, obj_raw: [*c]?*anyopaque) callconv(.c) types.tresult {
+            const arguments = funknown.queryArguments(requested_iid, obj_raw) orelse return types.kInvalidArgument;
+            arguments.out.* = null;
             return types.kNoInterface;
         }
 
@@ -1210,8 +2784,9 @@ test "zig-vst3-plugin bridge rejects overreported IBStream byte counts" {
             return types.kResultOk;
         }
 
-        fn tell(_: *anyopaque, pos: *types.int64) callconv(.c) types.tresult {
-            pos.* = 0;
+        fn tell(_: *anyopaque, pos: [*c]types.int64) callconv(.c) types.tresult {
+            if (pos == null) return types.kInvalidArgument;
+            pos[0] = 0;
             return types.kResultOk;
         }
     };
@@ -1253,6 +2828,68 @@ test "zig-vst3-plugin bridge parameter state stores ids and persists streams" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), restored.getNormalizedById(1));
 }
 
+test "zig-vst3-plugin bridge bounds invalid host collection visits" {
+    var event_storage: [1]plug.process.Event = undefined;
+    var event_collector = EventCollector{
+        .storage = &event_storage,
+        .frame_count = 4,
+    };
+    const invalid_event = ivstevents.Event{ .sampleOffset = -1 };
+    for (0..input_event_capacity - 1) |_|
+        try std.testing.expect(collectEvent(
+            &event_collector,
+            &invalid_event,
+        ));
+    try std.testing.expect(!collectEvent(
+        &event_collector,
+        &invalid_event,
+    ));
+    try std.testing.expectEqual(
+        input_event_capacity,
+        event_collector.item_visits,
+    );
+
+    var change_storage: [1]plug.process.ParameterChange = undefined;
+    var change_collector = ParameterChangeCollector{
+        .storage = &change_storage,
+        .frame_count = 4,
+    };
+    for (0..input_parameter_change_capacity - 1) |_|
+        try std.testing.expect(collectParameterPoint(
+            &change_collector,
+            7,
+            -1,
+            0.5,
+        ));
+    try std.testing.expect(!collectParameterPoint(
+        &change_collector,
+        7,
+        -1,
+        0.5,
+    ));
+    try std.testing.expectEqual(
+        input_parameter_change_capacity,
+        change_collector.item_visits,
+    );
+
+    const Queue = vst_parameter_changes.ParamValueQueue(1);
+    var empty_queue = Queue.init(7);
+    change_collector.item_visits = 0;
+    for (0..input_parameter_change_capacity - 1) |_|
+        try std.testing.expect(collectParameterQueue(
+            &change_collector,
+            empty_queue.asInterface(),
+        ));
+    try std.testing.expect(!collectParameterQueue(
+        &change_collector,
+        empty_queue.asInterface(),
+    ));
+    try std.testing.expectEqual(
+        input_parameter_change_capacity,
+        change_collector.source_visits,
+    );
+}
+
 test "zig-vst3-plugin bridge collects VST3 parameter changes" {
     const Changes = vst_parameter_changes.ParameterChanges(2, 2);
     var changes = Changes{};
@@ -1279,6 +2916,73 @@ test "zig-vst3-plugin bridge collects VST3 parameter changes" {
     try std.testing.expectEqual(@as(usize, 2), collected.items[2].sample_offset);
 }
 
+test "zig-vst3-plugin bridge collects offset zero parameter flushes" {
+    const Changes = vst_parameter_changes.ParameterChanges(1, 2);
+    var changes = Changes{};
+    const queue = changes.addQueue(7).?;
+    try std.testing.expectEqual(types.kResultOk, queue.appendPoint(0, 0.25));
+    try std.testing.expectEqual(types.kResultOk, queue.appendPoint(1, 0.75));
+    var storage: [2]plug.process.ParameterChange = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 0,
+        .inputParameterChanges = changes.asInterface(),
+    };
+
+    const collected = collectInputParameterChanges(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 1), collected.changeCount());
+    try std.testing.expectEqual(@as(u32, 7), collected.items[0].id);
+    try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
+    try std.testing.expectEqual(@as(f64, 0.25), collected.items[0].normalized);
+}
+
+test "zig-vst3-plugin bridge validates parameter flush bus structure" {
+    var input = [_]ivstaudioprocessor.AudioBusBuffers{
+        .{ .numChannels = 0 },
+        .{ .numChannels = 0 },
+    };
+    var output = [_]ivstaudioprocessor.AudioBusBuffers{
+        .{ .numChannels = 0 },
+        .{ .numChannels = 0 },
+    };
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 0,
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &input,
+        .outputs = &output,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+    };
+
+    try std.testing.expectEqual(types.kResultOk, validateParameterFlushData(&data, .{}));
+    data.inputs = null;
+    try std.testing.expectEqual(types.kInvalidArgument, validateParameterFlushData(&data, .{}));
+    data.inputs = &input;
+    input[0].numChannels = -1;
+    try std.testing.expectEqual(types.kInvalidArgument, validateParameterFlushData(&data, .{}));
+    input[0].numChannels = 0;
+    data.numInputs = 2;
+    try std.testing.expectEqual(types.kInvalidArgument, validateParameterFlushData(&data, .{}));
+    data.numInputs = 1;
+    data.numSamples = 1;
+    try std.testing.expectEqual(types.kInvalidArgument, validateParameterFlushData(&data, .{}));
+
+    data.numSamples = 0;
+    data.numInputs = 2;
+    const sidechain_config = StereoAudioBuses.Config{ .audio_sidechain_layout = .mono };
+    try std.testing.expectEqual(types.kResultOk, validateParameterFlushData(&data, sidechain_config));
+    input[1].numChannels = 2;
+    try std.testing.expectEqual(types.kInvalidArgument, validateParameterFlushData(&data, sidechain_config));
+
+    input[1].numChannels = 0;
+    data.numInputs = 1;
+    data.numOutputs = 2;
+    const auxiliary_config = StereoAudioBuses.Config{ .audio_auxiliary_output_layout = .mono };
+    try std.testing.expectEqual(types.kResultOk, validateParameterFlushData(&data, auxiliary_config));
+    output[1].numChannels = 2;
+    try std.testing.expectEqual(types.kInvalidArgument, validateParameterFlushData(&data, auxiliary_config));
+}
+
 test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter changes" {
     const TestParamPoint = struct {
         sample_offset: types.int32,
@@ -1297,8 +3001,9 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
 
         const owner = interface_map.ownerFromField(Self, ivstparameterchanges.IParamValueQueue, "iface");
 
-        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            out.* = null;
+        fn queryInterface(_: *anyopaque, requested_iid: [*c]const tuid.TUID, out_raw: [*c]?*anyopaque) callconv(.c) types.tresult {
+            const arguments = funknown.queryArguments(requested_iid, out_raw) orelse return types.kInvalidArgument;
+            arguments.out.* = null;
             return types.kNoInterface;
         }
 
@@ -1318,17 +3023,19 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
             return vst_index.int32Count(owner(ptr).points.len);
         }
 
-        fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.c) types.tresult {
+        fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: [*c]types.int32, value: [*c]vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (sample_offset == null or value == null) return types.kInvalidArgument;
             const self = owner(ptr);
             const point_index = vst_index.bounded(index, self.points.len) orelse return types.kInvalidArgument;
             const point = self.points[point_index];
-            sample_offset.* = point.sample_offset;
-            value.* = point.value;
+            sample_offset[0] = point.sample_offset;
+            value[0] = point.value;
             return types.kResultOk;
         }
 
-        fn addPoint(_: *anyopaque, _: types.int32, _: vsttypes.ParamValue, index: *types.int32) callconv(.c) types.tresult {
-            index.* = -1;
+        fn addPoint(_: *anyopaque, _: types.int32, _: vsttypes.ParamValue, index: [*c]types.int32) callconv(.c) types.tresult {
+            if (index == null) return types.kInvalidArgument;
+            index[0] = -1;
             return types.kResultFalse;
         }
 
@@ -1350,8 +3057,9 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
 
         const owner = interface_map.ownerFromField(Self, ivstparameterchanges.IParameterChanges, "iface");
 
-        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            out.* = null;
+        fn queryInterface(_: *anyopaque, requested_iid: [*c]const tuid.TUID, out_raw: [*c]?*anyopaque) callconv(.c) types.tresult {
+            const arguments = funknown.queryArguments(requested_iid, out_raw) orelse return types.kInvalidArgument;
+            arguments.out.* = null;
             return types.kNoInterface;
         }
 
@@ -1373,8 +3081,9 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
             return self.queues[queue_index];
         }
 
-        fn addParameterData(_: *anyopaque, _: *const vsttypes.ParamID, index: *types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
-            index.* = -1;
+        fn addParameterData(_: *anyopaque, id: [*c]const vsttypes.ParamID, index: [*c]types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
+            if (id == null or index == null) return null;
+            index[0] = -1;
             return null;
         }
 
@@ -1973,11 +3682,21 @@ test "zig-vst3-plugin bridge parameter controller exposes reflected edit operati
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[6]);
     try std.testing.expectEqual(types.kResultOk, controller.valueByString(7, &text, &value));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
+    try std.testing.expectEqual(types.kInvalidArgument, controller.parameterInfo(0, null));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.stringByValue(7, 0.5, null));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.valueByString(7, null, &value));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.valueByString(7, &text, null));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), controller.plainFromNormalized(7, 0.5));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), controller.normalizedFromPlain(7, 1.0));
 
     try std.testing.expectEqual(types.kResultOk, controller.setNormalized(8, 1.0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), controller.getNormalized(8));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(7, -0.1));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(7, 1.1));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(7, std.math.nan(vsttypes.ParamValue)));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(7, std.math.inf(vsttypes.ParamValue)));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), controller.getNormalized(7));
     try std.testing.expectEqual(types.kResultFalse, controller.setNormalized(9, 0.9));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), controller.getNormalized(9));
     try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(99, 0.5));
@@ -2019,6 +3738,13 @@ test "zig-vst3-plugin bridge stereo buses expose audio and event input metadata"
 
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, &info));
     try std.testing.expectEqual(ivstcomponent.BusInfo{}, info);
+
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.activateBusConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1, .{}));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.activateBusConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 0, .{}));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.activateBusConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 2, .{}));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.activateBusConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, 1, .{}));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.activateBusConfigured(99, @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1, .{}));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.activateBusConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, 1, .{}));
 }
 
 test "zig-vst3-plugin bridge stereo audio buses validate arrangements" {
@@ -2041,6 +3767,287 @@ test "zig-vst3-plugin bridge stereo audio buses validate arrangements" {
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangement(99, 0, &arrangement_out));
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
+}
+
+test "zig-vst3-plugin bridge mono and mixed layouts expose exact arrangements" {
+    const mono = AudioBuses.Config{
+        .audio_input_layout = .mono,
+        .audio_output_layout = .mono,
+    };
+    const mono_to_stereo = AudioBuses.Config{
+        .audio_input_layout = .mono,
+        .audio_output_layout = .stereo,
+    };
+    var mono_inputs = [_]vsttypes.SpeakerArrangement{mono_arrangement};
+    var mono_outputs = [_]vsttypes.SpeakerArrangement{mono_arrangement};
+    var stereo_outputs = [_]vsttypes.SpeakerArrangement{stereo_arrangement};
+    var info: ivstcomponent.BusInfo = .{};
+    var arrangement_out = empty_arrangement;
+
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.setArrangementsConfigured(&mono_inputs, 1, &mono_outputs, 1, mono));
+    try std.testing.expectEqual(types.kResultFalse, AudioBuses.setArrangementsConfigured(&mono_inputs, 1, &stereo_outputs, 1, mono));
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.setArrangementsConfigured(&mono_inputs, 1, &stereo_outputs, 1, mono_to_stereo));
+
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, mono));
+    try std.testing.expectEqual(@as(types.int32, 1), info.channelCount);
+    try expectString128("Mono In", &info.name);
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, mono));
+    try std.testing.expectEqual(mono_arrangement, arrangement_out);
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, mono_to_stereo));
+    try std.testing.expectEqual(stereo_arrangement, arrangement_out);
+}
+
+test "zig-vst3-plugin bridge exposes an inactive auxiliary sidechain bus" {
+    const config = AudioBuses.Config{
+        .audio_input_layout = .stereo,
+        .audio_sidechain_layout = .mono,
+        .audio_output_layout = .stereo,
+    };
+    const audio = @intFromEnum(ivstcomponent.MediaTypes.kAudio);
+    const input = @intFromEnum(ivstcomponent.BusDirections.kInput);
+    const output = @intFromEnum(ivstcomponent.BusDirections.kOutput);
+    var inputs = [_]vsttypes.SpeakerArrangement{ stereo_arrangement, mono_arrangement };
+    var outputs = [_]vsttypes.SpeakerArrangement{stereo_arrangement};
+    var info: ivstcomponent.BusInfo = .{};
+    var arrangement_out = empty_arrangement;
+
+    try std.testing.expectEqual(@as(types.int32, 2), AudioBuses.busCountConfigured(audio, input, config));
+    try std.testing.expectEqual(@as(types.int32, 1), AudioBuses.busCountConfigured(audio, output, config));
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.busInfoConfigured(audio, input, 1, &info, config));
+    try std.testing.expectEqual(@as(types.int32, 1), info.channelCount);
+    try std.testing.expectEqual(@intFromEnum(ivstcomponent.BusTypes.kAux), info.busType);
+    try std.testing.expectEqual(@as(types.uint32, 0), info.flags);
+    try expectString128("Sidechain In", &info.name);
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.activateBusConfigured(audio, input, 1, 1, config));
+    try std.testing.expectEqual(types.kInvalidArgument, AudioBuses.activateBusConfigured(audio, input, 2, 1, config));
+
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.setArrangementsConfigured(&inputs, 2, &outputs, 1, config));
+    inputs[1] = stereo_arrangement;
+    try std.testing.expectEqual(types.kResultFalse, AudioBuses.setArrangementsConfigured(&inputs, 2, &outputs, 1, config));
+    inputs[1] = mono_arrangement;
+    try std.testing.expectEqual(types.kResultFalse, AudioBuses.setArrangementsConfigured(&inputs, 1, &outputs, 1, config));
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.arrangementConfigured(input, 1, &arrangement_out, config));
+    try std.testing.expectEqual(mono_arrangement, arrangement_out);
+}
+
+test "zig-vst3-plugin bridge exposes an inactive auxiliary output bus" {
+    const config = AudioBuses.Config{
+        .audio_input_layout = .stereo,
+        .audio_output_layout = .stereo,
+        .audio_auxiliary_output_layout = .mono,
+    };
+    const audio = @intFromEnum(ivstcomponent.MediaTypes.kAudio);
+    const input = @intFromEnum(ivstcomponent.BusDirections.kInput);
+    const output = @intFromEnum(ivstcomponent.BusDirections.kOutput);
+    var inputs = [_]vsttypes.SpeakerArrangement{stereo_arrangement};
+    var outputs = [_]vsttypes.SpeakerArrangement{ stereo_arrangement, mono_arrangement };
+    var info: ivstcomponent.BusInfo = .{};
+    var arrangement_out = empty_arrangement;
+
+    try std.testing.expectEqual(@as(types.int32, 1), AudioBuses.busCountConfigured(audio, input, config));
+    try std.testing.expectEqual(@as(types.int32, 2), AudioBuses.busCountConfigured(audio, output, config));
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.busInfoConfigured(audio, output, 1, &info, config));
+    try std.testing.expectEqual(@as(types.int32, 1), info.channelCount);
+    try std.testing.expectEqual(@intFromEnum(ivstcomponent.BusTypes.kAux), info.busType);
+    try std.testing.expectEqual(@as(types.uint32, 0), info.flags);
+    try expectString128("Auxiliary Out", &info.name);
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.setArrangementsConfigured(&inputs, 1, &outputs, 2, config));
+    outputs[1] = stereo_arrangement;
+    try std.testing.expectEqual(types.kResultFalse, AudioBuses.setArrangementsConfigured(&inputs, 1, &outputs, 2, config));
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.arrangementConfigured(output, 1, &arrangement_out, config));
+    try std.testing.expectEqual(mono_arrangement, arrangement_out);
+}
+
+test "zig-vst3-plugin bridge exposes multiple auxiliary audio buses" {
+    const config = AudioBuses.Config{
+        .audio_auxiliary_input_layouts = &.{ .mono, .stereo },
+        .audio_auxiliary_output_layouts = &.{ .mono, .quadraphonic },
+    };
+    const audio = @intFromEnum(ivstcomponent.MediaTypes.kAudio);
+    const input = @intFromEnum(ivstcomponent.BusDirections.kInput);
+    const output = @intFromEnum(ivstcomponent.BusDirections.kOutput);
+    var inputs = [_]vsttypes.SpeakerArrangement{
+        stereo_arrangement,
+        mono_arrangement,
+        stereo_arrangement,
+    };
+    var outputs = [_]vsttypes.SpeakerArrangement{
+        stereo_arrangement,
+        mono_arrangement,
+        quadraphonic_arrangement,
+    };
+    var info: ivstcomponent.BusInfo = .{};
+    var arrangement_out = empty_arrangement;
+
+    try std.testing.expectEqual(@as(types.int32, 3), AudioBuses.busCountConfigured(audio, input, config));
+    try std.testing.expectEqual(@as(types.int32, 3), AudioBuses.busCountConfigured(audio, output, config));
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.busInfoConfigured(audio, input, 2, &info, config));
+    try std.testing.expectEqual(@as(types.int32, 2), info.channelCount);
+    try expectString128("Auxiliary In 2", &info.name);
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.busInfoConfigured(audio, output, 2, &info, config));
+    try std.testing.expectEqual(@as(types.int32, 4), info.channelCount);
+    try expectString128("Auxiliary Out 2", &info.name);
+    try std.testing.expectEqual(
+        types.kResultOk,
+        AudioBuses.setArrangementsConfigured(&inputs, 3, &outputs, 3, config),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        AudioBuses.arrangementConfigured(output, 2, &arrangement_out, config),
+    );
+    try std.testing.expectEqual(quadraphonic_arrangement, arrangement_out);
+
+    inputs[2] = mono_arrangement;
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        AudioBuses.setArrangementsConfigured(&inputs, 3, &outputs, 3, config),
+    );
+}
+
+test "zig-vst3-plugin bridge validates auxiliary bus configurations" {
+    const audio = @intFromEnum(ivstcomponent.MediaTypes.kAudio);
+    const input = @intFromEnum(ivstcomponent.BusDirections.kInput);
+    const without_main = AudioBuses.Config{
+        .audio_input = false,
+        .audio_auxiliary_input_layouts = &.{.mono},
+    };
+    const with_none = AudioBuses.Config{
+        .audio_auxiliary_output_layouts = &.{.none},
+    };
+    const nine_layouts =
+        [_]plug.plugin.AudioBusLayout{.mono} ** 9;
+    const nine_buses = AudioBuses.Config{
+        .audio_auxiliary_input_layouts = &nine_layouts,
+    };
+    const excess_layouts =
+        [_]plug.plugin.AudioBusLayout{.mono} ** 255;
+    const excess_buses = AudioBuses.Config{
+        .audio_auxiliary_input_layouts = &excess_layouts,
+    };
+
+    try std.testing.expectEqual(@as(types.int32, 0), AudioBuses.busCountConfigured(audio, input, without_main));
+    try std.testing.expectEqual(@as(types.int32, 0), AudioBuses.busCountConfigured(audio, input, with_none));
+    try std.testing.expectEqual(
+        @as(types.int32, 10),
+        AudioBuses.busCountConfigured(audio, input, nine_buses),
+    );
+    try std.testing.expectEqual(
+        @as(types.int32, 0),
+        AudioBuses.busCountConfigured(audio, input, excess_buses),
+    );
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        processContextErrorResult(error.InvalidAudioBusConfiguration),
+    );
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        processContextErrorResult(error.InvalidAudioBusChannels),
+    );
+}
+
+test "zig-vst3-plugin bridge exposes surround and ambisonic main bus layouts" {
+    const Case = struct {
+        layout: plug.plugin.AudioBusLayout,
+        arrangement: vsttypes.SpeakerArrangement,
+        channel_count: types.int32,
+        input_name: []const u8,
+        output_name: []const u8,
+    };
+    const cases = [_]Case{
+        .{ .layout = .surround_3_0, .arrangement = surround_3_0_arrangement, .channel_count = 3, .input_name = "3.0 Surround In", .output_name = "3.0 Surround Out" },
+        .{ .layout = .quadraphonic, .arrangement = quadraphonic_arrangement, .channel_count = 4, .input_name = "Quadraphonic In", .output_name = "Quadraphonic Out" },
+        .{ .layout = .surround_5_0, .arrangement = surround_5_0_arrangement, .channel_count = 5, .input_name = "5.0 Surround In", .output_name = "5.0 Surround Out" },
+        .{ .layout = .surround_5_1, .arrangement = surround_5_1_arrangement, .channel_count = 6, .input_name = "5.1 Surround In", .output_name = "5.1 Surround Out" },
+        .{ .layout = .surround_7_0, .arrangement = surround_7_0_arrangement, .channel_count = 7, .input_name = "7.0 Surround In", .output_name = "7.0 Surround Out" },
+        .{ .layout = .surround_7_1, .arrangement = surround_7_1_arrangement, .channel_count = 8, .input_name = "7.1 Surround In", .output_name = "7.1 Surround Out" },
+        .{ .layout = .surround_5_1_2, .arrangement = surround_5_1_2_arrangement, .channel_count = 8, .input_name = "5.1.2 Surround In", .output_name = "5.1.2 Surround Out" },
+        .{ .layout = .surround_7_1_4, .arrangement = surround_7_1_4_arrangement, .channel_count = 12, .input_name = "7.1.4 Surround In", .output_name = "7.1.4 Surround Out" },
+        .{ .layout = .ambisonic_first_order, .arrangement = ambisonic_first_order_arrangement, .channel_count = 4, .input_name = "First-Order Ambisonic In", .output_name = "First-Order Ambisonic Out" },
+        .{ .layout = .ambisonic_second_order, .arrangement = ambisonic_second_order_arrangement, .channel_count = 9, .input_name = "Second-Order Ambisonic In", .output_name = "Second-Order Ambisonic Out" },
+        .{ .layout = .ambisonic_third_order, .arrangement = ambisonic_third_order_arrangement, .channel_count = 16, .input_name = "Third-Order Ambisonic In", .output_name = "Third-Order Ambisonic Out" },
+    };
+
+    for (cases) |case| {
+        const config = AudioBuses.Config{
+            .audio_input_layout = case.layout,
+            .audio_output_layout = case.layout,
+        };
+        var inputs = [_]vsttypes.SpeakerArrangement{case.arrangement};
+        var outputs = [_]vsttypes.SpeakerArrangement{case.arrangement};
+        var info: ivstcomponent.BusInfo = .{};
+        var arrangement_out = empty_arrangement;
+
+        try std.testing.expectEqual(types.kResultOk, AudioBuses.setArrangementsConfigured(&inputs, 1, &outputs, 1, config));
+        try std.testing.expectEqual(types.kResultOk, AudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, config));
+        try std.testing.expectEqual(case.channel_count, info.channelCount);
+        try expectString128(case.input_name, &info.name);
+        try std.testing.expectEqual(types.kResultOk, AudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, config));
+        try expectString128(case.output_name, &info.name);
+        try std.testing.expectEqual(types.kResultOk, AudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, config));
+        try std.testing.expectEqual(case.arrangement, arrangement_out);
+
+        outputs[0] = stereo_arrangement;
+        try std.testing.expectEqual(types.kResultFalse, AudioBuses.setArrangementsConfigured(&inputs, 1, &outputs, 1, config));
+    }
+}
+
+test "zig-vst3-plugin bridge round trips every public speaker layout" {
+    const audio = @intFromEnum(ivstcomponent.MediaTypes.kAudio);
+    const input = @intFromEnum(ivstcomponent.BusDirections.kInput);
+    const output = @intFromEnum(ivstcomponent.BusDirections.kOutput);
+
+    inline for (@typeInfo(plug.plugin.AudioBusLayout).@"enum".fields) |field| {
+        const layout: plug.plugin.AudioBusLayout =
+            @enumFromInt(field.value);
+        if (layout == .none) {
+            try std.testing.expectEqual(
+                plug.plugin.AudioBusLayout.none,
+                AudioBuses.layoutForSpeakerArrangement(
+                    empty_arrangement,
+                ).?,
+            );
+            continue;
+        }
+
+        const config = AudioBuses.Config{
+            .audio_input_layout = layout,
+            .audio_output_layout = layout,
+        };
+        var arrangement_value = empty_arrangement;
+        try std.testing.expectEqual(
+            types.kResultOk,
+            AudioBuses.arrangementConfigured(
+                output,
+                0,
+                &arrangement_value,
+                config,
+            ),
+        );
+        try std.testing.expect(arrangement_value != empty_arrangement);
+        try std.testing.expectEqual(
+            layout,
+            AudioBuses.layoutForSpeakerArrangement(
+                arrangement_value,
+            ).?,
+        );
+
+        var info = ivstcomponent.BusInfo{};
+        try std.testing.expectEqual(
+            types.kResultOk,
+            AudioBuses.busInfoConfigured(
+                audio,
+                input,
+                0,
+                &info,
+                config,
+            ),
+        );
+        try std.testing.expectEqual(
+            @as(types.int32, layout.channelCount()),
+            info.channelCount,
+        );
+        try std.testing.expect(info.name[0] != 0);
+    }
 }
 
 test "zig-vst3-plugin bridge stereo buses can be output only" {
@@ -2114,7 +4121,21 @@ test "zig-vst3-plugin bridge realtime processor defaults validate process setup"
     };
 
     try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.validateProcessSetup(&setup));
+    try std.testing.expectEqual(plug.process.ProcessMode.realtime, RealtimeProcessorDefaults.processMode(setup.processMode).?);
 
+    setup.processMode = @intFromEnum(ivstaudioprocessor.ProcessModes.kPrefetch);
+    try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.validateProcessSetup(&setup));
+    try std.testing.expectEqual(plug.process.ProcessMode.prefetch, RealtimeProcessorDefaults.processMode(setup.processMode).?);
+
+    setup.processMode = @intFromEnum(ivstaudioprocessor.ProcessModes.kOffline);
+    try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.validateProcessSetup(&setup));
+    try std.testing.expectEqual(plug.process.ProcessMode.offline, RealtimeProcessorDefaults.processMode(setup.processMode).?);
+
+    setup.processMode = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, RealtimeProcessorDefaults.validateProcessSetup(&setup));
+    try std.testing.expectEqual(@as(?plug.process.ProcessMode, null), RealtimeProcessorDefaults.processMode(setup.processMode));
+
+    setup.processMode = @intFromEnum(ivstaudioprocessor.ProcessModes.kRealtime);
     setup.symbolicSampleSize = 99;
     try std.testing.expectEqual(types.kResultFalse, RealtimeProcessorDefaults.validateProcessSetup(&setup));
 
@@ -2239,6 +4260,10 @@ test "zig-vst3-plugin bridge converts VST3 normalized and plain values" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), normalizedParamToPlain(Params, &set, 7, 0.5));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), plainParamToNormalized(Params, &set, 7, 1.0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), normalizedParamToPlain(Params, &set, 8, 0.5));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), normalizedParamToPlain(Params, &set, 7, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), normalizedParamToPlain(Params, &set, 7, std.math.inf(f64)));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), plainParamToNormalized(Params, &set, 7, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), plainParamToNormalized(Params, &set, 7, -std.math.inf(f64)));
 }
 
 test "zig-vst3-plugin bridge builds process context from VST3 buffers" {
@@ -2256,7 +4281,18 @@ test "zig-vst3-plugin bridge builds process context from VST3 buffers" {
         .numChannels = 2,
         .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     };
-    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    var process_context = ivstprocesscontext.ProcessContext{
+        .state = ivstprocesscontext.StatesAndFlags.kPlaying |
+            ivstprocesscontext.StatesAndFlags.kProjectTimeMusicValid |
+            ivstprocesscontext.StatesAndFlags.kTempoValid |
+            ivstprocesscontext.StatesAndFlags.kTimeSigValid,
+        .sampleRate = test_sample_rate,
+        .projectTimeSamples = 96_000,
+        .projectTimeMusic = 8.0,
+        .tempo = 128.0,
+        .timeSigNumerator = 7,
+        .timeSigDenominator = 8,
+    };
     const data = ivstaudioprocessor.ProcessData{
         .numSamples = 2,
         .processContext = &process_context,
@@ -2266,8 +4302,37 @@ test "zig-vst3-plugin bridge builds process context from VST3 buffers" {
 
     try std.testing.expectEqual(@as(usize, 2), context.frameCount());
     try std.testing.expectEqual(@as(f32, 3.0), context.inputChannel(1).?[0]);
+    const transport = context.transport().?;
+    try std.testing.expect(transport.playing);
+    try std.testing.expectEqual(@as(i64, 96_000), transport.project_time_samples);
+    try std.testing.expectEqual(@as(?f64, 128.0), context.hostTempoBpm());
+    try std.testing.expectEqual(
+        plug.process.TimeSignature{ .numerator = 7, .denominator = 8 },
+        transport.time_signature.?,
+    );
     context.outputChannel(0).?[1] = 9.0;
     try std.testing.expectEqual(@as(f32, 9.0), out_left[1]);
+}
+
+test "zig-vst3-plugin bridge filters invalid optional transport fields" {
+    var process_context = ivstprocesscontext.ProcessContext{
+        .state = ivstprocesscontext.StatesAndFlags.kTempoValid |
+            ivstprocesscontext.StatesAndFlags.kTimeSigValid,
+        .sampleRate = test_sample_rate,
+        .tempo = std.math.nan(f64),
+        .timeSigNumerator = 4,
+        .timeSigDenominator = 3,
+    };
+    const data = ivstaudioprocessor.ProcessData{
+        .processContext = &process_context,
+    };
+    const transport = processTransport(&data).?;
+    try std.testing.expectEqual(@as(?f64, null), transport.tempo_bpm);
+    try std.testing.expectEqual(
+        @as(?plug.process.TimeSignature, null),
+        transport.time_signature,
+    );
+    try std.testing.expect(transport.valid());
 }
 
 test "zig-vst3-plugin bridge rejects negative process channel counts" {
@@ -2318,6 +4383,7 @@ test "zig-vst3-plugin bridge builds process context from main VST3 buses" {
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
+        .processMode = @intFromEnum(ivstaudioprocessor.ProcessModes.kPrefetch),
         .numInputs = 1,
         .numOutputs = 1,
         .inputs = &inputs,
@@ -2329,7 +4395,223 @@ test "zig-vst3-plugin bridge builds process context from main VST3 buses" {
     const context = try makeMainAudioProcessContext(f32, &data, .{}, .{}, null);
 
     try std.testing.expectEqual(@as(usize, 2), context.frameCount());
+    try std.testing.expect(context.isPrefetch());
     try std.testing.expectEqual(@as(f32, 4.0), context.inputChannel(1).?[1]);
+
+    var malformed = data;
+    malformed.processMode = 99;
+    try std.testing.expectError(error.InvalidProcessMode, makeMainAudioProcessContext(f32, &malformed, .{}, .{}, null));
+}
+
+test "zig-vst3-plugin bridge keeps auxiliary sidechain audio separate" {
+    var in_left = [_]f32{ 1.0, 2.0 };
+    var in_right = [_]f32{ 3.0, 4.0 };
+    var key = [_]f32{ 0.25, 0.75 };
+    var out_left = [_]f32{ 0.0, 0.0 };
+    var out_right = [_]f32{ 0.0, 0.0 };
+    var main_input_ptrs = [_][*]f32{ &in_left, &in_right };
+    var sidechain_ptrs = [_][*]f32{&key};
+    var output_ptrs = [_][*]f32{ &out_left, &out_right };
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{
+        .{
+            .numChannels = 2,
+            .channelBuffers = .{ .channelBuffers32 = main_input_ptrs[0..].ptr },
+        },
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers32 = sidechain_ptrs[0..].ptr },
+        },
+    };
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = output_ptrs[0..].ptr },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 2,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+    const config = StereoAudioBuses.Config{ .audio_sidechain_layout = .mono };
+
+    const context = try makeMainAudioProcessContextConfigured(f32, &data, .{}, .{}, null, config);
+    try std.testing.expectEqual(@as(usize, 2), context.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 1), context.sidechainInputChannelCount());
+    try std.testing.expectEqual(@as(?f32, 4.0), context.inputSample(1, 1));
+    try std.testing.expectEqual(@as(?f32, 0.75), context.sidechainInputSample(0, 1));
+
+    data.numInputs = 1;
+    const inactive = try makeMainAudioProcessContextConfigured(f32, &data, .{}, .{}, null, config);
+    try std.testing.expect(inactive.sidechainInputChannelsEmpty());
+
+    data.numInputs = 2;
+    inputs[1].numChannels = 2;
+    try std.testing.expectError(error.InvalidChannelCount, makeMainAudioProcessContextConfigured(f32, &data, .{}, .{}, null, config));
+}
+
+test "zig-vst3-plugin bridge keeps auxiliary output audio separate" {
+    var input = [_]f32{ 1.0, 2.0 };
+    var main_output = [_]f32{ 0.0, 0.0 };
+    var auxiliary_output = [_]f32{ 0.0, 0.0 };
+    var input_ptrs = [_][*]f32{&input};
+    var main_output_ptrs = [_][*]f32{&main_output};
+    var auxiliary_output_ptrs = [_][*]f32{&auxiliary_output};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = input_ptrs[0..].ptr },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers32 = main_output_ptrs[0..].ptr },
+        },
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers32 = auxiliary_output_ptrs[0..].ptr },
+        },
+    };
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 2,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+    const config = StereoAudioBuses.Config{
+        .audio_input_layout = .mono,
+        .audio_output_layout = .mono,
+        .audio_auxiliary_output_layout = .mono,
+    };
+
+    const context = try makeMainAudioProcessContextConfigured(f32, &data, .{}, .{}, null, config);
+    try std.testing.expectEqual(@as(usize, 1), context.outputChannelCount());
+    try std.testing.expectEqual(@as(usize, 1), context.auxiliaryOutputChannelCount());
+    try std.testing.expect(context.setAuxiliaryOutputSample(0, 1, 0.75));
+    try std.testing.expectEqual(@as(f32, 0.75), auxiliary_output[1]);
+    try std.testing.expectEqual(@as(f32, 0.0), main_output[1]);
+
+    data.numOutputs = 1;
+    const inactive = try makeMainAudioProcessContextConfigured(f32, &data, .{}, .{}, null, config);
+    try std.testing.expect(inactive.auxiliaryOutputChannelsEmpty());
+
+    data.numOutputs = 2;
+    outputs[1].numChannels = 2;
+    try std.testing.expectError(error.InvalidChannelCount, makeMainAudioProcessContextConfigured(f32, &data, .{}, .{}, null, config));
+}
+
+test "zig-vst3-plugin bridge preserves multiple auxiliary process buses" {
+    var main_input = [_]f32{ 0.1, 0.2 };
+    var auxiliary_input_mono = [_]f32{ 1.0, 1.1 };
+    var auxiliary_input_left = [_]f32{ 2.0, 2.1 };
+    var auxiliary_input_right = [_]f32{ 3.0, 3.1 };
+    var main_output = [_]f32{ 0.0, 0.0 };
+    var auxiliary_output_mono = [_]f32{ 0.0, 0.0 };
+    var auxiliary_output_left = [_]f32{ 0.0, 0.0 };
+    var auxiliary_output_right = [_]f32{ 0.0, 0.0 };
+    var main_input_ptrs = [_][*]f32{&main_input};
+    var auxiliary_input_mono_ptrs = [_][*]f32{&auxiliary_input_mono};
+    var auxiliary_input_stereo_ptrs = [_][*]f32{
+        &auxiliary_input_left,
+        &auxiliary_input_right,
+    };
+    var main_output_ptrs = [_][*]f32{&main_output};
+    var auxiliary_output_mono_ptrs = [_][*]f32{&auxiliary_output_mono};
+    var auxiliary_output_stereo_ptrs = [_][*]f32{
+        &auxiliary_output_left,
+        &auxiliary_output_right,
+    };
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers32 = main_input_ptrs[0..].ptr },
+        },
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers32 = auxiliary_input_mono_ptrs[0..].ptr },
+        },
+        .{
+            .numChannels = 2,
+            .channelBuffers = .{ .channelBuffers32 = auxiliary_input_stereo_ptrs[0..].ptr },
+        },
+    };
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers32 = main_output_ptrs[0..].ptr },
+        },
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers32 = auxiliary_output_mono_ptrs[0..].ptr },
+        },
+        .{
+            .numChannels = 2,
+            .channelBuffers = .{ .channelBuffers32 = auxiliary_output_stereo_ptrs[0..].ptr },
+        },
+    };
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 3,
+        .numOutputs = 3,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+    const config = StereoAudioBuses.Config{
+        .audio_input_layout = .mono,
+        .audio_output_layout = .mono,
+        .audio_auxiliary_input_layouts = &.{ .mono, .stereo },
+        .audio_auxiliary_output_layouts = &.{ .mono, .stereo },
+    };
+
+    const context = try makeMainAudioProcessContextConfigured(
+        f32,
+        &data,
+        .{},
+        .{},
+        null,
+        config,
+    );
+    try std.testing.expectEqual(@as(usize, 2), context.auxiliaryInputBusCount());
+    try std.testing.expectEqual(@as(usize, 2), context.auxiliaryOutputBusCount());
+    try std.testing.expectEqual(
+        @as(f32, 1.1),
+        context.auxiliaryInputBus(0).?.channel(0).?[1],
+    );
+    try std.testing.expectEqual(
+        @as(f32, 3.1),
+        context.auxiliaryInputBus(1).?.channel(1).?[1],
+    );
+    context.auxiliaryOutputBus(0).?.channel(0).?[0] = 4.0;
+    context.auxiliaryOutputBus(1).?.channel(1).?[1] = 5.0;
+    try std.testing.expectEqual(@as(f32, 4.0), auxiliary_output_mono[0]);
+    try std.testing.expectEqual(@as(f32, 5.0), auxiliary_output_right[1]);
+
+    data.numInputs = 2;
+    data.numOutputs = 2;
+    const trailing_inactive = try makeMainAudioProcessContextConfigured(
+        f32,
+        &data,
+        .{},
+        .{},
+        null,
+        config,
+    );
+    try std.testing.expectEqual(@as(usize, 2), trailing_inactive.auxiliaryInputBusCount());
+    try std.testing.expectEqual(@as(usize, 2), trailing_inactive.auxiliaryOutputBusCount());
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        trailing_inactive.auxiliaryInputBus(1).?.channelCount(),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        trailing_inactive.auxiliaryOutputBus(1).?.channelCount(),
+    );
 }
 
 test "zig-vst3-plugin bridge rejects missing main process buses" {
@@ -2395,6 +4677,51 @@ test "zig-vst3-plugin bridge builds input-only main process context" {
     try std.testing.expectEqual(@as(f32, 1.0), context.inputChannel(1).?[1]);
 }
 
+test "zig-vst3-plugin bridge exposes every negotiated surround channel" {
+    var input_samples = [_][2]f32{
+        .{ 0.0, 0.5 },
+        .{ 1.0, 1.5 },
+        .{ 2.0, 2.5 },
+        .{ 3.0, 3.5 },
+        .{ 4.0, 4.5 },
+        .{ 5.0, 5.5 },
+    };
+    var output_samples = [_][2]f32{.{ 0.0, 0.0 }} ** 6;
+    var input_channel_ptrs: [6][*]f32 = undefined;
+    var output_channel_ptrs: [6][*]f32 = undefined;
+    for (&input_samples, &input_channel_ptrs) |*samples, *channel_ptr| channel_ptr.* = samples;
+    for (&output_samples, &output_channel_ptrs) |*samples, *channel_ptr| channel_ptr.* = samples;
+
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 6,
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 6,
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+    const config = StereoAudioBuses.Config{
+        .audio_input_layout = .surround_5_1,
+        .audio_output_layout = .surround_5_1,
+    };
+
+    const context = try makeMainAudioProcessContextConfigured(f32, &data, .{}, .{}, null, config);
+    try std.testing.expectEqual(@as(usize, 6), context.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 6), context.outputChannelCount());
+    try std.testing.expectEqual(@as(f32, 5.5), context.inputChannel(5).?[1]);
+    context.outputChannel(5).?[1] = 0.75;
+    try std.testing.expectEqual(@as(f32, 0.75), output_samples[5][1]);
+}
+
 test "zig-vst3-plugin bridge generated main bus configurations follow declared audio IO" {
     const Case = struct {
         config: StereoAudioBuses.Config,
@@ -2440,6 +4767,27 @@ test "zig-vst3-plugin bridge generated main bus configurations follow declared a
         try std.testing.expectEqual(case.expected_outputs, context.outputChannelCount());
         try std.testing.expectEqual(if (case.expected_inputs == 0 and case.expected_outputs == 0) @as(usize, 0) else @as(usize, 2), context.frameCount());
     }
+
+    var mono_data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+    const mono_config = StereoAudioBuses.Config{
+        .audio_input_layout = .mono,
+        .audio_output_layout = .mono,
+    };
+    try std.testing.expectError(error.InvalidChannelCount, makeMainAudioProcessContextConfigured(f32, &mono_data, .{}, .{}, null, mono_config));
+    inputs[0].numChannels = 1;
+    outputs[0].numChannels = 1;
+    const mono_context = try makeMainAudioProcessContextConfigured(f32, &mono_data, .{}, .{}, null, mono_config);
+    try std.testing.expectEqual(@as(usize, 1), mono_context.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 1), mono_context.outputChannelCount());
+    inputs[0].numChannels = 2;
+    outputs[0].numChannels = 2;
 
     var empty_input = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 0,
@@ -2912,6 +5260,10 @@ test "bridge bounded collector caps appended items" {
     try std.testing.expect(collector.append(2));
     try std.testing.expect(!collector.append(3));
     try std.testing.expectEqualSlices(u8, &.{ 1, 2 }, collector.items());
+    try std.testing.expect(!collector.hasCapacity());
+
+    collector.count = std.math.maxInt(usize);
+    try std.testing.expectEqual(@as(usize, 0), collector.items().len);
     try std.testing.expect(!collector.hasCapacity());
 }
 

@@ -6,6 +6,7 @@ const factory = @import("factory.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
+const vstgui_headless_host = @import("vstgui_headless_host.zig");
 
 const BypassFactory = factory.StaticFactory3(.{
     .vendor = bypass_spec.Spec.vendor,
@@ -48,4 +49,13 @@ test "bypass plugin root exposes zig-vst3-plugin metadata" {
     try std.testing.expectEqual(@as(usize, 1), bypass_spec.Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 0), bypass_spec.bypass_param_index);
     try std.testing.expectEqual(@as(f64, 0.0), spec.values.view(&bypass_spec.parameter_set).loadNormalized("bypass"));
+}
+
+test "bypass editor survives concurrent headless host lifecycle stress" {
+    const report = try vstgui_headless_host.run(struct {
+        pub const component_create = bypass_component.create;
+        pub const controller_create = bypass_controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
 }

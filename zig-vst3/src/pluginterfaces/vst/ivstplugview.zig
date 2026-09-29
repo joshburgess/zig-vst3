@@ -5,10 +5,10 @@ const vsttypes = @import("vsttypes.zig");
 pub const iparameter_finder_iid = tuid.inlineUid(0x0F618302, 0x215D4587, 0xA512073C, 0x77B9D383);
 
 pub const IParameterFinderVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
-    findParameter: *const fn (*anyopaque, base_types.int32, base_types.int32, *vsttypes.ParamID) callconv(.c) base_types.tresult,
+    findParameter: *const fn (*anyopaque, base_types.int32, base_types.int32, [*c]vsttypes.ParamID) callconv(.c) base_types.tresult,
 };
 
 pub const IParameterFinder = extern struct {

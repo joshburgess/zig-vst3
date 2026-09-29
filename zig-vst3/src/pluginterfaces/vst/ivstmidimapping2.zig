@@ -39,13 +39,13 @@ pub const Midi1ControllerParamIDAssignmentList = extern struct {
 };
 
 pub const IMidiMapping2VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     getNumMidi2ControllerAssignments: *const fn (*anyopaque, vsttypes.BusDirection) callconv(.c) base_types.uint32,
-    getMidi2ControllerAssignments: *const fn (*anyopaque, vsttypes.BusDirection, *const Midi2ControllerParamIDAssignmentList) callconv(.c) base_types.tresult,
+    getMidi2ControllerAssignments: *const fn (*anyopaque, vsttypes.BusDirection, [*c]const Midi2ControllerParamIDAssignmentList) callconv(.c) base_types.tresult,
     getNumMidi1ControllerAssignments: *const fn (*anyopaque, vsttypes.BusDirection) callconv(.c) base_types.uint32,
-    getMidi1ControllerAssignments: *const fn (*anyopaque, vsttypes.BusDirection, *const Midi1ControllerParamIDAssignmentList) callconv(.c) base_types.tresult,
+    getMidi1ControllerAssignments: *const fn (*anyopaque, vsttypes.BusDirection, [*c]const Midi1ControllerParamIDAssignmentList) callconv(.c) base_types.tresult,
 };
 
 pub const IMidiMapping2 = extern struct {
@@ -53,7 +53,7 @@ pub const IMidiMapping2 = extern struct {
 };
 
 pub const IMidiLearn2VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, [*c]const tuid.TUID, [*c]?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
     onLiveMidi2ControllerInput: *const fn (*anyopaque, BusIndex, MidiChannel, Midi2Controller) callconv(.c) base_types.tresult,

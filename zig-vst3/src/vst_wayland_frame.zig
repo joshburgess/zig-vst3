@@ -26,7 +26,7 @@ pub fn WaylandHost(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, iwaylandframe.IWaylandHost, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iwaylandframe.iwayland_host_iid, .ptr = ptr },
@@ -96,7 +96,7 @@ pub fn WaylandFrame(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, iwaylandframe.IWaylandFrame, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iwaylandframe.iwayland_frame_iid, .ptr = ptr },
@@ -128,7 +128,9 @@ pub fn WaylandFrame(comptime Config: type) type {
             return null;
         }
 
-        fn getParentSurface(ptr: *anyopaque, rect: *iplugview.ViewRect, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.xdg_surface {
+        fn getParentSurface(ptr: *anyopaque, rect_raw: [*c]iplugview.ViewRect, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.xdg_surface {
+            if (rect_raw == null) return null;
+            const rect: *iplugview.ViewRect = @ptrCast(rect_raw);
             const self = owner(ptr);
             self.parent_surface_count +|= 1;
             self.recordDisplay(display);
@@ -251,6 +253,8 @@ test "wayland frame returns null by default" {
 
     var rect = iplugview.ViewRect{};
     try std.testing.expectEqual(@as(?*iwaylandframe.wl_surface, null), iface.vtable.getWaylandSurface(iface, null));
+    try std.testing.expectEqual(@as(?*iwaylandframe.xdg_surface, null), iface.vtable.getParentSurface(iface, null, null));
+    try std.testing.expectEqual(@as(types.uint32, 0), frame.parent_surface_count);
     try std.testing.expectEqual(@as(?*iwaylandframe.xdg_surface, null), iface.vtable.getParentSurface(iface, &rect, null));
     try std.testing.expectEqual(@as(?*iwaylandframe.xdg_toplevel, null), iface.vtable.getParentToplevel(iface, null));
     try std.testing.expectEqual(@as(types.uint32, 1), frame.surface_count);

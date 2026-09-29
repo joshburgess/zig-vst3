@@ -42,15 +42,15 @@ const EventMonitorState = struct {
     }
 };
 
-var monitor = EventMonitorState{};
-
-fn resetEventMonitorState() void {
-    monitor.reset();
-}
-
 const EventMonitorProcessor = struct {
-    pub fn process(_: EventMonitorProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        monitor.process(Sample, context);
+    state: EventMonitorState = .{},
+
+    pub fn reset(self: *EventMonitorProcessor) void {
+        self.state.reset();
+    }
+
+    pub fn process(self: *EventMonitorProcessor, _: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+        self.state.process(Sample, context);
     }
 };
 
@@ -59,23 +59,9 @@ const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
     pub const controller_cid = event_monitor_controller.cid;
     pub const event_input = event_monitor_spec.Spec.event_input;
     pub const audio_output = event_monitor_spec.Spec.audio_output;
+    pub const Params = event_monitor_spec.Spec.Params;
+    pub const parameter_set = &event_monitor_spec.parameter_set;
     pub const Processor = EventMonitorProcessor;
-
-    pub fn resetProcessState() void {
-        resetEventMonitorState();
-    }
-
-    pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
-        event_monitor_controller.applyParameterChanges(changes);
-    }
-
-    pub fn readState(state: ?*ibstream.IBStream) types.tresult {
-        return event_monitor_controller.readState(state);
-    }
-
-    pub fn writeState(state: ?*ibstream.IBStream) types.tresult {
-        return event_monitor_controller.writeState(state);
-    }
 });
 
 pub const create = Effect.create;
@@ -91,7 +77,7 @@ test "event monitor component can be created as an input-only analyzer" {
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expectEqual(@as(types.int32, 0), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);
+    try std.testing.expectEqual(@as(types.uint32, 0), component_iface.vtable.release(component_iface));
 }
 
 test "event monitor processor summarizes input events without audio output" {
@@ -130,7 +116,6 @@ test "event monitor component summarizes host event list input through processor
     const vsteventshelper = @import("pluginterfaces/vst/vsteventshelper.zig");
     const vst_event_list = @import("vst_event_list.zig");
 
-    resetEventMonitorState();
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
@@ -218,13 +203,13 @@ test "event monitor component summarizes host event list input through processor
     };
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
-    try std.testing.expectEqual(@as(usize, 1), monitor.note_on_count);
-    try std.testing.expectEqual(@as(usize, 1), monitor.note_off_count);
-    try std.testing.expectEqual(@as(usize, 1), monitor.midi_cc_count);
-    try std.testing.expectEqual(@as(usize, 1), monitor.pitch_bend_count);
-    try std.testing.expectEqual(@as(usize, 1), monitor.aftertouch_count);
-    try std.testing.expectEqual(@as(?usize, 3), monitor.latest_event_offset);
-    try std.testing.expectApproxEqAbs(@as(f64, 64.0 / 127.0), monitor.latest_midi_cc_value, 0.000001);
+    try std.testing.expectEqual(@as(usize, 1), Effect.processorInstance(component_iface).state.note_on_count);
+    try std.testing.expectEqual(@as(usize, 1), Effect.processorInstance(component_iface).state.note_off_count);
+    try std.testing.expectEqual(@as(usize, 1), Effect.processorInstance(component_iface).state.midi_cc_count);
+    try std.testing.expectEqual(@as(usize, 1), Effect.processorInstance(component_iface).state.pitch_bend_count);
+    try std.testing.expectEqual(@as(usize, 1), Effect.processorInstance(component_iface).state.aftertouch_count);
+    try std.testing.expectEqual(@as(?usize, 3), Effect.processorInstance(component_iface).state.latest_event_offset);
+    try std.testing.expectApproxEqAbs(@as(f64, 64.0 / 127.0), Effect.processorInstance(component_iface).state.latest_midi_cc_value, 0.000001);
 }
 
 test "event monitor component summarizes host event list input through double precision processor shell" {
@@ -236,7 +221,6 @@ test "event monitor component summarizes host event list input through double pr
     const vsteventshelper = @import("pluginterfaces/vst/vsteventshelper.zig");
     const vst_event_list = @import("vst_event_list.zig");
 
-    resetEventMonitorState();
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
@@ -324,13 +308,13 @@ test "event monitor component summarizes host event list input through double pr
     };
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
-    try std.testing.expectEqual(@as(usize, 1), monitor.note_on_count);
-    try std.testing.expectEqual(@as(usize, 1), monitor.note_off_count);
-    try std.testing.expectEqual(@as(usize, 1), monitor.midi_cc_count);
-    try std.testing.expectEqual(@as(usize, 1), monitor.pitch_bend_count);
-    try std.testing.expectEqual(@as(usize, 1), monitor.aftertouch_count);
-    try std.testing.expectEqual(@as(?usize, 3), monitor.latest_event_offset);
-    try std.testing.expectApproxEqAbs(@as(f64, 64.0 / 127.0), monitor.latest_midi_cc_value, 0.000001);
+    try std.testing.expectEqual(@as(usize, 1), Effect.processorInstance(component_iface).state.note_on_count);
+    try std.testing.expectEqual(@as(usize, 1), Effect.processorInstance(component_iface).state.note_off_count);
+    try std.testing.expectEqual(@as(usize, 1), Effect.processorInstance(component_iface).state.midi_cc_count);
+    try std.testing.expectEqual(@as(usize, 1), Effect.processorInstance(component_iface).state.pitch_bend_count);
+    try std.testing.expectEqual(@as(usize, 1), Effect.processorInstance(component_iface).state.aftertouch_count);
+    try std.testing.expectEqual(@as(?usize, 3), Effect.processorInstance(component_iface).state.latest_event_offset);
+    try std.testing.expectApproxEqAbs(@as(f64, 64.0 / 127.0), Effect.processorInstance(component_iface).state.latest_midi_cc_value, 0.000001);
 }
 
 test "event monitor component round-trips empty state through host callbacks" {

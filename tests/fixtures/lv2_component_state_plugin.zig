@@ -1,0 +1,466 @@
+const core = @import("zig-vst3-plugin-core");
+const std = @import("std");
+
+const ComponentStateProbe = struct {
+    mode: u32 = 7,
+    pending_mode: u32 = 7,
+    worker_schedule: ?*core.lv2.WorkerScheduleSink = null,
+    port_resize: ?*core.lv2.PortResizeSink = null,
+    state_changed: ?*core.lv2.StateChangedSink = null,
+    log: ?*core.lv2.LogSink = null,
+    worker_requested: bool = false,
+    port_resize_requested: bool = false,
+    worker_value: u32 = 0,
+    worker_end_run_count: usize = 0,
+    trace_sent: bool = false,
+    resource_path: [128]u8 = undefined,
+    resource_path_length: usize = 0,
+    pending_resource_path: [128]u8 = undefined,
+    pending_resource_path_length: usize = 0,
+    generated_path: [128]u8 = undefined,
+    generated_path_length: usize = 0,
+    pending_generated_path: [128]u8 = undefined,
+    pending_generated_path_length: usize = 0,
+    graph_atom_type: core.lv2.Urid = 0,
+
+    pub const name = "LV2 Component State Probe";
+    pub const vendor = "zig-vst3";
+    pub const audio_input_layout: core.plugin.AudioBusLayout = .mono;
+    pub const audio_output_layout: core.plugin.AudioBusLayout = .mono;
+    pub const event_input = true;
+    pub const event_output = true;
+    pub const component_state_maximum_encoded_size = 265;
+    pub const lv2_state_requires_make_path = true;
+    pub const lv2_thread_safe_restore = true;
+    pub const lv2_thread_safe_restore_maximum_component_size = 265;
+    pub const lv2_patch_response_capacity = 1024;
+    pub const lv2_patch_graph_operations = true;
+    pub const lv2_patch_graph_queries = true;
+    pub const lv2_patch_properties = &[_]core.lv2.PatchProperty{
+        .{
+            .uri = "https://zig-vst3.dev/tests/lv2-component-state#mode",
+            .value_kind = .int,
+            .readable = true,
+            .writable = true,
+        },
+        .{
+            .uri = "https://zig-vst3.dev/tests/lv2-component-state#resource",
+            .value_kind = .path,
+            .readable = true,
+            .writable = true,
+        },
+    };
+    pub const lv2_worker_maximum_request_size = @sizeOf(u32);
+    pub const lv2_worker_maximum_response_size = @sizeOf(u32);
+    pub const Params = struct {
+        gain: core.parameters.FloatParam = .{
+            .id = 0,
+            .name = "Gain",
+            .min = 0.0,
+            .max = 2.0,
+            .default = 1.0,
+        },
+    };
+
+    pub fn processWithParameterView(
+        self: *@This(),
+        context: *core.process.ProcessContext(f32),
+        parameters: core.parameters.ParameterView(Params),
+    ) void {
+        if (!self.worker_requested) {
+            self.worker_requested = true;
+            const request: u32 = 2;
+            const bytes = std.mem.asBytes(&request);
+            if (self.worker_schedule) |schedule|
+                _ = schedule.schedule(bytes);
+        }
+        if (!self.port_resize_requested) {
+            self.port_resize_requested = true;
+            if (self.port_resize) |resize|
+                _ = resize.resizeOutput(3, 4096);
+        }
+        if (!self.trace_sent) {
+            self.trace_sent = true;
+            if (self.log) |log|
+                _ = log.trace("component-state process 100%");
+        }
+        const input = context.inputChannel(0) orelse return;
+        const output = context.outputChannel(0) orelse return;
+        const gain: f32 = @floatCast(parameters.load("gain"));
+        for (input, output) |sample, *destination|
+            destination.* = sample * gain +
+                @as(f32, @floatFromInt(self.worker_value + self.mode));
+    }
+
+    pub fn bindLv2WorkerSchedule(
+        self: *@This(),
+        schedule: *core.lv2.WorkerScheduleSink,
+    ) void {
+        self.worker_schedule = schedule;
+    }
+
+    pub fn bindLv2PortResize(
+        self: *@This(),
+        resize: *core.lv2.PortResizeSink,
+    ) void {
+        self.port_resize = resize;
+    }
+
+    pub fn bindLv2StateChanged(
+        self: *@This(),
+        state_changed: *core.lv2.StateChangedSink,
+    ) void {
+        self.state_changed = state_changed;
+    }
+
+    pub fn bindLv2Log(
+        self: *@This(),
+        log: *core.lv2.LogSink,
+    ) void {
+        self.log = log;
+    }
+
+    pub fn runLv2Worker(
+        _: *@This(),
+        request: []const u8,
+        response: *core.lv2.WorkerResponseSink,
+    ) !void {
+        if (request.len != @sizeOf(u32))
+            return error.InvalidWorkerRequest;
+        const value = @as(
+            *align(1) const u32,
+            @ptrCast(request.ptr),
+        ).*;
+        const result = value + 1;
+        if (response.respond(std.mem.asBytes(&result)) != .success)
+            return error.WorkerResponseRejected;
+    }
+
+    pub fn applyLv2WorkerResponse(
+        self: *@This(),
+        response: []const u8,
+    ) !void {
+        if (response.len != @sizeOf(u32))
+            return error.InvalidWorkerResponse;
+        self.worker_value = @as(
+            *align(1) const u32,
+            @ptrCast(response.ptr),
+        ).*;
+        if (self.state_changed) |state_changed| {
+            state_changed.notify();
+            state_changed.notify();
+        }
+    }
+
+    pub fn endLv2WorkerRun(self: *@This()) !void {
+        self.worker_end_run_count += 1;
+    }
+
+    pub fn readLv2PatchProperty(
+        self: *const @This(),
+        property_index: usize,
+    ) !core.lv2.PatchValue {
+        return switch (property_index) {
+            0 => .{ .int = @intCast(self.mode) },
+            1 => .{ .path = if (self.resource_path_length == 0)
+                "/samples/original.wav"
+            else
+                self.resource_path[0..self.resource_path_length] },
+            else => error.UnknownPatchProperty,
+        };
+    }
+
+    pub fn writeLv2PatchProperty(
+        self: *@This(),
+        property_index: usize,
+        value: core.lv2.PatchValue,
+    ) !void {
+        switch (property_index) {
+            0 => {
+                const mode = switch (value) {
+                    .int => |item| item,
+                    else => return error.InvalidPatchValue,
+                };
+                if (mode < 0) return error.InvalidPatchValue;
+                self.mode = @intCast(mode);
+            },
+            1 => {
+                const path = switch (value) {
+                    .path => |item| item,
+                    else => return error.InvalidPatchValue,
+                };
+                if (path.len == 0 or path.len > self.resource_path.len)
+                    return error.InvalidPatchValue;
+                @memcpy(self.resource_path[0..path.len], path);
+                self.resource_path_length = path.len;
+            },
+            else => return error.UnknownPatchProperty,
+        }
+    }
+
+    pub fn applyLv2PatchGraphRequest(
+        self: *@This(),
+        request: core.lv2.PatchGraphRequest,
+    ) !void {
+        try validateRequestReference(request.request);
+        self.mode = switch (request.operation) {
+            .put => |operation| blk: {
+                if (operation.subject == 0 or
+                    request.context == null or
+                    request.sequence_number == null)
+                    return error.InvalidPatchGraphRequest;
+                self.graph_atom_type = operation.body.atom_type;
+                break :blk try graphInt(operation.body);
+            },
+            .insert => |operation| blk: {
+                if (operation.subject == 0)
+                    return error.InvalidPatchGraphRequest;
+                break :blk try graphInt(operation.body);
+            },
+            .patch => |operation| blk: {
+                if (operation.subject == 0 or
+                    try graphInt(operation.remove) != 24)
+                    return error.InvalidPatchGraphRequest;
+                break :blk try graphInt(operation.add);
+            },
+            .delete => |operation| blk: {
+                if (operation.subjects.len != 2 or
+                    operation.subjects[0] == 0 or
+                    operation.subjects[1] == 0)
+                    return error.InvalidPatchGraphRequest;
+                break :blk 25;
+            },
+            .copy => |operation| blk: {
+                if (operation.subjects.len != 2 or
+                    operation.destination == 0)
+                    return error.InvalidPatchGraphRequest;
+                break :blk 26;
+            },
+            .move => |operation| blk: {
+                if (operation.subject == 0 or
+                    operation.destination == 0)
+                    return error.InvalidPatchGraphRequest;
+                break :blk 27;
+            },
+        };
+    }
+
+    pub fn readLv2PatchGraph(
+        self: *const @This(),
+        request: core.lv2.PatchGraphGetRequest,
+    ) !core.lv2.PatchAtomValue {
+        try validateRequestReference(request.request);
+        if (request.subject == null or request.context == null)
+            return error.InvalidPatchGraphRequest;
+        _ = request.accept orelse return error.MissingPatchAcceptType;
+        if (self.graph_atom_type == 0)
+            return error.MissingPatchGraphBodyType;
+        return .{
+            .atom_type = self.graph_atom_type,
+            .body = std.mem.asBytes(&self.mode),
+        };
+    }
+
+    fn graphInt(value: core.lv2.PatchAtomValue) !u32 {
+        if (value.atom_type == 0 or
+            value.body.len != @sizeOf(i32))
+            return error.InvalidPatchGraphRequest;
+        const result = @as(
+            *align(1) const i32,
+            @ptrCast(value.body.ptr),
+        ).*;
+        if (result < 0) return error.InvalidPatchGraphRequest;
+        return @intCast(result);
+    }
+
+    fn validateRequestReference(
+        request: ?core.lv2.PatchRequestReference,
+    ) !void {
+        if (request) |reference| {
+            if (reference.atom_type == 0 or reference.id == 0 or
+                reference.object_type == 0)
+                return error.InvalidPatchRequestReference;
+        }
+    }
+
+    pub fn writeComponentState(
+        self: *const @This(),
+        writer: anytype,
+    ) !void {
+        try writer.writeByte(0xa5);
+        try writer.writeInt(u32, self.mode, .little);
+    }
+
+    pub fn readComponentState(
+        self: *@This(),
+        reader: anytype,
+    ) !void {
+        if (try reader.takeByte() != 0xa5)
+            return error.InvalidComponentState;
+        self.pending_mode = try reader.takeInt(u32, .little);
+    }
+
+    pub fn writeLv2ComponentState(
+        self: *const @This(),
+        writer: anytype,
+        paths: core.lv2.StatePathFeatures,
+    ) !void {
+        const default_path = "/samples/original.wav";
+        const source = if (self.resource_path_length == 0)
+            default_path
+        else
+            self.resource_path[0..self.resource_path_length];
+        var terminated: [129]u8 = @splat(0);
+        @memcpy(terminated[0..source.len], source);
+        var mapped = try paths.mapAbsolute(
+            terminated[0..source.len :0],
+        );
+        defer mapped.deinit();
+        const mapped_bytes = mapped.bytes();
+        if (mapped_bytes.len > 128) return error.StatePathTooLong;
+        var generated = try paths.makePath("generated/cache.bin");
+        defer generated.deinit();
+        var generated_terminated: [129]u8 = @splat(0);
+        const generated_bytes = generated.bytes();
+        if (generated_bytes.len > 128) return error.StatePathTooLong;
+        @memcpy(
+            generated_terminated[0..generated_bytes.len],
+            generated_bytes,
+        );
+        var mapped_generated = try paths.mapAbsolute(
+            generated_terminated[0..generated_bytes.len :0],
+        );
+        defer mapped_generated.deinit();
+        const mapped_generated_bytes = mapped_generated.bytes();
+        if (mapped_generated_bytes.len > 128)
+            return error.StatePathTooLong;
+        try writer.writeByte(0xa5);
+        try writer.writeInt(u32, self.mode, .little);
+        try writer.writeInt(u16, @intCast(mapped_bytes.len), .little);
+        try writer.writeAll(mapped_bytes);
+        try writer.writeInt(
+            u16,
+            @intCast(mapped_generated_bytes.len),
+            .little,
+        );
+        try writer.writeAll(mapped_generated_bytes);
+    }
+
+    pub fn readLv2ComponentState(
+        self: *@This(),
+        reader: anytype,
+        paths: core.lv2.StatePathFeatures,
+    ) !void {
+        var staged_bytes: [lv2_thread_safe_restore_maximum_component_size]u8 =
+            undefined;
+        var writer = std.Io.Writer.fixed(&staged_bytes);
+        try stageLv2ThreadSafeComponentRestore(
+            reader,
+            paths,
+            &writer,
+        );
+        var staged = std.Io.Reader.fixed(writer.buffered());
+        try self.applyLv2ThreadSafeComponentRestore(&staged);
+        if (staged.seek != staged.end)
+            return error.InvalidComponentState;
+    }
+
+    pub fn stageLv2ThreadSafeComponentRestore(
+        reader: anytype,
+        paths: core.lv2.StatePathFeatures,
+        writer: anytype,
+    ) !void {
+        if (try reader.takeByte() != 0xa5)
+            return error.InvalidComponentState;
+        const mode = try reader.takeInt(u32, .little);
+        const mapped_length = try reader.takeInt(u16, .little);
+        if (mapped_length == 0 or mapped_length > 128)
+            return error.InvalidStatePath;
+        var mapped: [129]u8 = @splat(0);
+        try reader.readSliceAll(mapped[0..mapped_length]);
+        var resolved = try paths.resolveAbstract(
+            mapped[0..mapped_length :0],
+        );
+        defer resolved.deinit();
+        const resolved_bytes = resolved.bytes();
+        if (resolved_bytes.len > 128)
+            return error.StatePathTooLong;
+        const generated_length = try reader.takeInt(u16, .little);
+        if (generated_length == 0 or generated_length > 128)
+            return error.InvalidStatePath;
+        var generated: [129]u8 = @splat(0);
+        try reader.readSliceAll(generated[0..generated_length]);
+        var resolved_generated = try paths.resolveAbstract(
+            generated[0..generated_length :0],
+        );
+        defer resolved_generated.deinit();
+        const resolved_generated_bytes = resolved_generated.bytes();
+        if (resolved_generated_bytes.len > 128)
+            return error.StatePathTooLong;
+        try writer.writeByte(0xa5);
+        try writer.writeInt(u32, mode, .little);
+        try writer.writeInt(
+            u16,
+            @intCast(resolved_bytes.len),
+            .little,
+        );
+        try writer.writeAll(resolved_bytes);
+        try writer.writeInt(
+            u16,
+            @intCast(resolved_generated_bytes.len),
+            .little,
+        );
+        try writer.writeAll(resolved_generated_bytes);
+    }
+
+    pub fn applyLv2ThreadSafeComponentRestore(
+        self: *@This(),
+        reader: anytype,
+    ) !void {
+        if (try reader.takeByte() != 0xa5)
+            return error.InvalidComponentState;
+        self.pending_mode = try reader.takeInt(u32, .little);
+        const resource_length = try reader.takeInt(u16, .little);
+        if (resource_length == 0 or
+            resource_length > self.pending_resource_path.len)
+            return error.InvalidStatePath;
+        try reader.readSliceAll(
+            self.pending_resource_path[0..resource_length],
+        );
+        self.pending_resource_path_length = resource_length;
+        const generated_length = try reader.takeInt(u16, .little);
+        if (generated_length == 0 or
+            generated_length > self.pending_generated_path.len)
+            return error.InvalidStatePath;
+        try reader.readSliceAll(
+            self.pending_generated_path[0..generated_length],
+        );
+        self.pending_generated_path_length = generated_length;
+    }
+
+    pub fn afterComponentStateRestore(self: *@This()) void {
+        self.mode = self.pending_mode;
+        @memcpy(
+            self.resource_path[0..self.pending_resource_path_length],
+            self.pending_resource_path[0..self.pending_resource_path_length],
+        );
+        self.resource_path_length = self.pending_resource_path_length;
+        @memcpy(
+            self.generated_path[0..self.pending_generated_path_length],
+            self.pending_generated_path[0..self.pending_generated_path_length],
+        );
+        self.generated_path_length = self.pending_generated_path_length;
+    }
+};
+
+const Adapter = core.lv2.CoreAdapter(
+    ComponentStateProbe,
+    "https://zig-vst3.dev/tests/lv2-component-state",
+    64,
+);
+
+pub export fn lv2_descriptor(
+    index: u32,
+) callconv(.c) ?*const core.lv2.Descriptor {
+    return Adapter.descriptorAt(index);
+}

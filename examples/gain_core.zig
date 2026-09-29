@@ -108,7 +108,7 @@ const LifecycleProbe = struct {
 };
 
 test "gain core example declares reflected metadata" {
-    const spec = Spec.init(.{});
+    const spec = try Spec.initChecked(.{});
     var instance = try Instance.init(std.testing.allocator, .{});
     const CustomMetadata = struct {
         pub const name = "zig-vst3-plugin Custom Metadata";
@@ -312,7 +312,7 @@ test "gain core example drives lifecycle hook variants" {
     try std.testing.expect(!instance.hasProcess64WithParametersHook());
     try std.testing.expect(instance.hasAnyProcessHook());
     try std.testing.expect(instance.hasDeinitHook());
-    instance.prepare(.{ .sample_rate = 96_000.0, .max_block_size = 128 });
+    try instance.prepare(.{ .sample_rate = 96_000.0, .max_block_size = 128 });
     try std.testing.expectEqual(@as(f64, 96_000.0), instance.plugin.prepared_sample_rate);
     try std.testing.expectEqual(@as(u32, 128), instance.plugin.prepared_max_block_size);
 

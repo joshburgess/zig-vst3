@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
@@ -6,6 +7,17 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
 const Linux = iplugview.Linux;
+
+pub const PollDescriptor = struct {
+    fd: Linux.FileDescriptor,
+    ready: bool = false,
+};
+
+pub const PumpReport = struct {
+    ready_events: usize = 0,
+    fired_timers: usize = 0,
+    waited_milliseconds: u32 = 0,
+};
 
 pub fn EventHandler(comptime Config: type) type {
     return extern struct {
@@ -22,7 +34,7 @@ pub fn EventHandler(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, Linux.IEventHandler, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.ievent_handler_iid, .ptr = ptr },
@@ -70,7 +82,7 @@ pub fn TimerHandler(comptime Config: type) type {
 
         const owner = interface_map.ownerFromField(Self, Linux.ITimerHandler, "iface");
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.itimer_handler_iid, .ptr = ptr },
@@ -129,10 +141,18 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
         const TimerEntry = extern struct {
             handler: ?*Linux.ITimerHandler = null,
             interval: Linux.TimerInterval = 0,
+            deadline_milliseconds: u64 = 0,
 
-            fn set(self: *TimerEntry, handler: *Linux.ITimerHandler, interval: Linux.TimerInterval) void {
+            fn set(
+                self: *TimerEntry,
+                handler: *Linux.ITimerHandler,
+                interval: Linux.TimerInterval,
+                now_milliseconds: u64,
+            ) void {
                 self.handler = handler;
                 self.interval = interval;
+                self.deadline_milliseconds =
+                    now_milliseconds +| interval;
                 _ = handler.vtable.addRef(handler);
             }
 
@@ -146,6 +166,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         event_handlers: [max_event_handlers]EventEntry = [_]EventEntry{.{}} ** max_event_handlers,
         timer_handlers: [max_timer_handlers]TimerEntry = [_]TimerEntry{.{}} ** max_timer_handlers,
+        clock_milliseconds: u64 = 0,
 
         pub fn asInterface(self: *Self) *Linux.IRunLoop {
             return &self.iface;
@@ -166,6 +187,90 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
                 }
             }
             return types.kResultFalse;
+        }
+
+        pub fn pollDescriptors(
+            self: *const Self,
+            output: []PollDescriptor,
+        ) !usize {
+            var count: usize = 0;
+            for (&self.event_handlers) |*entry| {
+                if (entry.handler == null) continue;
+                if (entry.fd < 0)
+                    return error.InvalidRunLoopEventHandler;
+                if (count == output.len)
+                    return error.PollDescriptorCapacityExceeded;
+                output[count] = .{ .fd = entry.fd };
+                count += 1;
+            }
+            return count;
+        }
+
+        pub fn nextTimeoutMilliseconds(
+            self: *const Self,
+            now_milliseconds: u64,
+            maximum_wait_milliseconds: u32,
+        ) !u32 {
+            if (now_milliseconds < self.clock_milliseconds)
+                return error.RunLoopClockMovedBackwards;
+            var timeout: u64 = maximum_wait_milliseconds;
+            for (&self.timer_handlers) |*entry| {
+                if (entry.handler == null) continue;
+                if (entry.interval == 0)
+                    return error.InvalidRunLoopTimer;
+                const remaining = if (entry.deadline_milliseconds <= now_milliseconds)
+                    0
+                else
+                    entry.deadline_milliseconds - now_milliseconds;
+                timeout = @min(timeout, remaining);
+            }
+            return @intCast(timeout);
+        }
+
+        pub fn dispatch(
+            self: *Self,
+            now_milliseconds: u64,
+            descriptors: []const PollDescriptor,
+        ) !PumpReport {
+            if (now_milliseconds < self.clock_milliseconds)
+                return error.RunLoopClockMovedBackwards;
+            self.clock_milliseconds = now_milliseconds;
+
+            var report = PumpReport{};
+            for (descriptors) |descriptor| {
+                if (!descriptor.ready) continue;
+                if (self.triggerEvent(descriptor.fd) == types.kResultOk)
+                    report.ready_events += 1;
+            }
+            for (&self.timer_handlers) |*entry| {
+                const handler = entry.handler orelse continue;
+                if (entry.interval == 0)
+                    return error.InvalidRunLoopTimer;
+                if (entry.deadline_milliseconds > now_milliseconds)
+                    continue;
+                const elapsed =
+                    now_milliseconds - entry.deadline_milliseconds;
+                const periods = elapsed / entry.interval + 1;
+                const advance = std.math.mul(
+                    u64,
+                    periods,
+                    entry.interval,
+                ) catch std.math.maxInt(u64);
+                entry.deadline_milliseconds = std.math.add(
+                    u64,
+                    entry.deadline_milliseconds,
+                    advance,
+                ) catch std.math.maxInt(u64);
+                handler.vtable.onTimer(handler);
+                report.fired_timers += 1;
+            }
+            return report;
+        }
+
+        /// Call only after the client has stopped registering callbacks
+        pub fn deinit(self: *Self) void {
+            for (&self.event_handlers) |*entry| entry.clear();
+            for (&self.timer_handlers) |*entry| entry.clear();
         }
 
         const owner = interface_map.ownerFromField(Self, Linux.IRunLoop, "iface");
@@ -204,14 +309,18 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
         fn appendTimerEntry(self: *Self, handler: *Linux.ITimerHandler, interval: Linux.TimerInterval) ?*TimerEntry {
             for (&self.timer_handlers) |*entry| {
                 if (entry.handler == null) {
-                    entry.set(handler, interval);
+                    entry.set(
+                        handler,
+                        interval,
+                        self.clock_milliseconds,
+                    );
                     return entry;
                 }
             }
             return null;
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.irun_loop_iid, .ptr = ptr },
@@ -248,9 +357,12 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
 
         fn registerTimer(ptr: *anyopaque, handler: ?*Linux.ITimerHandler, interval: Linux.TimerInterval) callconv(.c) types.tresult {
             const timer_handler = handler orelse return types.kInvalidArgument;
+            if (interval == 0) return types.kInvalidArgument;
             const self = owner(ptr);
             if (self.findTimerEntry(timer_handler)) |entry| {
                 entry.interval = interval;
+                entry.deadline_milliseconds =
+                    self.clock_milliseconds +| interval;
                 return types.kResultOk;
             }
             _ = self.appendTimerEntry(timer_handler, interval) orelse return types.kResultFalse;
@@ -274,6 +386,167 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
             .unregisterTimer = unregisterTimer,
         };
     };
+}
+
+pub fn Driver(
+    comptime max_event_handlers: usize,
+    comptime max_timer_handlers: usize,
+    comptime Api: type,
+) type {
+    return struct {
+        const Self = @This();
+        const Loop = RunLoop(
+            max_event_handlers,
+            max_timer_handlers,
+        );
+
+        run_loop: Loop,
+        api: Api,
+        poll_storage: [max_event_handlers]PollDescriptor =
+            undefined,
+
+        pub fn init(api: Api) Self {
+            var result = Self{
+                .run_loop = .{},
+                .api = api,
+            };
+            result.run_loop.clock_milliseconds =
+                result.api.nowMilliseconds();
+            return result;
+        }
+
+        pub fn asInterface(self: *Self) *Linux.IRunLoop {
+            return self.run_loop.asInterface();
+        }
+
+        pub fn pump(
+            self: *Self,
+            maximum_wait_milliseconds: u32,
+        ) !PumpReport {
+            const before = self.api.nowMilliseconds();
+            if (before < self.run_loop.clock_milliseconds)
+                return error.RunLoopClockMovedBackwards;
+            self.run_loop.clock_milliseconds = before;
+            const descriptor_count =
+                try self.run_loop.pollDescriptors(
+                    &self.poll_storage,
+                );
+            const timeout =
+                try self.run_loop.nextTimeoutMilliseconds(
+                    before,
+                    maximum_wait_milliseconds,
+                );
+            for (self.poll_storage[0..descriptor_count]) |*descriptor|
+                descriptor.ready = false;
+            try self.api.poll(
+                self.poll_storage[0..descriptor_count],
+                timeout,
+            );
+            const after = self.api.nowMilliseconds();
+            var report = try self.run_loop.dispatch(
+                after,
+                self.poll_storage[0..descriptor_count],
+            );
+            report.waited_milliseconds = if (after - before >
+                std.math.maxInt(u32))
+                std.math.maxInt(u32)
+            else
+                @intCast(after - before);
+            return report;
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.run_loop.deinit();
+        }
+    };
+}
+
+const maximum_system_poll_descriptors = 64;
+
+const LinuxPollApi = struct {
+    io: std.Io,
+
+    fn nowMilliseconds(self: *@This()) u64 {
+        const nanoseconds =
+            std.Io.Clock.awake.now(self.io).nanoseconds;
+        if (nanoseconds <= 0) return 0;
+        const milliseconds = @divFloor(
+            nanoseconds,
+            std.time.ns_per_ms,
+        );
+        if (milliseconds > std.math.maxInt(u64))
+            return std.math.maxInt(u64);
+        return @intCast(milliseconds);
+    }
+
+    fn poll(
+        _: *@This(),
+        descriptors: []PollDescriptor,
+        timeout_milliseconds: u32,
+    ) !void {
+        if (descriptors.len > maximum_system_poll_descriptors)
+            return error.TooManyRunLoopPollDescriptors;
+        var poll_fds: [maximum_system_poll_descriptors]std.posix.pollfd =
+            undefined;
+        for (descriptors, 0..) |descriptor, index| {
+            poll_fds[index] = .{
+                .fd = descriptor.fd,
+                .events = std.posix.POLL.IN,
+                .revents = 0,
+            };
+        }
+        _ = try std.posix.poll(
+            poll_fds[0..descriptors.len],
+            @intCast(@min(
+                timeout_milliseconds,
+                std.math.maxInt(i32),
+            )),
+        );
+        for (descriptors, 0..) |*descriptor, index| {
+            descriptor.ready =
+                poll_fds[index].revents != 0;
+        }
+    }
+};
+
+const UnsupportedPollApi = struct {
+    io: std.Io,
+
+    fn nowMilliseconds(_: *@This()) u64 {
+        return 0;
+    }
+
+    fn poll(
+        _: *@This(),
+        _: []PollDescriptor,
+        _: u32,
+    ) !void {
+        return error.UnsupportedPlatform;
+    }
+};
+
+pub const SystemPollApi = if (builtin.os.tag == .linux)
+    LinuxPollApi
+else
+    UnsupportedPollApi;
+
+pub fn StandaloneDriver(
+    comptime max_event_handlers: usize,
+    comptime max_timer_handlers: usize,
+) type {
+    return Driver(
+        max_event_handlers,
+        max_timer_handlers,
+        SystemPollApi,
+    );
+}
+
+pub fn initStandaloneDriver(
+    comptime max_event_handlers: usize,
+    comptime max_timer_handlers: usize,
+    io: std.Io,
+) StandaloneDriver(max_event_handlers, max_timer_handlers) {
+    return .init(.{ .io = io });
 }
 
 test "linux run loop registers and triggers event handlers" {
@@ -440,7 +713,9 @@ test "linux run loop updates duplicate timers and rejects full storage" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.registerTimer(iface, first.asInterface(), 32));
     try std.testing.expectEqual(@as(types.uint32, 2), first.ref_count.load(.monotonic));
     try std.testing.expectEqual(@as(Linux.TimerInterval, 32), loop.timer_handlers[0].interval);
+    try std.testing.expectEqual(@as(u64, 32), loop.timer_handlers[0].deadline_milliseconds);
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.registerTimer(iface, null, 16));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.registerTimer(iface, second.asInterface(), 0));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.registerTimer(iface, second.asInterface(), 64));
     try std.testing.expectEqual(@as(types.uint32, 1), second.ref_count.load(.monotonic));
     try std.testing.expectEqual(types.kResultFalse, loop.triggerTimer(second.asInterface()));
@@ -479,4 +754,149 @@ test "linux run loop clears unsupported query output" {
     var queried: ?*anyopaque = @ptrFromInt(0x1000);
     try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
     try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
+test "linux run loop driver dispatches descriptors and periodic timers" {
+    const MockApi = struct {
+        now_milliseconds: u64,
+        elapsed_milliseconds: u32 = 0,
+        ready_fd: ?Linux.FileDescriptor = null,
+        last_timeout_milliseconds: u32 = 0,
+
+        fn nowMilliseconds(self: *@This()) u64 {
+            return self.now_milliseconds;
+        }
+
+        fn poll(
+            self: *@This(),
+            descriptors: []PollDescriptor,
+            timeout_milliseconds: u32,
+        ) !void {
+            self.last_timeout_milliseconds =
+                timeout_milliseconds;
+            const elapsed = @min(
+                self.elapsed_milliseconds,
+                timeout_milliseconds,
+            );
+            self.now_milliseconds += elapsed;
+            if (self.ready_fd) |ready_fd| {
+                for (descriptors) |*descriptor| {
+                    if (descriptor.fd == ready_fd)
+                        descriptor.ready = true;
+                }
+            }
+        }
+    };
+    const LoopDriver = Driver(2, 2, MockApi);
+    const Event = EventHandler(struct {});
+    const Timer = TimerHandler(struct {});
+
+    var driver = LoopDriver.init(.{
+        .now_milliseconds = 100,
+    });
+    var event = Event{};
+    var timer = Timer{};
+    const iface = driver.asInterface();
+    try std.testing.expectEqual(
+        types.kResultOk,
+        iface.vtable.registerEventHandler(
+            iface,
+            event.asInterface(),
+            7,
+        ),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        iface.vtable.registerTimer(
+            iface,
+            timer.asInterface(),
+            10,
+        ),
+    );
+
+    driver.api.elapsed_milliseconds = 10;
+    driver.api.ready_fd = 7;
+    const first = try driver.pump(100);
+    try std.testing.expectEqual(@as(usize, 1), first.ready_events);
+    try std.testing.expectEqual(@as(usize, 1), first.fired_timers);
+    try std.testing.expectEqual(@as(u32, 10), first.waited_milliseconds);
+    try std.testing.expectEqual(
+        @as(u32, 10),
+        driver.api.last_timeout_milliseconds,
+    );
+    try std.testing.expectEqual(@as(types.uint32, 1), event.event_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), timer.timer_count);
+
+    driver.api.elapsed_milliseconds = 5;
+    driver.api.ready_fd = null;
+    const second = try driver.pump(100);
+    try std.testing.expectEqual(@as(usize, 0), second.ready_events);
+    try std.testing.expectEqual(@as(usize, 0), second.fired_timers);
+    try std.testing.expectEqual(@as(u32, 5), second.waited_milliseconds);
+
+    const third = try driver.run_loop.dispatch(145, &.{});
+    try std.testing.expectEqual(@as(usize, 1), third.fired_timers);
+    try std.testing.expectEqual(
+        @as(u64, 150),
+        driver.run_loop.timer_handlers[0].deadline_milliseconds,
+    );
+    try std.testing.expectError(
+        error.RunLoopClockMovedBackwards,
+        driver.run_loop.dispatch(144, &.{}),
+    );
+
+    driver.deinit();
+    try std.testing.expectEqual(
+        @as(types.uint32, 1),
+        event.ref_count.load(.monotonic),
+    );
+    try std.testing.expectEqual(
+        @as(types.uint32, 1),
+        timer.ref_count.load(.monotonic),
+    );
+}
+
+test "linux run loop driver contains malformed retained entries" {
+    const Loop = RunLoop(1, 1);
+    const Event = EventHandler(struct {});
+    const Timer = TimerHandler(struct {});
+    var loop = Loop{};
+    var event = Event{};
+    var timer = Timer{};
+
+    loop.event_handlers[0].handler = event.asInterface();
+    loop.event_handlers[0].fd = -1;
+    var descriptors: [1]PollDescriptor = undefined;
+    try std.testing.expectError(
+        error.InvalidRunLoopEventHandler,
+        loop.pollDescriptors(&descriptors),
+    );
+    loop.event_handlers[0] = .{};
+
+    loop.timer_handlers[0].handler = timer.asInterface();
+    loop.timer_handlers[0].interval = 0;
+    try std.testing.expectError(
+        error.InvalidRunLoopTimer,
+        loop.nextTimeoutMilliseconds(0, 100),
+    );
+    try std.testing.expectError(
+        error.InvalidRunLoopTimer,
+        loop.dispatch(0, &.{}),
+    );
+    loop.timer_handlers[0] = .{};
+}
+
+test "system standalone run loop exposes the Steinberg interface" {
+    var driver = initStandaloneDriver(2, 2, std.testing.io);
+    defer driver.deinit();
+    try std.testing.expectEqual(
+        &driver.run_loop.iface,
+        driver.asInterface(),
+    );
+    if (builtin.os.tag != .linux) {
+        try std.testing.expectError(
+            error.UnsupportedPlatform,
+            driver.pump(0),
+        );
+    }
 }

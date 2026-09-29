@@ -17,7 +17,11 @@ fn failCreatedInstance(out: *?*anyopaque, result: types.tresult) types.tresult {
     return result;
 }
 
-fn createHostInstance(comptime Config: type, self: anytype, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+fn createHostInstance(comptime Config: type, self: anytype, cid_raw: [*c]const tuid.TUID, iid_raw: [*c]const tuid.TUID, out_raw: [*c]?*anyopaque) types.tresult {
+    if (cid_raw == null or iid_raw == null or out_raw == null) return types.kInvalidArgument;
+    const cid: *const tuid.TUID = @ptrCast(cid_raw);
+    const iid: *const tuid.TUID = @ptrCast(iid_raw);
+    const out: *?*anyopaque = @ptrCast(out_raw);
     out.* = null;
     if (@hasDecl(Config, "createInstance")) {
         const result = Config.createInstance(self, cid, iid, out);
@@ -52,20 +56,20 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
         const ownerFromHost = interface_map.ownerFromField(Self, ivsthostapplication.IHostApplication, "host_application");
         const ownerFromInfo = interface_map.ownerFromField(Self, ivstchannelcontextinfo.IInfoListener, "info_listener");
 
-        fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryHost(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.host_application },
                 .{ .iid = &ivsthostapplication.ihost_application_iid, .ptr = &self.host_application },
                 .{ .iid = &ivstchannelcontextinfo.iinfo_listener_iid, .ptr = &self.info_listener },
             };
-            if (std.mem.eql(u8, requested_iid, &ivstchannelcontextinfo.iinfo_listener_iid)) {
+            if (interface_map.matches(requested_iid, &ivstchannelcontextinfo.iinfo_listener_iid)) {
                 return interface_map.queryWithAddRef(&self.info_listener, addRefInfo, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.host_application, addRefHost, &entries, requested_iid, out);
         }
 
-        fn queryInfo(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryInfo(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromInfo(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.info_listener },
@@ -94,12 +98,13 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
             return funknown.decrementRefCount(&self.info_ref_count, "IInfoListener");
         }
 
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            string128.copyPtr(out, name);
+        fn getName(_: *anyopaque, out_raw: [*c]vsttypes.TChar) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            string128.copyPtr(@ptrCast(out_raw), name);
             return types.kResultOk;
         }
 
-        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn createInstance(ptr: *anyopaque, cid: [*c]const tuid.TUID, iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             return createHostInstance(Config, self, cid, iid, out);
         }
@@ -155,20 +160,20 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
         const ownerFromHost = interface_map.ownerFromField(Self, ivsthostapplication.IHostApplication, "host_application");
         const ownerFromAutomation = interface_map.ownerFromField(Self, ivstautomationstate.IAutomationState, "automation_state");
 
-        fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryHost(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.host_application },
                 .{ .iid = &ivsthostapplication.ihost_application_iid, .ptr = &self.host_application },
                 .{ .iid = &ivstautomationstate.iautomation_state_iid, .ptr = &self.automation_state },
             };
-            if (std.mem.eql(u8, requested_iid, &ivstautomationstate.iautomation_state_iid)) {
+            if (interface_map.matches(requested_iid, &ivstautomationstate.iautomation_state_iid)) {
                 return interface_map.queryWithAddRef(&self.automation_state, addRefAutomation, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.host_application, addRefHost, &entries, requested_iid, out);
         }
 
-        fn queryAutomation(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryAutomation(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromAutomation(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.automation_state },
@@ -197,12 +202,13 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
             return funknown.decrementRefCount(&self.automation_ref_count, "IAutomationState");
         }
 
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            string128.copyPtr(out, name);
+        fn getName(_: *anyopaque, out_raw: [*c]vsttypes.TChar) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            string128.copyPtr(@ptrCast(out_raw), name);
             return types.kResultOk;
         }
 
-        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn createInstance(ptr: *anyopaque, cid: [*c]const tuid.TUID, iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             return createHostInstance(Config, self, cid, iid, out);
         }
@@ -257,20 +263,20 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
         const ownerFromHost = interface_map.ownerFromField(Self, ivsthostapplication.IHostApplication, "host_application");
         const ownerFromDataExchange = interface_map.ownerFromField(Self, ivstdataexchange.IDataExchangeHandler, "data_exchange_handler");
 
-        fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryHost(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.host_application },
                 .{ .iid = &ivsthostapplication.ihost_application_iid, .ptr = &self.host_application },
                 .{ .iid = &ivstdataexchange.idata_exchange_handler_iid, .ptr = &self.data_exchange_handler },
             };
-            if (std.mem.eql(u8, requested_iid, &ivstdataexchange.idata_exchange_handler_iid)) {
+            if (interface_map.matches(requested_iid, &ivstdataexchange.idata_exchange_handler_iid)) {
                 return interface_map.queryWithAddRef(&self.data_exchange_handler, addRefDataExchange, &entries, requested_iid, out);
             }
             return interface_map.queryWithAddRef(&self.host_application, addRefHost, &entries, requested_iid, out);
         }
 
-        fn queryDataExchange(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn queryDataExchange(ptr: *anyopaque, requested_iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.data_exchange_handler },
@@ -299,12 +305,13 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return funknown.decrementRefCount(&self.data_exchange_ref_count, "IDataExchangeHandler");
         }
 
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            string128.copyPtr(out, name);
+        fn getName(_: *anyopaque, out_raw: [*c]vsttypes.TChar) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            string128.copyPtr(@ptrCast(out_raw), name);
             return types.kResultOk;
         }
 
-        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+        fn createInstance(ptr: *anyopaque, cid: [*c]const tuid.TUID, iid: [*c]const tuid.TUID, out: [*c]?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             return createHostInstance(Config, self, cid, iid, out);
         }
@@ -322,11 +329,15 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             self.last_queue_id = queue_id;
         }
 
-        fn openQueue(ptr: *anyopaque, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
+        fn openQueue(ptr: *anyopaque, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out_raw: [*c]ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
+            if (out_raw == null) return types.kInvalidArgument;
+            const out: *ivstdataexchange.DataExchangeQueueID =
+                @ptrCast(out_raw);
             const self = ownerFromDataExchange(ptr);
             self.open_count +|= 1;
             self.recordOpenQueueRequest(user_context_id);
             out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+            if (processor == null or block_size == 0 or num_blocks == 0) return types.kInvalidArgument;
             if (@hasDecl(Config, "openQueue")) {
                 const result = Config.openQueue(self, processor, block_size, num_blocks, alignment, user_context_id, out);
                 if (result != types.kResultOk) return failOpenedQueue(out, result);
@@ -339,6 +350,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
         fn closeQueue(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             self.close_count +|= 1;
+            if (queue_id == ivstdataexchange.InvalidDataExchangeQueueID) return types.kInvalidArgument;
             if (@hasDecl(Config, "closeQueue")) {
                 const result = Config.closeQueue(self, queue_id);
                 if (result != types.kResultOk) return result;
@@ -352,9 +364,13 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return result;
         }
 
-        fn lockBlock(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) callconv(.c) types.tresult {
+        fn lockBlock(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block_raw: [*c]ivstdataexchange.DataExchangeBlock) callconv(.c) types.tresult {
+            if (block_raw == null) return types.kInvalidArgument;
+            const block: *ivstdataexchange.DataExchangeBlock =
+                @ptrCast(block_raw);
             const self = ownerFromDataExchange(ptr);
             block.* = .{};
+            if (queue_id == ivstdataexchange.InvalidDataExchangeQueueID) return failLockedBlock(block, types.kInvalidArgument);
             if (@hasDecl(Config, "lockBlock")) {
                 const result = Config.lockBlock(self, queue_id, block);
                 if (result != types.kResultOk) return failLockedBlock(block, result);
@@ -366,6 +382,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
 
         fn freeBlock(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, flags: types.TBool) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
+            if (queue_id == ivstdataexchange.InvalidDataExchangeQueueID or block_id == ivstdataexchange.InvalidDataExchangeBlockID or flags > 1) return types.kInvalidArgument;
             if (@hasDecl(Config, "freeBlock")) return Config.freeBlock(self, queue_id, block_id, flags);
             return types.kResultOk;
         }
@@ -709,6 +726,7 @@ test "data exchange host delegates successful block lifecycle" {
 }
 
 test "data exchange host clears failed delegated outputs" {
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrFromInt(0x3000);
     const Host = DataExchangeHost("Test Host", struct {
         pub fn createInstance(_: anytype, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) types.tresult {
             out.* = @ptrFromInt(0x10);
@@ -741,7 +759,7 @@ test "data exchange host clears failed delegated outputs" {
     const handler: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(queried.?));
 
     var queue_id: ivstdataexchange.DataExchangeQueueID = 88;
-    try std.testing.expectEqual(types.kResultFalse, handler.vtable.openQueue(handler, null, 128, 2, 8, 77, &queue_id));
+    try std.testing.expectEqual(types.kResultFalse, handler.vtable.openQueue(handler, processor, 128, 2, 8, 77, &queue_id));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
 
     var block = ivstdataexchange.DataExchangeBlock{
@@ -757,6 +775,7 @@ test "data exchange host clears failed delegated outputs" {
 }
 
 test "data exchange host rejects successful delegated invalid outputs" {
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrFromInt(0x3000);
     const Host = DataExchangeHost("Test Host", struct {
         pub fn openQueue(_: anytype, _: ?*ivstaudioprocessor.IAudioProcessor, _: types.uint32, _: types.uint32, _: types.uint32, _: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
             out.* = ivstdataexchange.InvalidDataExchangeQueueID;
@@ -779,7 +798,7 @@ test "data exchange host rejects successful delegated invalid outputs" {
     const handler: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(queried.?));
 
     var queue_id: ivstdataexchange.DataExchangeQueueID = 44;
-    try std.testing.expectEqual(types.kResultFalse, handler.vtable.openQueue(handler, null, 128, 2, 8, 77, &queue_id));
+    try std.testing.expectEqual(types.kResultFalse, handler.vtable.openQueue(handler, processor, 128, 2, 8, 77, &queue_id));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
 
     var block = ivstdataexchange.DataExchangeBlock{};
@@ -791,6 +810,7 @@ test "data exchange host rejects successful delegated invalid outputs" {
 }
 
 test "data exchange host default lifecycle is deterministic" {
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrFromInt(0x3000);
     const Host = DataExchangeHost("Test Host", struct {});
     var host = Host{};
     var queried: ?*anyopaque = null;
@@ -799,7 +819,7 @@ test "data exchange host default lifecycle is deterministic" {
     const handler: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(queried.?));
 
     var queue_id: ivstdataexchange.DataExchangeQueueID = 44;
-    try std.testing.expectEqual(types.kResultFalse, handler.vtable.openQueue(handler, null, 64, 1, 4, 12, &queue_id));
+    try std.testing.expectEqual(types.kResultFalse, handler.vtable.openQueue(handler, processor, 64, 1, 4, 12, &queue_id));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
 
     var block = ivstdataexchange.DataExchangeBlock{ .blockID = 7, .size = 8, .data = @ptrFromInt(0x1000) };
@@ -812,4 +832,56 @@ test "data exchange host default lifecycle is deterministic" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.close_count);
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeQueueID, 9), host.last_queue_id);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
+}
+
+test "data exchange host rejects invalid lifecycle inputs" {
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrFromInt(0x3000);
+    const block_data: *anyopaque = @ptrFromInt(0x4000);
+    const Host = DataExchangeHost("Test Host", struct {
+        pub fn openQueue(_: anytype, _: ?*ivstaudioprocessor.IAudioProcessor, _: types.uint32, _: types.uint32, _: types.uint32, _: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+            out.* = 44;
+            return types.kResultOk;
+        }
+
+        pub fn closeQueue(_: anytype, _: ivstdataexchange.DataExchangeQueueID) types.tresult {
+            return types.kResultOk;
+        }
+
+        pub fn lockBlock(_: anytype, _: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+            block.* = .{ .blockID = 12, .size = 64, .data = block_data };
+            return types.kResultOk;
+        }
+
+        pub fn freeBlock(_: anytype, _: ivstdataexchange.DataExchangeQueueID, _: ivstdataexchange.DataExchangeBlockID, _: types.TBool) types.tresult {
+            return types.kResultOk;
+        }
+    });
+    var host = Host{};
+    const handler = host.asDataExchangeHandler();
+
+    var queue_id: ivstdataexchange.DataExchangeQueueID = 44;
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.openQueue(handler, processor, 64, 1, 0, 12, null));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.openQueue(handler, null, 64, 1, 0, 12, &queue_id));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.openQueue(handler, processor, 0, 1, 0, 12, &queue_id));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.openQueue(handler, processor, 64, 0, 0, 12, &queue_id));
+
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.closeQueue(handler, ivstdataexchange.InvalidDataExchangeQueueID));
+
+    var block = ivstdataexchange.DataExchangeBlock{ .blockID = 1, .size = 8, .data = block_data };
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.lockBlock(handler, 9, null));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.lockBlock(handler, ivstdataexchange.InvalidDataExchangeQueueID, &block));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeBlockID, block.blockID);
+    try std.testing.expectEqual(@as(types.uint32, 0), block.size);
+    try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
+
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.freeBlock(handler, ivstdataexchange.InvalidDataExchangeQueueID, 12, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.freeBlock(handler, 44, ivstdataexchange.InvalidDataExchangeBlockID, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.freeBlock(handler, 44, 12, 2));
+
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.openQueue(handler, processor, 64, 1, 0, 12, &queue_id));
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeQueueID, 44), queue_id);
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.lockBlock(handler, queue_id, &block));
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.freeBlock(handler, queue_id, block.blockID, 1));
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.closeQueue(handler, queue_id));
 }
