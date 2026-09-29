@@ -2,7 +2,8 @@
 
 [![CI](https://github.com/joshburgess/zig-vst3/actions/workflows/ci.yml/badge.svg)](https://github.com/joshburgess/zig-vst3/actions/workflows/ci.yml)
 
-Zig libraries for building VST3 audio plugins, with LV2 core, toolkit-neutral UI, and VSTGUI parameter UI adapters.
+Zig libraries for building VST3 audio plugins, with optional LV2, AUv2, ARA,
+VSTGUI editors, and native standalone backends.
 
 This repository has two packages:
 
@@ -10,6 +11,11 @@ This repository has two packages:
 - `zig-vst3-plugin`: a higher-level framework for writing plugins with reflected parameters, state, automation, events, and reusable VST3 shells.
 
 The project builds and validates example VST3 bundles for effects, analyzers, event processors, and a MIDI-driven synth. The current stable version is `zig-vst3-0.3.0`, the first release with a documented compatibility boundary for the higher-level framework. Raw ABI, framework core, and example bundles are covered by unit tests, ABI checks, Steinberg validator runs, and CI on Linux, macOS, and Windows. Integrations that still need external-host or physical-device evidence remain experimental.
+
+The `feature/plugin-gui` branch also contains post-release hardening and bounded
+parser APIs listed under Unreleased in [CHANGELOG.md](CHANGELOG.md). The stable
+tag does not include those later changes. The [branch completion review](docs/branch-review.md)
+records the completed feature and quality milestones and the work still open.
 
 ## Which Package Should I Use?
 
@@ -59,11 +65,24 @@ The repository includes checked framework examples and bundled VST3 examples for
 - `event-echo`: input events echoed to an output event bus.
 - `event-monitor`: input-only analyzer topology and event inspection helpers.
 - `sine-synth`: output-only generator/instrument behavior driven by note input.
+- `resource-swap`: background resource preparation, immutable publication, and
+  persistent resource identity.
+- `fixed-rate`: fixed-rate processing, streaming resampling, and latency updates.
+- `model-shell`: prepared model-runtime adoption and resource lifecycle without
+  embedding a NAM inference engine.
+- `c-kernel`: downstream C DSP integration and runtime CPU dispatch.
+- `channel-strip`: grouped parameter controls, live meters, and processor telemetry.
+- `parametric-eq`: three-band EQ with linked response-graph editing and a spectrum analyzer.
+- `resonant-filter`: multimode filtering with linked graph controls and live analysis.
+- `ir-loader`: background impulse-response import, partitioned convolution, and
+  resource recovery.
+- `sample-player`: MIDI-triggered sample playback, background import, waveform
+  range editing, looping, tuning, and envelope controls.
 - `ara-playback`: f32 and f64 stereo ARA playback with a complete component, controller, main-factory, transactional paged source cache, bounded polyphonic-note, static-tuning, constant and piecewise variable-tempo, constant and changing meter, content-fade analysis, approved tuning overrides, host source and musical-context tempo maps, a bounded overlap-add spectral gain stage with paged-cache fallback, and an eight-tap windowed-sinc renderer with tempo reflection plus content-based head and tail fades.
 - `gain`, `bypass`, `mode-gain`, and `voice-mix`: visible native VSTGUI parameter editors on native builds, with protocol-only fallbacks for cross-target bundles.
 - `editor-smoke`: protocol-only editor lifecycle and platform-identifier coverage without a GUI toolkit dependency.
 
-Native macOS and Linux validator jobs run the bundled examples in CI, and a Windows validator job runs the Steinberg validator against the cross-built Windows bundles. Real-host rows are still future work.
+Native macOS and Linux validator jobs run the bundled examples in CI, and a Windows validator job runs the Steinberg validator against the cross-built Windows bundles. The [host matrix](docs/host-matrix.md) records macOS REAPER passes for the reference controls, Parametric EQ, and Resonant Filter. Sample Player, additional routing and instrument workflows, and native Windows and Linux hosts remain open. Historical passes apply to their recorded artifacts.
 
 ## Requirements
 
@@ -217,7 +236,7 @@ Set `LV2_VALIDATE` or `LV2LINT` to explicit executable paths when the tools are 
 
 CI runs the same gate in an isolated Linux job with the pinned SDK and uploads the validated bundle.
 
-The bundle is written to `zig-out/bundle/zig_vst3_mono_gain.lv2`. The LV2 core wrapper covers audio and control ports, bounded Atom Sequences with typed MIDI channel events, preserved raw system, SysEx, Program Change, and Channel Pressure messages, arbitrary bounded non-MIDI Atom bodies, segmented sample-offset time Position transport, block-length options, freewheeling/offline process-mode signaling, latency, activation, parameter and bounded component state, and optional bounded Worker requests and responses. The UI bridge adapts the shared editor model to native-parent attachment, control-port updates, host writes, optional touch gestures, idle, show, hide, resize, and teardown callbacks. The optional VSTGUI backend supplies parameter-driven sliders, toggles, and menus plus the native child widget. The metadata generator derives ports, main and auxiliary stream groups, common channel roles, ACN designations, and presets from declarations. It accepts validated project, license, maintainer, description, live-use, and UI declarations, and publishes the linked VSTGUI UI resource and binary on supported desktop targets. The generated bundle baseline passes independent RDF schema validation and warning-fatal `lv2lint` 0.16.2 validation in direct-distribution mode. The new port-group triples still need that independent gate rerun because those tools are not installed locally. External-host confirmation, advanced custom-component bindings, and dynamic bus topology remain open.
+The bundle is written to `zig-out/bundle/zig_vst3_mono_gain.lv2`. The LV2 core wrapper covers audio and control ports, bounded Atom Sequences with typed MIDI channel events, preserved raw system, SysEx, Program Change, and Channel Pressure messages, arbitrary bounded non-MIDI Atom bodies, segmented sample-offset time Position transport, block-length options, freewheeling/offline process-mode signaling, latency, activation, parameter and bounded component state, and optional bounded Worker requests and responses. The UI bridge adapts the shared editor model to native-parent attachment, control-port updates, host writes, optional touch gestures, idle, show, hide, resize, and teardown callbacks. The optional VSTGUI backend supplies parameter-driven sliders, toggles, and menus plus the native child widget. The metadata generator derives ports, main and auxiliary stream groups, common channel roles, ACN designations, and presets from declarations. It accepts validated project, license, maintainer, description, live-use, and UI declarations, and publishes the linked VSTGUI UI resource and binary on supported desktop targets. The generated bundle baseline passes independent RDF schema validation and warning-fatal `lv2lint` 0.16.2 validation in direct-distribution mode. The current Mono Gain metadata and frozen dynamic-topology distribution also pass the independent Linux CI gate; port-group validation is complete. External-host confirmation, advanced custom-component bindings, and live LV2 bus-count or layout mutation remain open.
 
 Build target bundle layouts:
 
@@ -273,6 +292,7 @@ See [docs/pluginval.md](docs/pluginval.md) for `PLUGINVAL`, strictness, and head
 - [docs/pluginval.md](docs/pluginval.md): Tracktion pluginval harness.
 - [docs/real-host-coverage.md](docs/real-host-coverage.md): remaining real-host GUI and advanced protocol coverage.
 - [docs/capability-matrix.md](docs/capability-matrix.md): implemented capabilities, scope decisions, and prioritized plugin-framework gaps.
+- [docs/branch-review.md](docs/branch-review.md): branch history, completion decision, verification evidence, and remaining work.
 - [docs/gui-plan.md](docs/gui-plan.md): phased plan for per-instance editors, GUI adapters, platform embedding, and rendering performance.
 - [docs/gui-baseline.md](docs/gui-baseline.md): pre-implementation GUI validation and performance baseline.
 - [docs/gui-adapter-evaluation.md](docs/gui-adapter-evaluation.md): VSTGUI and custom-renderer spike results and constraints.
@@ -290,7 +310,10 @@ The public CI workflow currently runs:
 - Linux, macOS, and Windows Steinberg validator checks for bundled examples.
 - macOS, Linux, and Windows pluginval checks for bundled examples, including a strictness 10 pass.
 - Linux, macOS, and Windows cross-bundle smoke checks.
-- Repository prose hygiene checks.
+- Six cross-target compilation jobs.
+- Independent LV2 schema and warning-fatal distribution lint.
+- Installed-package and downstream adoption fixtures in the platform test jobs.
+- Repository source policies, checked quality inventories, and prose hygiene.
 
 ## Current Limits
 

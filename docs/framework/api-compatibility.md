@@ -1,7 +1,8 @@
 # Framework API Compatibility Inventory
 
-This inventory defines the reviewed public framework surface for
-`zig-vst3-0.3.0-rc.1`. Compatibility-ready declarations follow the
+This inventory defines the public framework boundary established at
+`zig-vst3-0.3.0-rc.1` and retained by stable `zig-vst3-0.3.0` and the later
+compatible hardening on this branch. Compatibility-ready declarations follow the
 [Framework Compatibility Policy](compatibility-policy.md). Experimental
 declarations ship without that promise.
 

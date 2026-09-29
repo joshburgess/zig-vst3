@@ -72,7 +72,7 @@ The following areas are absent or intentionally much narrower here:
 - Animation, image codecs, OpenGL integration, embedded browser views, and general windowing.
 - JavaScript embedding, OSC, analytics, product unlocking, video playback, and camera capture.
 - Networking, cryptography, interprocess communication, process launching, and general operating-system services.
-- Cross-platform MIDI device discovery and streaming beyond desktop MIDI 1.
+- Mobile MIDI backends and physical interoperability evidence beyond the implemented desktop MIDI 1 and UMP paths.
 
 These omissions should not all become roadmap items. Most serve standalone applications, hosts, content tools, or licensing systems rather than a VST3 plugin runtime.
 

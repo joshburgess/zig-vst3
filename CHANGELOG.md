@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Verification
+
+- Completed the nine-phase quality consolidation program after stable `0.3.0`,
+  closing all 82 findings. The implementation candidate passes 465/465
+  ReleaseSafe steps with 7,727 tests passed and four environment skips, the
+  sanitizer matrix, 48 repeated concurrency runs, all 18 fuzz targets, archive
+  and downstream consumers, validators, benchmarks, and source policies.
+  Final closure commit `9865a3a1` passes all 19 public CI jobs. Exact commands
+  and results are recorded in `docs/quality/verification.md`.
+- Real-host, physical-device, live accessibility, visual, and audible evidence
+  remains open. No experimental integration is promoted by these checks.
+
 ### Added
 
 - Added `process.MidiFileLimits`, `default_midi_file_limits`, and `MidiFile.parseWithLimits` for applications that need an explicit Standard MIDI File byte, track, event, or payload policy.
@@ -89,6 +101,48 @@
 
 ### Added
 
+- Added optional per-instance VSTGUI editors with declarative controls,
+  responsive layout, parameter gestures, graph handles and layers, bounded
+  telemetry, presets, file import, waveform editing, persistent editor state,
+  and native accessibility bridges. Production examples include Channel Strip,
+  Parametric EQ, Resonant Filter, IR Loader, and Sample Player.
+- Added high-level VST3 processor, component, and controller shells sharing a
+  format-neutral lifecycle with offline, standalone, LV2, and AUv2 consumers.
+  Bus declarations support zero through 254 auxiliaries per direction, bounded
+  live VST3 topology changes, 39 speaker layouts, and typed host restart requests.
+- Added background resource preparation, immutable publication, deferred
+  reclamation, persistent references and missing-file recovery, fixed-rate
+  processing, streaming resampling, latency notification, C-kernel integration,
+  CPU dispatch, and scoped denormal control.
+- Added bounded Standard MIDI Files, RPN and MPE utilities, MIDI 1 and MIDI 2
+  UMP packets and scheduling, endpoint sessions, and MIDI-CI discovery,
+  profiles, Property Exchange, persistent remote caches, and Process Inquiry.
+- Added filters and specification-driven design, FFT and windows, FIR and IIR
+  oversampling, convolution, dynamics and modulation, SIMD buffer kernels,
+  special functions, fixed and allocator-owned matrix decompositions, and
+  polynomial fitting.
+- Added bounded PCM container reading and writing for WAV, AIFF, RF64, BW64,
+  and Wave64, uncompressed AIFC input, native FLAC, Vorbis and MPEG Layer III
+  codecs, transactional file recovery, gapless MP3 metadata and seeking, dither,
+  and broadcast metadata.
+- Added typed ADM and S-ADM validation and rendering, HOA decoding, measured
+  SOFA HRTF interpolation, room-path composition, and streaming motion filters.
+  Pinned independent codec and spatial references provide numerical comparisons.
+- Added LV2 core and UI adapters, bounded Atom events and transport, Worker,
+  Programs, Patch, portable State and Worker-staged restoration, Options,
+  logging, peak and typed UI messages, topology projection, generated bundles,
+  SDK-backed ABI checks, and independent schema and distribution lint.
+- Added AUv2 factories, registered component bundles, f32/f64 processing,
+  static auxiliary buses, sample-offset and ramp automation, class-info state,
+  property listeners, render notifications, and multi-output caching.
+- Added official ARA 2.3 declarations, bounded document controllers and product
+  extensions, source caches, note/tuning/tempo/meter/key/chord analysis,
+  archive persistence, spectral transforms, tempo-warped playback, and a
+  dual-precision playback reference product.
+- Added native standalone audio, MIDI, and window modules for CoreAudio,
+  CoreMIDI, Cocoa, WASAPI, WinMM, Windows MIDI Services, ALSA PCM/MIDI/UMP,
+  PipeWire, X11, and Wayland. Bounded lifecycle and recovery, channel routing,
+  MIDI scheduling, and split-device clock correction share the processor core.
 - Added a compile-time declaration manifest for both installed framework module roots. The staged installed-package gate rejects unclassified additions, removals, missing entries, and duplicates.
 - Added a framework compatibility policy covering compatible additions, behavior changes, deprecations, removals, experimental promotion, state identity, migration notes, and release evidence.
 - Added a release-candidate gate covering staged consumers, the complete ReleaseSafe graph, format and cross-target checks, sanitizers, raw ABI, Steinberg validation, and benchmarks.

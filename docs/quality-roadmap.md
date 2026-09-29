@@ -247,3 +247,12 @@ the repository can reproduce the recorded evidence. The result may be described
 as extensively reviewed and hardened. It must not be described as proven free
 of memory errors, because testing and review cannot establish that absolute
 claim for this class of Zig, C, C++, FFI, and platform code.
+
+## Recorded Completion
+
+Phases 0 through 8 completed at `9865a3a1`. All 82 findings are closed, and
+the exact closure commit passes all 19 public CI jobs. The implementation gate
+and subsequent documentation review are recorded in
+[verification](quality/verification.md) and [status](quality/status.md).
+The [branch review](branch-review.md) explains the handoff and distinguishes
+quality-program completion from the remaining external and product backlog.

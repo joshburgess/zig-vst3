@@ -508,7 +508,9 @@ Phase 0 completion commit: `69403ddd8a41b8a59c6b047f9b87065157e4087d`
 
 ## Next Review Target
 
-The quality consolidation program is complete. Preserve the final closure
-record, require its exact public CI run to pass, and present the resulting
-clean, pushed candidate to the user. Do not change pull request 6 or merge it
-without explicit authorization.
+The quality consolidation program is complete at `9865a3a1`. Its exact public
+CI run [31926228675](https://github.com/joshburgess/zig-vst3/actions/runs/31926228675)
+passed all 19 jobs. The [branch completion review](../branch-review.md) records
+the follow-up history and documentation audit and the remaining external,
+product, and cleanup work. Updating the PR description does not authorize
+changing its draft state, merging, or publishing another release.

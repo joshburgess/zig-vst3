@@ -2844,3 +2844,25 @@ This closure record changes only the quality findings, verification, and status
 documents. Its exact commit still requires the public CI confirmation named in
 the handoff. No pull-request state, tag, release, or branch has been changed,
 and no merge has been performed.
+
+## 2026-09-29: Branch Completion and Documentation Review
+
+Reviewed implementation and closure head: `9865a3a1f0966ac96c49a36018556aeb96c90e7c`.
+
+Public GitHub Actions run
+[31926228675](https://github.com/joshburgess/zig-vst3/actions/runs/31926228675)
+completed all 19 jobs successfully at the exact closure head on August 16.
+This closes the final public-CI confirmation left pending in the handoff above.
+
+The follow-up review compared the 833-commit history and complete branch scope
+with module exports, build targets, release tags, public guides, plan checklists,
+and finding dispositions. All 82 findings remain closed. Fresh source, parser,
+realtime, concurrency, atomic-order, numerics, ABI, cohesion, callback-pointer,
+production-termination, and full-history reference checks pass. Markdown path,
+prose punctuation, and diff checks cover the documentation corrections.
+
+The [branch review](../branch-review.md) records the completion decision and
+the remaining external and product backlog. The runtime, sanitizer, benchmark,
+and fuzz totals are the earlier exact-commit results, not fresh executions from
+this documentation pass. No implementation or compatibility classification
+changes accompany these corrections.

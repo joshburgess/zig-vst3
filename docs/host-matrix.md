@@ -1,6 +1,10 @@
 # Host Matrix
 
-Tier 3 host smoke tests are release gates. Record only tests that were run in a real host with the built plugin artifact.
+Tier 3 host smoke tests are promotion evidence for experimental integrations.
+The stable `0.3.x` core boundary uses the automated and downstream evidence in
+the [release checklist](release-checklist.md). Record only tests run in a real
+host with the identified plugin artifact. Historical passes below do not prove
+the final branch artifact.
 
 The [open-work tracker](open-work.md) lists every outstanding manual, visual, automated, cleanup, and feature item in one place.
 
