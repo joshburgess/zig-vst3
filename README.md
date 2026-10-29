@@ -45,7 +45,7 @@ Native macOS and Linux validator jobs run the bundled examples in CI, and a Wind
 
 ## Requirements
 
-- Zig 0.16.0
+- Zig 0.17.0
 - VST3 SDK `v3.8.0_build_66`, fetched by the project scripts when needed
 
 See [docs/toolchain.md](docs/toolchain.md) for the exact pinned versions.

@@ -16,5 +16,5 @@ pub const ICloneable = extern struct {
 
 test "cloneable vtable size matches SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(ICloneable));
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(ICloneableVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(ICloneableVTable).@"struct".field_names.len);
 }

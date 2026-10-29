@@ -30,5 +30,5 @@ pub const IParameterFunctionName = extern struct {
 
 test "parameter function name vtable slot count includes FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IParameterFunctionName));
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IParameterFunctionNameVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IParameterFunctionNameVTable).@"struct".field_names.len);
 }

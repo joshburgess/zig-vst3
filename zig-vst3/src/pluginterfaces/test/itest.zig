@@ -63,8 +63,8 @@ test "test interface vtable slot counts include FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(ITestResult));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(ITestSuite));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(ITestFactory));
-    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(ITestVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(ITestResultVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(ITestSuiteVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(ITestFactoryVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(ITestVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(ITestResultVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(ITestSuiteVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(ITestFactoryVTable).@"struct".field_names.len);
 }

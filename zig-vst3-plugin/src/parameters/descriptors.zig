@@ -223,7 +223,7 @@ pub const BoolParam = struct {
 
 pub fn EnumParam(comptime Enum: type) type {
     const info = @typeInfo(Enum).@"enum";
-    if (info.fields.len == 0) {
+    if (info.field_names.len == 0) {
         @compileError("EnumParam requires at least one enum field");
     }
 
@@ -241,13 +241,13 @@ pub fn EnumParam(comptime Enum: type) type {
         unit_id: i32 = 0,
 
         pub fn normalize(_: Self, value: Enum) f64 {
-            if (info.fields.len == 1) return 0.0;
+            if (info.field_names.len == 1) return 0.0;
             return normalizedFromIndex(indexOf(value));
         }
 
         pub fn denormalize(_: Self, normalized: f64) Enum {
             const clamped = clampNormalized(normalized);
-            const max_index = info.fields.len - 1;
+            const max_index = info.field_names.len - 1;
             const index = @as(usize, @intFromFloat(@round(clamped * @as(f64, @floatFromInt(max_index)))));
             return valueAtIndex(index);
         }
@@ -261,7 +261,7 @@ pub fn EnumParam(comptime Enum: type) type {
         }
 
         pub fn optionCount(_: Self) usize {
-            return info.fields.len;
+            return info.field_names.len;
         }
 
         pub fn indexOfValue(_: Self, value: Enum) usize {
@@ -269,19 +269,19 @@ pub fn EnumParam(comptime Enum: type) type {
         }
 
         pub fn valueAtOptionIndex(_: Self, wanted_index: usize) ?Enum {
-            if (wanted_index >= info.fields.len) return null;
+            if (wanted_index >= info.field_names.len) return null;
             return valueAtIndex(wanted_index);
         }
 
         pub fn labelAtOptionIndex(_: Self, wanted_index: usize) ?[]const u8 {
-            inline for (info.fields, 0..) |field, index| {
-                if (index == wanted_index) return field.name;
+            inline for (info.field_names, 0..) |field_name, index| {
+                if (index == wanted_index) return field_name;
             }
             return null;
         }
 
         pub fn normalizedFromOptionIndex(_: Self, wanted_index: usize) ?f64 {
-            if (wanted_index >= info.fields.len) return null;
+            if (wanted_index >= info.field_names.len) return null;
             return normalizedFromIndex(wanted_index);
         }
 
@@ -294,7 +294,7 @@ pub fn EnumParam(comptime Enum: type) type {
         }
 
         pub fn normalizedFromPlain(_: Self, plain: f64) f64 {
-            const max_index = info.fields.len - 1;
+            const max_index = info.field_names.len - 1;
             const index = if (std.math.isNan(plain) or plain <= 0)
                 0
             else if (plain >= @as(f64, @floatFromInt(max_index)))
@@ -306,8 +306,8 @@ pub fn EnumParam(comptime Enum: type) type {
 
         pub fn parsePlain(_: Self, text: []const u8) !f64 {
             const trimmed = trimPlainText(text);
-            inline for (info.fields, 0..) |field, index| {
-                if (std.mem.eql(u8, trimmed, field.name)) {
+            inline for (info.field_names, 0..) |field_name, index| {
+                if (std.mem.eql(u8, trimmed, field_name)) {
                     return normalizedFromIndex(index);
                 }
             }
@@ -315,22 +315,22 @@ pub fn EnumParam(comptime Enum: type) type {
         }
 
         fn indexOf(value: Enum) usize {
-            inline for (info.fields, 0..) |field, index| {
-                if (field.value == @intFromEnum(value)) return index;
+            inline for (info.field_values, 0..) |field_value, index| {
+                if (field_value == @backingInt(value)) return index;
             }
             unreachable;
         }
 
         fn valueAtIndex(wanted_index: usize) Enum {
-            inline for (info.fields, 0..) |field, index| {
-                if (index == wanted_index) return @enumFromInt(field.value);
+            inline for (info.field_values, 0..) |field_value, index| {
+                if (index == wanted_index) return @fromBackingInt(@intCast(field_value));
             }
             unreachable;
         }
 
         fn normalizedFromIndex(index: usize) f64 {
-            if (info.fields.len == 1) return 0.0;
-            return @as(f64, @floatFromInt(index)) / @as(f64, @floatFromInt(info.fields.len - 1));
+            if (info.field_names.len == 1) return 0.0;
+            return @as(f64, @floatFromInt(index)) / @as(f64, @floatFromInt(info.field_names.len - 1));
         }
     };
 }

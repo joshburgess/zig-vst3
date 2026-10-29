@@ -5,10 +5,10 @@ const tuid = @import("../../tuid.zig");
 pub const ixml_representation_controller_iid = tuid.inlineUid(0xA81A0471, 0x48C34DC4, 0xAC30C9E1, 0x3C8393D5);
 
 pub const RepresentationInfo = extern struct {
-    vendor: [64]base_types.char8 = [_]base_types.char8{0} ** 64,
-    name: [64]base_types.char8 = [_]base_types.char8{0} ** 64,
-    version: [64]base_types.char8 = [_]base_types.char8{0} ** 64,
-    host: [64]base_types.char8 = [_]base_types.char8{0} ** 64,
+    vendor: [64]base_types.char8 = @splat(0),
+    name: [64]base_types.char8 = @splat(0),
+    version: [64]base_types.char8 = @splat(0),
+    host: [64]base_types.char8 = @splat(0),
 
     pub const kNameSize = 64;
 };
@@ -163,5 +163,5 @@ test "representation struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 256), @sizeOf(RepresentationInfo));
     try @import("std").testing.expectEqual(@as(usize, 1), @alignOf(RepresentationInfo));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IXmlRepresentationController));
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IXmlRepresentationControllerVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IXmlRepresentationControllerVTable).@"struct".field_names.len);
 }

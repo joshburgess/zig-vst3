@@ -2286,11 +2286,11 @@ test "events expose stable MIDI pitch indexes" {
 }
 
 test "events reject oversized data payloads" {
-    const max_payload = [_]u8{0} ** max_data_event_bytes;
+    const max_payload: [max_data_event_bytes]u8 = @splat(0);
     const max_data = [_]Event{
         Event.dataEvent(0, 1, &max_payload),
     };
-    const oversized_payload = [_]u8{0} ** (max_data_event_bytes + 1);
+    const oversized_payload: [(max_data_event_bytes + 1)]u8 = @splat(0);
     const oversized_data = [_]Event{
         Event.dataEvent(0, 1, &oversized_payload),
     };
@@ -2859,7 +2859,7 @@ test "event writer appends event views atomically" {
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, outside_writer.appendAllCount(.{ .items = &invalid }));
     try std.testing.expectEqual(@as(usize, 0), outside_writer.eventCount());
 
-    const oversized_payload = [_]u8{0} ** (max_data_event_bytes + 1);
+    const oversized_payload: [(max_data_event_bytes + 1)]u8 = @splat(0);
     const oversized_data = [_]Event{
         Event.dataEvent(0, 1, &oversized_payload),
     };

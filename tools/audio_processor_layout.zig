@@ -14,11 +14,11 @@ pub fn main(init: std.process.Init) !void {
     try stdout.print("kVstAudioEffectClass {s}\n", .{audio_processor.kVstAudioEffectClass});
     try stdout.print("ComponentFlags.kDistributable {}\n", .{audio_processor.ComponentFlags.kDistributable});
     try stdout.print("ComponentFlags.kSimpleModeSupported {}\n", .{audio_processor.ComponentFlags.kSimpleModeSupported});
-    try stdout.print("SymbolicSampleSizes.kSample32 {}\n", .{@intFromEnum(audio_processor.SymbolicSampleSizes.kSample32)});
-    try stdout.print("SymbolicSampleSizes.kSample64 {}\n", .{@intFromEnum(audio_processor.SymbolicSampleSizes.kSample64)});
-    try stdout.print("ProcessModes.kRealtime {}\n", .{@intFromEnum(audio_processor.ProcessModes.kRealtime)});
-    try stdout.print("ProcessModes.kPrefetch {}\n", .{@intFromEnum(audio_processor.ProcessModes.kPrefetch)});
-    try stdout.print("ProcessModes.kOffline {}\n", .{@intFromEnum(audio_processor.ProcessModes.kOffline)});
+    try stdout.print("SymbolicSampleSizes.kSample32 {}\n", .{@backingInt(audio_processor.SymbolicSampleSizes.kSample32)});
+    try stdout.print("SymbolicSampleSizes.kSample64 {}\n", .{@backingInt(audio_processor.SymbolicSampleSizes.kSample64)});
+    try stdout.print("ProcessModes.kRealtime {}\n", .{@backingInt(audio_processor.ProcessModes.kRealtime)});
+    try stdout.print("ProcessModes.kPrefetch {}\n", .{@backingInt(audio_processor.ProcessModes.kPrefetch)});
+    try stdout.print("ProcessModes.kOffline {}\n", .{@backingInt(audio_processor.ProcessModes.kOffline)});
     try stdout.print("kNoTail {}\n", .{audio_processor.kNoTail});
     try stdout.print("kInfiniteTail {}\n", .{audio_processor.kInfiniteTail});
     try stdout.print("IProcessContextRequirements.kNeedSystemTime {}\n", .{audio_processor.ProcessContextRequirementFlags.kNeedSystemTime});
@@ -63,10 +63,10 @@ pub fn main(init: std.process.Init) !void {
     try printType(stdout, "IAudioPresentationLatency", audio_processor.IAudioPresentationLatency);
     try printType(stdout, "IProcessContextRequirements", audio_processor.IProcessContextRequirements);
 
-    var setup32 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample32) };
-    var setup64 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample64) };
-    var channel32 = [_]f32{0} ** 4;
-    var channel64 = [_]f64{0} ** 4;
+    var setup32 = audio_processor.ProcessSetup{ .symbolicSampleSize = @backingInt(audio_processor.SymbolicSampleSizes.kSample32) };
+    var setup64 = audio_processor.ProcessSetup{ .symbolicSampleSize = @backingInt(audio_processor.SymbolicSampleSizes.kSample64) };
+    var channel32: [4]f32 = @splat(0);
+    var channel64: [4]f64 = @splat(0);
     var channels32 = [_][*]f32{&channel32};
     var channels64 = [_][*]f64{&channel64};
     var buffers32 = audio_processor.AudioBusBuffers{ .channelBuffers = .{ .channelBuffers32 = channels32[0..].ptr } };
@@ -80,8 +80,8 @@ pub fn main(init: std.process.Init) !void {
     try stdout.print("AudioProcessorAlgo.getChannelMask.64 {}\n", .{audio_processor_algo.getChannelMask(64)});
     var src32_ch0 = [_]f32{ 1, 2, 3, 4 };
     var src32_ch1 = [_]f32{ 5, 6, 7, 8 };
-    var dest32_ch0 = [_]f32{0} ** 6;
-    var dest32_ch1 = [_]f32{0} ** 6;
+    var dest32_ch0: [6]f32 = @splat(0);
+    var dest32_ch1: [6]f32 = @splat(0);
     var src32_channels = [_][*]f32{ &src32_ch0, &src32_ch1 };
     var dest32_channels = [_][*]f32{ &dest32_ch0, &dest32_ch1 };
     var src32 = audio_processor.AudioBusBuffers{ .numChannels = 2, .channelBuffers = .{ .channelBuffers32 = src32_channels[0..].ptr } };
@@ -99,7 +99,7 @@ pub fn main(init: std.process.Init) !void {
     try stdout.print("AudioProcessorAlgo.clear32.dest0.1 {d:.1}\n", .{dest32_ch0[1]});
     try stdout.print("AudioProcessorAlgo.isSilent32.after {}\n", .{@intFromBool(audio_processor_algo.isSilent32(&dest32, 3, 0))});
     var src64_ch0 = [_]f64{ 1.5, 2.5, 3.5 };
-    var dest64_ch0 = [_]f64{0} ** 5;
+    var dest64_ch0: [5]f64 = @splat(0);
     var src64_channels = [_][*]f64{&src64_ch0};
     var dest64_channels = [_][*]f64{&dest64_ch0};
     var src64 = audio_processor.AudioBusBuffers{ .numChannels = 1, .channelBuffers = .{ .channelBuffers64 = src64_channels[0..].ptr } };
@@ -197,9 +197,9 @@ const MockEventList = struct {
         return .{
             .iface = .{ .vtable = &event_list_vtable },
             .event_storage = .{
-                .{ .sampleOffset = 10, .type = @intFromEnum(events.Event.EventTypes.kNoteOnEvent) },
-                .{ .sampleOffset = 20, .type = @intFromEnum(events.Event.EventTypes.kNoteOffEvent) },
-                .{ .sampleOffset = 30, .type = @intFromEnum(events.Event.EventTypes.kDataEvent) },
+                .{ .sampleOffset = 10, .type = @backingInt(events.Event.EventTypes.kNoteOnEvent) },
+                .{ .sampleOffset = 20, .type = @backingInt(events.Event.EventTypes.kNoteOffEvent) },
+                .{ .sampleOffset = 30, .type = @backingInt(events.Event.EventTypes.kDataEvent) },
             },
         };
     }

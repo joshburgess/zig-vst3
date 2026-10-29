@@ -37,7 +37,7 @@ pub const BusInfo = extern struct {
     mediaType: vsttypes.MediaType = 0,
     direction: vsttypes.BusDirection = 0,
     channelCount: base_types.int32 = 0,
-    name: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
+    name: vsttypes.String128 = @splat(0),
     busType: vsttypes.BusType = 0,
     flags: base_types.uint32 = 0,
 };
@@ -82,5 +82,5 @@ test "component struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(RoutingInfo));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponent));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IComponent));
-    try @import("std").testing.expectEqual(@as(usize, 14), @typeInfo(IComponentVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 14), @typeInfo(IComponentVTable).@"struct".field_names.len);
 }

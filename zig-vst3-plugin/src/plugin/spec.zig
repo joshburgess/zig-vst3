@@ -32,6 +32,7 @@ pub fn PluginSpec(comptime Plugin: type) type {
         pub const component_class_name = if (@hasDecl(Plugin, "component_class_name")) Plugin.component_class_name else Plugin.name;
         pub const controller_class_name = if (@hasDecl(Plugin, "controller_class_name")) Plugin.controller_class_name else Plugin.name ++ " Controller";
         pub const component_category = if (@hasDecl(Plugin, "component_category")) Plugin.component_category else "Audio Module Class";
+        pub const component_sub_categories = if (@hasDecl(Plugin, "component_sub_categories")) Plugin.component_sub_categories else "";
         pub const controller_category = if (@hasDecl(Plugin, "controller_category")) Plugin.controller_category else "Component Controller Class";
         pub const audio_input = !@hasDecl(Plugin, "audio_input") or Plugin.audio_input;
         pub const audio_output = !@hasDecl(Plugin, "audio_output") or Plugin.audio_output;

@@ -104,7 +104,7 @@ pub const StereoAudioBuses = struct {
                 .mediaType = media_type,
                 .direction = direction,
                 .channelCount = 2,
-                .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
+                .busType = @backingInt(ivstcomponent.BusTypes.kMain),
                 .flags = ivstcomponent.BusFlags.kDefaultActive,
             };
             string128.copy(&out.name, if (directionIs(direction, .kInput)) "Stereo In" else "Stereo Out");
@@ -116,7 +116,7 @@ pub const StereoAudioBuses = struct {
                 .mediaType = media_type,
                 .direction = direction,
                 .channelCount = 1,
-                .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
+                .busType = @backingInt(ivstcomponent.BusTypes.kMain),
                 .flags = ivstcomponent.BusFlags.kDefaultActive,
             };
             string128.copy(&out.name, if (directionIs(direction, .kInput)) "Event In" else "Event Out");
@@ -139,11 +139,11 @@ pub const StereoAudioBuses = struct {
     }
 
     fn mediaIs(media_type: vsttypes.MediaType, expected: ivstcomponent.MediaTypes) bool {
-        return media_type == @intFromEnum(expected);
+        return media_type == @backingInt(expected);
     }
 
     fn directionIs(direction: vsttypes.BusDirection, expected: ivstcomponent.BusDirections) bool {
-        return direction == @intFromEnum(expected);
+        return direction == @backingInt(expected);
     }
 
     fn failBusInfo(out: *ivstcomponent.BusInfo) types.tresult {
@@ -234,7 +234,7 @@ pub const RealtimeProcessorDefaults = struct {
     }
 
     fn sampleSizeIs(symbolic_sample_size: types.int32, expected: ivstaudioprocessor.SymbolicSampleSizes) bool {
-        return symbolic_sample_size == @intFromEnum(expected);
+        return symbolic_sample_size == @backingInt(expected);
     }
 };
 
@@ -666,7 +666,7 @@ pub fn processMainAudioConfiguredWithSampleRate(
 }
 
 fn processDataUses32BitSamples(data: *const ivstaudioprocessor.ProcessData) bool {
-    return data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32);
+    return data.symbolicSampleSize == @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32);
 }
 
 fn processContextErrorResult(err: anyerror) types.tresult {
@@ -757,7 +757,7 @@ const IBStreamReader = struct {
     fn streamImpl(reader_interface: *std.Io.Reader, writer: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
         const self: *IBStreamReader = @alignCast(@fieldParentPtr("interface", reader_interface));
         var buffer: [ibstream_buffer_bytes]u8 = undefined;
-        const limit_count: usize = @intCast(@min(@intFromEnum(limit), buffer.len));
+        const limit_count: usize = @intCast(@min(@backingInt(limit), buffer.len));
         const read_count = try self.read(buffer[0..limit_count]);
         try writer.writeAll(buffer[0..read_count]);
         return read_count;
@@ -887,29 +887,29 @@ fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.Para
 fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) bool {
     const offset = sampleOffsetInBlock(event.sampleOffset, collector.frame_count) orelse return true;
     const converted: ?plug.process.Event = switch (event.type) {
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isNormalizedValue(event.data.noteOn.velocity))
+        @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isNormalizedValue(event.data.noteOn.velocity))
             plug.process.Event.noteOn(offset, event.data.noteOn.channel, event.data.noteOn.pitch, event.data.noteOn.velocity).withBusIndex(event.busIndex)
         else
             null,
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent) => if (isNormalizedValue(event.data.noteOff.velocity))
+        @backingInt(ivstevents.Event.EventTypes.kNoteOffEvent) => if (isNormalizedValue(event.data.noteOff.velocity))
             plug.process.Event.noteOff(offset, event.data.noteOff.channel, event.data.noteOff.pitch, event.data.noteOff.velocity).withBusIndex(event.busIndex)
         else
             null,
-        @intFromEnum(ivstevents.Event.EventTypes.kDataEvent) => if (dataEventBytes(event.data.data)) |bytes|
+        @backingInt(ivstevents.Event.EventTypes.kDataEvent) => if (dataEventBytes(event.data.data)) |bytes|
             plug.process.Event.dataEvent(offset, event.data.data.type, bytes).withBusIndex(event.busIndex)
         else
             null,
-        @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent) => collectLegacyMidiCcEvent(event, offset),
-        @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent) => if (isNormalizedValue(event.data.polyPressure.pressure))
+        @backingInt(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent) => collectLegacyMidiCcEvent(event, offset),
+        @backingInt(ivstevents.Event.EventTypes.kPolyPressureEvent) => if (isNormalizedValue(event.data.polyPressure.pressure))
             plug.process.Event.aftertouch(offset, event.data.polyPressure.channel, event.data.polyPressure.pitch, event.data.polyPressure.pressure).withBusIndex(event.busIndex)
         else
             null,
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent) => if (isFiniteValue(event.data.noteExpressionValue.value))
+        @backingInt(ivstevents.Event.EventTypes.kNoteExpressionValueEvent) => if (isFiniteValue(event.data.noteExpressionValue.value))
             plug.process.Event.noteExpressionValue(offset, event.data.noteExpressionValue.noteId, event.data.noteExpressionValue.typeId, @floatCast(event.data.noteExpressionValue.value)).withBusIndex(event.busIndex)
         else
             null,
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent) => plug.process.Event.noteExpressionInt(offset, event.data.noteExpressionIntValue.noteId, event.data.noteExpressionIntValue.typeId, event.data.noteExpressionIntValue.value).withBusIndex(event.busIndex),
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent) => plug.process.Event.noteExpressionText(offset, event.data.noteExpressionText.noteId, event.data.noteExpressionText.typeId).withBusIndex(event.busIndex),
+        @backingInt(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent) => plug.process.Event.noteExpressionInt(offset, event.data.noteExpressionIntValue.noteId, event.data.noteExpressionIntValue.typeId, event.data.noteExpressionIntValue.value).withBusIndex(event.busIndex),
+        @backingInt(ivstevents.Event.EventTypes.kNoteExpressionTextEvent) => plug.process.Event.noteExpressionText(offset, event.data.noteExpressionText.noteId, event.data.noteExpressionText.typeId).withBusIndex(event.busIndex),
         else => plug.process.Event.other(offset).withBusIndex(event.busIndex),
     };
     const output = converted orelse return true;
@@ -959,7 +959,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
     switch (event.kind) {
         .note_on => {
             if (!isNormalizedValue(event.velocity)) return null;
-            result.type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent);
+            result.type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent);
             result.data = .{ .noteOn = .{
                 .channel = event.channel,
                 .pitch = event.pitch,
@@ -968,7 +968,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
         },
         .note_off => {
             if (!isNormalizedValue(event.velocity)) return null;
-            result.type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent);
+            result.type = @backingInt(ivstevents.Event.EventTypes.kNoteOffEvent);
             result.data = .{ .noteOff = .{
                 .channel = event.channel,
                 .pitch = event.pitch,
@@ -979,7 +979,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
             const control_number = std.math.cast(types.uint8, event.control_number) orelse return null;
             const channel = std.math.cast(types.int8, event.channel) orelse return null;
             if (!isNormalizedValue(event.value)) return null;
-            result.type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent);
+            result.type = @backingInt(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent);
             result.data = .{ .midiCCOut = .{
                 .controlNumber = control_number,
                 .channel = channel,
@@ -989,7 +989,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
         .pitch_bend => {
             const channel = std.math.cast(types.int8, event.channel) orelse return null;
             if (!isNormalizedValue(event.value)) return null;
-            result.type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent);
+            result.type = @backingInt(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent);
             result.data = .{ .midiCCOut = .{
                 .controlNumber = ivstmidicontrollers.kPitchBend,
                 .channel = channel,
@@ -999,7 +999,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
         },
         .aftertouch => {
             if (!isNormalizedValue(event.value)) return null;
-            result.type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent);
+            result.type = @backingInt(ivstevents.Event.EventTypes.kPolyPressureEvent);
             result.data = .{ .polyPressure = .{
                 .channel = event.channel,
                 .pitch = event.pitch,
@@ -1009,7 +1009,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
         },
         .note_expression_value => {
             if (!isFiniteValue(event.value)) return null;
-            result.type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent);
+            result.type = @backingInt(ivstevents.Event.EventTypes.kNoteExpressionValueEvent);
             result.data = .{ .noteExpressionValue = .{
                 .typeId = event.expression_type_id,
                 .noteId = event.note_id,
@@ -1017,7 +1017,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
             } };
         },
         .note_expression_int => {
-            result.type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent);
+            result.type = @backingInt(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent);
             result.data = .{ .noteExpressionIntValue = .{
                 .typeId = event.expression_type_id,
                 .noteId = event.note_id,
@@ -1025,7 +1025,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
             } };
         },
         .note_expression_text => {
-            result.type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent);
+            result.type = @backingInt(ivstevents.Event.EventTypes.kNoteExpressionTextEvent);
             result.data = .{ .noteExpressionText = .{
                 .typeId = event.expression_type_id,
                 .noteId = event.note_id,
@@ -1035,7 +1035,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
         },
         .data => {
             if (event.data.len > max_data_event_bytes) return null;
-            result.type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent);
+            result.type = @backingInt(ivstevents.Event.EventTypes.kDataEvent);
             result.data = .{ .data = .{
                 .size = vst_index.uint32Count(event.data.len),
                 .type = event.data_type,
@@ -1068,7 +1068,7 @@ test "zig-vst3-plugin bridge round-trips parameter state through IBStream" {
 
     try std.testing.expect(values.storeField(&set, "gain", 0.25));
     try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, stream.asStream(), &set, &values));
-    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, readParameterState(Params, stream.asStream(), &set, &restored));
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
 }
@@ -1094,7 +1094,7 @@ test "zig-vst3-plugin bridge reads older parameter state without requiring curre
 
     try std.testing.expect(old_values.storeField(&old_set, "gain", 0.25));
     try std.testing.expectEqual(types.kResultOk, writeParameterState(OldParams, stream.asStream(), &old_set, &old_values));
-    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, readParameterState(NewParams, stream.asStream(), &new_set, &new_values));
 
     try std.testing.expectEqual(@as(f64, 0.25), new_values.loadField(&new_set, "gain"));
@@ -1120,7 +1120,7 @@ test "zig-vst3-plugin bridge rejects truncated IBStream state" {
     try std.testing.expect(source.storeField(&set, "mix", 0.75));
     try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, stream.asStream(), &set, &source));
     stream.len -= 1;
-    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultFalse, readParameterState(Params, stream.asStream(), &set, &values));
     try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.6), values.loadField(&set, "mix"));
@@ -1147,7 +1147,7 @@ test "zig-vst3-plugin bridge rejects invalid normalized IBStream state" {
     const second_value_offset = plug.state.encodedEntryValueOffset(1);
     var invalid_value = FixedBufferStream.init(stream.bytes[second_value_offset..][0..@sizeOf(u64)]);
     try invalid_value.writer().writeInt(u64, @bitCast(@as(f64, 1.5)), .little);
-    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultFalse, restored.readFromStream(stream.asStream()));
 
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.8), restored.getNormalizedById(0));
@@ -1246,7 +1246,7 @@ test "zig-vst3-plugin bridge parameter state stores ids and persists streams" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), source.getNormalizedById(0));
 
     try std.testing.expectEqual(types.kResultOk, source.writeToStream(stream.asStream()));
-    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, restored.readFromStream(stream.asStream()));
 
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), restored.getNormalizedById(0));
@@ -1421,19 +1421,19 @@ test "zig-vst3-plugin bridge collects VST3 input events" {
         .{
             .busIndex = 0,
             .sampleOffset = 1,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent),
             .data = .{ .noteOn = .{ .channel = 2, .pitch = 60, .velocity = 0.75 } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 3,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOffEvent),
             .data = .{ .noteOff = .{ .channel = 2, .pitch = 60, .velocity = 0.25 } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 4,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kDataEvent),
             .data = .{ .data = .{} },
         },
     };
@@ -1463,55 +1463,55 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 input events" {
         .{
             .busIndex = 0,
             .sampleOffset = -1,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent),
             .data = .{ .noteOn = .{ .channel = 0, .pitch = 59, .velocity = 0.5 } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 0,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent),
             .data = .{ .noteOn = .{ .channel = 0, .pitch = 60, .velocity = 0.75 } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 4,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOffEvent),
             .data = .{ .noteOff = .{ .channel = 0, .pitch = 60, .velocity = 0.25 } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 1,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent),
             .data = .{ .noteOn = .{ .channel = 0, .pitch = 61, .velocity = std.math.nan(f32) } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 1,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent),
             .data = .{ .noteOn = .{ .channel = 0, .pitch = 61, .velocity = std.math.inf(f32) } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 1,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOffEvent),
             .data = .{ .noteOff = .{ .channel = 0, .pitch = 61, .velocity = -0.1 } },
         },
         .{
             .busIndex = 1,
             .sampleOffset = 2,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kPolyPressureEvent),
             .data = .{ .polyPressure = .{ .channel = 1, .pitch = 64, .pressure = 0.5 } },
         },
         .{
             .busIndex = 1,
             .sampleOffset = 2,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kPolyPressureEvent),
             .data = .{ .polyPressure = .{ .channel = 1, .pitch = 64, .pressure = 1.1 } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 2,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteExpressionValueEvent),
             .data = .{ .noteExpressionValue = .{
                 .typeId = 5,
                 .noteId = 42,
@@ -1521,7 +1521,7 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 input events" {
         .{
             .busIndex = 0,
             .sampleOffset = 2,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteExpressionValueEvent),
             .data = .{ .noteExpressionValue = .{
                 .typeId = 5,
                 .noteId = 42,
@@ -1531,7 +1531,7 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 input events" {
         .{
             .busIndex = 0,
             .sampleOffset = 3,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kDataEvent),
             .data = .{ .data = .{} },
         },
     };
@@ -1559,25 +1559,25 @@ test "zig-vst3-plugin bridge keeps valid events around malformed MIDI metadata" 
         .{
             .busIndex = 0,
             .sampleOffset = 0,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent),
             .data = .{ .noteOn = .{ .channel = 0, .pitch = 60, .velocity = 0.75 } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 1,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent),
             .data = .{ .noteOn = .{ .channel = 16, .pitch = 61, .velocity = 0.75 } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 2,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOffEvent),
             .data = .{ .noteOff = .{ .channel = 0, .pitch = 128, .velocity = 0.25 } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 3,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteOffEvent),
             .data = .{ .noteOff = .{ .channel = 0, .pitch = 60, .velocity = 0.25 } },
         },
     };
@@ -1630,7 +1630,7 @@ test "zig-vst3-plugin bridge maps legacy MIDI controller events" {
         .{
             .busIndex = 0,
             .sampleOffset = 0,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
             .data = .{ .midiCCOut = .{
                 .controlNumber = ivstmidicontrollers.kCtrlModWheel,
                 .channel = 2,
@@ -1640,7 +1640,7 @@ test "zig-vst3-plugin bridge maps legacy MIDI controller events" {
         .{
             .busIndex = 0,
             .sampleOffset = 1,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
             .data = .{ .midiCCOut = .{
                 .controlNumber = ivstmidicontrollers.kPitchBend,
                 .channel = 2,
@@ -1651,7 +1651,7 @@ test "zig-vst3-plugin bridge maps legacy MIDI controller events" {
         .{
             .busIndex = 0,
             .sampleOffset = 2,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
             .data = .{ .midiCCOut = .{
                 .controlNumber = ivstmidicontrollers.kAfterTouch,
                 .channel = 2,
@@ -1685,7 +1685,7 @@ test "zig-vst3-plugin bridge maps poly pressure and note expression events" {
         .{
             .busIndex = 0,
             .sampleOffset = 0,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kPolyPressureEvent),
             .data = .{ .polyPressure = .{
                 .channel = 1,
                 .pitch = 64,
@@ -1696,7 +1696,7 @@ test "zig-vst3-plugin bridge maps poly pressure and note expression events" {
         .{
             .busIndex = 0,
             .sampleOffset = 1,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteExpressionValueEvent),
             .data = .{ .noteExpressionValue = .{
                 .typeId = 5,
                 .noteId = 42,
@@ -1706,7 +1706,7 @@ test "zig-vst3-plugin bridge maps poly pressure and note expression events" {
         .{
             .busIndex = 0,
             .sampleOffset = 2,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent),
             .data = .{ .noteExpressionIntValue = .{
                 .typeId = 8,
                 .noteId = 42,
@@ -1716,7 +1716,7 @@ test "zig-vst3-plugin bridge maps poly pressure and note expression events" {
         .{
             .busIndex = 0,
             .sampleOffset = 3,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kNoteExpressionTextEvent),
             .data = .{ .noteExpressionText = .{
                 .typeId = 6,
                 .noteId = 42,
@@ -1756,10 +1756,10 @@ test "zig-vst3-plugin bridge preserves VST3 data event payloads" {
         .{
             .busIndex = 0,
             .sampleOffset = 0,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kDataEvent),
             .data = .{ .data = .{
                 .size = payload.len,
-                .type = @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx),
+                .type = @backingInt(ivstevents.DataEvent.DataTypes.kMidiSysEx),
                 .bytes = &payload,
             } },
         },
@@ -1777,30 +1777,30 @@ test "zig-vst3-plugin bridge preserves VST3 data event payloads" {
 
     try std.testing.expectEqual(@as(usize, 1), collected.eventCount());
     try std.testing.expectEqual(plug.process.EventKind.data, collected.items[0].kind);
-    try std.testing.expectEqual(@as(u32, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx)), collected.items[0].data_type);
+    try std.testing.expectEqual(@as(u32, @backingInt(ivstevents.DataEvent.DataTypes.kMidiSysEx)), collected.items[0].data_type);
     try std.testing.expectEqualSlices(u8, &payload, collected.items[0].data);
 }
 
 test "zig-vst3-plugin bridge drops malformed VST3 data event payloads" {
-    const payload = [_]u8{0xF0} ** (max_data_event_bytes + 1);
+    const payload: [(max_data_event_bytes + 1)]u8 = @splat(0xF0);
     const items = [_]ivstevents.Event{
         .{
             .busIndex = 0,
             .sampleOffset = 0,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kDataEvent),
             .data = .{ .data = .{
                 .size = 1,
-                .type = @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx),
+                .type = @backingInt(ivstevents.DataEvent.DataTypes.kMidiSysEx),
                 .bytes = null,
             } },
         },
         .{
             .busIndex = 0,
             .sampleOffset = 0,
-            .type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent),
+            .type = @backingInt(ivstevents.Event.EventTypes.kDataEvent),
             .data = .{ .data = .{
                 .size = payload.len,
-                .type = @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx),
+                .type = @backingInt(ivstevents.DataEvent.DataTypes.kMidiSysEx),
                 .bytes = &payload,
             } },
         },
@@ -1828,7 +1828,7 @@ test "zig-vst3-plugin bridge writes output events to VST3 event lists" {
         plug.process.Event.noteExpressionValue(3, 42, 5, 0.25),
         plug.process.Event.noteExpressionInt(3, 42, 5, 7),
         plug.process.Event.noteExpressionText(3, 42, 5),
-        plug.process.Event.dataEvent(3, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx), &payload),
+        plug.process.Event.dataEvent(3, @backingInt(ivstevents.DataEvent.DataTypes.kMidiSysEx), &payload),
         plug.process.Event.other(3),
     };
     const List = vst_event_list.EventList(7);
@@ -1842,30 +1842,30 @@ test "zig-vst3-plugin bridge writes output events to VST3 event lists" {
 
     const written = list.items();
     try std.testing.expectEqual(@as(usize, 7), written.len);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent), written[0].type);
+    try std.testing.expectEqual(@backingInt(ivstevents.Event.EventTypes.kNoteOnEvent), written[0].type);
     try std.testing.expectEqual(@as(i16, 60), written[0].data.noteOn.pitch);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[1].type);
+    try std.testing.expectEqual(@backingInt(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[1].type);
     try std.testing.expectEqual(@as(u8, ivstmidicontrollers.kCtrlModWheel), written[1].data.midiCCOut.controlNumber);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[2].type);
+    try std.testing.expectEqual(@backingInt(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[2].type);
     try std.testing.expectEqual(@as(u8, ivstmidicontrollers.kPitchBend), written[2].data.midiCCOut.controlNumber);
     try std.testing.expectEqual(@as(types.int16, 0x3FFF), events_helper.getPitchBendValue(&written[2].data.midiCCOut));
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent), written[3].type);
+    try std.testing.expectEqual(@backingInt(ivstevents.Event.EventTypes.kNoteExpressionValueEvent), written[3].type);
     try std.testing.expectEqual(@as(u32, 5), written[3].data.noteExpressionValue.typeId);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent), written[4].type);
+    try std.testing.expectEqual(@backingInt(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent), written[4].type);
     try std.testing.expectEqual(@as(u64, 7), written[4].data.noteExpressionIntValue.value);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent), written[5].type);
+    try std.testing.expectEqual(@backingInt(ivstevents.Event.EventTypes.kNoteExpressionTextEvent), written[5].type);
     try std.testing.expectEqual(@as(u32, 5), written[5].data.noteExpressionText.typeId);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kDataEvent), written[6].type);
+    try std.testing.expectEqual(@backingInt(ivstevents.Event.EventTypes.kDataEvent), written[6].type);
     try std.testing.expectEqual(@as(u32, payload.len), written[6].data.data.size);
-    try std.testing.expectEqual(@as(u32, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx)), written[6].data.data.type);
+    try std.testing.expectEqual(@as(u32, @backingInt(ivstevents.DataEvent.DataTypes.kMidiSysEx)), written[6].data.data.type);
     try std.testing.expectEqualSlices(u8, &payload, written[6].data.data.bytes.?[0..payload.len]);
 }
 
 test "zig-vst3-plugin bridge drops output MIDI events with invalid legacy fields" {
-    const large_payload = [_]u8{0xF0} ** (max_data_event_bytes + 1);
+    const large_payload: [(max_data_event_bytes + 1)]u8 = @splat(0xF0);
     const items = [_]plug.process.Event{
         plug.process.Event.noteOn(0, 1, 60, 0.5).withBusIndex(-1),
-        plug.process.Event.dataEvent(0, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx), &large_payload),
+        plug.process.Event.dataEvent(0, @backingInt(ivstevents.DataEvent.DataTypes.kMidiSysEx), &large_payload),
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = -1, .value = 0.5 },
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = 256, .value = 0.5 },
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 128, .control_number = ivstmidicontrollers.kCtrlModWheel, .value = 0.5 },
@@ -1895,10 +1895,10 @@ test "zig-vst3-plugin bridge drops output MIDI events with invalid legacy fields
 
     const written = list.items();
     try std.testing.expectEqual(@as(usize, 2), written.len);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[0].type);
+    try std.testing.expectEqual(@backingInt(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[0].type);
     try std.testing.expectEqual(@as(u8, ivstmidicontrollers.kPitchBend), written[0].data.midiCCOut.controlNumber);
     try std.testing.expectEqual(@as(types.int8, 1), written[0].data.midiCCOut.channel);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent), written[1].type);
+    try std.testing.expectEqual(@backingInt(ivstevents.Event.EventTypes.kNoteOffEvent), written[1].type);
     try std.testing.expectEqual(@as(types.int16, 61), written[1].data.noteOff.pitch);
 }
 
@@ -1945,7 +1945,7 @@ test "zig-vst3-plugin bridge parameter controller exposes reflected edit operati
         .state = &state,
     };
     var info = ivsteditcontroller.ParameterInfo{};
-    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var text: vsttypes.String128 = @splat('x');
     var value: vsttypes.ParamValue = 0;
 
     try std.testing.expectEqual(@as(types.int32, 3), controller.parameterCount());
@@ -1996,28 +1996,28 @@ test "zig-vst3-plugin bridge parameter controller exposes reflected edit operati
 test "zig-vst3-plugin bridge stereo buses expose audio and event input metadata" {
     var info = ivstcomponent.BusInfo{};
 
-    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
-    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
-    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountWithEventOutput(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), true));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kOutput)));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@backingInt(ivstcomponent.MediaTypes.kEvent), @backingInt(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCount(@backingInt(ivstcomponent.MediaTypes.kEvent), @backingInt(ivstcomponent.BusDirections.kOutput)));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountWithEventOutput(@backingInt(ivstcomponent.MediaTypes.kEvent), @backingInt(ivstcomponent.BusDirections.kOutput), true));
 
-    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfo(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kInput), 0, &info));
     try std.testing.expectEqual(@as(types.int32, 2), info.channelCount);
     try std.testing.expectEqual(ivstcomponent.BusFlags.kDefaultActive, info.flags);
     try expectString128("Stereo In", &info.name);
 
-    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfo(@backingInt(ivstcomponent.MediaTypes.kEvent), @backingInt(ivstcomponent.BusDirections.kInput), 0, &info));
     try std.testing.expectEqual(@as(types.int32, 1), info.channelCount);
     try std.testing.expectEqual(ivstcomponent.BusFlags.kDefaultActive, info.flags);
     try expectString128("Event In", &info.name);
 
-    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoWithEventOutput(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, true));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoWithEventOutput(@backingInt(ivstcomponent.MediaTypes.kEvent), @backingInt(ivstcomponent.BusDirections.kOutput), 0, &info, true));
     try std.testing.expectEqual(@as(types.int32, 1), info.channelCount);
     try std.testing.expectEqual(ivstcomponent.BusFlags.kDefaultActive, info.flags);
     try expectString128("Event Out", &info.name);
 
-    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, &info));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfo(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kInput), 1, &info));
     try std.testing.expectEqual(ivstcomponent.BusInfo{}, info);
 }
 
@@ -2035,9 +2035,9 @@ test "zig-vst3-plugin bridge stereo audio buses validate arrangements" {
     try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangements(&inputs, 1, null, 1));
     try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangements(&inputs, 1, &outputs, 0));
 
-    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.arrangement(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.arrangement(@backingInt(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out));
     try std.testing.expectEqual(stereo_arrangement, arrangement_out);
-    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangement(@intFromEnum(ivstcomponent.BusDirections.kOutput), 1, &arrangement_out));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangement(@backingInt(ivstcomponent.BusDirections.kOutput), 1, &arrangement_out));
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangement(99, 0, &arrangement_out));
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
@@ -2049,18 +2049,18 @@ test "zig-vst3-plugin bridge stereo buses can be output only" {
     var arrangement_out: vsttypes.SpeakerArrangement = empty_arrangement;
     const output_only = StereoAudioBuses.Config{ .audio_input = false };
 
-    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), output_only));
-    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), output_only));
-    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, output_only));
+    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kInput), output_only));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kOutput), output_only));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kInput), 0, &info, output_only));
     try std.testing.expectEqual(ivstcomponent.BusInfo{}, info);
-    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, output_only));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kOutput), 0, &info, output_only));
     try expectString128("Stereo Out", &info.name);
 
     try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.setArrangementsConfigured(null, 0, &outputs, 1, output_only));
     try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangementsConfigured(&outputs, 1, &outputs, 1, output_only));
-    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kInput), 0, &arrangement_out, output_only));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangementConfigured(@backingInt(ivstcomponent.BusDirections.kInput), 0, &arrangement_out, output_only));
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
-    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, output_only));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.arrangementConfigured(@backingInt(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, output_only));
     try std.testing.expectEqual(stereo_arrangement, arrangement_out);
 }
 
@@ -2070,18 +2070,18 @@ test "zig-vst3-plugin bridge stereo buses can be input only" {
     var arrangement_out: vsttypes.SpeakerArrangement = empty_arrangement;
     const input_only = StereoAudioBuses.Config{ .audio_output = false };
 
-    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), input_only));
-    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), input_only));
-    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, input_only));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kInput), input_only));
+    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kOutput), input_only));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kInput), 0, &info, input_only));
     try expectString128("Stereo In", &info.name);
-    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, input_only));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@backingInt(ivstcomponent.MediaTypes.kAudio), @backingInt(ivstcomponent.BusDirections.kOutput), 0, &info, input_only));
     try std.testing.expectEqual(ivstcomponent.BusInfo{}, info);
 
     try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.setArrangementsConfigured(&inputs, 1, null, 0, input_only));
     try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangementsConfigured(&inputs, 1, &inputs, 1, input_only));
-    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kInput), 0, &arrangement_out, input_only));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.arrangementConfigured(@backingInt(ivstcomponent.BusDirections.kInput), 0, &arrangement_out, input_only));
     try std.testing.expectEqual(stereo_arrangement, arrangement_out);
-    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, input_only));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangementConfigured(@backingInt(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, input_only));
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
 }
 
@@ -2089,17 +2089,17 @@ test "zig-vst3-plugin bridge stereo buses can disable event input" {
     var info = ivstcomponent.BusInfo{};
     const no_event_input = StereoAudioBuses.Config{ .event_input = false };
 
-    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput), no_event_input));
-    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, no_event_input));
+    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@backingInt(ivstcomponent.MediaTypes.kEvent), @backingInt(ivstcomponent.BusDirections.kInput), no_event_input));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@backingInt(ivstcomponent.MediaTypes.kEvent), @backingInt(ivstcomponent.BusDirections.kInput), 0, &info, no_event_input));
     try std.testing.expectEqual(ivstcomponent.BusInfo{}, info);
-    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), .{ .event_input = false, .event_output = true }));
-    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, .{ .event_input = false, .event_output = true }));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@backingInt(ivstcomponent.MediaTypes.kEvent), @backingInt(ivstcomponent.BusDirections.kOutput), .{ .event_input = false, .event_output = true }));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@backingInt(ivstcomponent.MediaTypes.kEvent), @backingInt(ivstcomponent.BusDirections.kOutput), 0, &info, .{ .event_input = false, .event_output = true }));
     try expectString128("Event Out", &info.name);
 }
 
 test "zig-vst3-plugin bridge realtime processor defaults accept 32 and 64 bit samples" {
-    try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.canProcessSampleSize(@intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)));
-    try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.canProcessSampleSize(@intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64)));
+    try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.canProcessSampleSize(@backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32)));
+    try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.canProcessSampleSize(@backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample64)));
     try std.testing.expectEqual(types.kResultFalse, RealtimeProcessorDefaults.canProcessSampleSize(99));
     try std.testing.expectEqual(@as(types.uint32, 0), RealtimeProcessorDefaults.latencySamples());
     try std.testing.expectEqual(@as(types.uint32, ivstaudioprocessor.kNoTail), RealtimeProcessorDefaults.tailSamples());
@@ -2107,8 +2107,8 @@ test "zig-vst3-plugin bridge realtime processor defaults accept 32 and 64 bit sa
 
 test "zig-vst3-plugin bridge realtime processor defaults validate process setup" {
     var setup = ivstaudioprocessor.ProcessSetup{
-        .processMode = @intFromEnum(ivstaudioprocessor.ProcessModes.kRealtime),
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .processMode = @backingInt(ivstaudioprocessor.ProcessModes.kRealtime),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .maxSamplesPerBlock = 64,
         .sampleRate = 48_000.0,
     };
@@ -2118,7 +2118,7 @@ test "zig-vst3-plugin bridge realtime processor defaults validate process setup"
     setup.symbolicSampleSize = 99;
     try std.testing.expectEqual(types.kResultFalse, RealtimeProcessorDefaults.validateProcessSetup(&setup));
 
-    setup.symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32);
+    setup.symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32);
     setup.maxSamplesPerBlock = 0;
     try std.testing.expectEqual(types.kInvalidArgument, RealtimeProcessorDefaults.validateProcessSetup(&setup));
 
@@ -2211,7 +2211,7 @@ test "zig-vst3-plugin bridge formats and parses VST3 parameter strings" {
     };
     const Set = plug.parameters.ParameterSet(Params);
     const set = Set.init(.{});
-    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var text: vsttypes.String128 = @splat('x');
     var value: vsttypes.ParamValue = 0;
 
     try std.testing.expectEqual(types.kResultOk, getParamStringByValue(Params, &set, 7, 0.5, &text));
@@ -2219,7 +2219,7 @@ test "zig-vst3-plugin bridge formats and parses VST3 parameter strings" {
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[6]);
     try std.testing.expectEqual(types.kResultOk, getParamValueByString(Params, &set, 7, &text, &value));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
-    text = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    text = @splat('x');
     try std.testing.expectEqual(types.kInvalidArgument, getParamStringByValue(Params, &set, 8, 0.5, &text));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[string128.payload_units]);
@@ -2504,7 +2504,7 @@ test "zig-vst3-plugin bridge dispatches main audio processing by sample size" {
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = 2,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .processContext = &process_context,
     };
 
@@ -2548,7 +2548,7 @@ test "zig-vst3-plugin bridge dispatches double precision main audio" {
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = 2,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
         .processContext = &process_context,
     };
 
@@ -2600,7 +2600,7 @@ test "zig-vst3-plugin bridge passes double precision process context inputs" {
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = input_samples.len,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
         .processContext = &process_context,
     };
     const parameter_items = [_]plug.process.ParameterChange{.{
@@ -2680,7 +2680,7 @@ test "zig-vst3-plugin bridge passes automation and events to main audio processo
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = input_samples.len,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .processContext = &process_context,
     };
     const parameter_items = [_]plug.process.ParameterChange{.{
@@ -2743,7 +2743,7 @@ test "zig-vst3-plugin bridge uses fallback sample rate without process context" 
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = input_samples.len,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
     };
     var sample_rate: f64 = 0;
 
@@ -2775,7 +2775,7 @@ test "zig-vst3-plugin bridge reports malformed main process data" {
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = 2,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .processContext = &process_context,
     };
 
@@ -2820,7 +2820,7 @@ test "zig-vst3-plugin bridge processes output-only main audio" {
         .numOutputs = 1,
         .outputs = &outputs,
         .numSamples = 2,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .processContext = &process_context,
     };
 
@@ -2856,7 +2856,7 @@ test "zig-vst3-plugin bridge processes input-only main audio" {
         .numOutputs = 0,
         .inputs = &inputs,
         .numSamples = 2,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .processContext = &process_context,
     };
     var total: f32 = 0.0;
@@ -2891,7 +2891,7 @@ test "zig-vst3-plugin bridge exposes output event writer to processors" {
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = 2,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .processContext = &process_context,
     };
     var event_storage: [1]plug.process.Event = undefined;
@@ -2905,7 +2905,7 @@ test "zig-vst3-plugin bridge exposes output event writer to processors" {
 
 test "bridge bounded collector caps appended items" {
     const Collector = BoundedCollector(u8);
-    var storage = [_]u8{0} ** 2;
+    var storage: [2]u8 = @splat(0);
     var collector = Collector{ .storage = &storage, .frame_count = 4 };
 
     try std.testing.expect(collector.append(1));

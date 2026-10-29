@@ -15,12 +15,14 @@ const SineSynthFactory = factory.StaticFactory3(.{
     .{
         .cid = sine_synth_component.cid,
         .category = sine_synth_spec.Spec.component_category,
+        .sub_categories = sine_synth_spec.Spec.component_sub_categories,
         .name = sine_synth_spec.component_class_name,
         .create = sine_synth_component.create,
     },
     .{
         .cid = sine_synth_controller.cid,
         .category = sine_synth_spec.Spec.controller_category,
+        .sub_categories = sine_synth_spec.Spec.component_sub_categories,
         .name = sine_synth_spec.controller_class_name,
         .create = sine_synth_controller.create,
     },

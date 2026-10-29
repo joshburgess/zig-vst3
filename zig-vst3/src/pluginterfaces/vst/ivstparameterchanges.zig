@@ -37,6 +37,6 @@ test "parameter change vtable slot counts include FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IParameterChanges));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IParamValueQueue));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IParameterChanges));
-    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IParamValueQueueVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IParameterChangesVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IParamValueQueueVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IParameterChangesVTable).@"struct".field_names.len);
 }

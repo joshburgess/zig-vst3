@@ -96,7 +96,7 @@ pub fn AudioInputs(comptime Sample: type) type {
     return struct {
         const Self = @This();
 
-        channels: [max_audio_channels][]const Sample = [_][]const Sample{&.{}} ** max_audio_channels,
+        channels: [max_audio_channels][]const Sample = @splat(&.{}),
         channel_count: usize = 0,
         frame_count: usize = 0,
 
@@ -149,7 +149,7 @@ pub fn AudioOutputs(comptime Sample: type) type {
     return struct {
         const Self = @This();
 
-        channels: [max_audio_channels][]Sample = [_][]Sample{&.{}} ** max_audio_channels,
+        channels: [max_audio_channels][]Sample = @splat(&.{}),
         channel_count: usize = 0,
         frame_count: usize = 0,
 

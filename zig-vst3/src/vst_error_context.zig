@@ -16,7 +16,7 @@ pub fn ErrorContext(comptime max_message_bytes: usize) type {
 
         iface: ierrorcontext.IErrorContext = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        message: [max_message_bytes]types.char8 = [_]types.char8{0} ** max_message_bytes,
+        message: [max_message_bytes]types.char8 = @splat(0),
         error_ui_disabled: bool = false,
         shown: bool = false,
 

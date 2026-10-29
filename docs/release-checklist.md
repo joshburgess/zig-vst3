@@ -2,7 +2,7 @@
 
 This checklist is for tagging raw API releases (most recently `zig-vst3-0.2.1`). It tracks release gates for the raw VST3 API package only. `zig-vst3-plugin` can keep evolving after a tag.
 
-The current release pins are Zig 0.16.0 and VST3 SDK `v3.8.0_build_66`. Keep [toolchain.md](toolchain.md), [stability.md](stability.md), and `CHANGELOG.md` aligned with any release-candidate change.
+The current release pins are Zig 0.17.0 and VST3 SDK `v3.8.0_build_66`. Keep [toolchain.md](toolchain.md), [stability.md](stability.md), and `CHANGELOG.md` aligned with any release-candidate change.
 
 ## Required Checks
 

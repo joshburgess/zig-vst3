@@ -17,13 +17,13 @@ pub const kAllProgramInvalid: base_types.int32 = -1;
 pub const UnitInfo = extern struct {
     id: vsttypes.UnitID = 0,
     parentUnitId: vsttypes.UnitID = 0,
-    name: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
+    name: vsttypes.String128 = @splat(0),
     programListId: vsttypes.ProgramListID = 0,
 };
 
 pub const ProgramListInfo = extern struct {
     id: vsttypes.ProgramListID = 0,
-    name: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
+    name: vsttypes.String128 = @splat(0),
     programCount: base_types.int32 = 0,
 };
 
@@ -113,9 +113,9 @@ test "unit struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IUnitInfo));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IProgramListData));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IUnitData));
-    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IUnitHandlerVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IUnitHandler2VTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 15), @typeInfo(IUnitInfoVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IProgramListDataVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IUnitDataVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IUnitHandlerVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IUnitHandler2VTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 15), @typeInfo(IUnitInfoVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IProgramListDataVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IUnitDataVTable).@"struct".field_names.len);
 }

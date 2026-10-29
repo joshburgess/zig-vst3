@@ -668,7 +668,7 @@ test "parameter state rejects malformed headers and unsupported versions" {
     const set = Set.init(.{});
     var values = Values.init(&set);
 
-    var bad_magic = [_]u8{0} ** encoded_header_size;
+    var bad_magic: [encoded_header_size]u8 = @splat(0);
     var bad_magic_stream = FixedBufferStream.init(&bad_magic);
     try std.testing.expectError(error.InvalidStateMagic, readParameterState(Params, &set, &values, bad_magic_stream.reader()));
 

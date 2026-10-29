@@ -26,7 +26,7 @@ pub const IContextMenuTargetVTable = extern struct {
 };
 
 pub const IContextMenuItem = extern struct {
-    name: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
+    name: vsttypes.String128 = @splat(0),
     tag: base_types.int32 = 0,
     flags: base_types.int32 = 0,
 
@@ -74,7 +74,7 @@ test "context menu struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IComponentHandler3));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IContextMenuTarget));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IContextMenu));
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IComponentHandler3VTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IContextMenuTargetVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 8), @typeInfo(IContextMenuVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IComponentHandler3VTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IContextMenuTargetVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 8), @typeInfo(IContextMenuVTable).@"struct".field_names.len);
 }

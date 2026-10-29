@@ -7,6 +7,7 @@ const SineSynthPlugin = struct {
     pub const vendor = "zig-vst3";
     pub const url = "https://github.com/joshburgess/zig-vst3";
     pub const audio_input = false;
+    pub const component_sub_categories = "Instrument|Synth";
     pub const Params = struct {
         level: plug.parameters.FloatParam = .{
             .id = level_param_id,

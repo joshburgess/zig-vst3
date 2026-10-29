@@ -100,7 +100,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
 
         iface: iupdatehandler.IUpdateHandler = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        entries: [max_dependents]Entry = [_]Entry{.{}} ** max_dependents,
+        entries: [max_dependents]Entry = @splat(.{}),
 
         pub fn asInterface(self: *Self) *iupdatehandler.IUpdateHandler {
             return &self.iface;
@@ -221,12 +221,12 @@ test "update handler registers triggers and removes dependents" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.addDependent(iface, &changed, dep_iface));
     try std.testing.expectEqual(@as(usize, 1), handler.dependentCount());
     try std.testing.expectEqual(@as(types.uint32, 2), dependent.ref_count.load(.monotonic));
-    try std.testing.expect(handler.triggerMatchingUpdates(&changed, @intFromEnum(iupdatehandler.ChangeMessage.kWillChange)));
+    try std.testing.expect(handler.triggerMatchingUpdates(&changed, @backingInt(iupdatehandler.ChangeMessage.kWillChange)));
     try std.testing.expectEqual(@as(types.uint32, 1), dependent.update_count);
 
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.triggerUpdates(iface, &changed, @intFromEnum(iupdatehandler.ChangeMessage.kChanged)));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.triggerUpdates(iface, &changed, @backingInt(iupdatehandler.ChangeMessage.kChanged)));
     try std.testing.expectEqual(@as(types.uint32, 2), dependent.update_count);
-    try std.testing.expectEqual(@intFromEnum(iupdatehandler.ChangeMessage.kChanged), dependent.last_message);
+    try std.testing.expectEqual(@backingInt(iupdatehandler.ChangeMessage.kChanged), dependent.last_message);
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.removeDependent(iface, &changed, dep_iface));
     try std.testing.expectEqual(@as(usize, 0), handler.dependentCount());

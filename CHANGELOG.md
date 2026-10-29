@@ -1,5 +1,27 @@
 # Changelog
 
+## zig-vst3-0.4.0 - 2026-10-23
+
+> Version note: the `zig-vst3-0.3.0` and `zig-vst3-0.3.0-rc.1` tags belong to the separate
+> plugin-gui feature line. This release continues from `main` (`0.2.1`) and only migrates the
+> framework to Zig 0.17.0.
+
+### Release Notes
+
+- `zig-vst3-0.4.0` migrates the library and its build to Zig 0.17.0. This is a breaking release: the same sources can no longer compile with Zig 0.16.0, because 0.17 removes the array-repeat operator `a ** b` and redefines `@typeInfo` payloads as structs-of-arrays. The `zig-vst3-0.2.1` tag remains the last release for Zig 0.16.0 users.
+- One behavioral change that does not fail to compile: Zig 0.17 narrows `@hasDecl` to `pub` declarations. Any `Config` hook (e.g. `clone`, `connect`, `disconnect`, `resizeView`, or the plugin lifecycle hooks) is only detected when it is declared `pub fn`. Hooks that stayed private silently stop being called, so make them `pub` when upgrading. The full suite covers the delegation paths on 0.17.
+- The local release gate remains `scripts/raw_api_release_check.sh`. The VST3 SDK pin stays at `v3.8.0_build_66`; the compiler pin moves to 0.17.0.
+
+### Changed
+
+- Migrated the language layer to Zig 0.17: array-repeat expressions now use `@splat`, struct/enum/function reflection reads `field_names`/`field_types`/`field_values`/`param_types`, and untyped `@splat` locals carry explicit array types.
+- Migrated `build.zig` to the Zig 0.17 build system: `b.getInstallPath` is gone, so bundle steps now write into a generated output directory (`addOutputDirectoryArg2`) and install it with `addInstallDirectory`, which keeps `--prefix` overrides working; validate and pluginval steps receive that directory through `addDirectoryArg2`, and macOS bundle metadata records the new version.
+- CI and documentation pins moved to Zig 0.17.0; `build.zig.zon` declares `minimum_zig_version = "0.17.0"`.
+
+### Fixed
+
+- Hook delegation tests declare their config hooks `pub`, matching the narrowed `@hasDecl` semantics of Zig 0.17.
+
 ## zig-vst3-0.2.1 - 2026-06-18
 
 ### Release Notes

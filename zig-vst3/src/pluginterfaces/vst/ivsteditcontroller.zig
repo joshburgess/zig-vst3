@@ -18,9 +18,9 @@ pub const kVstComponentControllerClass: base_types.FIDString = "Component Contro
 
 pub const ParameterInfo = extern struct {
     id: vsttypes.ParamID = 0,
-    title: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
-    shortTitle: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
-    units: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
+    title: vsttypes.String128 = @splat(0),
+    shortTitle: vsttypes.String128 = @splat(0),
+    units: vsttypes.String128 = @splat(0),
     stepCount: base_types.int32 = 0,
     defaultNormalizedValue: vsttypes.ParamValue = 0,
     unitId: vsttypes.UnitID = 0,
@@ -241,13 +241,13 @@ test "edit controller struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IMidiMapping));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IEditControllerHostEditing));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IComponentHandlerSystemTime));
-    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IComponentHandlerVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IComponentHandler2VTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IComponentHandlerBusActivationVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IProgressVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 18), @typeInfo(IEditControllerVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IEditController2VTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IMidiMappingVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IEditControllerHostEditingVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IComponentHandlerSystemTimeVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IComponentHandlerVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IComponentHandler2VTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IComponentHandlerBusActivationVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IProgressVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 18), @typeInfo(IEditControllerVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IEditController2VTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IMidiMappingVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IEditControllerHostEditingVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IComponentHandlerSystemTimeVTable).@"struct".field_names.len);
 }

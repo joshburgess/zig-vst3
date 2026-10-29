@@ -23,7 +23,7 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
         iface: ivstpluginterfacesupport.IPlugInterfaceSupport = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         count: types.uint32 = 0,
-        supported: [max_iids]tuid.TUID = [_]tuid.TUID{tuid.zero} ** max_iids,
+        supported: [max_iids]tuid.TUID = @splat(tuid.zero),
 
         pub fn asInterface(self: *Self) *ivstpluginterfacesupport.IPlugInterfaceSupport {
             return &self.iface;
@@ -98,7 +98,7 @@ pub fn PrefetchableSupport(comptime Config: type) type {
 
         iface: ivstprefetchablesupport.IPrefetchableSupport = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        state: ivstprefetchablesupport.PrefetchableSupport = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNeverPrefetchable),
+        state: ivstprefetchablesupport.PrefetchableSupport = @backingInt(ivstprefetchablesupport.ePrefetchableSupport.kIsNeverPrefetchable),
         get_count: types.uint32 = 0,
 
         pub fn asInterface(self: *Self) *ivstprefetchablesupport.IPrefetchableSupport {
@@ -221,8 +221,8 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         midi2_count: types.uint32 = 0,
         midi1_count: types.uint32 = 0,
-        midi2: [max_midi2]ivstmidimapping2.Midi2ControllerParamIDAssignment = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** max_midi2,
-        midi1: [max_midi1]ivstmidimapping2.Midi1ControllerParamIDAssignment = [_]ivstmidimapping2.Midi1ControllerParamIDAssignment{.{}} ** max_midi1,
+        midi2: [max_midi2]ivstmidimapping2.Midi2ControllerParamIDAssignment = @splat(.{}),
+        midi1: [max_midi1]ivstmidimapping2.Midi1ControllerParamIDAssignment = @splat(.{}),
         midi2_input_count: types.uint32 = 0,
         midi1_input_count: types.uint32 = 0,
         last_bus: ivstmidimapping2.BusIndex = 0,
@@ -329,7 +329,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn acceptsDirection(direction: vsttypes.BusDirection) bool {
             if (@hasDecl(Config, "direction")) return direction == Config.direction;
-            return direction == @intFromEnum(ivstcomponent.BusDirections.kInput);
+            return direction == @backingInt(ivstcomponent.BusDirections.kInput);
         }
 
         fn assignmentCount(assignments: anytype) usize {
@@ -424,7 +424,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
 
         iface: ivstphysicalui.INoteExpressionPhysicalUIMapping = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        maps: [max_maps]ivstphysicalui.PhysicalUIMap = [_]ivstphysicalui.PhysicalUIMap{.{}} ** max_maps,
+        maps: [max_maps]ivstphysicalui.PhysicalUIMap = @splat(.{}),
         map_count: types.uint32 = 0,
         request_count: types.uint32 = 0,
         last_bus: types.int32 = 0,
@@ -489,7 +489,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
         fn failPhysicalUIMapping(out: *ivstphysicalui.PhysicalUIMapList, result: types.tresult) types.tresult {
             if (out.map) |requested_maps| {
                 for (requested_maps[0..out.count]) |*requested| {
-                    requested.noteExpressionTypeID = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID);
+                    requested.noteExpressionTypeID = @backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID);
                 }
             }
             return result;
@@ -502,7 +502,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             if (!self.hasPhysicalMaps() or out.count == 0) return failPhysicalUIMapping(out, types.kResultFalse);
             const maps = self.physicalMaps();
             for (requested_maps[0..out.count]) |*requested| {
-                requested.noteExpressionTypeID = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID);
+                requested.noteExpressionTypeID = @backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID);
                 for (maps) |mapping| {
                     if (mapping.physicalUITypeID == requested.physicalUITypeID) {
                         requested.noteExpressionTypeID = mapping.noteExpressionTypeID;
@@ -581,12 +581,12 @@ test "plug interface support clears unsupported query output" {
 
 test "prefetchable support reports default state and supports query interface" {
     const Support = PrefetchableSupport(struct {});
-    var support = Support{ .state = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable) };
+    var support = Support{ .state = @backingInt(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable) };
     const iface = support.asInterface();
     var state: ivstprefetchablesupport.PrefetchableSupport = 0;
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getPrefetchableSupport(iface, &state));
-    try std.testing.expectEqual(@as(ivstprefetchablesupport.PrefetchableSupport, @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable)), state);
+    try std.testing.expectEqual(@as(ivstprefetchablesupport.PrefetchableSupport, @backingInt(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable)), state);
 
     var queried: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstprefetchablesupport.iprefetchable_support_iid, &queried));
@@ -605,16 +605,16 @@ test "prefetchable support reports default state and supports query interface" {
 test "prefetchable support reports state and clears delegated failure" {
     const Support = PrefetchableSupport(struct {
         pub fn getPrefetchableSupport(_: anytype, out: *ivstprefetchablesupport.PrefetchableSupport) types.tresult {
-            out.* = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable);
+            out.* = @backingInt(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable);
             return types.kResultFalse;
         }
     });
-    var support = Support{ .state = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNotYetPrefetchable) };
+    var support = Support{ .state = @backingInt(ivstprefetchablesupport.ePrefetchableSupport.kIsNotYetPrefetchable) };
     const iface = support.asInterface();
     var state: ivstprefetchablesupport.PrefetchableSupport = 99;
 
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getPrefetchableSupport(iface, &state));
-    try std.testing.expectEqual(@as(ivstprefetchablesupport.PrefetchableSupport, @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNotYetPrefetchable)), state);
+    try std.testing.expectEqual(@as(ivstprefetchablesupport.PrefetchableSupport, @backingInt(ivstprefetchablesupport.ePrefetchableSupport.kIsNotYetPrefetchable)), state);
     try std.testing.expectEqual(@as(types.uint32, 1), support.get_count);
 }
 
@@ -696,19 +696,19 @@ test "midi 2 mapping copies midi 1 and midi 2 assignment lists" {
     try std.testing.expectEqual(@as(usize, 1), mapping.midi1Assignments().len);
     try std.testing.expectEqual(@as(vsttypes.ParamID, 200), mapping.midi1Assignments()[0].pId);
 
-    try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expectEqual(@as(types.uint32, 0), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kOutput)));
+    try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.uint32, 0), iface.vtable.getNumMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kOutput)));
 
-    var midi2_out = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** 1;
+    var midi2_out: [1]ivstmidimapping2.Midi2ControllerParamIDAssignment = @splat(.{});
     const midi2_list = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = midi2_out.len, .map = &midi2_out };
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &midi2_list));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput), &midi2_list));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 100), midi2_out[0].pId);
     try std.testing.expectEqual(@as(ivstmidimapping2.MidiChannel, 2), midi2_out[0].channel);
     try std.testing.expectEqual(@as(types.uint8, 3), midi2_out[0].controller.bank_registered);
 
-    var midi1_out = [_]ivstmidimapping2.Midi1ControllerParamIDAssignment{.{}} ** 1;
+    var midi1_out: [1]ivstmidimapping2.Midi1ControllerParamIDAssignment = @splat(.{});
     const midi1_list = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = midi1_out.len, .map = &midi1_out };
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &midi1_list));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi1ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput), &midi1_list));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 200), midi1_out[0].pId);
     try std.testing.expectEqual(@as(vsttypes.CtrlNumber, 64), midi1_out[0].controller);
 }
@@ -722,27 +722,27 @@ test "midi 2 mapping reports invalid assignment outputs deterministically" {
     try std.testing.expectEqual(types.kResultOk, mapping.addMidi1(.{ .pId = 200 }));
     try std.testing.expectEqual(types.kResultOk, mapping.addMidi1(.{ .pId = 201 }));
 
-    var empty_midi2 = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** 0;
+    var empty_midi2: [0]ivstmidimapping2.Midi2ControllerParamIDAssignment = @splat(.{});
     const short_midi2 = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = 0, .map = &empty_midi2 };
     const null_midi2 = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = 1, .map = null };
-    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &short_midi2));
-    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &null_midi2));
-    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kOutput), &null_midi2));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput), &short_midi2));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput), &null_midi2));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kOutput), &null_midi2));
 
-    var empty_midi1 = [_]ivstmidimapping2.Midi1ControllerParamIDAssignment{.{}} ** 0;
+    var empty_midi1: [0]ivstmidimapping2.Midi1ControllerParamIDAssignment = @splat(.{});
     const short_midi1 = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = 0, .map = &empty_midi1 };
     const null_midi1 = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = 1, .map = null };
-    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &short_midi1));
-    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &null_midi1));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi1ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput), &short_midi1));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getMidi1ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput), &null_midi1));
 
-    var short_stale_midi2 = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{ .pId = 999 }} ** 1;
+    var short_stale_midi2: [1]ivstmidimapping2.Midi2ControllerParamIDAssignment = @splat(.{ .pId = 999 });
     const short_stale_midi2_list = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = short_stale_midi2.len, .map = &short_stale_midi2 };
-    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &short_stale_midi2_list));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput), &short_stale_midi2_list));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 0), short_stale_midi2[0].pId);
 
-    var short_stale_midi1 = [_]ivstmidimapping2.Midi1ControllerParamIDAssignment{.{ .pId = 999 }} ** 1;
+    var short_stale_midi1: [1]ivstmidimapping2.Midi1ControllerParamIDAssignment = @splat(.{ .pId = 999 });
     const short_stale_midi1_list = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = short_stale_midi1.len, .map = &short_stale_midi1 };
-    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &short_stale_midi1_list));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi1ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput), &short_stale_midi1_list));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 0), short_stale_midi1[0].pId);
 }
 
@@ -757,37 +757,37 @@ test "midi 2 mapping clamps inflated assignment counts" {
 
     try std.testing.expectEqual(@as(usize, 1), mapping.midi2Assignments().len);
     try std.testing.expectEqual(@as(usize, 1), mapping.midi1Assignments().len);
-    try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi1ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput)));
     try std.testing.expectEqual(types.kResultFalse, mapping.addMidi2(.{ .pId = 101 }));
     try std.testing.expectEqual(types.kResultFalse, mapping.addMidi1(.{ .pId = 201 }));
 
-    var midi2_out = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** 1;
+    var midi2_out: [1]ivstmidimapping2.Midi2ControllerParamIDAssignment = @splat(.{});
     const midi2_list = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = midi2_out.len, .map = &midi2_out };
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &midi2_list));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput), &midi2_list));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 100), midi2_out[0].pId);
 
-    var midi1_out = [_]ivstmidimapping2.Midi1ControllerParamIDAssignment{.{}} ** 1;
+    var midi1_out: [1]ivstmidimapping2.Midi1ControllerParamIDAssignment = @splat(.{});
     const midi1_list = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = midi1_out.len, .map = &midi1_out };
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &midi1_list));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi1ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput), &midi1_list));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 200), midi1_out[0].pId);
 }
 
 test "midi 2 mapping honors configured assignment direction" {
     const Mapping = Midi2Mapping(1, 1, struct {
-        pub const direction = @intFromEnum(ivstcomponent.BusDirections.kOutput);
+        pub const direction = @backingInt(ivstcomponent.BusDirections.kOutput);
     });
     var mapping = Mapping{};
     const iface = mapping.asMapping();
     try std.testing.expectEqual(types.kResultOk, mapping.addMidi2(.{ .pId = 100 }));
     try std.testing.expectEqual(types.kResultOk, mapping.addMidi1(.{ .pId = 200 }));
 
-    try std.testing.expectEqual(@as(types.uint32, 0), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kOutput)));
+    try std.testing.expectEqual(@as(types.uint32, 0), iface.vtable.getNumMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kOutput)));
 
-    var midi2_out = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** 1;
+    var midi2_out: [1]ivstmidimapping2.Midi2ControllerParamIDAssignment = @splat(.{});
     const midi2_list = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = midi2_out.len, .map = &midi2_out };
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kOutput), &midi2_list));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi2ControllerAssignments(iface, @backingInt(ivstcomponent.BusDirections.kOutput), &midi2_list));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 100), midi2_out[0].pId);
 }
 
@@ -892,28 +892,28 @@ test "physical UI mapping exposes fixed map list and clears delegated failures" 
     });
     var mapping = Mapping{};
     const iface = mapping.asInterface();
-    try std.testing.expectEqual(types.kResultOk, mapping.addMap(.{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 12 }));
-    try std.testing.expectEqual(types.kResultFalse, mapping.addMap(.{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIXMovement), .noteExpressionTypeID = 13 }));
+    try std.testing.expectEqual(types.kResultOk, mapping.addMap(.{ .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 12 }));
+    try std.testing.expectEqual(types.kResultFalse, mapping.addMap(.{ .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIXMovement), .noteExpressionTypeID = 13 }));
     try std.testing.expectEqual(@as(usize, 1), mapping.physicalMapsConst().len);
     try std.testing.expectEqual(@as(types.uint32, 12), mapping.physicalMapsConst()[0].noteExpressionTypeID);
 
     var requested = [_]ivstphysicalui.PhysicalUIMap{
-        .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 77 },
+        .{ .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 77 },
     };
     var list = ivstphysicalui.PhysicalUIMapList{ .count = requested.len, .map = &requested };
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getPhysicalUIMapping(iface, 3, 4, &list));
     try std.testing.expectEqual(@as(types.uint32, 1), list.count);
-    try std.testing.expectEqual(@as(types.uint32, @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID)), requested[0].noteExpressionTypeID);
+    try std.testing.expectEqual(@as(types.uint32, @backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID)), requested[0].noteExpressionTypeID);
     try std.testing.expectEqual(@as(types.int32, 3), mapping.last_bus);
     try std.testing.expectEqual(@as(types.int16, 4), mapping.last_channel);
 
     const DefaultMapping = PhysicalUIMapping(1, struct {});
     var default_mapping = DefaultMapping{};
-    try std.testing.expectEqual(types.kResultOk, default_mapping.addMap(.{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 12 }));
-    requested[0] = .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 0 };
+    try std.testing.expectEqual(types.kResultOk, default_mapping.addMap(.{ .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 12 }));
+    requested[0] = .{ .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 0 };
     try std.testing.expectEqual(types.kResultOk, default_mapping.asInterface().vtable.getPhysicalUIMapping(default_mapping.asInterface(), 0, 1, &list));
     try std.testing.expectEqual(@as(types.uint32, 1), list.count);
-    try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), requested[0].physicalUITypeID);
+    try std.testing.expectEqual(@backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), requested[0].physicalUITypeID);
     try std.testing.expectEqual(@as(types.uint32, 12), requested[0].noteExpressionTypeID);
 }
 
@@ -921,17 +921,17 @@ test "physical UI mapping clamps inflated map counts" {
     const Mapping = PhysicalUIMapping(1, struct {});
     var mapping = Mapping{};
     const iface = mapping.asInterface();
-    mapping.maps[0] = .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 12 };
+    mapping.maps[0] = .{ .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 12 };
     mapping.map_count = 99;
 
     try std.testing.expectEqual(@as(usize, 1), mapping.physicalMapsConst().len);
     var requested = [_]ivstphysicalui.PhysicalUIMap{
-        .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure) },
+        .{ .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure) },
     };
     var list = ivstphysicalui.PhysicalUIMapList{ .count = requested.len, .map = &requested };
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getPhysicalUIMapping(iface, 0, 1, &list));
     try std.testing.expectEqual(@as(types.uint32, 1), list.count);
-    try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), requested[0].physicalUITypeID);
+    try std.testing.expectEqual(@backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), requested[0].physicalUITypeID);
     try std.testing.expectEqual(@as(types.uint32, 12), requested[0].noteExpressionTypeID);
     try std.testing.expectEqual(types.kResultFalse, mapping.addMap(.{}));
 }
@@ -941,13 +941,13 @@ test "physical UI mapping reports empty lists and supports query interface" {
     var mapping = Mapping{};
     const iface = mapping.asInterface();
     var requested = [_]ivstphysicalui.PhysicalUIMap{
-        .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 77 },
+        .{ .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 77 },
     };
     var list = ivstphysicalui.PhysicalUIMapList{ .count = requested.len, .map = &requested };
 
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getPhysicalUIMapping(iface, 8, 9, &list));
     try std.testing.expectEqual(@as(types.uint32, 1), list.count);
-    try std.testing.expectEqual(@as(types.uint32, @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID)), requested[0].noteExpressionTypeID);
+    try std.testing.expectEqual(@as(types.uint32, @backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID)), requested[0].noteExpressionTypeID);
     try std.testing.expectEqual(@as(types.uint32, 1), mapping.request_count);
     try std.testing.expectEqual(@as(types.int32, 8), mapping.last_bus);
     try std.testing.expectEqual(@as(types.int16, 9), mapping.last_channel);

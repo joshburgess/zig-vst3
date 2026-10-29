@@ -17,5 +17,5 @@ pub const IParameterFinder = extern struct {
 
 test "parameter finder vtable slot count includes FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IParameterFinder));
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IParameterFinderVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IParameterFinderVTable).@"struct".field_names.len);
 }

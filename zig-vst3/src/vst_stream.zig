@@ -51,7 +51,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         iface: ibstream.IBStream = .{ .vtable = &stream_vtable },
         sizeable_iface: ibstream.ISizeableStream = .{ .vtable = &sizeable_vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        bytes: [capacity]u8 = [_]u8{0} ** capacity,
+        bytes: [capacity]u8 = @splat(0),
         len: usize = 0,
         pos: usize = 0,
         write_limit: usize = capacity,
@@ -194,11 +194,11 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         fn seek(ptr: *anyopaque, offset: types.int64, mode: types.int32, result: ?*types.int64) callconv(.c) types.tresult {
             const self = ownerFromStream(ptr);
             const next = switch (mode) {
-                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet) => offset,
-                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur) => seekTarget(self.pos, offset) orelse {
+                @backingInt(ibstream.IStreamSeekMode.kIBSeekSet) => offset,
+                @backingInt(ibstream.IStreamSeekMode.kIBSeekCur) => seekTarget(self.pos, offset) orelse {
                     return failPosition(result, types.kResultFalse);
                 },
-                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd) => seekTarget(self.boundedLen(), offset) orelse {
+                @backingInt(ibstream.IStreamSeekMode.kIBSeekEnd) => seekTarget(self.boundedLen(), offset) orelse {
                     return failPosition(result, types.kResultFalse);
                 },
                 else => {
@@ -267,10 +267,10 @@ test "fixed buffer stream reads writes seeks and reports size" {
     try std.testing.expectEqual(@as(types.int32, 3), written);
 
     var pos: types.int64 = -1;
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
     try std.testing.expectEqual(@as(types.int64, 0), pos);
 
-    var output = [_]u8{0} ** 3;
+    var output: [3]u8 = @splat(0);
     var read_count: types.int32 = 0;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.read(iface, &output, output.len, &read_count));
     try std.testing.expectEqual(@as(types.int32, 3), read_count);
@@ -324,7 +324,7 @@ test "fixed buffer stream round-trips generated chunked IO" {
     var prng = std.Random.DefaultPrng.init(0x1b57_4330_5a17_0001);
     const random = prng.random();
     var input: [64]u8 = undefined;
-    var output: [64]u8 = [_]u8{0} ** 64;
+    var output: [64]u8 = @splat(0);
     random.bytes(&input);
 
     var offset: usize = 0;
@@ -344,7 +344,7 @@ test "fixed buffer stream round-trips generated chunked IO" {
     try std.testing.expectEqual(@as(types.int64, input.len), size);
 
     var pos: types.int64 = -1;
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
     try std.testing.expectEqual(@as(types.int64, 0), pos);
 
     offset = 0;
@@ -366,7 +366,7 @@ test "fixed buffer stream handles generated seek positions" {
     const Stream = FixedBufferStream(16);
     var stream = Stream{};
     const iface = stream.asStream();
-    var input = [_]u8{0} ** 16;
+    var input: [16]u8 = @splat(0);
     for (&input, 0..) |*byte, index| byte.* = @intCast(index);
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, &input, input.len, null));
@@ -374,7 +374,7 @@ test "fixed buffer stream handles generated seek positions" {
     const set_offsets = [_]types.int64{ -1, 0, 1, 7, 15, 16, 17 };
     for (set_offsets) |offset| {
         var reported: types.int64 = -99;
-        const result = iface.vtable.seek(iface, offset, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &reported);
+        const result = iface.vtable.seek(iface, offset, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), &reported);
         if (offset < 0 or offset > input.len) {
             try std.testing.expectEqual(types.kResultFalse, result);
             try std.testing.expectEqual(@as(types.int64, -1), reported);
@@ -384,12 +384,12 @@ test "fixed buffer stream handles generated seek positions" {
         }
     }
 
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 8, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 8, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
     const current_offsets = [_]types.int64{ -9, -8, -1, 0, 1, 8, 9 };
     for (current_offsets) |offset| {
-        try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 8, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+        try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 8, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
         var reported: types.int64 = -99;
-        const result = iface.vtable.seek(iface, offset, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur), &reported);
+        const result = iface.vtable.seek(iface, offset, @backingInt(ibstream.IStreamSeekMode.kIBSeekCur), &reported);
         const expected = 8 + offset;
         if (expected < 0 or expected > input.len) {
             try std.testing.expectEqual(types.kResultFalse, result);
@@ -403,7 +403,7 @@ test "fixed buffer stream handles generated seek positions" {
     const end_offsets = [_]types.int64{ -17, -16, -1, 0, 1 };
     for (end_offsets) |offset| {
         var reported: types.int64 = -99;
-        const result = iface.vtable.seek(iface, offset, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd), &reported);
+        const result = iface.vtable.seek(iface, offset, @backingInt(ibstream.IStreamSeekMode.kIBSeekEnd), &reported);
         const expected = @as(types.int64, input.len) + offset;
         if (expected < 0 or expected > input.len) {
             try std.testing.expectEqual(types.kResultFalse, result);
@@ -419,22 +419,22 @@ test "fixed buffer stream rejects overflowing relative seeks" {
     const Stream = FixedBufferStream(16);
     var stream = Stream{};
     const iface = stream.asStream();
-    var input = [_]u8{0} ** 8;
+    var input: [8]u8 = @splat(0);
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, &input, input.len, null));
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 4, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 4, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
 
     var reported: types.int64 = 99;
     try std.testing.expectEqual(
         types.kResultFalse,
-        iface.vtable.seek(iface, std.math.maxInt(types.int64), @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur), &reported),
+        iface.vtable.seek(iface, std.math.maxInt(types.int64), @backingInt(ibstream.IStreamSeekMode.kIBSeekCur), &reported),
     );
     try std.testing.expectEqual(@as(types.int64, -1), reported);
 
     reported = 99;
     try std.testing.expectEqual(
         types.kResultFalse,
-        iface.vtable.seek(iface, std.math.maxInt(types.int64), @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd), &reported),
+        iface.vtable.seek(iface, std.math.maxInt(types.int64), @backingInt(ibstream.IStreamSeekMode.kIBSeekEnd), &reported),
     );
     try std.testing.expectEqual(@as(types.int64, -1), reported);
 }
@@ -451,7 +451,7 @@ test "fixed buffer stream resizes with zero fill and clamps cursor" {
     try std.testing.expectEqual(@as(usize, 6), stream.len);
     try std.testing.expectEqualSlices(u8, &[_]u8{ 1, 2, 3, 4, 0, 0 }, stream.data());
 
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd), null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekEnd), null));
     try std.testing.expectEqual(types.kResultOk, sizeable.vtable.setStreamSize(sizeable, 2));
     try std.testing.expectEqual(@as(usize, 2), stream.len);
     try std.testing.expectEqual(@as(usize, 2), stream.pos);
@@ -539,7 +539,7 @@ test "fixed buffer stream enforces bounds and supports query interface" {
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.seek(iface, 0, 99, &pos));
     try std.testing.expectEqual(@as(types.int64, -1), pos);
     pos = 99;
-    try std.testing.expectEqual(types.kResultFalse, iface.vtable.seek(iface, 100, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.seek(iface, 100, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
     try std.testing.expectEqual(@as(types.int64, -1), pos);
 
     var queried: ?*anyopaque = null;
@@ -559,7 +559,7 @@ test "fixed buffer stream rejects writes when position is past write limit" {
     var count: types.int32 = 99;
 
     try std.testing.expectEqual(types.kResultOk, sizeable.vtable.setStreamSize(sizeable, 8));
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 6, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 6, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.write(iface, &input, input.len, &count));
     try std.testing.expectEqual(@as(types.int32, 0), count);
 }
@@ -599,7 +599,7 @@ test "fixed buffer stream failed IO preserves cursor" {
 
     stream.write_limit = 4;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, &input, 2, null));
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
 
     pos = -1;
     count = -1;
@@ -625,7 +625,7 @@ test "fixed buffer stream generated IO bounds match visible buffer limits" {
                     .pos = position,
                 };
                 const iface = stream.asStream();
-                var output = [_]u8{0} ** 4;
+                var output: [4]u8 = @splat(0);
                 var count: types.int32 = -1;
                 const visible_len = @min(length, stream.bytes.len);
                 const readable = position <= visible_len and @as(usize, @intCast(request)) <= visible_len - position;
@@ -672,7 +672,7 @@ test "fixed buffer stream clamps corrupted cursors and sizes" {
     stream.pos = 7;
     try std.testing.expectEqualSlices(u8, &[_]u8{ 1, 2, 3, 4, 0, 0, 0, 0 }, stream.data());
 
-    var output = [_]u8{0} ** 2;
+    var output: [2]u8 = @splat(0);
     var count: types.int32 = 99;
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.read(iface, &output, output.len, &count));
     try std.testing.expectEqual(@as(types.int32, 0), count);

@@ -36,6 +36,6 @@ test "string result vtable sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IString));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IStringResult));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IString));
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IStringResultVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 9), @typeInfo(IStringVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IStringResultVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 9), @typeInfo(IStringVTable).@"struct".field_names.len);
 }

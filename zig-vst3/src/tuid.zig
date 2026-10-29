@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 
 pub const byte_count = 16;
 pub const TUID = [byte_count]u8;
-pub const zero: TUID = [_]u8{0} ** byte_count;
+pub const zero: TUID = @splat(0);
 
 pub const FUID = struct {
     bytes: TUID,

@@ -56,7 +56,7 @@ pub fn readUtf16ZAsAscii(source: [*]const types.char16, buffer: []u8) []const u8
 }
 
 test "copyAsciiZ zero-fills and truncates" {
-    var text = [_]u8{'x'} ** 4;
+    var text: [4]u8 = @splat('x');
 
     copyAsciiZ(&text, "abcdef");
 
@@ -64,7 +64,7 @@ test "copyAsciiZ zero-fills and truncates" {
 }
 
 test "copyAsciiZPtr accepts zero capacity" {
-    var text = [_]u8{'x'} ** 1;
+    var text: [1]u8 = @splat('x');
 
     copyAsciiZPtr(&text, 0, "abc");
 
@@ -72,7 +72,7 @@ test "copyAsciiZPtr accepts zero capacity" {
 }
 
 test "copyAsciiToUtf16Z zero-fills and truncates" {
-    var text = [_]types.char16{'x'} ** 4;
+    var text: [4]types.char16 = @splat('x');
 
     copyAsciiToUtf16Z(&text, "abcdef");
 
@@ -80,7 +80,7 @@ test "copyAsciiToUtf16Z zero-fills and truncates" {
 }
 
 test "copyAsciiToUtf16ZPtr accepts zero capacity" {
-    var text = [_]types.char16{'x'} ** 1;
+    var text: [1]types.char16 = @splat('x');
 
     copyAsciiToUtf16ZPtr(&text, 0, "abc");
 
@@ -88,7 +88,7 @@ test "copyAsciiToUtf16ZPtr accepts zero capacity" {
 }
 
 test "copyUtf16Z zero-fills and truncates" {
-    var text = [_]types.char16{'x'} ** 4;
+    var text: [4]types.char16 = @splat('x');
 
     copyUtf16Z(&text, &.{ 'a', 'b', 'c', 'd', 'e' });
 
@@ -96,7 +96,7 @@ test "copyUtf16Z zero-fills and truncates" {
 }
 
 test "copyUtf16ZPtr accepts zero capacity" {
-    var text = [_]types.char16{'x'} ** 1;
+    var text: [1]types.char16 = @splat('x');
 
     copyUtf16ZPtr(&text, 0, &.{ 'a', 'b', 'c' });
 
@@ -105,7 +105,7 @@ test "copyUtf16ZPtr accepts zero capacity" {
 
 test "readUtf16ZAsAscii stops at zero and clamps code units" {
     const source = [_:0]types.char16{ 'a', 0x1234, 'c', 0 };
-    var buffer = [_]u8{0} ** 8;
+    var buffer: [8]u8 = @splat(0);
 
     const text = readUtf16ZAsAscii(&source, &buffer);
 
@@ -124,7 +124,7 @@ test "nullable string spans use empty fallbacks" {
 
 test "readUtf16ZAsAscii truncates to output buffer" {
     const source = [_:0]types.char16{ 'a', 'b', 'c', 0 };
-    var buffer = [_]u8{0} ** 2;
+    var buffer: [2]u8 = @splat(0);
 
     const text = readUtf16ZAsAscii(&source, &buffer);
 
@@ -144,7 +144,7 @@ test "copyAsciiZ generated capacity boundaries" {
     };
 
     inline for (cases) |case| {
-        var text = [_]u8{'x'} ** case.capacity;
+        var text: [case.capacity]u8 = @splat('x');
 
         copyAsciiZ(&text, "abcde");
 
@@ -165,7 +165,7 @@ test "copyAsciiToUtf16Z generated capacity boundaries" {
     };
 
     inline for (cases) |case| {
-        var text = [_]types.char16{'x'} ** case.capacity;
+        var text: [case.capacity]types.char16 = @splat('x');
 
         copyAsciiToUtf16Z(&text, "abcde");
 
@@ -187,7 +187,7 @@ test "copyUtf16Z generated capacity boundaries" {
     };
 
     inline for (cases) |case| {
-        var text = [_]types.char16{'x'} ** case.capacity;
+        var text: [case.capacity]types.char16 = @splat('x');
 
         copyUtf16Z(&text, &source);
 
@@ -209,7 +209,7 @@ test "readUtf16ZAsAscii generated output boundaries" {
     };
 
     inline for (cases) |case| {
-        var buffer = [_]u8{0} ** case.capacity;
+        var buffer: [case.capacity]u8 = @splat(0);
 
         const text = readUtf16ZAsAscii(&source, &buffer);
 

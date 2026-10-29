@@ -801,7 +801,7 @@ pub const SpeakerArray = struct {
     pub const SpeakerType = base.uint64;
 
     count: base.int32 = 0,
-    speaker: [kMaxSpeakers]SpeakerType = [_]SpeakerType{0} ** kMaxSpeakers,
+    speaker: [kMaxSpeakers]SpeakerType = @splat(0),
 
     pub fn init(arrangement: vsttypes.SpeakerArrangement) SpeakerArray {
         var result = SpeakerArray{};
@@ -824,7 +824,7 @@ pub const SpeakerArray = struct {
 
     pub fn setArrangement(self: *SpeakerArray, arrangement: vsttypes.SpeakerArrangement) void {
         self.count = 0;
-        self.speaker = [_]SpeakerType{0} ** kMaxSpeakers;
+        self.speaker = @splat(0);
 
         var index: u6 = 0;
         while (true) {

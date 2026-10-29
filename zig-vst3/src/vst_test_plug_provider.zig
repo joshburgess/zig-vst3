@@ -276,7 +276,7 @@ test "test plug provider delegates component controller and release hooks throug
 test "test plug provider reports missing component UID deterministically" {
     const Provider = TestPlugProvider(struct {});
     var provider = Provider{};
-    var out_uid: tuid.TUID = [_]u8{0xAA} ** tuid.byte_count;
+    var out_uid: tuid.TUID = @splat(0xAA);
 
     try std.testing.expectEqual(types.kResultFalse, provider.asProvider().vtable.getComponentUID(provider.asProvider(), &out_uid));
     try std.testing.expectEqualSlices(u8, &tuid.zero, &out_uid);

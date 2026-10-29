@@ -52,6 +52,6 @@ test "data exchange struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IDataExchangeReceiver));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IDataExchangeHandler));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IDataExchangeReceiver));
-    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IDataExchangeHandlerVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IDataExchangeReceiverVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IDataExchangeHandlerVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IDataExchangeReceiverVTable).@"struct".field_names.len);
 }

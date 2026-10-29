@@ -93,7 +93,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
 
         iface: ivstcontextmenu.IContextMenu = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        entries: [max_items]Entry = [_]Entry{.{}} ** max_items,
+        entries: [max_items]Entry = @splat(.{}),
         popup_count: types.uint32 = 0,
         last_x: types.UCoord = 0,
         last_y: types.UCoord = 0,

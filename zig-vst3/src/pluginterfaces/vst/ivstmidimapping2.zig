@@ -72,6 +72,6 @@ test "MIDI 2 mapping struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(Midi1ControllerParamIDAssignmentList));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IMidiMapping2));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IMidiLearn2));
-    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IMidiMapping2VTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IMidiLearn2VTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IMidiMapping2VTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IMidiLearn2VTable).@"struct".field_names.len);
 }

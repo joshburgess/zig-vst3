@@ -21,8 +21,8 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         expression_count: types.uint32 = 0,
         keyswitch_count: types.uint32 = 0,
-        expressions: [max_expressions]ivstnoteexpression.NoteExpressionTypeInfo = [_]ivstnoteexpression.NoteExpressionTypeInfo{.{}} ** max_expressions,
-        keyswitches: [max_keyswitches]ivstnoteexpression.KeyswitchInfo = [_]ivstnoteexpression.KeyswitchInfo{.{}} ** max_keyswitches,
+        expressions: [max_expressions]ivstnoteexpression.NoteExpressionTypeInfo = @splat(.{}),
+        keyswitches: [max_keyswitches]ivstnoteexpression.KeyswitchInfo = @splat(.{}),
         last_bus: types.int32 = 0,
         last_channel: types.int16 = 0,
 
@@ -210,28 +210,28 @@ test "note expression helper stores expression and keyswitch info" {
     const keyswitch = helper.asKeyswitch();
 
     try std.testing.expectEqual(types.kResultOk, helper.addExpression(.{
-        .typeId = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kBrightnessTypeID),
+        .typeId = @backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kBrightnessTypeID),
         .valueDesc = .{ .defaultValue = 0.5, .minimum = 0, .maximum = 1, .stepCount = 0 },
         .associatedParameterId = 42,
     }));
-    try std.testing.expectEqual(types.kResultFalse, helper.addExpression(.{ .typeId = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kVibratoTypeID) }));
-    try std.testing.expectEqual(@intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kBrightnessTypeID), helper.expressionByIndex(0).?.typeId);
+    try std.testing.expectEqual(types.kResultFalse, helper.addExpression(.{ .typeId = @backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kVibratoTypeID) }));
+    try std.testing.expectEqual(@backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kBrightnessTypeID), helper.expressionByIndex(0).?.typeId);
     try std.testing.expect(helper.expressionByIndex(1) == null);
     try std.testing.expectEqual(@as(types.int32, 1), expression.vtable.getNoteExpressionCount(expression, 2, 3));
 
     var expression_info = ivstnoteexpression.NoteExpressionTypeInfo{};
     try std.testing.expectEqual(types.kResultOk, expression.vtable.getNoteExpressionInfo(expression, 2, 3, 0, &expression_info));
-    try std.testing.expectEqual(@intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kBrightnessTypeID), expression_info.typeId);
+    try std.testing.expectEqual(@backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kBrightnessTypeID), expression_info.typeId);
     try std.testing.expectEqual(@as(vsttypes.ParamID, 42), expression_info.associatedParameterId);
     try std.testing.expectEqual(types.kInvalidArgument, expression.vtable.getNoteExpressionInfo(expression, 2, 3, 1, &expression_info));
 
     try std.testing.expectEqual(types.kResultOk, helper.addKeyswitch(.{
-        .typeId = @intFromEnum(ivstnoteexpression.KeyswitchTypeIDs.kNoteOnKeyswitchTypeID),
+        .typeId = @backingInt(ivstnoteexpression.KeyswitchTypeIDs.kNoteOnKeyswitchTypeID),
         .keyswitchMin = 24,
         .keyswitchMax = 36,
         .unitId = 7,
     }));
-    try std.testing.expectEqual(types.kResultFalse, helper.addKeyswitch(.{ .typeId = @intFromEnum(ivstnoteexpression.KeyswitchTypeIDs.kOnReleaseKeyswitchTypeID) }));
+    try std.testing.expectEqual(types.kResultFalse, helper.addKeyswitch(.{ .typeId = @backingInt(ivstnoteexpression.KeyswitchTypeIDs.kOnReleaseKeyswitchTypeID) }));
     try std.testing.expectEqual(@as(types.int32, 24), helper.keyswitchByIndex(0).?.keyswitchMin);
     try std.testing.expect(helper.keyswitchByIndex(1) == null);
     try std.testing.expectEqual(@as(types.int32, 1), keyswitch.vtable.getKeyswitchCount(keyswitch, 4, 5));
@@ -267,7 +267,7 @@ test "note expression helper clears failed outputs" {
     try std.testing.expectEqual(types.kInvalidArgument, expression.vtable.getNoteExpressionInfo(expression, 0, 1, 0, &expression_info));
     try std.testing.expectEqual(@as(ivstnoteexpression.NoteExpressionTypeID, 0), expression_info.typeId);
 
-    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var text: vsttypes.String128 = @splat('x');
     try std.testing.expectEqual(types.kResultFalse, expression.vtable.getNoteExpressionStringByValue(expression, 0, 1, 0, 0.25, &text));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[0]);
 
@@ -366,7 +366,7 @@ test "note expression helper clears delegated conversion failures" {
     var helper = Helper{};
     const expression = helper.asNoteExpression();
 
-    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var text: vsttypes.String128 = @splat('x');
     try std.testing.expectEqual(types.kInvalidArgument, expression.vtable.getNoteExpressionStringByValue(expression, 0, 0, 1, 0.5, &text));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[string128.payload_units]);

@@ -72,9 +72,9 @@ pub const PFactoryInfo = extern struct {
     pub const kComponentNonDiscardable = 1 << 3;
     pub const kUnicode = 1 << 4;
 
-    vendor: [kNameSize]types.char8 = [_]types.char8{0} ** kNameSize,
-    url: [kURLSize]types.char8 = [_]types.char8{0} ** kURLSize,
-    email: [kEmailSize]types.char8 = [_]types.char8{0} ** kEmailSize,
+    vendor: [kNameSize]types.char8 = @splat(0),
+    url: [kURLSize]types.char8 = @splat(0),
+    email: [kEmailSize]types.char8 = @splat(0),
     flags: types.int32 = 0,
 };
 
@@ -85,8 +85,8 @@ pub const PClassInfo = extern struct {
 
     cid: tuid.TUID = tuid.zero,
     cardinality: types.int32 = 0,
-    category: [kCategorySize]types.char8 = [_]types.char8{0} ** kCategorySize,
-    name: [kNameSize]types.char8 = [_]types.char8{0} ** kNameSize,
+    category: [kCategorySize]types.char8 = @splat(0),
+    name: [kNameSize]types.char8 = @splat(0),
 };
 
 pub const PClassInfo2 = extern struct {
@@ -96,13 +96,13 @@ pub const PClassInfo2 = extern struct {
 
     cid: tuid.TUID = tuid.zero,
     cardinality: types.int32 = 0,
-    category: [PClassInfo.kCategorySize]types.char8 = [_]types.char8{0} ** PClassInfo.kCategorySize,
-    name: [PClassInfo.kNameSize]types.char8 = [_]types.char8{0} ** PClassInfo.kNameSize,
+    category: [PClassInfo.kCategorySize]types.char8 = @splat(0),
+    name: [PClassInfo.kNameSize]types.char8 = @splat(0),
     classFlags: types.uint32 = 0,
-    subCategories: [kSubCategoriesSize]types.char8 = [_]types.char8{0} ** kSubCategoriesSize,
-    vendor: [kVendorSize]types.char8 = [_]types.char8{0} ** kVendorSize,
-    version: [kVersionSize]types.char8 = [_]types.char8{0} ** kVersionSize,
-    sdkVersion: [kVersionSize]types.char8 = [_]types.char8{0} ** kVersionSize,
+    subCategories: [kSubCategoriesSize]types.char8 = @splat(0),
+    vendor: [kVendorSize]types.char8 = @splat(0),
+    version: [kVersionSize]types.char8 = @splat(0),
+    sdkVersion: [kVersionSize]types.char8 = @splat(0),
 };
 
 pub const PClassInfoW = extern struct {
@@ -112,13 +112,13 @@ pub const PClassInfoW = extern struct {
 
     cid: tuid.TUID = tuid.zero,
     cardinality: types.int32 = 0,
-    category: [PClassInfo.kCategorySize]types.char8 = [_]types.char8{0} ** PClassInfo.kCategorySize,
-    name: [PClassInfo.kNameSize]types.char16 = [_]types.char16{0} ** PClassInfo.kNameSize,
+    category: [PClassInfo.kCategorySize]types.char8 = @splat(0),
+    name: [PClassInfo.kNameSize]types.char16 = @splat(0),
     classFlags: types.uint32 = 0,
-    subCategories: [kSubCategoriesSize]types.char8 = [_]types.char8{0} ** kSubCategoriesSize,
-    vendor: [kVendorSize]types.char16 = [_]types.char16{0} ** kVendorSize,
-    version: [kVersionSize]types.char16 = [_]types.char16{0} ** kVersionSize,
-    sdkVersion: [kVersionSize]types.char16 = [_]types.char16{0} ** kVersionSize,
+    subCategories: [kSubCategoriesSize]types.char8 = @splat(0),
+    vendor: [kVendorSize]types.char16 = @splat(0),
+    version: [kVersionSize]types.char16 = @splat(0),
+    sdkVersion: [kVersionSize]types.char16 = @splat(0),
 };
 
 test "pluginbase struct sizes match SDK layout" {
@@ -128,10 +128,10 @@ test "pluginbase struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IPluginFactory));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IPluginFactory2));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IPluginFactory3));
-    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IPluginBaseVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IPluginFactoryVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 8), @typeInfo(IPluginFactory2VTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 10), @typeInfo(IPluginFactory3VTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IPluginBaseVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IPluginFactoryVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 8), @typeInfo(IPluginFactory2VTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 10), @typeInfo(IPluginFactory3VTable).@"struct".field_names.len);
     try @import("std").testing.expectEqual(@as(usize, 452), @sizeOf(PFactoryInfo));
     try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(PFactoryInfo));
     try @import("std").testing.expectEqual(@as(usize, 116), @sizeOf(PClassInfo));

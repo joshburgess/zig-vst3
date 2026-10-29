@@ -11,12 +11,13 @@ pub const EnumParam = descriptors.EnumParam;
 pub const ParameterValues = access.ParameterValues;
 
 pub fn ParameterSet(comptime Params: type) type {
-    const fields = @typeInfo(Params).@"struct".fields;
+    const field_names = @typeInfo(Params).@"struct".field_names;
+    const field_types = @typeInfo(Params).@"struct".field_types;
 
     return struct {
         const Self = @This();
 
-        pub const count = fields.len;
+        pub const count = field_names.len;
 
         params: Params,
 
@@ -37,7 +38,7 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn duplicateId(self: *const Self) ?u32 {
-            if (comptime fields.len == 0) return null;
+            if (comptime field_names.len == 0) return null;
             const index = self.duplicateIdIndex() orelse return null;
             return self.id(index);
         }
@@ -47,10 +48,10 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         fn duplicateScalarFieldIndex(self: *const Self, comptime field_name: []const u8) ?usize {
-            inline for (fields, 0..) |left_field, left_index| {
-                const left_value = @field(@field(self.params, left_field.name), field_name);
-                inline for (fields[left_index + 1 ..], left_index + 1..) |right_field, right_index| {
-                    if (@field(@field(self.params, right_field.name), field_name) == left_value) {
+            inline for (field_names, 0..) |left_field, left_index| {
+                const left_value = @field(@field(self.params, left_field), field_name);
+                inline for (field_names[left_index + 1 ..], left_index + 1..) |right_field, right_index| {
+                    if (@field(@field(self.params, right_field), field_name) == left_value) {
                         return right_index;
                     }
                 }
@@ -67,7 +68,7 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn duplicateName(self: *const Self) ?[]const u8 {
-            if (comptime fields.len == 0) return null;
+            if (comptime field_names.len == 0) return null;
             const index = self.duplicateNameIndex() orelse return null;
             return self.name(index);
         }
@@ -77,10 +78,10 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         fn duplicateStringFieldIndex(self: *const Self, comptime field_name: []const u8) ?usize {
-            inline for (fields, 0..) |left_field, left_index| {
-                const left_value = @field(@field(self.params, left_field.name), field_name);
-                inline for (fields[left_index + 1 ..], left_index + 1..) |right_field, right_index| {
-                    if (std.mem.eql(u8, @field(@field(self.params, right_field.name), field_name), left_value)) {
+            inline for (field_names, 0..) |left_field, left_index| {
+                const left_value = @field(@field(self.params, left_field), field_name);
+                inline for (field_names[left_index + 1 ..], left_index + 1..) |right_field, right_index| {
+                    if (std.mem.eql(u8, @field(@field(self.params, right_field), field_name), left_value)) {
                         return right_index;
                     }
                 }
@@ -97,22 +98,22 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn firstDescriptorError(self: *const Self) ?anyerror {
-            inline for (fields) |field| {
-                if (parameterDescriptorError(@field(self.params, field.name))) |err| return err;
+            inline for (field_names) |field| {
+                if (parameterDescriptorError(@field(self.params, field))) |err| return err;
             }
             return null;
         }
 
         pub fn firstDescriptorErrorIndex(self: *const Self) ?usize {
-            inline for (fields, 0..) |field, field_index| {
-                if (parameterDescriptorError(@field(self.params, field.name)) != null) return field_index;
+            inline for (field_names, 0..) |field, field_index| {
+                if (parameterDescriptorError(@field(self.params, field)) != null) return field_index;
             }
             return null;
         }
 
         pub fn firstDescriptorErrorName(self: *const Self) ?[]const u8 {
-            inline for (fields) |field| {
-                const param = @field(self.params, field.name);
+            inline for (field_names) |field| {
+                const param = @field(self.params, field);
                 if (parameterDescriptorError(param) != null) return param.name;
             }
             return null;
@@ -129,22 +130,22 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn validateUnitIds(self: *const Self, unit_set: anytype) !void {
-            inline for (fields) |field| {
-                const unit_id = @field(self.params, field.name).unit_id;
+            inline for (field_names) |field| {
+                const unit_id = @field(self.params, field).unit_id;
                 if (!unit_set.hasUnit(unit_id)) return error.InvalidParameterUnit;
             }
         }
 
         pub fn id(self: *const Self, index: usize) ?u32 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).id;
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).id;
             }
             return null;
         }
 
         pub fn name(self: *const Self, index: usize) ?[]const u8 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).name;
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).name;
             }
             return null;
         }
@@ -160,10 +161,10 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn shortName(self: *const Self, index: usize) ?[]const u8 {
-            inline for (fields, 0..) |field, field_index| {
+            inline for (field_names, 0..) |field, field_index| {
                 if (index == field_index) {
-                    const value = @field(self.params, field.name).short_name;
-                    return if (value.len == 0) @field(self.params, field.name).name else value;
+                    const value = @field(self.params, field).short_name;
+                    return if (value.len == 0) @field(self.params, field).name else value;
                 }
             }
             return null;
@@ -180,8 +181,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn units(self: *const Self, index: usize) ?[]const u8 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).units;
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).units;
             }
             return null;
         }
@@ -197,8 +198,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn defaultNormalized(self: *const Self, index: usize) ?f64 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).defaultNormalized();
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).defaultNormalized();
             }
             return null;
         }
@@ -214,9 +215,9 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn defaultPlain(self: *const Self, index: usize) ?f64 {
-            inline for (fields, 0..) |field, field_index| {
+            inline for (field_names, 0..) |field, field_index| {
                 if (index == field_index) {
-                    const param = @field(self.params, field.name);
+                    const param = @field(self.params, field);
                     return param.plainFromNormalized(param.defaultNormalized());
                 }
             }
@@ -234,8 +235,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn plainMinimum(self: *const Self, index: usize) ?f64 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return parameterPlainMinimum(@field(self.params, field.name));
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return parameterPlainMinimum(@field(self.params, field));
             }
             return null;
         }
@@ -251,8 +252,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn plainMaximum(self: *const Self, index: usize) ?f64 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return parameterPlainMaximum(@field(self.params, field.name));
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return parameterPlainMaximum(@field(self.params, field));
             }
             return null;
         }
@@ -282,8 +283,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn isBypass(self: *const Self, index: usize) ?bool {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).is_bypass;
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).is_bypass;
             }
             return null;
         }
@@ -299,8 +300,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn canAutomate(self: *const Self, index: usize) ?bool {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).can_automate;
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).can_automate;
             }
             return null;
         }
@@ -316,8 +317,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn isReadOnly(self: *const Self, index: usize) ?bool {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).is_read_only;
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).is_read_only;
             }
             return null;
         }
@@ -333,8 +334,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn unitId(self: *const Self, index: usize) ?i32 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).unit_id;
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).unit_id;
             }
             return null;
         }
@@ -350,8 +351,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn stepCount(self: *const Self, index: usize) ?i32 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return parameterStepCount(@field(self.params, field.name));
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return parameterStepCount(@field(self.params, field));
             }
             return null;
         }
@@ -367,8 +368,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn isList(self: *const Self, index: usize) ?bool {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return parameterIsList(@field(self.params, field.name));
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return parameterIsList(@field(self.params, field));
             }
             return null;
         }
@@ -384,8 +385,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn optionCount(self: *const Self, index: usize) ?usize {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return parameterOptionCount(@field(self.params, field.name));
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return parameterOptionCount(@field(self.params, field));
             }
             return null;
         }
@@ -401,8 +402,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn optionLabel(self: *const Self, index: usize, option_index: usize) ?[]const u8 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return parameterOptionLabel(@field(self.params, field.name), option_index);
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return parameterOptionLabel(@field(self.params, field), option_index);
             }
             return null;
         }
@@ -418,8 +419,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn optionNormalized(self: *const Self, index: usize, option_index: usize) ?f64 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return parameterOptionNormalized(@field(self.params, field.name), option_index);
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return parameterOptionNormalized(@field(self.params, field), option_index);
             }
             return null;
         }
@@ -463,15 +464,15 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn indexOfId(self: *const Self, wanted_id: u32) ?usize {
-            inline for (fields, 0..) |field, index| {
-                if (@field(self.params, field.name).id == wanted_id) return index;
+            inline for (field_names, 0..) |field, index| {
+                if (@field(self.params, field).id == wanted_id) return index;
             }
             return null;
         }
 
         pub fn indexOfName(self: *const Self, wanted_name: []const u8) ?usize {
-            inline for (fields, 0..) |field, index| {
-                if (std.mem.eql(u8, @field(self.params, field.name).name, wanted_name)) return index;
+            inline for (field_names, 0..) |field, index| {
+                if (std.mem.eql(u8, @field(self.params, field).name, wanted_name)) return index;
             }
             return null;
         }
@@ -485,14 +486,14 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn indexOfField(_: *const Self, comptime field_name: []const u8) usize {
-            inline for (fields, 0..) |field, index| {
-                if (comptime std.mem.eql(u8, field.name, field_name)) return index;
+            inline for (field_names, 0..) |field, index| {
+                if (comptime std.mem.eql(u8, field, field_name)) return index;
             }
             @compileError("unknown parameter field: " ++ field_name);
         }
 
-        pub fn descriptorAt(self: *const Self, comptime index: usize) fields[index].type {
-            return @field(self.params, fields[index].name);
+        pub fn descriptorAt(self: *const Self, comptime index: usize) field_types[index] {
+            return @field(self.params, field_names[index]);
         }
 
         pub fn idAt(self: *const Self, comptime index: usize) u32 {
@@ -677,8 +678,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn formatPlain(self: *const Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).formatPlain(normalized, buffer);
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).formatPlain(normalized, buffer);
             }
             return error.InvalidParameterIndex;
         }
@@ -694,8 +695,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn parsePlain(self: *const Self, index: usize, text: []const u8) !f64 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).parsePlain(text);
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).parsePlain(text);
             }
             return error.InvalidParameterIndex;
         }
@@ -711,8 +712,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn plainFromNormalized(self: *const Self, index: usize, normalized: f64) ?f64 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).plainFromNormalized(normalized);
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).plainFromNormalized(normalized);
             }
             return null;
         }
@@ -728,8 +729,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn normalizedFromPlain(self: *const Self, index: usize, plain: f64) ?f64 {
-            inline for (fields, 0..) |field, field_index| {
-                if (index == field_index) return @field(self.params, field.name).normalizedFromPlain(plain);
+            inline for (field_names, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field).normalizedFromPlain(plain);
             }
             return null;
         }
@@ -759,7 +760,7 @@ pub fn parameterStepCount(param: anytype) i32 {
     if (info == .@"struct" and @hasDecl(Param, "denormalize")) {
         const default_type = @TypeOf(param.default);
         if (@typeInfo(default_type) == .@"enum") {
-            return std.math.cast(i32, @typeInfo(default_type).@"enum".fields.len - 1) orelse std.math.maxInt(i32);
+            return std.math.cast(i32, @typeInfo(default_type).@"enum".field_names.len - 1) orelse std.math.maxInt(i32);
         }
     }
     return 0;
@@ -845,8 +846,10 @@ pub fn parameterDescriptorError(param: anytype) ?anyerror {
 }
 
 pub fn FieldDescriptor(comptime Params: type, comptime field_name: []const u8) type {
-    inline for (@typeInfo(Params).@"struct".fields) |field| {
-        if (comptime std.mem.eql(u8, field.name, field_name)) return field.type;
+    // 0.17：@typeInfo 改为数组结构体风格（名字/类型分两列并列）
+    const s = @typeInfo(Params).@"struct";
+    inline for (s.field_names, s.field_types) |name, FType| {
+        if (comptime std.mem.eql(u8, name, field_name)) return FType;
     }
     @compileError("unknown parameter field: " ++ field_name);
 }
@@ -855,7 +858,7 @@ pub fn FieldPlainType(comptime Params: type, comptime field_name: []const u8) ty
     const Descriptor = FieldDescriptor(Params, field_name);
     return @TypeOf(@as(Descriptor, undefined).denormalize(0.0));
 }
-test "parameter set reflects descriptor fields" {
+test "parameter set reflects descriptor field_names" {
     const Mode = enum { clean, lead };
     const Params = struct {
         gain: FloatParam = .{ .id = 0, .name = "Gain", .short_name = "Gain", .units = "dB", .min = 0.0, .max = 1.0, .default = 0.75 },

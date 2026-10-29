@@ -63,10 +63,11 @@ test "cloneable defaults to no clone" {
 }
 
 test "cloneable delegates to config clone hook" {
+    // 0.17：`@hasDecl` 只对 `pub` 声明返回 true——钩子必须显式 `pub`
     const Config = struct {
         var clone_target: u32 = 123;
 
-        fn clone(_: *anyopaque) ?*anyopaque {
+        pub fn clone(_: *anyopaque) ?*anyopaque {
             return &clone_target;
         }
     };

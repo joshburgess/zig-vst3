@@ -23,8 +23,8 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const parameter_set = &gain_spec.parameter_set;
     pub const physical_ui_maps = &[_]ivstphysicalui.PhysicalUIMap{
         .{
-            .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure),
-            .noteExpressionTypeID = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kExpressionTypeID),
+            .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure),
+            .noteExpressionTypeID = @backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kExpressionTypeID),
         },
     };
 });
@@ -149,7 +149,7 @@ test "gain controller exposes edit controller extension interfaces" {
     const controller2: *ivsteditcontroller.IEditController2 = @ptrCast(@alignCast(controller2_out.?));
     defer _ = controller2.vtable.release(controller2);
 
-    try std.testing.expectEqual(types.kResultOk, controller2.vtable.setKnobMode(controller2, @intFromEnum(ivsteditcontroller.KnobModes.kLinearMode)));
+    try std.testing.expectEqual(types.kResultOk, controller2.vtable.setKnobMode(controller2, @backingInt(ivsteditcontroller.KnobModes.kLinearMode)));
     try std.testing.expectEqual(types.kResultFalse, controller2.vtable.openHelp(controller2, 1));
     try std.testing.expectEqual(types.kResultFalse, controller2.vtable.openAboutBox(controller2, 1));
 
@@ -325,8 +325,8 @@ test "gain controller stores bus activation and system time handlers" {
     try std.testing.expectEqual(
         types.kResultOk,
         requestBusActivation(
-            @intFromEnum(ivstcomponent.MediaTypes.kEvent),
-            @intFromEnum(ivstcomponent.BusDirections.kInput),
+            @backingInt(ivstcomponent.MediaTypes.kEvent),
+            @backingInt(ivstcomponent.BusDirections.kInput),
             0,
             1,
         ),
@@ -356,19 +356,19 @@ test "gain controller stores progress callbacks" {
     defer _ = controller_iface.vtable.release(controller_iface);
 
     var progress_id: ivsteditcontroller.ProgressID = 999;
-    try std.testing.expectEqual(types.kResultFalse, startProgress(@intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
+    try std.testing.expectEqual(types.kResultFalse, startProgress(@backingInt(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
     try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 0), progress_id);
 
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
-    try std.testing.expectEqual(types.kResultOk, startProgress(@intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
+    try std.testing.expectEqual(types.kResultOk, startProgress(@backingInt(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
     try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 77), progress_id);
     try std.testing.expectEqual(types.kResultOk, updateProgress(progress_id, 0.5));
     try std.testing.expectEqual(types.kResultOk, finishProgress(progress_id));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.start_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.update_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.finish_count);
-    try std.testing.expectEqual(@intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), handler.last_type);
+    try std.testing.expectEqual(@backingInt(ivsteditcontroller.ProgressType.UIBackgroundTask), handler.last_type);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), handler.last_value);
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
@@ -502,17 +502,17 @@ test "gain controller exposes default root unit info" {
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getUnitInfo(unit_info, 1, &missing));
     try std.testing.expectEqual(@as(types.int32, 0), unit_info.vtable.getProgramListCount(unit_info));
 
-    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var program_name: vsttypes.String128 = @splat('x');
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, ivstunits.kNoProgramListId, 0, &program_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[1]);
 
-    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var program_info: vsttypes.String128 = @splat('x');
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramInfo(unit_info, ivstunits.kNoProgramListId, 0, "name", &program_info));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[1]);
 
-    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var pitch_name: vsttypes.String128 = @splat('x');
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramPitchName(unit_info, ivstunits.kNoProgramListId, 0, 60, &pitch_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[1]);
@@ -526,8 +526,8 @@ test "gain controller exposes default root unit info" {
         types.kResultOk,
         unit_info.vtable.getUnitByBus(
             unit_info,
-            @intFromEnum(ivstcomponent.MediaTypes.kAudio),
-            @intFromEnum(ivstcomponent.BusDirections.kInput),
+            @backingInt(ivstcomponent.MediaTypes.kAudio),
+            @backingInt(ivstcomponent.BusDirections.kInput),
             0,
             0,
             &unit_by_bus,
@@ -620,8 +620,8 @@ test "gain controller exposes default MIDI learn and MIDI 2 mapping interfaces" 
     try std.testing.expect(mapping2_out != null);
     const mapping2: *ivstmidimapping2.IMidiMapping2 = @ptrCast(@alignCast(mapping2_out.?));
     defer _ = mapping2.vtable.release(mapping2);
-    try std.testing.expectEqual(@as(types.uint32, 0), mapping2.vtable.getNumMidi1ControllerAssignments(mapping2, @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expectEqual(@as(types.uint32, 0), mapping2.vtable.getNumMidi2ControllerAssignments(mapping2, @intFromEnum(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.uint32, 0), mapping2.vtable.getNumMidi1ControllerAssignments(mapping2, @backingInt(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.uint32, 0), mapping2.vtable.getNumMidi2ControllerAssignments(mapping2, @backingInt(ivstcomponent.BusDirections.kInput)));
 
     var learn2_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivstmidimapping2.imidi_learn2_iid, &learn2_out));
@@ -659,7 +659,7 @@ test "gain controller exposes default note expression and keyswitch interfaces" 
         types.kInvalidArgument,
         expression.vtable.getNoteExpressionInfo(expression, 0, 0, 0, &expression_info),
     );
-    var expression_text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var expression_text: vsttypes.String128 = @splat('x');
     const empty_expression_text: [1:0]vsttypes.TChar = .{0};
     var expression_value: ivstnoteexpression.NoteExpressionValue = 1.0;
     try std.testing.expectEqual(
@@ -700,8 +700,8 @@ test "gain controller exposes default note expression and keyswitch interfaces" 
     defer _ = physical.vtable.release(physical);
 
     var requested_physical_maps = [_]ivstphysicalui.PhysicalUIMap{
-        .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure) },
-        .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIXMovement) },
+        .{ .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure) },
+        .{ .physicalUITypeID = @backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIXMovement) },
     };
     var physical_mapping: ivstphysicalui.PhysicalUIMapList = .{ .count = requested_physical_maps.len, .map = &requested_physical_maps };
     try std.testing.expectEqual(
@@ -709,10 +709,10 @@ test "gain controller exposes default note expression and keyswitch interfaces" 
         physical.vtable.getPhysicalUIMapping(physical, 0, 0, &physical_mapping),
     );
     try std.testing.expectEqual(@as(types.uint32, 2), physical_mapping.count);
-    try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), requested_physical_maps[0].physicalUITypeID);
-    try std.testing.expectEqual(@intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kExpressionTypeID), requested_physical_maps[0].noteExpressionTypeID);
-    try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIXMovement), requested_physical_maps[1].physicalUITypeID);
-    try std.testing.expectEqual(@intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID), requested_physical_maps[1].noteExpressionTypeID);
+    try std.testing.expectEqual(@backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), requested_physical_maps[0].physicalUITypeID);
+    try std.testing.expectEqual(@backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kExpressionTypeID), requested_physical_maps[0].noteExpressionTypeID);
+    try std.testing.expectEqual(@backingInt(ivstphysicalui.PhysicalUITypeIDs.kPUIXMovement), requested_physical_maps[1].physicalUITypeID);
+    try std.testing.expectEqual(@backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID), requested_physical_maps[1].noteExpressionTypeID);
 }
 
 test "gain controller exposes default parameter helper interfaces" {

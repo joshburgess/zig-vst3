@@ -20,5 +20,5 @@ pub const IErrorContext = extern struct {
 test "error context vtable size matches SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IErrorContext));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IErrorContext));
-    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IErrorContextVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IErrorContextVTable).@"struct".field_names.len);
 }

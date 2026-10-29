@@ -14,7 +14,7 @@ const NoteGateState = struct {
     const midi_pitch_count = plug_process.midiPitchCount();
 
     open: bool = false,
-    held_notes: [midi_pitch_count]bool = [_]bool{false} ** midi_pitch_count,
+    held_notes: [midi_pitch_count]bool = @splat(false),
     held_note_count: usize = 0,
 
     fn process(self: *NoteGateState, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
@@ -110,7 +110,7 @@ test "note gate component can be created as IComponent" {
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
-    try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @backingInt(ivstcomponent.MediaTypes.kEvent), @backingInt(ivstcomponent.BusDirections.kInput)));
     try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);
 }
 
@@ -196,7 +196,7 @@ test "note gate component gates host event list input through processor shell" {
     var input_events = InputEvents{};
     var note_on = ivstevents.Event{
         .sampleOffset = 1,
-        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+        .type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent),
         .data = .{ .noteOn = .{
             .channel = 0,
             .pitch = 60,
@@ -205,7 +205,7 @@ test "note gate component gates host event list input through processor shell" {
     };
     var note_off = ivstevents.Event{
         .sampleOffset = 3,
-        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+        .type = @backingInt(ivstevents.Event.EventTypes.kNoteOffEvent),
         .data = .{ .noteOff = .{
             .channel = 0,
             .pitch = 60,
@@ -221,7 +221,7 @@ test "note gate component gates host event list input through processor shell" {
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = 4,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .inputEvents = input_events.asInterface(),
         .processContext = &process_context,
     };
@@ -274,7 +274,7 @@ test "note gate component gates host event list input through double precision p
     var input_events = InputEvents{};
     var note_on = ivstevents.Event{
         .sampleOffset = 1,
-        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+        .type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent),
         .data = .{ .noteOn = .{
             .channel = 0,
             .pitch = 60,
@@ -283,7 +283,7 @@ test "note gate component gates host event list input through double precision p
     };
     var note_off = ivstevents.Event{
         .sampleOffset = 3,
-        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+        .type = @backingInt(ivstevents.Event.EventTypes.kNoteOffEvent),
         .data = .{ .noteOff = .{
             .channel = 0,
             .pitch = 60,
@@ -299,7 +299,7 @@ test "note gate component gates host event list input through double precision p
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = 4,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
         .inputEvents = input_events.asInterface(),
         .processContext = &process_context,
     };
@@ -431,6 +431,6 @@ test "note gate component round-trips empty state through host callbacks" {
     var stream = Stream{};
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
     try std.testing.expectEqual(@as(usize, plug_state.encoded_header_size), stream.data().len);
-    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
 }

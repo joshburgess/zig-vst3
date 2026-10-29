@@ -110,9 +110,9 @@ test "plug view struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(Linux.IEventHandler));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(Linux.ITimerHandler));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(Linux.IRunLoop));
-    try @import("std").testing.expectEqual(@as(usize, 15), @typeInfo(IPlugViewVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IPlugFrameVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(Linux.IEventHandlerVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(Linux.ITimerHandlerVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(Linux.IRunLoopVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 15), @typeInfo(IPlugViewVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IPlugFrameVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(Linux.IEventHandlerVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(Linux.ITimerHandlerVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(Linux.IRunLoopVTable).@"struct".field_names.len);
 }

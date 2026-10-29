@@ -14,10 +14,11 @@ fn validateVoidHook(
     if (!@hasDecl(Plugin, hook_name)) return;
 
     const hook = @typeInfo(@TypeOf(@field(Plugin, hook_name))).@"fn";
-    if (hook.params.len != hook_params.len) @compileError(message);
+    // 0.17：函数参数信息改为 `param_types`（数组结构体风格）
+    if (hook.param_types.len != hook_params.len) @compileError(message);
     if (hook.return_type.? != void) @compileError(message);
     inline for (hook_params, 0..) |expected_type, index| {
-        if (hook.params[index].type.? != expected_type) {
+        if (hook.param_types[index].? != expected_type) {
             @compileError(message);
         }
     }
@@ -27,10 +28,10 @@ fn validateInitHook(comptime Plugin: type) void {
     if (!@hasDecl(Plugin, "init")) return;
 
     const init_info = @typeInfo(@TypeOf(Plugin.init)).@"fn";
-    if (init_info.params.len != 1) {
+    if (init_info.param_types.len != 1) {
         @compileError("init must be fn (std.mem.Allocator) !Plugin");
     }
-    if (init_info.params[0].type.? != std.mem.Allocator) {
+    if (init_info.param_types[0].? != std.mem.Allocator) {
         @compileError("init must be fn (std.mem.Allocator) !Plugin");
     }
 

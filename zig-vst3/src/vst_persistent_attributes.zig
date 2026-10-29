@@ -85,7 +85,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             id: ?ipersistent.IAttrID = null,
             value: fvariant.FVariant = .{},
             queued: bool = false,
-            binary: [max_binary_bytes]u8 = [_]u8{0} ** max_binary_bytes,
+            binary: [max_binary_bytes]u8 = @splat(0),
             binary_size: types.uint32 = 0,
             owns_binary: bool = false,
 
@@ -134,7 +134,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
         iface: ipersistent.IAttributes = .{ .vtable = &attributes_vtable },
         iface2: ipersistent.IAttributes2 = .{ .vtable = &attributes2_vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        entries: [max_entries]Entry = [_]Entry{.{}} ** max_entries,
+        entries: [max_entries]Entry = @splat(.{}),
 
         pub fn asAttributes(self: *Self) *ipersistent.IAttributes {
             return &self.iface;
@@ -524,16 +524,16 @@ test "persistent attributes copy binary payloads" {
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.setBinaryData(attrs, "blob", &payload, payload.len, true));
     payload[0] = 9;
 
-    var out = [_]u8{0} ** 4;
+    var out: [4]u8 = @splat(0);
     try std.testing.expectEqual(@as(types.uint32, 4), attrs.vtable.getBinaryDataSize(attrs, "blob"));
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.getBinaryData(attrs, "blob", &out, out.len));
     try std.testing.expectEqualSlices(u8, &.{ 1, 2, 3, 4 }, &out);
 
-    out = [_]u8{9} ** 4;
+    out = @splat(9);
     try std.testing.expectEqual(types.kResultFalse, attrs.vtable.getBinaryData(attrs, "missing", &out, out.len));
     try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0 }, &out);
 
-    out = [_]u8{9} ** 4;
+    out = @splat(9);
     try std.testing.expectEqual(types.kResultFalse, attrs.vtable.getBinaryData(attrs, "blob", &out, 2));
     try std.testing.expectEqualSlices(u8, &.{ 0, 0, 9, 9 }, &out);
 }
@@ -574,7 +574,7 @@ test "persistent attributes can reference borrowed binary payloads" {
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.setBinaryData(attrs, "blob", &payload, payload.len, false));
     payload[0] = 9;
 
-    var out = [_]u8{0} ** 4;
+    var out: [4]u8 = @splat(0);
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.getBinaryData(attrs, "blob", &out, out.len));
     try std.testing.expectEqualSlices(u8, &.{ 9, 2, 3, 4 }, &out);
 

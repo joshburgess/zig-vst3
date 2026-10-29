@@ -157,7 +157,7 @@ pub fn readParameterStateWithMigrationsReport(
         .restored_count = 0,
         .ignored_count = 0,
     };
-    var seen_restored = [_]bool{false} ** parameters.ParameterSet(Params).count;
+    var seen_restored: [parameters.ParameterSet(Params).count]bool = @splat(false);
     for (0..header.entry_count) |_| {
         const entry = try readParameterStateEntry(reader);
         try restoreParameterStateEntry(Params, set, &restored, &seen_restored, migrations, entry, &report);

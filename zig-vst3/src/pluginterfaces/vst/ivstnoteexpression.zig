@@ -51,9 +51,9 @@ pub const NoteExpressionValueDescription = extern struct {
 
 pub const NoteExpressionTypeInfo = extern struct {
     typeId: NoteExpressionTypeID = 0,
-    title: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
-    shortTitle: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
-    units: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
+    title: vsttypes.String128 = @splat(0),
+    shortTitle: vsttypes.String128 = @splat(0),
+    units: vsttypes.String128 = @splat(0),
     unitId: base_types.int32 = 0,
     valueDesc: NoteExpressionValueDescription = .{},
     associatedParameterId: vsttypes.ParamID = 0,
@@ -82,8 +82,8 @@ pub const KeyswitchTypeIDs = enum(base_types.uint32) {
 
 pub const KeyswitchInfo = extern struct {
     typeId: KeyswitchTypeID = 0,
-    title: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
-    shortTitle: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128,
+    title: vsttypes.String128 = @splat(0),
+    shortTitle: vsttypes.String128 = @splat(0),
     keyswitchMin: base_types.int32 = 0,
     keyswitchMax: base_types.int32 = 0,
     keyRemapped: base_types.int32 = 0,
@@ -134,6 +134,6 @@ test "note expression event struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IKeyswitchController));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(INoteExpressionController));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IKeyswitchController));
-    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(INoteExpressionControllerVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IKeyswitchControllerVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(INoteExpressionControllerVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IKeyswitchControllerVTable).@"struct".field_names.len);
 }

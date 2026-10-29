@@ -15,7 +15,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
 
         iface: iplugview.IPlugView = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        platforms: [max_platforms]types.FIDString = [_]types.FIDString{iplugview.PlatformType.kPlatformTypeNSView} ** max_platforms,
+        platforms: [max_platforms]types.FIDString = @splat(iplugview.PlatformType.kPlatformTypeNSView),
         platform_count: types.uint32 = 0,
         frame: ?*iplugview.IPlugFrame = null,
         attached_parent: ?*anyopaque = null,

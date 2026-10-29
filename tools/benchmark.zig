@@ -80,7 +80,7 @@ fn benchRawStream() !Benchmark {
     var stream = Stream{};
     const iface = stream.asStream();
     var input = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8 };
-    var output = [_]u8{0} ** input.len;
+    var output: [input.len]u8 = @splat(0);
 
     var timer = try Timer.start();
     var checksum: u64 = 0;
@@ -89,13 +89,13 @@ fn benchRawStream() !Benchmark {
         var read: raw.pluginterfaces.base.types.int32 = 0;
         var pos: raw.pluginterfaces.base.types.int64 = 0;
 
-        if (iface.vtable.seek(iface, 0, @intFromEnum(raw.pluginterfaces.base.ibstream.IStreamSeekMode.kIBSeekSet), &pos) != raw.pluginterfaces.base.types.kResultOk) {
+        if (iface.vtable.seek(iface, 0, @backingInt(raw.pluginterfaces.base.ibstream.IStreamSeekMode.kIBSeekSet), &pos) != raw.pluginterfaces.base.types.kResultOk) {
             return error.BenchmarkStreamSeekFailed;
         }
         if (iface.vtable.write(iface, &input, input.len, &written) != raw.pluginterfaces.base.types.kResultOk) {
             return error.BenchmarkStreamWriteFailed;
         }
-        if (iface.vtable.seek(iface, 0, @intFromEnum(raw.pluginterfaces.base.ibstream.IStreamSeekMode.kIBSeekSet), &pos) != raw.pluginterfaces.base.types.kResultOk) {
+        if (iface.vtable.seek(iface, 0, @backingInt(raw.pluginterfaces.base.ibstream.IStreamSeekMode.kIBSeekSet), &pos) != raw.pluginterfaces.base.types.kResultOk) {
             return error.BenchmarkStreamSeekFailed;
         }
         if (iface.vtable.read(iface, &output, output.len, &read) != raw.pluginterfaces.base.types.kResultOk) {

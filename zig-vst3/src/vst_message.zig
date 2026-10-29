@@ -107,12 +107,13 @@ pub fn ConnectionPoint(comptime Config: type) type {
 }
 
 test "connection point preserves peer when delegated connection changes fail" {
+    // 0.17：`@hasDecl` 只对 `pub` 声明返回 true——钩子必须显式 `pub`
     const Config = struct {
-        fn connect(_: anytype, peer: ?*ivstmessage.IConnectionPoint) types.tresult {
+        pub fn connect(_: anytype, peer: ?*ivstmessage.IConnectionPoint) types.tresult {
             return if (peer == null) types.kInvalidArgument else types.kResultFalse;
         }
 
-        fn disconnect(_: anytype, _: ?*ivstmessage.IConnectionPoint) types.tresult {
+        pub fn disconnect(_: anytype, _: ?*ivstmessage.IConnectionPoint) types.tresult {
             return types.kResultFalse;
         }
     };
@@ -228,8 +229,8 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             kind: Kind = .empty,
             int_value: types.int64 = 0,
             float_value: f64 = 0,
-            string_value: [max_string_chars]vsttypes.TChar = [_]vsttypes.TChar{0} ** max_string_chars,
-            binary_value: [max_binary_bytes]u8 = [_]u8{0} ** max_binary_bytes,
+            string_value: [max_string_chars]vsttypes.TChar = @splat(0),
+            binary_value: [max_binary_bytes]u8 = @splat(0),
             binary_size: types.uint32 = 0,
 
             fn isEmpty(self: Entry) bool {
@@ -286,7 +287,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         iface: ivstattributes.IAttributeList = .{ .vtable = &attribute_vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        entries: [max_entries]Entry = [_]Entry{.{}} ** max_entries,
+        entries: [max_entries]Entry = @splat(.{}),
 
         pub fn asInterface(self: *Self) *ivstattributes.IAttributeList {
             return &self.iface;
@@ -443,7 +444,7 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
 
         iface: ivstattributes.IStreamAttributes = .{ .vtable = &stream_vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        file_name: [max_file_name_chars]vsttypes.TChar = [_]vsttypes.TChar{0} ** max_file_name_chars,
+        file_name: [max_file_name_chars]vsttypes.TChar = @splat(0),
         attributes: Attributes = .{},
 
         pub fn asInterface(self: *Self) *ivstattributes.IStreamAttributes {
@@ -501,7 +502,7 @@ pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: us
 
         iface: ivstmessage.IMessage = .{ .vtable = &message_vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        message_id: [max_message_id_bytes]types.char8 = [_]types.char8{0} ** max_message_id_bytes,
+        message_id: [max_message_id_bytes]types.char8 = @splat(0),
         attributes: Attributes = .{},
 
         pub fn asInterface(self: *Self) *ivstmessage.IMessage {
@@ -567,7 +568,7 @@ test "attribute list stores scalar string and binary values" {
 
     const text: [6:0]vsttypes.TChar = .{ 'h', 'e', 'l', 'l', 'o', 0 };
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setString(iface, "text", &text));
-    var text_out: [16]vsttypes.TChar = [_]vsttypes.TChar{'x'} ** 16;
+    var text_out: [16]vsttypes.TChar = @splat('x');
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getString(iface, "text", &text_out, text_out.len));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'h'), text_out[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 'o'), text_out[4]);
@@ -645,7 +646,7 @@ test "attribute list replaces values and clears stale typed outputs" {
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getFloat(iface, "value", &float_value));
     try std.testing.expectEqual(@as(f64, 0), float_value);
 
-    var text_out: [8]vsttypes.TChar = [_]vsttypes.TChar{'x'} ** 8;
+    var text_out: [8]vsttypes.TChar = @splat('x');
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getString(iface, "value", &text_out, text_out.len));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'n'), text_out[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text_out[3]);
@@ -720,7 +721,7 @@ test "stream attributes expose filename and attribute list" {
     const file_name: [11:0]vsttypes.TChar = .{ 'p', 'r', 'e', 's', 'e', 't', '.', 'v', 's', 't', 0 };
     stream_attributes.setFileName(&file_name);
 
-    var file_name_out: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var file_name_out: vsttypes.String128 = @splat('x');
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getFileName(iface, &file_name_out));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'p'), file_name_out[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 't'), file_name_out[9]);
@@ -744,12 +745,12 @@ test "stream attributes truncate filename to String128 output" {
     const TestStreamAttributes = StreamAttributes(160, 1, 4, 4);
     var stream_attributes = TestStreamAttributes{};
     const iface = stream_attributes.asInterface();
-    var long_name: [160:0]vsttypes.TChar = [_:0]vsttypes.TChar{'a'} ** 160;
+    var long_name: [160:0]vsttypes.TChar = @as([160:0]vsttypes.TChar, @splat('a'));
     long_name[0] = 'f';
 
     stream_attributes.setFileName(&long_name);
 
-    var file_name_out: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var file_name_out: vsttypes.String128 = @splat('x');
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getFileName(iface, &file_name_out));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'f'), file_name_out[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), file_name_out[string128.payload_units - 1]);

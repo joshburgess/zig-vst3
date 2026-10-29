@@ -394,7 +394,7 @@ test "channel context host exposes info listener and records callbacks" {
     const Host = ChannelContextHost("Test Host", struct {});
     var host = Host{};
     var queried: ?*anyopaque = null;
-    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var name: vsttypes.String128 = @splat('x');
 
     try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.getName(host.asHostApplication(), &name));
     try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Test Host"), std.mem.sliceTo(&name, 0));
@@ -484,7 +484,7 @@ test "channel context host truncates names and delegates create-instance success
         }
     });
     var host = Host{};
-    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var name: vsttypes.String128 = @splat('x');
     var created: ?*anyopaque = null;
 
     try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.getName(host.asHostApplication(), &name));

@@ -16,8 +16,8 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
         result_iface: istringresult.IStringResult = .{ .vtable = &result_vtable },
         string_iface: istringresult.IString = .{ .vtable = &string_vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        text8: [max_text8_bytes]types.char8 = [_]types.char8{0} ** max_text8_bytes,
-        text16: [max_text16_units]types.char16 = [_]types.char16{0} ** max_text16_units,
+        text8: [max_text8_bytes]types.char8 = @splat(0),
+        text16: [max_text16_units]types.char16 = @splat(0),
         wide: bool = false,
 
         pub fn asResult(self: *Self) *istringresult.IStringResult {

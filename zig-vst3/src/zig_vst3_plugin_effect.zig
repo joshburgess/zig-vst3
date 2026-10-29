@@ -743,7 +743,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             const requested_maps = out.map orelse return types.kInvalidArgument;
             if (physical_ui_maps.len == 0 or out.count == 0) return types.kResultFalse;
             for (requested_maps[0..out.count]) |*requested| {
-                requested.noteExpressionTypeID = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID);
+                requested.noteExpressionTypeID = @backingInt(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID);
                 for (physical_ui_maps) |mapping| {
                     if (mapping.physicalUITypeID == requested.physicalUITypeID) {
                         requested.noteExpressionTypeID = mapping.noteExpressionTypeID;
@@ -988,14 +988,14 @@ test "reflected edit controller exposes configured units and programs" {
     try std.testing.expectEqual(@as(types.int32, 2), list.programCount);
     try std.testing.expectEqual(@as(vsttypes.TChar, 'V'), list.name[0]);
 
-    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var program_name: vsttypes.String128 = @splat('x');
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramName(unit_info, 7, 1, &program_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'L'), program_name[0]);
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, 7, -1, &program_name));
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, 7, 2, &program_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
 
-    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    var program_info: vsttypes.String128 = @splat('x');
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramInfo(unit_info, 7, 0, "category", &program_info));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'C'), program_info[0]);
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramInfo(unit_info, 7, -1, "category", &program_info));
@@ -1052,7 +1052,7 @@ test "reflected edit controller exposes program snapshot data" {
 
     try std.testing.expectEqual(types.kResultOk, program_data.vtable.programDataSupported(program_data, 7));
     try std.testing.expectEqual(types.kResultOk, program_data.vtable.getProgramData(program_data, 7, 0, stream.asStream()));
-    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
     try std.testing.expectEqual(types.kResultOk, zig_vst3_plugin_bridge.readParameterState(Fixture.Params, stream.asStream(), &Fixture.parameter_set, &restored));
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadById(&Fixture.parameter_set, 1).?);
     try std.testing.expectEqual(types.kResultFalse, program_data.vtable.getProgramData(program_data, 7, 1, stream.asStream()));
@@ -1091,12 +1091,12 @@ test "reflected edit controller round-trips parameter state through host callbac
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setParamNormalized(controller_iface, 1, 0.0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), controller_iface.vtable.getParamNormalized(controller_iface, 1));
-    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentState(controller_iface, stream.asStream()));
     try std.testing.expectApproxEqAbs(@as(vsttypes.ParamValue, 0.75), controller_iface.vtable.getParamNormalized(controller_iface, 1), 0.000001);
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setParamNormalized(controller_iface, 1, 0.25));
-    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @backingInt(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setState(controller_iface, stream.asStream()));
     try std.testing.expectApproxEqAbs(@as(vsttypes.ParamValue, 0.75), controller_iface.vtable.getParamNormalized(controller_iface, 1), 0.000001);
 }
@@ -1319,7 +1319,7 @@ test "simple stereo effect processes with setup sample rate when process context
     defer _ = processor.vtable.release(processor);
 
     var setup = ivstaudioprocessor.ProcessSetup{
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .sampleRate = 44_100.0,
         .maxSamplesPerBlock = 2,
     };
@@ -1343,7 +1343,7 @@ test "simple stereo effect processes with setup sample rate when process context
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = input_samples.len,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
     };
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
@@ -1422,7 +1422,7 @@ test "simple stereo effect ignores parameter changes when process data is malfor
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = input_samples.len,
-        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .symbolicSampleSize = @backingInt(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .inputParameterChanges = changes.asInterface(),
         .processContext = &process_context,
     };
@@ -1935,7 +1935,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         };
 
         fn getPrefetchableSupport(_: *anyopaque, out: *ivstprefetchablesupport.PrefetchableSupport) callconv(.c) types.tresult {
-            out.* = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNeverPrefetchable);
+            out.* = @backingInt(ivstprefetchablesupport.ePrefetchableSupport.kIsNeverPrefetchable);
             return types.kResultOk;
         }
 

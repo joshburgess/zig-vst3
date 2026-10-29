@@ -20,8 +20,8 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         error_count: types.uint32 = 0,
         message_count: types.uint32 = 0,
-        errors: [max_messages][max_chars]types.char16 = [_][max_chars]types.char16{[_]types.char16{0} ** max_chars} ** max_messages,
-        messages: [max_messages][max_chars]types.char16 = [_][max_chars]types.char16{[_]types.char16{0} ** max_chars} ** max_messages,
+        errors: [max_messages][max_chars]types.char16 = @splat(@as([max_chars]types.char16, @splat(0))),
+        messages: [max_messages][max_chars]types.char16 = @splat(@as([max_chars]types.char16, @splat(0))),
 
         pub fn asInterface(self: *Self) *itest.ITestResult {
             return &self.iface;
@@ -177,8 +177,8 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         test_count: types.uint32 = 0,
         suite_count: types.uint32 = 0,
-        tests: [max_tests]TestEntry = [_]TestEntry{.{}} ** max_tests,
-        suites: [max_suites]SuiteEntry = [_]SuiteEntry{.{}} ** max_suites,
+        tests: [max_tests]TestEntry = @splat(.{}),
+        suites: [max_suites]SuiteEntry = @splat(.{}),
         environment: ?*itest.ITest = null,
 
         pub fn asInterface(self: *Self) *itest.ITestSuite {

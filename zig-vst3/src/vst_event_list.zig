@@ -15,7 +15,7 @@ pub fn EventList(comptime max_events: usize) type {
 
         iface: ivstevents.IEventList = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        events: [max_events]ivstevents.Event = [_]ivstevents.Event{.{}} ** max_events,
+        events: [max_events]ivstevents.Event = @splat(.{}),
         count: types.int32 = 0,
         fail_get_index: types.int32 = -1,
         fail_add_index: types.int32 = -1,
@@ -107,7 +107,7 @@ test "event list reads and writes events" {
     const iface = list.asInterface();
     var event = ivstevents.Event{
         .sampleOffset = 3,
-        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+        .type = @backingInt(ivstevents.Event.EventTypes.kNoteOnEvent),
         .data = .{ .noteOn = .{ .pitch = 60, .velocity = 0.5 } },
     };
 

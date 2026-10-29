@@ -187,6 +187,7 @@ pub fn build(b: *std.Build) void {
             .short_name = options.short_name,
             .display_name = options.display_name,
             .artifact_name = options.artifact_name,
+            .bundle_dir = plugin.bundles.native_dir,
         });
     }
     const validate_examples_step = b.step("validate-examples", "Build and validate all native VST3 example bundles");
@@ -200,12 +201,14 @@ pub fn build(b: *std.Build) void {
             .display_name = options.display_name,
             .artifact_name = options.artifact_name,
             .strictness = null,
+            .bundle_dir = plugin.bundles.native_dir,
         });
         pluginval_strict_example_steps[index] = addPluginvalStep(b, target, plugin.bundles.native, .{
             .short_name = b.fmt("{s}-strict", .{options.short_name}),
             .display_name = options.display_name,
             .artifact_name = options.artifact_name,
             .strictness = "10",
+            .bundle_dir = plugin.bundles.native_dir,
         });
     }
     const pluginval_examples_step = b.step("pluginval-examples", "Build and run pluginval for all native VST3 example bundles");
@@ -425,6 +428,9 @@ const Vst3ValidationOptions = struct {
     display_name: []const u8,
     artifact_name: []const u8,
     strictness: ?[]const u8 = null,
+    /// 原生 bundle 的生成目录（0.17：安装前缀在配置阶段不可知，改用“运行步骤产出的目录”
+    /// 的 LazyPath；为 null 表示该目标平台不产出原生 bundle）
+    bundle_dir: ?std.Build.LazyPath = null,
 };
 
 fn addVst3ValidationStep(
@@ -435,12 +441,10 @@ fn addVst3ValidationStep(
 ) *std.Build.Step {
     const step_name = b.fmt("validate-{s}", .{options.short_name});
     const validate_step = b.step(step_name, b.fmt("Build and validate the native {s} VST3 bundle", .{options.display_name}));
-    if (target.result.os.tag == .macos or target.result.os.tag == .linux) {
+    if (options.bundle_dir != null and (target.result.os.tag == .macos or target.result.os.tag == .linux)) {
         validate_step.dependOn(bundle_step);
-        const validate = b.addSystemCommand(&.{
-            "scripts/validate.sh",
-            b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
-        });
+        const validate = b.addSystemCommand(&.{"scripts/validate.sh"});
+        validate.addDirectoryArg2(options.bundle_dir.?, .{});
         validate.step.dependOn(bundle_step);
         validate_step.dependOn(&validate.step);
     } else {
@@ -457,12 +461,11 @@ fn addPluginvalStep(
 ) *std.Build.Step {
     const step_name = b.fmt("pluginval-{s}", .{options.short_name});
     const pluginval_step = b.step(step_name, b.fmt("Build and run pluginval for the native {s} VST3 bundle", .{options.display_name}));
-    if (target.result.os.tag == .macos or target.result.os.tag == .linux or target.result.os.tag == .windows) {
+    const os_tag = target.result.os.tag;
+    if (options.bundle_dir != null and (os_tag == .macos or os_tag == .linux or os_tag == .windows)) {
         pluginval_step.dependOn(bundle_step);
-        const pluginval = b.addSystemCommand(&.{
-            "scripts/pluginval.sh",
-            b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
-        });
+        const pluginval = b.addSystemCommand(&.{"scripts/pluginval.sh"});
+        pluginval.addDirectoryArg2(options.bundle_dir.?, .{});
         if (options.strictness) |strictness| {
             pluginval.setEnvironmentVariable("PLUGINVAL_STRICTNESS", strictness);
         }
@@ -483,6 +486,9 @@ const Vst3BundleOptions = struct {
 
 const Vst3BundleSteps = struct {
     native: *std.Build.Step,
+    /// 原生 bundle 的生成目录（供 validate/pluginval 直接当目录参数用；
+    /// 目标平台不产出原生 bundle 时为 null）
+    native_dir: ?std.Build.LazyPath = null,
     linux: *std.Build.Step,
     windows: *std.Build.Step,
 };
@@ -656,6 +662,11 @@ fn addVst3BundleDependencies(
     }
 }
 
+// 0.17 迁移注记：`b.getInstallPath` 已被移除（安装前缀在配置阶段不可知）。
+// 原来的“把 bundle 直接写进 <prefix>/bundle/…”改成两步：
+//   1) 打包脚本写进**运行步骤产出的目录**（`addOutputDirectoryArg2` → LazyPath）；
+//   2) 再用 `addInstallDirectory` 把它装到 `<prefix>/bundle/<name>`。
+// 好处：`zig build -p <自定义前缀>` 依然正确，验证/pluginval 也能直接拿目录路径。
 fn addVst3BundleSteps(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
@@ -664,25 +675,38 @@ fn addVst3BundleSteps(
 ) Vst3BundleSteps {
     const native_step_name = b.fmt("bundle-{s}", .{options.short_name});
     const native_step = b.step(native_step_name, b.fmt("Build a native VST3 bundle for the {s} plugin", .{options.display_name}));
+    var native_dir: ?std.Build.LazyPath = null;
     if (target.result.os.tag == .macos) {
         const bundle = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
         bundle.addFileArg(library.getEmittedBin());
+        const out_dir = bundle.addOutputDirectoryArg2(b.fmt("{s}.vst3", .{options.artifact_name}), .{});
         bundle.addArgs(&.{
-            b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
             options.bundle_id,
-            "0.2.1",
+            "0.4.0",
             options.artifact_name,
         });
         native_step.dependOn(&bundle.step);
+        native_step.dependOn(&b.addInstallDirectory(.{
+            .source_dir = out_dir,
+            .install_dir = .prefix,
+            .install_subdir = b.fmt("bundle/{s}.vst3", .{options.artifact_name}),
+        }).step);
+        native_dir = out_dir;
     } else if (target.result.os.tag == .linux) {
         const bundle = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
         bundle.addFileArg(library.getEmittedBin());
+        const out_dir = bundle.addOutputDirectoryArg2(b.fmt("{s}.vst3", .{options.artifact_name}), .{});
         bundle.addArgs(&.{
-            b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
             linuxPlatformDir(target.result.cpu.arch),
             options.artifact_name,
         });
         native_step.dependOn(&bundle.step);
+        native_step.dependOn(&b.addInstallDirectory(.{
+            .source_dir = out_dir,
+            .install_dir = .prefix,
+            .install_subdir = b.fmt("bundle/{s}.vst3", .{options.artifact_name}),
+        }).step);
+        native_dir = out_dir;
     } else {
         native_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS and Linux targets", .{native_step_name})).step);
     }
@@ -692,12 +716,17 @@ fn addVst3BundleSteps(
     if (target.result.os.tag == .linux) {
         const bundle_linux = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
         bundle_linux.addFileArg(library.getEmittedBin());
+        const out_dir = bundle_linux.addOutputDirectoryArg2(b.fmt("{s}_linux.vst3", .{options.artifact_name}), .{});
         bundle_linux.addArgs(&.{
-            b.getInstallPath(.prefix, b.fmt("bundle/{s}_linux.vst3", .{options.artifact_name})),
             linuxPlatformDir(target.result.cpu.arch),
             b.fmt("{s}_linux", .{options.artifact_name}),
         });
         linux_step.dependOn(&bundle_linux.step);
+        linux_step.dependOn(&b.addInstallDirectory(.{
+            .source_dir = out_dir,
+            .install_dir = .prefix,
+            .install_subdir = b.fmt("bundle/{s}_linux.vst3", .{options.artifact_name}),
+        }).step);
     } else {
         linux_step.dependOn(&b.addFail(b.fmt("{s} requires a Linux target", .{linux_step_name})).step);
     }
@@ -707,18 +736,24 @@ fn addVst3BundleSteps(
     if (target.result.os.tag == .windows) {
         const bundle_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
         bundle_windows.addFileArg(library.getEmittedBin());
+        const out_dir = bundle_windows.addOutputDirectoryArg2(b.fmt("{s}_windows.vst3", .{options.artifact_name}), .{});
         bundle_windows.addArgs(&.{
-            b.getInstallPath(.prefix, b.fmt("bundle/{s}_windows.vst3", .{options.artifact_name})),
             windowsPlatformDir(target.result.cpu.arch),
             b.fmt("{s}_windows", .{options.artifact_name}),
         });
         windows_step.dependOn(&bundle_windows.step);
+        windows_step.dependOn(&b.addInstallDirectory(.{
+            .source_dir = out_dir,
+            .install_dir = .prefix,
+            .install_subdir = b.fmt("bundle/{s}_windows.vst3", .{options.artifact_name}),
+        }).step);
     } else {
         windows_step.dependOn(&b.addFail(b.fmt("{s} requires a Windows target", .{windows_step_name})).step);
     }
 
     return .{
         .native = native_step,
+        .native_dir = native_dir,
         .linux = linux_step,
         .windows = windows_step,
     };

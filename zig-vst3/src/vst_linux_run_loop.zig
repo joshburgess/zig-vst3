@@ -144,8 +144,8 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
 
         iface: Linux.IRunLoop = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        event_handlers: [max_event_handlers]EventEntry = [_]EventEntry{.{}} ** max_event_handlers,
-        timer_handlers: [max_timer_handlers]TimerEntry = [_]TimerEntry{.{}} ** max_timer_handlers,
+        event_handlers: [max_event_handlers]EventEntry = @splat(.{}),
+        timer_handlers: [max_timer_handlers]TimerEntry = @splat(.{}),
 
         pub fn asInterface(self: *Self) *Linux.IRunLoop {
             return &self.iface;

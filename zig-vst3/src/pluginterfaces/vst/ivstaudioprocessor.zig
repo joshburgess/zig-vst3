@@ -145,7 +145,7 @@ test "audio processor struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IAudioProcessor));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IAudioPresentationLatency));
     try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IProcessContextRequirements));
-    try @import("std").testing.expectEqual(@as(usize, 11), @typeInfo(IAudioProcessorVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IAudioPresentationLatencyVTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IProcessContextRequirementsVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 11), @typeInfo(IAudioProcessorVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IAudioPresentationLatencyVTable).@"struct".field_names.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IProcessContextRequirementsVTable).@"struct".field_names.len);
 }

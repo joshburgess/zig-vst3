@@ -23,7 +23,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
         iface: ivstparameterchanges.IParamValueQueue = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         id: vsttypes.ParamID = 0,
-        points: [max_points]ParamPoint = [_]ParamPoint{.{}} ** max_points,
+        points: [max_points]ParamPoint = @splat(.{}),
         point_count: types.int32 = 0,
 
         pub fn init(id: vsttypes.ParamID) Self {
@@ -130,7 +130,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
 
         iface: ivstparameterchanges.IParameterChanges = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        queues: [max_queues]Queue = [_]Queue{.{}} ** max_queues,
+        queues: [max_queues]Queue = @splat(.{}),
         queue_count: types.int32 = 0,
 
         pub fn asInterface(self: *Self) *ivstparameterchanges.IParameterChanges {

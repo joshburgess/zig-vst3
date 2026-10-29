@@ -231,11 +231,11 @@ pub fn Delay(comptime T: type) type {
 
 test "delay helper copies through circular buffer" {
     var input = [_]f32{ 1, 2, 3, 4, 5 };
-    var output = [_]f32{0} ** 5;
+    var output: [5]f32 = @splat(0);
     var buffer = [_]f32{ 10, 20, 30, 40 };
     try @import("std").testing.expect(delay(f32, 5, &input, &output, &buffer, 4, 2, 0));
     try @import("std").testing.expectEqual(@as(f32, 10), output[0]);
-    var storage = [_]f32{0} ** 8;
+    var storage: [8]f32 = @splat(0);
     var processor_delay = Delay(f32).init(&storage, 5, 3);
     processor_delay.flush();
     try @import("std").testing.expectEqual(@as(base.int32, 8), processor_delay.getBufferSamples());
@@ -254,7 +254,7 @@ test "delay helper copies through circular buffer" {
 test "delay processor starts with valid ring positions" {
     var input = [_]f32{ 1, 2 };
     var output = [_]f32{ 9, 9 };
-    var storage = [_]f32{0} ** 8;
+    var storage: [8]f32 = @splat(0);
     var processor_delay = Delay(f32).init(&storage, 5, 3);
 
     try std.testing.expectEqual(@as(base.int32, 0), processor_delay.in_pos);
@@ -270,8 +270,8 @@ test "delay processor starts with valid ring positions" {
 
 test "delay processor wraps ring positions for oversized blocks" {
     var input = [_]f32{ 1, 2, 3, 4, 5, 6 };
-    var output = [_]f32{0} ** 6;
-    var storage = [_]f32{0} ** 4;
+    var output: [6]f32 = @splat(0);
+    var storage: [4]f32 = @splat(0);
     var processor_delay = Delay(f32).init(&storage, 2, 2);
 
     const silent = processor_delay.process(&input, &output, input.len, false);
@@ -295,7 +295,7 @@ test "delay processor keeps one free ring slot when storage is undersized" {
 
     var input = [_]f32{ 1, 2 };
     var output = [_]f32{ 9, 9 };
-    var storage = [_]f32{0} ** 4;
+    var storage: [4]f32 = @splat(0);
     var processor_delay = Delay(f32).init(&storage, 4, 4);
 
     try std.testing.expectEqual(@as(base.int32, 4), processor_delay.getBufferSamples());
@@ -311,7 +311,7 @@ test "delay processor keeps one free ring slot when storage is undersized" {
 test "delay processor clears output when ring state is invalid" {
     var input = [_]f32{ 1, 2 };
     var output = [_]f32{ 9, 9 };
-    var storage = [_]f32{0} ** 4;
+    var storage: [4]f32 = @splat(0);
     var processor_delay = Delay(f32).init(&storage, 2, 2);
     processor_delay.in_pos = -1;
 
@@ -341,7 +341,7 @@ test "bypass helpers reject invalid sizes and positions" {
     try std.testing.expect(!delay(f32, 1, &input, &output, &buffer, 2, 1, 1));
     try std.testing.expectEqual(@as(f32, 9), output[0]);
 
-    var storage = [_]f32{0} ** 4;
+    var storage: [4]f32 = @splat(0);
     var processor_delay = Delay(f32).init(&storage, std.math.maxInt(base.int32), 2);
     try std.testing.expectEqual(@as(base.int32, 4), processor_delay.getBufferSamples());
     const silent = processor_delay.process(&input, &output, -1, true);
